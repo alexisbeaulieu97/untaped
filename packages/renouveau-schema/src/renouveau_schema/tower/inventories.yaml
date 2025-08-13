@@ -1,0 +1,248 @@
+name: "Ansible Tower Inventories API"
+version: "v2"
+base_path: "/api/v2/inventories"
+
+endpoints:
+  list:
+    method: GET
+    path: "/"
+    description: "List all inventories"
+    parameters:
+      query:
+        page:
+          type: integer
+          description: "Page number for pagination"
+        page_size:
+          type: integer
+          description: "Number of results per page"
+        search:
+          type: string
+          description: "Search filter"
+        name:
+          type: string
+          description: "Filter by inventory name"
+        organization:
+          type: integer
+          description: "Filter by organization ID"
+    response:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Inventory"
+
+  get:
+    method: GET
+    path: "/{id}/"
+    description: "Get a specific inventory"
+    parameters:
+      path:
+        id:
+          type: integer
+          required: true
+          description: "Inventory ID"
+    response:
+      $ref: "#/components/schemas/Inventory"
+
+  hosts:
+    method: GET
+    path: "/{id}/hosts/"
+    description: "Get hosts in an inventory"
+    parameters:
+      path:
+        id:
+          type: integer
+          required: true
+          description: "Inventory ID"
+      query:
+        page:
+          type: integer
+          description: "Page number for pagination"
+        page_size:
+          type: integer
+          description: "Number of results per page"
+        search:
+          type: string
+          description: "Search filter"
+        name:
+          type: string
+          description: "Filter by host name"
+    response:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Host"
+
+  groups:
+    method: GET
+    path: "/{id}/groups/"
+    description: "Get groups in an inventory"
+    parameters:
+      path:
+        id:
+          type: integer
+          required: true
+          description: "Inventory ID"
+      query:
+        page:
+          type: integer
+          description: "Page number for pagination"
+        page_size:
+          type: integer
+          description: "Number of results per page"
+        search:
+          type: string
+          description: "Search filter"
+        name:
+          type: string
+          description: "Filter by group name"
+    response:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+
+components:
+  schemas:
+    Inventory:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        organization:
+          type: integer
+        kind:
+          type: string
+          enum: ["", "smart"]
+        host_filter:
+          type: string
+        variables:
+          type: string
+        has_active_failures:
+          type: boolean
+        total_hosts:
+          type: integer
+        hosts_with_active_failures:
+          type: integer
+        total_groups:
+          type: integer
+        groups_with_active_failures:
+          type: integer
+        has_inventory_sources:
+          type: boolean
+        total_inventory_sources:
+          type: integer
+        inventory_sources_with_failures:
+          type: integer
+        insights_credential:
+          type: integer
+        pending_deletion:
+          type: boolean
+        created:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time
+
+    Host:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        inventory:
+          type: integer
+        enabled:
+          type: boolean
+        instance_id:
+          type: string
+        variables:
+          type: string
+        has_active_failures:
+          type: boolean
+        has_inventory_sources:
+          type: boolean
+        last_job:
+          type: integer
+        last_job_host_summary:
+          type: integer
+        insights_system_id:
+          type: string
+        ansible_facts_modified:
+          type: string
+          format: date-time
+        created:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        inventory:
+          type: integer
+        variables:
+          type: string
+        has_active_failures:
+          type: boolean
+        total_hosts:
+          type: integer
+        hosts_with_active_failures:
+          type: integer
+        total_groups:
+          type: integer
+        groups_with_active_failures:
+          type: integer
+        has_inventory_sources:
+          type: boolean
+        created:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time

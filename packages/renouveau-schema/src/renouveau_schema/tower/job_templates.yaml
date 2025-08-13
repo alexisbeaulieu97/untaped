@@ -1,0 +1,241 @@
+name: "Ansible Tower Job Templates API"
+version: "v2"
+base_path: "/api/v2/job_templates"
+
+endpoints:
+  list:
+    method: GET
+    path: "/"
+    description: "List all job templates"
+    parameters:
+      query:
+        page:
+          type: integer
+          description: "Page number for pagination"
+        page_size:
+          type: integer
+          description: "Number of results per page"
+        search:
+          type: string
+          description: "Search filter"
+        name:
+          type: string
+          description: "Filter by job template name"
+        project:
+          type: integer
+          description: "Filter by project ID"
+    response:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobTemplate"
+
+  get:
+    method: GET
+    path: "/{id}/"
+    description: "Get a specific job template"
+    parameters:
+      path:
+        id:
+          type: integer
+          required: true
+          description: "Job template ID"
+    response:
+      $ref: "#/components/schemas/JobTemplate"
+
+  launch:
+    method: POST
+    path: "/{id}/launch/"
+    description: "Launch a job template"
+    parameters:
+      path:
+        id:
+          type: integer
+          required: true
+          description: "Job template ID"
+      body:
+        type: object
+        properties:
+          extra_vars:
+            type: object
+            description: "Extra variables for the job"
+          limit:
+            type: string
+            description: "Inventory subset"
+          job_tags:
+            type: string
+            description: "Job tags to run"
+          skip_tags:
+            type: string
+            description: "Job tags to skip"
+          inventory:
+            type: integer
+            description: "Inventory ID to use"
+          credential:
+            type: integer
+            description: "Credential ID to use"
+    response:
+      $ref: "#/components/schemas/Job"
+
+components:
+  schemas:
+    JobTemplate:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        job_type:
+          type: string
+          enum: ["run", "check"]
+        inventory:
+          type: integer
+        project:
+          type: integer
+        playbook:
+          type: string
+        scm_branch:
+          type: string
+        forks:
+          type: integer
+        limit:
+          type: string
+        verbosity:
+          type: integer
+        extra_vars:
+          type: string
+        job_tags:
+          type: string
+        force_handlers:
+          type: boolean
+        skip_tags:
+          type: string
+        start_at_task:
+          type: string
+        timeout:
+          type: integer
+        use_fact_cache:
+          type: boolean
+        host_config_key:
+          type: string
+        ask_scm_branch_on_launch:
+          type: boolean
+        ask_diff_mode_on_launch:
+          type: boolean
+        ask_variables_on_launch:
+          type: boolean
+        ask_limit_on_launch:
+          type: boolean
+        ask_tags_on_launch:
+          type: boolean
+        ask_skip_tags_on_launch:
+          type: boolean
+        ask_job_type_on_launch:
+          type: boolean
+        ask_verbosity_on_launch:
+          type: boolean
+        ask_inventory_on_launch:
+          type: boolean
+        ask_credential_on_launch:
+          type: boolean
+        survey_enabled:
+          type: boolean
+        become_enabled:
+          type: boolean
+        diff_mode:
+          type: boolean
+        allow_simultaneous:
+          type: boolean
+        custom_virtualenv:
+          type: string
+        job_slice_count:
+          type: integer
+        webhook_service:
+          type: string
+        webhook_credential:
+          type: integer
+        created:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time
+        last_job_run:
+          type: string
+          format: date-time
+        last_job_failed:
+          type: boolean
+        next_job_run:
+          type: string
+          format: date-time
+        status:
+          type: string
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: integer
+        job_template:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+            [
+              "new",
+              "pending",
+              "waiting",
+              "running",
+              "successful",
+              "failed",
+              "error",
+              "canceled",
+            ]
+        failed:
+          type: boolean
+        started:
+          type: string
+          format: date-time
+        finished:
+          type: string
+          format: date-time
+        elapsed:
+          type: number
+        job_args:
+          type: string
+        job_cwd:
+          type: string
+        job_env:
+          type: object
+        job_explanation:
+          type: string
+        result_traceback:
+          type: string
+        launch_type:
+          type: string
+        canceled_on:
+          type: string
+          format: date-time
+        created:
+          type: string
+          format: date-time
+        modified:
+          type: string
+          format: date-time
