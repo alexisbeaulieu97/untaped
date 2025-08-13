@@ -1,0 +1,11 @@
+[project]
+name = "renouveau"
+version = "0.1.0"
+description = "Renouveau - A modern Python project using UV workspaces"
+readme = "README.md"
+authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["packages/*"]

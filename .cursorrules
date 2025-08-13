@@ -1,0 +1,278 @@
+# Renouveau - UV Workspace Project Rules
+
+## Project Structure
+
+This is a Python project using UV workspaces with a "packages/" structure.
+
+### Workspace Layout
+```
+renouveau/
+├── packages/
+│   ├── renouveau-core/      # Core library package
+│   │   ├── pyproject.toml   # Package configuration
+│   │   └── src/
+│   │       └── renouveau_core/
+│   └── renouveau-app/       # Application package
+│       ├── pyproject.toml   # Package configuration 
+│       └── src/
+│           └── renouveau_app/
+├── pyproject.toml           # Workspace root configuration
+├── uv.lock                  # Shared lockfile for entire workspace
+└── .cursorrules            # These rules
+```
+
+## UV Workspace Commands - ALWAYS USE THESE
+
+### Core Principles
+1. **NEVER use pip directly** - Always use `uv` commands
+2. **NEVER manually edit uv.lock** - Let UV manage it
+3. **PREFER UV commands over manual file editing** for dependency management
+4. **ALWAYS sync before running code** to ensure environment consistency
+
+### Essential Commands
+
+#### Workspace Management
+```bash
+# Sync entire workspace (run this first!)
+uv sync --all-packages
+
+# Build all packages in workspace 
+uv build --all-packages
+
+# Run commands in workspace context
+uv run <command>
+
+# Add dependency to specific package
+uv add --package <package-name> <dependency>
+
+# Remove dependency from specific package  
+uv remove --package <package-name> <dependency>
+```
+
+#### Development Workflow
+```bash
+# Sync and install everything (daily workflow start)
+uv sync --all-packages
+
+# Run tests for entire workspace
+uv run pytest
+
+# Run application
+uv run python main.py
+
+# Run from specific package context
+uv run --package renouveau-app python -m renouveau_app
+
+# Add development dependencies
+uv add --dev pytest mypy ruff
+
+# Check if environment is synchronized
+uv sync --check
+```
+
+#### Package-Specific Operations
+```bash
+# Add dependency to renouveau-core
+uv add --package renouveau-core <dependency>
+
+# Add dependency to renouveau-app
+uv add --package renouveau-app <dependency>
+
+# Build specific package
+uv build --package renouveau-core
+
+# Sync specific package
+uv sync --package renouveau-core
+```
+
+## Project Configuration Rules
+
+### pyproject.toml Files
+
+#### Root Workspace (/)
+- **Virtual workspace** - no build system
+- Contains `[tool.uv.workspace]` with `members = ["packages/*"]`
+- Empty `dependencies = []` array
+- Defines workspace-wide Python version requirement
+
+#### Package Members (packages/*)
+- Each has own `[project]` section with dependencies
+- Use `[tool.uv.sources]` for workspace dependencies
+- Include `[build-system]` with uv_build backend
+- Workspace dependencies marked with `workspace = true`
+
+### Dependency Management
+
+#### Adding Dependencies
+```bash
+# External dependencies (preferred method)
+uv add --package renouveau-core requests
+
+# Workspace dependencies (automatic)
+uv add --package renouveau-app renouveau-core
+```
+
+#### Workspace Sources Example
+```toml
+[tool.uv.sources]
+renouveau-core = { workspace = true }
+```
+
+## File Editing Guidelines
+
+### PREFERRED: Use UV Commands
+```bash
+# Instead of manually editing pyproject.toml:
+uv add --package renouveau-core requests
+uv remove --package renouveau-core requests
+
+# Instead of manually managing virtual environments:
+uv sync --all-packages
+uv run python script.py
+```
+
+### WHEN Manual Editing is Acceptable
+- Adding project metadata (name, description, authors)
+- Configuring build systems or tools (ruff, mypy configs)
+- Adding non-dependency project settings
+- Documentation and README files
+
+### NEVER Manually Edit
+- `dependencies` arrays (use `uv add/remove`)
+- `uv.lock` file
+- `[tool.uv.sources]` for workspace deps (auto-managed)
+
+## Development Patterns
+
+### Starting Work Session
+```bash
+# 1. Sync workspace first
+uv sync --all-packages
+
+# 2. Verify sync status
+uv sync --check
+
+# 3. Run your development commands
+uv run pytest
+uv run python main.py
+```
+
+### Adding New Features
+```bash
+# 1. Add required dependencies
+uv add --package <target-package> <new-dependency>
+
+# 2. Sync to install
+uv sync --all-packages
+
+# 3. Develop and test
+uv run pytest
+```
+
+### Building and Publishing
+```bash
+# Build all packages
+uv build --all-packages
+
+# Build specific package
+uv build --package renouveau-core
+
+# Publish (when ready)
+uv publish dist/*
+```
+
+## Common Troubleshooting
+
+### Environment Issues
+```bash
+# If dependencies seem out of sync:
+uv sync --all-packages
+
+# If lockfile conflicts arise:
+uv lock --refresh
+
+# Check what's installed:
+uv pip list
+
+# Clean rebuild:
+rm -rf .venv
+uv sync --all-packages
+```
+
+### Workspace Issues
+```bash
+# If workspace members aren't recognized:
+uv sync --all-packages
+
+# Verify workspace structure:
+uv build --all-packages
+```
+
+## Performance Tips
+
+### Use UV's Speed
+- UV is 10-100x faster than pip - leverage this
+- Workspace operations are optimized for monorepos
+- Lock file sharing reduces redundant dependency resolution
+
+### Cache Management
+```bash
+# Clean cache if needed (rare)
+uv cache clean
+
+# Check cache size
+uv cache dir
+```
+
+## Integration with Other Tools
+
+### IDE Integration
+- Point IDE Python interpreter to `.venv/bin/python`
+- Use `uv run` prefix for command execution
+- Ensure IDE respects workspace structure
+
+### CI/CD Patterns
+```bash
+# In CI, always sync first:
+uv sync --all-packages --frozen
+
+# For deployment builds:
+uv build --all-packages
+```
+
+## Error Prevention
+
+### Common Mistakes to Avoid
+1. ❌ Using `pip install` directly
+2. ❌ Manually editing `uv.lock`
+3. ❌ Forgetting to sync after changes
+4. ❌ Mixing package managers (pip, poetry, uv)
+5. ❌ Editing workspace sources manually
+
+### Best Practices
+1. ✅ Always start with `uv sync --all-packages`
+2. ✅ Use `uv add/remove` for dependencies
+3. ✅ Run `uv run` for execution
+4. ✅ Test with `uv build --all-packages`
+5. ✅ Commit both pyproject.toml and uv.lock
+
+## Quick Reference
+
+### Most Used Commands
+```bash
+uv sync --all-packages              # Daily workflow start
+uv add --package <pkg> <dep>        # Add dependency
+uv run <command>                    # Execute in environment
+uv build --all-packages             # Build everything
+```
+
+### Emergency Commands
+```bash
+rm -rf .venv && uv sync --all-packages  # Nuclear option
+uv lock --refresh                        # Refresh lock
+uv sync --check                          # Verify state
+```
+
+---
+
+**Remember**: UV is fast and reliable. Trust it, use it, and let it manage your Python dependencies and workspace structure. Manual intervention should be the exception, not the rule.
