@@ -1,0 +1,16 @@
+[project]
+name = "renouveau-ansible-plugins"
+version = "0.1.0"
+description = "Ansible plugins for Renouveau project"
+authors = [{ name = "Your Name", email = "your@email.com" }]
+dependencies = ["ansible-core", "deepdiff>=8.6.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/renouveau_ansible_plugins"]

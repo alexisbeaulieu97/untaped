@@ -5,7 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = ["renouveau-core"]
+dependencies = [
+    "renouveau-core",
+    "rich>=14.1.0",
+    "typer>=0.16.0",
+]
 
 [tool.uv.sources]
 renouveau-core = { workspace = true }

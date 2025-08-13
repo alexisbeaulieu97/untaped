@@ -1,5 +1,5 @@
 [project]
-name = "renouveau-core"
+name = "renouveau-schema"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,16 +8,13 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "gitpython>=3.1.45",
-    "pydantic-settings>=2.10.1",
-    "renouveau-schema",
+    "pyyaml>=6.0.2",
     "requests>=2.32.4",
 ]
+
+[project.scripts]
+renouveau-schema = "renouveau_schema:main"
 
 [build-system]
 requires = ["uv_build>=0.8.9,<0.9.0"]
 build-backend = "uv_build"
-
-[tool.uv.sources]
-renouveau-schema = { workspace = true }
-
