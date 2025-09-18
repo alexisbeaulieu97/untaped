@@ -24,12 +24,6 @@ specs/
   001-mvp-scope-resources/  # Current feature specifications and design
 ```
 
-## Constitution
-- The constitution is the source of truth for the project.
-- You must follow the constitution at all times.
-- It is located at `.specify/memory/constitution.md`.
-
-
 ## Commands
 # MVP CLI commands (create, update, delete) for job templates and workflow job templates
 # All commands support --config-file, --vars-file, --var, --dry-run, --verbose flags

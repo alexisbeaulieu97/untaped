@@ -5,33 +5,15 @@ alwaysApply: true
 ---
 # Project Management Guidelines
 
-## Guidelines
+## Tools
+- ALWAYS use `uv` commands for all workspace and package management operations, unless there is no equivalent `uv` command.
+    - Editing a `pyproject.toml` file
+    - Adding dependencies to a package
+    - Removing dependencies from a package
+    - Syncing the workspace
+    - Running package commands
+    - Running tests
 
-- Use uv commands for all workspace and package management operations when available
-- Prefer `uv add`, `uv remove`, `uv sync` over manual pyproject.toml editing
-- Use `uv run` for script execution and `uv tool` for CLI installations
-- Manual file editing allowed only when no equivalent uv command exists
-- This ensures consistent dependency resolution and workspace state management
-
-## Examples
-
-- ✅ Good:
-```
-mkdir -p packages
-uv init --package --lib packages/<package-name>
-```
-
-- ✅ Good:
-```
-uv add --package packages/<package-name> <module-1> <module-2> <module-3>
-```
-
-- ❌ Bad:
-```
-mkdir -p packages/<package-name>
-```
-
-- ❌ Bad:
-```
-pip install <module-1> <module-2> <module-3>
-```
+## Constitution
+- The [constitution](.specify/memory/constitution.md) is the source of truth for the project.
+- You must follow the constitution at all times.
