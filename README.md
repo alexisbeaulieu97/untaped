@@ -4,7 +4,7 @@
 
 ## 🎯 Vision
 
-Renouveau aims to be the Swiss Army knife for Ansible developers and operators, providing:
+Untaped aims to be the Swiss Army knife for Ansible developers and operators, providing:
 
 - **Unified Interface**: Single CLI tool for all Ansible project management tasks
 - **Schema-Driven API**: YAML-defined API schemas for consistent and extensible integrations
@@ -14,14 +14,14 @@ Renouveau aims to be the Swiss Army knife for Ansible developers and operators, 
 
 ## 🏗️ Architecture
 
-Renouveau uses a UV workspace structure with three main packages:
+Untaped uses a UV workspace structure with three main packages:
 
 ```
-renouveau/
+untaped/
 ├── packages/
-│   ├── renouveau-schema/      # YAML API definitions & framework
-│   ├── renouveau-core/        # Business logic & API clients  
-│   └── renouveau-app/         # CLI interface (typer + rich)
+│   ├── untaped-schema/      # YAML API definitions & framework
+│   ├── untaped-core/        # Business logic & API clients  
+│   └── untaped-app/         # CLI interface (typer + rich)
 ├── pyproject.toml             # Workspace configuration
 ├── uv.lock                    # Shared dependency lock
 └── main.py                    # Entry point
@@ -29,17 +29,17 @@ renouveau/
 
 ### Package Overview
 
-#### 🔧 **renouveau-schema**
+#### 🔧 **untaped-schema**
 - **YAML API Definitions**: Structured schemas for Ansible Tower/AWX API v2
 - **Generic Framework**: Reusable API client framework driven by YAML schemas
 - **Validation**: Request/response validation using schema definitions
 
-#### 🧠 **renouveau-core** 
+#### 🧠 **untaped-core** 
 - **API Clients**: Tower/AWX and GitHub API clients built on the schema framework
 - **Business Logic**: Core functionality for Ansible project management
 - **Configuration**: Application settings and environment management
 
-#### 🖥️ **renouveau-app**
+#### 🖥️ **untaped-app**
 - **CLI Interface**: Beautiful command-line interface using Typer and Rich
 - **Commands**: Organized subcommands for different Ansible operations
 - **User Experience**: Progress bars, colored output, and interactive prompts
@@ -81,14 +81,14 @@ renouveau/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/renouveau.git
-cd renouveau
+git clone https://github.com/yourusername/untaped.git
+cd untaped
 
 # Install using UV
 uv sync --all-packages
 
 # Run the CLI
-uv run renouveau --help
+uv run untaped --help
 ```
 
 ### Configuration
@@ -96,7 +96,7 @@ uv run renouveau --help
 Create a configuration file to define your Ansible project structure and Tower endpoints:
 
 ```yaml
-# ~/.config/renouveau/config.yaml
+# ~/.config/untaped/config.yaml
 ansible:
   project_root: "."
   playbook_dirs: ["playbooks/"]
@@ -116,36 +116,36 @@ github:
 
 ```bash
 # Ansible Tower operations
-renouveau tower job-template list
-renouveau tower job-template show 42
-renouveau tower job-template launch 42 --extra-vars '{"key": "value"}'
-renouveau tower job-template workflows 42  # Find workflows using job template
+untaped tower job-template list
+untaped tower job-template show 42
+untaped tower job-template launch 42 --extra-vars '{"key": "value"}'
+untaped tower job-template workflows 42  # Find workflows using job template
 
-renouveau tower inventory list --search "production"
-renouveau tower inventory hosts 10
+untaped tower inventory list --search "production"
+untaped tower inventory hosts 10
 
-renouveau tower project list
-renouveau tower project update 5
+untaped tower project list
+untaped tower project update 5
 
-renouveau tower workflow list
-renouveau tower workflow show 15
-renouveau tower workflow nodes 15  # List workflow nodes
+untaped tower workflow list
+untaped tower workflow show 15
+untaped tower workflow nodes 15  # List workflow nodes
 
 # Local Ansible management
-renouveau ansible playbook list
-renouveau ansible playbook validate site.yml
-renouveau ansible role list
-renouveau ansible role validate common
+untaped ansible playbook list
+untaped ansible playbook validate site.yml
+untaped ansible role list
+untaped ansible role validate common
 
 # GitHub integration  
-renouveau github repo list-roles
-renouveau github repo clone ansible-role-nginx
-renouveau github repo sync-local
+untaped github repo list-roles
+untaped github repo clone ansible-role-nginx
+untaped github repo sync-local
 
 # Project management
-renouveau project init --template basic
-renouveau project validate
-renouveau project deploy --environment staging
+untaped project init --template basic
+untaped project validate
+untaped project deploy --environment staging
 ```
 
 ## 🛠️ Development
@@ -160,8 +160,8 @@ renouveau project deploy --environment staging
 
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/renouveau.git
-cd renouveau
+git clone https://github.com/yourusername/untaped.git
+cd untaped
 
 # Sync all workspace packages
 uv sync --all-packages
@@ -183,23 +183,23 @@ uv run mypy packages/
 ### Project Structure
 
 ```
-renouveau/
+untaped/
 ├── packages/
-│   ├── renouveau-schema/
-│   │   ├── src/renouveau_schema/
+│   ├── untaped-schema/
+│   │   ├── src/untaped_schema/
 │   │   │   ├── framework/          # Generic API framework
 │   │   │   ├── tower/              # Tower API schemas
 │   │   │   └── github/             # GitHub API schemas
 │   │   └── pyproject.toml
-│   ├── renouveau-core/
-│   │   ├── src/renouveau_core/
+│   ├── untaped-core/
+│   │   ├── src/untaped_core/
 │   │   │   ├── tower/              # Tower API client
 │   │   │   ├── github/             # GitHub API client
 │   │   │   ├── ansible/            # Local Ansible tools
 │   │   │   └── config/             # Configuration management
 │   │   └── pyproject.toml
-│   └── renouveau-app/
-│       ├── src/renouveau_app/
+│   └── untaped-app/
+│       ├── src/untaped_app/
 │       │   ├── commands/           # CLI command groups
 │       │   ├── ui/                 # Rich UI components
 │       │   └── main.py             # CLI entry point
@@ -214,18 +214,18 @@ renouveau/
 
 ### Adding New Features
 
-1. **API Endpoints**: Add YAML schema definitions in `renouveau-schema`
-2. **Business Logic**: Implement functionality in `renouveau-core`
-3. **CLI Commands**: Add user interface in `renouveau-app`
+1. **API Endpoints**: Add YAML schema definitions in `untaped-schema`
+2. **Business Logic**: Implement functionality in `untaped-core`
+3. **CLI Commands**: Add user interface in `untaped-app`
 4. **Tests**: Write tests for all new functionality
 5. **Documentation**: Update README and inline docs
 
 ### Schema-Driven Development
 
-Renouveau uses YAML schemas to define API interactions:
+Untaped uses YAML schemas to define API interactions:
 
 ```yaml
-# packages/renouveau-schema/src/renouveau_schema/tower/job_templates.yaml
+# packages/untaped-schema/src/untaped_schema/tower/job_templates.yaml
 name: "Ansible Tower Job Templates API"
 version: "v2"
 base_path: "/api/v2/job_templates"
@@ -275,11 +275,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
-- **Documentation**: [docs.renouveau.dev](https://docs.renouveau.dev)
-- **PyPI Package**: [pypi.org/project/renouveau](https://pypi.org/project/renouveau)
-- **Issue Tracker**: [GitHub Issues](https://github.com/yourusername/renouveau/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/renouveau/discussions)
+- **Documentation**: [docs.untaped.dev](https://docs.untaped.dev)
+- **PyPI Package**: [pypi.org/project/untaped](https://pypi.org/project/untaped)
+- **Issue Tracker**: [GitHub Issues](https://github.com/yourusername/untaped/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/untaped/discussions)
 
 ---
 
-**Renouveau** - Bringing renewal to Ansible project management 🚀
+**Untaped** - Bringing renewal to Ansible project management 🚀
