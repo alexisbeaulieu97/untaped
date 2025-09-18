@@ -34,7 +34,7 @@
 Primary requirement: Manage Ansible Tower job templates and workflow job templates using declarative YAML configurations with schema validation, templating support, and CLI operations (create, update, delete). Technical approach: Config-driven architecture with UV workspace modular design, Pydantic validation-first processing, and thin CLI orchestration.
 
 ## Technical Context
-**Language/Version**: Python 3.11+  
+**Language/Version**: Python 3.12+  
 **Primary Dependencies**: uv (workspace management), Typer (CLI framework), Pydantic (schema validation), Jinja2 (templating), httpx (API communication)  
 **Storage**: YAML configuration files with optional variable files  
 **Testing**: pytest with contract tests, integration tests, and unit tests  

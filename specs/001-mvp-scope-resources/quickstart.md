@@ -7,7 +7,7 @@
 ## Prerequisites
 
 ### System Requirements
-- Python 3.11 or higher
+- Python 3.12 or higher
 - Access to Ansible Tower/AWX instance
 - Network connectivity to Tower API
 
