@@ -46,7 +46,7 @@ Primary requirement: Manage Ansible Tower job templates and workflow job templat
 
 **User-provided Technical Requirements**: 
 - Core Stack: Python, uv (workspace management), Typer (CLI framework), Pydantic (schema validation), Jinja2 (templating), httpx or requests (API communication)
-- Proposed Repo Structure: untaped.core (shared utilities), untaped.ansible (domain logic), untaped.cli (entrypoint)
+- Proposed Repo Structure: packages/untaped-core (shared utilities), packages/untaped-ansible (domain logic), packages/untaped-cli (entrypoint)
 - Validation Flow: Load YAML → Render with Jinja2 → Validate with Pydantic → Apply to Tower API
 - Distribution: Packaged with uv, installable as CLI (pipx or uv tool install)
 
@@ -55,7 +55,7 @@ Primary requirement: Manage Ansible Tower job templates and workflow job templat
 
 **I. Config-Driven Architecture**: ✅ PASS - All workflow logic in YAML configs, Python only as execution engine  
 **II. Validation-First Processing**: ✅ PASS - Pydantic schema validation before any API calls  
-**III. UV Workspace Modular Design**: ✅ PASS - Repository organized as UV workspaces (untaped.core, untaped.ansible, untaped.cli)  
+**III. UV Workspace Modular Design**: ✅ PASS - Repository organized as UV workspaces in packages/ directory (untaped-core, untaped-ansible, untaped-cli)  
 **IV. Thin CLI Architecture**: ✅ PASS - CLI orchestrates workflows, complexity in configurations  
 **V. Extensible-by-Design**: ✅ PASS - Configuration-driven approach enables extension through schema additions  
 **VI. Schema Validation Requirements**: ✅ PASS - Pydantic models define strict schemas, validation first step

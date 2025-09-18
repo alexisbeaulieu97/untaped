@@ -9,9 +9,10 @@ Auto-generated from all feature plans. Last updated: 2025-09-18
 
 ## Project Structure
 ```
-untaped.core/     # Shared utilities (YAML loader, template renderer, error formatting)
-untaped.ansible/  # Domain logic for Tower resources (models, API wrappers, CLI sub-app)
-untaped.cli/      # Entrypoint that registers sub-apps with Typer
+packages/
+  untaped-core/     # Shared utilities (YAML loader, template renderer, error formatting)
+  untaped-ansible/  # Domain logic for Tower resources (models, API wrappers, CLI sub-app)
+  untaped-cli/      # Entrypoint that registers sub-apps with Typer
 tests/
   contract/       # API contract tests
   integration/    # End-to-end workflow tests  
