@@ -54,7 +54,7 @@
 ## Architecture Patterns
 
 ### Modular Workspace Design
-**Decision**: Three-workspace architecture (untaped.core, untaped.ansible, untaped.cli)  
+**Decision**: Three-workspace architecture (packages/untaped-core, packages/untaped-ansible, packages/untaped-cli)  
 **Rationale**:
 - Clear separation of concerns
 - Independent testing and versioning

@@ -9,7 +9,7 @@ All workflow logic lives in YAML configurations and templates, never in Python c
 All YAML configurations must pass Pydantic schema validation before any processing begins. Schema validation occurs early in the pipeline - before any external API calls, resource modifications, or side effects. Invalid configurations fail fast with clear, actionable error messages. No configuration reaches Ansible Tower's API without successful schema validation.
 
 ### III. UV Workspace Modular Design (NON-NEGOTIABLE)
-Repository is organized as UV workspaces with each package completely self-contained. Every package has its own dependencies, tests, documentation, and clear boundaries. Packages communicate through well-defined interfaces only. Cross-package dependencies must be explicit and justified. Each workspace package serves a single, well-defined purpose.
+Repository is organized as UV workspaces with each package completely self-contained within a `packages/` directory. Every package has its own dependencies, tests, documentation, and clear boundaries. Packages communicate through well-defined interfaces only. Cross-package dependencies must be explicit and justified. Each workspace package serves a single, well-defined purpose.
 
 ### V. Extensible-by-Design (NON-NEGOTIABLE)
 New resources, APIs, and workflows can be added without breaking existing functionality. Schema versioning supports backward compatibility during transitions. Plugin architecture allows extension without core modifications. Configuration-driven approach enables new resource types through schema additions rather than code changes. Existing workflows remain unaffected by system extensions.
@@ -30,6 +30,13 @@ New resources, APIs, and workflows can be added without breaking existing functi
 - Validation errors must provide clear, actionable feedback to users
 - Schema versions are managed independently with backward compatibility
 - Failed validation prevents any API calls or system modifications
+
+### UV Workspace Management
+- Use uv commands for all workspace and package management operations when available
+- Prefer `uv add`, `uv remove`, `uv sync` over manual pyproject.toml editing
+- Use `uv run` for script execution and `uv tool` for CLI installations
+- Manual file editing allowed only when no equivalent uv command exists
+- This ensures consistent dependency resolution and workspace state management
 
 ### API Integration Requirements
 - All Ansible Tower API interactions must be idempotent
