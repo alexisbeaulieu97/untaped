@@ -1,6 +1,6 @@
-# Renouveau - Ansible Project Management Tool
+# Untaped - Ansible Project Management Tool
 
-**Renouveau** is a modern command-line tool for managing Ansible projects, designed to streamline interactions with Ansible Tower/AWX, Git repositories, and local Ansible content.
+**Untaped** is a modern command-line tool for managing Ansible projects, designed to streamline interactions with Ansible Tower/AWX, Git repositories, and local Ansible content.
 
 ## 🎯 Vision
 
