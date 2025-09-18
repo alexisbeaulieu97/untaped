@@ -44,13 +44,13 @@ UV workspace structure per plan.md:
 - **tests/**: Test directory with contract/, integration/, unit/ subdirs
 
 ## Phase 3.1: Setup
-- [ ] T001 Create UV workspace structure with packages/untaped-core/, packages/untaped-ansible/, packages/untaped-cli/ packages
-- [ ] T002 Initialize packages/untaped-core package with pyproject.toml and dependencies (PyYAML, Jinja2, Pydantic)
-- [ ] T003 [P] Initialize packages/untaped-ansible package with pyproject.toml and dependencies (httpx, Pydantic)
-- [ ] T004 [P] Initialize packages/untaped-cli package with pyproject.toml and dependencies (Typer, Rich)
+- [x] T001 Create UV workspace structure with packages/untaped-core/, packages/untaped-ansible/, packages/untaped-cli/ packages
+- [x] T002 Initialize packages/untaped-core package with pyproject.toml and dependencies (PyYAML, Jinja2, Pydantic)
+- [x] T003 [P] Initialize packages/untaped-ansible package with pyproject.toml and dependencies (httpx, Pydantic)
+- [x] T004 [P] Initialize packages/untaped-cli package with pyproject.toml and dependencies (Typer, Rich)
 - [ ] T005 [P] Configure linting tools (black, flake8, mypy) in workspace root
 - [ ] T006 [P] Setup pytest configuration with markers for contract, integration, unit tests
-- [ ] T007 Create test directory structure with tests/contract/, tests/integration/, tests/unit/
+- [x] T007 Create test directory structure with tests/contract/, tests/integration/, tests/unit/
 
 ## Phase 3.2: Tests First (TDD) ⚠️ MUST COMPLETE BEFORE 3.3
 **CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
