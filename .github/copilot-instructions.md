@@ -3,7 +3,7 @@
 Auto-generated from all feature plans. Last updated: 2025-09-18
 
 ## Active Technologies
-- Python 3.11+ with uv workspace management (001-mvp-scope-resources)
+- Python 3.12+ with uv workspace management (001-mvp-scope-resources)
 - Typer CLI framework + Pydantic validation + Jinja2 templating (001-mvp-scope-resources)
 - httpx for Ansible Tower API communication (001-mvp-scope-resources)
 
@@ -15,11 +15,16 @@ packages/
   untaped-cli/      # Entrypoint that registers sub-apps with Typer
 tests/
   contract/       # API contract tests
-  integration/    # End-to-end workflow tests  
+  integration/    # End-to-end workflow tests
   unit/          # Individual component tests
 specs/
   001-mvp-scope-resources/  # Current feature specifications and design
 ```
+
+## Constitution
+- The constitution is the source of truth for the project.
+- You must follow the constitution at all times.
+- It is located at `.specify/memory/constitution.md`.
 
 ## Commands
 # MVP CLI commands (create, update, delete) for job templates and workflow job templates
