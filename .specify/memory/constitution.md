@@ -38,6 +38,18 @@ New resources, APIs, and workflows can be added without breaking existing functi
 - Manual file editing allowed only when no equivalent uv command exists
 - This ensures consistent dependency resolution and workspace state management
 
+Canonical commands (examples):
+```
+mkdir -p packages
+uv init --package --lib packages/untaped-core
+uv init --package --lib packages/untaped-ansible
+uv init --package --lib packages/untaped-cli
+
+uv add --project packages/untaped-core pydantic jinja2 pyyaml
+uv add --project packages/untaped-ansible pydantic httpx
+uv add --project packages/untaped-cli typer rich
+```
+
 ### API Integration Requirements
 - All Ansible Tower API interactions must be idempotent
 - Implement proper error handling with retry logic for transient failures
