@@ -4,11 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "Alexis Beaulieu", email = "alexisbeaulieu@protonmail.com" }
+    { name = "Alexis Beaulieu", email = "alexisbeaulieu@protonmail.com" },
 ]
 requires-python = ">=3.12"
 dependencies = [
     "jinja2>=3.1",
+    "loguru>=0.7.3",
     "pydantic>=2.9",
     "pyyaml>=6.0.2",
 ]

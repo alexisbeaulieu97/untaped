@@ -7,7 +7,12 @@ authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu@protonmail.com" },
 ]
 requires-python = ">=3.12"
-dependencies = ["typer", "untaped-core", "untaped-ansible"]
+dependencies = [
+    "typer",
+    "untaped-core",
+    "untaped-ansible",
+    "rich>=14.1.0",
+]
 
 [project.scripts]
 untaped = "untaped_cli:app"

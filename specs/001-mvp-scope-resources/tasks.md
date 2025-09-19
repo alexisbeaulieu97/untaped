@@ -110,20 +110,20 @@ Modules under these packages use underscore import names (e.g., `untaped_core`, 
 - [x] T044 Resource validation service in packages/untaped-ansible/src/untaped_ansible/services/validation_service.py
 
 ### CLI Commands
-- [ ] T045 Global CLI options and common utilities in packages/untaped-cli/src/untaped_cli/common.py
-- [ ] T046 Job template create command in packages/untaped-cli/src/untaped_cli/commands/job_templates.py
-- [ ] T047 Job template update and delete commands in packages/untaped-cli/src/untaped_cli/commands/job_templates.py
-- [ ] T048 Workflow job template create/update/delete commands in packages/untaped-cli/src/untaped_cli/commands/workflow_job_templates.py
-- [ ] T049 CLI entrypoint and Typer app registration in packages/untaped-cli/src/untaped_cli/app.py
+- [x] T045 Global CLI options and common utilities in packages/untaped-cli/src/untaped_cli/common.py
+- [x] T046 Job template create command in packages/untaped-cli/src/untaped_cli/commands/create.py
+- [x] T047 Job template update and delete commands in packages/untaped-cli/src/untaped_cli/commands/{update.py,delete.py}
+- [x] T048 Workflow job template create/update/delete commands in packages/untaped-cli/src/untaped_cli/commands/{create.py,update.py,delete.py}
+- [x] T049 CLI entrypoint and Typer app registration in packages/untaped-cli/src/untaped_cli/app.py
 
 ## Phase 3.4: Integration
-- [ ] T050 Register ansible CLI sub-app in main entrypoint
-- [ ] T051 Configure structured logging across all packages
-- [ ] T052 Implement configuration file discovery (CLI args, env vars, default paths)
-- [ ] T053 Add comprehensive error handling with exit codes per CLI contract
-- [ ] T054 Implement dry-run mode for all commands
-- [ ] T055 Add verbose output formatting with Rich
-- [ ] T056 Implement version flag for resource naming
+- [x] T050 Register ansible CLI sub-app in main entrypoint
+- [x] T051 Configure structured logging across all packages
+- [x] T052 Implement configuration file discovery (CLI args, env vars, default paths)
+- [x] T053 Add comprehensive error handling with exit codes per CLI contract
+- [x] T054 Implement dry-run mode for all commands
+- [x] T055 Add verbose output formatting with Rich
+- [x] T056 Implement version flag for resource naming
 
 ## Phase 3.5: Polish  
 - [ ] T057 [P] Unit tests for YAML loader in tests/unit/test_yaml_loader.py
