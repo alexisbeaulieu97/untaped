@@ -131,10 +131,10 @@ Modules under these packages use underscore import names (e.g., `untaped_core`, 
 - [x] T059 [P] Unit tests for Pydantic models validation in tests/unit/test_models_validation.py
 - [x] T060 [P] Unit tests for error formatting in tests/unit/test_error_formatter.py
 - [x] T061 [P] Unit tests for configuration validator in tests/unit/test_config_validator.py
-- [ ] T062 [P] Performance tests for schema validation <100ms in tests/performance/test_validation_performance.py
-- [ ] T063 [P] Performance tests for template rendering <50ms in tests/performance/test_template_performance.py
-- [ ] T064 [P] Create README.md with installation and usage instructions
-- [ ] T065 [P] Create comprehensive API documentation in docs/
+- [x] T062 [P] Performance tests for schema validation <100ms in tests/performance/test_validation_performance.py
+- [x] T063 [P] Performance tests for template rendering <50ms in tests/performance/test_template_performance.py
+- [x] T064 [P] Create README.md with installation and usage instructions
+- [x] T065 [P] Create comprehensive API documentation in docs/
 - [ ] T066 Remove code duplication and refactor shared utilities
 - [ ] T067 Run full quickstart.md scenarios manually for validation
 
