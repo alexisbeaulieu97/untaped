@@ -16,6 +16,7 @@ from ..common import (
     handle_template_error,
     handle_validation_outcome,
     parse_inline_variables,
+    get_tower_url,
     echo_json,
     resolve_config_file,
 )
@@ -81,6 +82,7 @@ def create_job_template(  # noqa: D401
 
     api_response = result.response or {}
     resource_id = api_response.get("id", 0)
+    tower_base = get_tower_url()
     response = {
         "status": "success",
         "action": "create",
@@ -88,7 +90,7 @@ def create_job_template(  # noqa: D401
         "resource_name": resource_name,
         "resource_id": resource_id,
         "message": f"Job template '{resource_name}' created successfully",
-        "tower_url": f"https://tower.example.com/#/templates/job_template/{resource_id}",
+        "tower_url": f"{tower_base}/#/templates/job_template/{resource_id}",
         "rendered": payload,
     }
     echo_json(response)
@@ -149,6 +151,7 @@ def create_workflow_job_template(
 
     api_response = result.response or {}
     resource_id = api_response.get("id", 0)
+    tower_base = get_tower_url()
     response = {
         "status": "success",
         "action": "create",
@@ -156,7 +159,7 @@ def create_workflow_job_template(
         "resource_name": resource_name,
         "resource_id": resource_id,
         "message": f"Workflow job template '{resource_name}' created successfully",
-        "tower_url": f"https://tower.example.com/#/templates/workflow_job_template/{resource_id}",
+        "tower_url": f"{tower_base}/#/templates/workflow_job_template/{resource_id}",
         "workflow_nodes": payload.get("workflow_nodes", []),
     }
     echo_json(response)
