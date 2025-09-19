@@ -45,11 +45,11 @@
 ### HTTP Client
 **Decision**: httpx for Ansible Tower API communication  
 **Rationale**:
-- Modern async/sync HTTP client
-- Better error handling than requests
-- Built-in timeout and retry support
-- Type-safe response handling
-**Alternatives considered**: requests (synchronous only), aiohttp (async-only complexity)
+- Dual sync/async support for future extensibility
+- Built-in timeouts, redirect handling, and HTTP/2 support
+- Clean MockTransport for deterministic contract testing
+- Familiar requests-like API with modern improvements
+**Alternatives considered**: requests (sync-only, requires extra plumbing for advanced scenarios), aiohttp (async-only complexity)
 
 ## Architecture Patterns
 

@@ -57,57 +57,57 @@ Modules under these packages use underscore import names (e.g., `untaped_core`, 
 **CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
 
 ### CLI Contract Tests
-- [ ] T008 [P] CLI contract test for create job-template command in tests/contract/test_cli_create_job_template.py
-- [ ] T009 [P] CLI contract test for create workflow-job-template command in tests/contract/test_cli_create_workflow.py
-- [ ] T010 [P] CLI contract test for update job-template command in tests/contract/test_cli_update_job_template.py
-- [ ] T011 [P] CLI contract test for update workflow-job-template command in tests/contract/test_cli_update_workflow.py
-- [ ] T012 [P] CLI contract test for delete job-template command in tests/contract/test_cli_delete_job_template.py
-- [ ] T013 [P] CLI contract test for delete workflow-job-template command in tests/contract/test_cli_delete_workflow.py
+- [x] T008 [P] CLI contract test for create job-template command in tests/contract/test_cli_create_job_template.py
+- [x] T009 [P] CLI contract test for create workflow-job-template command in tests/contract/test_cli_create_workflow.py
+- [x] T010 [P] CLI contract test for update job-template command in tests/contract/test_cli_update_job_template.py
+- [x] T011 [P] CLI contract test for update workflow-job-template command in tests/contract/test_cli_update_workflow.py
+- [x] T012 [P] CLI contract test for delete job-template command in tests/contract/test_cli_delete_job_template.py
+- [x] T013 [P] CLI contract test for delete workflow-job-template command in tests/contract/test_cli_delete_workflow.py
 
 ### Tower API Contract Tests
-- [ ] T014 [P] Tower API contract test for job template CRUD operations in tests/contract/test_tower_api_job_templates.py
-- [ ] T015 [P] Tower API contract test for workflow job template CRUD in tests/contract/test_tower_api_workflows.py
-- [ ] T016 [P] Tower API contract test for authentication in tests/contract/test_tower_api_auth.py
-- [ ] T017 [P] Tower API contract test for resource references (inventories, projects, credentials) in tests/contract/test_tower_api_resources.py
+- [x] T014 [P] Tower API contract test for job template CRUD operations in tests/contract/test_tower_api_job_templates.py
+- [x] T015 [P] Tower API contract test for workflow job template CRUD in tests/contract/test_tower_api_workflows.py
+- [x] T016 [P] Tower API contract test for authentication in tests/contract/test_tower_api_auth.py
+- [x] T017 [P] Tower API contract test for resource references (inventories, projects, credentials) in tests/contract/test_tower_api_resources.py
 
 ### Integration Tests (from Quickstart scenarios)
-- [ ] T018 [P] Integration test for simple job template creation scenario in tests/integration/test_simple_job_template.py
-- [ ] T019 [P] Integration test for templated job creation with variables in tests/integration/test_templated_job_creation.py
-- [ ] T020 [P] Integration test for workflow job template creation in tests/integration/test_workflow_creation.py
-- [ ] T021 [P] Integration test for resource update workflow in tests/integration/test_resource_update.py
-- [ ] T022 [P] Integration test for resource deletion workflow in tests/integration/test_resource_deletion.py
-- [ ] T023 [P] Integration test for validation error handling in tests/integration/test_validation_errors.py
-- [ ] T024 [P] Integration test for template rendering errors in tests/integration/test_template_errors.py
+- [x] T018 [P] Integration test for simple job template creation scenario in tests/integration/test_simple_job_template.py
+- [x] T019 [P] Integration test for templated job creation with variables in tests/integration/test_templated_job_creation.py
+- [x] T020 [P] Integration test for workflow job template creation in tests/integration/test_workflow_creation.py
+- [x] T021 [P] Integration test for resource update workflow in tests/integration/test_resource_update.py
+- [x] T022 [P] Integration test for resource deletion workflow in tests/integration/test_resource_deletion.py
+- [x] T023 [P] Integration test for validation error handling in tests/integration/test_validation_errors.py
+- [x] T024 [P] Integration test for template rendering errors in tests/integration/test_template_errors.py
 
 ## Phase 3.3: Core Implementation (ONLY after tests are failing)
 
 ### Pydantic Models (Data Layer)
-- [ ] T025 [P] ConfigurationFile model in packages/untaped-core/src/untaped_core/models/configuration.py
-- [ ] T026 [P] JobTemplate model with all fields in packages/untaped-ansible/src/untaped_ansible/models/job_template.py
-- [ ] T027 [P] WorkflowJobTemplate model in packages/untaped-ansible/src/untaped_ansible/models/workflow_job_template.py
-- [ ] T028 [P] WorkflowNode model in packages/untaped-ansible/src/untaped_ansible/models/workflow_node.py
-- [ ] T029 [P] VariableFile model in packages/untaped-core/src/untaped_core/models/variables.py
-- [ ] T030 [P] ValidationResult and error models in packages/untaped-core/src/untaped_core/models/validation.py
-- [ ] T031 [P] ResourceType and JobType enums in packages/untaped-ansible/src/untaped_ansible/models/enums.py
+- [x] T025 [P] ConfigurationFile model in packages/untaped-core/src/untaped_core/models/configuration.py
+- [x] T026 [P] JobTemplate model with all fields in packages/untaped-ansible/src/untaped_ansible/models/job_template.py
+- [x] T027 [P] WorkflowJobTemplate model in packages/untaped-ansible/src/untaped_ansible/models/workflow_job_template.py
+- [x] T028 [P] WorkflowNode model in packages/untaped-ansible/src/untaped_ansible/models/workflow_node.py
+- [x] T029 [P] VariableFile model in packages/untaped-core/src/untaped_core/models/variables.py
+- [x] T030 [P] ValidationResult and error models in packages/untaped-core/src/untaped_core/models/validation.py
+- [x] T031 [P] ResourceType and JobType enums in packages/untaped-ansible/src/untaped_ansible/models/enums.py
 
 ### Core Utilities
-- [ ] T032 [P] YAML loader utility in packages/untaped-core/src/untaped_core/yaml_loader.py
-- [ ] T033 [P] Jinja2 template renderer in packages/untaped-core/src/untaped_core/template_renderer.py
-- [ ] T034 [P] Error formatter utility in packages/untaped-core/src/untaped_core/error_formatter.py
-- [ ] T035 [P] Configuration validator in packages/untaped-core/src/untaped_core/validators/config_validator.py
+- [x] T032 [P] YAML loader utility in packages/untaped-core/src/untaped_core/yaml_loader.py
+- [x] T033 [P] Jinja2 template renderer in packages/untaped-core/src/untaped_core/template_renderer.py
+- [x] T034 [P] Error formatter utility in packages/untaped-core/src/untaped_core/error_formatter.py
+- [x] T035 [P] Configuration validator in packages/untaped-core/src/untaped_core/validators/config_validator.py
 
 ### Tower API Client
-- [ ] T036 Tower API authentication client in packages/untaped-ansible/src/untaped_ansible/api/auth.py
-- [ ] T037 Tower API base client with error handling in packages/untaped-ansible/src/untaped_ansible/api/base_client.py
-- [ ] T038 Job template API wrapper in packages/untaped-ansible/src/untaped_ansible/api/job_templates.py
-- [ ] T039 Workflow job template API wrapper in packages/untaped-ansible/src/untaped_ansible/api/workflow_job_templates.py
-- [ ] T040 Resource reference API wrapper (inventories, projects, credentials) in packages/untaped-ansible/src/untaped_ansible/api/resources.py
+- [x] T036 Tower API authentication client in packages/untaped-ansible/src/untaped_ansible/api/auth.py
+- [x] T037 Tower API base client with error handling in packages/untaped-ansible/src/untaped_ansible/api/base.py
+- [x] T038 Job template API wrapper in packages/untaped-ansible/src/untaped_ansible/api/job_templates.py
+- [x] T039 Workflow job template API wrapper in packages/untaped-ansible/src/untaped_ansible/api/workflow_job_templates.py
+- [x] T040 Resource reference API wrapper (inventories, projects, credentials) in packages/untaped-ansible/src/untaped_ansible/api/resources.py
 
 ### Service Layer  
-- [ ] T041 Configuration processing service in packages/untaped-ansible/src/untaped_ansible/services/config_processor.py
-- [ ] T042 Job template management service in packages/untaped-ansible/src/untaped_ansible/services/job_template_service.py
-- [ ] T043 Workflow job template management service in packages/untaped-ansible/src/untaped_ansible/services/workflow_service.py
-- [ ] T044 Resource validation service in packages/untaped-ansible/src/untaped_ansible/services/validation_service.py
+- [x] T041 Configuration processing service in packages/untaped-ansible/src/untaped_ansible/services/config_processor.py
+- [x] T042 Job template management service in packages/untaped-ansible/src/untaped_ansible/services/job_template_service.py
+- [x] T043 Workflow job template management service in packages/untaped-ansible/src/untaped_ansible/services/workflow_service.py
+- [x] T044 Resource validation service in packages/untaped-ansible/src/untaped_ansible/services/validation_service.py
 
 ### CLI Commands
 - [ ] T045 Global CLI options and common utilities in packages/untaped-cli/src/untaped_cli/common.py

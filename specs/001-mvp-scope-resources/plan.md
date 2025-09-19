@@ -45,7 +45,7 @@ Primary requirement: Manage Ansible Tower job templates and workflow job templat
 **Scale/Scope**: MVP supports 2 resource types (Job Templates, Workflow Job Templates), extensible for additional Tower resources
 
 **User-provided Technical Requirements**: 
-- Core Stack: Python, uv (workspace management), Typer (CLI framework), Pydantic (schema validation), Jinja2 (templating), httpx or requests (API communication)
+- Core Stack: Python, uv (workspace management), Typer (CLI framework), Pydantic (schema validation), Jinja2 (templating), httpx (API communication)
 - Proposed Repo Structure: packages/untaped-core (shared utilities), packages/untaped-ansible (domain logic), packages/untaped-cli (entrypoint)
 - Validation Flow: Load YAML → Render with Jinja2 → Validate with Pydantic → Apply to Tower API
 - Distribution: Packaged with uv, installable as CLI (pipx or uv tool install)
