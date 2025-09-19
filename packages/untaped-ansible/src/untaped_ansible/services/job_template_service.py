@@ -30,6 +30,7 @@ class JobTemplateService:
         inline_variables: Mapping[str, Any] | None = None,
         variable_files: Sequence[str | Path] | None = None,
         dry_run: bool = False,
+        version_suffix: str | None = None,
     ) -> ServiceResult:
         outcome = self._config_processor.process(
             config_path,
@@ -41,6 +42,11 @@ class JobTemplateService:
             return ServiceResult(outcome=outcome)
 
         payload = outcome.resource_payload or {}
+        if version_suffix:
+            payload = dict(payload)
+            payload["name"] = f"{payload['name']}-{version_suffix}"
+            outcome.resource_payload = payload
+
         resolved_payload = self._resource_validation.resolve_job_template_payload(payload)
 
         if dry_run:

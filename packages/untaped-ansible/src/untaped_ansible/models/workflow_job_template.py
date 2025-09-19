@@ -22,7 +22,7 @@ class WorkflowJobTemplate(BaseModel):
     ask_inventory_on_launch: bool | None = None
     ask_scm_branch_on_launch: bool | None = None
     ask_limit_on_launch: bool | None = None
-    workflow_nodes: list[WorkflowNode] = Field(default_factory=list, min_length=1)
+    workflow_nodes: list[WorkflowNode] = Field(..., min_length=1)
 
     @model_validator(mode="after")
     def _validate_graph(self) -> "WorkflowJobTemplate":
