@@ -5,6 +5,8 @@ from untaped_core.logging import configure_logging
 from .commands import create_app, delete_app, update_app
 from .common import set_verbose
 
+__all__ = ["app"]
+
 
 app = typer.Typer(help="untaped CLI")
 
