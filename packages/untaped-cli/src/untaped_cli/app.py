@@ -7,11 +7,7 @@ app = typer.Typer(help="untaped CLI")
 
 
 @app.callback()
-def main(
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Enable verbose output"
-    )
-):
+def main(verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output")):
     return
 
 
@@ -30,5 +26,3 @@ def version():
 
 app.add_typer(job_templates_app, name="job-templates")
 app.add_typer(workflow_job_templates_app, name="workflow-job-templates")
-
-
