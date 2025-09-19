@@ -25,6 +25,7 @@ from untaped_ansible.services.workflow_service import WorkflowJobTemplateService
 console = Console()
 logger = get_logger()
 _VERBOSE_MODE = False
+_TOWER_URL = os.getenv("TOWER_HOST", "https://tower.example.com")
 
 
 class InMemoryTowerResourcesApi:
@@ -260,6 +261,10 @@ def get_runtime() -> CliRuntime:
         workflow_service=workflow_service,
     )
     return _RUNTIME
+
+
+def get_tower_url() -> str:
+    return _TOWER_URL.rstrip("/")
 
 
 def parse_inline_variables(values: Sequence[str]) -> dict[str, Any]:
