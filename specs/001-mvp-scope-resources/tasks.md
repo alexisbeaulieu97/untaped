@@ -135,7 +135,7 @@ Modules under these packages use underscore import names (e.g., `untaped_core`, 
 - [x] T063 [P] Performance tests for template rendering <50ms in tests/performance/test_template_performance.py
 - [x] T064 [P] Create README.md with installation and usage instructions
 - [x] T065 [P] Create comprehensive API documentation in docs/
-- [ ] T066 Remove code duplication and refactor shared utilities
+- [x] T066 Remove code duplication and refactor shared utilities
 - [ ] T067 Run full quickstart.md scenarios manually for validation
 
 ## Dependencies
