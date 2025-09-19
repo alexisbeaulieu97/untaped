@@ -7,7 +7,7 @@
 ```
 1. Load plan.md from feature directory
    → SUCCESS: Found implementation plan with UV workspace structure
-   → Extract: Python 3.11+, Typer CLI, Pydantic validation, Jinja2 templates, httpx API
+   → Extract: Python 3.12+, Typer CLI, Pydantic validation, Jinja2 templates, httpx API
 2. Load optional design documents:
    → data-model.md: Extract entities → ConfigurationFile, JobTemplate, WorkflowJobTemplate, etc.
    → contracts/: CLI contracts and Tower API contracts → contract test tasks
@@ -42,14 +42,15 @@ UV workspace structure per plan.md:
 - **packages/untaped-ansible/**: Ansible Tower domain logic
 - **packages/untaped-cli/**: CLI entrypoint package
 - **tests/**: Test directory with contract/, integration/, unit/ subdirs
+Modules under these packages use underscore import names (e.g., `untaped_core`, `untaped_ansible`, `untaped_cli`).
 
 ## Phase 3.1: Setup
 - [x] T001 Create UV workspace structure with packages/untaped-core/, packages/untaped-ansible/, packages/untaped-cli/ packages
-- [x] T002 Initialize packages/untaped-core package with pyproject.toml and dependencies (PyYAML, Jinja2, Pydantic)
+- [x] T002 Initialize packages/untaped-core package with pyproject.toml and dependencies (pyYAML, Jinja2, Pydantic)
 - [x] T003 [P] Initialize packages/untaped-ansible package with pyproject.toml and dependencies (httpx, Pydantic)
 - [x] T004 [P] Initialize packages/untaped-cli package with pyproject.toml and dependencies (Typer, Rich)
-- [ ] T005 [P] Configure linting tools (black, flake8, mypy) in workspace root
-- [ ] T006 [P] Setup pytest configuration with markers for contract, integration, unit tests
+- [x] T005 [P] Configure linting and formatting with Ruff plus mypy settings in workspace root
+- [x] T006 [P] Setup pytest configuration with markers for contract, integration, unit tests
 - [x] T007 Create test directory structure with tests/contract/, tests/integration/, tests/unit/
 
 ## Phase 3.2: Tests First (TDD) ⚠️ MUST COMPLETE BEFORE 3.3
@@ -81,39 +82,39 @@ UV workspace structure per plan.md:
 ## Phase 3.3: Core Implementation (ONLY after tests are failing)
 
 ### Pydantic Models (Data Layer)
-- [ ] T025 [P] ConfigurationFile model in packages/untaped-core/src/untaped/core/models/configuration.py
-- [ ] T026 [P] JobTemplate model with all fields in packages/untaped-ansible/src/untaped/ansible/models/job_template.py
-- [ ] T027 [P] WorkflowJobTemplate model in packages/untaped-ansible/src/untaped/ansible/models/workflow_job_template.py  
-- [ ] T028 [P] WorkflowNode model in packages/untaped-ansible/src/untaped/ansible/models/workflow_node.py
-- [ ] T029 [P] VariableFile model in packages/untaped-core/src/untaped/core/models/variables.py
-- [ ] T030 [P] ValidationResult and error models in packages/untaped-core/src/untaped/core/models/validation.py
-- [ ] T031 [P] ResourceType and JobType enums in packages/untaped-ansible/src/untaped/ansible/models/enums.py
+- [ ] T025 [P] ConfigurationFile model in packages/untaped-core/src/untaped_core/models/configuration.py
+- [ ] T026 [P] JobTemplate model with all fields in packages/untaped-ansible/src/untaped_ansible/models/job_template.py
+- [ ] T027 [P] WorkflowJobTemplate model in packages/untaped-ansible/src/untaped_ansible/models/workflow_job_template.py
+- [ ] T028 [P] WorkflowNode model in packages/untaped-ansible/src/untaped_ansible/models/workflow_node.py
+- [ ] T029 [P] VariableFile model in packages/untaped-core/src/untaped_core/models/variables.py
+- [ ] T030 [P] ValidationResult and error models in packages/untaped-core/src/untaped_core/models/validation.py
+- [ ] T031 [P] ResourceType and JobType enums in packages/untaped-ansible/src/untaped_ansible/models/enums.py
 
 ### Core Utilities
-- [ ] T032 [P] YAML loader utility in packages/untaped-core/src/untaped/core/utils/yaml_loader.py
-- [ ] T033 [P] Jinja2 template renderer in packages/untaped-core/src/untaped/core/utils/template_renderer.py
-- [ ] T034 [P] Error formatter utility in packages/untaped-core/src/untaped/core/utils/error_formatter.py
-- [ ] T035 [P] Configuration validator in packages/untaped-core/src/untaped/core/validators/config_validator.py
+- [ ] T032 [P] YAML loader utility in packages/untaped-core/src/untaped_core/yaml_loader.py
+- [ ] T033 [P] Jinja2 template renderer in packages/untaped-core/src/untaped_core/template_renderer.py
+- [ ] T034 [P] Error formatter utility in packages/untaped-core/src/untaped_core/error_formatter.py
+- [ ] T035 [P] Configuration validator in packages/untaped-core/src/untaped_core/validators/config_validator.py
 
 ### Tower API Client
-- [ ] T036 Tower API authentication client in packages/untaped-ansible/src/untaped/ansible/api/auth.py
-- [ ] T037 Tower API base client with error handling in packages/untaped-ansible/src/untaped/ansible/api/base_client.py
-- [ ] T038 Job template API wrapper in packages/untaped-ansible/src/untaped/ansible/api/job_templates.py
-- [ ] T039 Workflow job template API wrapper in packages/untaped-ansible/src/untaped/ansible/api/workflow_job_templates.py
-- [ ] T040 Resource reference API wrapper (inventories, projects, credentials) in packages/untaped-ansible/src/untaped/ansible/api/resources.py
+- [ ] T036 Tower API authentication client in packages/untaped-ansible/src/untaped_ansible/api/auth.py
+- [ ] T037 Tower API base client with error handling in packages/untaped-ansible/src/untaped_ansible/api/base_client.py
+- [ ] T038 Job template API wrapper in packages/untaped-ansible/src/untaped_ansible/api/job_templates.py
+- [ ] T039 Workflow job template API wrapper in packages/untaped-ansible/src/untaped_ansible/api/workflow_job_templates.py
+- [ ] T040 Resource reference API wrapper (inventories, projects, credentials) in packages/untaped-ansible/src/untaped_ansible/api/resources.py
 
 ### Service Layer  
-- [ ] T041 Configuration processing service in packages/untaped-ansible/src/untaped/ansible/services/config_processor.py
-- [ ] T042 Job template management service in packages/untaped-ansible/src/untaped/ansible/services/job_template_service.py
-- [ ] T043 Workflow job template management service in packages/untaped-ansible/src/untaped/ansible/services/workflow_service.py
-- [ ] T044 Resource validation service in packages/untaped-ansible/src/untaped/ansible/services/validation_service.py
+- [ ] T041 Configuration processing service in packages/untaped-ansible/src/untaped_ansible/services/config_processor.py
+- [ ] T042 Job template management service in packages/untaped-ansible/src/untaped_ansible/services/job_template_service.py
+- [ ] T043 Workflow job template management service in packages/untaped-ansible/src/untaped_ansible/services/workflow_service.py
+- [ ] T044 Resource validation service in packages/untaped-ansible/src/untaped_ansible/services/validation_service.py
 
 ### CLI Commands
-- [ ] T045 Global CLI options and common utilities in packages/untaped-cli/src/untaped/cli/common.py
-- [ ] T046 Create command implementation in packages/untaped-cli/src/untaped/cli/commands/create.py
-- [ ] T047 Update command implementation in packages/untaped-cli/src/untaped/cli/commands/update.py
-- [ ] T048 Delete command implementation in packages/untaped-cli/src/untaped/cli/commands/delete.py
-- [ ] T049 CLI entrypoint and app registration in packages/untaped-cli/src/untaped/cli/main.py
+- [ ] T045 Global CLI options and common utilities in packages/untaped-cli/src/untaped_cli/common.py
+- [ ] T046 Job template create command in packages/untaped-cli/src/untaped_cli/commands/job_templates.py
+- [ ] T047 Job template update and delete commands in packages/untaped-cli/src/untaped_cli/commands/job_templates.py
+- [ ] T048 Workflow job template create/update/delete commands in packages/untaped-cli/src/untaped_cli/commands/workflow_job_templates.py
+- [ ] T049 CLI entrypoint and Typer app registration in packages/untaped-cli/src/untaped_cli/app.py
 
 ## Phase 3.4: Integration
 - [ ] T050 Register ansible CLI sub-app in main entrypoint
@@ -156,7 +157,7 @@ UV workspace structure per plan.md:
 Task: "Initialize packages/untaped-core package with pyproject.toml and dependencies"
 Task: "Initialize packages/untaped-ansible package with pyproject.toml and dependencies" 
 Task: "Initialize packages/untaped-cli package with pyproject.toml and dependencies"
-Task: "Configure linting tools (black, flake8, mypy) in workspace root"
+Task: "Configure linting and formatting with Ruff plus mypy settings in workspace root"
 Task: "Setup pytest configuration with markers for contract, integration, unit tests"
 ```
 
@@ -174,13 +175,13 @@ Task: "CLI contract test for delete workflow-job-template command in tests/contr
 ### Phase 3.3 Parallel Model Creation
 ```bash
 # Launch model creation T025-T031 together:
-Task: "ConfigurationFile model in packages/untaped-core/src/untaped/core/models/configuration.py"
-Task: "JobTemplate model with all fields in packages/untaped-ansible/src/untaped/ansible/models/job_template.py"
-Task: "WorkflowJobTemplate model in packages/untaped-ansible/src/untaped/ansible/models/workflow_job_template.py"
-Task: "WorkflowNode model in packages/untaped-ansible/src/untaped/ansible/models/workflow_node.py"
-Task: "VariableFile model in packages/untaped-core/src/untaped/core/models/variables.py"
-Task: "ValidationResult and error models in packages/untaped-core/src/untaped/core/models/validation.py"
-Task: "ResourceType and JobType enums in packages/untaped-ansible/src/untaped/ansible/models/enums.py"
+Task: "ConfigurationFile model in packages/untaped-core/src/untaped_core/models/configuration.py"
+Task: "JobTemplate model with all fields in packages/untaped-ansible/src/untaped_ansible/models/job_template.py"
+Task: "WorkflowJobTemplate model in packages/untaped-ansible/src/untaped_ansible/models/workflow_job_template.py"
+Task: "WorkflowNode model in packages/untaped-ansible/src/untaped_ansible/models/workflow_node.py"
+Task: "VariableFile model in packages/untaped-core/src/untaped_core/models/variables.py"
+Task: "ValidationResult and error models in packages/untaped-core/src/untaped_core/models/validation.py"
+Task: "ResourceType and JobType enums in packages/untaped-ansible/src/untaped_ansible/models/enums.py"
 ```
 
 ## Validation Checklist

@@ -1,3 +1,21 @@
+[project]
+name = "untaped"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Alexis Beaulieu", email = "alexisbeaulieu@protonmail.com" },
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.2",
+    "pytest>=8.4.2",
+    "ruff>=0.13.1",
+]
+
 [tool.uv.workspace]
 members = ["packages/*"]
 
@@ -5,3 +23,12 @@ members = ["packages/*"]
 untaped-core = { workspace = true }
 untaped-ansible = { workspace = true }
 untaped-cli = { workspace = true }
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+    "contract: contract tests for CLI and API contracts",
+    "integration: integration tests across components",
+    "unit: fast unit tests for isolated modules",
+]

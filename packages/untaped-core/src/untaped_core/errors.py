@@ -4,5 +4,3 @@ class ValidationError(Exception):
 
 class ConfigurationError(Exception):
     pass
-
-
