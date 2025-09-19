@@ -11,13 +11,7 @@ from untaped_cli.app import app
 
 runner = CliRunner()
 
-
-@pytest.mark.integration
-def test_simple_job_template_creation_flow() -> None:
-    with runner.isolated_filesystem():
-        config_path = Path("simple-job-template.yml")
-        config_path.write_text(
-            """
+SIMPLE_JOB_TEMPLATE_CONFIG = """
 resource_type: job_template
 job_template:
   name: my-first-job
@@ -31,9 +25,16 @@ job_template:
   forks: 5
   verbosity: 0
   timeout: 3600
-            """.strip(),
-            encoding="utf-8",
-        )
+""".strip()
+
+
+@pytest.mark.integration
+def test_simple_job_template_creation_flow() -> None:
+    with runner.isolated_filesystem():
+        config_path = Path("simple-job-template.yml")
+        config_path.write_text(SIMPLE_JOB_TEMPLATE_CONFIG, encoding="utf-8")
+
+        tower_env = {"TOWER_HOST": "https://tower.example.com"}
 
         validate = runner.invoke(
             app,
@@ -44,6 +45,7 @@ job_template:
                 str(config_path),
                 "--dry-run",
             ],
+            env=tower_env,
         )
 
         assert validate.exit_code == 0
@@ -62,6 +64,7 @@ job_template:
                 "--config-file",
                 str(config_path),
             ],
+            env=tower_env,
         )
 
         assert create.exit_code == 0
@@ -72,3 +75,65 @@ job_template:
         assert create_payload["resource_type"] == "job_template"
         assert create_payload["resource_name"] == "my-first-job"
         assert "tower_url" in create_payload
+
+
+@pytest.mark.integration
+def test_simple_job_template_creation_requires_tower_host() -> None:
+    with runner.isolated_filesystem():
+        config_path = Path("simple-job-template.yml")
+        config_path.write_text(SIMPLE_JOB_TEMPLATE_CONFIG, encoding="utf-8")
+
+        create = runner.invoke(
+            app,
+            [
+                "create",
+                "job-template",
+                "--config-file",
+                str(config_path),
+            ],
+            env={},
+        )
+
+        assert create.exit_code == 2
+        assert "TOWER_HOST" in (create.stderr or create.stdout)
+
+
+@pytest.mark.integration
+def test_tower_host_environment_override_between_invocations() -> None:
+    with runner.isolated_filesystem():
+        config_path = Path("simple-job-template.yml")
+        config_path.write_text(SIMPLE_JOB_TEMPLATE_CONFIG, encoding="utf-8")
+
+        first = runner.invoke(
+            app,
+            [
+                "create",
+                "job-template",
+                "--config-file",
+                str(config_path),
+            ],
+            env={"TOWER_HOST": "https://tower.one.example.com"},
+        )
+
+        assert first.exit_code == 0
+
+        first_payload = json.loads(first.stdout)
+        assert first_payload["status"] == "success"
+        assert first_payload["tower_url"].split("/#/")[0] == "https://tower.one.example.com"
+
+        second = runner.invoke(
+            app,
+            [
+                "create",
+                "job-template",
+                "--config-file",
+                str(config_path),
+            ],
+            env={"TOWER_HOST": "https://tower.two.example.com/"},
+        )
+
+        assert second.exit_code == 0
+
+        second_payload = json.loads(second.stdout)
+        assert second_payload["status"] == "success"
+        assert second_payload["tower_url"].split("/#/")[0] == "https://tower.two.example.com"
