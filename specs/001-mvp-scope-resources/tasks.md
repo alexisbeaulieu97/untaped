@@ -126,11 +126,11 @@ Modules under these packages use underscore import names (e.g., `untaped_core`, 
 - [x] T056 Implement version flag for resource naming
 
 ## Phase 3.5: Polish  
-- [ ] T057 [P] Unit tests for YAML loader in tests/unit/test_yaml_loader.py
-- [ ] T058 [P] Unit tests for template renderer in tests/unit/test_template_renderer.py
-- [ ] T059 [P] Unit tests for Pydantic models validation in tests/unit/test_models_validation.py
-- [ ] T060 [P] Unit tests for error formatting in tests/unit/test_error_formatter.py
-- [ ] T061 [P] Unit tests for configuration validator in tests/unit/test_config_validator.py
+- [x] T057 [P] Unit tests for YAML loader in tests/unit/test_yaml_loader.py
+- [x] T058 [P] Unit tests for template renderer in tests/unit/test_template_renderer.py
+- [x] T059 [P] Unit tests for Pydantic models validation in tests/unit/test_models_validation.py
+- [x] T060 [P] Unit tests for error formatting in tests/unit/test_error_formatter.py
+- [x] T061 [P] Unit tests for configuration validator in tests/unit/test_config_validator.py
 - [ ] T062 [P] Performance tests for schema validation <100ms in tests/performance/test_validation_performance.py
 - [ ] T063 [P] Performance tests for template rendering <50ms in tests/performance/test_template_performance.py
 - [ ] T064 [P] Create README.md with installation and usage instructions
