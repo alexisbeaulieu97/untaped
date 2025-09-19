@@ -60,30 +60,19 @@ class InMemoryTowerResourcesApi:
 class InMemoryJobTemplatesApi:
     def __init__(self) -> None:
         self._store: dict[str, dict[str, Any]] = {
-            "my-job-template": {
-                "id": 101,
-                "name": "my-job-template",
-                "description": "Existing description",
+            name: {
+                "id": idx,
+                "name": name,
+                "description": description,
                 "forks": 5,
                 "verbosity": 0,
                 "timeout": 3600,
-            },
-            "example-job": {
-                "id": 103,
-                "name": "example-job",
-                "description": "Example job template",
-                "forks": 5,
-                "verbosity": 0,
-                "timeout": 3600,
-            },
-            "my-first-job": {
-                "id": 102,
-                "name": "my-first-job",
-                "description": "My first job template created with untaped",
-                "forks": 5,
-                "verbosity": 0,
-                "timeout": 3600,
-            },
+            }
+            for name, idx, description in (
+                ("my-job-template", 101, "Existing description"),
+                ("example-job", 103, "Example job template"),
+                ("my-first-job", 102, "My first job template created with untaped"),
+            )
         }
         self._next_id = 200
 
@@ -97,13 +86,7 @@ class InMemoryJobTemplatesApi:
         return record
 
     def update(self, identifier: int | str, payload: dict[str, Any]) -> dict[str, Any]:
-        key = str(identifier)
-        if key not in self._store:
-            response = httpx.Response(404, json={"detail": f"Job template '{identifier}' not found"})
-            error = TowerApiError("Resource not found", response=response)
-            setattr(error, "resource_name", key)
-            raise error
-
+        key = self._resolve_name(identifier)
         existing = self._store[key]
         changes = []
         for field, new_value in payload.items():
@@ -130,14 +113,26 @@ class InMemoryJobTemplatesApi:
         return response
 
     def delete(self, identifier: int | str) -> None:
-        key = str(identifier)
-        if key not in self._store:
-            response = httpx.Response(404, json={"detail": f"Job template '{identifier}' not found"})
-            error = TowerApiError("Resource not found", response=response)
-            setattr(error, "resource_name", key)
-            raise error
+        key = self._resolve_name(identifier)
         del self._store[key]
         logger.info("Deleted job template {name}", name=key)
+
+    def _resolve_name(self, identifier: int | str) -> str:
+        key = str(identifier)
+        if key in self._store:
+            return key
+        try:
+            candidate_id = int(identifier)
+        except (TypeError, ValueError):
+            candidate_id = None
+        if candidate_id is not None:
+            for name, data in self._store.items():
+                if data.get("id") == candidate_id:
+                    return name
+        response = httpx.Response(404, json={"detail": f"Job template '{identifier}' not found"})
+        error = TowerApiError("Resource not found", response=response)
+        setattr(error, "resource_name", key)
+        raise error
 
 
 class InMemoryWorkflowJobTemplatesApi:
@@ -171,13 +166,8 @@ class InMemoryWorkflowJobTemplatesApi:
         return record
 
     def update(self, identifier: int | str, payload: dict[str, Any]) -> dict[str, Any]:
-        key = str(identifier)
-        existing = self._store.get(key)
-        if existing is None:
-            response = httpx.Response(404, json={"detail": f"Workflow '{identifier}' not found"})
-            error = TowerApiError("Resource not found", response=response)
-            setattr(error, "resource_name", key)
-            raise error
+        key = self._resolve_name(identifier)
+        existing = self._store[key]
 
         changes = []
         nodes = payload.get("workflow_nodes", [])
@@ -205,14 +195,26 @@ class InMemoryWorkflowJobTemplatesApi:
         return response
 
     def delete(self, identifier: int | str) -> None:
-        key = str(identifier)
-        if key not in self._store:
-            response = httpx.Response(404, json={"detail": f"Workflow '{identifier}' not found"})
-            error = TowerApiError("Resource not found", response=response)
-            setattr(error, "resource_name", key)
-            raise error
+        key = self._resolve_name(identifier)
         del self._store[key]
         logger.info("Deleted workflow job template {name}", name=key)
+
+    def _resolve_name(self, identifier: int | str) -> str:
+        key = str(identifier)
+        if key in self._store:
+            return key
+        try:
+            candidate_id = int(identifier)
+        except (TypeError, ValueError):
+            candidate_id = None
+        if candidate_id is not None:
+            for name, data in self._store.items():
+                if data.get("id") == candidate_id:
+                    return name
+        response = httpx.Response(404, json={"detail": f"Workflow '{identifier}' not found"})
+        error = TowerApiError("Resource not found", response=response)
+        setattr(error, "resource_name", key)
+        raise error
 
 
 @dataclass
