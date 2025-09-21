@@ -1,92 +1,50 @@
-# Untaped Constitution
+# [PROJECT_NAME] Constitution
+<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 
 ## Core Principles
 
-### I. Config-Driven Architecture (NON-NEGOTIABLE)
-All workflow logic lives in YAML configurations and templates, never in Python code. Business logic, resource definitions, and workflow orchestration are expressed declaratively through configuration files. Python code serves only as the execution engine - interpreting configs, validating schemas, and interfacing with APIs. No hardcoded workflow logic in application code.
+### [PRINCIPLE_1_NAME]
+<!-- Example: I. Library-First -->
+[PRINCIPLE_1_DESCRIPTION]
+<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
 
-### II. Validation-First Processing (NON-NEGOTIABLE)
-All YAML configurations must pass Pydantic schema validation before any processing begins. Schema validation occurs early in the pipeline - before any external API calls, resource modifications, or side effects. Invalid configurations fail fast with clear, actionable error messages. No configuration reaches Ansible Tower's API without successful schema validation.
+### [PRINCIPLE_2_NAME]
+<!-- Example: II. CLI Interface -->
+[PRINCIPLE_2_DESCRIPTION]
+<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
 
-### III. UV Workspace Modular Design (NON-NEGOTIABLE)
-Repository is organized as UV workspaces with each package completely self-contained within a `packages/` directory. Every package has its own dependencies, tests, documentation, and clear boundaries. Packages communicate through well-defined interfaces only. Cross-package dependencies must be explicit and justified. Each workspace package serves a single, well-defined purpose.
+### [PRINCIPLE_3_NAME]
+<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+[PRINCIPLE_3_DESCRIPTION]
+<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
 
-### V. Extensible-by-Design (NON-NEGOTIABLE)
-New resources, APIs, and workflows can be added without breaking existing functionality. Schema versioning supports backward compatibility during transitions. Plugin architecture allows extension without core modifications. Configuration-driven approach enables new resource types through schema additions rather than code changes. Existing workflows remain unaffected by system extensions.
+### [PRINCIPLE_4_NAME]
+<!-- Example: IV. Integration Testing -->
+[PRINCIPLE_4_DESCRIPTION]
+<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
 
-## Infrastructure-as-Code Standards
+### [PRINCIPLE_5_NAME]
+<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+[PRINCIPLE_5_DESCRIPTION]
+<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
-### Configuration Management
-- YAML is the primary configuration format for all resource definitions
-- Configuration files must be version-controlled and treated as source code
-- Support Jinja2 templating for dynamic configuration generation
-- Environment-specific configurations managed through variable files
-- No hardcoded credentials or sensitive data in configuration files
-- All configurations validated through Pydantic schemas before processing
+## [SECTION_2_NAME]
+<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 
-### Schema Validation Requirements
-- Pydantic models define strict schemas for all YAML configurations
-- Schema validation is the first step in every workflow - no exceptions
-- Validation errors must provide clear, actionable feedback to users
-- Schema versions are managed independently with backward compatibility
-- Failed validation prevents any API calls or system modifications
+[SECTION_2_CONTENT]
+<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
 
-### UV Workspace Management
-- Use uv commands for all workspace and package management operations when available
-- Prefer `uv add`, `uv remove`, `uv sync` over manual pyproject.toml editing
-- Use `uv run` for script execution and `uv tool` for CLI installations
-- Manual file editing allowed only when no equivalent uv command exists
-- This ensures consistent dependency resolution and workspace state management
+## [SECTION_3_NAME]
+<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
 
-Canonical commands (examples):
-```
-mkdir -p packages
-uv init --package --lib packages/untaped-core
-uv init --package --lib packages/untaped-ansible
-uv init --package --lib packages/untaped-cli
-
-uv add --project packages/untaped-core pydantic jinja2 pyyaml
-uv add --project packages/untaped-ansible pydantic httpx
-uv add --project packages/untaped-cli typer rich
-```
-
-### API Integration Requirements
-- All Ansible Tower API interactions must be idempotent
-- Implement proper error handling with retry logic for transient failures
-- Comprehensive logging of all API requests and responses for debugging
-
-### Security & Compliance
-- Credentials managed through secure credential providers (environment variables, credential files, etc.)
-- All API communications must use HTTPS
-- Input validation and sanitization for all user-provided data
-- Audit logging for all resource modifications
-
-## Development Workflow
-
-### Quality Gates
-- All code must pass schema validation tests before merge
-- Integration tests must pass against a test Ansible Tower instance
-- Code coverage minimum of 85% for all libraries
-- Static analysis and linting (black, flake8, mypy) must pass
-- Documentation must be updated for any API or schema changes
-
-### Release Management
-- Follow semantic versioning (MAJOR.MINOR.PATCH)
-- Breaking changes require MAJOR version bump and migration guide
-- Schema changes are versioned independently with backward compatibility
-- All releases tagged and documented with changelog
-- Support for multiple schema versions during transition periods
+[SECTION_3_CONTENT]
+<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
 
 ## Governance
+<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-This constitution supersedes all other development practices and guidelines. All pull requests and code reviews must verify compliance with these principles. Any deviation must be explicitly justified and documented.
+[GOVERNANCE_RULES]
+<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
 
-Amendments to this constitution require:
-1. Written proposal with justification and impact analysis
-2. Team approval through consensus or formal vote
-3. Migration plan for existing code where applicable
-4. Documentation updates across all affected libraries
-
-Complexity must always be justified - prefer simple, clear solutions over clever ones. When in doubt, choose the approach that makes the system more testable and maintainable.
-
-**Version**: 1.0.0 | **Ratified**: September 18, 2025 | **Last Amended**: September 18, 2025
+**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
+<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
