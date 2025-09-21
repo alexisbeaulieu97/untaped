@@ -103,11 +103,11 @@ Task: "Integration test auth in tests/integration/test_auth.py"
 1. **From Contracts**:
    - Each contract file → contract test task [P]
    - Each endpoint → implementation task
-   
+
 2. **From Data Model**:
    - Each entity → model creation task [P]
    - Relationships → service layer tasks
-   
+
 3. **From User Stories**:
    - Each story → integration test [P]
    - Quickstart scenarios → validation tasks
@@ -125,3 +125,6 @@ Task: "Integration test auth in tests/integration/test_auth.py"
 - [ ] Parallel tasks truly independent
 - [ ] Each task specifies exact file path
 - [ ] No task modifies same file as another [P] task
+
+---
+*Based on [constitution](/.specify/memory/constitution.md) v1.1.0 – Configuration-driven architecture, validation-first processing, test-first development, modular workspaces, thin CLI design, and uv workspace management are required across tasks.*
