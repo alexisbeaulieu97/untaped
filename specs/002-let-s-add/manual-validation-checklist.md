@@ -69,7 +69,7 @@ EOF
 
 untaped github list-directory test-list-2.yaml --recursive
 
-# Expected: Should show files from subdirectories
+# Expected: Should show files from subdirectories recursively (all levels)
 ```
 
 ### ✅ 3. Template Variables
@@ -147,6 +147,18 @@ EOF
 untaped github read-file invalid-config.yaml --dry-run
 
 # Expected: Should show validation errors and exit with code 1
+```
+
+```bash
+# Test 5c: Non-existent file dry run
+cat > missing-file.yaml << 'EOF'
+repository: "octocat/Hello-World"
+file_path: "nonexistent-file.md"
+EOF
+
+untaped github read-file missing-file.yaml --dry-run --verbose
+
+# Expected: Should show "File Exists: ❌ No" and "can_proceed: false"
 ```
 
 ### ✅ 6. Error Handling

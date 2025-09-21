@@ -8,6 +8,7 @@ members = [
     "untaped-ansible",
     "untaped-cli",
     "untaped-core",
+    "untaped-github",
 ]
 
 [[package]]
@@ -543,6 +544,21 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pyyaml", specifier = ">=6.0.2" },
+]
+
+[[package]]
+name = "untaped-github"
+version = "0.1.0"
+source = { editable = "packages/untaped-github" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "untaped-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "untaped-core", editable = "packages/untaped-core" },
 ]
 
 [[package]]

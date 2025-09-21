@@ -72,7 +72,7 @@ class GitHubFileOperationsApi(GitHubBaseApi):
             if item.get("type") == "dir":
                 sub_path = f"{base_path}/{item['name']}" if base_path else item["name"]
                 try:
-                    sub_contents = self.list_directory(repository, sub_path, recursive=False)
+                    sub_contents = self.list_directory(repository, sub_path, recursive=True)
                     all_contents.extend(sub_contents)
                 except GitHubApiError:
                     # Skip directories we can't access

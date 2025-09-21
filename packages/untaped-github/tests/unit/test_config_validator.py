@@ -261,3 +261,72 @@ class TestConfigurationValidator:
         assert not result.is_valid
         # Should have multiple errors (config validation, auth, repo access, file access)
         assert len(result.errors) >= 3
+
+    def test_recursive_listing_validation(self):
+        """Test that recursive listing parameter is properly validated."""
+        mock_gh = Mock(spec=GitHubCliWrapper)
+        validator = ConfigurationValidator(mock_gh)
+
+        # Test valid recursive configuration
+        config = {
+            "repository": "octocat/Hello-World",
+            "directory_path": "docs",
+            "recursive": True
+        }
+
+        # Should not raise validation errors for recursive flag
+        result = validator.validate_file_operation(config)
+        assert result.is_valid
+        assert not result.errors
+
+        # Test invalid recursive type
+        config_invalid = {
+            "repository": "octocat/Hello-World",
+            "directory_path": "docs",
+            "recursive": "yes"  # Should be boolean
+        }
+
+        result_invalid = validator.validate_file_operation(config_invalid)
+        assert not result_invalid.is_valid
+        assert any("recursive" in str(error).lower() for error in result_invalid.errors)
+
+    @patch('untaped_github.gh_cli_wrapper.GitHubCliWrapper.api_get')
+    def test_recursive_directory_listing_api_calls(self, mock_api_get):
+        """Test that recursive directory listing makes proper API calls."""
+        # Mock nested directory structure
+        mock_api_get.side_effect = [
+            # First call to root directory
+            [
+                {"name": "README.md", "type": "file", "size": 1024},
+                {"name": "src", "type": "dir", "size": 0},
+                {"name": "docs", "type": "dir", "size": 0}
+            ],
+            # Second call to src directory (recursive=True)
+            [
+                {"name": "main.py", "type": "file", "size": 2048},
+                {"name": "utils", "type": "dir", "size": 0},
+                {"name": "tests", "type": "dir", "size": 0}
+            ],
+            # Third call to utils directory (recursive=True)
+            [{"name": "helpers.py", "type": "file", "size": 512}],
+            # Fourth call to tests directory (recursive=True)
+            [{"name": "test_main.py", "type": "file", "size": 1024}],
+            # Fifth call to docs directory (recursive=True)
+            [{"name": "api.md", "type": "file", "size": 4096}]
+        ]
+
+        mock_gh = Mock(spec=GitHubCliWrapper)
+        mock_gh.api_get = mock_api_get
+        validator = ConfigurationValidator(mock_gh)
+
+        config = {
+            "repository": "octocat/test-repo",
+            "directory_path": ".",
+            "recursive": True
+        }
+
+        result = validator.validate_file_operation(config)
+
+        # Should make multiple API calls for recursive listing
+        assert mock_api_get.call_count == 5  # root + 4 subdirectories
+        assert result.is_valid

@@ -50,7 +50,16 @@ class FileOperationService:
             raise Exception(f"{formatted_error}: {e}")
 
     def validate_file_operation(self, file_operation: FileOperation) -> bool:
-        """Validate that a file operation can be executed successfully."""
+        """Validate that a file operation can be executed successfully.
+
+        This method checks authentication, repository access, and file existence.
+        Returns False if any check fails, including if the file doesn't exist.
+
+        Note: This method was fixed to properly check the return value of
+        check_file_exists() instead of ignoring it. Previously, it would return
+        True even when the target file didn't exist, causing dry runs to succeed
+        while actual reads would fail.
+        """
         try:
             # Check authentication
             self.api.require_authentication()
@@ -58,12 +67,12 @@ class FileOperationService:
             # Check repository access
             self.api.validate_repository_access(file_operation.repository)
 
-            # Check file exists
-            self.api.check_file_exists(
+            # Check file exists - return False if file doesn't exist
+            file_exists = self.api.check_file_exists(
                 file_operation.repository, file_operation.file_path, file_operation.ref
             )
 
-            return True
+            return file_exists
 
         except Exception:
             return False

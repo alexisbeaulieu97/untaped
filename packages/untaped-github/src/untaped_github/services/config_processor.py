@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
+from pydantic import ValidationError
 
 from ..error_formatter import ErrorFormatter
 from ..gh_cli_wrapper import GitHubCliWrapper

@@ -1,4 +1,5 @@
 """CLI command for listing directory contents from GitHub repositories."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,25 +9,24 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from untaped_github.services.file_service import FileOperationService
 
 from ..github_common import (
-    create_gh_wrapper,
     create_config_processor,
+    create_gh_wrapper,
     ensure_gh_cli_availability,
+    format_directory_listing,
     handle_authentication,
     handle_operation_error,
     handle_validation_result_with_exit_codes,
     process_configuration_with_validation,
-    format_directory_listing
 )
-from untaped_github.services.file_service import FileOperationService
-
 
 console = Console()
 app = typer.Typer(
     name="list-directory",
     help="List files in a GitHub repository directory",
-    add_completion=False
+    add_completion=False,
 )
 
 
@@ -34,28 +34,15 @@ app = typer.Typer(
 def list_directory(
     config_file: str = typer.Argument(..., help="YAML configuration file path"),
     vars_file: List[str] = typer.Option(
-        None,
-        "--vars-file",
-        "-f",
-        help="Variable file(s) for template rendering"
+        None, "--vars-file", "-f", help="Variable file(s) for template rendering"
     ),
     dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would be done without executing"
+        False, "--dry-run", help="Show what would be done without executing"
     ),
-    verbose: bool = typer.Option(
-        False,
-        "--verbose",
-        "-v",
-        help="Show detailed output"
-    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
     recursive: bool = typer.Option(
-        False,
-        "--recursive",
-        "-r",
-        help="Recursively list all files in subdirectories"
-    )
+        False, "--recursive", "-r", help="Recursively list all files in subdirectories"
+    ),
 ) -> Optional[List[dict]]:
     """List files in a GitHub repository directory using YAML configuration.
 
@@ -102,35 +89,54 @@ def list_directory(
                 repository = config_data["repository"]
                 directory_path = config_data.get("directory_path", ".")
 
-                dry_run_result = file_service.dry_run_directory_list(repository, directory_path)
+                dry_run_result = file_service.dry_run_directory_list(
+                    repository, directory_path
+                )
 
                 if dry_run_result["can_proceed"]:
-                    console.print(Panel.fit(
-                        "[green]✅ Dry run successful - operation can proceed[/green]",
-                        title="Dry Run Result",
-                        border_style="green"
-                    ))
+                    console.print(
+                        Panel.fit(
+                            "[green]✅ Dry run successful - operation can proceed[/green]",
+                            title="Dry Run Result",
+                            border_style="green",
+                        )
+                    )
 
                     if verbose:
                         table = Table(title="Configuration Details")
                         table.add_column("Property", style="cyan")
                         table.add_column("Value", style="white")
 
-                        table.add_row("Repository", dry_run_result['repository'])
-                        table.add_row("Directory", dry_run_result['directory_path'])
-                        table.add_row("Authentication", "✅ Valid" if dry_run_result.get('authentication_valid') else "❌ Invalid")
-                        table.add_row("Repository Access", "✅ Accessible" if dry_run_result.get('repository_accessible') else "❌ Not accessible")
+                        table.add_row("Repository", dry_run_result["repository"])
+                        table.add_row("Directory", dry_run_result["directory_path"])
+                        table.add_row(
+                            "Authentication",
+                            "✅ Valid"
+                            if dry_run_result.get("authentication_valid")
+                            else "❌ Invalid",
+                        )
+                        table.add_row(
+                            "Repository Access",
+                            "✅ Accessible"
+                            if dry_run_result.get("repository_accessible")
+                            else "❌ Not accessible",
+                        )
 
                         console.print(table)
                 else:
-                    console.print(Panel.fit(
-                        "[red]❌ Dry run failed - operation cannot proceed[/red]",
-                        title="Dry Run Result",
-                        border_style="red"
-                    ), err=True)
+                    console.print(
+                        Panel.fit(
+                            "[red]❌ Dry run failed - operation cannot proceed[/red]",
+                            title="Dry Run Result",
+                            border_style="red",
+                        ),
+                        err=True,
+                    )
 
                     if "error" in dry_run_result:
-                        console.print(f"[red]Error: {dry_run_result['error']}[/red]", err=True)
+                        console.print(
+                            f"[red]Error: {dry_run_result['error']}[/red]", err=True
+                        )
                     raise typer.Exit(code=1)
 
             except Exception as e:
@@ -148,7 +154,9 @@ def list_directory(
             # Format and display result
             if verbose:
                 # Rich formatted output for verbose mode
-                console.print(f"[green]✅ Directory listing completed:[/green] {directory_path} in {repository}")
+                console.print(
+                    f"[green]✅ Directory listing completed:[/green] {directory_path} in {repository}"
+                )
 
                 table = Table(title="Directory Contents")
                 table.add_column("Type", style="cyan", justify="center")
@@ -160,13 +168,19 @@ def list_directory(
                     file_type = "📁" if file_info.get("type") == "dir" else "📄"
                     size = file_info.get("size", 0)
                     total_size += size
-                    table.add_row(file_type, file_info.get('name', 'unknown'), f"{size","} bytes")
+                    table.add_row(
+                        file_type, file_info.get("name", "unknown"), f"{size:,} bytes"
+                    )
 
                 console.print(table)
-                console.print(f"[blue]Total: {len(files)} items, {total_size","} bytes[/blue]")
+                console.print(
+                    f"[blue]Total: {len(files)} items, {total_size:,} bytes[/blue]"
+                )
             else:
                 # Simple output for non-verbose mode
-                formatted_output = format_directory_listing(files, repository, directory_path)
+                formatted_output = format_directory_listing(
+                    files, repository, directory_path
+                )
                 typer.echo(formatted_output)
 
             return files

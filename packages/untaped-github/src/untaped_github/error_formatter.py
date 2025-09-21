@@ -16,7 +16,7 @@ class ErrorFormatter:
         """Format a validation result for display."""
         if result.is_valid:
             if result.warnings:
-                return f"✅ Configuration is valid\n\n⚠️  Warnings:\n" + "\n".join(
+                return "✅ Configuration is valid\n\n⚠️  Warnings:\n" + "\n".join(
                     f"  - {w}" for w in result.warnings
                 )
             return "✅ Configuration is valid"

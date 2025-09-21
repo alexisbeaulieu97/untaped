@@ -5,10 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from .models.validation import ValidationError
 
 
 class GitHubCliError(Exception):
@@ -78,7 +75,7 @@ class GitHubCliWrapper:
 
     def api_get_raw(self, endpoint: str) -> str:
         """Execute a GET request and return raw text content."""
-        args = ["api", endpoint, "--raw"]
+        args = ["api", endpoint]
         result = self._run_gh_command(args)
         return result.stdout.strip()
 
@@ -94,7 +91,7 @@ class GitHubCliWrapper:
         try:
             # This will fail if not authenticated
             result = self._run_gh_command(["auth", "status"])
-            return "Logged in to github.com" in result.stdout
+            return result.returncode == 0
         except GitHubCliError:
             return False
 
