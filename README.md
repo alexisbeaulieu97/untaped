@@ -48,11 +48,15 @@ The CLI also supports verbose output (`--verbose`), template variables (`--vars-
 
 ## Documentation
 
-- CLI quickstart workflows are documented in `specs/001-mvp-scope-resources/quickstart.md`
-- Detailed tasks, research, and design decisions reside in the `specs/001-mvp-scope-resources/` directory
+- **Quick Start**: See above CLI usage examples and configuration flow
+- **Developer Guide**: See `DEVELOPMENT.md` for coding standards, testing, and workflows
+- **AI Agent Guidance**: See `AGENTS.md` for AI-specific architectural patterns and decision trees
+- **Project Constitution**: See `.specify/memory/constitution.md` for governance principles
+- **Feature Specifications**: Detailed specs and design decisions in `specs/001-mvp-scope-resources/`
 
 ## Contributing
 
-1. Run `uv run pytest` before submitting changes
-2. Keep contract tests up to date with CLI/API behavior
-3. Follow the modular package structure and validation-first principles
+1. **Follow TDD**: Write tests first, then implement to make them pass
+2. **Run Quality Checks**: `uv run pytest && uv run mypy . && uv run ruff check .`
+3. **Respect Package Boundaries**: Keep CLI thin, business logic in libraries
+4. **Use Constitutional Principles**: Validation-first processing, configuration-driven architecture
