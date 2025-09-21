@@ -1,9 +1,9 @@
 import typer
-
 from untaped_core.logging import configure_logging
 
 from .commands import create_app, delete_app, update_app
 from .common import set_verbose
+from .github_app import register_github_commands
 
 __all__ = ["app"]
 
@@ -17,7 +17,11 @@ ansible_app.add_typer(delete_app, name="delete")
 
 
 @app.callback()
-def main(verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output")) -> None:
+def main(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Enable verbose output"
+    ),
+) -> None:
     set_verbose(verbose)
     configure_logging(level="DEBUG" if verbose else "INFO")
 
@@ -39,3 +43,6 @@ app.add_typer(ansible_app, name="ansible")
 app.add_typer(create_app, name="create")
 app.add_typer(update_app, name="update")
 app.add_typer(delete_app, name="delete")
+
+# Register GitHub commands
+register_github_commands(app)

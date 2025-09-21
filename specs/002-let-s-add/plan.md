@@ -1,8 +1,8 @@
 
-# Implementation Plan: MVP Infrastructure-as-Code Toolkit
+# Implementation Plan: GitHub API File Operations
 
-**Branch**: `001-mvp-scope-resources` | **Date**: September 18, 2025 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-mvp-scope-resources/spec.md`
+**Branch**: `002-github-api-support` | **Date**: September 21, 2025 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `/specs/002-let-s-add/spec.md`
 
 ## Execution Flow (/plan command scope)
 ```
@@ -31,43 +31,39 @@
 - Phase 3-4: Implementation execution (manual or via tools)
 
 ## Summary
-Primary requirement: Manage Ansible Tower job templates and workflow job templates using declarative YAML configurations with schema validation, templating support, and CLI operations (create, update, delete). Technical approach: Config-driven architecture with UV workspace modular design, Pydantic validation-first processing, and thin CLI orchestration.
+Primary requirement: Enable users to read and list files from GitHub repositories through declarative YAML configurations using the `gh` CLI tool for API interactions. Technical approach: Config-driven architecture with UV workspace modular design, Pydantic validation-first processing, and thin CLI orchestration using `gh api` commands.
 
 ## Technical Context
-**Language/Version**: Python 3.12+  
-**Primary Dependencies**: uv (workspace management), Typer (CLI framework), Pydantic (schema validation), Jinja2 (templating), httpx (API communication)  
-**Storage**: YAML configuration files with optional variable files  
-**Testing**: pytest with contract tests, integration tests, and unit tests  
+**Language/Version**: Python 3.12+
+**Primary Dependencies**: gh CLI tool (external), subprocess for CLI interaction, Pydantic for validation, Jinja2 for templating
+**Storage**: YAML configuration files with optional variable files
+**Testing**: pytest with contract tests, integration tests, and unit tests
 **Target Platform**: Cross-platform CLI tool (Linux, macOS, Windows)
-**Project Type**: single - modular CLI toolkit with UV workspaces  
-**Performance Goals**: Schema validation <100ms, API operations <5s, template rendering <50ms  
-**Constraints**: Config-driven (no hardcoded logic), validation-first (no API calls without schema pass), modular UV workspaces  
-**Scale/Scope**: MVP supports 2 resource types (Job Templates, Workflow Job Templates), extensible for additional Tower resources
-
-**User-provided Technical Requirements**: 
-- Core Stack: Python, uv (workspace management), Typer (CLI framework), Pydantic (schema validation), Jinja2 (templating), httpx (API communication)
-- Proposed Repo Structure: packages/untaped-core (shared utilities), packages/untaped-ansible (domain logic), packages/untaped-cli (entrypoint)
-- Validation Flow: Load YAML → Render with Jinja2 → Validate with Pydantic → Apply to Tower API
-- Distribution: Packaged with uv, installable as CLI (pipx or uv tool install)
+**Project Type**: single - modular CLI toolkit with UV workspaces
+**Performance Goals**: Schema validation <100ms, gh CLI execution <5s, template rendering <50ms
+**Constraints**: Config-driven (no hardcoded logic), validation-first (no gh CLI calls without schema pass), modular UV workspaces, gh CLI authentication required
+**Scale/Scope**: MVP supports 2 operations (file read, directory listing), extensible for additional GitHub API operations
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-**Core Principles:**
-- [x] I. Config-Driven Architecture: PASS - All workflow logic in YAML configs, Python only as execution engine
-- [x] II. Validation-First Processing: PASS - Pydantic schema validation before any API calls
-- [x] III. UV Workspace Modular Design: PASS - Repository organized as UV workspaces in packages/ directory (untaped-core, untaped-ansible, untaped-cli)
-- [x] V. Extensible-by-Design: PASS - Configuration-driven approach enables extension through schema additions
+Based on Untaped Constitution principles:
+
+**Core Principles Gates:**
+- [x] Config-Driven Architecture: PASS - All workflow logic in YAML configs, Python only as execution engine
+- [x] Validation-First Processing: PASS - Pydantic schema validation before any gh CLI calls
+- [x] UV Workspace Modular Design: PASS - Repository organized as UV workspaces in packages/ directory (untaped-core, untaped-ansible, untaped-cli) + new untaped-github package
+- [x] Extensible-by-Design: PASS - Configuration-driven approach enables extension through schema additions
 
 **Infrastructure-as-Code Standards:**
 - [x] YAML as primary config format with Jinja2 templating support: PASS - Design uses YAML with Jinja2 rendering
-- [x] Pydantic schema validation as first step in every workflow: PASS - Validation occurs before API calls
+- [x] Pydantic schema validation as first step in every workflow: PASS - Validation occurs before gh CLI calls
 - [x] UV commands for all workspace/package management operations: PASS - Using uv init, uv add, uv sync
-- [x] Idempotent Ansible Tower API interactions with proper error handling: PASS - Design includes retry logic and comprehensive error handling
+- [x] Idempotent Ansible Tower API interactions with proper error handling: PASS - gh CLI interactions designed to be idempotent with comprehensive error handling
 
-**Development Workflow:**
+**Development Workflow Gates:**
 - [x] All code passes schema validation tests before merge: PASS - Design includes comprehensive validation testing
-- [x] Integration tests pass against test Ansible Tower instance: PASS - Design includes integration testing
+- [x] Integration tests pass against test Ansible Tower instance: PASS - Design includes integration testing with gh CLI
 - [x] 85%+ code coverage for all libraries: PASS - Design includes unit, integration, and contract tests
 - [x] Static analysis and linting (black, flake8, mypy) pass: PASS - Design includes linting and type checking
 - [x] Documentation updated for API/schema changes: PASS - Design includes documentation updates
@@ -129,7 +125,7 @@ ios/ or android/
 └── [platform-specific structure]
 ```
 
-**Structure Decision**: Option 1 (Single project) - CLI toolkit with modular UV workspaces
+**Structure Decision**: Option 1 (Single project) - CLI toolkit with modular UV workspaces. Adding new `untaped-github` package for GitHub API operations.
 
 ## Phase 0: Outline & Research
 1. **Extract unknowns from Technical Context** above:
@@ -175,7 +171,7 @@ ios/ or android/
    - Quickstart test = story validation steps
 
 5. **Update agent file incrementally** (O(1) operation):
-   - Run `.specify/scripts/bash/update-agent-context.sh copilot` for your AI assistant
+   - Run `.specify/scripts/bash/update-agent-context.sh cursor` for your AI assistant
    - If exists: Add only NEW tech from current plan
    - Preserve manual additions between markers
    - Update recent changes (keep last 3)
@@ -214,10 +210,10 @@ ios/ or android/
 ## Complexity Tracking
 *Fill ONLY if Constitution Check has violations that must be justified*
 
-| Violation                  | Why Needed         | Simpler Alternative Rejected Because |
-| -------------------------- | ------------------ | ------------------------------------ |
-| [e.g., 4th project]        | [current need]     | [why 3 projects insufficient]        |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient]  |
+| Violation | Why Needed | Simpler Alternative Rejected Because |
+|-----------|------------|-------------------------------------|
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
 
 
 ## Progress Tracking
@@ -226,16 +222,16 @@ ios/ or android/
 **Phase Status**:
 - [x] Phase 0: Research complete (/plan command)
 - [x] Phase 1: Design complete (/plan command)
-- [x] Phase 2: Task planning complete (/plan command - describe approach only)
-- [ ] Phase 3: Tasks generated (/tasks command)
+- [x] Phase 2: Task planning complete (/tasks command)
+- [x] Phase 3: Tasks generated (/tasks command)
 - [ ] Phase 4: Implementation complete
 - [ ] Phase 5: Validation passed
 
 **Gate Status**:
 - [x] Initial Constitution Check: PASS
-- [x] Post-Design Constitution Check: PASS - All design artifacts maintain constitutional compliance
+- [x] Post-Design Constitution Check: PASS
 - [x] All NEEDS CLARIFICATION resolved
-- [ ] Complexity deviations documented - None required
+- [x] Complexity deviations documented - None required
 
 ---
 *Based on Untaped Constitution v1.0.0 - See `/memory/constitution.md`*

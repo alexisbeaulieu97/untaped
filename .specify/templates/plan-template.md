@@ -47,7 +47,31 @@
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Based on Untaped Constitution principles:
+
+**Core Principles Gates:**
+- [ ] Config-Driven Architecture: All workflow logic must be in YAML configs, not Python code
+- [ ] Validation-First Processing: All YAML configs must pass Pydantic validation before processing
+- [ ] UV Workspace Modular Design: Repository must use UV workspaces with self-contained packages
+- [ ] Extensible-by-Design: New resources/APIs must not break existing functionality
+
+**Infrastructure-as-Code Standards:**
+- [ ] YAML as primary config format with Jinja2 templating support
+- [ ] Pydantic schema validation as first step in every workflow
+- [ ] UV commands for all workspace/package management operations
+- [ ] Idempotent Ansible Tower API interactions with proper error handling
+
+**Development Workflow Gates:**
+- [ ] All code passes schema validation tests before merge
+- [ ] Integration tests pass against test Ansible Tower instance
+- [ ] 85%+ code coverage for all libraries
+- [ ] Static analysis and linting (black, flake8, mypy) pass
+- [ ] Documentation updated for API/schema changes
+
+**Governance:**
+- [ ] Semantic versioning (MAJOR.MINOR.PATCH) followed
+- [ ] Breaking changes require MAJOR version bump and migration guide
+- [ ] Complexity justified and documented
 
 ## Project Structure
 
@@ -145,7 +169,7 @@ ios/ or android/
    - Quickstart test = story validation steps
 
 5. **Update agent file incrementally** (O(1) operation):
-   - Run `.specify/scripts/bash/update-agent-context.sh copilot` for your AI assistant
+   - Run `.specify/scripts/bash/update-agent-context.sh cursor` for your AI assistant
    - If exists: Add only NEW tech from current plan
    - Preserve manual additions between markers
    - Update recent changes (keep last 3)
@@ -208,4 +232,4 @@ ios/ or android/
 - [ ] Complexity deviations documented
 
 ---
-*Based on Constitution v2.1.1 - See `/memory/constitution.md`*
+*Based on Untaped Constitution v1.0.0 - See `/memory/constitution.md`*

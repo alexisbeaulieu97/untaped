@@ -1,12 +1,3 @@
-<!-- Sync Impact Report:
-Version change: N/A → 1.0.0 (Initial version from design.md)
-Modified principles: All principles updated from design.md content
-Added sections: Infrastructure-as-Code Standards, Development Workflow
-Removed sections: None
-Templates requiring updates: ✅ plan-template.md (Constitution Check section), ✅ specs/001-mvp-scope-resources/plan.md (Constitution Check section)
-Suggested follow-up: Update .codex/commands/ and agent-specific files to reference Untaped-specific principles
--->
-
 # Untaped Constitution
 
 ## Core Principles
@@ -98,4 +89,4 @@ Amendments to this constitution require:
 
 Complexity must always be justified - prefer simple, clear solutions over clever ones. When in doubt, choose the approach that makes the system more testable and maintainable.
 
-**Version**: 1.0.0 | **Ratified**: September 18, 2025 | **Last Amended**: September 21, 2025
+**Version**: 1.0.0 | **Ratified**: September 18, 2025 | **Last Amended**: September 18, 2025
