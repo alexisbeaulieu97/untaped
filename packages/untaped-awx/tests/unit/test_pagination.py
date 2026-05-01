@@ -23,10 +23,12 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        awx:
-          base_url: https://aap.example.com
-          token: secret
-          api_prefix: /api/v2/
+        profiles:
+          default:
+            awx:
+              base_url: https://aap.example.com
+              token: secret
+              api_prefix: /api/v2/
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

@@ -107,5 +107,67 @@ def _to_yaml_value(value: Any) -> Any:
     return value
 
 
+# ---------------------------- profile helpers ---------------------------- #
+#
+# All helpers below are dumb primitives: they edit / read the
+# `profiles.<name>` section without enforcing policy. Use cases (in
+# `untaped-profile`) are responsible for "default cannot be deleted",
+# "active must point at an existing profile", etc.
+
+
+def list_profile_names(path: Path | None = None) -> list[str]:
+    """Return the names of every profile present in the config file."""
+    profiles = read_config_dict(path).get("profiles") or {}
+    if not isinstance(profiles, dict):
+        return []
+    return list(profiles.keys())
+
+
+def get_active_profile_name(path: Path | None = None) -> str | None:
+    """Return the persisted active profile, or ``None`` if unset / blank."""
+    name = read_config_dict(path).get("active")
+    if not isinstance(name, str) or not name:
+        return None
+    return name
+
+
+def set_active_profile(name: str, path: Path | None = None) -> None:
+    """Persist ``active: <name>`` (no existence validation)."""
+    data = read_config_dict(path)
+    data["active"] = name
+    write_config_dict(data, path)
+
+
+def read_profile(name: str, path: Path | None = None) -> dict[str, Any] | None:
+    """Return the profile's raw dict, or ``None`` if it doesn't exist."""
+    profiles = read_config_dict(path).get("profiles") or {}
+    if not isinstance(profiles, dict):
+        return None
+    profile = profiles.get(name)
+    return profile if isinstance(profile, dict) else None
+
+
+def write_profile(name: str, profile_data: dict[str, Any], path: Path | None = None) -> None:
+    """Replace ``profiles.<name>`` with ``profile_data`` (creates the section)."""
+    data = read_config_dict(path)
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict):
+        profiles = {}
+        data["profiles"] = profiles
+    profiles[name] = profile_data
+    write_config_dict(data, path)
+
+
+def delete_profile(name: str, path: Path | None = None) -> bool:
+    """Remove ``profiles.<name>``. Returns ``True`` if it existed."""
+    data = read_config_dict(path)
+    profiles = data.get("profiles")
+    if not isinstance(profiles, dict) or name not in profiles:
+        return False
+    del profiles[name]
+    write_config_dict(data, path)
+    return True
+
+
 # Sentinel used by :func:`get_at_path` to disambiguate "missing" from "value is None".
 MISSING: Any = _MISSING

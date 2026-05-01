@@ -94,7 +94,10 @@ def test_entries_raise_clean_error_on_missing_name(_isolate_config: Path, tmp_pa
 
 
 def test_register_preserves_other_top_level_settings(_isolate_config: Path, tmp_path: Path) -> None:
-    _isolate_config.write_text("log_level: DEBUG\nawx:\n  base_url: https://x\n")
+    _isolate_config.write_text(
+        "profiles:\n  default:\n    log_level: DEBUG\n    awx:\n      base_url: https://x\n"
+        "active: default\n"
+    )
     repo = WorkspaceRegistryRepository()
     a = tmp_path / "a"
     a.mkdir()
@@ -103,6 +106,7 @@ def test_register_preserves_other_top_level_settings(_isolate_config: Path, tmp_
     import yaml as _yaml
 
     raw = _yaml.safe_load(_isolate_config.read_text())
-    assert raw["log_level"] == "DEBUG"
-    assert raw["awx"]["base_url"] == "https://x"
+    assert raw["profiles"]["default"]["log_level"] == "DEBUG"
+    assert raw["profiles"]["default"]["awx"]["base_url"] == "https://x"
+    assert raw["active"] == "default"
     assert raw["workspace"]["workspaces"][0]["name"] == "prod"

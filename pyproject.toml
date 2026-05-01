@@ -14,6 +14,7 @@ dependencies = [
     "untaped-workspace",
     "untaped-awx",
     "untaped-github",
+    "untaped-profile",
 ]
 
 [project.scripts]
@@ -32,6 +33,7 @@ untaped-config = { workspace = true }
 untaped-workspace = { workspace = true }
 untaped-awx = { workspace = true }
 untaped-github = { workspace = true }
+untaped-profile = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -93,6 +95,7 @@ packages = [
     "untaped",
     "untaped_core",
     "untaped_config",
+    "untaped_profile",
     "untaped_workspace",
     "untaped_awx",
     "untaped_github",
