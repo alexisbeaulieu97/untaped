@@ -57,6 +57,16 @@ class ApplyResource:
         write: bool = False,
     ) -> ApplyOutcome:
         spec = self._catalog.get(resource.kind)
+        # ``read_only`` kinds (Credential, Inventory, Organization, CredentialType)
+        # are not roundtrippable yet — per-kind sub-apps already hide ``apply``,
+        # but the top-level ``untaped awx apply <file>`` reaches this use case
+        # directly via ``apply_file`` and would otherwise issue create/update
+        # calls for resources whose CRUD is deferred. Reject at the boundary.
+        if spec.fidelity == "read_only" or "apply" not in spec.commands:
+            raise BadRequest(
+                f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
+                "edit this resource via the AWX UI or API directly."
+            )
         identity = _build_identity(spec, resource)
         payload = _build_payload(spec, resource, fk=self._fk)
         strategy = self._strategies.get(spec.apply_strategy)
@@ -93,7 +103,22 @@ class ApplyResource:
                 f"undeclared $encrypted$ at {spec.kind}.{path} dropped — "
                 f"declare in spec.secret_paths to silence"
             )
-        changes = _diff(spec, existing, payload, preserved=preserved)
+        # Decide which top-level fields can be safely omitted from a PATCH
+        # (AWX retains the existing value, including nested secrets) and
+        # which would silently clobber a secret if PATCHed. The latter are
+        # rejected at the boundary — the user must either provide the real
+        # secret value or revert their sibling change.
+        preserved_fields, conflict_fields = _partition_top_level_fields(
+            write_payload, existing, preserved
+        )
+        if conflict_fields:
+            raise BadRequest(
+                f"Cannot apply {spec.kind} {resource.metadata.name!r}: "
+                f"{', '.join(sorted(conflict_fields))} contain a $encrypted$ placeholder "
+                f"alongside a sibling change. PATCH would overwrite the existing secret. "
+                f"Provide the actual secret value(s) or revert the sibling change(s)."
+            )
+        changes = _diff(spec, existing, write_payload, preserved_fields=preserved_fields)
 
         if not write:
             action = "preview"
@@ -245,8 +270,16 @@ def _build_payload(spec: ResourceSpec, resource: Resource, *, fk: FkResolver) ->
 def _scope_for(ref: Any, resource: Resource) -> dict[str, str] | None:
     if ref.scope_field is None:
         return None
-    if ref.scope_field == "organization" and resource.metadata.organization:
-        return {"organization": resource.metadata.organization}
+    if ref.scope_field == "organization":
+        # For Schedule (and any future kind whose canonical org lives on the
+        # polymorphic parent), prefer ``parent.organization`` so name-scoped
+        # FK lookups resolve in the parent's org, not the schedule's own
+        # (which is typically ``None``).
+        org = (
+            resource.metadata.parent.organization if resource.metadata.parent else None
+        ) or resource.metadata.organization
+        if org:
+            return {"organization": org}
     return None
 
 
@@ -255,22 +288,24 @@ def _diff(
     existing: dict[str, Any] | None,
     desired: dict[str, Any],
     *,
-    preserved: list[str],
+    preserved_fields: set[str],
 ) -> list[FieldChange]:
-    """Return field-level changes between existing and desired.
+    """Return field-level changes between existing and the (stripped) desired payload.
 
-    ``preserved`` paths are emitted as ``preserved existing secret`` rows.
+    ``desired`` is the post-strip payload (placeholders removed). Top-level
+    fields in ``preserved_fields`` are emitted as ``preserved existing secret``
+    rows and are excluded from the PATCH so AWX retains the value (including
+    any nested secrets).
     """
-    preserved_top: set[str] = {p.split(".", 1)[0] for p in preserved}
     out: list[FieldChange] = []
     if existing is None:
         for field, after in desired.items():
-            note = "preserved existing secret" if field in preserved_top else None
+            note = "preserved existing secret" if field in preserved_fields else None
             out.append(FieldChange(field=field, before=None, after=after, note=note))
         return out
     for field, after in desired.items():
         before = existing.get(field)
-        if field in preserved_top:
+        if field in preserved_fields:
             out.append(
                 FieldChange(
                     field=field,
@@ -282,7 +317,94 @@ def _diff(
             continue
         if not _equal(before, after):
             out.append(FieldChange(field=field, before=before, after=after))
+    # Top-level secret fields entirely stripped from ``desired`` (e.g.
+    # ``webhook_key``) still need a row so the user sees them in the preview.
+    for field in preserved_fields:
+        if field in desired:
+            continue
+        before = existing.get(field)
+        out.append(
+            FieldChange(
+                field=field,
+                before=before,
+                after=before,
+                note="preserved existing secret",
+            )
+        )
     return out
+
+
+def _partition_top_level_fields(
+    write_payload: dict[str, Any],
+    existing: dict[str, Any] | None,
+    preserved: list[str],
+) -> tuple[set[str], list[str]]:
+    """Decide which preserved-secret top-level fields are safe to omit from PATCH.
+
+    For each top-level key that contains at least one preserved secret path,
+    compare the user's stripped subtree against the existing record's subtree
+    with the same paths removed:
+
+    - Equal → ``preserved`` (omit from the PATCH; AWX keeps the value).
+    - Different → ``conflict`` (a sibling change alongside the placeholder;
+      PATCHing would clobber the secret).
+
+    ``existing is None`` (create path) returns empty sets — there's nothing
+    to preserve, and ``_do_create`` enforces the no-placeholders rule
+    separately.
+    """
+    if existing is None:
+        return set(), []
+    by_top: dict[str, list[str]] = {}
+    for path in preserved:
+        top = path.split(".", 1)[0]
+        by_top.setdefault(top, []).append(path)
+    existing_stripped = _strip_paths(existing, preserved)
+    preserved_fields: set[str] = set()
+    conflict_fields: list[str] = []
+    for top in by_top:
+        if write_payload.get(top) == existing_stripped.get(top):
+            preserved_fields.add(top)
+        else:
+            conflict_fields.append(top)
+    return preserved_fields, conflict_fields
+
+
+def _strip_paths(obj: Any, paths: list[str]) -> Any:
+    """Return a deep copy of ``obj`` with the given dotted paths removed.
+
+    Path syntax matches ``ResourceSpec.secret_paths``: ``*`` matches any
+    list element or dict key.
+    """
+    result = copy.deepcopy(obj)
+    for path in paths:
+        _remove_at_path(result, path.split("."))
+    return result
+
+
+def _remove_at_path(obj: Any, parts: list[str]) -> None:
+    if not parts or obj is None:
+        return
+    head = parts[0]
+    rest = parts[1:]
+    if not rest:
+        if isinstance(obj, dict):
+            if head == "*":
+                obj.clear()
+            else:
+                obj.pop(head, None)
+        elif isinstance(obj, list) and head == "*":
+            obj.clear()
+        return
+    if isinstance(obj, dict):
+        if head == "*":
+            for key in list(obj.keys()):
+                _remove_at_path(obj[key], rest)
+        elif head in obj:
+            _remove_at_path(obj[head], rest)
+    elif isinstance(obj, list) and head == "*":
+        for item in obj:
+            _remove_at_path(item, rest)
 
 
 def _equal(a: Any, b: Any) -> bool:
