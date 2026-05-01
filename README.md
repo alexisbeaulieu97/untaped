@@ -1,62 +1,74 @@
 # untaped
 
-`untaped` is a modular Infrastructure-as-Code toolkit for managing Ansible Tower job templates and workflow job templates via declarative YAML, with validation-first processing and templating support.
+A personal DevOps CLI suite. One binary (`untaped`), one sub-command per
+domain, each piped into the next.
 
-## Workspace Overview
+```
+untaped config ...      # inspect and edit ~/.untaped/config.yml
+untaped workspace ...   # manage local git workspaces
+untaped awx ...         # Ansible Automation Platform / AWX
+untaped github ...      # GitHub search & inspection
+```
 
-- `packages/untaped-core`: shared utilities (YAML loading, template rendering, validation, logging)
-- `packages/untaped-ansible`: Tower-specific models, API wrappers, and services
-- `packages/untaped-cli`: Typer-based CLI (`untaped`) for create/update/delete workflows
-- `tests/`: contract, integration, unit, and performance test suites
+## Install
 
-## Getting Started
+The workspace root **is** the `untaped` package — it owns the `untaped`
+binary and aggregates every domain. Two ways to use it:
+
+### Dev mode (fast, recommended while developing)
 
 ```bash
-# Install dependencies
-uv sync
-
-# Run contract tests
-uv run pytest tests/contract -q
-
-# Run CLI help
+git clone https://github.com/<you>/untaped
+cd untaped
+uv sync --all-packages
 uv run untaped --help
 ```
 
-## CLI Usage Examples
+`uv run untaped` always runs against the current source tree.
+
+### Global editable install
+
+To get an `untaped` binary on your `PATH` that picks up local edits across
+every workspace member:
 
 ```bash
-# Validate and create a job template
-uv run untaped create job-template --config-file path/to/job.yml --dry-run
-uv run untaped create job-template --config-file path/to/job.yml
-
-# Update a job template
-uv run untaped update job-template my-job --config-file updated.yml
-
-# Delete a workflow job template
-uv run untaped delete workflow-job-template deploy-workflow --force
+uv tool install --editable .
 ```
 
-The CLI also supports verbose output (`--verbose`), template variables (`--vars-file`, `--var KEY=VALUE`), dry-run mode, and version suffixing (`--version`).
+uv resolves each `workspace = true` source to the local member and installs
+all of them editably in the tool environment.
 
-## Configuration Flow
+## Configure
 
-1. Load YAML configuration (with optional variable files and inline variables)
-2. Render Jinja2 templates
-3. Validate against Pydantic models
-4. Resolve Tower resource references
-5. Execute Tower API operations (create, update, delete)
+Settings live in `~/.untaped/config.yml` (override the path with
+`UNTAPED_CONFIG`). Individual fields can be overridden per-shell with
+`UNTAPED_<SECTION>__<FIELD>` env vars (e.g. `UNTAPED_AWX__TOKEN=…`).
 
-## Documentation
+```yaml
+log_level: INFO
 
-- **Quick Start**: See above CLI usage examples and configuration flow
-- **Developer Guide**: See `DEVELOPMENT.md` for coding standards, testing, and workflows
-- **AI Agent Guidance**: See `AGENTS.md` for AI-specific architectural patterns and decision trees
-- **Project Constitution**: See `.specify/memory/constitution.md` for governance principles
-- **Feature Specifications**: Detailed specs and design decisions in `specs/001-mvp-scope-resources/`
+awx:
+  base_url: https://aap.example.com
+  token: <token>
+
+github:
+  token: ghp_xxx
+
+workspace:
+  workspaces:
+    - name: prod
+      path: ~/work/prod
+      repos:
+        - https://github.com/org/svc-a.git
+        - https://github.com/org/svc-b.git
+```
+
+## Pipe-friendly by design
+
+Every command supports `--format json|yaml|table|raw` and `--columns name`.
+`--format raw` is what you pipe into `fzf`, `awk`, or another `untaped`
+command. Logs go to stderr; only data hits stdout.
 
 ## Contributing
 
-1. **Follow TDD**: Write tests first, then implement to make them pass
-2. **Run Quality Checks**: `uv run pytest && uv run mypy . && uv run ruff check .`
-3. **Respect Package Boundaries**: Keep CLI thin, business logic in libraries
-4. **Use Constitutional Principles**: Validation-first processing, configuration-driven architecture
+See [AGENTS.md](./AGENTS.md) for the architecture, rules, and recipes.
