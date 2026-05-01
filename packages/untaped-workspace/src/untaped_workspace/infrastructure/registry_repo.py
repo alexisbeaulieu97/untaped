@@ -85,7 +85,15 @@ def _existing_entries(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _to_workspace(entry: dict[str, Any]) -> Workspace:
-    return Workspace(name=str(entry["name"]), path=_canonical(entry["path"]))
+    name = entry.get("name")
+    path = entry.get("path")
+    if not isinstance(name, str) or not name:
+        raise RegistryError(
+            f"invalid workspace registry entry: missing or empty 'name' (got {entry!r})"
+        )
+    if not isinstance(path, str) or not path:
+        raise RegistryError(f"invalid workspace registry entry {name!r}: missing or empty 'path'")
+    return Workspace(name=name, path=_canonical(path))
 
 
 def _canonical(path: str | Path) -> Path:

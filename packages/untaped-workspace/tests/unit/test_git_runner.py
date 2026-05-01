@@ -21,10 +21,14 @@ def upstream(tmp_path: Path) -> Path:
     subprocess.run(["git", "clone", str(bare), str(seed)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
     subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "tag.gpgsign", "false"], check=True)
     (seed / "README.md").write_text("hi")
     subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(seed), "commit", "-m", "init"], check=True, capture_output=True
+        ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", "init"],
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(seed), "push", "origin", "main"], check=True, capture_output=True
@@ -64,12 +68,18 @@ def test_clone_with_reference_specific_branch(tmp_path: Path, upstream: Path) ->
     subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
     subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "tag.gpgsign", "false"], check=True)
     subprocess.run(
         ["git", "-C", str(seed), "checkout", "-b", "develop"], check=True, capture_output=True
     )
     (seed / "f.txt").write_text("x")
     subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(seed), "commit", "-m", "dev"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", "dev"],
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["git", "-C", str(seed), "push", "origin", "develop"], check=True, capture_output=True
     )

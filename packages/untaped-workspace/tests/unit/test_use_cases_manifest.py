@@ -152,6 +152,9 @@ def test_remove_repo_prune_refuses_dirty(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError, match="uncommitted changes"):
         use_case(workspace, ident="svc-a", prune=True)
     assert clone_dir.exists()  # not pruned
+    # manifest must not have been modified — both clone and entry stay
+    manifest = ManifestRepository().read(ws_path)
+    assert [r.name for r in manifest.repos] == ["svc-a"]
 
 
 def test_import_creates_workspace_from_external_manifest(tmp_path: Path) -> None:

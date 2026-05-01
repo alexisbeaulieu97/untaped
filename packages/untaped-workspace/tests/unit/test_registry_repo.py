@@ -77,6 +77,22 @@ def test_find_by_path_canonical_match(_isolate_config: Path, tmp_path: Path) -> 
     assert found.name == "prod"
 
 
+def test_entries_raise_clean_error_on_malformed_entry(_isolate_config: Path) -> None:
+    _isolate_config.write_text("workspace:\n  workspaces:\n    - name: prod\n")
+    repo = WorkspaceRegistryRepository()
+    with pytest.raises(RegistryError, match=r"missing or empty 'path'"):
+        repo.entries()
+
+
+def test_entries_raise_clean_error_on_missing_name(_isolate_config: Path, tmp_path: Path) -> None:
+    _isolate_config.write_text(
+        f"workspace:\n  workspaces:\n    - path: {tmp_path}\n",
+    )
+    repo = WorkspaceRegistryRepository()
+    with pytest.raises(RegistryError, match=r"missing or empty 'name'"):
+        repo.entries()
+
+
 def test_register_preserves_other_top_level_settings(_isolate_config: Path, tmp_path: Path) -> None:
     _isolate_config.write_text("log_level: DEBUG\nawx:\n  base_url: https://x\n")
     repo = WorkspaceRegistryRepository()

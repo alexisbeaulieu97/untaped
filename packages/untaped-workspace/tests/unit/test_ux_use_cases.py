@@ -84,3 +84,34 @@ def test_edit_missing_editor_raises(tmp_path: Path) -> None:
     registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
     with pytest.raises(WorkspaceError, match="editor not found"):
         EditWorkspace(registry, runner=_runner, env={})("prod", editor="bogus-editor")
+
+
+def test_edit_splits_editor_arguments(tmp_path: Path) -> None:
+    captured: list[list[str]] = []
+
+    def _runner(cmd):  # type: ignore[no-untyped-def]
+        captured.append(list(cmd))
+        return 0
+
+    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+
+    # explicit editor with flags
+    EditWorkspace(registry, runner=_runner, env={})("prod", editor="code --reuse-window")
+    assert captured[-1] == ["code", "--reuse-window", str(tmp_path / "prod")]
+
+    # quoted segments survive
+    EditWorkspace(registry, runner=_runner, env={"VISUAL": 'sh -c "exec vim $0"'})("prod")
+    assert captured[-1] == ["sh", "-c", "exec vim $0", str(tmp_path / "prod")]
+
+    # error names just the executable, not the full string
+    def _missing(_cmd):  # type: ignore[no-untyped-def]
+        raise FileNotFoundError("no such file")
+
+    with pytest.raises(WorkspaceError, match=r"editor not found: code$"):
+        EditWorkspace(registry, runner=_missing, env={})("prod", editor="code --reuse-window")
+
+
+def test_edit_rejects_empty_editor(tmp_path: Path) -> None:
+    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    with pytest.raises(WorkspaceError, match="editor command is empty"):
+        EditWorkspace(registry, runner=lambda _c: 0, env={})("prod", editor="   ")

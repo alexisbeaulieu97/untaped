@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -49,6 +50,12 @@ class EditWorkspace:
         path = self._registry.get(name).path
         chosen = editor or self._env.get("VISUAL") or self._env.get("EDITOR") or "vi"
         try:
-            return self._runner([chosen, str(path)])
+            argv = shlex.split(chosen)
+        except ValueError as exc:
+            raise WorkspaceError(f"could not parse editor command {chosen!r}: {exc}") from exc
+        if not argv:
+            raise WorkspaceError("editor command is empty")
+        try:
+            return self._runner([*argv, str(path)])
         except FileNotFoundError as exc:
-            raise WorkspaceError(f"editor not found: {chosen}") from exc
+            raise WorkspaceError(f"editor not found: {argv[0]}") from exc
