@@ -19,7 +19,7 @@ from untaped_core.http import HttpClient, resolve_verify
 from untaped_core.logging import configure_logging, get_logger
 from untaped_core.output import OutputFormat, format_output
 from untaped_core.settings import HttpSettings, Settings, get_settings, resolve_config_path
-from untaped_core.stdin import read_stdin
+from untaped_core.stdin import read_identifiers, read_stdin
 
 __all__ = [
     "ColumnsOption",
@@ -36,6 +36,7 @@ __all__ = [
     "format_output",
     "get_logger",
     "get_settings",
+    "read_identifiers",
     "read_stdin",
     "report_errors",
     "resolve_config_path",

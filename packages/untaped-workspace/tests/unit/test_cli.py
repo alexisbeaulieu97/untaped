@@ -104,6 +104,48 @@ def test_add_unknown_workspace_errors(tmp_path: Path) -> None:
     assert result.exit_code == 1
 
 
+def test_remove_accepts_multiple_repos(tmp_path: Path) -> None:
+    """Repeated positional repo identifiers — drop several manifests entries
+    in one call."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-b.git", "--name", "lab"])
+
+    rm = runner.invoke(app, ["remove", "svc-a", "svc-b", "--name", "lab"])
+    assert rm.exit_code == 0, rm.output
+
+
+def test_remove_reads_repos_from_stdin(tmp_path: Path) -> None:
+    """`workspace list ... | remove --stdin` is the documented pipeline shape."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-b.git", "--name", "lab"])
+
+    rm = runner.invoke(app, ["remove", "--stdin", "--name", "lab"], input="svc-a\nsvc-b\n")
+    assert rm.exit_code == 0, rm.output
+
+
+def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
+    """A missing repo in a multi-repo `remove` batch must not suppress
+    the removals that resolved successfully — same pipeline-resilience
+    rule as ``awx <kind> get --stdin`` and ``launch --stdin``."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+
+    rm = runner.invoke(app, ["remove", "ghost", "svc-a", "--name", "lab"])
+    assert rm.exit_code != 0
+    # svc-a was removed despite ghost failing — confirmed by being able to
+    # re-add it without "duplicate" errors.
+    re_add = runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    assert re_add.exit_code == 0, re_add.output
+
+
 # ── path / edit / shell-init ────────────────────────────────────────────────
 
 
