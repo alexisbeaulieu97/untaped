@@ -11,10 +11,10 @@ from typing import Any
 
 from untaped_core.config_file import (
     get_at_path,
+    mutate_config,
     read_config_dict,
     set_at_path,
     unset_at_path,
-    write_config_dict,
 )
 from untaped_core.settings import get_settings
 
@@ -45,36 +45,44 @@ class WorkspaceRegistryRepository:
 
     def register(self, *, name: str, path: Path) -> Workspace:
         canonical = _canonical(path)
-        data = read_config_dict()
-        existing = _existing_entries(data)
-        for entry in existing:
-            if entry.get("name") == name:
-                raise RegistryError(
-                    f"workspace name already registered: {name!r} → {entry.get('path')}"
-                )
-            if _canonical(entry.get("path", "")) == canonical:
-                raise RegistryError(
-                    f"workspace path already registered: {entry.get('path')} "
-                    f"(as {entry.get('name')!r})"
-                )
-        set_at_path(data, _REGISTRY_PATH, [*existing, {"name": name, "path": str(path)}])
-        write_config_dict(data)
+
+        def _apply(data: dict[str, Any]) -> None:
+            existing = _existing_entries(data)
+            for entry in existing:
+                if entry.get("name") == name:
+                    raise RegistryError(
+                        f"workspace name already registered: {name!r} → {entry.get('path')}"
+                    )
+                if _canonical(entry.get("path", "")) == canonical:
+                    raise RegistryError(
+                        f"workspace path already registered: {entry.get('path')} "
+                        f"(as {entry.get('name')!r})"
+                    )
+            set_at_path(data, _REGISTRY_PATH, [*existing, {"name": name, "path": str(path)}])
+
+        mutate_config(_apply)
         get_settings.cache_clear()
         return Workspace(name=name, path=canonical)
 
     def unregister(self, name: str) -> bool:
-        data = read_config_dict()
-        existing = _existing_entries(data)
-        new_entries = [e for e in existing if e.get("name") != name]
-        if len(new_entries) == len(existing):
-            return False
-        if new_entries:
-            set_at_path(data, _REGISTRY_PATH, new_entries)
-        else:
-            unset_at_path(data, _REGISTRY_PATH)
-        write_config_dict(data)
-        get_settings.cache_clear()
-        return True
+        removed = False
+
+        def _apply(data: dict[str, Any]) -> None:
+            nonlocal removed
+            existing = _existing_entries(data)
+            new_entries = [e for e in existing if e.get("name") != name]
+            if len(new_entries) == len(existing):
+                return
+            if new_entries:
+                set_at_path(data, _REGISTRY_PATH, new_entries)
+            else:
+                unset_at_path(data, _REGISTRY_PATH)
+            removed = True
+
+        mutate_config(_apply)
+        if removed:
+            get_settings.cache_clear()
+        return removed
 
 
 def _existing_entries(data: dict[str, Any]) -> list[dict[str, Any]]:

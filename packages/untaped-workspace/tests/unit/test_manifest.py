@@ -89,3 +89,53 @@ def test_derive_repo_name_edge_cases() -> None:
     assert derive_repo_name("https://github.com/org/svc.git/") == "svc"
     assert derive_repo_name("git@github.com:org/svc.git") == "svc"
     assert derive_repo_name("file:///tmp/foo.git") == "foo"
+
+
+# ---- duplicate-repo invariants ---------------------------------------------
+
+
+def test_manifest_rejects_duplicate_repo_names() -> None:
+    """Two explicit names colliding break ``sync`` (both repos map to the
+    same working-tree path) and make ``remove`` ambiguous."""
+    with pytest.raises(ValidationError, match="duplicate"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://x/a.git", name="alpha"),
+                Repo(url="https://x/b.git", name="alpha"),
+            ]
+        )
+
+
+def test_manifest_rejects_duplicate_derived_repo_names() -> None:
+    """Two URLs that derive to the same name still collide on disk, so the
+    manifest must reject them even when ``name`` is omitted."""
+    with pytest.raises(ValidationError, match="duplicate"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://github.com/org/svc.git"),
+                Repo(url="https://gitlab.com/team/svc.git"),
+            ]
+        )
+
+
+def test_manifest_rejects_duplicate_repo_urls() -> None:
+    """Same URL twice (even with different names) is meaningless and
+    indicates a hand-edit or import bug."""
+    with pytest.raises(ValidationError, match="duplicate"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://x/a.git", name="alpha"),
+                Repo(url="https://x/a.git", name="beta"),
+            ]
+        )
+
+
+def test_manifest_allows_distinct_repos() -> None:
+    """Sanity: distinct URLs and distinct names still load."""
+    m = WorkspaceManifest(
+        repos=[
+            Repo(url="https://x/a.git", name="alpha"),
+            Repo(url="https://x/b.git", name="beta"),
+        ]
+    )
+    assert {r.name for r in m.repos} == {"alpha", "beta"}

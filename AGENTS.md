@@ -153,7 +153,8 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped_core.config_schema import walk_settings`           |
 | Read/write `~/.untaped/config.yml`         | `from untaped_core.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
-| Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile` |
+| Atomic read-modify-write the config file   | `from untaped_core.config_file import mutate_config` (file-locked; use this for any new write path that touches the YAML) |
+| Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
 | Merge `default` ⤥ active to an effective dict | `from untaped_core.profile_resolver import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr` (auto-redacted by `untaped config list`)    |
 
@@ -300,7 +301,7 @@ deferred. Each item names the trigger that would justify revisiting:
 | Item | Trigger to revisit |
 |---|---|
 | Split `ResourceSpec` into domain (identity/fidelity/FKs/secrets) + infrastructure (api_path/transport) | A second consumer of resource contracts (offline validator, alternate backend, MCP server). |
-| Move `RemoveRepo`/`EditWorkspace` `shutil`/`subprocess` calls behind infrastructure adapters | A second policy needs to plug in (dry-run, audit log, trash-before-delete). |
+| Move `RemoveRepo`/`EditWorkspace`/`Foreach`/`SyncWorkspace` `shutil`/`subprocess`/`shell_runner` calls behind infrastructure adapters | A second policy needs to plug in (dry-run, audit log, trash-before-delete, command sandboxing, non-shell runner). |
 | Typed wrappers at the AWX use-case boundary (`ServerRecord`, `WritePayload`, `ActionPayload`) instead of `dict[str, Any]` | A second client implementation, or an MCP-served read path. |
 | `workspace foreach` structured output (`--format`/`--columns`) | A scripted consumer hits the prefix-mixed stdout shape. |
 | Bulk FK prefetch in save/apply | Bulk operations on 100+ resources start showing FK-resolution latency. |

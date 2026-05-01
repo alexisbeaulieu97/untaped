@@ -56,6 +56,22 @@ class WorkspaceManifest(BaseModel):
     defaults: ManifestDefaults = Field(default_factory=ManifestDefaults)
     repos: list[Repo] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _reject_duplicate_repos(self) -> WorkspaceManifest:
+        # Sync and remove both key off the (name, url) pair: two repos
+        # sharing either field would collide on disk or make `remove`
+        # ambiguous. Refuse here so imports/hand-edits fail loud, not later.
+        seen_names: set[str] = set()
+        seen_urls: set[str] = set()
+        for repo in self.repos:
+            if repo.name in seen_names:
+                raise ValueError(f"duplicate repo name: {repo.name!r}")
+            if repo.url in seen_urls:
+                raise ValueError(f"duplicate repo url: {repo.url!r}")
+            seen_names.add(repo.name)
+            seen_urls.add(repo.url)
+        return self
+
     def repo_by_name(self, name: str) -> Repo | None:
         return next((r for r in self.repos if r.name == name), None)
 
