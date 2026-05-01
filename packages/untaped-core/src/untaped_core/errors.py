@@ -17,7 +17,12 @@ class ConfigError(UntapedError):
 
 
 class HttpError(UntapedError):
-    """Raised when an HTTP call fails (network, timeout, or non-2xx status)."""
+    """Raised when an HTTP call fails (network, timeout, or non-2xx status).
+
+    ``body`` carries the response text when the failure was a non-2xx
+    status; it lets domain layers map status + payload into typed errors
+    without re-running the request.
+    """
 
     def __init__(
         self,
@@ -25,10 +30,12 @@ class HttpError(UntapedError):
         *,
         status_code: int | None = None,
         url: str | None = None,
+        body: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.url = url
+        self.body = body
 
 
 def first_validation_error(exc: ValidationError) -> str:

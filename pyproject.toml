@@ -69,6 +69,7 @@ ban-relative-imports = "all"
 "**/tests/**" = ["S101"]
 # Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...))
 "**/cli/commands.py" = ["B008"]
+"**/cli/resource_commands.py" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"

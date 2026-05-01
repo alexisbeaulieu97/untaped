@@ -85,6 +85,7 @@ class HttpClient:
                 f"HTTP {response.status_code} for {request.url}",
                 status_code=response.status_code,
                 url=str(request.url),
+                body=response.text,
             )
         return response
 

@@ -95,3 +95,47 @@ def test_get_settings_is_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_settings_class_can_be_instantiated_directly() -> None:
     s = Settings()
     assert isinstance(s, Settings)
+
+
+def test_awx_defaults_aap_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AAP is the default deployment target; controller v2 prefix is canonical."""
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    s = get_settings()
+    assert s.awx.api_prefix == "/api/controller/v2/"
+    assert s.awx.default_organization is None
+    assert s.awx.page_size == 200
+
+
+def test_awx_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        awx:
+          base_url: https://awx.example.com
+          api_prefix: /api/v2/
+          default_organization: Default
+          page_size: 100
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.awx.api_prefix == "/api/v2/"
+    assert s.awx.default_organization == "Default"
+    assert s.awx.page_size == 100
+
+
+def test_awx_api_prefix_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_AWX__API_PREFIX", "/api/v2/")
+    s = get_settings()
+    assert s.awx.api_prefix == "/api/v2/"
+
+
+def test_awx_api_prefix_must_start_and_end_with_slash() -> None:
+    from pydantic import ValidationError
+    from untaped_core.settings import AwxSettings
+
+    with pytest.raises(ValidationError):
+        AwxSettings(api_prefix="api/v2/")
+    with pytest.raises(ValidationError):
+        AwxSettings(api_prefix="/api/v2")
