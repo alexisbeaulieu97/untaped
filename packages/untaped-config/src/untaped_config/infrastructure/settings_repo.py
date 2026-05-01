@@ -10,10 +10,10 @@ from pydantic import ValidationError
 from untaped_core import ConfigError, Settings, first_validation_error, get_settings
 from untaped_core.config_file import (
     list_profile_names,
+    mutate_config,
     read_config_dict,
     set_at_path,
     unset_at_path,
-    write_config_dict,
 )
 from untaped_core.config_schema import FieldDescriptor, find_descriptor, walk_settings
 from untaped_core.profile_resolver import (
@@ -80,37 +80,47 @@ class SettingsFileRepository:
         """Coerce ``raw_value``, validate against the schema, then persist."""
         descriptor = self.descriptor(key)
         coerced = _coerce_scalar(raw_value)
-        data = self.yaml_dict()
-        target = self._resolve_target_profile(data, profile)
-        profiles = _ensure_profiles_dict(data)
-        profile_data = profiles.setdefault(target, {})
-        if not isinstance(profile_data, dict):
-            profile_data = {}
-            profiles[target] = profile_data
-        set_at_path(profile_data, descriptor.path, coerced)
-        merged = _merge_for_validation(data, active=target)
-        try:
-            self._settings_cls.model_validate(merged)
-        except ValidationError as exc:
-            raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
-        write_config_dict(data)
+
+        def _apply(data: dict[str, Any]) -> None:
+            target = self._resolve_target_profile(data, profile)
+            profiles = _ensure_profiles_dict(data)
+            profile_data = profiles.setdefault(target, {})
+            if not isinstance(profile_data, dict):
+                profile_data = {}
+                profiles[target] = profile_data
+            set_at_path(profile_data, descriptor.path, coerced)
+            merged = _merge_for_validation(data, active=target)
+            try:
+                self._settings_cls.model_validate(merged)
+            except ValidationError as exc:
+                raise ConfigError(
+                    f"invalid value for {key!r}: {first_validation_error(exc)}"
+                ) from exc
+
+        mutate_config(_apply)
         get_settings.cache_clear()
 
     def unset_value(self, key: str, *, profile: str | None = None) -> bool:
         descriptor = self.descriptor(key)
-        data = self.yaml_dict()
-        profiles = data.get("profiles")
-        if not isinstance(profiles, dict):
-            return False
-        target = profile or _current_active_profile_name(data)
-        profile_data = profiles.get(target)
-        if not isinstance(profile_data, dict):
-            return False
-        if not unset_at_path(profile_data, descriptor.path):
-            return False
-        write_config_dict(data)
-        get_settings.cache_clear()
-        return True
+        removed = False
+
+        def _apply(data: dict[str, Any]) -> None:
+            nonlocal removed
+            profiles = data.get("profiles")
+            if not isinstance(profiles, dict):
+                return
+            target = profile or _current_active_profile_name(data)
+            profile_data = profiles.get(target)
+            if not isinstance(profile_data, dict):
+                return
+            if not unset_at_path(profile_data, descriptor.path):
+                return
+            removed = True
+
+        mutate_config(_apply)
+        if removed:
+            get_settings.cache_clear()
+        return removed
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
         """Decide which profile a ``set`` writes to, validating existence

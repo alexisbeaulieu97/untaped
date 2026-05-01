@@ -9,16 +9,21 @@ need comment preservation later, swap to ``ruamel.yaml``.
 
 from __future__ import annotations
 
+import copy
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import yaml
+from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
+from untaped_core.errors import ConfigError
 from untaped_core.settings import resolve_config_path
 
 _MISSING = object()
+_DEFAULT_LOCK_TIMEOUT = 5.0
 
 
 def read_config_dict(path: Path | None = None) -> dict[str, Any]:
@@ -47,6 +52,47 @@ def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
         yaml.safe_dump(data, f, sort_keys=True, default_flow_style=False)
     os.chmod(tmp, 0o600)
     os.replace(tmp, target)
+
+
+def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None) -> None:
+    """Read, mutate, and write the config file under an advisory lock.
+
+    Two concurrent CLI invocations both read-modify-writing the YAML can
+    silently drop one of the writes. ``mutate_config`` serialises the
+    load-mutate-store sequence behind a per-file lock so the second caller
+    sees the first caller's commit, never an older snapshot.
+
+    The callback receives a mutable dict; mutate it in place. The atomic
+    write only runs after the callback returns successfully — exceptions
+    leave the on-disk file untouched. The dict is also snapshot before
+    the callback runs and the write is skipped when nothing changed, so
+    no-ops (deleting a missing profile, unsetting a missing key) don't
+    spuriously create or reformat the YAML file. Cache invalidation is
+    the caller's job (mutating helpers like :func:`write_profile` clear
+    it explicitly).
+
+    Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
+    (seconds, float). Default is 5 seconds.
+    """
+    target = path or resolve_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    timeout = float(os.environ.get("UNTAPED_CONFIG_LOCK_TIMEOUT", _DEFAULT_LOCK_TIMEOUT))
+    lock = FileLock(str(target) + ".lock", timeout=timeout)
+    try:
+        lock.acquire()
+    except Timeout as exc:
+        raise ConfigError(
+            f"could not acquire lock on {target}; another untaped process is "
+            f"writing to it (waited {timeout}s)."
+        ) from exc
+    try:
+        data = read_config_dict(target)
+        before = copy.deepcopy(data)
+        fn(data)
+        if data != before:
+            write_config_dict(data, target)
+    finally:
+        lock.release()
 
 
 def parse_key(key: str) -> tuple[str, ...]:
@@ -131,9 +177,11 @@ def get_active_profile_name(path: Path | None = None) -> str | None:
 
 def set_active_profile(name: str, path: Path | None = None) -> None:
     """Persist ``active: <name>`` (no existence validation)."""
-    data = read_config_dict(path)
-    data["active"] = name
-    write_config_dict(data, path)
+
+    def _apply(data: dict[str, Any]) -> None:
+        data["active"] = name
+
+    mutate_config(_apply, path)
 
 
 def read_profile(name: str, path: Path | None = None) -> dict[str, Any] | None:
@@ -147,24 +195,52 @@ def read_profile(name: str, path: Path | None = None) -> dict[str, Any] | None:
 
 def write_profile(name: str, profile_data: dict[str, Any], path: Path | None = None) -> None:
     """Replace ``profiles.<name>`` with ``profile_data`` (creates the section)."""
-    data = read_config_dict(path)
-    profiles = data.get("profiles")
-    if not isinstance(profiles, dict):
-        profiles = {}
-        data["profiles"] = profiles
-    profiles[name] = profile_data
-    write_config_dict(data, path)
+
+    def _apply(data: dict[str, Any]) -> None:
+        profiles = data.get("profiles")
+        if not isinstance(profiles, dict):
+            profiles = {}
+            data["profiles"] = profiles
+        profiles[name] = profile_data
+
+    mutate_config(_apply, path)
 
 
 def delete_profile(name: str, path: Path | None = None) -> bool:
     """Remove ``profiles.<name>``. Returns ``True`` if it existed."""
-    data = read_config_dict(path)
-    profiles = data.get("profiles")
-    if not isinstance(profiles, dict) or name not in profiles:
-        return False
-    del profiles[name]
-    write_config_dict(data, path)
-    return True
+    removed = False
+
+    def _apply(data: dict[str, Any]) -> None:
+        nonlocal removed
+        profiles = data.get("profiles")
+        if not isinstance(profiles, dict) or name not in profiles:
+            return
+        del profiles[name]
+        removed = True
+
+    mutate_config(_apply, path)
+    return removed
+
+
+def rename_profile(old: str, new: str, path: Path | None = None) -> None:
+    """Rename ``profiles.<old>`` to ``profiles.<new>`` in one transaction.
+
+    Also updates ``active:`` if it pointed at ``old``. Raises ``KeyError``
+    if ``old`` is missing or ``ValueError`` if ``new`` already exists, both
+    *before* any mutation is written.
+    """
+
+    def _apply(data: dict[str, Any]) -> None:
+        profiles = data.get("profiles")
+        if not isinstance(profiles, dict) or old not in profiles:
+            raise KeyError(f"profile {old!r} does not exist")
+        if new in profiles:
+            raise ValueError(f"profile {new!r} already exists")
+        profiles[new] = profiles.pop(old)
+        if data.get("active") == old:
+            data["active"] = new
+
+    mutate_config(_apply, path)
 
 
 # Sentinel used by :func:`get_at_path` to disambiguate "missing" from "value is None".

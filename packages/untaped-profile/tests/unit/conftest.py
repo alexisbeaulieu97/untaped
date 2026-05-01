@@ -61,6 +61,15 @@ class FakeProfileRepository:
     def delete(self, name: str) -> bool:
         return self._profiles.pop(name, None) is not None
 
+    def rename(self, old: str, new: str) -> None:
+        if old not in self._profiles:
+            raise KeyError(old)
+        if new in self._profiles:
+            raise ValueError(new)
+        self._profiles[new] = self._profiles.pop(old)
+        if self._persisted_active == old:
+            self._persisted_active = new
+
     def set_active(self, name: str) -> None:
         self._persisted_active = name
 
