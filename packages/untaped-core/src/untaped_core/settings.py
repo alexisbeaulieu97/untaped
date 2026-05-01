@@ -11,7 +11,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -37,8 +37,24 @@ class HttpSettings(BaseModel):
 
 
 class AwxSettings(BaseModel):
+    """AWX / Ansible Automation Platform settings.
+
+    The default ``api_prefix`` targets AAP's controller endpoint; users
+    running upstream AWX should set it to ``/api/v2/``.
+    """
+
     base_url: str | None = None
     token: SecretStr | None = None
+    api_prefix: str = "/api/controller/v2/"
+    default_organization: str | None = None
+    page_size: int = 200
+
+    @field_validator("api_prefix")
+    @classmethod
+    def _api_prefix_shape(cls, v: str) -> str:
+        if not v.startswith("/") or not v.endswith("/"):
+            raise ValueError("api_prefix must start and end with '/'")
+        return v
 
 
 class GithubSettings(BaseModel):
