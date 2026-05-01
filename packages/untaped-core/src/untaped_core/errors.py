@@ -1,17 +1,42 @@
-"""Custom exception hierarchy for untaped-core utilities."""
+"""Base exception hierarchy for untaped."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pydantic import ValidationError
 
 
-class UntapedCoreError(Exception):
-    """Base exception for untaped-core."""
+class UntapedError(Exception):
+    """Root of the untaped exception hierarchy."""
 
 
-class YamlLoadError(UntapedCoreError):
-    """Raised when YAML content cannot be read or parsed."""
+class ConfigError(UntapedError):
+    """Raised when configuration is missing, malformed, or invalid."""
 
 
-class TemplateRenderingError(UntapedCoreError):
-    """Raised when Jinja2 template rendering fails."""
+class HttpError(UntapedError):
+    """Raised when an HTTP call fails (network, timeout, or non-2xx status)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        url: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.url = url
 
 
-class ConfigurationValidationError(UntapedCoreError):
-    """Raised when a configuration file is structurally invalid."""
+def first_validation_error(exc: ValidationError) -> str:
+    """Format the first issue from a Pydantic ``ValidationError`` as ``loc: msg``."""
+    errs = exc.errors()
+    if not errs:
+        return str(exc)
+    err = errs[0]
+    loc = ".".join(str(part) for part in err.get("loc", ()))
+    msg = err.get("msg", "invalid value")
+    return f"{loc}: {msg}" if loc else msg
