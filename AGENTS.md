@@ -202,6 +202,71 @@ doesn't match the manifest's target. This stops a stale `defaults.branch`
 from kidnapping a user mid-`feature/x`. See
 `application.SyncWorkspace._sync_repo` for the state machine.
 
+### `untaped-awx` — declarative resource framework
+
+The AWX bounded context follows the same DDD layout but builds a small
+**resource framework** because the surface (5+ kinds × list/get/save/apply
++ launch) is too uniform to hand-write per-kind without copy-paste.
+
+- **`ResourceSpec`** (in `domain/spec.py`) declares each kind's
+  contract: `kind`, `cli_name`, `api_path`, `identity_keys`,
+  `canonical_fields`, `read_only_fields`, `fk_refs`, `secret_paths`,
+  `actions`, `apply_strategy`, `commands`, `fidelity`, `list_columns`,
+  `list_filters`. Per-kind specs live in
+  `infrastructure/specs/{job_template,workflow,project,credential,
+  schedule,_support}.py` and are aggregated into `ALL_SPECS`.
+- **kubectl-style envelope** for saved files (`domain/envelope.py`):
+  `{kind, apiVersion, metadata: {name, organization, parent?}, spec}`.
+  FK references are by name (scoped to `metadata.organization`); the
+  polymorphic Schedule parent is a typed `IdentityRef`.
+- **Apply is preview-by-default** (`application/apply_resource.py`).
+  Writes require `--yes`. The diff is field-level; declared
+  `secret_paths` (e.g. `inputs.*`, `webhook_key`) carrying
+  `$encrypted$` are stripped from PATCH and shown as
+  `(preserved existing secret)` rows. `$encrypted$` at *undeclared*
+  paths fires a stderr warning and is dropped (paranoid net).
+- **`ApplyStrategy`** is a Protocol in `application/ports.py`. The
+  default strategy uses plain CRUD; `ScheduleApplyStrategy` POSTs
+  against `<parent_path>/<parent_id>/schedules/` for create and
+  PATCHes the global `/schedules/<id>/` for update. Each spec names
+  its strategy; `infrastructure/strategy_resolver.py` injects the
+  concrete instance.
+- **`Catalog`** is also a Protocol; `infrastructure/catalog.py`
+  provides the static `AwxResourceCatalog` over `ALL_SPECS`. Use
+  cases never import infrastructure — CLI wires concrete adapters at
+  the composition root (`cli/_context.py`).
+- **AAP/AWX compatibility** via `awx.api_prefix` (default
+  `/api/controller/v2/` for AAP; users on upstream AWX set
+  `/api/v2/`). Every URL flows through `AwxClient._url(path)` so the
+  prefix is honoured uniformly.
+- **Restore fidelity tiers**: `full` (JT, Project, Schedule), `partial`
+  (WorkflowJobTemplate header — node graph deferred to v0.5),
+  `read_only` (Credential — `$encrypted$` roundtrip deferred,
+  Organization, Inventory, CredentialType — CRUD deferred). Saves
+  below `full` echo the tier to stderr and embed an inline YAML
+  comment.
+- **Apply ordering** for multi-doc files / directories: hardcoded
+  dependency order in `application/apply_file.py` —
+  `Organization → CredentialType → Credential → Project → Inventory →
+  JobTemplate → WorkflowJobTemplate → Schedule`.
+- **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
+  for end-to-end CLI flows.
+
+#### Deferred review items (post-`REVIEW.md`)
+
+These were called out in the architectural review and intentionally
+deferred. Each item names the trigger that would justify revisiting:
+
+| Item | Trigger to revisit |
+|---|---|
+| Split `ResourceSpec` into domain (identity/fidelity/FKs/secrets) + infrastructure (api_path/transport) | A second consumer of resource contracts (offline validator, alternate backend, MCP server). |
+| Move `RemoveRepo`/`EditWorkspace` `shutil`/`subprocess` calls behind infrastructure adapters | A second policy needs to plug in (dry-run, audit log, trash-before-delete). |
+| Typed wrappers at the AWX use-case boundary (`ServerRecord`, `WritePayload`, `ActionPayload`) instead of `dict[str, Any]` | A second client implementation, or an MCP-served read path. |
+| `workspace foreach` structured output (`--format`/`--columns`) | A scripted consumer hits the prefix-mixed stdout shape. |
+| Bulk FK prefetch in save/apply | Bulk operations on 100+ resources start showing FK-resolution latency. |
+| Decouple `AwxClient`/`cli/_context` from `untaped_core.Settings` (extractability) | Plan to ship `untaped-awx` as a standalone library or embed it elsewhere. |
+| Workflow node graph round-trip (`save_hook`/`apply_hook` for `WorkflowJobTemplateNode`) — design space already shaped by polymorphic `FkRef` | User explicitly needs the v0.5 workflow-nodes milestone. |
+
 ## Development Workflow
 
 ```bash

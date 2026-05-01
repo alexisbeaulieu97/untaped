@@ -36,6 +36,32 @@ def test_5xx_raises_http_error() -> None:
     assert exc_info.value.status_code == 503
 
 
+def test_non_2xx_preserves_response_body() -> None:
+    """Status-aware error mapping needs the body, so HttpError must carry it."""
+    payload = {"detail": "token rejected", "code": "auth_failed"}
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/secure").mock(return_value=httpx.Response(401, json=payload))
+        with pytest.raises(HttpError) as exc_info:
+            client.get("/secure")
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.body is not None
+    assert "token rejected" in exc_info.value.body
+
+
+def test_network_error_has_no_body() -> None:
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/fail").mock(side_effect=httpx.ConnectError("dns"))
+        with pytest.raises(HttpError) as exc_info:
+            client.get("/fail")
+    assert exc_info.value.body is None
+
+
 def test_auth_callable_injects_headers() -> None:
     captured: dict[str, str] = {}
 

@@ -30,6 +30,7 @@ class _Git(Protocol):
     def clone_with_reference(
         self, *, url: str, dest: Path, bare: Path, branch: str | None = None
     ) -> None: ...
+    def fetch(self, repo_path: Path) -> None: ...
     def status(self, repo_path: Path) -> RepoStatus: ...
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None: ...
 
@@ -104,6 +105,14 @@ class SyncWorkspace:
             return _outcome(
                 workspace, repo, "clone", f"branch {target_branch}" if target_branch else ""
             )
+
+        # Refresh the working clone's remote refs so behind/ahead numbers are
+        # current. The bare cache already got `bare_fetch`, but each working
+        # clone keeps its own `origin/*` refs.
+        try:
+            self._git.fetch(local)
+        except GitError as exc:
+            return _outcome(workspace, repo, "skip", f"fetch failed: {exc}")
 
         try:
             status = self._git.status(local)
