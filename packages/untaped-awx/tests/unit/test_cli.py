@@ -16,24 +16,37 @@ def _reset_settings_cache() -> Iterator[None]:
     get_settings.cache_clear()
 
 
-def _write_config(tmp_path: Path) -> Path:
+def _write_config(tmp_path: Path, *, api_prefix: str | None = None) -> Path:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        """
+    body = """
         awx:
           base_url: https://aap.example.com
           token: secret
         """
-    )
+    if api_prefix is not None:
+        body += f"  api_prefix: {api_prefix}\n"
+    cfg.write_text(body)
     return cfg
 
 
-def test_ping_demo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = _write_config(tmp_path)
+@pytest.mark.parametrize(
+    ("api_prefix", "expected_path"),
+    [
+        (None, "/api/controller/v2/ping/"),  # AAP default
+        ("/api/v2/", "/api/v2/ping/"),  # upstream AWX
+    ],
+)
+def test_ping_uses_configured_api_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    api_prefix: str | None,
+    expected_path: str,
+) -> None:
+    cfg = _write_config(tmp_path, api_prefix=api_prefix)
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
     with respx.mock(base_url="https://aap.example.com") as mock:
-        mock.get("/api/v2/ping/").mock(
+        mock.get(expected_path).mock(
             return_value=httpx.Response(
                 200,
                 json={"version": "4.5.0", "active_node": "controller-1"},

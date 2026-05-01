@@ -25,12 +25,14 @@ class _StubGit:
         statuses: dict[str, RepoStatus] | None = None,
         clone_fail: set[str] = frozenset(),
         fetch_fail: bool = False,
+        local_fetch_fail: set[str] = frozenset(),
     ) -> None:
         self.events: list[tuple[str, Any]] = []
         self._on_disk = set(on_disk)
         self._statuses = statuses or {}
         self._clone_fail = clone_fail
         self._fetch_fail = fetch_fail
+        self._local_fetch_fail = local_fetch_fail
 
     def ensure_bare(self, url: str, *, cache_dir: Path | None = None) -> Path:
         self.events.append(("ensure_bare", url))
@@ -49,6 +51,11 @@ class _StubGit:
             raise GitError("clone failed")
         self._on_disk.add(dest.name)
         dest.mkdir(parents=True, exist_ok=True)
+
+    def fetch(self, repo_path: Path) -> None:
+        self.events.append(("fetch", repo_path.name))
+        if repo_path.name in self._local_fetch_fail:
+            raise GitError("network down")
 
     def status(self, repo_path: Path) -> RepoStatus:
         self.events.append(("status", repo_path.name))
@@ -259,6 +266,49 @@ def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
     outcomes = SyncWorkspace(ManifestRepository(), git)(workspace)
     assert outcomes[0].action == "skip"
     assert "cache fetch failed" in outcomes[0].detail
+
+
+def test_existing_clone_is_fetched_before_status(tmp_path: Path) -> None:
+    """`status.behind` reads `origin/<branch>` from the working clone — that
+    ref is stale unless we fetch the clone first."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a").mkdir()  # existing clone
+    git = _StubGit(on_disk=["svc-a"])
+    SyncWorkspace(ManifestRepository(), git)(workspace)
+
+    op_names = [event[0] for event in git.events]
+    fetch_idx = op_names.index("fetch")
+    status_idx = op_names.index("status")
+    assert fetch_idx < status_idx
+
+
+def test_fresh_clone_does_not_call_local_fetch(tmp_path: Path) -> None:
+    """A brand-new clone shouldn't be redundantly fetched after clone."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    git = _StubGit()
+    SyncWorkspace(ManifestRepository(), git)(workspace)
+    op_names = [event[0] for event in git.events]
+    assert "clone" in op_names
+    assert "fetch" not in op_names
+
+
+def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
+    """A network-flaky `git fetch` on an existing clone is a skip, not abort."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a").mkdir()
+    git = _StubGit(on_disk=["svc-a"], local_fetch_fail={"svc-a"})
+    outcomes = SyncWorkspace(ManifestRepository(), git)(workspace)
+    assert outcomes[0].action == "skip"
+    assert "fetch failed" in (outcomes[0].detail or "")
 
 
 @pytest.fixture

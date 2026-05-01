@@ -693,12 +693,14 @@ name = "untaped-awx"
 version = "0.1.0"
 source = { editable = "packages/untaped-awx" }
 dependencies = [
+    { name = "pyyaml" },
     { name = "typer" },
     { name = "untaped-core" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "typer", specifier = ">=0.25.1" },
     { name = "untaped-core", editable = "packages/untaped-core" },
 ]

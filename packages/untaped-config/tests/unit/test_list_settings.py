@@ -91,3 +91,18 @@ def test_env_var_naming_for_nested() -> None:
     repo = SettingsFileRepository()
     descriptor = repo.descriptor("awx.token")
     assert repo.env_var_for(descriptor) == "UNTAPED_AWX__TOKEN"
+
+
+def test_awx_extended_keys_listed() -> None:
+    """The new awx.* settings should appear in `untaped config list`."""
+    keys = {e.key for e in ListSettings(SettingsFileRepository())()}
+    assert "awx.api_prefix" in keys
+    assert "awx.default_organization" in keys
+    assert "awx.page_size" in keys
+
+
+def test_awx_api_prefix_default_shown(tmp_path: Path) -> None:
+    entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
+    api_prefix = entries["awx.api_prefix"]
+    assert api_prefix.source == "default"
+    assert api_prefix.value == "/api/controller/v2/"
