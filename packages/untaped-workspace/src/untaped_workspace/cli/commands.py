@@ -250,7 +250,15 @@ def foreach_command(
         autocompletion=complete_workspace_name,
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
-    parallel: int = typer.Option(1, "--parallel", "-j", help="Concurrent workers."),
+    parallel: int = typer.Option(
+        1,
+        "--parallel",
+        "-j",
+        help=(
+            "Concurrent workers. Fail-fast cancellation is best-effort: "
+            "in-flight commands run to completion; only queued work stops."
+        ),
+    ),
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Don't stop after a non-zero exit."
     ),

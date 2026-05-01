@@ -79,6 +79,35 @@ def test_show_unknown_profile_errors(_isolate_config: Path) -> None:
     assert result.exit_code != 0
 
 
+def test_show_json_emits_structured_envelope(_isolate_config: Path) -> None:
+    """`untaped profile show prod --format json | jq '.data'` is the
+    documented usage. JSON output wraps the profile data in
+    ``{name, active, raw, data}`` so jq users can address each field."""
+    import json
+
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["name"] == "prod"
+    assert payload["active"] is True
+    assert payload["raw"] is False
+    assert payload["data"] == {"log_level": "INFO", "awx": {"base_url": "https://prod"}}
+
+
+def test_show_json_raw_flag_is_recorded(_isolate_config: Path) -> None:
+    """``raw=True`` shows up in the JSON envelope so a downstream
+    consumer can tell which view was rendered."""
+    import json
+
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod", "--raw", "--format", "json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["raw"] is True
+    assert payload["data"] == {"awx": {"base_url": "https://prod"}}
+
+
 # ---- use ----
 
 
