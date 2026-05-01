@@ -149,6 +149,7 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Make an HTTP call                          | `from untaped_core import HttpClient`                            |
 | Format output for stdout                   | `from untaped_core import format_output, OutputFormat`           |
 | Read piped values from stdin               | `from untaped_core import read_stdin`                            |
+| Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
 | Log to stderr                              | `from untaped_core import get_logger`                            |
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped_core.config_schema import walk_settings`           |

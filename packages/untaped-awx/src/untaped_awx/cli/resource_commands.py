@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from untaped_core import OutputFormat, format_output, read_identifiers, report_errors
+from untaped_core import (
+    OutputFormat,
+    UntapedError,
+    format_output,
+    read_identifiers,
+    report_errors,
+)
 
 from untaped_awx.application import (
     GetResource,
@@ -89,11 +95,21 @@ def _add_get(app: typer.Typer, spec: ResourceSpec) -> None:
         columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
         """Fetch one or more resources by name."""
+        records: list[Any] = []
+        any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
             scope = _scope(ctx, organization, spec)
-            records = [GetResource(ctx.repo)(spec, name=n, scope=scope) for n in ids]
-        typer.echo(format_output(records, fmt=fmt, columns=list(columns or [])))
+            for n in ids:
+                try:
+                    records.append(GetResource(ctx.repo)(spec, name=n, scope=scope))
+                except UntapedError as exc:
+                    typer.echo(f"error: {n}: {exc}", err=True)
+                    any_failed = True
+        if records:
+            typer.echo(format_output(records, fmt=fmt, columns=list(columns or [])))
+        if any_failed:
+            raise typer.Exit(code=1)
 
 
 # ---- save ----
@@ -183,22 +199,30 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
             payload["extra_vars"] = "\n".join(extra_vars)
         if limit and "limit" in accepts:
             payload["limit"] = limit
+        jobs: list[Any] = []
+        any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
             scope = _scope(ctx, organization, spec)
-            jobs = []
             for n in ids:
-                job = RunAction(ctx.repo)(
-                    spec,
-                    name=n,
-                    action="launch",
-                    scope=scope,
-                    payload=payload,
-                )
-                if wait or monitor:
-                    job = WatchJob(ctx.repo)(job)
-                jobs.append(job)
-        typer.echo(format_output([j.model_dump() for j in jobs], fmt="yaml", columns=[]))
+                try:
+                    job = RunAction(ctx.repo)(
+                        spec,
+                        name=n,
+                        action="launch",
+                        scope=scope,
+                        payload=payload,
+                    )
+                    if wait or monitor:
+                        job = WatchJob(ctx.repo)(job)
+                    jobs.append(job)
+                except UntapedError as exc:
+                    typer.echo(f"error: {n}: {exc}", err=True)
+                    any_failed = True
+        if jobs:
+            typer.echo(format_output([j.model_dump() for j in jobs], fmt="yaml", columns=[]))
+        if any_failed:
+            raise typer.Exit(code=1)
 
 
 # ---- update (Project SCM sync) ----
