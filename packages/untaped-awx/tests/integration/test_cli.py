@@ -123,6 +123,56 @@ def test_apply_preview_does_not_write(fake_aap: Any, tmp_path: Path) -> None:
     assert jt["description"] == "deploy the app"
 
 
+def test_get_accepts_multiple_positional_names(fake_aap: Any) -> None:
+    """Identifier-taking commands must support repeated positionals so users
+    can fetch several resources in one call (then pipe to format_output)."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    fake_aap.seed("job_templates", id=11, name="beta", organization=1, organization_name="Default")
+    result = CliRunner().invoke(
+        app, ["job-templates", "get", "alpha", "beta", "--format", "raw", "--columns", "name"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.stdout
+    assert "beta" in result.stdout
+
+
+def test_get_reads_names_from_stdin(fake_aap: Any) -> None:
+    """`list ... | get --stdin` is the documented pipeline shape per
+    AGENTS.md "Output & Piping Conventions"."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    fake_aap.seed("job_templates", id=11, name="beta", organization=1, organization_name="Default")
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "--stdin", "--format", "raw", "--columns", "name"],
+        input="alpha\nbeta\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.stdout
+    assert "beta" in result.stdout
+
+
+def test_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    result = CliRunner().invoke(app, ["job-templates", "get", "alpha", "--stdin"], input="beta\n")
+    assert result.exit_code != 0
+
+
+def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
+    """`launch --stdin` fans out launches across every identifier read from
+    stdin — same pipeline shape as `get --stdin`."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    fake_aap.seed("job_templates", id=11, name="beta", organization=1, organization_name="Default")
+    result = CliRunner().invoke(app, ["job-templates", "launch", "--stdin"], input="alpha\nbeta\n")
+    assert result.exit_code == 0, result.output
+    launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
+    launched_ids = {c[1] for c in launches}
+    assert launched_ids == {10, 11}
+
+
 def test_apply_yes_writes_changes(fake_aap: Any, tmp_path: Path) -> None:
     _seed_basic(fake_aap)
     f = tmp_path / "jt.yml"
