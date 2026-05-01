@@ -13,6 +13,7 @@ from untaped_core import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
+    UntapedError,
     format_output,
     read_identifiers,
     report_errors,
@@ -154,6 +155,7 @@ def remove_command(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
 ) -> None:
     """Remove one or more repos from a workspace's manifest."""
+    any_failed = False
     with report_errors():
         idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = _resolve(name, path)
@@ -161,10 +163,16 @@ def remove_command(
             if prune and not _confirm(f"prune local clone for {ident!r} in {ws.name!r}?", yes=yes):
                 typer.echo("aborted", err=True)
                 raise typer.Exit(code=1)
-            removed = RemoveRepo(ManifestRepository(), status=GitRunner())(
-                ws, ident=ident, prune=prune
-            )
-            typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
+            try:
+                removed = RemoveRepo(ManifestRepository(), status=GitRunner())(
+                    ws, ident=ident, prune=prune
+                )
+                typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
+            except UntapedError as exc:
+                typer.echo(f"error: {ident}: {exc}", err=True)
+                any_failed = True
+    if any_failed:
+        raise typer.Exit(code=1)
 
 
 # sync -----------------------------------------------------------------------

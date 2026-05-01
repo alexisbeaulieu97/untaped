@@ -158,6 +158,9 @@ def test_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
     fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
     result = CliRunner().invoke(app, ["job-templates", "get", "alpha", "--stdin"], input="beta\n")
     assert result.exit_code != 0
+    # Confirm the failure is the intentional mutually-exclusive rejection,
+    # not a crash bubbling up an unrelated exception.
+    assert "stdin" in (result.output + (result.stderr or "")).lower()
 
 
 def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
@@ -171,6 +174,44 @@ def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
     launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
     launched_ids = {c[1] for c in launches}
     assert launched_ids == {10, 11}
+
+
+def test_launch_stdin_emits_partial_results_when_one_fails(fake_aap: Any) -> None:
+    """A missing name mid-fan-out must not hide the IDs of the jobs that
+    already submitted to AWX. Otherwise a user piping 50 names sees only
+    the error for the first failure and has no record of the running jobs.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    # No "ghost" template — second call will fail.
+    result = CliRunner().invoke(app, ["job-templates", "launch", "--stdin"], input="alpha\nghost\n")
+    # Non-zero exit because ghost failed.
+    assert result.exit_code != 0
+    # alpha did launch — its action call is recorded server-side.
+    launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
+    assert any(c[1] == 10 for c in launches)
+    # alpha's job dict must reach stdout — without per-item resilience,
+    # the format_output call after the loop never runs and the user
+    # has no record of the running job.
+    assert result.stdout.strip(), "expected partial-success stdout, got empty"
+    # ghost's error must surface on stderr.
+    assert "ghost" in (result.output + (result.stderr or ""))
+
+
+def test_get_stdin_continues_on_missing_name(fake_aap: Any) -> None:
+    """A missing name in a multi-name `get --stdin` batch must not
+    suppress the names that resolved successfully."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "--stdin", "--format", "raw", "--columns", "name"],
+        input="alpha\nghost\n",
+    )
+    assert result.exit_code != 0
+    # alpha's row reaches stdout even though ghost failed.
+    assert "alpha" in result.stdout
+    assert "ghost" in (result.output + (result.stderr or ""))
 
 
 def test_apply_yes_writes_changes(fake_aap: Any, tmp_path: Path) -> None:
