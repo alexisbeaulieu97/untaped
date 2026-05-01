@@ -11,10 +11,13 @@ Source = Literal["yaml", "env", "default", "unset"]
 
 
 class SettingEntry(BaseModel):
-    """One row in the ``untaped config list`` table."""
+    """One row in the ``untaped config list`` table.
+
+    Secret values are pre-masked into ``value`` (``"***"``), so callers don't
+    need a separate ``is_secret`` flag.
+    """
 
     key: str
     value: str
     default: str
     source: Source
-    is_secret: bool

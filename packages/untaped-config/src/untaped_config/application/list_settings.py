@@ -8,8 +8,7 @@ from untaped_core import Settings
 from untaped_core.config_file import MISSING, get_at_path
 from untaped_core.config_schema import FieldDescriptor
 
-from untaped_config.domain import SettingEntry, Source
-from untaped_config.infrastructure.settings_repo import display_default, display_value
+from untaped_config.domain import SettingEntry, Source, display_default, display_value
 
 
 class SettingsRepository(Protocol):
@@ -40,7 +39,6 @@ class ListSettings:
                     value=display_value(descriptor, current, reveal_secrets=reveal_secrets),
                     default=display_default(descriptor),
                     source=source,
-                    is_secret=descriptor.is_secret,
                 )
             )
         return entries

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import typer
-from untaped_core import OutputFormat, format_output
+from untaped_core import ColumnsOption, FormatOption, format_output, report_errors
 
 from untaped_github.application import WhoAmI
 from untaped_github.infrastructure import GithubClient
@@ -22,12 +22,11 @@ def _callback() -> None:
 
 @app.command("whoami")
 def whoami_command(
-    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-    columns: list[str] | None = typer.Option(
-        None, "--columns", "-c", help="Columns to include (repeatable)."
-    ),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Show the authenticated GitHub user (``GET /user``)."""
-    with GithubClient() as client:
-        user = WhoAmI(client)()
-    typer.echo(format_output([user.model_dump()], fmt=fmt, columns=columns))
+    with report_errors():
+        with GithubClient() as client:
+            user = WhoAmI(client)()
+        typer.echo(format_output([user.model_dump()], fmt=fmt, columns=columns))
