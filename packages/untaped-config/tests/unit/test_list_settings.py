@@ -62,7 +62,6 @@ def test_secrets_redacted_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     assert entries["awx.token"].value == "***"
-    assert entries["awx.token"].is_secret is True
 
 
 def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

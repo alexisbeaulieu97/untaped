@@ -13,8 +13,8 @@ Public API:
 - ``errors``         — base exception hierarchy
 """
 
-from untaped_core.cli import report_errors
-from untaped_core.errors import ConfigError, HttpError, UntapedError
+from untaped_core.cli import ColumnsOption, FormatOption, report_errors
+from untaped_core.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped_core.http import HttpClient, resolve_verify
 from untaped_core.logging import configure_logging, get_logger
 from untaped_core.output import OutputFormat, format_output
@@ -22,7 +22,9 @@ from untaped_core.settings import HttpSettings, Settings, get_settings, resolve_
 from untaped_core.stdin import read_stdin
 
 __all__ = [
+    "ColumnsOption",
     "ConfigError",
+    "FormatOption",
     "HttpClient",
     "HttpError",
     "HttpSettings",
@@ -30,6 +32,7 @@ __all__ = [
     "Settings",
     "UntapedError",
     "configure_logging",
+    "first_validation_error",
     "format_output",
     "get_logger",
     "get_settings",

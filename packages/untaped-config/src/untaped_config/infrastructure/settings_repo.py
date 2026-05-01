@@ -6,8 +6,8 @@ import os
 from typing import Any
 
 import yaml
-from pydantic import SecretStr, ValidationError
-from untaped_core import ConfigError, Settings, get_settings
+from pydantic import ValidationError
+from untaped_core import ConfigError, Settings, first_validation_error, get_settings
 from untaped_core.config_file import (
     MISSING,
     get_at_path,
@@ -24,9 +24,12 @@ class SettingsFileRepository:
 
     def __init__(self, settings_cls: type[Settings] = Settings) -> None:
         self._settings_cls = settings_cls
+        self._descriptors: list[FieldDescriptor] | None = None
 
     def descriptors(self) -> list[FieldDescriptor]:
-        return walk_settings(self._settings_cls)
+        if self._descriptors is None:
+            self._descriptors = walk_settings(self._settings_cls)
+        return self._descriptors
 
     def descriptor(self, key: str) -> FieldDescriptor:
         descriptors = self.descriptors()
@@ -57,7 +60,7 @@ class SettingsFileRepository:
         try:
             self._settings_cls.model_validate(data)
         except ValidationError as exc:
-            raise ConfigError(f"invalid value for {key!r}: {_first_error(exc)}") from exc
+            raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
         write_config_dict(data)
         get_settings.cache_clear()
 
@@ -80,32 +83,3 @@ def _coerce_scalar(raw_value: str) -> Any:
     coercion when we validate the merged dict.
     """
     return yaml.safe_load(raw_value)
-
-
-def _first_error(exc: ValidationError) -> str:
-    errs = exc.errors()
-    if not errs:
-        return str(exc)
-    err = errs[0]
-    loc = ".".join(str(part) for part in err.get("loc", ()))
-    msg = err.get("msg", "invalid value")
-    return f"{loc}: {msg}" if loc else msg
-
-
-def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> str:
-    """Format a setting value for table display."""
-    if value is None:
-        return "—"
-    if descriptor.is_secret and not reveal_secrets:
-        return "***"
-    if isinstance(value, SecretStr):
-        return value.get_secret_value() if reveal_secrets else "***"
-    return str(value)
-
-
-def display_default(descriptor: FieldDescriptor) -> str:
-    if not descriptor.has_default or descriptor.default is None:
-        return "—"
-    if isinstance(descriptor.default, SecretStr):
-        return descriptor.default.get_secret_value()
-    return str(descriptor.default)

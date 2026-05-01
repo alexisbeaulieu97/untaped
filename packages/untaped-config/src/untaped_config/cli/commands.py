@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import typer
-from untaped_core import OutputFormat, format_output, report_errors, resolve_config_path
+from untaped_core import (
+    ColumnsOption,
+    FormatOption,
+    format_output,
+    report_errors,
+    resolve_config_path,
+)
 
 from untaped_config.application import ListSettings, SetSetting, UnsetSetting
 from untaped_config.infrastructure import SettingsFileRepository
@@ -22,10 +28,8 @@ def _callback() -> None:
 
 @app.command("list")
 def list_command(
-    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-    columns: list[str] | None = typer.Option(
-        None, "--columns", "-c", help="Columns to include (repeatable)."
-    ),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
     show_secrets: bool = typer.Option(
         False, "--show-secrets", help="Reveal secret values instead of `***`."
     ),
@@ -34,7 +38,7 @@ def list_command(
     with report_errors():
         repo = SettingsFileRepository()
         entries = ListSettings(repo)(reveal_secrets=show_secrets)
-        rows = [e.model_dump(exclude={"is_secret"}) for e in entries]
+        rows = [e.model_dump() for e in entries]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
+from untaped_core import first_validation_error
 
 from untaped_workspace.domain import WorkspaceManifest
 from untaped_workspace.errors import ManifestError
@@ -34,7 +36,9 @@ class ManifestRepository:
         try:
             return WorkspaceManifest.model_validate(raw)
         except ValidationError as exc:
-            raise ManifestError(f"invalid manifest at {path}: {_first_error(exc)}") from exc
+            raise ManifestError(
+                f"invalid manifest at {path}: {first_validation_error(exc)}"
+            ) from exc
 
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
         path = self.manifest_path(workspace_dir)
@@ -55,33 +59,22 @@ class ManifestRepository:
         try:
             manifest = WorkspaceManifest.model_validate(raw)
         except ValidationError as exc:
-            raise ManifestError(f"invalid manifest at {source}: {_first_error(exc)}") from exc
+            raise ManifestError(
+                f"invalid manifest at {source}: {first_validation_error(exc)}"
+            ) from exc
         return WrittenManifest(manifest=manifest, source=source)
 
 
+@dataclass(frozen=True, slots=True)
 class WrittenManifest:
     """A loaded manifest plus its source path (for nicer error messages)."""
 
-    __slots__ = ("manifest", "source")
-
-    def __init__(self, *, manifest: WorkspaceManifest, source: Path) -> None:
-        self.manifest = manifest
-        self.source = source
+    manifest: WorkspaceManifest
+    source: Path
 
 
 def _dump(manifest: WorkspaceManifest) -> str:
     data = manifest.model_dump(exclude_none=True, exclude_defaults=False)
-    # Drop empty defaults block to keep manifests tidy
     if not data.get("defaults"):
         data.pop("defaults", None)
     return yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
-
-
-def _first_error(exc: ValidationError) -> str:
-    errs = exc.errors()
-    if not errs:
-        return str(exc)
-    err = errs[0]
-    loc = ".".join(str(p) for p in err.get("loc", ()))
-    msg = err.get("msg", "invalid")
-    return f"{loc}: {msg}" if loc else msg

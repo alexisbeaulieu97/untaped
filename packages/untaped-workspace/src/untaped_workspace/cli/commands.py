@@ -9,7 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from untaped_core import OutputFormat, format_output, report_errors
+from untaped_core import (
+    ColumnsOption,
+    FormatOption,
+    OutputFormat,
+    format_output,
+    report_errors,
+)
 
 from untaped_workspace.application import (
     AddRepo,
@@ -67,10 +73,8 @@ def _confirm(prompt: str, *, yes: bool) -> bool:
 
 @app.command("list")
 def list_command(
-    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-    columns: list[str] | None = typer.Option(
-        None, "--columns", "-c", help="Columns to include (repeatable)."
-    ),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """List registered workspaces."""
     with report_errors():
@@ -173,10 +177,8 @@ def sync_command(
     ),
     prune: bool = typer.Option(False, "--prune", help="Remove local clones not in the manifest."),
     all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),
-    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-    columns: list[str] | None = typer.Option(
-        None, "--columns", "-c", help="Columns to include (repeatable)."
-    ),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
     with report_errors():
@@ -212,10 +214,8 @@ def status_command(
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
     all_workspaces: bool = typer.Option(False, "--all", help="Status across all workspaces."),
-    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-    columns: list[str] | None = typer.Option(
-        None, "--columns", "-c", help="Columns to include (repeatable)."
-    ),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Per-repo `git status` snapshot."""
     with report_errors():

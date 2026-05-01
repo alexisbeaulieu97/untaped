@@ -2,36 +2,16 @@
 
 from __future__ import annotations
 
-import subprocess
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
-
-from untaped_workspace.domain import Repo, Workspace, WorkspaceManifest
-
-
-class ForeachOutcome(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    workspace: str
-    repo: str
-    returncode: int
-    stdout: str
-    stderr: str
+from untaped_workspace.domain import ForeachOutcome, Repo, Workspace, WorkspaceManifest
+from untaped_workspace.infrastructure.shell_runner import CommandRunner, shell_runner
 
 
 class _ManifestReader(Protocol):
     def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-
-
-CommandRunner = Callable[[str, Path], "subprocess.CompletedProcess[str]"]
-
-
-def _default_runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, shell=True, cwd=cwd, text=True, capture_output=True, check=False)
 
 
 class Foreach:
@@ -39,7 +19,7 @@ class Foreach:
         self,
         manifests: _ManifestReader,
         *,
-        runner: CommandRunner = _default_runner,
+        runner: CommandRunner = shell_runner,
     ) -> None:
         self._manifests = manifests
         self._runner = runner
@@ -85,14 +65,13 @@ class Foreach:
         outcomes: list[ForeachOutcome] = []
         with ThreadPoolExecutor(max_workers=parallel) as pool:
             futures = {pool.submit(self._run_one, workspace, repo, command): repo for repo in repos}
-            for fut in futures:
+            for fut in as_completed(futures):
                 outcome = fut.result()
                 outcomes.append(outcome)
                 if outcome.returncode != 0 and not continue_on_error:
                     for other in futures:
                         other.cancel()
                     break
-        # Sort outcomes back to declared order so output is stable
         order = {repo.name: i for i, repo in enumerate(repos)}
         outcomes.sort(key=lambda o: order.get(o.repo, len(order)))
         return outcomes

@@ -4,10 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Annotated
 
 import typer
 
 from untaped_core.errors import UntapedError
+from untaped_core.output import OutputFormat
+
+FormatOption = Annotated[
+    OutputFormat,
+    typer.Option("--format", "-f", help="Output format."),
+]
+"""Shared ``--format / -f`` option for any command that prints rows."""
+
+ColumnsOption = Annotated[
+    list[str] | None,
+    typer.Option("--columns", "-c", help="Columns to include (repeatable)."),
+]
+"""Shared ``--columns / -c`` option for any command that prints rows."""
 
 
 @contextmanager
