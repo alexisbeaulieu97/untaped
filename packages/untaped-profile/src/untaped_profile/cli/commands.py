@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import typer
 import yaml
 from untaped_core import (
@@ -61,8 +63,14 @@ def show_command(
         "--raw",
         help="Show only the keys this profile literally sets (no `default` fallback merge).",
     ),
+    fmt: FormatOption = "yaml",
 ) -> None:
-    """Print a profile's contents (effective view by default)."""
+    """Print a profile's contents (effective view by default).
+
+    ``yaml`` (default) prints the merged data as a flat YAML document for
+    human use; ``json`` emits a wrapped envelope so downstream tools can
+    address the metadata fields (``jq '.data.awx.base_url'`` etc.).
+    """
     with report_errors():
         profile = ShowProfile(ProfileFileRepository())(name, raw=raw)
         header = f"# profile: {profile.name}"
@@ -71,7 +79,18 @@ def show_command(
         if not raw:
             header += " — effective view (default ⤥ named)"
         typer.echo(header, err=True)
-        typer.echo(yaml.safe_dump(profile.data, sort_keys=False, default_flow_style=False).rstrip())
+        if fmt == "json":
+            envelope = {
+                "name": profile.name,
+                "active": profile.is_active,
+                "raw": raw,
+                "data": profile.data,
+            }
+            typer.echo(json.dumps(envelope))
+        else:
+            typer.echo(
+                yaml.safe_dump(profile.data, sort_keys=False, default_flow_style=False).rstrip()
+            )
 
 
 @app.command("use", no_args_is_help=True)
