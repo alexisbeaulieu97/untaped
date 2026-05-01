@@ -17,6 +17,7 @@ from untaped_config.application import (
     SetSetting,
     UnsetSetting,
 )
+from untaped_config.domain import SettingEntry
 from untaped_config.infrastructure import SettingsFileRepository
 
 app = typer.Typer(
@@ -94,15 +95,8 @@ def unset_command(
         typer.echo(msg, err=True)
 
 
-def _entry_to_row(entry: object) -> dict[str, object]:
-    """Flatten a SettingEntry into a row, rendering ``source`` as a label string.
-
-    JSON consumers get the same flat shape as table/raw users — keep it
-    simple and consistent across formats.
-    """
-    from untaped_config.domain import SettingEntry  # local import to avoid cycle
-
-    assert isinstance(entry, SettingEntry)
+def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
+    """Flatten ``SettingEntry`` so JSON, table, and raw all see the same shape."""
     return {
         "key": entry.key,
         "value": entry.value,

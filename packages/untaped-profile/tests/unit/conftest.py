@@ -19,9 +19,14 @@ class FakeProfileRepository:
         self,
         profiles: dict[str, dict[str, Any]] | None = None,
         active: str | None = None,
+        effective_active: str | None = None,
     ) -> None:
         self._profiles: dict[str, dict[str, Any]] = copy.deepcopy(profiles or {})
-        self._active = active
+        self._persisted_active = active
+        # Simulate a sticky env override (e.g. UNTAPED_PROFILE) — set_active
+        # updates the persisted pointer but the override keeps winning, just
+        # like the real ProfileFileRepository.
+        self._effective_override = effective_active
 
     # ----- queries -----
 
@@ -29,7 +34,10 @@ class FakeProfileRepository:
         return list(self._profiles.keys())
 
     def active_name(self) -> str | None:
-        return self._active
+        return self._effective_override or self._persisted_active
+
+    def persisted_active_name(self) -> str | None:
+        return self._persisted_active
 
     def read(self, name: str) -> dict[str, Any] | None:
         profile = self._profiles.get(name)
@@ -54,7 +62,7 @@ class FakeProfileRepository:
         return self._profiles.pop(name, None) is not None
 
     def set_active(self, name: str) -> None:
-        self._active = name
+        self._persisted_active = name
 
 
 def _deep_merge_into(dst: dict[str, Any], src: dict[str, Any]) -> None:
@@ -88,7 +96,10 @@ def empty_repo_factory():  # type: ignore[no-untyped-def]
     def _make(
         profiles: dict[str, dict[str, Any]] | None = None,
         active: str | None = None,
+        effective_active: str | None = None,
     ) -> FakeProfileRepository:
-        return FakeProfileRepository(profiles=profiles, active=active)
+        return FakeProfileRepository(
+            profiles=profiles, active=active, effective_active=effective_active
+        )
 
     return _make

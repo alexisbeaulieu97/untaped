@@ -17,9 +17,26 @@ Top-level keys outside ``profiles`` are ignored — splicing app-state like
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from untaped_core.errors import ConfigError
+
+ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
+DEFAULT_PROFILE = "default"
+
+
+def effective_active_profile_name(data: dict[str, Any]) -> str | None:
+    """Return the active profile honouring ``UNTAPED_PROFILE``.
+
+    Precedence: env var > ``data['active']`` > ``None``. Callers fall back
+    to ``"default"`` themselves when they need a guaranteed name.
+    """
+    env_override = os.environ.get(ACTIVE_PROFILE_ENV)
+    if env_override:
+        return env_override
+    raw = data.get("active")
+    return raw if isinstance(raw, str) and raw else None
 
 
 def resolve_profiles(
@@ -32,7 +49,7 @@ def resolve_profiles(
     if not profiles:
         return {}, {}
 
-    if "default" not in profiles:
+    if DEFAULT_PROFILE not in profiles:
         raise ConfigError(
             "config has a `profiles` section but no `default` profile; "
             "the default profile is required."
@@ -43,11 +60,28 @@ def resolve_profiles(
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
 
-    _layer(profiles["default"], "default", effective, provenance, ())
-    if active_name != "default":
+    _layer(profiles[DEFAULT_PROFILE], DEFAULT_PROFILE, effective, provenance, ())
+    if active_name != DEFAULT_PROFILE:
         _layer(profiles[active_name], active_name, effective, provenance, ())
 
     return effective, provenance
+
+
+def splice_workspace_registry(raw: dict[str, Any], effective: dict[str, Any]) -> None:
+    """Hoist top-level ``workspace.workspaces`` (state) into the merged dict.
+
+    Profiles can still set ``workspace.cache_dir``; the registry merges in
+    without clobbering other workspace keys.
+    """
+    ws_state = raw.get("workspace")
+    if not isinstance(ws_state, dict):
+        return
+    registry = ws_state.get("workspaces")
+    if registry is None:
+        return
+    merged_ws = effective.setdefault("workspace", {})
+    if isinstance(merged_ws, dict):
+        merged_ws["workspaces"] = registry
 
 
 def _select_active(
@@ -55,7 +89,7 @@ def _select_active(
     active_override: str | None,
     profiles: dict[str, Any],
 ) -> str:
-    name = active_override if active_override else config_data.get("active") or "default"
+    name = active_override if active_override else config_data.get("active") or DEFAULT_PROFILE
     if name not in profiles:
         raise ConfigError(
             f"active profile {name!r} is not defined in `profiles`. "

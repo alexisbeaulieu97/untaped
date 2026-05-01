@@ -90,13 +90,13 @@ def test_set_then_list_shows_profile_default_source(_isolate_settings: Path) -> 
 
 def test_set_with_no_args_shows_help(_isolate_settings: Path) -> None:
     result = CliRunner().invoke(app, ["set"])
-    assert result.exit_code in (0, 2)
+    assert result.exit_code == 2
     assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
 
 
 def test_unset_with_no_args_shows_help(_isolate_settings: Path) -> None:
     result = CliRunner().invoke(app, ["unset"])
-    assert result.exit_code in (0, 2)
+    assert result.exit_code == 2
     assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
 
 

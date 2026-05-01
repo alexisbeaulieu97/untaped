@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from untaped_core import ConfigError
+from untaped_core.profile_resolver import DEFAULT_PROFILE
 
 from untaped_profile.application.ports import ProfileRepository
-
-DEFAULT_PROFILE = "default"
 
 
 class RenameProfile:
@@ -35,5 +34,5 @@ class RenameProfile:
             raise ConfigError(f"profile {new_name!r} already exists")
         self._repo.write(new_name, source)
         self._repo.delete(old_name)
-        if self._repo.active_name() == old_name:
+        if self._repo.persisted_active_name() == old_name:
             self._repo.set_active(new_name)

@@ -110,3 +110,16 @@ def test_set_active_persists(_isolate_config: Path) -> None:
     repo = ProfileFileRepository()
     repo.set_active("default")
     assert repo.active_name() == "default"
+
+
+def test_persisted_active_name_ignores_env_override(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``persisted_active_name`` reads only YAML, so a per-call env override
+    can't sneak into mutating use cases (delete/rename) that rewrite the
+    persisted ``active:`` pointer."""
+    _seed(_isolate_config)
+    monkeypatch.setenv("UNTAPED_PROFILE", "default")
+    repo = ProfileFileRepository()
+    assert repo.active_name() == "default"
+    assert repo.persisted_active_name() == "prod"

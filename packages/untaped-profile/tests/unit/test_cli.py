@@ -179,6 +179,5 @@ def test_help_lists_all_commands() -> None:
 
 def test_no_args_shows_help() -> None:
     result = CliRunner().invoke(app, [])
-    # no_args_is_help on the typer app
-    assert result.exit_code in (0, 2)
+    assert result.exit_code == 2
     assert "Manage configuration profiles" in result.output or "Manage" in result.output

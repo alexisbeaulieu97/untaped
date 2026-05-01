@@ -28,3 +28,18 @@ def test_refuses_to_delete_active(repo: Any) -> None:
 def test_unknown_profile_raises(repo: Any) -> None:
     with pytest.raises(ConfigError, match="ghost"):
         DeleteProfile(repo)("ghost")
+
+
+def test_active_check_uses_persisted_not_effective(empty_repo_factory: Any) -> None:
+    """``prod`` looks active under a per-call override, but the persisted
+    pointer is ``default``. Deleting ``prod`` is fine — the persisted
+    ``active:`` won't be orphaned. The check must consult the persisted
+    value, not the env-aware ``active_name()``.
+    """
+    repo = empty_repo_factory(
+        profiles={"default": {}, "prod": {}},
+        active="default",
+        effective_active="prod",
+    )
+    DeleteProfile(repo)("prod")
+    assert "prod" not in repo.names()

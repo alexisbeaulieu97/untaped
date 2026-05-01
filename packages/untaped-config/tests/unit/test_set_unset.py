@@ -61,6 +61,21 @@ def test_set_validates_via_pydantic(_isolate_settings: Path) -> None:
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
 
+def test_set_validates_target_profile_not_ambient_active(_isolate_settings: Path) -> None:
+    """Validation must merge from the target profile's perspective.
+
+    Otherwise an invalid value lands in a non-active profile and only
+    explodes later when that profile becomes active — by which point the
+    user is already past the failed `set` and has lost the validation
+    feedback.
+    """
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    awx:\n      page_size: 50\n  stage: {}\nactive: default\n"
+    )
+    with pytest.raises(ConfigError, match="invalid value"):
+        SetSetting(SettingsFileRepository())("awx.page_size", "abc", profile="stage")
+
+
 def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
     with pytest.raises(ConfigError, match="unknown setting"):
         SetSetting(SettingsFileRepository())("bogus.key", "x")

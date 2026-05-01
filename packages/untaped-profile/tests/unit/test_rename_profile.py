@@ -49,3 +49,20 @@ def test_rejects_renaming_to_default(empty_repo_factory: Any) -> None:
 def test_rejects_empty_target_name(repo: Any) -> None:
     with pytest.raises(ConfigError, match="name"):
         RenameProfile(repo)("stage", "")
+
+
+def test_does_not_rewrite_active_under_transient_override(empty_repo_factory: Any) -> None:
+    """A per-call override (``--profile``/``UNTAPED_PROFILE``) makes ``prod``
+    look active for display, but the persisted ``active:`` still points at
+    ``default``. Rename must compare against the persisted value, otherwise
+    ``untaped --profile prod profile rename prod production`` silently
+    rewrites the user's persisted active pointer.
+    """
+    repo = empty_repo_factory(
+        profiles={"default": {}, "prod": {"a": 1}},
+        active="default",
+        effective_active="prod",
+    )
+    RenameProfile(repo)("prod", "production")
+    assert repo.persisted_active_name() == "default"
+    assert "production" in repo.names()

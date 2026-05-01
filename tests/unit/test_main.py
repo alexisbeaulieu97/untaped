@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -16,11 +17,7 @@ def _isolate_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
     monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
     get_settings.cache_clear()
     yield cfg
-    # The root --profile flag mutates os.environ directly; monkeypatch only
-    # tracks values it set, so guard against leakage across tests by clearing
-    # UNTAPED_PROFILE explicitly at teardown.
-    import os
-
+    # `--profile` writes to os.environ directly, so monkeypatch can't roll it back.
     os.environ.pop("UNTAPED_PROFILE", None)
     get_settings.cache_clear()
 
