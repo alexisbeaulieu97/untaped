@@ -9,6 +9,7 @@ need comment preservation later, swap to ``ruamel.yaml``.
 
 from __future__ import annotations
 
+import copy
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -63,8 +64,12 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
 
     The callback receives a mutable dict; mutate it in place. The atomic
     write only runs after the callback returns successfully — exceptions
-    leave the on-disk file untouched. Cache invalidation is the caller's
-    job (mutating helpers like :func:`write_profile` clear it explicitly).
+    leave the on-disk file untouched. The dict is also snapshot before
+    the callback runs and the write is skipped when nothing changed, so
+    no-ops (deleting a missing profile, unsetting a missing key) don't
+    spuriously create or reformat the YAML file. Cache invalidation is
+    the caller's job (mutating helpers like :func:`write_profile` clear
+    it explicitly).
 
     Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
     (seconds, float). Default is 5 seconds.
@@ -82,8 +87,10 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
         ) from exc
     try:
         data = read_config_dict(target)
+        before = copy.deepcopy(data)
         fn(data)
-        write_config_dict(data, target)
+        if data != before:
+            write_config_dict(data, target)
     finally:
         lock.release()
 

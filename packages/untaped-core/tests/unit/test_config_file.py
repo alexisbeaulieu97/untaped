@@ -289,6 +289,55 @@ def test_mutate_config_creates_file_when_absent(
     assert read_config_dict() == {"active": "default", "profiles": {"default": {}}}
 
 
+def test_mutate_config_skips_write_when_callback_no_ops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A callback that doesn't mutate the dict must not touch disk.
+
+    Otherwise commands that intentionally no-op (``config unset`` for a
+    missing key, ``delete_profile`` for a missing name, ``unregister`` for
+    a missing workspace) silently re-serialize the YAML — losing comments,
+    losing user-set key order, and bumping mtime — even though nothing
+    semantically changed.
+    """
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {"log_level": "INFO"}}})
+    before_mtime = cfg.stat().st_mtime_ns
+
+    mutate_config(lambda data: None)
+
+    assert cfg.stat().st_mtime_ns == before_mtime
+
+
+def test_mutate_config_no_op_does_not_create_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A no-op against a missing config must not bring the file into
+    existence — the user just probed something that wasn't there."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    mutate_config(lambda data: None)
+
+    assert not cfg.exists()
+
+
+def test_delete_profile_does_not_touch_file_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: deleting a profile that doesn't exist used to no-op
+    cleanly. After moving onto ``mutate_config`` it spuriously rewrote
+    the file. The helper must skip the write."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    before_mtime = cfg.stat().st_mtime_ns
+
+    assert delete_profile("ghost") is False
+    assert cfg.stat().st_mtime_ns == before_mtime
+
+
 def test_mutate_config_exception_keeps_file_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
