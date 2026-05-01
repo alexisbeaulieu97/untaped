@@ -1,34 +1,128 @@
 [project]
 name = "untaped"
 version = "0.1.0"
-description = "Add your description here"
+description = "A personal DevOps CLI suite."
 readme = "README.md"
 authors = [
-    { name = "Alexis Beaulieu", email = "alexisbeaulieu@protonmail.com" },
+    { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" },
 ]
-requires-python = ">=3.12"
-dependencies = []
+requires-python = ">=3.14"
+dependencies = [
+    "typer>=0.25.1",
+    "untaped-core",
+    "untaped-config",
+    "untaped-workspace",
+    "untaped-awx",
+    "untaped-github",
+]
 
-[dependency-groups]
-dev = [
-    "mypy>=1.18.2",
-    "pytest>=8.4.2",
-    "ruff>=0.13.1",
-]
+[project.scripts]
+untaped = "untaped.main:app"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
 
 [tool.uv.workspace]
 members = ["packages/*"]
 
 [tool.uv.sources]
 untaped-core = { workspace = true }
-untaped-ansible = { workspace = true }
-untaped-cli = { workspace = true }
+untaped-config = { workspace = true }
+untaped-workspace = { workspace = true }
+untaped-awx = { workspace = true }
+untaped-github = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.2",
+    "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.15.12",
+    "types-pyyaml>=6.0.12.20260408",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+    "RUF",  # ruff-specific
+]
+ignore = []
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use assert statements and longer modules
+"**/tests/**" = ["S101"]
+# Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...))
+"**/cli/commands.py" = ["B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_unused_configs = true
+warn_unreachable = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+# Type-check src/ only; tests are validated by running them.
+# Point at each package directory directly so mypy can derive module names
+# unambiguously (mixing `src/` and `packages/*/src/` causes "found twice" errors).
+packages = [
+    "untaped",
+    "untaped_core",
+    "untaped_config",
+    "untaped_workspace",
+    "untaped_awx",
+    "untaped_github",
+]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
-testpaths = ["tests"]
+minversion = "8.0"
+testpaths = ["tests", "packages"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov",
+    "--cov-report=term-missing",
+    "--import-mode=importlib",
+]
 markers = [
-    "contract: contract tests for CLI and API contracts",
-    "integration: integration tests across components",
-    "unit: fast unit tests for isolated modules",
+    "integration: cross-package or external-service tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src", "packages"]
+omit = ["**/tests/**", "**/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
 ]
