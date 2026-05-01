@@ -1,0 +1,128 @@
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+from untaped_config import app
+from untaped_core.settings import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+    yield cfg
+    get_settings.cache_clear()
+
+
+def test_list_outputs_keys(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["list", "--format", "raw", "--columns", "key"])
+    assert result.exit_code == 0, result.output
+    keys = result.stdout.splitlines()
+    assert "log_level" in keys
+    assert "awx.token" in keys
+    assert "github.token" in keys
+    assert "http.ca_bundle" in keys
+    assert "http.verify_ssl" in keys
+
+
+def test_list_redacts_secrets_by_default(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "abcdef-secret")
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(
+        app, ["list", "--format", "raw", "--columns", "key", "--columns", "value"]
+    )
+    assert result.exit_code == 0
+    assert "abcdef-secret" not in result.stdout
+    assert "awx.token\t***" in result.stdout
+
+
+def test_list_show_secrets_reveals(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "abcdef-secret")
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "list",
+            "--show-secrets",
+            "--format",
+            "raw",
+            "--columns",
+            "key",
+            "--columns",
+            "value",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "abcdef-secret" in result.stdout
+
+
+def test_set_then_list_shows_yaml_source(_isolate_settings: Path) -> None:
+    runner = CliRunner()
+    set_result = runner.invoke(app, ["set", "log_level", "DEBUG"])
+    assert set_result.exit_code == 0, set_result.output
+
+    list_result = runner.invoke(
+        app,
+        [
+            "list",
+            "--format",
+            "raw",
+            "--columns",
+            "key",
+            "--columns",
+            "value",
+            "--columns",
+            "source",
+        ],
+    )
+    assert list_result.exit_code == 0
+    assert "log_level\tDEBUG\tyaml" in list_result.stdout
+
+
+def test_set_with_no_args_shows_help(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set"])
+    # no_args_is_help: exit code is 0 with the help text
+    assert result.exit_code in (0, 2)
+    assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
+
+
+def test_unset_with_no_args_shows_help(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["unset"])
+    assert result.exit_code in (0, 2)
+    assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
+
+
+def test_set_rejects_invalid_value(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "http.verify_ssl", "not-a-bool"])
+    assert result.exit_code != 0
+
+
+def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "bogus.key", "x"])
+    assert result.exit_code != 0
+
+
+def test_unset_returns_clean_when_not_set(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["unset", "log_level"])
+    # the message goes to stderr; CliRunner captures both by default
+    assert result.exit_code == 0
+
+
+def test_unset_after_set(_isolate_settings: Path) -> None:
+    runner = CliRunner()
+    runner.invoke(app, ["set", "log_level", "DEBUG"])
+    result = runner.invoke(app, ["unset", "log_level"])
+    assert result.exit_code == 0
+    # confirm it's back to default
+    list_result = runner.invoke(
+        app, ["list", "--format", "raw", "--columns", "key", "--columns", "source"]
+    )
+    assert "log_level\tdefault" in list_result.stdout
