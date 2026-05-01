@@ -14,6 +14,7 @@ from untaped_core import (
     FormatOption,
     OutputFormat,
     format_output,
+    read_identifiers,
     report_errors,
 )
 
@@ -135,7 +136,10 @@ def add_command(
 
 @app.command("remove", no_args_is_help=True)
 def remove_command(
-    repo: str = typer.Argument(..., help="Repo URL or alias to remove."),
+    repos: list[str] | None = typer.Argument(None, help="Repo URL(s) or alias(es) to remove."),
+    stdin: bool = typer.Option(
+        False, "--stdin", help="Read repo identifiers from stdin (one per line)."
+    ),
     name: str | None = typer.Option(
         None,
         "--name",
@@ -149,14 +153,18 @@ def remove_command(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
 ) -> None:
-    """Remove a repo from a workspace's manifest."""
+    """Remove one or more repos from a workspace's manifest."""
     with report_errors():
+        idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = _resolve(name, path)
-        if prune and not _confirm(f"prune local clone for {repo!r} in {ws.name!r}?", yes=yes):
-            typer.echo("aborted", err=True)
-            raise typer.Exit(code=1)
-        removed = RemoveRepo(ManifestRepository(), status=GitRunner())(ws, ident=repo, prune=prune)
-        typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
+        for ident in idents:
+            if prune and not _confirm(f"prune local clone for {ident!r} in {ws.name!r}?", yes=yes):
+                typer.echo("aborted", err=True)
+                raise typer.Exit(code=1)
+            removed = RemoveRepo(ManifestRepository(), status=GitRunner())(
+                ws, ident=ident, prune=prune
+            )
+            typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
 
 
 # sync -----------------------------------------------------------------------

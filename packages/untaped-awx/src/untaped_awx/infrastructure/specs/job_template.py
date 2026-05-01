@@ -90,25 +90,17 @@ JOB_TEMPLATE_SPEC = ResourceSpec(
     ),
     secret_paths=("webhook_key", "survey_spec.spec.*.default"),
     actions=(
+        # ``accepts`` is the public CLI contract for this action — keep it in
+        # sync with what the launch command actually exposes. The full set of
+        # AAP-supported launch overrides (inventory, credentials, scm_branch,
+        # job_tags, skip_tags, verbosity, diff_mode, job_type, forks) is
+        # tracked in AGENTS.md "Deferred review items" until we generate
+        # Typer flags from this list.
         ActionSpec(
             name="launch",
             path="launch",
             returns="job",
-            accepts=frozenset(
-                {
-                    "extra_vars",
-                    "limit",
-                    "inventory",
-                    "credentials",
-                    "scm_branch",
-                    "job_tags",
-                    "skip_tags",
-                    "verbosity",
-                    "diff_mode",
-                    "job_type",
-                    "forks",
-                }
-            ),
+            accepts=frozenset({"extra_vars", "limit"}),
         ),
     ),
     list_columns=("name", "organization", "project", "inventory", "last_job_status"),
