@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -83,8 +84,6 @@ def test_show_json_emits_structured_envelope(_isolate_config: Path) -> None:
     """`untaped profile show prod --format json | jq '.data'` is the
     documented usage. JSON output wraps the profile data in
     ``{name, active, raw, data}`` so jq users can address each field."""
-    import json
-
     _seed(_isolate_config)
     result = CliRunner().invoke(app, ["show", "prod", "--format", "json"])
     assert result.exit_code == 0, result.output
@@ -98,8 +97,6 @@ def test_show_json_emits_structured_envelope(_isolate_config: Path) -> None:
 def test_show_json_raw_flag_is_recorded(_isolate_config: Path) -> None:
     """``raw=True`` shows up in the JSON envelope so a downstream
     consumer can tell which view was rendered."""
-    import json
-
     _seed(_isolate_config)
     result = CliRunner().invoke(app, ["show", "prod", "--raw", "--format", "json"])
     assert result.exit_code == 0
