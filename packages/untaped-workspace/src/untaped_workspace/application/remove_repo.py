@@ -45,15 +45,15 @@ class RemoveRepo:
         repo = manifest.find_repo(ident)
         if repo is None:
             raise WorkspaceError(f"repo {ident!r} not declared in workspace {workspace.name!r}")
+
+        local = workspace.path / repo.name
+        should_prune = prune and local.is_dir()
+        if should_prune and self._status is not None and self._status.is_dirty(local):
+            raise WorkspaceError(f"refusing to prune {local}: working tree has uncommitted changes")
+
         manifest.repos = [r for r in manifest.repos if r is not repo]
         self._manifests.write(workspace.path, manifest)
 
-        if prune:
-            local = workspace.path / repo.name
-            if local.is_dir():
-                if self._status is not None and self._status.is_dirty(local):
-                    raise WorkspaceError(
-                        f"refusing to prune {local}: working tree has uncommitted changes"
-                    )
-                self._rmtree(local)
+        if should_prune:
+            self._rmtree(local)
         return repo
