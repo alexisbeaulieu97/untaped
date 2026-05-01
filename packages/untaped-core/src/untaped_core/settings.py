@@ -1,8 +1,17 @@
 """User-facing configuration loaded from ``~/.untaped/config.yml``.
 
-Override the path with the ``UNTAPED_CONFIG`` env var. Individual fields can be
-overridden with ``UNTAPED_<SECTION>__<FIELD>`` env vars (e.g.
-``UNTAPED_AWX__TOKEN``); env beats YAML beats defaults.
+The YAML schema is profile-based: every configurable value lives inside a
+``profiles.<name>`` block. ``profiles.default`` is required and used as the
+fallback layer; ``active: <name>`` (or the ``UNTAPED_PROFILE`` env var)
+selects the overlay profile. Individual fields can still be overridden with
+``UNTAPED_<SECTION>__<FIELD>`` env vars (e.g. ``UNTAPED_AWX__TOKEN``);
+precedence is: env > active profile > default profile > schema default.
+
+The ``workspace.workspaces`` registry is **app state** (not user-tunable
+config), so it lives at the top level of the YAML and is spliced back into
+the merged dict by :class:`ProfilesSettingsSource`.
+
+Override the file path with the ``UNTAPED_CONFIG`` env var.
 """
 
 from __future__ import annotations
@@ -10,13 +19,21 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
-    YamlConfigSettingsSource,
+)
+from pydantic_settings.sources import InitSettingsSource
+
+from untaped_core.profile_resolver import (
+    effective_active_profile_name,
+    resolve_profiles,
+    splice_workspace_registry,
 )
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -102,11 +119,38 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         path = resolve_config_path()
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings]
-        if path.is_file():
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=path))
-        sources.append(file_secret_settings)
-        return tuple(sources)
+        return (
+            init_settings,
+            env_settings,
+            ProfilesSettingsSource(settings_cls, yaml_file=path),
+            file_secret_settings,
+        )
+
+
+class ProfilesSettingsSource(InitSettingsSource):
+    """Pydantic-settings source: parse the YAML, merge profiles, splice
+    in the top-level workspace registry, hand the dict to pydantic.
+
+    Active-profile selection precedence:
+
+    1. ``UNTAPED_PROFILE`` env var (per-process override),
+    2. ``active:`` key in the YAML,
+    3. fallback to ``"default"``.
+    """
+
+    def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
+        raw = self._load_raw_yaml(yaml_file)
+        effective, _ = resolve_profiles(raw, active_override=effective_active_profile_name(raw))
+        splice_workspace_registry(raw, effective)
+        super().__init__(settings_cls, effective)
+
+    @staticmethod
+    def _load_raw_yaml(yaml_file: Path) -> dict[str, Any]:
+        if not yaml_file.is_file():
+            return {}
+        with yaml_file.open() as f:
+            raw = yaml.safe_load(f) or {}
+        return raw if isinstance(raw, dict) else {}
 
 
 def resolve_config_path() -> Path:
