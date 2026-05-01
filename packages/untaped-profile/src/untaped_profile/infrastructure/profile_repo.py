@@ -16,6 +16,7 @@ from untaped_core.config_file import (
     list_profile_names,
     read_config_dict,
     read_profile,
+    rename_profile,
     set_active_profile,
     write_profile,
 )
@@ -64,6 +65,10 @@ class ProfileFileRepository:
         if removed:
             get_settings.cache_clear()
         return removed
+
+    def rename(self, old: str, new: str) -> None:
+        rename_profile(old, new)
+        get_settings.cache_clear()
 
     def set_active(self, name: str) -> None:
         set_active_profile(name)
