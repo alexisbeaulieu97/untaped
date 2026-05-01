@@ -28,17 +28,20 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        log_level: DEBUG
-        http:
-          ca_bundle: /etc/ssl/corp-ca.pem
-          verify_ssl: true
-        awx:
-          base_url: https://aap.example.com
-          token: secret
-        github:
-          token: ghp_xxx
+        profiles:
+          default:
+            log_level: DEBUG
+            http:
+              ca_bundle: /etc/ssl/corp-ca.pem
+              verify_ssl: true
+            awx:
+              base_url: https://aap.example.com
+              token: secret
+            github:
+              token: ghp_xxx
+            workspace:
+              cache_dir: /custom/cache
         workspace:
-          cache_dir: /custom/cache
           workspaces:
             - name: prod
               path: /tmp/prod
@@ -67,9 +70,11 @@ def test_workspace_cache_dir_default(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("awx:\n  token: ultra-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    awx:\n      token: ultra-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
+    assert s.awx.token is not None
+    assert s.awx.token.get_secret_value() == "ultra-secret-value"
     assert "ultra-secret-value" not in repr(s)
     assert "ultra-secret-value" not in str(s)
     assert "ultra-secret-value" not in str(s.awx)
@@ -77,7 +82,7 @@ def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.Monke
 
 def test_env_var_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("awx:\n  token: from-yaml\n")
+    cfg.write_text("profiles:\n  default:\n    awx:\n      token: from-yaml\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     monkeypatch.setenv("UNTAPED_AWX__TOKEN", "from-env")
     s = get_settings()
@@ -110,11 +115,13 @@ def test_awx_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        awx:
-          base_url: https://awx.example.com
-          api_prefix: /api/v2/
-          default_organization: Default
-          page_size: 100
+        profiles:
+          default:
+            awx:
+              base_url: https://awx.example.com
+              api_prefix: /api/v2/
+              default_organization: Default
+              page_size: 100
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

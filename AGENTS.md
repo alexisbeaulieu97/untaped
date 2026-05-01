@@ -47,8 +47,9 @@ untaped/
 │       └── main.py
 ├── tests/                        # tests for the root CLI
 └── packages/
-    ├── untaped-core/             # shared infra (settings, http, config, output, stdin, logging, errors)
-    ├── untaped-config/           # `untaped config list/set/unset`
+    ├── untaped-core/             # shared infra (settings, http, config, profiles, output, stdin, logging, errors)
+    ├── untaped-config/           # `untaped config list/set/unset` (operates on profiles)
+    ├── untaped-profile/          # `untaped profile list/show/use/create/delete/rename`
     ├── untaped-workspace/        # manage local git workspaces
     ├── untaped-awx/              # Ansible Automation Platform / AWX API
     └── untaped-github/           # GitHub API search & inspection
@@ -56,9 +57,10 @@ untaped/
 
 | Package             | Type | Owns                                                                  |
 | ------------------- | ---- | --------------------------------------------------------------------- |
-| `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps via `add_typer`.     |
-| `untaped-core`      | lib  | Cross-cutting: settings, http (incl. TLS), config schema/file, logging, output, stdin. |
-| `untaped-config`    | lib  | The `config` meta-domain: introspect/edit `~/.untaped/config.yml`.    |
+| `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps via `add_typer`. Hosts the root `--profile` flag. |
+| `untaped-core`      | lib  | Cross-cutting: settings, http (incl. TLS), config schema/file, profiles (resolver + helpers), logging, output, stdin. |
+| `untaped-config`    | lib  | The `config` meta-domain: introspect/edit profile contents in `~/.untaped/config.yml`. |
+| `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/create/delete/rename profiles. |
 | `untaped-workspace` | lib  | Workspace bounded context: per-workspace `untaped.yml` manifests, central `name → path` registry, sync/status/foreach via subprocess `git`. |
 | `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            |
 | `untaped-github`    | lib  | GitHub bounded context (search, repos, users, …).                     |
@@ -151,10 +153,48 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped_core.config_schema import walk_settings`           |
 | Read/write `~/.untaped/config.yml`         | `from untaped_core.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
+| Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile` |
+| Merge `default` ⤥ active to an effective dict | `from untaped_core.profile_resolver import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr` (auto-redacted by `untaped config list`)    |
 
 If you find yourself writing one of these inside a domain, stop — pull the
 helper from `untaped-core` instead, or add it there if it's missing.
+
+### Profiles
+
+`~/.untaped/config.yml` is **profile-based**: every configurable value
+lives under `profiles.<name>`, never at the top level. Two profile-related
+keys live outside that block:
+
+- `active: <name>` — selects which profile is active. May be unset (then
+  `default` is used). The `UNTAPED_PROFILE` env var or the root
+  `untaped --profile <name>` flag override this for one process.
+- `workspace.workspaces` — the workspace registry. This is **app state**,
+  not user-tunable config, so it stays at the top level and is hoisted
+  back into the merged dict by `ProfilesSettingsSource`.
+
+Resolution order, high → low:
+
+```
+env vars (UNTAPED_…)  >  active profile  >  default profile  >  schema default
+```
+
+Two-layer fallback only — `prod` ⤥ `default` ⤥ schema. There is no
+profile-to-profile inheritance beyond the implicit `default` fallback.
+
+The `default` profile is required (the resolver raises if `profiles.*` is
+non-empty without it). It is also the bottom layer for everything: any
+named profile can declare just the keys that differ.
+
+`untaped config set <key> <value>` writes to the active profile by default;
+`--profile <name>` targets a different one (the named profile must already
+exist; `default` is auto-bootstrapped). `untaped profile <…>` manages the
+profile inventory itself: `list`, `show`, `use`, `create [--copy-from]`,
+`delete`, `rename`. Deleting `default` or the active profile is refused.
+
+The root `--profile` flag mutates `os.environ["UNTAPED_PROFILE"]` and
+clears `get_settings`'s `lru_cache` immediately, so per-call overrides
+take effect even when the cache was already populated.
 
 ### TLS verification
 
@@ -294,11 +334,25 @@ uv run untaped --help
 # install the `untaped` binary globally, editable across every workspace member
 uv tool install --editable .
 
-# common config interactions
-uv run untaped config list                          # show all settings
+# common config interactions (operate on the active profile by default)
+uv run untaped config list                          # show resolved settings (active ⤥ default ⤥ schema)
+uv run untaped config list --all-profiles           # one row per (profile, key)
 uv run untaped config list --show-secrets           # reveal redacted values
-uv run untaped config set awx.token <token>         # persist to ~/.untaped/config.yml
-uv run untaped config unset awx.token               # remove a key
+uv run untaped config set awx.token <token>        # write to the active profile
+uv run untaped config set awx.token <tok> --profile prod  # write to a specific profile
+uv run untaped config unset awx.token               # remove from the active profile
+
+# profile management
+uv run untaped profile list                         # list profiles, ✓ marks active
+uv run untaped profile show prod                    # effective view (default ⤥ prod)
+uv run untaped profile use prod                     # persist `active: prod`
+uv run untaped profile create homelab --copy-from default
+uv run untaped profile delete stage
+uv run untaped profile rename prod production       # also updates `active:` if it pointed there
+
+# per-call override (does not touch the persisted active profile)
+uv run untaped --profile stage awx job-templates list
+UNTAPED_PROFILE=stage uv run untaped config list
 ```
 
 **TDD loop:**
@@ -384,11 +438,13 @@ Then:
    - `Path | None = None` for filesystem paths.
    - `bool` / `int` / `str` with sensible defaults otherwise.
 3. **Update tests in `packages/untaped-core/tests/unit/test_settings.py`**
-   so the new key is loaded from YAML and overridable via env var.
+   so the new key is loaded from YAML (under `profiles.default`) and
+   overridable via env var. Remember: top-level keys are no longer
+   honoured — every value lives under a profile.
 4. **Update `packages/untaped-config/tests/unit/test_list_settings.py`**
    to assert the new key shows up in `untaped config list`.
-5. Update **this file**'s "Cross-Cutting helpers" or "TLS verification"
-   sections if the setting is cross-cutting.
+5. Update **this file**'s "Cross-Cutting helpers", "TLS verification", or
+   "Profiles" sections if the setting is cross-cutting.
 6. Verify with `uv run untaped config list` — your new key must appear
    automatically, since the schema is walked.
 

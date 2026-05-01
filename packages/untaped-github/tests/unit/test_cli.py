@@ -18,7 +18,7 @@ def _reset_settings_cache() -> Iterator[None]:
 
 def _write_config(tmp_path: Path) -> Path:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("github:\n  token: ghp_test\n")
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
     return cfg
 
 

@@ -11,7 +11,12 @@ from untaped_core import (
     resolve_config_path,
 )
 
-from untaped_config.application import ListSettings, SetSetting, UnsetSetting
+from untaped_config.application import (
+    ListAllProfilesSettings,
+    ListSettings,
+    SetSetting,
+    UnsetSetting,
+)
 from untaped_config.infrastructure import SettingsFileRepository
 
 app = typer.Typer(
@@ -33,12 +38,25 @@ def list_command(
     show_secrets: bool = typer.Option(
         False, "--show-secrets", help="Reveal secret values instead of `***`."
     ),
+    all_profiles: bool = typer.Option(
+        False,
+        "--all-profiles",
+        help="Show one row per (profile, key) instead of the resolved view.",
+    ),
 ) -> None:
-    """List every configurable setting with its current value, default, and source."""
+    """List configurable settings.
+
+    Default view: the effective values resolved from the active profile (with
+    fallback to ``default`` and schema defaults). Use ``--all-profiles`` to
+    inspect what every profile has set, regardless of which is active.
+    """
     with report_errors():
         repo = SettingsFileRepository()
-        entries = ListSettings(repo)(reveal_secrets=show_secrets)
-        rows = [e.model_dump() for e in entries]
+        if all_profiles:
+            entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
+        else:
+            entries = ListSettings(repo)(reveal_secrets=show_secrets)
+        rows = [_entry_to_row(e) for e in entries]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
@@ -46,19 +64,49 @@ def list_command(
 def set_command(
     key: str = typer.Argument(..., help="Dotted setting key, e.g. `awx.token`."),
     value: str = typer.Argument(..., help="New value (parsed as a YAML scalar)."),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="Target profile to write to (defaults to the active profile).",
+    ),
 ) -> None:
-    """Persist ``key = value`` to the config file (validated against the schema)."""
+    """Persist ``key = value`` into a profile (validated against the schema)."""
     with report_errors():
-        SetSetting(SettingsFileRepository())(key, value)
-        typer.echo(f"set {key} (config: {resolve_config_path()})", err=True)
+        SetSetting(SettingsFileRepository())(key, value, profile=profile)
+        target = profile or "<active>"
+        typer.echo(f"set {key} in profile {target} (config: {resolve_config_path()})", err=True)
 
 
 @app.command("unset", no_args_is_help=True)
 def unset_command(
     key: str = typer.Argument(..., help="Dotted setting key to remove."),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="Target profile to remove from (defaults to the active profile).",
+    ),
 ) -> None:
-    """Remove ``key`` from the config file (no-op if it wasn't set)."""
+    """Remove ``key`` from a profile (no-op if it wasn't set)."""
     with report_errors():
-        removed = UnsetSetting(SettingsFileRepository())(key)
-        msg = f"unset {key}" if removed else f"{key} was not set"
+        removed = UnsetSetting(SettingsFileRepository())(key, profile=profile)
+        target = profile or "<active>"
+        msg = f"unset {key} in profile {target}" if removed else f"{key} was not set"
         typer.echo(msg, err=True)
+
+
+def _entry_to_row(entry: object) -> dict[str, object]:
+    """Flatten a SettingEntry into a row, rendering ``source`` as a label string.
+
+    JSON consumers get the same flat shape as table/raw users — keep it
+    simple and consistent across formats.
+    """
+    from untaped_config.domain import SettingEntry  # local import to avoid cycle
+
+    assert isinstance(entry, SettingEntry)
+    return {
+        "key": entry.key,
+        "value": entry.value,
+        "default": entry.default,
+        "source": entry.source.label,
+        "profile": entry.profile or "",
+    }
