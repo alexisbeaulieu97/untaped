@@ -64,8 +64,6 @@ class ListAllProfilesSettings:
             for path, value in _iter_leaves(profile, ()):
                 descriptor = descriptors_by_path.get(path)
                 if descriptor is None:
-                    # Unknown key under this profile (e.g. typo, leftover); skip
-                    # to avoid leaking arbitrary YAML into the table.
                     continue
                 entries.append(
                     SettingEntry(

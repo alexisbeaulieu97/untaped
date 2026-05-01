@@ -30,7 +30,11 @@ from pydantic_settings import (
 )
 from pydantic_settings.sources import InitSettingsSource
 
-from untaped_core.profile_resolver import resolve_profiles
+from untaped_core.profile_resolver import (
+    effective_active_profile_name,
+    resolve_profiles,
+    splice_workspace_registry,
+)
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 
@@ -136,9 +140,8 @@ class ProfilesSettingsSource(InitSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = self._load_raw_yaml(yaml_file)
-        active_override = os.environ.get("UNTAPED_PROFILE") or None
-        effective, _ = resolve_profiles(raw, active_override=active_override)
-        self._splice_workspace_registry(raw, effective)
+        effective, _ = resolve_profiles(raw, active_override=effective_active_profile_name(raw))
+        splice_workspace_registry(raw, effective)
         super().__init__(settings_cls, effective)
 
     @staticmethod
@@ -148,23 +151,6 @@ class ProfilesSettingsSource(InitSettingsSource):
         with yaml_file.open() as f:
             raw = yaml.safe_load(f) or {}
         return raw if isinstance(raw, dict) else {}
-
-    @staticmethod
-    def _splice_workspace_registry(raw: dict[str, Any], effective: dict[str, Any]) -> None:
-        """Hoist top-level ``workspace.workspaces`` (state) into the merged dict.
-
-        Profiles can still set ``workspace.cache_dir``; the registry merges in
-        without clobbering other workspace keys.
-        """
-        ws_state = raw.get("workspace")
-        if not isinstance(ws_state, dict):
-            return
-        registry = ws_state.get("workspaces")
-        if registry is None:
-            return
-        merged_ws = effective.setdefault("workspace", {})
-        if isinstance(merged_ws, dict):
-            merged_ws["workspaces"] = registry
 
 
 def resolve_config_path() -> Path:

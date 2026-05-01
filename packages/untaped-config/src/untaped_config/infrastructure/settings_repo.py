@@ -9,8 +9,6 @@ import yaml
 from pydantic import ValidationError
 from untaped_core import ConfigError, Settings, first_validation_error, get_settings
 from untaped_core.config_file import (
-    MISSING,
-    get_at_path,
     list_profile_names,
     read_config_dict,
     set_at_path,
@@ -18,7 +16,12 @@ from untaped_core.config_file import (
     write_config_dict,
 )
 from untaped_core.config_schema import FieldDescriptor, find_descriptor, walk_settings
-from untaped_core.profile_resolver import resolve_profiles
+from untaped_core.profile_resolver import (
+    DEFAULT_PROFILE,
+    effective_active_profile_name,
+    resolve_profiles,
+    splice_workspace_registry,
+)
 
 
 class SettingsFileRepository:
@@ -50,9 +53,9 @@ class SettingsFileRepository:
 
     def provenance(self) -> dict[tuple[str, ...], str]:
         """Map every leaf path that came from YAML to its profile name."""
-        active_override = os.environ.get("UNTAPED_PROFILE") or None
+        data = self.yaml_dict()
         try:
-            _, prov = resolve_profiles(self.yaml_dict(), active_override=active_override)
+            _, prov = resolve_profiles(data, active_override=effective_active_profile_name(data))
         except ConfigError:
             return {}
         return prov
@@ -85,7 +88,7 @@ class SettingsFileRepository:
             profile_data = {}
             profiles[target] = profile_data
         set_at_path(profile_data, descriptor.path, coerced)
-        merged = _merge_for_validation(data)
+        merged = _merge_for_validation(data, active=target)
         try:
             self._settings_cls.model_validate(merged)
         except ValidationError as exc:
@@ -100,12 +103,11 @@ class SettingsFileRepository:
         if not isinstance(profiles, dict):
             return False
         target = profile or _current_active_profile_name(data)
-        if target not in profiles or not isinstance(profiles[target], dict):
+        profile_data = profiles.get(target)
+        if not isinstance(profile_data, dict):
             return False
-        profile_data = profiles[target]
-        if get_at_path(profile_data, descriptor.path) is MISSING:
+        if not unset_at_path(profile_data, descriptor.path):
             return False
-        unset_at_path(profile_data, descriptor.path)
         write_config_dict(data)
         get_settings.cache_clear()
         return True
@@ -115,7 +117,7 @@ class SettingsFileRepository:
         when an explicit profile was named."""
         if profile is None:
             return _current_active_profile_name(data)
-        if profile == "default":
+        if profile == DEFAULT_PROFILE:
             return profile
         existing = data.get("profiles") or {}
         if not isinstance(existing, dict) or profile not in existing:
@@ -138,23 +140,19 @@ def _ensure_profiles_dict(data: dict[str, Any]) -> dict[str, Any]:
 
 def _current_active_profile_name(data: dict[str, Any]) -> str:
     """Return the active profile recorded in ``data`` (env override applied)."""
-    name = os.environ.get("UNTAPED_PROFILE") or data.get("active") or "default"
-    if not isinstance(name, str) or not name:
-        return "default"
-    return name
+    return effective_active_profile_name(data) or DEFAULT_PROFILE
 
 
-def _merge_for_validation(data: dict[str, Any]) -> dict[str, Any]:
-    """Run the resolver to get a merged dict suitable for Pydantic validation."""
-    active_override = os.environ.get("UNTAPED_PROFILE") or None
-    effective, _ = resolve_profiles(data, active_override=active_override)
-    # Splice the workspace registry like ProfilesSettingsSource does so the
-    # full Settings model can validate.
-    ws_state = data.get("workspace")
-    if isinstance(ws_state, dict) and "workspaces" in ws_state:
-        merged_ws = effective.setdefault("workspace", {})
-        if isinstance(merged_ws, dict):
-            merged_ws["workspaces"] = ws_state["workspaces"]
+def _merge_for_validation(data: dict[str, Any], *, active: str) -> dict[str, Any]:
+    """Run the resolver as if ``active`` were the live profile.
+
+    Used when writing to a profile that isn't the ambient active one — the
+    schema check has to validate the target profile's view, otherwise the
+    invalid value silently lands on disk and only fails when the profile
+    is later activated.
+    """
+    effective, _ = resolve_profiles(data, active_override=active)
+    splice_workspace_registry(data, effective)
     return effective
 
 

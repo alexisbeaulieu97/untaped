@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from untaped_core import ConfigError
+from untaped_core.profile_resolver import DEFAULT_PROFILE
 
 from untaped_profile.application.ports import ProfileRepository
-
-DEFAULT_PROFILE = "default"
 
 
 class DeleteProfile:
@@ -28,7 +27,7 @@ class DeleteProfile:
         if self._repo.read(name) is None:
             known = ", ".join(sorted(self._repo.names())) or "(none)"
             raise ConfigError(f"profile {name!r} does not exist. Known: {known}")
-        if (self._repo.active_name() or DEFAULT_PROFILE) == name:
+        if (self._repo.persisted_active_name() or DEFAULT_PROFILE) == name:
             raise ConfigError(
                 f"cannot delete the active profile {name!r}; "
                 "switch to another profile first with `untaped profile use`"

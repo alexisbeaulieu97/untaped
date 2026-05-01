@@ -126,9 +126,7 @@ def list_profile_names(path: Path | None = None) -> list[str]:
 def get_active_profile_name(path: Path | None = None) -> str | None:
     """Return the persisted active profile, or ``None`` if unset / blank."""
     name = read_config_dict(path).get("active")
-    if not isinstance(name, str) or not name:
-        return None
-    return name
+    return name if isinstance(name, str) and name else None
 
 
 def set_active_profile(name: str, path: Path | None = None) -> None:

@@ -7,7 +7,6 @@ profile-aware helpers in ``config_file`` and ``profile_resolver``.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from untaped_core import get_settings
@@ -20,7 +19,7 @@ from untaped_core.config_file import (
     set_active_profile,
     write_profile,
 )
-from untaped_core.profile_resolver import resolve_profiles
+from untaped_core.profile_resolver import effective_active_profile_name, resolve_profiles
 
 
 class ProfileFileRepository:
@@ -37,9 +36,15 @@ class ProfileFileRepository:
         :class:`ProfilesSettingsSource`, etc.), so the ``profile list`` ✓
         marker stays consistent with reality during a per-call override.
         """
-        env_override = os.environ.get("UNTAPED_PROFILE")
-        if env_override:
-            return env_override
+        return effective_active_profile_name(read_config_dict())
+
+    def persisted_active_name(self) -> str | None:
+        """Return ``active:`` from disk, ignoring per-call overrides.
+
+        Mutating use cases (delete, rename) compare against this so a
+        transient ``--profile`` flag never rewrites the user's persisted
+        active pointer behind their back.
+        """
         return get_active_profile_name()
 
     def read(self, name: str) -> dict[str, Any] | None:

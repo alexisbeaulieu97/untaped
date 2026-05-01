@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from untaped_core import ConfigError
+from untaped_core.profile_resolver import DEFAULT_PROFILE
 
 from untaped_profile.application.ports import ProfileRepository
 from untaped_profile.domain import Profile
@@ -20,9 +21,10 @@ class ShowProfile:
         self._repo = repo
 
     def __call__(self, name: str, *, raw: bool = False) -> Profile:
-        if self._repo.read(name) is None:
+        raw_data = self._repo.read(name)
+        if raw_data is None:
             known = ", ".join(sorted(self._repo.names())) or "(none)"
             raise ConfigError(f"profile {name!r} does not exist. Known: {known}")
-        data = self._repo.read(name) or {} if raw else self._repo.resolved(name)
-        active = self._repo.active_name() or "default"
+        data = raw_data if raw else self._repo.resolved(name)
+        active = self._repo.active_name() or DEFAULT_PROFILE
         return Profile(name=name, data=data, is_active=(name == active))
