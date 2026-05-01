@@ -115,3 +115,19 @@ def test_edit_rejects_empty_editor(tmp_path: Path) -> None:
     registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
     with pytest.raises(WorkspaceError, match="editor command is empty"):
         EditWorkspace(registry, runner=lambda _c: 0, env={})("prod", editor="   ")
+
+
+def test_edit_preserves_windows_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list[list[str]] = []
+
+    def _runner(cmd):  # type: ignore[no-untyped-def]
+        captured.append(list(cmd))
+        return 0
+
+    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+
+    monkeypatch.setattr("untaped_workspace.application.edit_workspace.os.name", "nt")
+    EditWorkspace(registry, runner=_runner, env={})("prod", editor=r"C:\Tools\vim.exe")
+    # backslashes must survive — POSIX-mode splitting would mangle this to
+    # 'C:Toolsvim.exe' before subprocess ever sees it.
+    assert captured[-1] == [r"C:\Tools\vim.exe", str(tmp_path / "prod")]

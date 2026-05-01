@@ -50,7 +50,7 @@ class EditWorkspace:
         path = self._registry.get(name).path
         chosen = editor or self._env.get("VISUAL") or self._env.get("EDITOR") or "vi"
         try:
-            argv = shlex.split(chosen)
+            argv = shlex.split(chosen, posix=os.name != "nt")
         except ValueError as exc:
             raise WorkspaceError(f"could not parse editor command {chosen!r}: {exc}") from exc
         if not argv:
