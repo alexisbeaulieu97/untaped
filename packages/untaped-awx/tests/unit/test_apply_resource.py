@@ -8,10 +8,13 @@ from typing import Any
 import pytest
 from untaped_awx.application import ApplyResource
 from untaped_awx.domain import Metadata, Resource, ResourceSpec
+from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import (
+    CREDENTIAL_SPEC,
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
+    SCHEDULE_SPEC,
 )
 
 # ----- Stubs -----
@@ -381,3 +384,191 @@ def test_fks_resolved_for_create() -> None:
     payload, _ = strategy.created
     assert payload["credential"] == 7
     assert payload["organization"] == 1
+
+
+def test_apply_rejects_read_only_kind() -> None:
+    """Read-only kinds (Credential, Inventory, Organization, CredentialType)
+    must not flow through ApplyResource — top-level ``apply <file>`` would
+    otherwise issue create/update calls against deferred-CRUD endpoints.
+    """
+    strategy = _StubStrategy(existing=None)
+    apply = _make_apply(
+        catalog_specs={"Credential": CREDENTIAL_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    resource = Resource(
+        kind="Credential",
+        metadata=Metadata(name="scm-key", organization="Default"),
+        spec={"credential_type": 1},
+    )
+    with pytest.raises(BadRequest, match="does not support apply"):
+        apply(resource, write=True)
+    assert strategy.created is None
+    assert strategy.updated is None
+
+
+def test_apply_unchanged_with_nested_encrypted_preserves_field() -> None:
+    """Re-applying a JT whose only ``$encrypted$`` is a nested survey default
+    is a no-op — survey_spec is omitted from the PATCH so AWX retains the
+    nested secret.
+    """
+    survey = {
+        "spec": [
+            {"variable": "pw", "default": "$encrypted$", "question_name": "Password"},
+        ]
+    }
+    existing = {
+        "id": 42,
+        "name": "deploy",
+        "organization": 1,
+        "playbook": "deploy.yml",
+        "survey_spec": survey,
+    }
+    strategy = _StubStrategy(existing=existing)
+    apply = _make_apply(
+        catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"playbook": "deploy.yml", "survey_spec": survey},
+    )
+    outcome = apply(resource, write=True)
+    assert outcome.action == "unchanged"
+    assert strategy.updated is None
+
+
+def test_apply_sibling_change_alongside_nested_secret_raises() -> None:
+    """Renaming a survey question while the question's default is still
+    ``$encrypted$`` must raise — PATCHing survey_spec would clobber the
+    nested secret.
+    """
+    existing = {
+        "id": 42,
+        "name": "deploy",
+        "organization": 1,
+        "playbook": "deploy.yml",
+        "survey_spec": {
+            "spec": [
+                {
+                    "variable": "pw",
+                    "default": "$encrypted$",
+                    "question_name": "Password",
+                },
+            ]
+        },
+    }
+    strategy = _StubStrategy(existing=existing)
+    apply = _make_apply(
+        catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={
+            "playbook": "deploy.yml",
+            "survey_spec": {
+                "spec": [
+                    {
+                        "variable": "pw",
+                        "default": "$encrypted$",
+                        "question_name": "New Password Prompt",
+                    },
+                ]
+            },
+        },
+    )
+    with pytest.raises(BadRequest, match="survey_spec"):
+        apply(resource, write=True)
+    assert strategy.updated is None
+
+
+def test_apply_real_secret_value_alongside_sibling_change_succeeds() -> None:
+    """Inlining the real secret unblocks the sibling rename — the PATCH
+    sends the full survey_spec including the new value.
+    """
+    existing = {
+        "id": 42,
+        "name": "deploy",
+        "organization": 1,
+        "playbook": "deploy.yml",
+        "survey_spec": {
+            "spec": [
+                {
+                    "variable": "pw",
+                    "default": "$encrypted$",
+                    "question_name": "Password",
+                },
+            ]
+        },
+    }
+    strategy = _StubStrategy(existing=existing)
+    apply = _make_apply(
+        catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    new_survey = {
+        "spec": [
+            {
+                "variable": "pw",
+                "default": "actual-secret",
+                "question_name": "New Password Prompt",
+            },
+        ]
+    }
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"playbook": "deploy.yml", "survey_spec": new_survey},
+    )
+    outcome = apply(resource, write=True)
+    assert outcome.action == "updated"
+    assert strategy.updated is not None
+    _, patch_payload = strategy.updated
+    assert patch_payload["survey_spec"] == new_survey
+
+
+def test_schedule_inventory_fk_uses_parent_organization() -> None:
+    """Schedule's ``metadata.parent.organization`` must drive the inventory
+    FK scope. With ``metadata.organization=None`` (typical for saved
+    schedules), the only org information available is on ``parent``.
+    """
+    captured_scopes: list[dict[str, str] | None] = []
+
+    class _RecordingFk:
+        def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int:
+            captured_scopes.append(scope)
+            return 99
+
+        def id_to_name(self, kind: str, id_: int) -> str:
+            raise KeyError((kind, id_))
+
+        def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int]:
+            return value["kind"], 1
+
+    strategy = _StubStrategy(existing=None)
+    apply = ApplyResource(
+        client=_StubClient(),  # type: ignore[arg-type]
+        catalog=_StubCatalog({"Schedule": SCHEDULE_SPEC}),  # type: ignore[arg-type]
+        fk=_RecordingFk(),  # type: ignore[arg-type]
+        strategies=_StubStrategies(strategy),  # type: ignore[arg-type]
+    )
+    resource = Resource(
+        kind="Schedule",
+        metadata=Metadata(
+            name="nightly",
+            organization=None,
+            parent=IdentityRef(kind="JobTemplate", name="deploy", organization="OrgB"),
+        ),
+        spec={"rrule": "FREQ=DAILY;COUNT=1", "inventory": "shared-name"},
+    )
+    apply(resource, write=True)
+    # The inventory FK lookup must have received the parent's organization.
+    inventory_scopes = [s for s in captured_scopes if s is not None]
+    assert inventory_scopes == [{"organization": "OrgB"}]

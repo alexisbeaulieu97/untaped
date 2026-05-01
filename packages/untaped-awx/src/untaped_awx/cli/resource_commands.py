@@ -68,7 +68,7 @@ def _add_list(app: typer.Typer, spec: ResourceSpec) -> None:
     ) -> None:
         """List resources."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization)
+            scope = _scope(ctx, organization, spec)
             records = list(ListResources(ctx.repo)(spec, search=search, scope=scope, limit=limit))
         cols = list(columns) if columns else list(spec.list_columns)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
@@ -89,7 +89,7 @@ def _add_get(app: typer.Typer, spec: ResourceSpec) -> None:
     ) -> None:
         """Fetch a single resource by name."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization)
+            scope = _scope(ctx, organization, spec)
             record = GetResource(ctx.repo)(spec, name=name, scope=scope)
         typer.echo(format_output([record], fmt=fmt, columns=list(columns or [])))
 
@@ -110,7 +110,7 @@ def _add_save(app: typer.Typer, spec: ResourceSpec) -> None:
     ) -> None:
         """Dump the resource as a portable YAML envelope."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization)
+            scope = _scope(ctx, organization, spec)
             resource = SaveResource(ctx.repo, ctx.fk)(spec, name=name, scope=scope)
         comment = spec.fidelity_note if spec.fidelity != "full" else None
         if comment:
@@ -181,7 +181,7 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
         if limit and "limit" in accepts:
             payload["limit"] = limit
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization)
+            scope = _scope(ctx, organization, spec)
             job = RunAction(ctx.repo)(
                 spec,
                 name=name,
@@ -208,7 +208,7 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
     ) -> None:
         """Trigger an SCM sync (Project)."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization)
+            scope = _scope(ctx, organization, spec)
             job = RunAction(ctx.repo)(spec, name=name, action="update", scope=scope)
             if wait:
                 job = WatchJob(ctx.repo)(job)
@@ -218,6 +218,13 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- helpers ----
 
 
-def _scope(ctx: Any, organization: str | None) -> dict[str, str] | None:
+def _scope(ctx: Any, organization: str | None, spec: ResourceSpec) -> dict[str, str] | None:
+    # Org-scoping only applies to specs whose identity includes ``organization``.
+    # Global resources (Organization, CredentialType) and parent-scoped ones
+    # (Schedule) must not pick up ``awx.default_organization`` as a filter —
+    # AWX would interpret ``organization__name=...`` against records that have
+    # no such column and silently return zero results.
+    if "organization" not in spec.identity_keys:
+        return None
     org = organization or ctx.default_organization
     return {"organization": org} if org else None
