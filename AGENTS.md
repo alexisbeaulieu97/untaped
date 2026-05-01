@@ -149,6 +149,7 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Make an HTTP call                          | `from untaped_core import HttpClient`                            |
 | Format output for stdout                   | `from untaped_core import format_output, OutputFormat`           |
 | Read piped values from stdin               | `from untaped_core import read_stdin`                            |
+| Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
 | Log to stderr                              | `from untaped_core import get_logger`                            |
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped_core.config_schema import walk_settings`           |
@@ -307,6 +308,7 @@ deferred. Each item names the trigger that would justify revisiting:
 | Bulk FK prefetch in save/apply | Bulk operations on 100+ resources start showing FK-resolution latency. |
 | Decouple `AwxClient`/`cli/_context` from `untaped_core.Settings` (extractability) | Plan to ship `untaped-awx` as a standalone library or embed it elsewhere. |
 | Workflow node graph round-trip (`save_hook`/`apply_hook` for `WorkflowJobTemplateNode`) — design space already shaped by polymorphic `FkRef` | User explicitly needs the v0.5 workflow-nodes milestone. |
+| Generate Typer flags for every `ActionSpec.accepts` field (including list-typed `credentials`/`job_tags`) — currently the spec lists 11 launch fields but the CLI exposes only `--extra-vars`/`--limit`, so we shrunk `accepts` to match the CLI to keep the contract honest. | First user request for inventory/credentials/scm_branch/tags/verbosity at launch time. |
 
 ## Development Workflow
 
