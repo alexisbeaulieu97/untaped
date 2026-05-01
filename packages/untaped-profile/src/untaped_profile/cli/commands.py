@@ -1,0 +1,121 @@
+"""Typer commands: ``untaped profile list / show / use / create / delete / rename``."""
+
+from __future__ import annotations
+
+import typer
+import yaml
+from untaped_core import (
+    ColumnsOption,
+    FormatOption,
+    format_output,
+    report_errors,
+    resolve_config_path,
+)
+
+from untaped_profile.application import (
+    CreateProfile,
+    DeleteProfile,
+    ListProfiles,
+    RenameProfile,
+    ShowProfile,
+    UseProfile,
+)
+from untaped_profile.infrastructure import ProfileFileRepository
+
+app = typer.Typer(
+    name="profile",
+    help="Manage configuration profiles in ``~/.untaped/config.yml``.",
+    no_args_is_help=True,
+)
+
+
+@app.callback()
+def _callback() -> None:
+    """Manage configuration profiles in ``~/.untaped/config.yml``."""
+
+
+@app.command("list")
+def list_command(
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """List every profile, marking which one is active."""
+    with report_errors():
+        profiles = ListProfiles(ProfileFileRepository())()
+        rows: list[dict[str, object]] = [
+            {
+                "name": p.name,
+                "active": "✓" if p.is_active else "",
+                "keys": p.key_count,
+            }
+            for p in profiles
+        ]
+        typer.echo(format_output(rows, fmt=fmt, columns=columns))
+
+
+@app.command("show", no_args_is_help=True)
+def show_command(
+    name: str = typer.Argument(..., help="Profile name to inspect."),
+    raw: bool = typer.Option(
+        False,
+        "--raw",
+        help="Show only the keys this profile literally sets (no `default` fallback merge).",
+    ),
+) -> None:
+    """Print a profile's contents (effective view by default)."""
+    with report_errors():
+        profile = ShowProfile(ProfileFileRepository())(name, raw=raw)
+        header = f"# profile: {profile.name}"
+        if profile.is_active:
+            header += " (active)"
+        if not raw:
+            header += " — effective view (default ⤥ named)"
+        typer.echo(header, err=True)
+        typer.echo(yaml.safe_dump(profile.data, sort_keys=False, default_flow_style=False).rstrip())
+
+
+@app.command("use", no_args_is_help=True)
+def use_command(
+    name: str = typer.Argument(..., help="Profile to activate."),
+) -> None:
+    """Persist ``active: <name>`` in the config file."""
+    with report_errors():
+        UseProfile(ProfileFileRepository())(name)
+        typer.echo(f"active profile: {name} (config: {resolve_config_path()})", err=True)
+
+
+@app.command("create", no_args_is_help=True)
+def create_command(
+    name: str = typer.Argument(..., help="Name of the new profile."),
+    copy_from: str | None = typer.Option(
+        None,
+        "--copy-from",
+        help="Existing profile to copy as a starting point.",
+    ),
+) -> None:
+    """Create a new profile (empty by default; use ``--copy-from`` to seed it)."""
+    with report_errors():
+        CreateProfile(ProfileFileRepository())(name, copy_from=copy_from)
+        suffix = f" (copied from {copy_from})" if copy_from else ""
+        typer.echo(f"created profile: {name}{suffix}", err=True)
+
+
+@app.command("delete", no_args_is_help=True)
+def delete_command(
+    name: str = typer.Argument(..., help="Profile to remove."),
+) -> None:
+    """Delete a profile. Refuses to delete ``default`` or the active profile."""
+    with report_errors():
+        DeleteProfile(ProfileFileRepository())(name)
+        typer.echo(f"deleted profile: {name}", err=True)
+
+
+@app.command("rename", no_args_is_help=True)
+def rename_command(
+    old_name: str = typer.Argument(..., help="Existing profile name."),
+    new_name: str = typer.Argument(..., help="New profile name."),
+) -> None:
+    """Rename a profile, updating ``active:`` if it pointed at the old name."""
+    with report_errors():
+        RenameProfile(ProfileFileRepository())(old_name, new_name)
+        typer.echo(f"renamed profile: {old_name} → {new_name}", err=True)

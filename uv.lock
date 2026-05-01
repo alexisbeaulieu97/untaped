@@ -13,6 +13,7 @@ members = [
     "untaped-config",
     "untaped-core",
     "untaped-github",
+    "untaped-profile",
     "untaped-workspace",
 ]
 
@@ -653,6 +654,7 @@ dependencies = [
     { name = "untaped-config" },
     { name = "untaped-core" },
     { name = "untaped-github" },
+    { name = "untaped-profile" },
     { name = "untaped-workspace" },
 ]
 
@@ -674,6 +676,7 @@ requires-dist = [
     { name = "untaped-config", editable = "packages/untaped-config" },
     { name = "untaped-core", editable = "packages/untaped-core" },
     { name = "untaped-github", editable = "packages/untaped-github" },
+    { name = "untaped-profile", editable = "packages/untaped-profile" },
     { name = "untaped-workspace", editable = "packages/untaped-workspace" },
 ]
 
@@ -759,6 +762,23 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "typer", specifier = ">=0.25.1" },
+    { name = "untaped-core", editable = "packages/untaped-core" },
+]
+
+[[package]]
+name = "untaped-profile"
+version = "0.1.0"
+source = { editable = "packages/untaped-profile" }
+dependencies = [
+    { name = "typer" },
+    { name = "untaped-config" },
+    { name = "untaped-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "typer", specifier = ">=0.25.1" },
+    { name = "untaped-config", editable = "packages/untaped-config" },
     { name = "untaped-core", editable = "packages/untaped-core" },
 ]
 
