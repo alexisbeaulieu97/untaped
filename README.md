@@ -46,9 +46,11 @@ lives under `profiles.<name>`, and `active: <name>` selects which one is
 in force. Resolution order, high → low:
 
 ```
-UNTAPED_<…>= env var  >  active profile  >  default profile  >  schema default
+UNTAPED_<SECTION>__<FIELD>  >  active profile  >  default profile  >  schema default
 ```
 
+Individual fields can be overridden per-shell with
+`UNTAPED_<SECTION>__<FIELD>` env vars (e.g. `UNTAPED_AWX__TOKEN=…`).
 `profiles.default` is required and acts as the bottom layer for every other
 profile — name a key once in `default`, override it in `prod`/`stage`/etc.
 The active profile can also be set per-process via `UNTAPED_PROFILE=<name>`
@@ -83,6 +85,8 @@ workspace:
 
 Use the `untaped config` and `untaped profile` commands to edit the file
 safely (validated against the schema, no hand-rolled YAML).
+`untaped config set <key> <value>` writes to the active profile by default;
+pass `--profile <name>` to target a different one.
 
 ## Pipe-friendly by design
 
