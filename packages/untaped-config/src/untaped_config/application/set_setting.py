@@ -14,8 +14,7 @@ class SetSetting:
 
     ``profile`` overrides the active profile and must already exist (except
     for ``"default"``, which is auto-bootstrapped if missing). Returns the
-    resolved target profile name so callers can echo where the write landed
-    instead of an opaque ``<active>`` placeholder.
+    resolved target profile name so callers can echo where the write landed.
     """
 
     def __init__(self, repo: _SetCapableRepo) -> None:
