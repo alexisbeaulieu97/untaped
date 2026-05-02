@@ -307,7 +307,7 @@ def foreach_command(
                     typer.echo(f"[{o.repo}] exit {o.returncode}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
-            typer.echo(format_output(rows, fmt=fmt, columns=list(columns or [])))
+            typer.echo(format_output(rows, fmt=fmt, columns=columns))
         if any_failed:
             raise typer.Exit(code=1)
 
