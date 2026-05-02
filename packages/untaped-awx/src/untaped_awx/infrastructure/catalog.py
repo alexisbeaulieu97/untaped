@@ -18,11 +18,7 @@ class AwxResourceCatalog:
 
     def __init__(self, specs: tuple[ResourceSpec, ...] = ALL_SPECS) -> None:
         self._by_kind: dict[str, ResourceSpec] = {s.kind: s for s in specs}
-        self._by_cli_name: dict[str, ResourceSpec] = {}
-        for spec in specs:
-            self._by_cli_name[spec.cli_name] = spec
-            for alias in spec.aliases:
-                self._by_cli_name[alias] = spec
+        self._by_cli_name: dict[str, ResourceSpec] = {s.cli_name: s for s in specs}
 
     def get(self, kind: str) -> ResourceSpec:
         try:

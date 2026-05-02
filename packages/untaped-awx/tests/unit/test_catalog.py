@@ -17,12 +17,6 @@ def test_lookup_by_cli_name() -> None:
     assert spec.kind == "JobTemplate"
 
 
-def test_lookup_by_alias() -> None:
-    cat = AwxResourceCatalog()
-    assert cat.by_cli_name("jt").kind == "JobTemplate"
-    assert cat.by_cli_name("wf").kind == "WorkflowJobTemplate"
-
-
 def test_kinds_returns_all() -> None:
     cat = AwxResourceCatalog()
     kinds = cat.kinds()
