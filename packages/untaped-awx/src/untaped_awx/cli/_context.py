@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from untaped_core import get_settings
 
+from untaped_awx.domain import ResourceSpec
 from untaped_awx.infrastructure import AwxClient, AwxResourceCatalog
 from untaped_awx.infrastructure.fk_resolver import FkResolver
 from untaped_awx.infrastructure.resource_repo import ResourceRepository
@@ -57,3 +58,21 @@ def open_context() -> Iterator[AwxContext]:
         yield ctx
     finally:
         ctx.close()
+
+
+def scope_for_spec(
+    spec: ResourceSpec,
+    organization: str | None,
+    default_organization: str | None,
+) -> dict[str, str] | None:
+    """Org-scoping only applies to specs whose identity includes ``organization``.
+
+    Global resources (Organization, CredentialType) and parent-scoped ones
+    (Schedule) must not pick up ``awx.default_organization`` as a filter —
+    AWX would interpret ``organization__name=...`` against records that have
+    no such column and silently return zero results.
+    """
+    if "organization" not in spec.identity_keys:
+        return None
+    org = organization or default_organization
+    return {"organization": org} if org else None

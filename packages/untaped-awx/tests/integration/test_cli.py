@@ -450,6 +450,73 @@ def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
     assert "no such command" in result.output.lower() or "usage" in result.output.lower()
 
 
+def test_save_all_with_organization_still_includes_parent_scoped_schedules(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """`awx save --all --organization X` must not filter Schedule records
+    by `organization__name=X`. Schedule's `identity_keys` is `("name",)` —
+    its parent organization lives in `metadata.parent`, not as a direct
+    FK column. Applying the org filter the same way as JT/Project would
+    silently exclude schedules from the bulk backup.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="deploy.yml",
+        project=10,
+        project_name="playbooks",
+    )
+    # Schedule attached to the JT — note no `organization_name` on the
+    # record itself; AWX surfaces parent org via summary_fields only.
+    fake_aap.seed(
+        "schedules",
+        id=50,
+        name="nightly",
+        unified_job_template=30,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 30,
+                "name": "deploy",
+                "unified_job_type": "job_template",
+                "organization_name": "Default",
+            }
+        },
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Org filter still applied to org-scoped kinds.
+    assert (out_dir / "JobTemplate__deploy.yml").exists()
+    assert (out_dir / "Project__playbooks.yml").exists()
+
+    # Schedule must be saved despite --organization filter (the bug filtered it out).
+    schedule_files = list(out_dir.glob("Schedule__*.yml"))
+    assert schedule_files, (
+        "schedule excluded by organization__name filter; saved files: "
+        f"{[p.name for p in out_dir.iterdir()]}"
+    )
+    assert any("nightly" in f.name for f in schedule_files)
+
+
 def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed(

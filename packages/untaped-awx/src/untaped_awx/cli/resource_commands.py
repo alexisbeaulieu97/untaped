@@ -23,7 +23,7 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
-from untaped_awx.cli._context import open_context
+from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
@@ -259,12 +259,4 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
 
 
 def _scope(ctx: Any, organization: str | None, spec: ResourceSpec) -> dict[str, str] | None:
-    # Org-scoping only applies to specs whose identity includes ``organization``.
-    # Global resources (Organization, CredentialType) and parent-scoped ones
-    # (Schedule) must not pick up ``awx.default_organization`` as a filter —
-    # AWX would interpret ``organization__name=...`` against records that have
-    # no such column and silently return zero results.
-    if "organization" not in spec.identity_keys:
-        return None
-    org = organization or ctx.default_organization
-    return {"organization": org} if org else None
+    return scope_for_spec(spec, organization, ctx.default_organization)
