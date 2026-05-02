@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Literal
 
 import typer
 import yaml
@@ -23,6 +24,11 @@ from untaped_profile.application import (
     UseProfile,
 )
 from untaped_profile.infrastructure import ProfileFileRepository
+
+# `profile show` returns a single nested object — `raw`/`table` (which want
+# tabular rows) don't apply, so narrow the format type for this command and
+# let Typer reject other values at parse time.
+ShowFormat = Literal["yaml", "json"]
 
 app = typer.Typer(
     name="profile",
@@ -63,13 +69,20 @@ def show_command(
         "--raw",
         help="Show only the keys this profile literally sets (no `default` fallback merge).",
     ),
-    fmt: FormatOption = "yaml",
+    fmt: ShowFormat = typer.Option(
+        "yaml",
+        "--format",
+        "-f",
+        help="Output format (yaml or json).",
+    ),
 ) -> None:
     """Print a profile's contents (effective view by default).
 
     ``yaml`` (default) prints the merged data as a flat YAML document for
     human use; ``json`` emits a wrapped envelope so downstream tools can
     address the metadata fields (``jq '.data.awx.base_url'`` etc.).
+    ``raw`` and ``table`` are not supported — a single nested object has
+    no rows for those formats to render.
     """
     with report_errors():
         profile = ShowProfile(ProfileFileRepository())(name, raw=raw)
