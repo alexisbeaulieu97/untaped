@@ -696,6 +696,7 @@ name = "untaped-awx"
 version = "0.1.0"
 source = { editable = "packages/untaped-awx" }
 dependencies = [
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "typer" },
     { name = "untaped-core" },
@@ -703,6 +704,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.3" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "typer", specifier = ">=0.25.1" },
     { name = "untaped-core", editable = "packages/untaped-core" },
@@ -713,12 +715,16 @@ name = "untaped-config"
 version = "0.1.0"
 source = { editable = "packages/untaped-config" }
 dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "typer" },
     { name = "untaped-core" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.3" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "typer", specifier = ">=0.25.1" },
     { name = "untaped-core", editable = "packages/untaped-core" },
 ]
@@ -757,12 +763,14 @@ name = "untaped-github"
 version = "0.1.0"
 source = { editable = "packages/untaped-github" }
 dependencies = [
+    { name = "pydantic" },
     { name = "typer" },
     { name = "untaped-core" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.3" },
     { name = "typer", specifier = ">=0.25.1" },
     { name = "untaped-core", editable = "packages/untaped-core" },
 ]
@@ -772,15 +780,15 @@ name = "untaped-profile"
 version = "0.1.0"
 source = { editable = "packages/untaped-profile" }
 dependencies = [
+    { name = "pyyaml" },
     { name = "typer" },
-    { name = "untaped-config" },
     { name = "untaped-core" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "typer", specifier = ">=0.25.1" },
-    { name = "untaped-config", editable = "packages/untaped-config" },
     { name = "untaped-core", editable = "packages/untaped-core" },
 ]
 
@@ -789,12 +797,16 @@ name = "untaped-workspace"
 version = "0.1.0"
 source = { editable = "packages/untaped-workspace" }
 dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "typer" },
     { name = "untaped-core" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.3" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "typer", specifier = ">=0.25.1" },
     { name = "untaped-core", editable = "packages/untaped-core" },
 ]
