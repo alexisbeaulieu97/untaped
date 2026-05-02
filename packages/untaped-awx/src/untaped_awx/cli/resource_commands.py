@@ -108,7 +108,7 @@ def _add_get(app: typer.Typer, spec: ResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
-            typer.echo(format_output(records, fmt=fmt, columns=list(columns or [])))
+            typer.echo(format_output(records, fmt=fmt, columns=columns))
         if any_failed:
             raise typer.Exit(code=1)
 
@@ -225,9 +225,7 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if jobs:
-            typer.echo(
-                format_output([j.model_dump() for j in jobs], fmt=fmt, columns=list(columns or []))
-            )
+            typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
         if any_failed:
             raise typer.Exit(code=1)
 
@@ -254,7 +252,7 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
             job = RunAction(ctx.repo)(spec, name=name, action="update", scope=scope)
             if wait:
                 job = WatchJob(ctx.repo)(job)
-        typer.echo(format_output([job.model_dump()], fmt=fmt, columns=list(columns or [])))
+        typer.echo(format_output([job.model_dump()], fmt=fmt, columns=columns))
 
 
 # ---- helpers ----

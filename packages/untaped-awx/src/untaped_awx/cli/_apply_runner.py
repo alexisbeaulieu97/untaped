@@ -43,6 +43,8 @@ def run_apply(
         for outcome in outcomes:
             for line in diff_lines(outcome):
                 typer.echo(line, err=True)
+    if any(o.action == "failed" for o in outcomes):
+        raise typer.Exit(code=1)
 
 
 def _make_reader(*, kind_filter: str | None, cli_name: str | None) -> ResourceDocumentReader:

@@ -311,9 +311,7 @@ def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path)
     )
     result = CliRunner().invoke(app, ["job-templates", "apply", "--file", str(f), "--yes"])
     output = result.output + (result.stderr or "")
-    # Either the ambiguity surfaces directly, or apply continues-on-error
-    # records the failure in its outcome rows. Either way, the message
-    # must reach the user and exit must be non-zero (no silent overwrite).
+    assert result.exit_code != 0, output
     assert "ambiguous" in output.lower(), output
 
 
