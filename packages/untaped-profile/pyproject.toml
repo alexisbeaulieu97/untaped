@@ -8,8 +8,8 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "pyyaml>=6.0.3",
     "typer>=0.25.1",
-    "untaped-config",
     "untaped-core",
 ]
 
@@ -19,4 +19,3 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 untaped-core = { workspace = true }
-untaped-config = { workspace = true }
