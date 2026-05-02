@@ -15,7 +15,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError
+from untaped_workspace.errors import GitError, WorkspaceError
 
 _RmTree = Callable[[Path], None]
 
@@ -75,6 +75,10 @@ class SyncWorkspace:
         if not only:
             return list(manifest.repos)
         wanted = set(only)
+        known = {r.name for r in manifest.repos} | {r.url for r in manifest.repos}
+        unmatched = sorted(wanted - known)
+        if unmatched:
+            raise WorkspaceError(f"unknown repo identifier(s) for --only: {', '.join(unmatched)}")
         return [r for r in manifest.repos if (r.name in wanted) or (r.url in wanted)]
 
     def _ensure_bare_fresh(self, url: str) -> Path:

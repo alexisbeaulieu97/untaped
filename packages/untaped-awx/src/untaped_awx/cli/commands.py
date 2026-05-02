@@ -203,13 +203,17 @@ def jobs_wait(
     timeout: float | None = typer.Option(
         None, "--timeout", help="Seconds to wait before giving up."
     ),
+    fmt: OutputFormat = typer.Option(
+        "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
+    ),
+    columns: ColumnsOption = None,
 ) -> None:
     """Block until the job reaches a terminal state."""
     with report_errors(), open_context() as ctx:
         record = ctx.repo.request("GET", f"jobs/{job_id}/")
         job = Job.model_validate({**record, "kind": "job"})
         final = WatchJob(ctx.repo)(job, timeout=timeout)
-    typer.echo(format_output([final.model_dump()], fmt="yaml", columns=[]))
+    typer.echo(format_output([final.model_dump()], fmt=fmt, columns=columns))
 
 
 app.add_typer(jobs_app, name="jobs")

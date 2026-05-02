@@ -39,10 +39,7 @@ class SaveResource:
         name: str,
         scope: dict[str, str] | None = None,
     ) -> Resource:
-        params: dict[str, str] = {"name": name}
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
-        record = self._client.find(spec, params=params)
+        record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
         return self._build_resource(spec, record)

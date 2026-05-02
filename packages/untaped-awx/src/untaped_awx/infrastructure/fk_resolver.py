@@ -37,10 +37,7 @@ class FkResolver:
         if key in self._name_cache:
             return self._name_cache[key]
         spec = self._catalog.get(kind)
-        params: dict[str, str] = {"name": name}
-        for k, v in scope.items():
-            params[f"{k}__name"] = v
-        record = self._repo.find(spec, params=params)
+        record = self._repo.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(kind, {"name": name, **scope})
         id_ = int(record["id"])

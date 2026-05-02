@@ -16,7 +16,6 @@ from untaped_core.config_file import (
     set_at_path,
     unset_at_path,
 )
-from untaped_core.settings import get_settings
 
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError
@@ -61,7 +60,6 @@ class WorkspaceRegistryRepository:
             set_at_path(data, _REGISTRY_PATH, [*existing, {"name": name, "path": str(path)}])
 
         mutate_config(_apply)
-        get_settings.cache_clear()
         return Workspace(name=name, path=canonical)
 
     def unregister(self, name: str) -> bool:
@@ -80,8 +78,6 @@ class WorkspaceRegistryRepository:
             removed = True
 
         mutate_config(_apply)
-        if removed:
-            get_settings.cache_clear()
         return removed
 
 

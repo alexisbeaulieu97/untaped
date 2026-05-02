@@ -176,6 +176,81 @@ def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
     assert launched_ids == {10, 11}
 
 
+def test_get_without_scope_raises_when_name_is_ambiguous(fake_aap: Any) -> None:
+    """A name that exists in multiple orgs must raise (no silent first-match)."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
+
+    result = CliRunner().invoke(app, ["job-templates", "get", "deploy"])
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "ambiguous" in output.lower(), output
+
+
+def test_get_with_scope_resolves_unambiguously(fake_aap: Any) -> None:
+    """Adding the missing scope removes the ambiguity."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
+
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "deploy", "--organization", "Org-A", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+
+
+def test_launch_supports_format_json(fake_aap: Any) -> None:
+    """The pipeline contract: launch must honour --format/--columns
+    instead of forcing yaml output."""
+    import json as _json
+
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    result = CliRunner().invoke(app, ["job-templates", "launch", "alpha", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed, parsed
+
+
+def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
+    """`awx jobs wait` must honour --format — CI scripts that pipe a
+    wait verdict into ``jq`` rely on the structured shape."""
+    import json as _json
+
+    fake_aap.seed("jobs", id=42, name="run", status="successful", type="job")
+    result = CliRunner().invoke(app, ["jobs", "wait", "42", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed
+    assert parsed[0].get("id") == 42
+
+
+def test_project_update_supports_format_json(fake_aap: Any) -> None:
+    """The generated `<kind> update` command on Project must honour
+    --format too. Symmetric with launch."""
+    import json as _json
+
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app, ["projects", "update", "playbooks", "--organization", "Default", "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed
+
+
 def test_launch_stdin_emits_partial_results_when_one_fails(fake_aap: Any) -> None:
     """A missing name mid-fan-out must not hide the IDs of the jobs that
     already submitted to AWX. Otherwise a user piping 50 names sees only
@@ -212,6 +287,32 @@ def test_get_stdin_continues_on_missing_name(fake_aap: Any) -> None:
     # alpha's row reaches stdout even though ghost failed.
     assert "alpha" in result.stdout
     assert "ghost" in (result.output + (result.stderr or ""))
+
+
+def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path) -> None:
+    """An under-scoped apply against ambiguous AWX state must surface the
+    ambiguity rather than overwrite an arbitrary record."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed("projects", id=10, name="playbooks", organization=1, organization_name="Org-A")
+    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=30, name="deploy", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=31, name="deploy", organization=2, organization_name="Org-B")
+
+    f = tmp_path / "jt.yml"
+    # Note: no organization in metadata — that's the under-scoped case.
+    f.write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: deploy }\n"
+        "spec:\n"
+        "  playbook: deploy.yml\n"
+        "  project: playbooks\n"
+        "  inventory: prod\n"
+    )
+    result = CliRunner().invoke(app, ["job-templates", "apply", "--file", str(f), "--yes"])
+    output = result.output + (result.stderr or "")
+    assert result.exit_code != 0, output
+    assert "ambiguous" in output.lower(), output
 
 
 def test_apply_yes_writes_changes(fake_aap: Any, tmp_path: Path) -> None:

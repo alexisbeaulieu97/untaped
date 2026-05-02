@@ -86,3 +86,82 @@ def test_network_error_raises_http_error() -> None:
         with pytest.raises(HttpError) as exc_info:
             client.get("/fail")
     assert exc_info.value.status_code is None
+
+
+def test_get_json_returns_decoded_body() -> None:
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/ok").mock(return_value=httpx.Response(200, json={"x": 1}))
+        body = client.get_json("/ok")
+    assert body == {"x": 1}
+
+
+def test_request_json_returns_none_for_empty_body() -> None:
+    """204 No Content (and 200 with empty body) decode to ``None``,
+    not a JSONDecodeError."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.delete("/thing/1").mock(return_value=httpx.Response(204))
+        assert client.request_json("DELETE", "/thing/1") is None
+
+
+def test_get_json_html_response_raises_http_error() -> None:
+    """A 200 carrying HTML (auth proxy interstitial, misconfigured
+    controller) must raise HttpError, not leak JSONDecodeError past the
+    typed-error boundary."""
+    body = "<html><body>login required</body></html>"
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/api").mock(
+            return_value=httpx.Response(200, text=body, headers={"content-type": "text/html"})
+        )
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json("/api")
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.body is not None
+    assert "login required" in exc_info.value.body
+
+
+def test_get_json_truncates_long_body_to_snippet() -> None:
+    """The body snippet on a decode failure is bounded so a multi-MB
+    error page doesn't explode stderr."""
+    long_body = "x" * 5000
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/api").mock(
+            return_value=httpx.Response(200, text=long_body, headers={"content-type": "text/html"})
+        )
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json("/api")
+    assert exc_info.value.body is not None
+    assert len(exc_info.value.body) == 256
+    assert exc_info.value.body == long_body[:256]
+
+
+def test_request_json_does_not_decode_on_4xx() -> None:
+    """A 4xx with an HTML body must surface its HTTP status — never the
+    decode error. Locks the order of operations: status check happens
+    before JSON decoding."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/api").mock(
+            return_value=httpx.Response(
+                401,
+                text="<html>login expired</html>",
+                headers={"content-type": "text/html"},
+            )
+        )
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json("/api")
+    assert exc_info.value.status_code == 401
+    assert "401" in str(exc_info.value)

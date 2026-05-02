@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_core import get_settings
 from untaped_core.config_file import (
     delete_profile,
     get_active_profile_name,
@@ -58,18 +57,12 @@ class ProfileFileRepository:
 
     def write(self, name: str, data: dict[str, Any]) -> None:
         write_profile(name, data)
-        get_settings.cache_clear()
 
     def delete(self, name: str) -> bool:
-        removed = delete_profile(name)
-        if removed:
-            get_settings.cache_clear()
-        return removed
+        return delete_profile(name)
 
     def rename(self, old: str, new: str) -> None:
         rename_profile(old, new)
-        get_settings.cache_clear()
 
     def set_active(self, name: str) -> None:
         set_active_profile(name)
-        get_settings.cache_clear()

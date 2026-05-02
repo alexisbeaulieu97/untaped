@@ -43,7 +43,22 @@ class ResourceClient(Protocol):
     def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]: ...
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
-        """Return the first record matching ``params`` or ``None``."""
+        """Return the unique record matching ``params`` or ``None``.
+
+        Implementations must raise an ambiguity error when more than one
+        record matches — silently picking the first match would target
+        whichever record the server ordered ahead.
+        """
+        ...
+
+    def find_by_identity(
+        self,
+        spec: ResourceSpec,
+        *,
+        name: str,
+        scope: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Look up a record by ``name`` plus optional FK-name scope."""
         ...
 
     def create(self, spec: ResourceSpec, payload: dict[str, Any]) -> dict[str, Any]: ...
