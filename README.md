@@ -49,7 +49,7 @@ differ.
 
 Resolution order (high → low):
 
-```
+```text
 UNTAPED_<SECTION>__<FIELD> env var  >  active profile  >  default profile  >  schema default
 ```
 

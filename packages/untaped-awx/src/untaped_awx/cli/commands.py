@@ -204,7 +204,7 @@ def jobs_wait(
         None, "--timeout", help="Seconds to wait before giving up."
     ),
     fmt: OutputFormat = typer.Option(
-        "yaml", "--format", "-f", help="Output format (yaml|json|table|raw)."
+        "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
     ),
     columns: ColumnsOption = None,
 ) -> None:

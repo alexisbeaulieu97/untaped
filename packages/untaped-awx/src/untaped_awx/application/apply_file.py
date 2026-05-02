@@ -104,19 +104,34 @@ def _topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Res
             if isinstance(referenced_kind, str) and referenced_kind in kinds_in_docs:
                 edges[doc.kind].add(referenced_kind)
 
-    kind_order = _kahn_topological_order(kinds_in_docs, edges)
+    # Tie-break ready kinds by the catalog's canonical order (Organization
+    # before CredentialType, etc. — see AGENTS.md "Apply ordering"). Falling
+    # back to the kind name keeps unknown-but-valid kinds deterministic.
+    kind_rank = {kind: i for i, kind in enumerate(catalog.kinds())}
+    kind_order = _kahn_topological_order(kinds_in_docs, edges, rank=kind_rank)
 
     # Stable secondary ordering by metadata.name within a kind.
     rank = {kind: i for i, kind in enumerate(kind_order)}
     return sorted(docs_list, key=lambda d: (rank[d.kind], d.metadata.name))
 
 
-def _kahn_topological_order(kinds: set[str], edges: dict[str, set[str]]) -> list[str]:
+def _kahn_topological_order(
+    kinds: set[str],
+    edges: dict[str, set[str]],
+    *,
+    rank: dict[str, int],
+) -> list[str]:
     """Return ``kinds`` in dependency order: a kind appears after every
     other kind it depends on. Raises if there's a cycle.
 
     ``edges[k]`` is the set of kinds ``k`` depends on (must apply before).
+    ``rank`` is the catalog's canonical ordering used as the tie-breaker
+    when multiple kinds are ready at once.
     """
+
+    def order_key(k: str) -> tuple[int, str]:
+        return (rank.get(k, len(rank)), k)
+
     # In-degree = number of unresolved dependencies for each kind.
     in_degree = {k: len(edges.get(k, set())) for k in kinds}
     # Reverse edges: dependents[parent] = set of children.
@@ -125,18 +140,16 @@ def _kahn_topological_order(kinds: set[str], edges: dict[str, set[str]]) -> list
         for parent in parents:
             dependents[parent].add(child)
 
-    # Pop kinds with zero remaining dependencies. Sort the ready set so the
-    # output is deterministic across runs.
-    ready = sorted(k for k, deg in in_degree.items() if deg == 0)
+    ready = sorted((k for k, deg in in_degree.items() if deg == 0), key=order_key)
     ordered: list[str] = []
     while ready:
         kind = ready.pop(0)
         ordered.append(kind)
-        for child in sorted(dependents.get(kind, set())):
+        for child in sorted(dependents.get(kind, set()), key=order_key):
             in_degree[child] -= 1
             if in_degree[child] == 0:
                 ready.append(child)
-        ready.sort()
+        ready.sort(key=order_key)
 
     if len(ordered) != len(kinds):
         unresolved = sorted(k for k, deg in in_degree.items() if deg > 0)

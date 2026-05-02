@@ -194,7 +194,7 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
             False, "--monitor", help="Stream + wait (alias for --wait in v0)."
         ),
         fmt: OutputFormat = typer.Option(
-            "yaml", "--format", "-f", help="Output format (yaml|json|table|raw)."
+            "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
         ),
         columns: ColumnsOption = None,
     ) -> None:
@@ -242,7 +242,7 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
         fmt: OutputFormat = typer.Option(
-            "yaml", "--format", "-f", help="Output format (yaml|json|table|raw)."
+            "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
         ),
         columns: ColumnsOption = None,
     ) -> None:
