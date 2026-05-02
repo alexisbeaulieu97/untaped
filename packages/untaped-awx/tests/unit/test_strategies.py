@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 from untaped_awx.domain import IdentityRef, ResourceSpec
-from untaped_awx.errors import BadRequest
+from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
@@ -169,6 +169,65 @@ def test_schedule_strategy_rejects_unknown_parent_kind() -> None:
             client=client,  # type: ignore[arg-type]
             fk=_StubFk(),  # type: ignore[arg-type]
         )
+
+
+class _MultiResultClient:
+    """Stub that returns N results from `request` GET — for ambiguity tests."""
+
+    def __init__(self, results: list[dict[str, Any]], count: int | None = None) -> None:
+        self._results = results
+        self._count = count if count is not None else len(results)
+        self.request_calls: list[tuple[str, str, dict[str, str]]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.request_calls.append((method, path, dict(params or {})))
+        return {"count": self._count, "results": self._results}
+
+    def find(self, *a: Any, **kw: Any) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    def create(self, *a: Any, **kw: Any) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def update(self, *a: Any, **kw: Any) -> dict[str, Any]:
+        raise NotImplementedError
+
+
+def test_schedule_strategy_raises_on_ambiguous_lookup() -> None:
+    """Two schedules sharing a name under one parent must raise rather
+    than silently picking whichever AWX returned first."""
+    client = _MultiResultClient(
+        results=[
+            {"id": 5, "name": "nightly"},
+            {"id": 6, "name": "nightly"},
+        ],
+        count=2,
+    )
+    s = ScheduleApplyStrategy()
+    parent = IdentityRef(kind="JobTemplate", name="deploy", organization="Default")
+    with pytest.raises(AmbiguousIdentityError) as excinfo:
+        s.find_existing(
+            SCHEDULE_SPEC,
+            {"name": "nightly", "parent": parent},
+            client=client,  # type: ignore[arg-type]
+            fk=_StubFk(parent_id=42),  # type: ignore[arg-type]
+        )
+    assert excinfo.value.kind == "Schedule"
+    assert excinfo.value.match_count == 2
+    # The parent is materialized as kind#id in the identity payload so
+    # the message is unambiguous about *which* parent the lookup hit.
+    assert "name" in excinfo.value.identity
+    method, path, params = client.request_calls[0]
+    assert method == "GET"
+    assert path == "job_templates/42/schedules/"
+    assert params["page_size"] == "2"
 
 
 def test_schedule_strategy_rejects_missing_parent() -> None:

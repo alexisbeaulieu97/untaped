@@ -24,6 +24,18 @@ class _StubRepo:
                 return record
         return None
 
+    def find_by_identity(
+        self,
+        spec: ResourceSpec,
+        *,
+        name: str,
+        scope: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        params: dict[str, str] = {"name": name}
+        for k, v in (scope or {}).items():
+            params[f"{k}__name"] = v
+        return self.find(spec, params=params)
+
     def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
         self.get_calls.append((spec.kind, id_))
         for record in self.store.get(spec.kind, []):

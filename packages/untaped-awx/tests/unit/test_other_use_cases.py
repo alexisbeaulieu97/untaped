@@ -17,6 +17,7 @@ from untaped_awx.application import (
 )
 from untaped_awx.domain import Job, Resource, ResourceSpec
 from untaped_awx.errors import AwxApiError, ResourceNotFound
+from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
@@ -58,6 +59,18 @@ class _Client:
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
         self.find_calls.append(params)
         return self.find_result
+
+    def find_by_identity(
+        self,
+        spec: ResourceSpec,
+        *,
+        name: str,
+        scope: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        params: dict[str, str] = {"name": name}
+        for k, v in (scope or {}).items():
+            params[f"{k}__name"] = v
+        return self.find(spec, params=params)
 
     def create(self, *a: Any, **kw: Any) -> dict[str, Any]:
         raise NotImplementedError
@@ -259,11 +272,93 @@ def test_apply_file_orders_by_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources)  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
-    # Hardcoded order: Project < JobTemplate < Schedule
+    # Topo order from fk_refs: JobTemplate → Project, Schedule.parent → JT.
     assert kinds.index("Project") < kinds.index("JobTemplate") < kinds.index("Schedule")
+
+
+def test_apply_file_uses_polymorphic_parent_edge(tmp_path: Path) -> None:
+    """Schedule's polymorphic ``parent`` FK must contribute a real
+    dependency edge. Without other kinds in the file, alphabetical
+    tie-breaking would put Schedule before WorkflowJobTemplate; only
+    the parent edge can correct that."""
+    f = tmp_path / "sched.yml"
+    f.write_text(
+        "kind: Schedule\n"
+        "metadata:\n"
+        "  name: nightly\n"
+        "  parent: { kind: WorkflowJobTemplate, name: wf, organization: Default }\n"
+        "spec: { rrule: FREQ=DAILY }\n"
+        "---\n"
+        "kind: WorkflowJobTemplate\n"
+        "metadata: { name: wf, organization: Default }\n"
+        "spec: {}\n"
+    )
+    from untaped_awx.infrastructure.yaml_io import read_resources
+
+    recorder = _RecordingApply()
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use(f, write=False)
+    kinds = [k for k, _, _ in recorder.calls]
+    assert kinds.index("WorkflowJobTemplate") < kinds.index("Schedule"), kinds
+
+
+def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
+    """Cycles in the spec dependency graph must surface as a clear
+    error rather than silently dropping kinds from the apply order."""
+    from untaped_awx.application.apply_file import _topological_sort
+    from untaped_awx.domain import FkRef
+    from untaped_awx.domain.envelope import Metadata
+
+    spec_a = ResourceSpec(
+        kind="A",
+        cli_name="a",
+        api_path="a",
+        identity_keys=("name",),
+        canonical_fields=(),
+        fk_refs=(FkRef(field="b", kind="B"),),
+    )
+    spec_b = ResourceSpec(
+        kind="B",
+        cli_name="b",
+        api_path="b",
+        identity_keys=("name",),
+        canonical_fields=(),
+        fk_refs=(FkRef(field="a", kind="A"),),
+    )
+
+    class _Stub:
+        def get(self, kind: str) -> ResourceSpec:
+            return spec_a if kind == "A" else spec_b
+
+        def kinds(self) -> tuple[str, ...]:
+            return ("A", "B")
+
+        def by_cli_name(self, cli_name: str) -> ResourceSpec:
+            raise NotImplementedError
+
+    docs = [
+        Resource(kind="A", metadata=Metadata(name="x"), spec={}),
+        Resource(kind="B", metadata=Metadata(name="y"), spec={}),
+    ]
+    with pytest.raises(AwxApiError, match="cycle"):
+        _topological_sort(docs, catalog=_Stub())  # type: ignore[arg-type]
+
+
+def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
+    """Unknown kinds used to silently sort last; the topo path raises so
+    the user sees a clear error instead of an out-of-order apply."""
+    f = tmp_path / "weird.yml"
+    f.write_text("kind: NotARealKind\nmetadata: { name: x, organization: Default }\nspec: {}\n")
+    from untaped_awx.infrastructure.yaml_io import read_resources
+
+    recorder = _RecordingApply()
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    with pytest.raises(AwxApiError, match="unknown kind"):
+        use(f, write=False)
+    assert recorder.calls == []
 
 
 def test_apply_file_continues_on_error_by_default(
@@ -295,7 +390,7 @@ def test_apply_file_continues_on_error_by_default(
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources)  # type: ignore[arg-type]
+    use = ApplyFile(failing, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
     outcomes = use(f, write=False)
     # Both docs were applied even though one failed (default = continue-on-error).
     assert sorted(o.action for o in outcomes) == ["failed", "preview"]
@@ -326,7 +421,7 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources)  # type: ignore[arg-type]
+    use = ApplyFile(failing, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
     use(f, write=False, fail_fast=True)
     assert failing.calls == ["boom"]
 

@@ -37,7 +37,7 @@ def run_apply(
     """End-to-end apply for one CLI invocation. Writes to stdout/stderr."""
     reader = _make_reader(kind_filter=kind_filter, cli_name=cli_name)
     apply_one = _build_apply_resource(ctx)
-    outcomes = ApplyFile(apply_one, reader)(file, write=write, fail_fast=fail_fast)
+    outcomes = ApplyFile(apply_one, reader, ctx.catalog)(file, write=write, fail_fast=fail_fast)
     typer.echo(format_output(outcome_rows(outcomes), fmt=fmt, columns=columns))
     if not write:
         for outcome in outcomes:
