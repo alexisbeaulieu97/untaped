@@ -192,6 +192,8 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
         monitor: bool = typer.Option(
             False, "--monitor", help="Stream + wait (alias for --wait in v0)."
         ),
+        fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
+        columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
         payload: dict[str, Any] = {}
@@ -220,7 +222,13 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if jobs:
-            typer.echo(format_output([j.model_dump() for j in jobs], fmt="yaml", columns=[]))
+            typer.echo(
+                format_output(
+                    [j.model_dump() for j in jobs],
+                    fmt=fmt,
+                    columns=list(columns or []),
+                )
+            )
         if any_failed:
             raise typer.Exit(code=1)
 
@@ -236,6 +244,8 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
             None, "--organization", help="Scope to organization."
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
+        fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
+        columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
         """Trigger an SCM sync (Project)."""
         with report_errors(), open_context() as ctx:
@@ -243,7 +253,7 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
             job = RunAction(ctx.repo)(spec, name=name, action="update", scope=scope)
             if wait:
                 job = WatchJob(ctx.repo)(job)
-        typer.echo(format_output([job.model_dump()], fmt="yaml", columns=[]))
+        typer.echo(format_output([job.model_dump()], fmt=fmt, columns=list(columns or [])))
 
 
 # ---- helpers ----

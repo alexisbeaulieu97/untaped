@@ -428,3 +428,125 @@ def test_project_update_calls_action(fake_aap: Any) -> None:
         api_path == "projects" and action == "update"
         for api_path, _, action, _ in fake_aap.actions_called
     )
+
+
+def test_project_update_supports_format_json(fake_aap: Any) -> None:
+    """`projects update` produces row-shaped output (an update job dict).
+    The README claims every command supports `--format`, so this command
+    must accept it and produce parseable JSON."""
+    import json
+
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "update",
+            "playbooks",
+            "--organization",
+            "Default",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    # JSON output is a list of job dicts (single update job here).
+    assert isinstance(payload, list)
+    assert payload and "id" in payload[0]
+
+
+def test_project_update_supports_raw_columns(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "update",
+            "playbooks",
+            "--organization",
+            "Default",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # Single newline-separated id, no surrounding YAML.
+    assert result.stdout.strip().isdigit()
+
+
+def test_launch_supports_format_json(fake_aap: Any) -> None:
+    """`launch` returns one or more job dicts. Same shape as `update`,
+    same `--format` contract."""
+    import json
+
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "launch", "alpha", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    assert payload and "id" in payload[0]
+
+
+def test_launch_supports_raw_columns(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=11,
+        name="beta",
+        organization=1,
+        organization_name="Default",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "alpha",
+            "beta",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    ids = [line for line in result.stdout.splitlines() if line.strip()]
+    assert len(ids) == 2
+    for id_str in ids:
+        assert id_str.strip().isdigit()
