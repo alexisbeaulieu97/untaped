@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.errors import BadRequest
+from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 
 
 class DefaultApplyStrategy:
@@ -95,9 +95,15 @@ class ScheduleApplyStrategy:
         page = client.request(
             "GET",
             f"{path}/{parent_id}/schedules/",
-            params={"name": str(identity["name"]), "page_size": "1"},
+            params={"name": str(identity["name"]), "page_size": "2"},
         )
         results = page.get("results") or []
+        if len(results) >= 2:
+            raise AmbiguousIdentityError(
+                "Schedule",
+                {"name": identity["name"], "parent": f"{parent_kind}#{parent_id}"},
+                match_count=page.get("count"),
+            )
         return results[0] if results else None
 
     def create(

@@ -176,6 +176,35 @@ def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
     assert launched_ids == {10, 11}
 
 
+def test_get_without_scope_raises_when_name_is_ambiguous(fake_aap: Any) -> None:
+    """Two job templates with the same name in different orgs used to
+    silently resolve to whichever AWX returned first. The lookup now
+    raises so the user sees the missing scope."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
+
+    result = CliRunner().invoke(app, ["job-templates", "get", "deploy"])
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "ambiguous" in output.lower(), output
+
+
+def test_get_with_scope_resolves_unambiguously(fake_aap: Any) -> None:
+    """Adding the missing scope removes the ambiguity."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=11, name="deploy", organization=2, organization_name="Org-B")
+
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "deploy", "--organization", "Org-A", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+
+
 def test_launch_supports_format_json(fake_aap: Any) -> None:
     """The pipeline contract: launch must honour --format/--columns
     instead of forcing yaml output."""
@@ -260,6 +289,35 @@ def test_get_stdin_continues_on_missing_name(fake_aap: Any) -> None:
     # alpha's row reaches stdout even though ghost failed.
     assert "alpha" in result.stdout
     assert "ghost" in (result.output + (result.stderr or ""))
+
+
+def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path) -> None:
+    """The destructive path: applying a JobTemplate file that omits its
+    organization while two same-named templates exist across orgs used
+    to clobber whichever AWX returned first. The lookup now fails loud."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed("projects", id=10, name="playbooks", organization=1, organization_name="Org-A")
+    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=30, name="deploy", organization=1, organization_name="Org-A")
+    fake_aap.seed("job_templates", id=31, name="deploy", organization=2, organization_name="Org-B")
+
+    f = tmp_path / "jt.yml"
+    # Note: no organization in metadata — that's the under-scoped case.
+    f.write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: deploy }\n"
+        "spec:\n"
+        "  playbook: deploy.yml\n"
+        "  project: playbooks\n"
+        "  inventory: prod\n"
+    )
+    result = CliRunner().invoke(app, ["job-templates", "apply", "--file", str(f), "--yes"])
+    output = result.output + (result.stderr or "")
+    # Either the ambiguity surfaces directly, or apply continues-on-error
+    # records the failure in its outcome rows. Either way, the message
+    # must reach the user and exit must be non-zero (no silent overwrite).
+    assert "ambiguous" in output.lower(), output
 
 
 def test_apply_yes_writes_changes(fake_aap: Any, tmp_path: Path) -> None:
