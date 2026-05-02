@@ -280,7 +280,7 @@ def foreach_command(
             "prefixed with [repo] and forwarded to stdout."
         ),
     ),
-    columns: list[str] | None = typer.Option(None, "--columns", "-c"),
+    columns: ColumnsOption = None,
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
