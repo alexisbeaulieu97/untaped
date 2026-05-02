@@ -12,7 +12,6 @@ from untaped_awx.domain import FkRef, ResourceSpec
 ORGANIZATION_SPEC = ResourceSpec(
     kind="Organization",
     cli_name="organizations",
-    aliases=("org",),
     api_path="organizations",
     identity_keys=("name",),
     canonical_fields=("description",),
@@ -35,7 +34,6 @@ ORGANIZATION_SPEC = ResourceSpec(
 INVENTORY_SPEC = ResourceSpec(
     kind="Inventory",
     cli_name="inventories",
-    aliases=("inv",),
     api_path="inventories",
     identity_keys=("name", "organization"),
     canonical_fields=("description", "kind", "host_filter", "variables"),
@@ -58,7 +56,6 @@ INVENTORY_SPEC = ResourceSpec(
     ),
     fk_refs=(FkRef(field="organization", kind="Organization"),),
     list_columns=("name", "organization", "kind", "total_hosts"),
-    list_filters=("organization",),
     commands=("list", "get"),
     fidelity="read_only",
     fidelity_note="inventory CRUD is out of v0 scope",

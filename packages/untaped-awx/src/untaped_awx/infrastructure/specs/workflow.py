@@ -12,7 +12,6 @@ from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
 WORKFLOW_JOB_TEMPLATE_SPEC = ResourceSpec(
     kind="WorkflowJobTemplate",
     cli_name="workflow-templates",
-    aliases=("wf",),
     api_path="workflow_job_templates",
     identity_keys=("name", "organization"),
     canonical_fields=(
@@ -72,7 +71,6 @@ WORKFLOW_JOB_TEMPLATE_SPEC = ResourceSpec(
         ),
     ),
     list_columns=("name", "organization", "last_job_status"),
-    list_filters=("organization",),
     commands=("list", "get", "save", "apply", "launch"),
     fidelity="partial",
     fidelity_note="node graph + edges not roundtripped (v0 limitation)",

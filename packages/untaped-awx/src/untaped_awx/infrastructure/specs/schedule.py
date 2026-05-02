@@ -13,7 +13,6 @@ from untaped_awx.domain import FkRef, ResourceSpec
 SCHEDULE_SPEC = ResourceSpec(
     kind="Schedule",
     cli_name="schedules",
-    aliases=("sched",),
     api_path="schedules",
     identity_keys=("name",),  # uniqueness is name-within-parent; parent is in metadata.parent
     canonical_fields=(
