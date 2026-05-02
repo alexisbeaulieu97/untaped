@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import typer
 from untaped_core import (
@@ -27,7 +28,7 @@ from untaped_awx.application import (
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli.resource_commands import make_resource_app
-from untaped_awx.domain import Job
+from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.specs import ALL_SPECS
@@ -126,11 +127,15 @@ def save_top_command(
                 continue
             if "save" not in spec.commands:
                 continue
-            # Per-spec scoping: parent-scoped (Schedule) and global
-            # (Organization, CredentialType) kinds get no `organization__name`
-            # filter even when --organization is passed.
-            scope = scope_for_spec(spec, organization, ctx.default_organization)
-            for record in save.find_all(spec, scope=scope):
+            # Bulk save is "back up everything" by intent. Pass
+            # `default_organization=None` so an active default never
+            # silently narrows the backup — only an explicit
+            # ``--organization`` does.
+            scope = scope_for_spec(spec, organization, None)
+            records = save.find_all(spec, scope=scope)
+            if organization:
+                records = _narrow_to_organization(spec, records, organization)
+            for record in records:
                 resource = save.from_record(spec, record)
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
                 safe_name = _safe_filename_segment(resource.metadata.name)
@@ -166,6 +171,38 @@ def _assert_inside(parent: Path, target: Path) -> None:
         target.resolve().relative_to(parent_resolved)
     except ValueError as exc:  # pragma: no cover — defensive guard
         raise AwxApiError(f"refusing to write {target} — outside {parent_resolved}") from exc
+
+
+def _narrow_to_organization(
+    spec: ResourceSpec,
+    records: list[dict[str, Any]],
+    organization: str,
+) -> list[dict[str, Any]]:
+    """Apply a client-side organization filter for parent-scoped kinds.
+
+    For kinds whose ``identity_keys`` include ``organization``, the
+    server-side ``organization__name=`` query already narrowed the
+    list. Schedule has no direct organization key — its parent's org
+    lives in ``summary_fields.unified_job_template.organization_name``
+    — so we filter here to keep ``--organization X`` honest in bulk
+    save. Records whose parent org is missing or doesn't match are
+    dropped: a ``--organization X`` request without confirmable parent
+    org is treated as "not in X."
+    """
+    if "organization" in spec.identity_keys:
+        return records  # already filtered server-side
+    if spec.kind != "Schedule":
+        return records  # global kinds (Organization, CredentialType) ignore org
+    return [
+        r
+        for r in records
+        if (
+            ((r.get("summary_fields") or {}).get("unified_job_template") or {}).get(
+                "organization_name"
+            )
+        )
+        == organization
+    ]
 
 
 # ---- jobs (read-only execution records) ----

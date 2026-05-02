@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 from untaped_awx import app
 
@@ -538,6 +539,126 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         f"{[p.name for p in out_dir.iterdir()]}"
     )
     assert any("nightly" in f.name for f in schedule_files)
+
+
+def test_save_all_does_not_default_to_active_organization(
+    fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`awx save --all` is a "back up everything" command. When the user
+    has set `awx.default_organization` in config but does NOT pass
+    `--organization`, bulk save must not silently narrow the backup —
+    that contradicts the user's intent and would cause cross-org
+    resources to be silently omitted.
+
+    Per-resource commands (`job-templates list`, etc.) DO use
+    `default_organization` as a sensible default; bulk save does not.
+    """
+    monkeypatch.setenv("UNTAPED_AWX__DEFAULT_ORGANIZATION", "Default")
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy-default",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy-other",
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+
+    # Both JTs must be saved — bulk save without an explicit --organization
+    # is "everything", regardless of `default_organization`.
+    saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
+    assert saved == ["JobTemplate__deploy-default.yml", "JobTemplate__deploy-other.yml"], (
+        f"expected both JTs saved, got {saved}"
+    )
+
+
+def test_save_all_with_organization_filters_schedules_by_parent_org(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """Schedule's identity is `(name,)` — its parent organization lives in
+    `summary_fields.unified_job_template.organization_name`. When the
+    user asks `awx save --all --organization X`, bulk save must
+    filter Schedule records client-side by the parent's org so
+    cross-org schedules don't leak into the backup.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy-other",
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+    # Schedule attached to JT in `Default`.
+    fake_aap.seed(
+        "schedules",
+        id=50,
+        name="nightly-default",
+        unified_job_template=30,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 30,
+                "name": "deploy",
+                "unified_job_type": "job_template",
+                "organization_name": "Default",
+            }
+        },
+    )
+    # Schedule attached to JT in `Other` — must be excluded by `--organization Default`.
+    fake_aap.seed(
+        "schedules",
+        id=51,
+        name="nightly-other",
+        unified_job_template=31,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 31,
+                "name": "deploy-other",
+                "unified_job_type": "job_template",
+                "organization_name": "Other",
+            }
+        },
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
+    )
+    assert result.exit_code == 0, result.output
+
+    saved_schedules = sorted(p.name for p in out_dir.glob("Schedule__*.yml"))
+    assert saved_schedules == ["Schedule__nightly-default.yml"], (
+        "schedule from a different org leaked into org-scoped bulk save; "
+        f"saved schedule files: {saved_schedules}"
+    )
 
 
 def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
