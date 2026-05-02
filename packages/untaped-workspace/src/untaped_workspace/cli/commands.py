@@ -270,8 +270,24 @@ def foreach_command(
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Don't stop after a non-zero exit."
     ),
+    fmt: OutputFormat | None = typer.Option(
+        None,
+        "--format",
+        "-f",
+        help=(
+            "Render ForeachOutcome rows in the given format (json|yaml|table|raw). "
+            "Default is passthrough: each line of the user command's stdout is "
+            "prefixed with [repo] and forwarded to stdout."
+        ),
+    ),
+    columns: list[str] | None = typer.Option(None, "--columns", "-c"),
 ) -> None:
-    """Run a shell command in each repo of the workspace."""
+    """Run a shell command in each repo of the workspace.
+
+    Default output is the raw command stdout/stderr per repo, prefixed
+    with ``[<repo>]``. Pass ``--format`` to emit ``ForeachOutcome`` rows
+    (``json|yaml|table|raw``) suitable for piping into ``jq`` / ``awk``.
+    """
     with report_errors():
         ws = _resolve(name, path)
         outcomes = Foreach(ManifestRepository())(
@@ -280,15 +296,18 @@ def foreach_command(
             parallel=parallel,
             continue_on_error=continue_on_error,
         )
-        any_failed = False
-        for o in outcomes:
-            for line in o.stdout.splitlines():
-                typer.echo(f"[{o.repo}] {line}")
-            for line in o.stderr.splitlines():
-                typer.echo(f"[{o.repo}] {line}", err=True)
-            if o.returncode != 0:
-                any_failed = True
-                typer.echo(f"[{o.repo}] exit {o.returncode}", err=True)
+        any_failed = any(o.returncode != 0 for o in outcomes)
+        if fmt is None:
+            for o in outcomes:
+                for line in o.stdout.splitlines():
+                    typer.echo(f"[{o.repo}] {line}")
+                for line in o.stderr.splitlines():
+                    typer.echo(f"[{o.repo}] {line}", err=True)
+                if o.returncode != 0:
+                    typer.echo(f"[{o.repo}] exit {o.returncode}", err=True)
+        else:
+            rows = [o.model_dump() for o in outcomes]
+            typer.echo(format_output(rows, fmt=fmt, columns=list(columns or [])))
         if any_failed:
             raise typer.Exit(code=1)
 

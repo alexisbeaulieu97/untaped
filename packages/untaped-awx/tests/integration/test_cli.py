@@ -176,6 +176,54 @@ def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
     assert launched_ids == {10, 11}
 
 
+def test_launch_supports_format_json(fake_aap: Any) -> None:
+    """The pipeline contract: launch must honour --format/--columns
+    instead of forcing yaml output."""
+    import json as _json
+
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    result = CliRunner().invoke(app, ["job-templates", "launch", "alpha", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed, parsed
+
+
+def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
+    """`awx jobs wait` must honour --format — CI scripts that pipe a
+    wait verdict into ``jq`` rely on the structured shape."""
+    import json as _json
+
+    fake_aap.seed("jobs", id=42, name="run", status="successful", type="job")
+    result = CliRunner().invoke(app, ["jobs", "wait", "42", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed
+    assert parsed[0].get("id") == 42
+
+
+def test_project_update_supports_format_json(fake_aap: Any) -> None:
+    """The generated `<kind> update` command on Project must honour
+    --format too. Symmetric with launch."""
+    import json as _json
+
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app, ["projects", "update", "playbooks", "--organization", "Default", "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed
+
+
 def test_launch_stdin_emits_partial_results_when_one_fails(fake_aap: Any) -> None:
     """A missing name mid-fan-out must not hide the IDs of the jobs that
     already submitted to AWX. Otherwise a user piping 50 names sees only
