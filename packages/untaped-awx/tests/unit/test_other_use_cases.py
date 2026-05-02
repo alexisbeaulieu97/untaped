@@ -355,7 +355,9 @@ def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
 
     recorder = _RecordingApply()
     use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
-    with pytest.raises(AwxApiError, match="unknown kind"):
+    # Match the kind name (input) rather than the catalog's error wording, so
+    # this test stays valid if the catalog's prose changes.
+    with pytest.raises(AwxApiError, match="NotARealKind"):
         use(f, write=False)
     assert recorder.calls == []
 
