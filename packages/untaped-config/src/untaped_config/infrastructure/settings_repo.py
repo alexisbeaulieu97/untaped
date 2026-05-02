@@ -110,10 +110,9 @@ class SettingsFileRepository:
         """Remove ``key`` from the resolved profile.
 
         Returns ``(removed, target)``. An explicit ``--profile`` that names a
-        profile which doesn't exist raises ``ConfigError`` — same contract as
-        ``set_value`` — so a typo can't masquerade as a successful no-op.
-        Removing a key that simply isn't set in the resolved profile is still
-        a clean no-op (``removed=False``).
+        profile which doesn't exist raises ``ConfigError``. Removing a key
+        that simply isn't set in the resolved profile is a no-op
+        (``removed=False``).
         """
         descriptor = self.descriptor(key)
         removed = False
@@ -140,7 +139,7 @@ class SettingsFileRepository:
         """Decide which profile a ``set`` writes to, validating existence
         when an explicit profile was named."""
         if profile is None:
-            return _current_active_profile_name(data)
+            return effective_active_profile_name(data) or DEFAULT_PROFILE
         if profile == DEFAULT_PROFILE:
             return profile
         existing = data.get("profiles") or {}
@@ -160,11 +159,6 @@ def _ensure_profiles_dict(data: dict[str, Any]) -> dict[str, Any]:
         profiles = {}
         data["profiles"] = profiles
     return profiles
-
-
-def _current_active_profile_name(data: dict[str, Any]) -> str:
-    """Return the active profile recorded in ``data`` (env override applied)."""
-    return effective_active_profile_name(data) or DEFAULT_PROFILE
 
 
 def _merge_for_validation(data: dict[str, Any], *, active: str) -> dict[str, Any]:

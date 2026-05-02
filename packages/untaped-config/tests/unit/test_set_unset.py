@@ -157,11 +157,7 @@ def test_unset_returns_false_when_not_set(_isolate_settings: Path) -> None:
 
 
 def test_unset_raises_when_named_profile_missing(_isolate_settings: Path) -> None:
-    """`unset --profile ghost` must error like `set` does, not silently no-op.
-
-    A typo against a named profile (especially while clearing a secret) used
-    to look like a successful cleanup.
-    """
+    """`unset --profile <missing>` must raise like `set` does."""
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
     with pytest.raises(ConfigError, match=r"profile.*ghost"):
         UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")

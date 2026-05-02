@@ -14,8 +14,7 @@ class UnsetSetting:
 
     Returns ``(removed, target_profile)`` where ``removed`` is ``True`` if a
     value was actually removed. An explicit ``--profile`` that names a
-    non-existent profile raises ``ConfigError`` — same contract as ``set`` —
-    so a typo doesn't masquerade as a clean no-op.
+    non-existent profile raises ``ConfigError`` — same contract as ``set``.
     """
 
     def __init__(self, repo: _UnsetCapableRepo) -> None:
