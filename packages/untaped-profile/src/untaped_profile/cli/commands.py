@@ -10,9 +10,12 @@ import yaml
 from untaped_core import (
     ColumnsOption,
     FormatOption,
+    Settings,
     format_output,
+    redact_secrets,
     report_errors,
     resolve_config_path,
+    secret_field_paths,
 )
 
 from untaped_profile.application import (
@@ -69,6 +72,11 @@ def show_command(
         "--raw",
         help="Show only the keys this profile literally sets (no `default` fallback merge).",
     ),
+    show_secrets: bool = typer.Option(
+        False,
+        "--show-secrets",
+        help="Reveal secret values instead of `***`.",
+    ),
     fmt: ShowFormat = typer.Option(
         "yaml",
         "--format",
@@ -83,6 +91,9 @@ def show_command(
     address the metadata fields (``jq '.data.awx.base_url'`` etc.).
     ``raw`` and ``table`` are not supported — a single nested object has
     no rows for those formats to render.
+
+    Secrets (AWX/GitHub tokens) are masked as ``***`` in both formats
+    unless ``--show-secrets`` is passed, mirroring ``untaped config list``.
     """
     with report_errors():
         profile = ShowProfile(ProfileFileRepository())(name, raw=raw)
@@ -92,18 +103,21 @@ def show_command(
         if not raw:
             header += " — effective view (default ⤥ named)"
         typer.echo(header, err=True)
+        data = (
+            profile.data
+            if show_secrets
+            else redact_secrets(profile.data, secret_field_paths(Settings))
+        )
         if fmt == "json":
             envelope = {
                 "name": profile.name,
                 "active": profile.is_active,
                 "raw": raw,
-                "data": profile.data,
+                "data": data,
             }
             typer.echo(json.dumps(envelope))
         else:
-            typer.echo(
-                yaml.safe_dump(profile.data, sort_keys=False, default_flow_style=False).rstrip()
-            )
+            typer.echo(yaml.safe_dump(data, sort_keys=False, default_flow_style=False).rstrip())
 
 
 @app.command("use", no_args_is_help=True)
