@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import typer
 from untaped_core import (
@@ -27,7 +28,7 @@ from untaped_awx.application import (
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli.resource_commands import make_resource_app
-from untaped_awx.domain import Job
+from untaped_awx.domain import Job, Metadata, ResourceSpec
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.specs import ALL_SPECS
@@ -99,9 +100,12 @@ def save_top_command(
 ) -> None:
     """Bulk-save resources to a directory.
 
-    ``save --all --out-dir DIR`` writes one ``<Kind>__<name>.yml`` per
-    resource. Kinds with read-only fidelity (Credential) are skipped
-    with a one-line note.
+    ``save --all --out-dir DIR`` writes one file per resource using the
+    full identity in the filename so same-named records across
+    organizations don't collide:
+    ``<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml``.
+    Kinds with read-only fidelity (Credential) are skipped with a
+    one-line note.
     """
     if not all_kinds and not kind:
         raise typer.BadParameter("pass --all or --kind")
@@ -126,15 +130,18 @@ def save_top_command(
                 continue
             if "save" not in spec.commands:
                 continue
-            # Per-spec scoping: parent-scoped (Schedule) and global
-            # (Organization, CredentialType) kinds get no `organization__name`
-            # filter even when --organization is passed.
-            scope = scope_for_spec(spec, organization, ctx.default_organization)
-            for record in save.find_all(spec, scope=scope):
+            # Bulk save is "back up everything" by intent. Pass
+            # `default_organization=None` so an active default never
+            # silently narrows the backup — only an explicit
+            # ``--organization`` does.
+            scope = scope_for_spec(spec, organization, None)
+            records = save.find_all(spec, scope=scope)
+            if organization:
+                records = _narrow_to_organization(spec, records, organization)
+            for record in records:
                 resource = save.from_record(spec, record)
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
-                safe_name = _safe_filename_segment(resource.metadata.name)
-                target = out_dir / f"{spec.kind}__{safe_name}.yml"
+                target = out_dir / _resource_filename(spec.kind, resource.metadata)
                 _assert_inside(out_dir, target)
                 write_resource(target, resource, header_comment=comment)
                 written.append(str(target))
@@ -166,6 +173,42 @@ def _assert_inside(parent: Path, target: Path) -> None:
         target.resolve().relative_to(parent_resolved)
     except ValueError as exc:  # pragma: no cover — defensive guard
         raise AwxApiError(f"refusing to write {target} — outside {parent_resolved}") from exc
+
+
+def _narrow_to_organization(
+    spec: ResourceSpec,
+    records: list[dict[str, Any]],
+    organization: str,
+) -> list[dict[str, Any]]:
+    """Filter parent-scoped kinds (Schedule) by parent's org client-side."""
+    if "organization" in spec.identity_keys:
+        return records  # already filtered server-side
+    if spec.kind != "Schedule":
+        return records  # global kinds (Organization, CredentialType) ignore org
+    return [
+        r
+        for r in records
+        if (
+            ((r.get("summary_fields") or {}).get("unified_job_template") or {}).get(
+                "organization_name"
+            )
+        )
+        == organization
+    ]
+
+
+def _resource_filename(kind: str, metadata: Metadata) -> str:
+    """Encode the identity tuple in the filename so same-named records don't collide."""
+    parts: list[str] = [kind]
+    if metadata.parent is not None:
+        parts.append(metadata.parent.kind)
+        if metadata.parent.organization:
+            parts.append(metadata.parent.organization)
+        parts.append(metadata.parent.name)
+    elif metadata.organization is not None:
+        parts.append(metadata.organization)
+    parts.append(metadata.name)
+    return "__".join(_safe_filename_segment(p) for p in parts) + ".yml"
 
 
 # ---- jobs (read-only execution records) ----
