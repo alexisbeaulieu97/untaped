@@ -521,9 +521,9 @@ def test_save_all_organization_filter_applies_per_spec_identity(
     assert result.exit_code == 0, result.output
 
     # Org filter still applied to org-scoped kinds: JT in `Default` saved,
-    # JT in `Other` not saved.
-    assert (out_dir / "JobTemplate__deploy.yml").exists()
-    assert (out_dir / "Project__playbooks.yml").exists()
+    # JT in `Other` not saved. Filenames now encode the org for org-scoped kinds.
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
+    assert (out_dir / "Project__Default__playbooks.yml").exists()
     other_org_jt_files = [
         p for p in out_dir.glob("JobTemplate__*.yml") if "deploy-elsewhere" in p.name
     ]
@@ -544,15 +544,7 @@ def test_save_all_organization_filter_applies_per_spec_identity(
 def test_save_all_does_not_default_to_active_organization(
     fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`awx save --all` is a "back up everything" command. When the user
-    has set `awx.default_organization` in config but does NOT pass
-    `--organization`, bulk save must not silently narrow the backup —
-    that contradicts the user's intent and would cause cross-org
-    resources to be silently omitted.
-
-    Per-resource commands (`job-templates list`, etc.) DO use
-    `default_organization` as a sensible default; bulk save does not.
-    """
+    """`save --all` ignores `default_organization`; only `--organization` narrows."""
     monkeypatch.setenv("UNTAPED_AWX__DEFAULT_ORGANIZATION", "Default")
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("organizations", id=2, name="Other")
@@ -580,20 +572,16 @@ def test_save_all_does_not_default_to_active_organization(
     # Both JTs must be saved — bulk save without an explicit --organization
     # is "everything", regardless of `default_organization`.
     saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
-    assert saved == ["JobTemplate__deploy-default.yml", "JobTemplate__deploy-other.yml"], (
-        f"expected both JTs saved, got {saved}"
-    )
+    assert saved == [
+        "JobTemplate__Default__deploy-default.yml",
+        "JobTemplate__Other__deploy-other.yml",
+    ], f"expected both JTs saved, got {saved}"
 
 
 def test_save_all_with_organization_filters_schedules_by_parent_org(
     fake_aap: Any, tmp_path: Path
 ) -> None:
-    """Schedule's identity is `(name,)` — its parent organization lives in
-    `summary_fields.unified_job_template.organization_name`. When the
-    user asks `awx save --all --organization X`, bulk save must
-    filter Schedule records client-side by the parent's org so
-    cross-org schedules don't leak into the backup.
-    """
+    """`awx save --all --organization X` filters schedules client-side by parent org."""
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("organizations", id=2, name="Other")
     fake_aap.seed(
@@ -655,10 +643,46 @@ def test_save_all_with_organization_filters_schedules_by_parent_org(
     assert result.exit_code == 0, result.output
 
     saved_schedules = sorted(p.name for p in out_dir.glob("Schedule__*.yml"))
-    assert saved_schedules == ["Schedule__nightly-default.yml"], (
+    assert saved_schedules == [
+        "Schedule__JobTemplate__Default__deploy__nightly-default.yml",
+    ], (
         "schedule from a different org leaked into org-scoped bulk save; "
         f"saved schedule files: {saved_schedules}"
     )
+
+
+def test_save_all_distinguishes_same_named_resources_across_orgs(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """Two same-named org-scoped resources in different orgs must produce two distinct files."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy",  # same name, different org
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+
+    saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
+    assert saved == [
+        "JobTemplate__Default__deploy.yml",
+        "JobTemplate__Other__deploy.yml",
+    ], f"expected two distinct files for same-named JTs in different orgs, got {saved}"
 
 
 def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
@@ -686,7 +710,7 @@ def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     # Project file exists; Credential file does not.
-    assert (out_dir / "Project__playbooks.yml").exists()
+    assert (out_dir / "Project__Default__playbooks.yml").exists()
     assert not any(p.name.startswith("Credential__") for p in out_dir.iterdir())
     assert "skipping Credential" in result.stderr
 
