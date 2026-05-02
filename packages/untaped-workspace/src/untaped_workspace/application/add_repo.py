@@ -30,17 +30,23 @@ class AddRepo:
         if manifest.repo_by_url(url) is not None:
             raise WorkspaceError(f"repo already in workspace {workspace.name!r}: {url}")
         repo = Repo.model_validate({"url": url, "name": repo_name, "branch": branch})
-        if manifest.repo_by_name(repo.name) is not None:
+        existing = manifest.repo_by_name(repo.name)
+        if existing is not None:
             # The check has to happen before the in-place ``repos.append`` —
             # the Pydantic ``WorkspaceManifest`` model validator only fires
             # on construction, not on list mutation, so without this guard
             # an explicit ``--repo-name`` collision lands a duplicate on
             # disk that the next read rejects.
-            if repo_name is None:
-                raise WorkspaceError(
-                    f"repo name {repo.name!r} already in use; pass --repo-name to disambiguate"
-                )
-            raise WorkspaceError(f"repo name {repo.name!r} already in use")
+            base = (
+                f"repo name {repo.name!r} already in use in workspace "
+                f"{workspace.name!r} by {existing.url}"
+            )
+            # ``not repo_name`` mirrors ``Repo._fill_default_name``'s check
+            # so an explicit empty string is treated the same as omitting
+            # the flag (both produce a derived name).
+            if not repo_name:
+                raise WorkspaceError(f"{base}; pass --repo-name to disambiguate")
+            raise WorkspaceError(base)
         manifest.repos.append(repo)
         self._manifests.write(workspace.path, manifest)
         return repo
