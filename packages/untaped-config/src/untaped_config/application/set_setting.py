@@ -6,18 +6,20 @@ from typing import Protocol
 
 
 class _SetCapableRepo(Protocol):
-    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> None: ...
+    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str: ...
 
 
 class SetSetting:
     """Validate then persist ``key = value`` in the user's config file.
 
     ``profile`` overrides the active profile and must already exist (except
-    for ``"default"``, which is auto-bootstrapped if missing).
+    for ``"default"``, which is auto-bootstrapped if missing). Returns the
+    resolved target profile name so callers can echo where the write landed
+    instead of an opaque ``<active>`` placeholder.
     """
 
     def __init__(self, repo: _SetCapableRepo) -> None:
         self._repo = repo
 
-    def __call__(self, key: str, raw_value: str, *, profile: str | None = None) -> None:
-        self._repo.set_value(key, raw_value, profile=profile)
+    def __call__(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
+        return self._repo.set_value(key, raw_value, profile=profile)

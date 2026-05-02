@@ -76,13 +76,19 @@ class SettingsFileRepository:
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
         return os.environ.get(self.env_var_for(descriptor))
 
-    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> None:
-        """Coerce ``raw_value``, validate against the schema, then persist."""
+    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
+        """Coerce ``raw_value``, validate against the schema, then persist.
+
+        Returns the resolved target profile name so callers can report it.
+        """
         descriptor = self.descriptor(key)
         coerced = _coerce_scalar(raw_value)
+        resolved: str = ""
 
         def _apply(data: dict[str, Any]) -> None:
+            nonlocal resolved
             target = self._resolve_target_profile(data, profile)
+            resolved = target
             profiles = _ensure_profiles_dict(data)
             profile_data = profiles.setdefault(target, {})
             if not isinstance(profile_data, dict):
@@ -98,17 +104,28 @@ class SettingsFileRepository:
                 ) from exc
 
         mutate_config(_apply)
+        return resolved
 
-    def unset_value(self, key: str, *, profile: str | None = None) -> bool:
+    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
+        """Remove ``key`` from the resolved profile.
+
+        Returns ``(removed, target)``. An explicit ``--profile`` that names a
+        profile which doesn't exist raises ``ConfigError`` — same contract as
+        ``set_value`` — so a typo can't masquerade as a successful no-op.
+        Removing a key that simply isn't set in the resolved profile is still
+        a clean no-op (``removed=False``).
+        """
         descriptor = self.descriptor(key)
         removed = False
+        resolved: str = ""
 
         def _apply(data: dict[str, Any]) -> None:
-            nonlocal removed
+            nonlocal removed, resolved
+            target = self._resolve_target_profile(data, profile)
+            resolved = target
             profiles = data.get("profiles")
             if not isinstance(profiles, dict):
                 return
-            target = profile or _current_active_profile_name(data)
             profile_data = profiles.get(target)
             if not isinstance(profile_data, dict):
                 return
@@ -117,7 +134,7 @@ class SettingsFileRepository:
             removed = True
 
         mutate_config(_apply)
-        return removed
+        return removed, resolved
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
         """Decide which profile a ``set`` writes to, validating existence

@@ -116,8 +116,9 @@ def test_set_preserves_other_profiles_and_state(_isolate_settings: Path) -> None
 
 def test_unset_removes_key_from_active_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\nactive: default\n")
-    removed = UnsetSetting(SettingsFileRepository())("log_level")
+    removed, target = UnsetSetting(SettingsFileRepository())("log_level")
     assert removed is True
+    assert target == "default"
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["default"] == {}
 
@@ -126,8 +127,9 @@ def test_unset_targets_named_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: DEBUG\nactive: prod\n"
     )
-    removed = UnsetSetting(SettingsFileRepository())("log_level", profile="default")
+    removed, target = UnsetSetting(SettingsFileRepository())("log_level", profile="default")
     assert removed is True
+    assert target == "default"
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["default"] == {}
     assert data["profiles"]["prod"]["log_level"] == "DEBUG"
@@ -150,11 +152,16 @@ def test_unset_keeps_other_keys_in_parent(_isolate_settings: Path) -> None:
 
 
 def test_unset_returns_false_when_not_set(_isolate_settings: Path) -> None:
-    removed = UnsetSetting(SettingsFileRepository())("log_level")
+    removed, _ = UnsetSetting(SettingsFileRepository())("log_level")
     assert removed is False
 
 
-def test_unset_returns_false_when_profile_missing(_isolate_settings: Path) -> None:
+def test_unset_raises_when_named_profile_missing(_isolate_settings: Path) -> None:
+    """`unset --profile ghost` must error like `set` does, not silently no-op.
+
+    A typo against a named profile (especially while clearing a secret) used
+    to look like a successful cleanup.
+    """
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
-    removed = UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
-    assert removed is False
+    with pytest.raises(ConfigError, match=r"profile.*ghost"):
+        UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")

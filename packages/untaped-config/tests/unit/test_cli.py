@@ -142,6 +142,46 @@ def test_set_with_unknown_profile_errors(_isolate_settings: Path) -> None:
     assert result.exit_code != 0
 
 
+def test_set_message_names_resolved_default_profile(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG"])
+    assert result.exit_code == 0, result.output
+    assert "in profile default" in result.output
+    assert "<active>" not in result.output
+
+
+def test_set_message_names_explicit_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--profile", "prod"])
+    assert result.exit_code == 0, result.output
+    assert "in profile prod" in result.output
+
+
+def test_set_message_resolves_env_override(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n  stage: {}\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
+    get_settings.cache_clear()
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG"])
+    assert result.exit_code == 0, result.output
+    assert "in profile stage" in result.output
+
+
+def test_unset_message_names_resolved_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+    result = CliRunner().invoke(app, ["unset", "log_level"])
+    assert result.exit_code == 0, result.output
+    assert "in profile default" in result.output
+    assert "<active>" not in result.output
+
+
+def test_unset_with_missing_explicit_profile_errors(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n")
+    result = CliRunner().invoke(app, ["unset", "log_level", "--profile", "ghost"])
+    assert result.exit_code != 0
+    assert "ghost" in result.output
+
+
 def test_list_all_profiles_shows_per_profile_rows(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
