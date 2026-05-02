@@ -7,7 +7,6 @@ from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
 PROJECT_SPEC = ResourceSpec(
     kind="Project",
     cli_name="projects",
-    aliases=("proj",),
     api_path="projects",
     identity_keys=("name", "organization"),
     canonical_fields=(
@@ -50,7 +49,6 @@ PROJECT_SPEC = ResourceSpec(
     ),
     actions=(ActionSpec(name="update", path="update", returns="job"),),
     list_columns=("name", "organization", "scm_type", "scm_branch", "status"),
-    list_filters=("organization",),
     commands=("list", "get", "save", "apply", "update"),
     fidelity="full",
 )

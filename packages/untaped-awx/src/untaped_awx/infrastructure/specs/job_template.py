@@ -8,7 +8,6 @@ from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
 JOB_TEMPLATE_SPEC = ResourceSpec(
     kind="JobTemplate",
     cli_name="job-templates",
-    aliases=("jt",),
     api_path="job_templates",
     identity_keys=("name", "organization"),
     canonical_fields=(
@@ -104,7 +103,6 @@ JOB_TEMPLATE_SPEC = ResourceSpec(
         ),
     ),
     list_columns=("name", "organization", "project", "inventory", "last_job_status"),
-    list_filters=("organization",),
     commands=("list", "get", "save", "apply", "launch"),
     fidelity="full",
 )

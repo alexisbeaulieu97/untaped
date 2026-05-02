@@ -72,7 +72,6 @@ class ResourceSpec(BaseModel):
 
     kind: str
     cli_name: str
-    aliases: tuple[str, ...] = ()
     api_path: str
     identity_keys: tuple[str, ...]
     canonical_fields: tuple[str, ...]
@@ -82,7 +81,6 @@ class ResourceSpec(BaseModel):
     actions: tuple[ActionSpec, ...] = ()
     apply_strategy: str = "default"
     list_columns: tuple[str, ...] = ()
-    list_filters: tuple[str, ...] = ()
     commands: tuple[CommandName, ...] = ("list", "get", "save", "apply")
     fidelity: Fidelity = "full"
     fidelity_note: str | None = None
