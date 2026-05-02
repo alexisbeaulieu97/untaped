@@ -7,7 +7,7 @@ domain, each piped into the next.
 untaped config ...      # inspect and edit ~/.untaped/config.yml
 untaped workspace ...   # manage local git workspaces
 untaped awx ...         # Ansible Automation Platform / AWX
-untaped github ...      # GitHub search & inspection
+untaped github ...      # inspect the authenticated GitHub user
 ```
 
 ## Install
@@ -41,27 +41,63 @@ all of them editably in the tool environment.
 ## Configure
 
 Settings live in `~/.untaped/config.yml` (override the path with
-`UNTAPED_CONFIG`). Individual fields can be overridden per-shell with
-`UNTAPED_<SECTION>__<FIELD>` env vars (e.g. `UNTAPED_AWX__TOKEN=…`).
+`UNTAPED_CONFIG`). The schema is **profile-based**: every configurable
+value lives under `profiles.<name>`. The `default` profile is required
+whenever `profiles:` is non-empty — it's the fallback layer that every
+other profile inherits from. Other profiles only declare the keys that
+differ.
+
+Resolution order (high → low):
+
+```
+UNTAPED_<SECTION>__<FIELD> env var  >  active profile  >  default profile  >  schema default
+```
+
+The active profile comes from `UNTAPED_PROFILE` (the root `untaped
+--profile <name>` flag is sugar that sets this env var for one process),
+then the `active:` key in the YAML, falling back to `default`.
 
 ```yaml
-log_level: INFO
+active: prod                    # optional; selects the overlay profile
 
-awx:
-  base_url: https://aap.example.com
-  token: <token>
+profiles:
+  default:
+    log_level: INFO
+    awx:
+      base_url: https://aap.example.com
+      token: <token>
+      # api_prefix defaults to /api/controller/v2/ for AAP. Upstream AWX
+      # users should override it to /api/v2/ here.
+    github:
+      token: ghp_xxx
 
-github:
-  token: ghp_xxx
+  prod:
+    awx:
+      base_url: https://aap.prod.example.com
+      token: <prod token>
 
-workspace:
+workspace:                      # registry: name → path only
   workspaces:
     - name: prod
       path: ~/work/prod
-      repos:
-        - https://github.com/org/svc-a.git
-        - https://github.com/org/svc-b.git
+    - name: stage
+      path: ~/work/stage
 ```
+
+Repos belong to a workspace, not the registry: each workspace directory
+holds its own `untaped.yml` manifest declaring its repos. The top-level
+`workspace.workspaces` block above is the central registry that lets
+`untaped workspace path <name>` and `--name <name>` find a workspace by
+name.
+
+TLS verification reads the OS trust store by default (so corporate CAs
+installed system-wide just work). Override with
+`http.ca_bundle: /path/to/corp-ca.pem` for an explicit bundle, or
+`http.verify_ssl: false` as a last-resort escape hatch.
+
+Use `untaped config set <key> <value>` to write to the active profile (or
+`--profile <name>` to target a specific one), and `untaped profile <…>`
+to manage the profile inventory itself.
 
 ## Pipe-friendly by design
 

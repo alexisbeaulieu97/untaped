@@ -52,7 +52,7 @@ untaped/
     ├── untaped-profile/          # `untaped profile list/show/use/create/delete/rename`
     ├── untaped-workspace/        # manage local git workspaces
     ├── untaped-awx/              # Ansible Automation Platform / AWX API
-    └── untaped-github/           # GitHub API search & inspection
+    └── untaped-github/           # GitHub authenticated-user inspection
 ```
 
 | Package             | Type | Owns                                                                  |
@@ -63,7 +63,7 @@ untaped/
 | `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/create/delete/rename profiles. |
 | `untaped-workspace` | lib  | Workspace bounded context: per-workspace `untaped.yml` manifests, central `name → path` registry, sync/status/foreach via subprocess `git`. |
 | `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            |
-| `untaped-github`    | lib  | GitHub bounded context (search, repos, users, …).                     |
+| `untaped-github`    | lib  | GitHub bounded context — currently only the authenticated user (`whoami`); search/repos/etc. unimplemented. |
 
 ## Hard Rules
 
