@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 from untaped_awx import app
 
@@ -520,9 +521,9 @@ def test_save_all_organization_filter_applies_per_spec_identity(
     assert result.exit_code == 0, result.output
 
     # Org filter still applied to org-scoped kinds: JT in `Default` saved,
-    # JT in `Other` not saved.
-    assert (out_dir / "JobTemplate__deploy.yml").exists()
-    assert (out_dir / "Project__playbooks.yml").exists()
+    # JT in `Other` not saved. Filenames now encode the org for org-scoped kinds.
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
+    assert (out_dir / "Project__Default__playbooks.yml").exists()
     other_org_jt_files = [
         p for p in out_dir.glob("JobTemplate__*.yml") if "deploy-elsewhere" in p.name
     ]
@@ -538,6 +539,150 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         f"{[p.name for p in out_dir.iterdir()]}"
     )
     assert any("nightly" in f.name for f in schedule_files)
+
+
+def test_save_all_does_not_default_to_active_organization(
+    fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`save --all` ignores `default_organization`; only `--organization` narrows."""
+    monkeypatch.setenv("UNTAPED_AWX__DEFAULT_ORGANIZATION", "Default")
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy-default",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy-other",
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+
+    # Both JTs must be saved — bulk save without an explicit --organization
+    # is "everything", regardless of `default_organization`.
+    saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
+    assert saved == [
+        "JobTemplate__Default__deploy-default.yml",
+        "JobTemplate__Other__deploy-other.yml",
+    ], f"expected both JTs saved, got {saved}"
+
+
+def test_save_all_with_organization_filters_schedules_by_parent_org(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """`awx save --all --organization X` filters schedules client-side by parent org."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy-other",
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+    # Schedule attached to JT in `Default`.
+    fake_aap.seed(
+        "schedules",
+        id=50,
+        name="nightly-default",
+        unified_job_template=30,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 30,
+                "name": "deploy",
+                "unified_job_type": "job_template",
+                "organization_name": "Default",
+            }
+        },
+    )
+    # Schedule attached to JT in `Other` — must be excluded by `--organization Default`.
+    fake_aap.seed(
+        "schedules",
+        id=51,
+        name="nightly-other",
+        unified_job_template=31,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 31,
+                "name": "deploy-other",
+                "unified_job_type": "job_template",
+                "organization_name": "Other",
+            }
+        },
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
+    )
+    assert result.exit_code == 0, result.output
+
+    saved_schedules = sorted(p.name for p in out_dir.glob("Schedule__*.yml"))
+    assert saved_schedules == [
+        "Schedule__JobTemplate__Default__deploy__nightly-default.yml",
+    ], (
+        "schedule from a different org leaked into org-scoped bulk save; "
+        f"saved schedule files: {saved_schedules}"
+    )
+
+
+def test_save_all_distinguishes_same_named_resources_across_orgs(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """Two same-named org-scoped resources in different orgs must produce two distinct files."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy",  # same name, different org
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+
+    saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
+    assert saved == [
+        "JobTemplate__Default__deploy.yml",
+        "JobTemplate__Other__deploy.yml",
+    ], f"expected two distinct files for same-named JTs in different orgs, got {saved}"
 
 
 def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
@@ -565,7 +710,7 @@ def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     # Project file exists; Credential file does not.
-    assert (out_dir / "Project__playbooks.yml").exists()
+    assert (out_dir / "Project__Default__playbooks.yml").exists()
     assert not any(p.name.startswith("Credential__") for p in out_dir.iterdir())
     assert "skipping Credential" in result.stderr
 
