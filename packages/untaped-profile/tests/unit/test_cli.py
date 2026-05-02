@@ -105,6 +105,17 @@ def test_show_json_raw_flag_is_recorded(_isolate_config: Path) -> None:
     assert payload["data"] == {"awx": {"base_url": "https://prod"}}
 
 
+@pytest.mark.parametrize("bad_fmt", ["raw", "table"])
+def test_show_rejects_unsupported_formats(_isolate_config: Path, bad_fmt: str) -> None:
+    """`raw` and `table` make no sense for a single nested object — silently
+    falling through to YAML would lie to scripts that requested a specific
+    pipe-friendly shape. Reject at parse time instead."""
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod", "--format", bad_fmt])
+    assert result.exit_code != 0
+    assert bad_fmt in result.output.lower() or "invalid" in result.output.lower()
+
+
 # ---- use ----
 
 
