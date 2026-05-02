@@ -73,8 +73,7 @@ def set_command(
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
     with report_errors():
-        SetSetting(SettingsFileRepository())(key, value, profile=profile)
-        target = profile or "<active>"
+        target = SetSetting(SettingsFileRepository())(key, value, profile=profile)
         typer.echo(f"set {key} in profile {target} (config: {resolve_config_path()})", err=True)
 
 
@@ -89,9 +88,11 @@ def unset_command(
 ) -> None:
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
     with report_errors():
-        removed = UnsetSetting(SettingsFileRepository())(key, profile=profile)
-        target = profile or "<active>"
-        msg = f"unset {key} in profile {target}" if removed else f"{key} was not set"
+        removed, target = UnsetSetting(SettingsFileRepository())(key, profile=profile)
+        if removed:
+            msg = f"unset {key} in profile {target}"
+        else:
+            msg = f"{key} was not set in profile {target}"
         typer.echo(msg, err=True)
 
 
