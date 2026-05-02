@@ -89,7 +89,10 @@ def unset_command(
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=profile)
-        msg = f"unset {key} in profile {target}" if removed else f"{key} was not set"
+        if removed:
+            msg = f"unset {key} in profile {target}"
+        else:
+            msg = f"{key} was not set in profile {target}"
         typer.echo(msg, err=True)
 
 

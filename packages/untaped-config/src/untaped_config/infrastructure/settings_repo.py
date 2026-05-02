@@ -136,8 +136,8 @@ class SettingsFileRepository:
         return removed, resolved
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
-        """Decide which profile a ``set`` writes to, validating existence
-        when an explicit profile was named."""
+        """Resolve the target profile for a ``set`` or ``unset``, validating
+        existence when an explicit profile was named."""
         if profile is None:
             return effective_active_profile_name(data) or DEFAULT_PROFILE
         if profile == DEFAULT_PROFILE:
