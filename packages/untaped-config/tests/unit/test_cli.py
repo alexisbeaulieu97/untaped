@@ -182,6 +182,14 @@ def test_unset_with_missing_explicit_profile_errors(_isolate_settings: Path) -> 
     assert "ghost" in result.output
 
 
+def test_unset_noop_message_names_resolved_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n")
+    result = CliRunner().invoke(app, ["unset", "log_level"])
+    assert result.exit_code == 0, result.output
+    assert "was not set in profile default" in result.output
+    assert "<active>" not in result.output
+
+
 def test_list_all_profiles_shows_per_profile_rows(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
