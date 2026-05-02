@@ -20,7 +20,7 @@ from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped_core.errors import ConfigError
-from untaped_core.settings import resolve_config_path
+from untaped_core.settings import get_settings, resolve_config_path
 
 _MISSING = object()
 _DEFAULT_LOCK_TIMEOUT = 5.0
@@ -67,9 +67,9 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
     leave the on-disk file untouched. The dict is also snapshot before
     the callback runs and the write is skipped when nothing changed, so
     no-ops (deleting a missing profile, unsetting a missing key) don't
-    spuriously create or reformat the YAML file. Cache invalidation is
-    the caller's job (mutating helpers like :func:`write_profile` clear
-    it explicitly).
+    spuriously create or reformat the YAML file. ``get_settings``'s cache
+    is cleared after a successful write so the rest of the process sees
+    the new values without callers needing to do it themselves.
 
     Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
     (seconds, float). Default is 5 seconds.
@@ -91,6 +91,7 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
         fn(data)
         if data != before:
             write_config_dict(data, target)
+            get_settings.cache_clear()
     finally:
         lock.release()
 
