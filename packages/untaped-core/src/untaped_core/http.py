@@ -95,6 +95,26 @@ class HttpClient:
     def post(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("POST", path, **kwargs)
 
+    def request_json(self, method: str, path: str, **kwargs: Any) -> Any:
+        """Like :meth:`request` but decodes the JSON body, mapping decode
+        failures to :class:`HttpError`.
+
+        Empty bodies (e.g. 204 responses to DELETE) return ``None``.
+
+        A 200 carrying HTML (auth proxy interstitial, misconfigured
+        controller) would otherwise leak ``json.JSONDecodeError`` past the
+        typed-error boundary; this catches that case and reports it with
+        the same context as a non-2xx error.
+        """
+        response = self.request(method, path, **kwargs)
+        return _decode_json(response)
+
+    def get_json(self, path: str, **kwargs: Any) -> Any:
+        return self.request_json("GET", path, **kwargs)
+
+    def post_json(self, path: str, **kwargs: Any) -> Any:
+        return self.request_json("POST", path, **kwargs)
+
     def close(self) -> None:
         self._client.close()
 
@@ -108,3 +128,21 @@ class HttpClient:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+_BODY_SNIPPET_LIMIT = 256
+
+
+def _decode_json(response: httpx.Response) -> Any:
+    if not response.content:
+        return None
+    try:
+        return response.json()
+    except ValueError as exc:
+        snippet = response.text[:_BODY_SNIPPET_LIMIT]
+        raise HttpError(
+            f"non-JSON response from {response.request.url}: {exc}",
+            status_code=response.status_code,
+            url=str(response.request.url),
+            body=snippet,
+        ) from exc

@@ -31,7 +31,7 @@ class GithubClient:
         )
 
     def me(self) -> dict[str, Any]:
-        return self._http.get("/user").json()  # type: ignore[no-any-return]
+        return self._http.get_json("/user")  # type: ignore[no-any-return]
 
     def close(self) -> None:
         self._http.close()
