@@ -39,10 +39,7 @@ class RunAction:
                 f"{spec.kind} has no action {action!r} "
                 f"(available: {[a.name for a in spec.actions]})"
             )
-        params: dict[str, str] = {"name": name}
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
-        record = self._client.find(spec, params=params)
+        record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
         result = self._client.action(spec, int(record["id"]), action_spec.path, payload=payload)

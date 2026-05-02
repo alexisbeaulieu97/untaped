@@ -25,10 +25,7 @@ class GetResource:
             return self._client.get(spec, id)
         if name is None:
             raise ValueError("GetResource requires either name= or id=")
-        params: dict[str, str] = {"name": name}
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
-        record = self._client.find(spec, params=params)
+        record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
         return record

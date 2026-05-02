@@ -98,7 +98,6 @@ class SettingsFileRepository:
                 ) from exc
 
         mutate_config(_apply)
-        get_settings.cache_clear()
 
     def unset_value(self, key: str, *, profile: str | None = None) -> bool:
         descriptor = self.descriptor(key)
@@ -118,8 +117,6 @@ class SettingsFileRepository:
             removed = True
 
         mutate_config(_apply)
-        if removed:
-            get_settings.cache_clear()
         return removed
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:

@@ -285,6 +285,37 @@ def test_foreach_runs_command_in_each_repo(
     assert "[upstream] main" in result.stdout
 
 
+def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
+    """`--format json` emits ForeachOutcome rows; the [repo]-prefixed
+    passthrough is suppressed so downstream tools can parse stdout."""
+    import json as _json
+
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(
+        app,
+        [
+            "foreach",
+            "git rev-parse --abbrev-ref HEAD",
+            "--name",
+            "smoke",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed
+    row = parsed[0]
+    assert {"workspace", "repo", "returncode", "stdout", "stderr"} <= set(row)
+    assert row["repo"] == "upstream"
+    assert "[upstream]" not in result.stdout
+
+
 def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"

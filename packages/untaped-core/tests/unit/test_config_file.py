@@ -273,6 +273,45 @@ def test_mutate_config_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert read_config_dict()["profiles"]["default"]["log_level"] == "DEBUG"
 
 
+def test_mutate_config_clears_get_settings_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful write must invalidate ``get_settings`` so the next
+    reader sees the new values without manual ``cache_clear()``."""
+    from untaped_core import get_settings
+
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {"log_level": "INFO"}}})
+
+    get_settings.cache_clear()
+    assert get_settings().log_level == "INFO"
+
+    def _set_debug(data: dict[str, Any]) -> None:
+        data["profiles"]["default"]["log_level"] = "DEBUG"
+
+    mutate_config(_set_debug)
+    assert get_settings().log_level == "DEBUG"
+
+
+def test_mutate_config_no_op_does_not_clear_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the callback doesn't change anything, the cache must stay warm
+    — clearing it on every call would defeat the cache for read-mostly
+    flows like ``config list``."""
+    from untaped_core import get_settings
+
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {"log_level": "INFO"}}})
+
+    get_settings.cache_clear()
+    cached = get_settings()
+    mutate_config(lambda data: None)
+    assert get_settings() is cached
+
+
 def test_mutate_config_creates_file_when_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

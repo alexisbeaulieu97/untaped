@@ -21,15 +21,17 @@ from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
 ALL_SPECS: tuple[ResourceSpec, ...] = (
     ORGANIZATION_SPEC,
-    INVENTORY_SPEC,
     CREDENTIAL_TYPE_SPEC,
     CREDENTIAL_SPEC,
     PROJECT_SPEC,
+    INVENTORY_SPEC,
     JOB_TEMPLATE_SPEC,
     WORKFLOW_JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
 )
-"""Canonical ordering follows apply-time dependency order."""
+"""Canonical ordering follows apply-time dependency order
+(see ``AGENTS.md`` Apply ordering); the topological sort in
+``apply_file._topological_sort`` uses this order as its tie-breaker."""
 
 __all__ = [
     "ALL_SPECS",

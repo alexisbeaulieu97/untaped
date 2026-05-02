@@ -95,6 +95,20 @@ class HttpClient:
     def post(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("POST", path, **kwargs)
 
+    def request_json(self, method: str, path: str, **kwargs: Any) -> Any:
+        """Decode the JSON body, mapping parse failures to :class:`HttpError`.
+
+        Returns ``None`` for empty bodies (e.g. 204 DELETE).
+        """
+        response = self.request(method, path, **kwargs)
+        return _decode_json(response)
+
+    def get_json(self, path: str, **kwargs: Any) -> Any:
+        return self.request_json("GET", path, **kwargs)
+
+    def post_json(self, path: str, **kwargs: Any) -> Any:
+        return self.request_json("POST", path, **kwargs)
+
     def close(self) -> None:
         self._client.close()
 
@@ -108,3 +122,23 @@ class HttpClient:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+_BODY_SNIPPET_LIMIT = 256
+
+
+def _decode_json(response: httpx.Response) -> Any:
+    if not response.content:
+        return None
+    try:
+        return response.json()
+    except ValueError as exc:
+        # Slice bytes before decoding so a multi-MB error page doesn't
+        # decode the whole body just to keep the first 256 chars.
+        snippet = response.content[:_BODY_SNIPPET_LIMIT].decode("utf-8", errors="replace")
+        raise HttpError(
+            f"non-JSON response from {response.request.url}: {exc}",
+            status_code=response.status_code,
+            url=str(response.request.url),
+            body=snippet,
+        ) from exc

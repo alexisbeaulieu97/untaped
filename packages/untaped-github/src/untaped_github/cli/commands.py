@@ -10,14 +10,14 @@ from untaped_github.infrastructure import GithubClient
 
 app = typer.Typer(
     name="github",
-    help="Search and inspect GitHub from the command line.",
+    help="Inspect the authenticated GitHub user.",
     no_args_is_help=True,
 )
 
 
 @app.callback()
 def _callback() -> None:
-    """Search and inspect GitHub from the command line."""
+    """Inspect the authenticated GitHub user."""
 
 
 @app.command("whoami")

@@ -13,7 +13,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError
+from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import ManifestRepository
 
 
@@ -203,6 +203,26 @@ def test_only_filters_repos(tmp_path: Path) -> None:
     git = _StubGit()
     outcomes = SyncWorkspace(ManifestRepository(), git)(workspace, only=["svc-b"])
     assert [o.repo for o in outcomes] == ["svc-b"]
+
+
+def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://x/svc-a.git"),
+                Repo(url="https://x/svc-b.git"),
+            ],
+        ),
+    )
+    git = _StubGit()
+    with pytest.raises(WorkspaceError) as excinfo:
+        SyncWorkspace(ManifestRepository(), git)(workspace, only=["svc-b", "typo", "also-typo"])
+    msg = str(excinfo.value)
+    assert "typo" in msg
+    assert "also-typo" in msg
+    # And no git work should have happened.
+    assert git.events == []
 
 
 def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
