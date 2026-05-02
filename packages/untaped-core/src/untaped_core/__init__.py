@@ -14,6 +14,7 @@ Public API:
 """
 
 from untaped_core.cli import ColumnsOption, FormatOption, report_errors
+from untaped_core.config_schema import redact_secrets, secret_field_paths
 from untaped_core.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped_core.http import HttpClient, resolve_verify
 from untaped_core.logging import configure_logging, get_logger
@@ -38,7 +39,9 @@ __all__ = [
     "get_settings",
     "read_identifiers",
     "read_stdin",
+    "redact_secrets",
     "report_errors",
     "resolve_config_path",
     "resolve_verify",
+    "secret_field_paths",
 ]

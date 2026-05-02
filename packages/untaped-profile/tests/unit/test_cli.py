@@ -32,6 +32,21 @@ def _seed(cfg: Path) -> None:
     )
 
 
+def _seed_with_secrets(cfg: Path) -> None:
+    """Profile inventory where ``prod`` carries both AWX and GitHub tokens.
+
+    Used to exercise the redaction path in ``profile show``.
+    """
+    cfg.write_text(
+        "profiles:\n"
+        "  default:\n    log_level: INFO\n"
+        "  prod:\n"
+        "    awx:\n      base_url: https://prod\n      token: super-secret-aap\n"
+        "    github:\n      token: ghp_super_secret\n"
+        "active: prod\n"
+    )
+
+
 # ---- list ----
 
 
@@ -103,6 +118,66 @@ def test_show_json_raw_flag_is_recorded(_isolate_config: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["raw"] is True
     assert payload["data"] == {"awx": {"base_url": "https://prod"}}
+
+
+def test_show_redacts_secrets_by_default_yaml(_isolate_config: Path) -> None:
+    """Default YAML output must mask SecretStr fields — terminal scrollback,
+    shell captures, and copy/paste should never carry a raw AWX/GitHub token."""
+    _seed_with_secrets(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod"])
+    assert result.exit_code == 0, result.output
+    payload = yaml.safe_load(result.stdout)
+    assert payload["awx"]["token"] == "***"
+    assert payload["github"]["token"] == "***"
+    # raw token bytes must not appear anywhere in stdout
+    assert "super-secret-aap" not in result.stdout
+    assert "ghp_super_secret" not in result.stdout
+    # non-secret fields are untouched
+    assert payload["awx"]["base_url"] == "https://prod"
+    assert payload["log_level"] == "INFO"
+
+
+def test_show_redacts_secrets_by_default_json(_isolate_config: Path) -> None:
+    """Same redaction applies to the JSON envelope's ``data`` payload."""
+    _seed_with_secrets(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["data"]["awx"]["token"] == "***"
+    assert payload["data"]["github"]["token"] == "***"
+    assert "super-secret-aap" not in result.stdout
+    assert "ghp_super_secret" not in result.stdout
+    assert payload["data"]["awx"]["base_url"] == "https://prod"
+
+
+def test_show_secrets_flag_reveals_raw_values(_isolate_config: Path) -> None:
+    """``--show-secrets`` is the explicit opt-in for the rare case the user
+    actually needs the token (e.g. reading it back into env)."""
+    _seed_with_secrets(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod", "--show-secrets"])
+    assert result.exit_code == 0, result.output
+    payload = yaml.safe_load(result.stdout)
+    assert payload["awx"]["token"] == "super-secret-aap"
+    assert payload["github"]["token"] == "ghp_super_secret"
+
+
+def test_show_secrets_flag_reveals_raw_values_json(_isolate_config: Path) -> None:
+    _seed_with_secrets(_isolate_config)
+    result = CliRunner().invoke(app, ["show", "prod", "--show-secrets", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["data"]["awx"]["token"] == "super-secret-aap"
+    assert payload["data"]["github"]["token"] == "ghp_super_secret"
+
+
+def test_show_redaction_no_op_when_secrets_absent(_isolate_config: Path) -> None:
+    """A profile that doesn't set any secret-typed field must produce the
+    same output as before — redaction must not invent ``***`` placeholders."""
+    _seed(_isolate_config)  # the existing seed has no tokens
+    result = CliRunner().invoke(app, ["show", "prod"])
+    assert result.exit_code == 0, result.output
+    payload = yaml.safe_load(result.stdout)
+    assert payload == {"log_level": "INFO", "awx": {"base_url": "https://prod"}}
 
 
 @pytest.mark.parametrize("bad_fmt", ["raw", "table"])

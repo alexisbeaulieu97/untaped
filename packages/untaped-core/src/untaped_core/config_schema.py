@@ -8,8 +8,10 @@ skipped — they are managed by domain-specific commands (e.g.
 
 from __future__ import annotations
 
+import copy
 import types
 import typing
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, get_args, get_origin
 
@@ -89,6 +91,42 @@ def find_descriptor(descriptors: list[FieldDescriptor], key: str) -> FieldDescri
         if d.key == key:
             return d
     return None
+
+
+def secret_field_paths(model_cls: type[BaseModel]) -> list[tuple[str, ...]]:
+    """Return the dotted paths of every ``SecretStr``-typed leaf in ``model_cls``."""
+    return [d.path for d in walk_settings(model_cls) if d.is_secret]
+
+
+def redact_secrets(
+    data: Mapping[str, Any],
+    paths: Iterable[tuple[str, ...]],
+    *,
+    placeholder: str = "***",
+) -> dict[str, Any]:
+    """Deep-copy ``data`` and replace each leaf at ``paths`` with ``placeholder``.
+
+    Paths that aren't present in ``data`` are silently skipped — profiles can
+    omit any subset of the schema. ``None`` leaves are also left alone, so a
+    user who has not set a secret still sees ``None`` rather than ``***``.
+    """
+    out: dict[str, Any] = copy.deepcopy(dict(data))
+    for path in paths:
+        _redact_path(out, path, placeholder)
+    return out
+
+
+def _redact_path(data: dict[str, Any], path: tuple[str, ...], placeholder: str) -> None:
+    if not path:
+        return
+    cursor: Any = data
+    for part in path[:-1]:
+        if not isinstance(cursor, dict) or part not in cursor:
+            return
+        cursor = cursor[part]
+    leaf = path[-1]
+    if isinstance(cursor, dict) and leaf in cursor and cursor[leaf] is not None:
+        cursor[leaf] = placeholder
 
 
 def _unwrap_optional(annotation: Any) -> Any:
