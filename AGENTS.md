@@ -253,10 +253,13 @@ The AWX bounded context follows the same DDD layout but builds a small
 - **`ResourceSpec`** (in `domain/spec.py`) declares each kind's
   contract: `kind`, `cli_name`, `api_path`, `identity_keys`,
   `canonical_fields`, `read_only_fields`, `fk_refs`, `secret_paths`,
-  `actions`, `apply_strategy`, `commands`, `fidelity`, `list_columns`,
-  `list_filters`. Per-kind specs live in
+  `actions`, `apply_strategy`, `commands`, `fidelity`, `list_columns`.
+  Per-kind specs live in
   `infrastructure/specs/{job_template,workflow,project,credential,
-  schedule,_support}.py` and are aggregated into `ALL_SPECS`.
+  schedule,_support}.py` and are aggregated into `ALL_SPECS`. Spec
+  fields stay honest with the CLI: a knob only lives in `ResourceSpec`
+  if the factory actually wires it (see `accepts` in the deferred-items
+  table for the same principle).
 - **kubectl-style envelope** for saved files (`domain/envelope.py`):
   `{kind, apiVersion, metadata: {name, organization, parent?}, spec}`.
   FK references are by name (scoped to `metadata.organization`); the
@@ -308,7 +311,7 @@ deferred. Each item names the trigger that would justify revisiting:
 | Bulk FK prefetch in save/apply | Bulk operations on 100+ resources start showing FK-resolution latency. |
 | Decouple `AwxClient`/`cli/_context` from `untaped_core.Settings` (extractability) | Plan to ship `untaped-awx` as a standalone library or embed it elsewhere. |
 | Workflow node graph round-trip (`save_hook`/`apply_hook` for `WorkflowJobTemplateNode`) — design space already shaped by polymorphic `FkRef` | User explicitly needs the v0.5 workflow-nodes milestone. |
-| Generate Typer flags for every `ActionSpec.accepts` field (including list-typed `credentials`/`job_tags`) — currently the spec lists 11 launch fields but the CLI exposes only `--extra-vars`/`--limit`, so we shrunk `accepts` to match the CLI to keep the contract honest. | First user request for inventory/credentials/scm_branch/tags/verbosity at launch time. |
+| Generate Typer flags for every `ActionSpec.accepts` field (including list-typed `credentials`/`job_tags`) — `accepts` was shrunk to match the CLI to keep the contract honest, same convention that removed the inert `aliases` and `list_filters` spec fields. | First user request for inventory/credentials/scm_branch/tags/verbosity at launch time. |
 
 ## Development Workflow
 
