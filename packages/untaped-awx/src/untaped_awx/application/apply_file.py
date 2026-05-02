@@ -79,25 +79,22 @@ def _topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Res
 
     kinds_in_docs = {d.kind for d in docs_list}
 
-    # Validate kinds against the catalog before any sorting work — gives a
-    # clear error rather than silently leaving unknown kinds last.
-    for kind in kinds_in_docs:
-        catalog.get(kind)  # raises AwxApiError on unknown
+    # Resolve every kind once; raises AwxApiError on unknown kinds before
+    # any sorting work, and gives every loop below O(1) spec access.
+    specs = {kind: catalog.get(kind) for kind in kinds_in_docs}
 
     # Build a kind-level dependency graph restricted to kinds present in
     # the input. Cross-doc dependencies on kinds NOT present mean the
     # parent already exists in AWX — those don't constrain ordering.
     edges: dict[str, set[str]] = defaultdict(set)
-    for kind in kinds_in_docs:
-        spec = catalog.get(kind)
+    for kind, spec in specs.items():
         for ref in spec.fk_refs:
             if ref.kind is not None and ref.kind in kinds_in_docs:
                 edges[kind].add(ref.kind)
 
     # Polymorphic refs: read the referenced kind from each doc's data.
     for doc in docs_list:
-        spec = catalog.get(doc.kind)
-        for ref in spec.fk_refs:
+        for ref in specs[doc.kind].fk_refs:
             if not ref.polymorphic or ref.kind_in_value is None:
                 continue
             value = doc.spec.get(ref.field) if isinstance(doc.spec, dict) else None
