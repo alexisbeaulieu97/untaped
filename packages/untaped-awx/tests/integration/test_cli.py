@@ -177,9 +177,7 @@ def test_launch_reads_names_from_stdin(fake_aap: Any) -> None:
 
 
 def test_get_without_scope_raises_when_name_is_ambiguous(fake_aap: Any) -> None:
-    """Two job templates with the same name in different orgs used to
-    silently resolve to whichever AWX returned first. The lookup now
-    raises so the user sees the missing scope."""
+    """A name that exists in multiple orgs must raise (no silent first-match)."""
     fake_aap.seed("organizations", id=1, name="Org-A")
     fake_aap.seed("organizations", id=2, name="Org-B")
     fake_aap.seed("job_templates", id=10, name="deploy", organization=1, organization_name="Org-A")
@@ -292,9 +290,8 @@ def test_get_stdin_continues_on_missing_name(fake_aap: Any) -> None:
 
 
 def test_apply_under_scoped_file_raises_ambiguity(fake_aap: Any, tmp_path: Path) -> None:
-    """The destructive path: applying a JobTemplate file that omits its
-    organization while two same-named templates exist across orgs used
-    to clobber whichever AWX returned first. The lookup now fails loud."""
+    """An under-scoped apply against ambiguous AWX state must surface the
+    ambiguity rather than overwrite an arbitrary record."""
     fake_aap.seed("organizations", id=1, name="Org-A")
     fake_aap.seed("organizations", id=2, name="Org-B")
     fake_aap.seed("projects", id=10, name="playbooks", organization=1, organization_name="Org-A")

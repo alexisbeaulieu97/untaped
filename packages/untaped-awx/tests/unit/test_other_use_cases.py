@@ -348,8 +348,7 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
 
 
 def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
-    """Unknown kinds used to silently sort last; the topo path raises so
-    the user sees a clear error instead of an out-of-order apply."""
+    """Unknown kinds must raise instead of being applied in arbitrary order."""
     f = tmp_path / "weird.yml"
     f.write_text("kind: NotARealKind\nmetadata: { name: x, organization: Default }\nspec: {}\n")
     from untaped_awx.infrastructure.yaml_io import read_resources

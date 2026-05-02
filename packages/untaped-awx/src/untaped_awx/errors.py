@@ -82,9 +82,7 @@ class AmbiguousIdentityError(AwxApiError):
         *,
         match_count: int | None = None,
     ) -> None:
-        # AWX's URL-filter convention (`<key>__name`) leaks into the params
-        # dicts callers naturally reach for; strip the suffix here so the
-        # user-visible message reads as a plain identity.
+        # AWX's `<key>__name` filter syntax shouldn't leak into user messages.
         cleaned: dict[str, Any] = {
             (k.removesuffix("__name") if isinstance(k, str) else k): v for k, v in identity.items()
         }
