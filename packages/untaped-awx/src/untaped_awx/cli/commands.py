@@ -25,7 +25,7 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
-from untaped_awx.cli._context import open_context
+from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.domain import Job
 from untaped_awx.errors import AwxApiError
@@ -114,7 +114,6 @@ def save_top_command(
                 ctx.catalog.get(kind)  # type: ignore[arg-type]
             ]
         )
-        scope = {"organization": organization} if organization else None
         save = SaveResource(ctx.repo, ctx.fk)
         out_dir.mkdir(parents=True, exist_ok=True)
         written: list[str] = []
@@ -127,6 +126,10 @@ def save_top_command(
                 continue
             if "save" not in spec.commands:
                 continue
+            # Per-spec scoping: parent-scoped (Schedule) and global
+            # (Organization, CredentialType) kinds get no `organization__name`
+            # filter even when --organization is passed.
+            scope = scope_for_spec(spec, organization, ctx.default_organization)
             for record in save.find_all(spec, scope=scope):
                 resource = save.from_record(spec, record)
                 comment = spec.fidelity_note if spec.fidelity != "full" else None

@@ -450,6 +450,96 @@ def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
     assert "no such command" in result.output.lower() or "usage" in result.output.lower()
 
 
+def test_save_all_organization_filter_applies_per_spec_identity(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """`awx save --all --organization X` must apply the org filter only to
+    specs whose ``identity_keys`` include ``organization``. Schedule's
+    identity is ``("name",)`` (parent org lives in ``metadata.parent``);
+    applying the same filter as JT/Project there silently excludes every
+    schedule. JT in a *different* org must still be filtered out.
+
+    This pins both halves of the regression: schedules included AND
+    other-org JTs excluded.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="deploy.yml",
+        project=10,
+        project_name="playbooks",
+    )
+    # Same JT name, different org — must be excluded by `--organization Default`.
+    fake_aap.seed(
+        "job_templates",
+        id=31,
+        name="deploy-elsewhere",
+        organization=2,
+        organization_name="Other",
+        playbook="deploy.yml",
+        project=10,
+        project_name="playbooks",
+    )
+    # Schedule attached to the JT — note no `organization_name` on the
+    # record itself; AWX surfaces parent org via summary_fields only.
+    fake_aap.seed(
+        "schedules",
+        id=50,
+        name="nightly",
+        unified_job_template=30,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 30,
+                "name": "deploy",
+                "unified_job_type": "job_template",
+                "organization_name": "Default",
+            }
+        },
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Org filter still applied to org-scoped kinds: JT in `Default` saved,
+    # JT in `Other` not saved.
+    assert (out_dir / "JobTemplate__deploy.yml").exists()
+    assert (out_dir / "Project__playbooks.yml").exists()
+    other_org_jt_files = [
+        p for p in out_dir.glob("JobTemplate__*.yml") if "deploy-elsewhere" in p.name
+    ]
+    assert not other_org_jt_files, (
+        "different-org JT leaked through bulk-save filter; saved files: "
+        f"{[p.name for p in out_dir.iterdir()]}"
+    )
+
+    # Schedule must be saved despite --organization filter (the bug filtered it out).
+    schedule_files = list(out_dir.glob("Schedule__*.yml"))
+    assert schedule_files, (
+        "schedule excluded by organization__name filter; saved files: "
+        f"{[p.name for p in out_dir.iterdir()]}"
+    )
+    assert any("nightly" in f.name for f in schedule_files)
+
+
 def test_save_all_skips_credentials(fake_aap: Any, tmp_path: Path) -> None:
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed(
