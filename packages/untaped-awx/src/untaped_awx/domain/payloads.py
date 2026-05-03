@@ -40,7 +40,19 @@ class ServerRecord(BaseModel):
     name: str | None = None
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Dict-style access for backward compatibility with raw payloads."""
+        """Dict-style access for backward compatibility with raw payloads.
+
+        Matches Python ``dict.get`` semantics: ``default`` is returned
+        only when ``key`` is *absent*, not when it's present-but-``None``.
+        Concretely, ``record.get("name", "x")`` returns ``"x"`` only when
+        AWX omitted ``name`` entirely AND the field isn't declared on
+        ``ServerRecord``. Since ``name`` IS declared (as
+        ``str | None = None``), a missing AWX response yields
+        ``self.name == None`` and ``record.get("name", "x")`` returns
+        ``None``. Callers that need ``""`` for a missing name should
+        write ``record.get("name") or ""`` rather than relying on the
+        default.
+        """
         if key in self.__class__.model_fields:
             return getattr(self, key)
         if self.__pydantic_extra__ is None:

@@ -242,11 +242,14 @@ without `git worktree` branch conflicts.
 
 Other side-effecting calls (shell-out for `foreach`, editor launch for
 `edit`, `rmtree` for `remove --prune` / `sync --prune`) live behind
-`infrastructure.system_adapters` as three small Protocols (`ShellRunner`,
-`EditorRunner`, `Filesystem`) plus default implementations. Application
-use cases require those adapters as constructor arguments — none of
-them imports `subprocess` or `shutil` directly. The CLI composition
-root wires the defaults; tests inject stubs.
+`infrastructure.system_adapters` as three small adapter types
+(`ShellRunner`, `EditorRunner`, `Filesystem`) plus default
+implementations. `ShellRunner` and `EditorRunner` are `Callable`
+aliases (they have one operation each); `Filesystem` is a `Protocol`
+(it groups `rmtree` and any future side-effecting fs operation).
+Application use cases require those adapters as constructor
+arguments — none of them imports `subprocess` or `shutil` directly.
+The CLI composition root wires the defaults; tests inject stubs.
 
 `workspace foreach` honours the standard piping contract: `--format
 table` (default) replays each repo's captured stdout / stderr with a
@@ -272,12 +275,15 @@ The AWX bounded context follows the same DDD layout but builds a small
 - **`ResourceSpec`** (in `domain/spec.py`) declares each kind's
   *domain* contract: `kind`, `identity_keys`, `canonical_fields`,
   `read_only_fields`, `fk_refs`, `secret_paths`, `actions`,
-  `fidelity`, `fidelity_note`. Application use cases depend only on
-  this view. **`AwxResourceSpec`** (in `infrastructure/spec.py`)
-  extends it with the transport / CLI fields the framework needs to
-  talk to AWX and wire Typer sub-apps: `cli_name`, `api_path`,
-  `apply_strategy`, `list_columns`, `commands`. Per-kind specs live
-  in `infrastructure/specs/{job_template,workflow,project,credential,
+  `apply_strategy`, `fidelity`, `fidelity_note`. `apply_strategy` is
+  a behaviour selector (a string the `StrategyResolver` maps to a
+  concrete `ApplyStrategy`); it lives in domain because the choice of
+  strategy is per-kind semantics, not transport. Application use
+  cases depend only on this view. **`AwxResourceSpec`** (in
+  `infrastructure/spec.py`) extends it with the AWX REST + CLI
+  wiring: `cli_name`, `api_path`, `list_columns`, `commands`.
+  Per-kind specs live in
+  `infrastructure/specs/{job_template,workflow,project,credential,
   schedule,_support}.py` (each constructs an `AwxResourceSpec`) and
   are aggregated into `ALL_SPECS`. Spec fields stay honest with the
   CLI: a knob only lives in the spec if the factory actually wires it.
