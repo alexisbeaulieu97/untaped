@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.application.ports import ResourceClient
 from untaped_awx.errors import ResourceNotFound
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+if TYPE_CHECKING:
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class GetResource:

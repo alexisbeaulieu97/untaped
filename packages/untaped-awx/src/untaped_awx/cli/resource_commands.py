@@ -221,9 +221,22 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
         columns: ColumnsOption = None,
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
+        _reject_unsupported_launch_flags(
+            kind=spec.kind,
+            accepts=accepts,
+            inventory=inventory,
+            credential=credential,
+            scm_branch=scm_branch,
+            job_tag=job_tag,
+            skip_tag=skip_tag,
+            verbosity=verbosity,
+            diff_mode=diff_mode,
+            job_type=job_type,
+        )
         jobs: list[Any] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
+            scope = _scope(ctx, organization, spec)
             payload = _build_launch_payload(
                 accepts=accepts,
                 extra_vars=extra_vars,
@@ -237,10 +250,9 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 diff_mode=diff_mode,
                 job_type=job_type,
                 fk=ctx.fk,
-                org_scope=_scope(ctx, organization, spec),
+                org_scope=scope,
             )
             ids = read_identifiers(list(names or []), stdin=stdin)
-            scope = _scope(ctx, organization, spec)
             for n in ids:
                 try:
                     job = RunAction(ctx.repo)(
@@ -260,6 +272,64 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
         if any_failed:
             raise typer.Exit(code=1)
+
+
+# Map CLI flag names → the field name in `ActionSpec.accepts` they target.
+# extra_vars and limit are accepted by every launch-capable kind today, so
+# they're not in the rejection map; if a future kind drops them, add them.
+_LAUNCH_FLAG_TO_ACCEPT: dict[str, str] = {
+    "--inventory": "inventory",
+    "--credential": "credentials",
+    "--scm-branch": "scm_branch",
+    "--job-tag": "job_tags",
+    "--skip-tag": "skip_tags",
+    "--verbosity": "verbosity",
+    "--diff-mode": "diff_mode",
+    "--job-type": "job_type",
+}
+
+
+def _reject_unsupported_launch_flags(
+    *,
+    kind: str,
+    accepts: frozenset[str],
+    inventory: str | None,
+    credential: list[str] | None,
+    scm_branch: str | None,
+    job_tag: list[str] | None,
+    skip_tag: list[str] | None,
+    verbosity: int | None,
+    diff_mode: bool | None,
+    job_type: str | None,
+) -> None:
+    """Fail loudly when the user supplies a flag this kind doesn't accept.
+
+    Avoids the "parser acknowledges, code silently ignores" footgun. The
+    flags are wired uniformly across kinds (Typer signature is shared in
+    ``_add_launch``) but a workflow template's ``launch.accepts`` is a
+    strict subset of a job template's, and silently dropping a value the
+    user typed deliberately would be worse than rejecting up front.
+    """
+    supplied: dict[str, object] = {
+        "--inventory": inventory,
+        "--credential": credential,
+        "--scm-branch": scm_branch,
+        "--job-tag": job_tag,
+        "--skip-tag": skip_tag,
+        "--verbosity": verbosity,
+        "--diff-mode": diff_mode,
+        "--job-type": job_type,
+    }
+    bad = sorted(
+        flag
+        for flag, value in supplied.items()
+        if value is not None and value != [] and _LAUNCH_FLAG_TO_ACCEPT[flag] not in accepts
+    )
+    if bad:
+        raise typer.BadParameter(
+            f"{kind}.launch does not accept {', '.join(bad)} "
+            f"(supported: {', '.join(sorted(accepts))})"
+        )
 
 
 def _build_launch_payload(

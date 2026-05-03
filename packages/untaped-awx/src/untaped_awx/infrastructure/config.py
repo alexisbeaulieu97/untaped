@@ -30,5 +30,5 @@ class AwxConfig(BaseModel):
     @classmethod
     def _api_prefix_shape(cls, v: str) -> str:
         if not v.startswith("/") or not v.endswith("/"):
-            raise ValueError("api_prefix must start and end with '/'")
+            raise ValueError(f"api_prefix must start and end with '/' (got {v!r})")
         return v

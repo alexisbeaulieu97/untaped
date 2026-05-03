@@ -12,12 +12,16 @@ Schedule's polymorphic parent is extracted from AWX's
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
 from untaped_awx.domain import IdentityRef, Metadata, Resource
 from untaped_awx.errors import ResourceNotFound
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+if TYPE_CHECKING:
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+    _MetadataExtractor = Callable[[AwxResourceSpec, dict[str, Any], FkResolver], Metadata]
 
 # AWX's snake_case "unified_job_type" → our PascalCase kind names.
 _UJT_KIND_MAP: dict[str, str] = {
@@ -119,9 +123,6 @@ def _schedule_metadata(spec: AwxResourceSpec, record: dict[str, Any], fk: FkReso
         parent_org = parent_summary.get("organization_name")
         parent = IdentityRef(kind=parent_kind, name=parent_name, organization=parent_org)
     return Metadata(name=name, parent=parent)
-
-
-_MetadataExtractor = Callable[[AwxResourceSpec, dict[str, Any], FkResolver], Metadata]
 
 
 _METADATA_EXTRACTORS: dict[str, _MetadataExtractor] = {

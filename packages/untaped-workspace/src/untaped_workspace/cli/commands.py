@@ -280,11 +280,14 @@ def foreach_command(
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
-    The default ``--format table`` keeps the human-friendly streaming
-    behaviour: each line of stdout/stderr is prefixed with ``[<repo>]``
-    and forwarded as the command runs. Pass ``--format json|yaml|raw``
-    to emit ``ForeachOutcome`` rows after every repo finishes — suitable
-    for piping into ``jq`` / ``awk`` / another ``untaped`` command.
+    The default ``--format table`` is human-friendly: when each repo
+    finishes, its captured stdout / stderr is replayed line-by-line
+    with a ``[<repo>]`` prefix. Output is buffered per repo (the
+    underlying runner uses ``capture_output=True``), so users running
+    chatty commands won't see anything until that repo's command
+    exits. Pass ``--format json|yaml|raw`` to emit ``ForeachOutcome``
+    rows after every repo finishes — suitable for piping into ``jq``
+    / ``awk`` / another ``untaped`` command.
     """
     with report_errors():
         ws = _resolve(name, path)
