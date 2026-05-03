@@ -11,38 +11,60 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from untaped_awx.domain import Job, Resource, ResourceSpec
+from untaped_awx.domain import (
+    ActionPayload,
+    Job,
+    Resource,
+    ServerRecord,
+    WritePayload,
+)
+
+if TYPE_CHECKING:
+    # AwxResourceSpec lives in infrastructure but is the concrete spec type
+    # passed to transport-aware ports below. Type-only import keeps the
+    # runtime decoupling intact (application doesn't import infrastructure).
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class Catalog(Protocol):
-    """Looks up :class:`ResourceSpec` instances by kind or CLI name."""
+    """Looks up resource specs by kind or CLI name.
 
-    def get(self, kind: str) -> ResourceSpec: ...
+    Returns the transport-aware :class:`AwxResourceSpec` so callers
+    constructing requests have ``api_path`` and friends available.
+    Application code that only needs domain semantics still works
+    because ``AwxResourceSpec`` is a :class:`ResourceSpec`.
+    """
+
+    def get(self, kind: str) -> AwxResourceSpec: ...
     def kinds(self) -> tuple[str, ...]: ...
-    def by_cli_name(self, cli_name: str) -> ResourceSpec: ...
+    def by_cli_name(self, cli_name: str) -> AwxResourceSpec: ...
 
 
 class ResourceClient(Protocol):
     """Generic CRUD + custom-action transport against AWX endpoints.
 
-    All methods take the kind's :class:`ResourceSpec` so the client can
-    derive the API path. The client never branches on kind — it follows
-    the spec verbatim.
+    Single-record reads return :class:`ServerRecord` so callers can
+    use typed attribute access (``record.id``, ``record.name``). The
+    bulk :meth:`list` yields raw dicts — most callers iterate-and-format
+    or iterate-and-extract, where the per-record Pydantic round trip
+    is pure overhead. Writes accept :class:`WritePayload` (create /
+    update) or :class:`ActionPayload` (custom actions). The client
+    never branches on kind — it follows the spec verbatim.
     """
 
     def list(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]: ...
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]: ...
+    def get(self, spec: AwxResourceSpec, id_: int) -> ServerRecord: ...
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         """Return the unique record matching ``params`` or ``None``.
 
         Implementations must raise an ambiguity error when more than one
@@ -53,27 +75,31 @@ class ResourceClient(Protocol):
 
     def find_by_identity(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         name: str,
         scope: dict[str, str] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> ServerRecord | None:
         """Look up a record by ``name`` plus optional FK-name scope."""
         ...
 
-    def create(self, spec: ResourceSpec, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def create(self, spec: AwxResourceSpec, payload: WritePayload) -> ServerRecord: ...
 
-    def update(self, spec: ResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update(self, spec: AwxResourceSpec, id_: int, payload: WritePayload) -> ServerRecord: ...
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None: ...
+    def delete(self, spec: AwxResourceSpec, id_: int) -> None: ...
 
     def action(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         id_: int,
         action: str,
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]: ...
+        payload: ActionPayload | None = None,
+    ) -> dict[str, Any]:
+        """Custom-action POST. The response shape varies by action
+        (Job vs project_update vs ad-hoc dict), so the raw dict is
+        returned and the caller normalises into a typed result."""
+        ...
 
     def request(
         self,
@@ -123,19 +149,31 @@ class FkResolver(Protocol):
         """
         ...
 
+    def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
+        """Warm the cache for the listed ``(kind, scope)`` groups.
+
+        ``plan`` maps a kind to a list of scopes the caller is about
+        to resolve. Implementations issue one bulk ``list`` per
+        ``(kind, scope)`` and populate both directions of the cache.
+        Failures are best-effort and do not interrupt the caller —
+        per-record lookups will still happen on cache miss.
+        """
+        ...
+
 
 class ApplyStrategy(Protocol):
     """Owns the write path for a kind.
 
-    Strategies are responsible for both lookup (find existing by
-    identity) and write (create / update). The default strategy uses
-    plain CRUD; the Schedule strategy POSTs against the parent
-    endpoint.
+    Strategies are the bridge between the dict-shaped payloads produced
+    by application use cases (which copy, strip secrets, and diff
+    in-place) and the typed :class:`ResourceClient` boundary. Strategy
+    implementations wrap on the way in (``WritePayload(**payload)``)
+    and unwrap on the way out (``record.model_dump()``).
     """
 
     def find_existing(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         identity: dict[str, Any],
         *,
         client: ResourceClient,
@@ -144,7 +182,7 @@ class ApplyStrategy(Protocol):
 
     def create(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
@@ -154,7 +192,7 @@ class ApplyStrategy(Protocol):
 
     def update(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,

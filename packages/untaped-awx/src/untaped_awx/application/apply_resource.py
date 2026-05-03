@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
 from untaped_awx.application.ports import (
@@ -24,9 +24,11 @@ from untaped_awx.domain import (
     ApplyOutcome,
     FieldChange,
     Resource,
-    ResourceSpec,
 )
 from untaped_awx.errors import BadRequest
+
+if TYPE_CHECKING:
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 WarnFn = Callable[[str], None]
 
@@ -62,6 +64,8 @@ class ApplyResource:
         # but the top-level ``untaped awx apply <file>`` reaches this use case
         # directly via ``apply_file`` and would otherwise issue create/update
         # calls for resources whose CRUD is deferred. Reject at the boundary.
+        # The ``commands`` check covers any future kind that opts out of apply
+        # without using the read_only fidelity tier.
         if spec.fidelity == "read_only" or "apply" not in spec.commands:
             raise BadRequest(
                 f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
@@ -84,7 +88,7 @@ class ApplyResource:
     def _dispatch(
         self,
         *,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         resource: Resource,
         identity: dict[str, Any],
         payload: dict[str, Any],
@@ -156,7 +160,7 @@ class ApplyResource:
     def _do_create(
         self,
         *,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         resource: Resource,
         identity: dict[str, Any],
         payload: dict[str, Any],
@@ -187,7 +191,7 @@ class ApplyResource:
     def _do_update(
         self,
         *,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         resource: Resource,
         existing: dict[str, Any],
         payload: dict[str, Any],
@@ -224,7 +228,7 @@ class ApplyResource:
         )
 
 
-def _build_identity(spec: ResourceSpec, resource: Resource) -> dict[str, Any]:
+def _build_identity(spec: AwxResourceSpec, resource: Resource) -> dict[str, Any]:
     """Identity is whichever metadata fields uniquely identify the resource.
 
     Default: ``{name, organization}``. Schedule includes ``parent``.
@@ -237,7 +241,7 @@ def _build_identity(spec: ResourceSpec, resource: Resource) -> dict[str, Any]:
     return identity
 
 
-def _build_payload(spec: ResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
+def _build_payload(spec: AwxResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
     """Project resource.spec to canonical_fields and resolve FKs."""
     body: dict[str, Any] = {}
     raw = resource.spec
@@ -284,7 +288,7 @@ def _scope_for(ref: Any, resource: Resource) -> dict[str, str] | None:
 
 
 def _diff(
-    spec: ResourceSpec,
+    spec: AwxResourceSpec,
     existing: dict[str, Any] | None,
     desired: dict[str, Any],
     *,

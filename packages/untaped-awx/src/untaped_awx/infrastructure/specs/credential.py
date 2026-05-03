@@ -8,9 +8,10 @@ credentials and copy IDs into manifests.
 
 from __future__ import annotations
 
-from untaped_awx.domain import FkRef, ResourceSpec
+from untaped_awx.domain import FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-CREDENTIAL_SPEC = ResourceSpec(
+CREDENTIAL_SPEC = AwxResourceSpec(
     kind="Credential",
     cli_name="credentials",
     api_path="credentials",

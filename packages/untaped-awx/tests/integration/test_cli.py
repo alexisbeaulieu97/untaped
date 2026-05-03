@@ -217,6 +217,114 @@ def test_launch_supports_format_json(fake_aap: Any) -> None:
     assert isinstance(parsed, list) and parsed, parsed
 
 
+def test_workflow_launch_rejects_unsupported_flags(fake_aap: Any) -> None:
+    """Workflow templates accept a subset of JobTemplate's launch flags.
+    Passing an unsupported one (here: --verbosity, --diff-mode,
+    --credential, --job-type) must fail with a clear error rather than
+    silently dropping the value."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "workflow_job_templates", id=10, name="wf", organization=1, organization_name="Default"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "launch",
+            "wf",
+            "--organization",
+            "Default",
+            "--verbosity",
+            "3",
+        ],
+    )
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "--verbosity" in output
+    assert "WorkflowJobTemplate.launch does not accept" in output
+
+
+def test_launch_forwards_full_action_payload(fake_aap: Any) -> None:
+    """Every flag listed in JobTemplate.launch.accepts must reach the
+    POST body, with FK names (--inventory, --credential) resolved via
+    the FkResolver and list flags (--job-tag/--skip-tag/--credential)
+    accumulated correctly."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "inventories",
+        id=20,
+        name="prod",
+        organization=1,
+        organization_name="Default",
+        kind="",
+    )
+    fake_aap.seed(
+        "credentials",
+        id=30,
+        name="ssh",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed(
+        "credentials",
+        id=31,
+        name="vault",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "alpha",
+            "--organization",
+            "Default",
+            "--extra-vars",
+            "foo=1",
+            "--limit",
+            "web*",
+            "--inventory",
+            "prod",
+            "--credential",
+            "ssh",
+            "--credential",
+            "vault",
+            "--scm-branch",
+            "release",
+            "--job-tag",
+            "deploy",
+            "--job-tag",
+            "smoke",
+            "--skip-tag",
+            "slow",
+            "--verbosity",
+            "3",
+            "--diff-mode",
+            "--job-type",
+            "check",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
+    assert len(launches) == 1
+    body = launches[0][3]
+    assert body["extra_vars"] == "foo=1"
+    assert body["limit"] == "web*"
+    assert body["inventory"] == 20
+    assert body["credentials"] == [30, 31]
+    assert body["scm_branch"] == "release"
+    assert body["job_tags"] == "deploy,smoke"
+    assert body["skip_tags"] == "slow"
+    assert body["verbosity"] == 3
+    assert body["diff_mode"] is True
+    assert body["job_type"] == "check"
+
+
 def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
     """`awx jobs wait` must honour --format — CI scripts that pipe a
     wait verdict into ``jq`` rely on the structured shape."""

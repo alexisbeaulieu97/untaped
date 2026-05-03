@@ -3,9 +3,10 @@ project/inventory/credentials. Headline kind for ``launch``."""
 
 from __future__ import annotations
 
-from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
+from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-JOB_TEMPLATE_SPEC = ResourceSpec(
+JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="JobTemplate",
     cli_name="job-templates",
     api_path="job_templates",
@@ -89,17 +90,27 @@ JOB_TEMPLATE_SPEC = ResourceSpec(
     ),
     secret_paths=("webhook_key", "survey_spec.spec.*.default"),
     actions=(
-        # ``accepts`` is the public CLI contract for this action — keep it in
-        # sync with what the launch command actually exposes. The full set of
-        # AAP-supported launch overrides (inventory, credentials, scm_branch,
-        # job_tags, skip_tags, verbosity, diff_mode, job_type, forks) is
-        # tracked in AGENTS.md "Deferred review items" until we generate
-        # Typer flags from this list.
+        # ``accepts`` is the public CLI contract: each name listed here
+        # gets a Typer flag wired in `_add_launch`. The CLI dispatches
+        # on membership so every kind's launch surface stays honest.
         ActionSpec(
             name="launch",
             path="launch",
             returns="job",
-            accepts=frozenset({"extra_vars", "limit"}),
+            accepts=frozenset(
+                {
+                    "extra_vars",
+                    "limit",
+                    "inventory",
+                    "credentials",
+                    "scm_branch",
+                    "job_tags",
+                    "skip_tags",
+                    "verbosity",
+                    "diff_mode",
+                    "job_type",
+                }
+            ),
         ),
     ),
     list_columns=("name", "organization", "project", "inventory", "last_job_status"),

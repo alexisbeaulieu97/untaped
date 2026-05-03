@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Protocol
@@ -21,12 +20,8 @@ class _HasPath(Protocol):
     def path(self) -> Path: ...
 
 
-Runner = Callable[[Sequence[str]], int]
-
-
-def _default_runner(cmd: Sequence[str]) -> int:
-    completed = subprocess.run(list(cmd), check=False)
-    return completed.returncode
+EditorRunner = Callable[[Sequence[str]], int]
+"""Port: spawn an editor (argv) and return its exit code."""
 
 
 class EditWorkspace:
@@ -34,7 +29,7 @@ class EditWorkspace:
         self,
         registry: _RegistryReader,
         *,
-        runner: Runner = _default_runner,
+        runner: EditorRunner,
         env: dict[str, str] | None = None,
     ) -> None:
         self._registry = registry

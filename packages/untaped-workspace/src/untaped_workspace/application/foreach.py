@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Protocol
 
 from untaped_workspace.domain import ForeachOutcome, Repo, Workspace, WorkspaceManifest
-from untaped_workspace.infrastructure.shell_runner import CommandRunner, shell_runner
+
+
+class _CompletedCommand(Protocol):
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+ShellRunner = Callable[[str, Path], _CompletedCommand]
+"""Port: run a shell command in ``cwd`` and return its completed-process result."""
 
 
 class _ManifestReader(Protocol):
@@ -19,7 +30,7 @@ class Foreach:
         self,
         manifests: _ManifestReader,
         *,
-        runner: CommandRunner = shell_runner,
+        runner: ShellRunner,
     ) -> None:
         self._manifests = manifests
         self._runner = runner
@@ -82,24 +93,31 @@ class Foreach:
             return ForeachOutcome(
                 workspace=workspace.name,
                 repo=repo.name,
+                command=command,
                 returncode=-1,
                 stdout="",
                 stderr=f"not cloned: {local}",
+                duration_s=0.0,
             )
+        start = time.perf_counter()
         try:
             completed = self._runner(command, local)
         except FileNotFoundError as exc:
             return ForeachOutcome(
                 workspace=workspace.name,
                 repo=repo.name,
+                command=command,
                 returncode=-1,
                 stdout="",
                 stderr=str(exc),
+                duration_s=time.perf_counter() - start,
             )
         return ForeachOutcome(
             workspace=workspace.name,
             repo=repo.name,
+            command=command,
             returncode=completed.returncode,
             stdout=completed.stdout or "",
             stderr=completed.stderr or "",
+            duration_s=time.perf_counter() - start,
         )
