@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.application.ports import ResourceClient
-from untaped_awx.domain import ResourceSpec
 from untaped_awx.errors import ResourceNotFound
+
+if TYPE_CHECKING:
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class GetResource:
@@ -15,17 +17,17 @@ class GetResource:
 
     def __call__(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         name: str | None = None,
-        id: int | None = None,
+        id_: int | None = None,
         scope: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        if id is not None:
-            return self._client.get(spec, id)
+        if id_ is not None:
+            return self._client.get(spec, id_).model_dump()
         if name is None:
-            raise ValueError("GetResource requires either name= or id=")
+            raise ValueError("GetResource requires either name= or id_=")
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
-        return record
+        return record.model_dump()

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from untaped_awx.domain import IdentityRef, ResourceSpec
+from untaped_awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
@@ -23,17 +23,19 @@ class _StubClient:
         self.update_calls: list[tuple[str, int, dict[str, Any]]] = []
         self.request_calls: list[tuple[str, str, dict[str, Any]]] = []
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         self.find_calls.append((spec.kind, params))
-        return self.find_result
+        return ServerRecord(**self.find_result) if self.find_result else None
 
-    def create(self, spec: ResourceSpec, payload: dict[str, Any]) -> dict[str, Any]:
-        self.create_calls.append((spec.kind, payload))
-        return {"id": 100, **payload}
+    def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
+        body = payload.model_dump()
+        self.create_calls.append((spec.kind, body))
+        return ServerRecord(id=100, **body)
 
-    def update(self, spec: ResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]:
-        self.update_calls.append((spec.kind, id_, payload))
-        return {"id": id_, **payload}
+    def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord:
+        body = payload.model_dump()
+        self.update_calls.append((spec.kind, id_, body))
+        return ServerRecord(id=id_, **body)
 
     def request(
         self,

@@ -36,9 +36,12 @@ from untaped_workspace.cli.completions import complete_workspace_name
 from untaped_workspace.domain import SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
     GitRunner,
+    LocalFilesystem,
     ManifestRepository,
     WorkspaceRegistryRepository,
     WorkspaceResolver,
+    editor_runner,
+    shell_runner,
 )
 
 app = typer.Typer(
@@ -128,7 +131,9 @@ def add_command(
         repo = AddRepo(ManifestRepository())(ws, url=url, repo_name=repo_name, branch=branch)
         typer.echo(f"added {repo.name} to {ws.name!r}", err=True)
         if sync:
-            outcomes = SyncWorkspace(ManifestRepository(), GitRunner())(ws, only=[repo.name])
+            outcomes = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())(
+                ws, only=[repo.name]
+            )
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
@@ -164,9 +169,9 @@ def remove_command(
                 typer.echo("aborted", err=True)
                 raise typer.Exit(code=1)
             try:
-                removed = RemoveRepo(ManifestRepository(), status=GitRunner())(
-                    ws, ident=ident, prune=prune
-                )
+                removed = RemoveRepo(
+                    ManifestRepository(), fs=LocalFilesystem(), status=GitRunner()
+                )(ws, ident=ident, prune=prune)
                 typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
             except UntapedError as exc:
                 typer.echo(f"error: {ident}: {exc}", err=True)
@@ -199,7 +204,7 @@ def sync_command(
     """Reconcile workspace clones with the manifest."""
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
-        use_case = SyncWorkspace(ManifestRepository(), GitRunner())
+        use_case = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         outcomes = []
         for ws in targets:
             outcomes.extend(use_case(ws, only=only, prune=prune))
@@ -270,34 +275,30 @@ def foreach_command(
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Don't stop after a non-zero exit."
     ),
-    fmt: OutputFormat | None = typer.Option(
-        None,
-        "--format",
-        "-f",
-        help=(
-            "Render ForeachOutcome rows in the given format (json|yaml|table|raw). "
-            "Default is passthrough: each line of the user command's stdout is "
-            "prefixed with [repo] and forwarded to stdout."
-        ),
-    ),
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
-    Default output is the raw command stdout/stderr per repo, prefixed
-    with ``[<repo>]``. Pass ``--format`` to emit ``ForeachOutcome`` rows
-    (``json|yaml|table|raw``) suitable for piping into ``jq`` / ``awk``.
+    The default ``--format table`` is human-friendly: when each repo
+    finishes, its captured stdout / stderr is replayed line-by-line
+    with a ``[<repo>]`` prefix. Output is buffered per repo (the
+    underlying runner uses ``capture_output=True``), so users running
+    chatty commands won't see anything until that repo's command
+    exits. Pass ``--format json|yaml|raw`` to emit ``ForeachOutcome``
+    rows after every repo finishes — suitable for piping into ``jq``
+    / ``awk`` / another ``untaped`` command.
     """
     with report_errors():
         ws = _resolve(name, path)
-        outcomes = Foreach(ManifestRepository())(
+        outcomes = Foreach(ManifestRepository(), runner=shell_runner)(
             ws,
             command=cmd,
             parallel=parallel,
             continue_on_error=continue_on_error,
         )
         any_failed = any(o.returncode != 0 for o in outcomes)
-        if fmt is None:
+        if fmt == "table":
             for o in outcomes:
                 for line in o.stdout.splitlines():
                     typer.echo(f"[{o.repo}] {line}")
@@ -331,7 +332,7 @@ def import_command(
         )
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
-            outcomes = SyncWorkspace(ManifestRepository(), GitRunner())(ws)
+            outcomes = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())(ws)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
@@ -371,6 +372,6 @@ def edit_command(
 ) -> None:
     """Open the workspace directory in your editor."""
     with report_errors():
-        rc = EditWorkspace(WorkspaceRegistryRepository())(name, editor=editor)
+        rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, editor=editor)
         if rc != 0:
             raise typer.Exit(code=rc)

@@ -3,6 +3,12 @@
 The default strategy works for any kind whose write path is plain CRUD
 against ``<api_path>/``. Schedule has its own strategy because creates
 must POST against the parent's nested ``/schedules/`` endpoint.
+
+Strategies bridge the dict-shaped payloads produced by application use
+cases to the typed :class:`ResourceClient` boundary: dicts are wrapped
+in :class:`WritePayload` on the way out, and :class:`ServerRecord`
+results from the client are flattened to dict for the apply pipeline's
+in-place strip / diff / preserve passes.
 """
 
 from __future__ import annotations
@@ -10,8 +16,9 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain import WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class DefaultApplyStrategy:
@@ -24,7 +31,7 @@ class DefaultApplyStrategy:
 
     def find_existing(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         identity: dict[str, Any],
         *,
         client: ResourceClient,
@@ -38,29 +45,32 @@ class DefaultApplyStrategy:
                 params["name"] = str(value)
             else:
                 params[f"{key}__name"] = str(value)
-        return client.find(spec, params=params)
+        record = client.find(spec, params=params)
+        return record.model_dump() if record is not None else None
 
     def create(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
         client: ResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        return client.create(spec, payload)
+        record = client.create(spec, WritePayload(**payload))
+        return record.model_dump()
 
     def update(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
         client: ResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        return client.update(spec, existing["id"], payload)
+        record = client.update(spec, existing["id"], WritePayload(**payload))
+        return record.model_dump()
 
 
 class ScheduleApplyStrategy:
@@ -81,7 +91,7 @@ class ScheduleApplyStrategy:
 
     def find_existing(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         identity: dict[str, Any],
         *,
         client: ResourceClient,
@@ -108,7 +118,7 @@ class ScheduleApplyStrategy:
 
     def create(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
@@ -128,14 +138,15 @@ class ScheduleApplyStrategy:
 
     def update(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
         client: ResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        return client.update(spec, existing["id"], payload)
+        record = client.update(spec, existing["id"], WritePayload(**payload))
+        return record.model_dump()
 
     @classmethod
     def _parent_path(cls, parent_kind: str) -> str:

@@ -3,6 +3,14 @@
 The repository never branches on kind — it follows the spec verbatim
 to derive paths and parameters. Per-kind variation is handled in
 strategies + apply hooks.
+
+Single-record reads (``get`` / ``find`` / ``find_by_identity``) wrap
+raw httpx JSON in :class:`ServerRecord` so callers can use typed
+attribute access. The bulk ``list`` skips the wrap — its callers
+iterate-and-format or iterate-and-extract, where the per-record
+Pydantic round trip is pure overhead. Writes unwrap
+:class:`WritePayload` / :class:`ActionPayload` via ``.model_dump()``
+before handing the dict to httpx.
 """
 
 from __future__ import annotations
@@ -10,11 +18,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.domain import ActionPayload, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError
 from untaped_awx.infrastructure.awx_client import AwxClient
 from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.infrastructure.pagination import paginate
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class ResourceRepository:
@@ -24,7 +33,7 @@ class ResourceRepository:
 
     def list(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
@@ -38,11 +47,12 @@ class ResourceRepository:
                 limit=limit,
             )
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+    def get(self, spec: AwxResourceSpec, id_: int) -> ServerRecord:
         with map_awx_errors():
-            return self._client.get_json(f"{spec.api_path}/{id_}/")  # type: ignore[no-any-return]
+            raw = self._client.get_json(f"{spec.api_path}/{id_}/")
+        return ServerRecord(**raw)
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         """Return the unique record matching ``params`` or ``None``.
 
         Requests two records to detect ambiguity: more than one match
@@ -56,15 +66,15 @@ class ResourceRepository:
         results = page.get("results") or []
         if len(results) >= 2:
             raise AmbiguousIdentityError(spec.kind, dict(params), match_count=page.get("count"))
-        return results[0] if results else None
+        return ServerRecord(**results[0]) if results else None
 
     def find_by_identity(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         name: str,
         scope: dict[str, str] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> ServerRecord | None:
         """Look up a record by ``name`` plus optional FK-name scope.
 
         Builds AWX's ``<scope_field>__name=<value>`` syntax so callers
@@ -76,31 +86,38 @@ class ResourceRepository:
             params[f"{k}__name"] = v
         return self.find(spec, params=params)
 
-    def create(self, spec: ResourceSpec, payload: dict[str, Any]) -> dict[str, Any]:
+    def create(self, spec: AwxResourceSpec, payload: WritePayload) -> ServerRecord:
         with map_awx_errors():
-            return self._client.post_json(f"{spec.api_path}/", json=payload)  # type: ignore[no-any-return]
-
-    def update(self, spec: ResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]:
-        with map_awx_errors():
-            return self._client.request_json(  # type: ignore[no-any-return]
-                "PATCH", f"{spec.api_path}/{id_}/", json=payload
+            raw = self._client.post_json(
+                f"{spec.api_path}/", json=payload.model_dump(exclude_none=False)
             )
+        return ServerRecord(**raw)
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def update(self, spec: AwxResourceSpec, id_: int, payload: WritePayload) -> ServerRecord:
+        with map_awx_errors():
+            raw = self._client.request_json(
+                "PATCH",
+                f"{spec.api_path}/{id_}/",
+                json=payload.model_dump(exclude_none=False),
+            )
+        return ServerRecord(**raw)
+
+    def delete(self, spec: AwxResourceSpec, id_: int) -> None:
         with map_awx_errors():
             self._client.request_json("DELETE", f"{spec.api_path}/{id_}/")
 
     def action(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         id_: int,
         action: str,
-        payload: dict[str, Any] | None = None,
+        payload: ActionPayload | None = None,
     ) -> dict[str, Any]:
+        body = payload.model_dump(exclude_none=False) if payload is not None else {}
         with map_awx_errors():
             return self._client.post_json(  # type: ignore[no-any-return]
                 f"{spec.api_path}/{id_}/{action}/",
-                json=payload or {},
+                json=body,
             )
 
     def request(

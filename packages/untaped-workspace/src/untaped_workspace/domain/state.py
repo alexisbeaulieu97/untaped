@@ -77,6 +77,8 @@ class ForeachOutcome(BaseModel):
 
     workspace: str
     repo: str
+    command: str
     returncode: int
     stdout: str
     stderr: str
+    duration_s: float = 0.0

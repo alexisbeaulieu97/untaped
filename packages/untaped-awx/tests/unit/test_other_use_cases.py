@@ -15,7 +15,7 @@ from untaped_awx.application import (
     SaveResource,
     WatchJob,
 )
-from untaped_awx.domain import Job, Resource, ResourceSpec
+from untaped_awx.domain import ActionPayload, Job, Resource, ResourceSpec, ServerRecord
 from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.specs import (
@@ -51,14 +51,14 @@ class _Client:
         self.list_calls.append(dict(params or {}))
         return iter(self._list)
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+    def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         if self.get_result is None:
             raise KeyError(id_)
-        return self.get_result
+        return ServerRecord(**self.get_result)
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         self.find_calls.append(params)
-        return self.find_result
+        return ServerRecord(**self.find_result) if self.find_result else None
 
     def find_by_identity(
         self,
@@ -66,16 +66,16 @@ class _Client:
         *,
         name: str,
         scope: dict[str, str] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> ServerRecord | None:
         params: dict[str, str] = {"name": name}
         for k, v in (scope or {}).items():
             params[f"{k}__name"] = v
         return self.find(spec, params=params)
 
-    def create(self, *a: Any, **kw: Any) -> dict[str, Any]:
+    def create(self, *a: Any, **kw: Any) -> ServerRecord:
         raise NotImplementedError
 
-    def update(self, *a: Any, **kw: Any) -> dict[str, Any]:
+    def update(self, *a: Any, **kw: Any) -> ServerRecord:
         raise NotImplementedError
 
     def delete(self, *a: Any, **kw: Any) -> None:
@@ -86,9 +86,10 @@ class _Client:
         spec: ResourceSpec,
         id_: int,
         action: str,
-        payload: dict[str, Any] | None = None,
+        payload: ActionPayload | None = None,
     ) -> dict[str, Any]:
-        self.action_calls.append((id_, action, payload or {}))
+        body = payload.model_dump() if payload is not None else {}
+        self.action_calls.append((id_, action, body))
         return self.action_result or {}
 
     def request(
@@ -158,6 +159,9 @@ class _StaticFk:
 
     def resolve_polymorphic(self, *a: Any, **kw: Any) -> tuple[str, int]:
         raise NotImplementedError
+
+    def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
+        return None
 
 
 def test_save_resource_translates_fk_ids_to_names() -> None:
@@ -272,7 +276,7 @@ def test_apply_file_orders_by_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
     # Topo order from fk_refs: JobTemplate → Project, Schedule.parent → JT.
@@ -299,7 +303,7 @@ def test_apply_file_uses_polymorphic_parent_edge(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
     assert kinds.index("WorkflowJobTemplate") < kinds.index("Schedule"), kinds
@@ -311,8 +315,9 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
     from untaped_awx.application.apply_file import _topological_sort
     from untaped_awx.domain import FkRef
     from untaped_awx.domain.envelope import Metadata
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-    spec_a = ResourceSpec(
+    spec_a = AwxResourceSpec(
         kind="A",
         cli_name="a",
         api_path="a",
@@ -320,7 +325,7 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
         canonical_fields=(),
         fk_refs=(FkRef(field="b", kind="B"),),
     )
-    spec_b = ResourceSpec(
+    spec_b = AwxResourceSpec(
         kind="B",
         cli_name="b",
         api_path="b",
@@ -354,7 +359,7 @@ def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     # Match the kind name (input) rather than the catalog's error wording, so
     # this test stays valid if the catalog's prose changes.
     with pytest.raises(AwxApiError, match="NotARealKind"):
@@ -391,7 +396,7 @@ def test_apply_file_continues_on_error_by_default(
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(failing, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     outcomes = use(f, write=False)
     # Both docs were applied even though one failed (default = continue-on-error).
     assert sorted(o.action for o in outcomes) == ["failed", "preview"]
@@ -422,7 +427,7 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(failing, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     use(f, write=False, fail_fast=True)
     assert failing.calls == ["boom"]
 

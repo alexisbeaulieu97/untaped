@@ -7,9 +7,10 @@ scoped them out of v0.
 
 from __future__ import annotations
 
-from untaped_awx.domain import FkRef, ResourceSpec
+from untaped_awx.domain import FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-ORGANIZATION_SPEC = ResourceSpec(
+ORGANIZATION_SPEC = AwxResourceSpec(
     kind="Organization",
     cli_name="organizations",
     api_path="organizations",
@@ -31,7 +32,7 @@ ORGANIZATION_SPEC = ResourceSpec(
 )
 
 
-INVENTORY_SPEC = ResourceSpec(
+INVENTORY_SPEC = AwxResourceSpec(
     kind="Inventory",
     cli_name="inventories",
     api_path="inventories",
@@ -62,7 +63,7 @@ INVENTORY_SPEC = ResourceSpec(
 )
 
 
-CREDENTIAL_TYPE_SPEC = ResourceSpec(
+CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
     kind="CredentialType",
     cli_name="credential-types",
     api_path="credential_types",

@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
+from untaped_awx.infrastructure import AwxConfig
 from untaped_core.settings import get_settings
 
 
@@ -273,3 +274,13 @@ def fake_aap(aap_config: Path) -> Iterator[FakeAap]:
     with respx.mock(base_url=fake.base_url, assert_all_called=False) as mock:
         fake.install(mock)
         yield fake
+
+
+@pytest.fixture
+def awx_config() -> AwxConfig:
+    """Standard test config matching the YAML in :func:`aap_config`."""
+    return AwxConfig(
+        base_url="https://aap.example.com",
+        token="secret",  # type: ignore[arg-type]
+        api_prefix="/api/v2/",
+    )
