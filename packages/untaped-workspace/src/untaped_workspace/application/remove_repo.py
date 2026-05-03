@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import shutil
-from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
 from untaped_workspace.domain import Repo, Workspace, WorkspaceManifest
 from untaped_workspace.errors import WorkspaceError
 
-_RmTree = Callable[[Path], None]
+
+class Filesystem(Protocol):
+    """Port: side-effecting filesystem operations the use case may invoke."""
+
+    def rmtree(self, path: Path) -> None: ...
 
 
 class _ManifestStorage(Protocol):
@@ -27,12 +29,12 @@ class RemoveRepo:
         self,
         manifest_repo: _ManifestStorage,
         *,
+        fs: Filesystem,
         status: _StatusInspector | None = None,
-        rmtree: _RmTree = shutil.rmtree,
     ) -> None:
         self._manifests = manifest_repo
+        self._fs = fs
         self._status = status
-        self._rmtree = rmtree
 
     def __call__(
         self,
@@ -55,5 +57,5 @@ class RemoveRepo:
         self._manifests.write(workspace.path, manifest)
 
         if should_prune:
-            self._rmtree(local)
+            self._fs.rmtree(local)
         return repo
