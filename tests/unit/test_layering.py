@@ -43,7 +43,16 @@ def _discover_application_dirs() -> list[tuple[str, Path]]:
 
 
 def _is_type_checking_guard(test: ast.expr) -> bool:
-    return isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
+    # Handles both `if TYPE_CHECKING:` and `if typing.TYPE_CHECKING:`.
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    if isinstance(test, ast.Attribute):
+        return (
+            test.attr == "TYPE_CHECKING"
+            and isinstance(test.value, ast.Name)
+            and test.value.id == "typing"
+        )
+    return False
 
 
 def _runtime_imports(tree: ast.Module) -> list[ast.Import | ast.ImportFrom]:
@@ -101,7 +110,7 @@ def test_application_does_not_import_infrastructure_at_runtime(
     import_root: str, application_dir: Path
 ) -> None:
     violations: list[str] = []
-    for py_file in sorted(application_dir.glob("*.py")):
+    for py_file in sorted(application_dir.rglob("*.py")):
         violations.extend(_violations_in_file(import_root, py_file, application_dir))
 
     assert not violations, (
@@ -110,17 +119,38 @@ def test_application_does_not_import_infrastructure_at_runtime(
     )
 
 
-def test_layering_test_discovers_every_domain() -> None:
-    """Sanity check: the discovery glob actually finds the expected packages.
+# Workspace packages that intentionally have no ``application/`` layer
+# (flat shared kits without DDD layering). Every other package in
+# ``packages/`` must have one — adding a new domain without one trips
+# the guard below, prompting the contributor to either add the layer or
+# document the exception by listing the package here.
+_PACKAGES_WITHOUT_APPLICATION_LAYER = frozenset({"untaped_core"})
 
-    If a new domain is added without an ``application/`` directory, this
-    test fails fast — useful guard against silently skipping a package.
+
+def _discover_package_roots() -> list[tuple[str, Path]]:
+    """Return ``(import_root, src_dir)`` for every workspace package."""
+    return [
+        (src_dir.name, src_dir)
+        for src_dir in sorted(PACKAGES_DIR.glob("*/src/*"))
+        if src_dir.is_dir()
+    ]
+
+
+def test_every_domain_has_application_layer() -> None:
+    """Every workspace package except known flat kits must have an
+    ``application/`` directory.
+
+    Derives the expected set from disk so a new domain that follows the
+    recipe in ``AGENTS.md`` is automatically covered without test edits.
+    A new domain *without* an ``application/`` layer trips this guard.
     """
-    found_roots = {root for root, _ in _discover_application_dirs()}
-    assert found_roots == {
-        "untaped_awx",
-        "untaped_config",
-        "untaped_github",
-        "untaped_profile",
-        "untaped_workspace",
-    }, f"unexpected domain set: {sorted(found_roots)}"
+    missing = [
+        f"{import_root} ({src_dir})"
+        for import_root, src_dir in _discover_package_roots()
+        if import_root not in _PACKAGES_WITHOUT_APPLICATION_LAYER
+        and not (src_dir / "application").is_dir()
+    ]
+    assert not missing, (
+        "packages without application/ (add the layer or list in "
+        f"_PACKAGES_WITHOUT_APPLICATION_LAYER): {missing}"
+    )
