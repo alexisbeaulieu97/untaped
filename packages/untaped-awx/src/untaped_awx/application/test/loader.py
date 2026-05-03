@@ -11,7 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from jinja2 import UndefinedError
+import yaml
+from jinja2 import TemplateError, UndefinedError
 from pydantic import ValidationError
 
 from untaped_awx.application.test.ports import (
@@ -55,7 +56,10 @@ class LoadTestSuite:
             prompt=self._prompt,
         )
         rendered = self._render_body(body, values)
-        data = self._parser.parse_yaml(rendered)
+        try:
+            data = self._parser.parse_yaml(rendered)
+        except yaml.YAMLError as exc:
+            raise AwxApiError(f"{path}: rendered body is not valid YAML: {exc}") from exc
         if not isinstance(data, dict):
             raise AwxApiError(
                 f"{path}: rendered body must be a YAML mapping; got {type(data).__name__}"
@@ -63,6 +67,9 @@ class LoadTestSuite:
         if "kind" not in data:
             raise AwxApiError(f"{path}: missing required 'kind: AwxTestSuite' marker")
         data.setdefault("name", path.stem)
+        # Carry the parsed frontmatter specs through so callers (e.g.
+        # ``awx test list --format json``) can introspect required vars.
+        data["variables"] = {name: spec for name, spec in var_specs.items()}
         try:
             suite = TestSuite.model_validate(data)
         except ValidationError as exc:
@@ -73,7 +80,10 @@ class LoadTestSuite:
     def _parse_variable_specs(self, meta_yaml: str) -> dict[str, VariableSpec]:
         if not meta_yaml.strip():
             return {}
-        meta = self._parser.parse_yaml(meta_yaml)
+        try:
+            meta = self._parser.parse_yaml(meta_yaml)
+        except yaml.YAMLError as exc:
+            raise AwxApiError(f"frontmatter is not valid YAML: {exc}") from exc
         if meta is None:
             return {}
         if not isinstance(meta, dict):
@@ -98,6 +108,10 @@ class LoadTestSuite:
             return self._parser.render_body(body, values)
         except UndefinedError as exc:
             raise AwxApiError(f"undefined Jinja2 variable: {exc}") from exc
+        except TemplateError as exc:
+            # Covers ``TemplateSyntaxError`` (compile-time) and other Jinja2
+            # errors raised during ``render`` (e.g. filter failures).
+            raise AwxApiError(f"Jinja2 template error: {exc}") from exc
 
 
 def _reject_non_empty_assert(path: Path, suite: TestSuite) -> None:

@@ -11,6 +11,7 @@ from untaped_awx.application.test.resolver import ResolveCasePayload
 from untaped_awx.application.test.runner import RunTestSuite
 from untaped_awx.domain import Job
 from untaped_awx.domain.test_suite import Case, TestSuite
+from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
@@ -91,7 +92,9 @@ def _make_runner(
     watcher: StubWatcher,
     default_org: str | None = None,
 ) -> RunTestSuite:
-    resolver = ResolveCasePayload(fk, default_organization=default_org)
+    resolver = ResolveCasePayload(
+        fk, catalog=AwxResourceCatalog(), default_organization=default_org
+    )
     jt_scope = {"organization": default_org} if default_org is not None else None
     return RunTestSuite(
         resolver=resolver,
@@ -213,6 +216,35 @@ class RecordingLauncher:
         return self._default
 
 
+def test_case_filter_with_unmatched_names_raises() -> None:
+    """Typos like ``--case smokee`` must hard-fail, not silently launch zero jobs."""
+    fk = StubFk()
+    launcher = StubLauncher({})
+    watcher = StubWatcher()
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
+    suite = _suite("s", {"keep": {}})
+
+    from untaped_awx.errors import AwxApiError
+
+    with pytest.raises(AwxApiError, match="nope"):
+        runner([suite], case_filter={"nope"})
+    assert launcher.calls == []  # no launches on unmatched filter
+
+
+def test_case_filter_partial_match_reports_only_unmatched() -> None:
+    fk = StubFk()
+    launcher = StubLauncher({})
+    watcher = StubWatcher()
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
+    suite = _suite("s", {"keep": {}, "skip": {}})
+
+    from untaped_awx.errors import AwxApiError
+
+    with pytest.raises(AwxApiError, match="bogus") as exc_info:
+        runner([suite], case_filter={"keep", "bogus"})
+    assert "keep" not in str(exc_info.value)
+
+
 def test_case_filter_runs_only_selected() -> None:
     fk = StubFk()
     launcher = StubLauncher({})
@@ -224,6 +256,73 @@ def test_case_filter_runs_only_selected() -> None:
 
     assert [r.case for r in outcome.results] == ["keep"]
     assert len(launcher.calls) == 1
+
+
+# ---- prefetch correctness ------------------------------------------------
+
+
+def test_prefetch_does_not_walk_extra_vars() -> None:
+    """The resolver's contract: opaque ``extra_vars`` content is not inspected."""
+    fk = StubFk()
+    launcher = StubLauncher({})
+    watcher = StubWatcher()
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
+    suite = _suite(
+        "s",
+        {"a": {"extra_vars": {"inventory": "Web Inventory"}}},
+    )
+
+    runner([suite])
+
+    prefetch_calls = [c for c in fk.calls if c[0] == "prefetch"]
+    assert prefetch_calls == [("prefetch",)]  # empty plan — no Inventory entry
+
+
+def test_prefetch_includes_defaults_top_level_fks() -> None:
+    """A shared ``defaults.launch.inventory`` should warm the cache once."""
+    fk = StubFk()
+    launcher = StubLauncher({})
+    watcher = StubWatcher()
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher, default_org="org-a")
+    defaults_case = Case.model_validate({"launch": {"inventory": "Web Inventory"}})
+    suite = TestSuite(
+        name="s",
+        job_template="JT",
+        defaults=defaults_case,
+        cases={
+            f"c{i}": Case.model_validate({"launch": {"extra_vars": {"i": i}}}) for i in range(3)
+        },
+    )
+
+    runner([suite])
+
+    prefetch_calls = [c for c in fk.calls if c[0] == "prefetch"]
+    assert prefetch_calls == [("prefetch", "Inventory")]
+
+
+def test_prefetch_uses_org_scope_for_org_scoped_fks() -> None:
+    """Prefetch scope must match what the resolver will look up with."""
+    captured: list[tuple[str, list[dict[str, str] | None]]] = []
+    fk = StubFk()
+
+    original_prefetch = fk.prefetch
+
+    def record(plan: dict[str, list[dict[str, str] | None]]) -> None:
+        captured.extend(plan.items())
+        original_prefetch(plan)
+
+    fk.prefetch = record  # type: ignore[method-assign]
+    launcher = StubLauncher({})
+    watcher = StubWatcher()
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher, default_org="org-a")
+    suite = _suite(
+        "s",
+        {"c": {"inventory": "Web Inventory"}},
+    )
+
+    runner([suite])
+
+    assert captured == [("Inventory", [{"organization": "org-a"}])]
 
 
 # ---- parallel runner ----------------------------------------------------

@@ -75,6 +75,37 @@ def test_jinja2_rendering_with_cli_var() -> None:
     assert suite.cases["c"].launch["limit"] == "prod"  # type: ignore[attr-defined]
 
 
+def test_invalid_jinja2_syntax_raises_awx_api_error() -> None:
+    text = (
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n  c:\n    launch:\n      limit: '{{ unclosed }'\n"
+    )
+    with pytest.raises(AwxApiError, match=r"syntax|Jinja"):
+        _load(text)
+
+
+def test_invalid_yaml_body_raises_awx_api_error() -> None:
+    text = (
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n  c:\n    launch:\n      limit: 'closing-quote-missing\n"
+    )
+    with pytest.raises(AwxApiError, match="YAML"):
+        _load(text)
+
+
+def test_invalid_yaml_frontmatter_raises_awx_api_error() -> None:
+    text = (
+        "---\nvariables: : invalid\n---\n"
+        "kind: AwxTestSuite\njobTemplate: y\ncases: {c: {launch: {}}}\n"
+    )
+    with pytest.raises(AwxApiError, match=r"YAML|frontmatter"):
+        _load(text)
+
+
 def test_strict_undefined_on_missing_var() -> None:
     text = (
         "---\n"

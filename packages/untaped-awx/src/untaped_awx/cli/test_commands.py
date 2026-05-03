@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from untaped_core import OutputFormat, format_output, report_errors
+from untaped_core import ColumnsOption, FormatOption, format_output, report_errors
 
 from untaped_awx.cli._context import AwxContext, open_context
 from untaped_awx.domain.test_suite import TestSuite
@@ -27,9 +27,8 @@ def _callback() -> None:
     """Run declarative AWX-job test suites."""
 
 
-# Heavy imports (jinja2, yaml, RunAction, WatchJob, …) are deferred until the
-# user actually invokes a subcommand — the simpler ``awx ping`` / ``awx --help``
-# paths shouldn't pay for them.
+# Heavy imports (jinja2, yaml, the loader/runner) are deferred to subcommand
+# bodies — ``awx ping`` and ``awx --help`` shouldn't pay for them.
 
 _LOG_TAIL_LINES = 40
 
@@ -40,8 +39,6 @@ _VARS_FILE_OPT = typer.Option([], "--vars-file", help="YAML file of variable val
 _NON_INTERACTIVE_OPT = typer.Option(
     False, "--non-interactive", help="Fail on missing required vars instead of prompting."
 )
-_FORMAT_OPT = typer.Option("table", "--format", "-f", help="Output format.")
-_COLUMNS_OPT = typer.Option(None, "--columns", "-c")
 
 
 # ---- shared helpers ------------------------------------------------------
@@ -67,8 +64,10 @@ def _expand_paths(paths: Iterable[Path]) -> list[Path]:
             for child in sorted(path.iterdir()):
                 if child.suffix.lower() in {".yml", ".yaml"} and child.is_file():
                     out.append(child)
-        else:
+        elif path.is_file():
             out.append(path)
+        else:
+            raise typer.BadParameter(f"{path} does not exist")
     if not out:
         raise typer.BadParameter("no test files found")
     return out
@@ -123,8 +122,8 @@ def run_command(
     show_logs: bool = typer.Option(
         False, "--show-logs", "-v", help="On failure, dump the tail of AWX stdout to stderr."
     ),
-    fmt: OutputFormat = _FORMAT_OPT,
-    columns: list[str] | None = _COLUMNS_OPT,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Render, resolve, launch and report on one or more test files."""
     from untaped_awx.application import RunAction, WatchJob
@@ -144,7 +143,11 @@ def run_command(
         )
         spec = _jt_spec(ctx)
         runner = RunTestSuite(
-            resolver=ResolveCasePayload(ctx.fk, default_organization=ctx.default_organization),
+            resolver=ResolveCasePayload(
+                ctx.fk,
+                catalog=ctx.catalog,
+                default_organization=ctx.default_organization,
+            ),
             launcher=RunAction(ctx.repo),
             watcher=WatchJob(ctx.repo),
             spec=spec,
@@ -199,8 +202,8 @@ def list_command(
     var: list[str] = _VAR_OPT,
     vars_file: list[Path] = _VARS_FILE_OPT,
     non_interactive: bool = _NON_INTERACTIVE_OPT,
-    fmt: OutputFormat = _FORMAT_OPT,
-    columns: list[str] | None = _COLUMNS_OPT,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """List the cases that would run, without launching anything."""
     cli_vars = _parse_var_pairs(var)
@@ -214,12 +217,27 @@ def list_command(
             non_interactive=non_interactive,
         )
 
-    rows: list[dict[str, Any]] = []
-    for suite in suites:
-        for case_name in suite.cases:
-            rows.append(
-                {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
-            )
+    if fmt in {"json", "yaml"}:
+        # Suite-level shape with variable metadata so automation can
+        # introspect required vars, defaults, choices, and secret flags.
+        rows: list[dict[str, Any]] = [
+            {
+                "suite": suite.name,
+                "job_template": suite.job_template,
+                "cases": list(suite.cases.keys()),
+                "variables": {
+                    name: spec.model_dump(exclude_none=True)
+                    for name, spec in suite.variables.items()
+                },
+            }
+            for suite in suites
+        ]
+    else:
+        rows = [
+            {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
+            for suite in suites
+            for case_name in suite.cases
+        ]
     typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
@@ -247,7 +265,9 @@ def validate_command(
             non_interactive=non_interactive,
         )
         spec = _jt_spec(ctx)
-        resolver = ResolveCasePayload(ctx.fk, default_organization=ctx.default_organization)
+        resolver = ResolveCasePayload(
+            ctx.fk, catalog=ctx.catalog, default_organization=ctx.default_organization
+        )
         any_errors = False
         for suite in suites:
             for case_name, case in suite.cases.items():

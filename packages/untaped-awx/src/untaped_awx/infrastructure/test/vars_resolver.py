@@ -47,7 +47,9 @@ def resolve_variables(
         elif name in file_values:
             value = _coerce(spec, file_values[name], source=f"vars-file ({name})")
         elif spec.default is not None:
-            value = spec.default
+            # Coerce defaults too: a string-quoted ``default: "8080"`` for
+            # ``type: int`` must produce an int, matching CLI/file input.
+            value = _coerce(spec, spec.default, source=f"default ({name})")
         elif not prompt.is_interactive():
             missing_in_non_interactive.append(name)
             continue
@@ -75,12 +77,23 @@ def _reject_unknown(names: Iterable[str], specs: Mapping[str, VariableSpec], ori
 
 
 def _load_vars_file(path: Path) -> dict[str, Any]:
-    raw = path.read_text(encoding="utf-8")
-    parsed = yaml.safe_load(raw)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise AwxApiError(f"failed to read vars-file {path}: {exc}") from exc
+    try:
+        parsed = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        raise AwxApiError(f"vars-file {path} is not valid YAML: {exc}") from exc
     if parsed is None:
         return {}
     if not isinstance(parsed, dict):
         raise AwxApiError(f"vars-file {path} must be a YAML mapping")
+    non_string = sorted(repr(key) for key in parsed if not isinstance(key, str))
+    if non_string:
+        raise AwxApiError(
+            f"vars-file {path}: variable names must be strings (got {', '.join(non_string)})"
+        )
     return parsed
 
 

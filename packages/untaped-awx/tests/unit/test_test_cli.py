@@ -56,6 +56,49 @@ def test_test_help_lists_subcommands(cli: CliRunner) -> None:
     assert "validate" in out
 
 
+def test_run_against_missing_file_emits_clean_error(
+    cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """A typo'd test path should not leak a Python traceback."""
+    missing = tmp_path / "does-not-exist.yml"
+    result = cli.invoke(app, ["test", "run", str(missing), "--non-interactive"])
+    assert result.exit_code != 0
+    combined = (result.stderr or "") + (result.output or "")
+    assert "Traceback" not in combined
+    # ``typer.BadParameter`` renders an "Error" box; the precise text wraps
+    # depending on terminal width, so we only assert the user-visible signal.
+    assert "Error" in combined
+
+
+def test_run_with_broken_vars_file_emits_clean_error(
+    cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    _seed_jt(fake_aap)
+    test_file = _write(
+        tmp_path / "needs.yml",
+        "---\nvariables:\n  env: { type: string }\n---\n"
+        "kind: AwxTestSuite\nname: x\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      limit: '{{ env }}'\n",
+    )
+    bad_vars = tmp_path / "bad.yml"
+    bad_vars.write_text("env: : not yaml\n")  # malformed
+
+    result = cli.invoke(
+        app,
+        [
+            "test",
+            "run",
+            str(test_file),
+            "--vars-file",
+            str(bad_vars),
+            "--non-interactive",
+        ],
+    )
+    assert result.exit_code != 0
+    combined = (result.stderr or "") + (result.output or "")
+    assert "Traceback" not in combined
+
+
 def test_run_passes_when_job_succeeds(cli: CliRunner, fake_aap: FakeAap, tmp_path: Path) -> None:
     _seed_jt(fake_aap)
     test_file = _write(
@@ -163,6 +206,28 @@ def test_validate_renders_without_launching(
     assert all(action != "launch" for _, _, action, _ in fake_aap.actions_called)
 
 
+def test_fake_aap_next_action_status_is_one_shot(
+    cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """Setting ``next_action_status`` once must not bleed into a second launch."""
+    _seed_jt(fake_aap)
+    fake_aap.next_action_status = "failed"
+
+    test_file = _write(
+        tmp_path / "matrix.yml",
+        "kind: AwxTestSuite\nname: m\njobTemplate: Deploy app\n"
+        "cases:\n  first:\n    launch: {}\n  second:\n    launch: {}\n",
+    )
+
+    result = cli.invoke(app, ["test", "run", str(test_file), "--non-interactive"])
+
+    assert result.exit_code == 1  # one of the cases failed
+    out = result.stdout
+    # First case picks up the override (failed); second resets to successful.
+    assert "fail" in out
+    assert "pass" in out
+
+
 def test_show_logs_prints_stdout_tail_for_failed_case(
     cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
 ) -> None:
@@ -183,6 +248,41 @@ def test_show_logs_prints_stdout_tail_for_failed_case(
 
     assert result.exit_code == 1
     assert "ERROR: boom" in (result.stderr or result.output)
+
+
+def test_list_json_includes_variable_metadata(
+    cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """``list --format json`` must surface declared frontmatter variables."""
+    _seed_jt(fake_aap)
+    test_file = _write(
+        tmp_path / "with_vars.yml",
+        "---\n"
+        "variables:\n"
+        "  env:\n"
+        "    description: Target environment\n"
+        "    type: choice\n"
+        "    choices: [dev, prod]\n"
+        "    default: dev\n"
+        "---\n"
+        "kind: AwxTestSuite\n"
+        "name: deploy\n"
+        "jobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch: {}\n",
+    )
+
+    result = cli.invoke(
+        app,
+        ["test", "list", str(test_file), "--format", "json", "--non-interactive"],
+    )
+
+    assert result.exit_code == 0, result.stderr or result.output
+    import json
+
+    parsed = json.loads(result.stdout)
+    assert parsed[0]["variables"]["env"]["description"] == "Target environment"
+    assert parsed[0]["variables"]["env"]["choices"] == ["dev", "prod"]
+    assert parsed[0]["cases"] == ["c"]
 
 
 def test_list_dumps_cases_in_json(cli: CliRunner, fake_aap: FakeAap, tmp_path: Path) -> None:
