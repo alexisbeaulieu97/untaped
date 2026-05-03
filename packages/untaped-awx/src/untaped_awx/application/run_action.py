@@ -8,12 +8,14 @@ logging works the same regardless of action.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.application.ports import ResourceClient
 from untaped_awx.domain import ActionPayload, Job
 from untaped_awx.errors import AwxApiError, ResourceNotFound
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+if TYPE_CHECKING:
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 _KIND_OF_ACTION_RESULT: dict[str, str] = {
     "launch": "job",

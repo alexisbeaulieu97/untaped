@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from untaped_awx.domain import ResourceSpec
-from untaped_awx.errors import ResourceNotFound
+from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.fk_resolver import FkResolver
 
@@ -190,12 +190,16 @@ def test_prefetch_one_list_per_kind_scope_pair() -> None:
     assert repo.find_calls == []
 
 
-def test_prefetch_swallows_errors() -> None:
-    """A flaky bulk fetch must not break the per-call fallback path."""
+def test_prefetch_swallows_awx_errors() -> None:
+    """A flaky bulk fetch must not break the per-call fallback path.
+
+    Programming errors (KeyError, TypeError, etc.) propagate so they're
+    visible during development; only AWX-side failures are absorbed.
+    """
 
     class _BoomRepo(_StubRepo):
         def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-            raise RuntimeError("boom")
+            raise AwxApiError("network down")
             yield  # pragma: no cover - unreachable
 
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
@@ -203,3 +207,18 @@ def test_prefetch_swallows_errors() -> None:
     fk.prefetch({"Organization": [None]})  # must not raise
     # Per-call lookup still works.
     assert fk.name_to_id("Organization", "Default") == 7
+
+
+def test_prefetch_propagates_programming_errors() -> None:
+    """Bare `Exception` would mask typos / KeyErrors. Confirm those
+    bubble up so they can be caught in development."""
+
+    class _BuggyRepo(_StubRepo):
+        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
+            raise KeyError("forgot to seed")
+            yield  # pragma: no cover - unreachable
+
+    repo = _BuggyRepo({})
+    fk = FkResolver(repo, AwxResourceCatalog())  # type: ignore[arg-type]
+    with pytest.raises(KeyError):
+        fk.prefetch({"Organization": [None]})

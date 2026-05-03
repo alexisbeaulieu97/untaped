@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
 from untaped_awx.application.ports import (
@@ -26,7 +26,9 @@ from untaped_awx.domain import (
     Resource,
 )
 from untaped_awx.errors import BadRequest
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+if TYPE_CHECKING:
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 WarnFn = Callable[[str], None]
 
@@ -62,7 +64,9 @@ class ApplyResource:
         # but the top-level ``untaped awx apply <file>`` reaches this use case
         # directly via ``apply_file`` and would otherwise issue create/update
         # calls for resources whose CRUD is deferred. Reject at the boundary.
-        if spec.fidelity == "read_only":
+        # The ``commands`` check covers any future kind that opts out of apply
+        # without using the read_only fidelity tier.
+        if spec.fidelity == "read_only" or "apply" not in spec.commands:
             raise BadRequest(
                 f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
                 "edit this resource via the AWX UI or API directly."

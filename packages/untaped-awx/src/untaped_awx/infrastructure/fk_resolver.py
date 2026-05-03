@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_awx.errors import ResourceNotFound
+from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.resource_repo import ResourceRepository
 
@@ -104,5 +104,8 @@ class FkResolver:
                 record_id = int(record["id"])
                 self._name_cache.setdefault((kind, record_name, cache_scope), record_id)
                 self._id_cache.setdefault((kind, record_id), record_name)
-        except Exception:
+        except AwxApiError:
+            # Per-record name_to_id calls remain authoritative; a flaky bulk
+            # fetch silently degrades to per-call resolution rather than
+            # failing an apply that the per-call path could still satisfy.
             return

@@ -26,7 +26,13 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ServerRecord(BaseModel):
-    """A record returned by AWX (post-deserialization)."""
+    """A record returned by AWX (post-deserialization).
+
+    The dict-style access methods below reach into ``__pydantic_extra__``
+    — Pydantic v2's documented attribute for fields stored under
+    ``extra="allow"``. It's stable across the v2 line; if Pydantic v3
+    renames it, update here and re-run ``test_server_record_dict_access``.
+    """
 
     model_config = ConfigDict(extra="allow", frozen=True)
 

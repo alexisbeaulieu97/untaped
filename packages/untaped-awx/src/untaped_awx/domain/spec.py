@@ -80,5 +80,9 @@ class ResourceSpec(BaseModel):
     fk_refs: tuple[FkRef, ...] = ()
     secret_paths: tuple[str, ...] = ()
     actions: tuple[ActionSpec, ...] = ()
+    apply_strategy: str = "default"
+    """Behavior selector: which write path the apply pipeline dispatches to.
+    The string is opaque to the domain — :class:`StrategyResolver` (an
+    infrastructure adapter) maps it to a concrete :class:`ApplyStrategy`."""
     fidelity: Fidelity = "full"
     fidelity_note: str | None = None

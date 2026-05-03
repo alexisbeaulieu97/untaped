@@ -217,6 +217,34 @@ def test_launch_supports_format_json(fake_aap: Any) -> None:
     assert isinstance(parsed, list) and parsed, parsed
 
 
+def test_workflow_launch_rejects_unsupported_flags(fake_aap: Any) -> None:
+    """Workflow templates accept a subset of JobTemplate's launch flags.
+    Passing an unsupported one (here: --verbosity, --diff-mode,
+    --credential, --job-type) must fail with a clear error rather than
+    silently dropping the value."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "workflow_job_templates", id=10, name="wf", organization=1, organization_name="Default"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "launch",
+            "wf",
+            "--organization",
+            "Default",
+            "--verbosity",
+            "3",
+        ],
+    )
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "--verbosity" in output
+    assert "WorkflowJobTemplate.launch does not accept" in output
+
+
 def test_launch_forwards_full_action_payload(fake_aap: Any) -> None:
     """Every flag listed in JobTemplate.launch.accepts must reach the
     POST body, with FK names (--inventory, --credential) resolved via

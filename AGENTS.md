@@ -249,9 +249,12 @@ them imports `subprocess` or `shutil` directly. The CLI composition
 root wires the defaults; tests inject stubs.
 
 `workspace foreach` honours the standard piping contract: `--format
-table` (default) keeps live `[<repo>] line` streaming for human use,
-and `--format json|yaml|raw` always batches to one row per repo (each
-row is a `ForeachOutcome`, including `command` and `duration_s`).
+table` (default) replays each repo's captured stdout / stderr with a
+`[<repo>] line` prefix once that repo's command finishes (output is
+buffered per repo by the underlying runner — chatty commands won't
+appear until they exit). `--format json|yaml|raw` emits one
+`ForeachOutcome` row per repo (including `command` and `duration_s`)
+after every repo finishes.
 
 Branch cascade is **clone-time only**: per-repo `branch` > workspace
 `defaults.branch` > the remote's HEAD. Subsequent `sync`s do not
