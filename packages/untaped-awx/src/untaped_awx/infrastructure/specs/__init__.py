@@ -7,7 +7,7 @@ every spec into the global tuple consumed by the catalog.
 
 from __future__ import annotations
 
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import (
     CREDENTIAL_TYPE_SPEC,
     INVENTORY_SPEC,
@@ -19,7 +19,7 @@ from untaped_awx.infrastructure.specs.project import PROJECT_SPEC
 from untaped_awx.infrastructure.specs.schedule import SCHEDULE_SPEC
 from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
-ALL_SPECS: tuple[ResourceSpec, ...] = (
+ALL_SPECS: tuple[AwxResourceSpec, ...] = (
     ORGANIZATION_SPEC,
     CREDENTIAL_TYPE_SPEC,
     CREDENTIAL_SPEC,

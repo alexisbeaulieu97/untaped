@@ -8,9 +8,10 @@ for create and PATCHes the global ``/schedules/<id>/`` for update.
 
 from __future__ import annotations
 
-from untaped_awx.domain import FkRef, ResourceSpec
+from untaped_awx.domain import FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-SCHEDULE_SPEC = ResourceSpec(
+SCHEDULE_SPEC = AwxResourceSpec(
     kind="Schedule",
     cli_name="schedules",
     api_path="schedules",

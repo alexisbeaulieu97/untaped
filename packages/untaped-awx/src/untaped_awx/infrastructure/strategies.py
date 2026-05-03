@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import ResourceSpec
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class DefaultApplyStrategy:
@@ -24,7 +24,7 @@ class DefaultApplyStrategy:
 
     def find_existing(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         identity: dict[str, Any],
         *,
         client: ResourceClient,
@@ -42,7 +42,7 @@ class DefaultApplyStrategy:
 
     def create(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
@@ -53,7 +53,7 @@ class DefaultApplyStrategy:
 
     def update(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
@@ -81,7 +81,7 @@ class ScheduleApplyStrategy:
 
     def find_existing(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         identity: dict[str, Any],
         *,
         client: ResourceClient,
@@ -108,7 +108,7 @@ class ScheduleApplyStrategy:
 
     def create(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
@@ -128,7 +128,7 @@ class ScheduleApplyStrategy:
 
     def update(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,

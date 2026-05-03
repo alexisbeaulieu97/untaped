@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
+from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-PROJECT_SPEC = ResourceSpec(
+PROJECT_SPEC = AwxResourceSpec(
     kind="Project",
     cli_name="projects",
     api_path="projects",

@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
-def names_for(spec: ResourceSpec):  # type: ignore[no-untyped-def]
+def names_for(spec: AwxResourceSpec):  # type: ignore[no-untyped-def]
     """Return a Typer ``autocompletion`` callback for ``spec``'s names."""
 
     def _complete(incomplete: str) -> Iterator[str]:
