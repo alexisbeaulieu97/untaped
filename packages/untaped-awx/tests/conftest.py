@@ -38,6 +38,11 @@ class FakeAap:
         self.store: dict[str, dict[int, dict[str, Any]]] = defaultdict(dict)
         self._next_id = 1
         self.actions_called: list[tuple[str, int, str, dict[str, Any]]] = []
+        # Test override: when set, the next launch returns this status (and
+        # ``next_action_stdout`` is recorded on the synthetic job record so
+        # ``jobs/<id>/stdout/`` can be fetched).
+        self.next_action_status: str = "successful"
+        self.next_action_stdout: str | None = None
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -155,8 +160,16 @@ class FakeAap:
             "id": new_id,
             "type": "job" if action == "launch" else "project_update",
             "name": f"{record.get('name', '')}-{action}",
-            "status": "successful",
+            "status": self.next_action_status,
         }
+        if self.next_action_stdout is not None:
+            store_path = "jobs" if action == "launch" else f"{action}s"
+            self.seed(
+                store_path,
+                id=new_id,
+                status=self.next_action_status,
+                stdout=self.next_action_stdout,
+            )
         return httpx.Response(200, json=result)
 
     def _sub_list(

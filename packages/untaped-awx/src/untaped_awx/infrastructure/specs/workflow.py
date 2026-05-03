@@ -53,6 +53,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         FkRef(field="organization", kind="Organization"),
         FkRef(field="inventory", kind="Inventory", scope_field="organization"),
     ),
+    launch_fk_refs=(FkRef(field="labels", kind="Label", multi=True),),
     secret_paths=("webhook_key", "survey_spec.spec.*.default"),
     actions=(
         ActionSpec(

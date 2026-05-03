@@ -353,6 +353,68 @@ The AWX bounded context follows the same DDD layout but builds a small
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
   for end-to-end CLI flows.
 
+### `untaped awx test` — declarative AWX test suites
+
+`awx test run|list|validate` reads YAML files declaring a
+parameterised matrix of launch payloads against one job template.
+Designed to automate AWX-job testing: same playbook, many input
+variations, one pass/fail report. v1 verdict = AWX `successful`
+status; richer assertions are reserved for v2.
+
+- **File shape**: YAML frontmatter (raw, **not** Jinja2-rendered)
+  declares `variables`. The body is rendered with the resolved
+  variable context (Jinja2 `StrictUndefined`, plus `to_yaml` /
+  `to_json` filters), then parsed as YAML.
+- **Cases**: a dict (`case_name → case_body`). Each case body has
+  `launch:` (the AWX launch payload) and reserved `assert:`. v1
+  rejects any non-empty `assert:` block at validation — assertions
+  land in v2; reserved schema keeps that addition non-breaking. See
+  `examples/test-deploy-app.yml`.
+- **Variables**: `name`, `type` (`string`/`int`/`bool`/`choice`/`list`),
+  `default`, `choices`, `secret`, `description`. Precedence high → low:
+  `--var k=v` > `--vars-file` > `default` > interactive prompt.
+  `--non-interactive` (or no TTY) → fail-fast on missing required
+  vars instead of prompting.
+- **Pass-through with typo warnings**: fields under `launch:` match
+  AWX's API verbatim. Anything outside the v2.x known-fields set
+  (`KNOWN_LAUNCH_FIELDS` in `application/test/resolver.py`) and not
+  declared as an FK triggers a stderr warning ("unknown launch field
+  'frooks' — typo? passing through to AWX") and still passes through.
+- **Name resolution** (hybrid: `fk_refs` + `!ref` tag):
+  - **Default path** — bare strings on FK fields resolve via
+    `fk_refs` ∪ `launch_fk_refs`. `JobTemplate.fk_refs` covers
+    `inventory`/`project`/`organization`/`credentials`. The
+    launch-only fields `execution_environment`, `labels`, and
+    `instance_groups` live under `launch_fk_refs` (in `domain/spec.py`).
+    Resolution is **top-level only on declared FK fields, never
+    recursive** — `extra_vars` and other opaque dicts are passed
+    through untouched.
+  - **Escape hatch** — the `!ref { kind, name, [scope...] }` YAML
+    tag works anywhere in the tree (e.g. inside `extra_vars`).
+    `RefSentinel` lives in `domain/test_suite.py`; the constructor
+    is in `infrastructure/test/parser.py`. Structurally distinct
+    from a dict, so user content like `{name: Alice}` is never
+    misinterpreted.
+  - **Catalog stubs** (`ExecutionEnvironment`, `Label`,
+    `InstanceGroup` in `infrastructure/specs/_support.py`) exist
+    purely so `FkResolver` can map names → ids; they have
+    `commands=()` and no CLI sub-app.
+- **Runner phases** (`application/test/runner.py`): `load → plan →
+  prefetch → resolve → launch+wait`. Resolution finishes in the main
+  thread before any worker is spawned (`FkResolver`'s caches aren't
+  thread-safe). Workers only do `RunAction(spec, ..., payload=…)` +
+  `WatchJob(job, timeout=…)` against a shared `AwxClient`
+  (`httpx.Client` is documented thread-safe).
+- **Result classification**: `result ∈ {pass, fail, error, timeout}`,
+  separate from AWX's raw `job_status`. Exit code 0 only when every
+  case has `result == "pass"`.
+- **Wiring**: `cli/test_commands.py` is the composition root; it
+  builds `LoadTestSuite` (with `DefaultParser`, `resolve_variables`,
+  `TyperPrompt`), `ResolveCasePayload`, and `RunTestSuite` from
+  `AwxContext`. The parser/vars-resolver/prompt are application-layer
+  Protocols (`application/test/ports.py`); concrete adapters live in
+  `infrastructure/test/`.
+
 ## Development Workflow
 
 ```bash
