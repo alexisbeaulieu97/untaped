@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import shutil
-from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from untaped_workspace.application.remove_repo import Filesystem
 from untaped_workspace.domain import (
     Repo,
     RepoStatus,
@@ -16,8 +15,6 @@ from untaped_workspace.domain import (
     WorkspaceManifest,
 )
 from untaped_workspace.errors import GitError, WorkspaceError
-
-_RmTree = Callable[[Path], None]
 
 
 class _ManifestReader(Protocol):
@@ -41,13 +38,13 @@ class SyncWorkspace:
         manifests: _ManifestReader,
         git: _Git,
         *,
+        fs: Filesystem,
         cache_dir: Path | None = None,
-        rmtree: _RmTree = shutil.rmtree,
     ) -> None:
         self._manifests = manifests
         self._git = git
+        self._fs = fs
         self._cache_dir = cache_dir
-        self._rmtree = rmtree
         # Bare paths whose `bare_fetch` has already run during this use-case
         # invocation chain. Lets `--all` sync N workspaces sharing repo URLs
         # without re-fetching the same bare N times.
@@ -182,7 +179,7 @@ class SyncWorkspace:
                 action="skip",
                 detail="dirty working tree (refusing to prune)",
             )
-        self._rmtree(entry)
+        self._fs.rmtree(entry)
         return SyncOutcome(
             workspace=workspace.name,
             repo=entry.name,

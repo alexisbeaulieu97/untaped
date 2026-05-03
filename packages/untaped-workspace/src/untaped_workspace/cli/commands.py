@@ -36,9 +36,12 @@ from untaped_workspace.cli.completions import complete_workspace_name
 from untaped_workspace.domain import SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
     GitRunner,
+    LocalFilesystem,
     ManifestRepository,
     WorkspaceRegistryRepository,
     WorkspaceResolver,
+    editor_runner,
+    shell_runner,
 )
 
 app = typer.Typer(
@@ -128,7 +131,9 @@ def add_command(
         repo = AddRepo(ManifestRepository())(ws, url=url, repo_name=repo_name, branch=branch)
         typer.echo(f"added {repo.name} to {ws.name!r}", err=True)
         if sync:
-            outcomes = SyncWorkspace(ManifestRepository(), GitRunner())(ws, only=[repo.name])
+            outcomes = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())(
+                ws, only=[repo.name]
+            )
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
@@ -164,9 +169,9 @@ def remove_command(
                 typer.echo("aborted", err=True)
                 raise typer.Exit(code=1)
             try:
-                removed = RemoveRepo(ManifestRepository(), status=GitRunner())(
-                    ws, ident=ident, prune=prune
-                )
+                removed = RemoveRepo(
+                    ManifestRepository(), fs=LocalFilesystem(), status=GitRunner()
+                )(ws, ident=ident, prune=prune)
                 typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
             except UntapedError as exc:
                 typer.echo(f"error: {ident}: {exc}", err=True)
@@ -199,7 +204,7 @@ def sync_command(
     """Reconcile workspace clones with the manifest."""
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
-        use_case = SyncWorkspace(ManifestRepository(), GitRunner())
+        use_case = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         outcomes = []
         for ws in targets:
             outcomes.extend(use_case(ws, only=only, prune=prune))
@@ -290,7 +295,7 @@ def foreach_command(
     """
     with report_errors():
         ws = _resolve(name, path)
-        outcomes = Foreach(ManifestRepository())(
+        outcomes = Foreach(ManifestRepository(), runner=shell_runner)(
             ws,
             command=cmd,
             parallel=parallel,
@@ -331,7 +336,7 @@ def import_command(
         )
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
-            outcomes = SyncWorkspace(ManifestRepository(), GitRunner())(ws)
+            outcomes = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())(ws)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
@@ -371,6 +376,6 @@ def edit_command(
 ) -> None:
     """Open the workspace directory in your editor."""
     with report_errors():
-        rc = EditWorkspace(WorkspaceRegistryRepository())(name, editor=editor)
+        rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, editor=editor)
         if rc != 0:
             raise typer.Exit(code=rc)
