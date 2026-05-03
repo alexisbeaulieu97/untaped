@@ -53,10 +53,10 @@ class _StubRepo:
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         self.list_calls.append((spec.kind, params))
-        for record in self.store.get(spec.kind, []):
-            if params and not all(_matches(record, k, v) for k, v in params.items()):
+        for raw in self.store.get(spec.kind, []):
+            if params and not all(_matches(raw, k, v) for k, v in params.items()):
                 continue
-            yield record
+            yield raw
 
 
 def _matches(record: dict[str, Any], param_key: str, value: str) -> bool:

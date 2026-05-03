@@ -35,5 +35,4 @@ class ListResources:
             params["search"] = search
         for k, v in (scope or {}).items():
             params[f"{k}__name"] = v
-        for record in self._client.list(spec, params=params, limit=limit):
-            yield record.model_dump()
+        return self._client.list(spec, params=params, limit=limit)
