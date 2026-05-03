@@ -45,10 +45,13 @@ class Catalog(Protocol):
 class ResourceClient(Protocol):
     """Generic CRUD + custom-action transport against AWX endpoints.
 
-    Reads return :class:`ServerRecord`; writes accept
-    :class:`WritePayload` (for create/update) or :class:`ActionPayload`
-    (for custom actions). The client never branches on kind — it
-    follows the spec verbatim.
+    Single-record reads return :class:`ServerRecord` so callers can
+    use typed attribute access (``record.id``, ``record.name``). The
+    bulk :meth:`list` yields raw dicts — most callers iterate-and-format
+    or iterate-and-extract, where the per-record Pydantic round trip
+    is pure overhead. Writes accept :class:`WritePayload` (create /
+    update) or :class:`ActionPayload` (custom actions). The client
+    never branches on kind — it follows the spec verbatim.
     """
 
     def list(
@@ -57,7 +60,7 @@ class ResourceClient(Protocol):
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
-    ) -> Iterator[ServerRecord]: ...
+    ) -> Iterator[dict[str, Any]]: ...
 
     def get(self, spec: AwxResourceSpec, id_: int) -> ServerRecord: ...
 

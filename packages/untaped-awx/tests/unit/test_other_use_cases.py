@@ -47,9 +47,9 @@ class _Client:
 
     def list(
         self, spec: ResourceSpec, *, params: Any = None, limit: Any = None
-    ) -> Iterator[ServerRecord]:
+    ) -> Iterator[dict[str, Any]]:
         self.list_calls.append(dict(params or {}))
-        return iter(ServerRecord(**r) for r in self._list)
+        return iter(self._list)
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         if self.get_result is None:

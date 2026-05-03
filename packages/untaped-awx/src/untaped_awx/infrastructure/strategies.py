@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import ServerRecord, WritePayload
+from untaped_awx.domain import WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -46,7 +46,7 @@ class DefaultApplyStrategy:
             else:
                 params[f"{key}__name"] = str(value)
         record = client.find(spec, params=params)
-        return _record_to_dict(record)
+        return record.model_dump() if record is not None else None
 
     def create(
         self,
@@ -157,12 +157,6 @@ class ScheduleApplyStrategy:
                 f"schedule parent kind {parent_kind!r} not supported "
                 f"(use one of {sorted(cls._PARENT_PATHS)})"
             ) from exc
-
-
-def _record_to_dict(record: ServerRecord | None) -> dict[str, Any] | None:
-    """Flatten a :class:`ServerRecord` (or None) to the dict shape the
-    apply pipeline expects in-place mutation on."""
-    return record.model_dump() if record is not None else None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

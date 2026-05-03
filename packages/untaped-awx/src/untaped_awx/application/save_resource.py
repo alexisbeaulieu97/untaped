@@ -58,7 +58,7 @@ class SaveResource:
         params: dict[str, str] = {}
         for k, v in (scope or {}).items():
             params[f"{k}__name"] = v
-        return [r.model_dump() for r in self._client.list(spec, params=params or None)]
+        return list(self._client.list(spec, params=params or None))
 
     def from_record(self, spec: AwxResourceSpec, record: dict[str, Any]) -> Resource:
         """Public access to the record→resource builder for bulk save flows."""

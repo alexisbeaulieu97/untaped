@@ -4,9 +4,13 @@ The repository never branches on kind — it follows the spec verbatim
 to derive paths and parameters. Per-kind variation is handled in
 strategies + apply hooks.
 
-Every read wraps the raw httpx JSON in a :class:`ServerRecord`; every
-write unwraps a :class:`WritePayload` / :class:`ActionPayload` via
-``.model_dump()`` before handing the dict to httpx.
+Single-record reads (``get`` / ``find`` / ``find_by_identity``) wrap
+raw httpx JSON in :class:`ServerRecord` so callers can use typed
+attribute access. The bulk ``list`` skips the wrap — its callers
+iterate-and-format or iterate-and-extract, where the per-record
+Pydantic round trip is pure overhead. Writes unwrap
+:class:`WritePayload` / :class:`ActionPayload` via ``.model_dump()``
+before handing the dict to httpx.
 """
 
 from __future__ import annotations
@@ -33,16 +37,15 @@ class ResourceRepository:
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
-    ) -> Iterator[ServerRecord]:
+    ) -> Iterator[dict[str, Any]]:
         with map_awx_errors():
-            for raw in paginate(
+            yield from paginate(
                 self._client,
                 f"{spec.api_path}/",
                 params=params,
                 page_size=self._page_size,
                 limit=limit,
-            ):
-                yield ServerRecord(**raw)
+            )
 
     def get(self, spec: AwxResourceSpec, id_: int) -> ServerRecord:
         with map_awx_errors():
