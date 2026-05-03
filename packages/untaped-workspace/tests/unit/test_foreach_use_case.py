@@ -104,3 +104,26 @@ def test_skips_uncloned_repo(tmp_path: Path) -> None:
     outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x")
     assert outcomes[0].returncode == -1
     assert "not cloned" in outcomes[0].stderr
+
+
+def test_outcome_records_command_and_duration(tmp_path: Path) -> None:
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
+    )
+    runner = _runner_factory()
+    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="echo hi")
+    outcome = outcomes[0]
+    assert outcome.command == "echo hi"
+    assert outcome.duration_s >= 0.0
+
+
+def test_outcome_records_command_when_uncloned(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    ManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
+    workspace = Workspace(name="prod", path=ws_path)
+    runner = _runner_factory()
+    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="echo hi")
+    assert outcomes[0].command == "echo hi"
+    assert outcomes[0].duration_s == 0.0
