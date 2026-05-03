@@ -7,6 +7,10 @@ sorts the docs so an upsert can resolve its FKs against already-applied
 parents, then dispatches each through :class:`ApplyResource`. Errors are
 non-fatal by default; pass ``fail_fast=True`` to abort on first failure.
 
+Before the apply loop runs, :meth:`FkResolver.prefetch` is called with
+the set of ``(kind, scope)`` groups the docs reference so FK lookups
+collapse from N round trips per kind into one paginated ``list``.
+
 Note: the reader is a port (Protocol) defined in
 ``application/ports``. Concrete YAML / JSON / stdin readers live in
 infrastructure and are wired by the CLI composition root.
@@ -19,7 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from untaped_awx.application.apply_resource import ApplyResource
-from untaped_awx.application.ports import Catalog, ResourceDocumentReader
+from untaped_awx.application.ports import Catalog, FkResolver, ResourceDocumentReader
 from untaped_awx.domain import ApplyOutcome, Resource
 from untaped_awx.errors import AwxApiError
 
@@ -30,10 +34,12 @@ class ApplyFile:
         apply_one: ApplyResource,
         reader: ResourceDocumentReader,
         catalog: Catalog,
+        fk: FkResolver,
     ) -> None:
         self._apply_one = apply_one
         self._reader = reader
         self._catalog = catalog
+        self._fk = fk
 
     def __call__(
         self,
@@ -44,6 +50,9 @@ class ApplyFile:
     ) -> list[ApplyOutcome]:
         docs = list(self._reader(path))
         ordered = _topological_sort(docs, catalog=self._catalog)
+        plan = _prefetch_plan(ordered, catalog=self._catalog)
+        if plan:
+            self._fk.prefetch(plan)
         outcomes: list[ApplyOutcome] = []
         for doc in ordered:
             try:
@@ -60,6 +69,36 @@ class ApplyFile:
                 if fail_fast:
                     break
         return outcomes
+
+
+def _prefetch_plan(
+    docs: Iterable[Resource], *, catalog: Catalog
+) -> dict[str, list[dict[str, str] | None]]:
+    """Derive the ``(kind, scope)`` groups the apply pass will look up.
+
+    Walks every doc's payload, finds each ``FkRef``, and records the
+    scope under which the lookup will happen (no scope = global). The
+    result is fed to :meth:`FkResolver.prefetch` which collapses each
+    group into one bulk list.
+    """
+    seen: dict[str, set[frozenset[tuple[str, str]]]] = defaultdict(set)
+    for doc in docs:
+        spec = catalog.get(doc.kind)
+        body = doc.spec if isinstance(doc.spec, dict) else {}
+        for ref in spec.fk_refs:
+            if ref.polymorphic:
+                continue
+            if ref.kind is None or ref.field not in body or body[ref.field] is None:
+                continue
+            scope: dict[str, str] = {}
+            if ref.scope_field is not None:
+                scope_value = body.get(ref.scope_field)
+                if isinstance(scope_value, str) and scope_value:
+                    scope[ref.scope_field] = scope_value
+            seen[ref.kind].add(frozenset(scope.items()))
+    return {
+        kind: [dict(items) if items else None for items in scopes] for kind, scopes in seen.items()
+    }
 
 
 def _topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Resource]:

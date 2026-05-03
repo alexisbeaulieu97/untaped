@@ -137,6 +137,17 @@ class FkResolver(Protocol):
         """
         ...
 
+    def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
+        """Warm the cache for the listed ``(kind, scope)`` groups.
+
+        ``plan`` maps a kind to a list of scopes the caller is about
+        to resolve. Implementations issue one bulk ``list`` per
+        ``(kind, scope)`` and populate both directions of the cache.
+        Failures are best-effort and do not interrupt the caller —
+        per-record lookups will still happen on cache miss.
+        """
+        ...
+
 
 class ApplyStrategy(Protocol):
     """Owns the write path for a kind.
