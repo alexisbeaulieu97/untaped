@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ class _StubRepo:
         self.store = store
         self.find_calls: list[tuple[str, dict[str, str]]] = []
         self.get_calls: list[tuple[str, int]] = []
+        self.list_calls: list[tuple[str, dict[str, str] | None]] = []
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
         self.find_calls.append((spec.kind, params))
@@ -42,6 +44,19 @@ class _StubRepo:
             if record["id"] == id_:
                 return record
         raise KeyError(id_)
+
+    def list(
+        self,
+        spec: ResourceSpec,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        self.list_calls.append((spec.kind, params))
+        for record in self.store.get(spec.kind, []):
+            if params and not all(_matches(record, k, v) for k, v in params.items()):
+                continue
+            yield record
 
 
 def _matches(record: dict[str, Any], param_key: str, value: str) -> bool:
@@ -124,3 +139,67 @@ def test_name_to_id_populates_id_to_name_cache() -> None:
     # Reverse lookup should be a cache hit
     assert fk.id_to_name("Organization", 7) == "Default"
     assert repo.get_calls == []
+
+
+def test_prefetch_warms_both_caches_with_one_list_call() -> None:
+    repo = _StubRepo(
+        {
+            "Organization": [
+                {"id": 7, "name": "Default"},
+                {"id": 8, "name": "Other"},
+            ],
+        }
+    )
+    fk = FkResolver(repo, AwxResourceCatalog())  # type: ignore[arg-type]
+
+    fk.prefetch({"Organization": [None]})
+
+    assert len(repo.list_calls) == 1
+    # Subsequent name->id and id->name hit the cache (no extra calls).
+    assert fk.name_to_id("Organization", "Default") == 7
+    assert fk.name_to_id("Organization", "Other") == 8
+    assert fk.id_to_name("Organization", 7) == "Default"
+    assert repo.find_calls == []
+    assert repo.get_calls == []
+
+
+def test_prefetch_one_list_per_kind_scope_pair() -> None:
+    repo = _StubRepo(
+        {
+            "Project": [
+                {"id": 42, "name": "playbooks", "organization_name": "Default"},
+                {"id": 43, "name": "playbooks", "organization_name": "Other"},
+            ],
+        }
+    )
+    fk = FkResolver(repo, AwxResourceCatalog())  # type: ignore[arg-type]
+
+    fk.prefetch(
+        {
+            "Project": [
+                {"organization": "Default"},
+                {"organization": "Default"},  # duplicate scope: deduped
+                {"organization": "Other"},
+            ],
+        }
+    )
+
+    assert len(repo.list_calls) == 2
+    assert fk.name_to_id("Project", "playbooks", scope={"organization": "Default"}) == 42
+    assert fk.name_to_id("Project", "playbooks", scope={"organization": "Other"}) == 43
+    assert repo.find_calls == []
+
+
+def test_prefetch_swallows_errors() -> None:
+    """A flaky bulk fetch must not break the per-call fallback path."""
+
+    class _BoomRepo(_StubRepo):
+        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
+            raise RuntimeError("boom")
+            yield  # pragma: no cover - unreachable
+
+    repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
+    fk = FkResolver(repo, AwxResourceCatalog())  # type: ignore[arg-type]
+    fk.prefetch({"Organization": [None]})  # must not raise
+    # Per-call lookup still works.
+    assert fk.name_to_id("Organization", "Default") == 7

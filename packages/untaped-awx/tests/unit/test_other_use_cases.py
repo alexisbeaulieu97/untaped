@@ -159,6 +159,9 @@ class _StaticFk:
     def resolve_polymorphic(self, *a: Any, **kw: Any) -> tuple[str, int]:
         raise NotImplementedError
 
+    def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
+        return None
+
 
 def test_save_resource_translates_fk_ids_to_names() -> None:
     client = _Client(
@@ -272,7 +275,7 @@ def test_apply_file_orders_by_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
     # Topo order from fk_refs: JobTemplate → Project, Schedule.parent → JT.
@@ -299,7 +302,7 @@ def test_apply_file_uses_polymorphic_parent_edge(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
     assert kinds.index("WorkflowJobTemplate") < kinds.index("Schedule"), kinds
@@ -355,7 +358,7 @@ def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     # Match the kind name (input) rather than the catalog's error wording, so
     # this test stays valid if the catalog's prose changes.
     with pytest.raises(AwxApiError, match="NotARealKind"):
@@ -392,7 +395,7 @@ def test_apply_file_continues_on_error_by_default(
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(failing, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     outcomes = use(f, write=False)
     # Both docs were applied even though one failed (default = continue-on-error).
     assert sorted(o.action for o in outcomes) == ["failed", "preview"]
@@ -423,7 +426,7 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources, AwxResourceCatalog())  # type: ignore[arg-type]
+    use = ApplyFile(failing, read_resources, AwxResourceCatalog(), _StaticFk({}))  # type: ignore[arg-type]
     use(f, write=False, fail_fast=True)
     assert failing.calls == ["boom"]
 
