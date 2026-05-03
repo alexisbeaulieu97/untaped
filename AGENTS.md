@@ -109,6 +109,10 @@ These are non-negotiable. Every contribution must respect them.
     hard-code `verify=True/False` or a path. The helper picks the OS trust
     store, an explicit `ca_bundle`, or disabled verification based on the
     user's settings.
+12. **Use absolute imports across the workspace.** `from untaped_<x>.… import …`
+    or `from untaped_core import …`, never `from .foo import bar`. Enforced
+    by ruff's `ban-relative-imports = "all"`; the rule applies inside every
+    package, including tests.
 
 ## Architecture: 4-Layer DDD per domain
 
@@ -151,6 +155,8 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped_core import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped_core import HttpClient`                            |
 | Format output for stdout                   | `from untaped_core import format_output, OutputFormat`           |
+| Add `--format` / `--columns` to a Typer command (data-emitting commands) | `from untaped_core import FormatOption, ColumnsOption` |
+| Wrap a Typer command body so `UntapedError` → clean exit code 1 | `from untaped_core import report_errors`                  |
 | Read piped values from stdin               | `from untaped_core import read_stdin`                            |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
 | Log to stderr                              | `from untaped_core import get_logger`                            |
@@ -322,11 +328,12 @@ The AWX bounded context follows the same DDD layout but builds a small
   prefix is honoured uniformly.
 - **`AwxConfig`** (`infrastructure/config.py`) is the package-local
   config struct (`base_url`, `token`, `api_prefix`,
-  `default_organization`, `page_size`). The CLI composition root
-  (`cli/_context.awx_config_from_settings`) is the *only* place that
-  reads `untaped_core.Settings`; every other module in the package
-  depends on `AwxConfig` so `untaped-awx` is extractable as a
-  standalone library.
+  `default_organization`, `page_size`). Only `cli/` modules read
+  `untaped_core.Settings` — today `cli/_context.awx_config_from_settings`
+  (the composition root) and `cli/commands.py:ping_command`; new
+  commands should follow the same pattern. `application/`,
+  `infrastructure/`, and `domain/` depend on `AwxConfig` so
+  `untaped-awx` is extractable as a standalone library.
 - **Bulk FK prefetch** (`FkResolver.prefetch`): before the apply loop
   in `application/apply_file.py`, the FK plan derived from each doc's
   `fk_refs` is pre-fetched in one paginated `list` per `(kind,
@@ -337,10 +344,12 @@ The AWX bounded context follows the same DDD layout but builds a small
   (WorkflowJobTemplate), `read_only` (Credential, Organization, Inventory,
   CredentialType). Saves below `full` echo the tier to stderr and embed an
   inline YAML comment.
-- **Apply ordering** for multi-doc files / directories: hardcoded
-  dependency order in `application/apply_file.py` —
-  `Organization → CredentialType → Credential → Project → Inventory →
-  JobTemplate → WorkflowJobTemplate → Schedule`.
+- **Apply ordering** for multi-doc files / directories: derived
+  topologically from each spec's `fk_refs`
+  (`application/apply_file._topological_sort`), with `ALL_SPECS` in
+  `infrastructure/specs/__init__.py` as the tie-breaker — currently
+  yielding `Organization → CredentialType → Credential → Project →
+  Inventory → JobTemplate → WorkflowJobTemplate → Schedule`.
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
   for end-to-end CLI flows.
 
@@ -356,7 +365,7 @@ uv add --package untaped-awx httpx-retries
 # add a dev dep (root)
 uv add --group dev some-test-helper
 
-# run all tests with coverage
+# run all tests with coverage; gate is fail_under = 80% (see pyproject.toml)
 uv run pytest
 
 # fast lint + format
@@ -548,8 +557,11 @@ helpers before writing anything new.
 
 - **Importing httpx, pyyaml, or os in a `domain/` module.** Domain is pure.
   Move the call to `infrastructure/`.
-- **A `cli/` module importing `infrastructure/` directly.** Go through
-  `application/` so the use case is the only thing the CLI sees.
+- **A `cli/` module calling business logic from `infrastructure/` instead
+  of going through an `application/` use case.** Importing infrastructure
+  to wire concrete adapters at the composition root (e.g.
+  `cli/_context.py`) is fine and expected; the ban is on bypassing
+  application use cases for the actual logic.
 - **Adding a new dep with `pyproject.toml` edits.** Use `uv add --package`.
 - **Writing a helper inside a domain that another domain will need.** Move
   it to `untaped-core` immediately (move ≠ copy).
@@ -564,10 +576,12 @@ helpers before writing anything new.
 - **Forgetting `no_args_is_help=True` on commands with required args.**
   `untaped foo bar` (no args) must show help, not crash with a missing-arg
   error.
-- **Naming a method `list` on a class with `list[X]` return annotations.**
-  mypy resolves `list` to the method (a callable) inside the class, not
-  the builtin, and complains about iteration / "not valid as a type". Use
-  a different name (we use `entries`) or `from typing import List as _List`.
+- **Naming a method `list` on a class whose annotations elsewhere include
+  `list[X]`.** mypy resolves `list` to the method (a callable) inside the
+  class, not the builtin, and complains about iteration / "not valid as
+  a type". `Iterator[X]` / `Iterable[X]` returns don't collide and are
+  fine. If you do hit the collision, use a different name (we use
+  `entries`) or `from typing import List as _List`.
 - **Adding a new git operation outside `GitRunner`.** All git subprocess
   calls live in `untaped_workspace.infrastructure.git_runner.GitRunner` —
   domain and application layers depend on its `Protocol`, so tests can
