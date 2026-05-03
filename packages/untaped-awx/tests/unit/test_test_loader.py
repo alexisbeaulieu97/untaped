@@ -97,6 +97,46 @@ def test_invalid_yaml_body_raises_awx_api_error() -> None:
         _load(text)
 
 
+def test_duplicate_case_names_in_rendered_yaml_are_rejected() -> None:
+    """A Jinja2 matrix that produces duplicate case names must hard-fail."""
+    text = (
+        "---\n"
+        "variables:\n"
+        "  regions:\n"
+        "    type: list\n"
+        "    default: [us, us]\n"
+        "---\n"
+        "kind: AwxTestSuite\n"
+        "name: x\n"
+        "jobTemplate: y\n"
+        "cases:\n"
+        "{% for r in regions %}"
+        "  shared:\n"
+        "    launch:\n"
+        "      extra_vars: { region: {{ r | to_yaml }} }\n"
+        "{% endfor %}"
+    )
+    with pytest.raises(AwxApiError, match=r"duplicate"):
+        _load(text)
+
+
+def test_variable_metadata_with_name_key_is_rejected_cleanly() -> None:
+    """A user including ``name:`` inside a variable body should not crash with TypeError."""
+    text = (
+        "---\nvariables:\n"
+        "  env:\n"
+        "    type: string\n"
+        "    default: dev\n"
+        "    name: shadowing\n"  # collides with the inferred VariableSpec.name
+        "---\n"
+        "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases: {c: {launch: {}}}\n"
+    )
+    # The dropped ``name`` field doesn't break the load (it's the same
+    # value the loader would set anyway, just dropped defensively).
+    suite = _load(text)
+    assert "env" in suite.variables  # type: ignore[attr-defined]
+
+
 def test_invalid_yaml_frontmatter_raises_awx_api_error() -> None:
     text = (
         "---\nvariables: : invalid\n---\n"

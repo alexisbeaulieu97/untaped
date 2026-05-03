@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import yaml
-from jinja2 import Environment, StrictUndefined
+from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
 from untaped_awx.domain.test_suite import RefSentinel
 from untaped_awx.errors import AwxApiError
@@ -66,7 +66,31 @@ def split_frontmatter(text: str) -> tuple[str, str]:
 
 
 class _RefSafeLoader(yaml.SafeLoader):
-    """Private loader so the ``!ref`` constructor can't leak globally."""
+    """Private loader so the ``!ref`` constructor can't leak globally.
+
+    Also rejects duplicate mapping keys: PyYAML's default loader silently
+    keeps only the last duplicate, which would let a Jinja2 matrix that
+    accidentally produces the same case name twice quietly drop a case.
+    """
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        seen: set[Any] = set()
+        duplicates: list[str] = []
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)  # type: ignore[no-untyped-call]
+            try:
+                if key in seen:
+                    duplicates.append(repr(key))
+                seen.add(key)
+            except TypeError:
+                # Unhashable key — let the base implementation raise.
+                pass
+        if duplicates:
+            line = node.start_mark.line + 1
+            raise AwxApiError(
+                f"duplicate YAML mapping key(s) at line {line}: {', '.join(duplicates)}"
+            )
+        return super().construct_mapping(node, deep=deep)
 
 
 def _construct_ref(loader: yaml.SafeLoader, node: yaml.Node) -> RefSentinel:
@@ -89,8 +113,15 @@ _RefSafeLoader.add_constructor("!ref", _construct_ref)
 
 
 def load_yaml_with_refs(text: str) -> Any:
-    """Parse YAML, recognising the ``!ref`` tag as :class:`RefSentinel`."""
-    return yaml.load(text, Loader=_RefSafeLoader)
+    """Parse YAML, recognising the ``!ref`` tag as :class:`RefSentinel`.
+
+    Wraps :class:`yaml.YAMLError` in :class:`AwxApiError` so the
+    application layer never has to import PyYAML's exception types.
+    """
+    try:
+        return yaml.load(text, Loader=_RefSafeLoader)
+    except yaml.YAMLError as exc:
+        raise AwxApiError(f"invalid YAML: {exc}") from exc
 
 
 # ---- Jinja2 env ---------------------------------------------------------
@@ -154,5 +185,12 @@ class DefaultParser:
         body: str,
         values: Mapping[str, Any],
     ) -> str:
-        template = self._env.from_string(body)
-        return template.render(dict(values))
+        try:
+            template = self._env.from_string(body)
+            return template.render(dict(values))
+        except UndefinedError as exc:
+            raise AwxApiError(f"undefined Jinja2 variable: {exc}") from exc
+        except TemplateError as exc:
+            # Covers ``TemplateSyntaxError`` (compile-time) and other Jinja2
+            # errors raised during rendering (e.g. filter failures).
+            raise AwxApiError(f"Jinja2 template error: {exc}") from exc

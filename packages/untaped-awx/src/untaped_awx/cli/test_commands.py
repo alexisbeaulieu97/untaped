@@ -167,13 +167,14 @@ def run_command(
                     continue
                 _print_failure_logs(ctx, result.suite, result.case, result.job_id)
 
-    typer.echo(
-        format_output(
-            [r.model_dump() for r in outcome.results],
-            fmt=fmt,
-            columns=columns,
+        typer.echo(
+            format_output(
+                [r.model_dump() for r in outcome.results],
+                fmt=fmt,
+                columns=columns,
+            )
         )
-    )
+
     if outcome.exit_code() != 0:
         raise typer.Exit(code=1)
 
