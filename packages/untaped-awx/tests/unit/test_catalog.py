@@ -59,3 +59,23 @@ def test_schedule_parent_is_polymorphic() -> None:
     parent_fk = next(fk for fk in cat.get("Schedule").fk_refs if fk.field == "parent")
     assert parent_fk.polymorphic
     assert parent_fk.kind_in_value == "kind"
+
+
+def test_launch_only_kinds_are_registered() -> None:
+    """ExecutionEnvironment / Label / InstanceGroup are catalog-only stubs."""
+    cat = AwxResourceCatalog()
+    for kind in ("ExecutionEnvironment", "Label", "InstanceGroup"):
+        spec = cat.get(kind)
+        assert spec.kind == kind
+        # Stubs aren't CLI-exposed: no save/apply, no list/get sub-app commands.
+        assert spec.commands == ()
+
+
+def test_job_template_launch_fk_refs() -> None:
+    """JobTemplate declares the launch-only foreign-key fields."""
+    cat = AwxResourceCatalog()
+    jt = cat.get("JobTemplate")
+    fields = {fk.field: fk for fk in jt.launch_fk_refs}
+    assert fields["execution_environment"].kind == "ExecutionEnvironment"
+    assert fields["labels"].kind == "Label" and fields["labels"].multi
+    assert fields["instance_groups"].kind == "InstanceGroup" and fields["instance_groups"].multi

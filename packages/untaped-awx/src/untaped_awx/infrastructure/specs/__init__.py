@@ -10,7 +10,10 @@ from __future__ import annotations
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs._support import (
     CREDENTIAL_TYPE_SPEC,
+    EXECUTION_ENVIRONMENT_SPEC,
+    INSTANCE_GROUP_SPEC,
     INVENTORY_SPEC,
+    LABEL_SPEC,
     ORGANIZATION_SPEC,
 )
 from untaped_awx.infrastructure.specs.credential import CREDENTIAL_SPEC
@@ -25,6 +28,9 @@ ALL_SPECS: tuple[AwxResourceSpec, ...] = (
     CREDENTIAL_SPEC,
     PROJECT_SPEC,
     INVENTORY_SPEC,
+    EXECUTION_ENVIRONMENT_SPEC,
+    LABEL_SPEC,
+    INSTANCE_GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
     WORKFLOW_JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
@@ -37,8 +43,11 @@ __all__ = [
     "ALL_SPECS",
     "CREDENTIAL_SPEC",
     "CREDENTIAL_TYPE_SPEC",
+    "EXECUTION_ENVIRONMENT_SPEC",
+    "INSTANCE_GROUP_SPEC",
     "INVENTORY_SPEC",
     "JOB_TEMPLATE_SPEC",
+    "LABEL_SPEC",
     "ORGANIZATION_SPEC",
     "PROJECT_SPEC",
     "SCHEDULE_SPEC",

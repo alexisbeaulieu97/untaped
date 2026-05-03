@@ -87,3 +87,29 @@ def test_domain_spec_rejects_transport_fields() -> None:
             canonical_fields=("description",),
             cli_name="projects",  # only on AwxResourceSpec
         )
+
+
+def test_launch_fk_refs_default_is_empty() -> None:
+    """``launch_fk_refs`` is optional; defaults to an empty tuple."""
+    spec = ResourceSpec(
+        kind="Project",
+        identity_keys=("name",),
+        canonical_fields=("description",),
+    )
+    assert spec.launch_fk_refs == ()
+
+
+def test_launch_fk_refs_accepts_fk_refs() -> None:
+    """Launch-only foreign keys are declared with the same ``FkRef`` shape."""
+    spec = ResourceSpec(
+        kind="JobTemplate",
+        identity_keys=("name",),
+        canonical_fields=("description",),
+        launch_fk_refs=(
+            FkRef(field="execution_environment", kind="ExecutionEnvironment"),
+            FkRef(field="labels", kind="Label", multi=True),
+        ),
+    )
+    assert len(spec.launch_fk_refs) == 2
+    assert spec.launch_fk_refs[1].multi is True
+    assert spec.launch_fk_refs[0].kind == "ExecutionEnvironment"
