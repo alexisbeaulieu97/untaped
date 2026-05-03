@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 from untaped_awx.application.test.ports import Launcher, Watcher
 from untaped_awx.application.test.resolver import ResolveCasePayload
 from untaped_awx.domain import Job
-from untaped_awx.domain.spec import FkRef
 from untaped_awx.domain.test_suite import (
     Case,
     CaseResult,
@@ -24,6 +23,7 @@ from untaped_awx.domain.test_suite import (
     TestRunOutcome,
     TestSuite,
 )
+from untaped_awx.errors import AwxApiError
 
 if TYPE_CHECKING:
     from untaped_awx.infrastructure.spec import AwxResourceSpec
@@ -82,7 +82,7 @@ class RunTestSuite:
         timeout: float | None = None,
     ) -> TestRunOutcome:
         plan = self._build_plan(list(suites), case_filter)
-        self._fk.prefetch(_prefetch_plan(self._spec, plan))
+        self._fk.prefetch(self._prefetch_plan(plan))
         resolved = self._resolve_all(plan)
 
         if parallel <= 1:
@@ -107,7 +107,45 @@ class RunTestSuite:
                 if case_filter is not None and case_name not in case_filter:
                     continue
                 plan.append((suite, case_name, case))
+        if case_filter is not None:
+            matched = {case_name for _, case_name, _ in plan}
+            unmatched = sorted(case_filter - matched)
+            if unmatched:
+                raise AwxApiError(
+                    "no case matched --case " + ", ".join(repr(name) for name in unmatched)
+                )
         return plan
+
+    def _prefetch_plan(
+        self, plan: Sequence[tuple[TestSuite, str, Case]]
+    ) -> dict[str, list[dict[str, str] | None]]:
+        """Walk every case (defaults included) to learn which name lookups will fire.
+
+        Returns a mapping suitable for :meth:`FkResolver.prefetch`, with
+        the **same scope** the resolver will use for the actual lookup so
+        the cache hits. Empty when no FK names appear (so prefetch is a
+        no-op rather than firing spurious ``list`` calls).
+
+        Resolution is **top-level on declared FK fields, plus any
+        :class:`RefSentinel` discovered anywhere in the tree** —
+        mirroring :class:`ResolveCasePayload`. Opaque user content under
+        ``extra_vars`` is *not* otherwise inspected.
+        """
+        by_kind: dict[str, list[dict[str, str] | None]] = {}
+        fk_index = {
+            ref.field: ref
+            for ref in (*self._spec.fk_refs, *self._spec.launch_fk_refs)
+            if not ref.polymorphic and ref.kind is not None
+        }
+        for suite, _, case in plan:
+            merged = _merge_top_level(suite.defaults, case)
+            for field, value in merged.items():
+                ref = fk_index.get(field)
+                if ref is not None and _is_resolvable_fk_value(value):
+                    assert ref.kind is not None
+                    by_kind.setdefault(ref.kind, []).append(self._resolve.scope_for_fk_field(ref))
+                _collect_ref_sentinels(value, by_kind, self._resolve.scope_for_ref)
+        return by_kind
 
     def _resolve_all(self, plan: Sequence[tuple[TestSuite, str, Case]]) -> list[_ResolvedCase]:
         out: list[_ResolvedCase] = []
@@ -173,37 +211,28 @@ def _classify(suite_name: str, case_name: str, job: Job, duration_s: float) -> C
     )
 
 
-def _prefetch_plan(
-    spec: AwxResourceSpec,
-    cases: Sequence[tuple[TestSuite, str, Case]],
-) -> dict[str, list[dict[str, str] | None]]:
-    """Empty when no FK names appear, so :meth:`FkResolver.prefetch` becomes a no-op."""
-    by_kind: dict[str, list[dict[str, str] | None]] = {}
-    fk_index = {ref.field: ref for ref in (*spec.fk_refs, *spec.launch_fk_refs)}
-    for _, _, case in cases:
-        _walk_for_prefetch(case.launch, fk_index, by_kind)
-    return by_kind
-
-
-def _walk_for_prefetch(
+def _collect_ref_sentinels(
     value: Any,
-    fk_index: dict[str, FkRef],
     by_kind: dict[str, list[dict[str, str] | None]],
+    scope_for: Callable[[RefSentinel], dict[str, str] | None],
 ) -> None:
+    """Walk every nested dict/list looking for ``!ref`` sentinels.
+
+    Plain dicts and lists are recursed into so a ``!ref`` nested inside
+    ``extra_vars`` is still discovered (the resolver does the same).
+    Non-tagged dicts contribute no FK keys themselves — only declared
+    top-level fields, handled separately, do.
+    """
     if isinstance(value, RefSentinel):
-        by_kind.setdefault(value.kind, []).append(value.scope)
+        by_kind.setdefault(value.kind, []).append(scope_for(value))
         return
     if isinstance(value, dict):
-        for field, sub in value.items():
-            ref = fk_index.get(field)
-            if ref is not None and _is_resolvable_fk_value(sub):
-                assert ref.kind is not None
-                by_kind.setdefault(ref.kind, []).append(None)
-            _walk_for_prefetch(sub, fk_index, by_kind)
+        for sub in value.values():
+            _collect_ref_sentinels(sub, by_kind, scope_for)
         return
     if isinstance(value, list):
         for item in value:
-            _walk_for_prefetch(item, fk_index, by_kind)
+            _collect_ref_sentinels(item, by_kind, scope_for)
 
 
 def _is_resolvable_fk_value(value: Any) -> bool:
@@ -211,3 +240,17 @@ def _is_resolvable_fk_value(value: Any) -> bool:
     if isinstance(value, str):
         return True
     return isinstance(value, list) and any(isinstance(item, str) for item in value)
+
+
+def _merge_top_level(defaults: Case | None, case: Case) -> dict[str, Any]:
+    """Defaults ⤥ case at the top-level launch keys (no deep merge here).
+
+    Prefetch only cares about *which keys exist*, not their merged values,
+    so a shallow merge captures FK-bearing keys from defaults that the
+    case doesn't override.
+    """
+    out: dict[str, Any] = {}
+    if defaults is not None:
+        out.update(defaults.launch)
+    out.update(case.launch)
+    return out

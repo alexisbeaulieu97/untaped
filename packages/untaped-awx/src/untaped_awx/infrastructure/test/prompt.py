@@ -16,7 +16,9 @@ class TyperPrompt:
     def is_interactive(self) -> bool:
         if self._force_non_interactive:
             return False
-        return sys.stdin.isatty() and sys.stderr.isatty()
+        # Only ``stdin`` matters: stderr being redirected (``2>/dev/null``)
+        # is normal log practice and must not silently disable prompts.
+        return sys.stdin.isatty()
 
     def ask(self, spec: VariableSpec) -> str:
         prompt_text = spec.description or spec.name

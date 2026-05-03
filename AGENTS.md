@@ -349,7 +349,11 @@ The AWX bounded context follows the same DDD layout but builds a small
   (`application/apply_file._topological_sort`), with `ALL_SPECS` in
   `infrastructure/specs/__init__.py` as the tie-breaker — currently
   yielding `Organization → CredentialType → Credential → Project →
-  Inventory → JobTemplate → WorkflowJobTemplate → Schedule`.
+  Inventory → JobTemplate → WorkflowJobTemplate → Schedule`. The
+  catalog-only stubs `ExecutionEnvironment`, `Label`, and
+  `InstanceGroup` sit between `Inventory` and `JobTemplate` in
+  `ALL_SPECS` for `FkResolver` lookups but are excluded from
+  apply/save flows by their `commands=()` setting.
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
   for end-to-end CLI flows.
 

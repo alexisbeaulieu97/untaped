@@ -86,6 +86,21 @@ def test_cli_overrides_vars_file(tmp_path: Path) -> None:
     assert values == {"env": "cli_env"}
 
 
+def test_int_default_string_is_coerced() -> None:
+    """A string-quoted default for ``type: int`` must be coerced like CLI input."""
+    prompt = StubPrompt(answers={})
+    specs = {"port": _spec("port", type="int", default="8080")}
+    values = resolve_variables(specs, cli={}, files=(), prompt=prompt)
+    assert values == {"port": 8080}
+
+
+def test_list_default_csv_is_coerced() -> None:
+    prompt = StubPrompt(answers={})
+    specs = {"regions": _spec("regions", type="list", default="us-east-1,eu-west-1")}
+    values = resolve_variables(specs, cli={}, files=(), prompt=prompt)
+    assert values == {"regions": ["us-east-1", "eu-west-1"]}
+
+
 def test_int_type_coerces_string() -> None:
     prompt = StubPrompt(answers={})
     specs = {"port": _spec("port", type="int")}

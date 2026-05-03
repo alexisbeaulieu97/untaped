@@ -29,6 +29,16 @@ def test_variable_spec_choice_requires_choices_list() -> None:
         VariableSpec(name="env", type="choice", choices=())
 
 
+def test_variable_spec_default_must_be_in_choices() -> None:
+    with pytest.raises(ValidationError):
+        VariableSpec(name="env", type="choice", choices=("a", "b"), default="c")
+
+
+def test_variable_spec_default_in_choices_is_accepted() -> None:
+    spec = VariableSpec(name="env", type="choice", choices=("a", "b"), default="a")
+    assert spec.default == "a"
+
+
 def test_case_assert_alias_for_python_keyword() -> None:
     """``assert:`` is a Python keyword, the field is exposed as ``assert_``."""
     case = Case.model_validate({"launch": {"limit": "x"}, "assert": {}})
@@ -95,3 +105,23 @@ def test_outcome_exit_code_one_when_any_not_pass(bad_result: str) -> None:
         )
     )
     assert outcome.exit_code() == 1
+
+
+def test_outcome_exit_code_one_when_no_cases_ran() -> None:
+    """Empty results means nothing was tested — that's a failure for a test runner."""
+    outcome = TestRunOutcome(results=())
+    assert outcome.exit_code() == 1
+
+
+def test_ref_sentinel_rejects_empty_kind() -> None:
+    from untaped_awx.domain.test_suite import RefSentinel
+
+    with pytest.raises(ValueError, match="kind"):
+        RefSentinel(kind="", name="foo")
+
+
+def test_ref_sentinel_rejects_empty_name() -> None:
+    from untaped_awx.domain.test_suite import RefSentinel
+
+    with pytest.raises(ValueError, match="name"):
+        RefSentinel(kind="Inventory", name="")

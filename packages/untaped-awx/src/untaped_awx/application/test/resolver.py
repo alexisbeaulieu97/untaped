@@ -9,11 +9,13 @@ that's the only path that descends into nested values.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, Protocol
 
+from untaped_awx.application.ports import Catalog
 from untaped_awx.domain.spec import FkRef
 from untaped_awx.domain.test_suite import Case, RefSentinel
+from untaped_awx.errors import AwxApiError
 
 if TYPE_CHECKING:
     from untaped_awx.infrastructure.spec import AwxResourceSpec
@@ -61,9 +63,11 @@ class ResolveCasePayload:
         self,
         fk: FkLookup,
         *,
+        catalog: Catalog,
         default_organization: str | None = None,
     ) -> None:
         self._fk = fk
+        self._catalog = catalog
         self._default_org = default_organization
 
     def __call__(
@@ -96,14 +100,16 @@ class ResolveCasePayload:
             if ref is None:
                 out[field] = value
                 continue
+            if ref.multi and value is None:
+                # AWX treats absent as "no override"; sending ``null`` for a
+                # list field is rejected by some endpoints. Drop the key.
+                continue
             out[field] = self._resolve_fk_value(ref, value)
         return out
 
     def _resolve_fk_value(self, ref: FkRef, value: Any) -> Any:
         scope = self._scope_for(ref)
         if ref.multi:
-            if value is None:
-                return value
             if not isinstance(value, list):
                 # Single value where a list is expected — wrap so resolution still works.
                 return [self._resolve_one(ref, value, scope)]
@@ -126,12 +132,36 @@ class ResolveCasePayload:
         return value  # pass through anything we don't know how to resolve
 
     def _resolve_ref(self, ref: RefSentinel) -> int:
-        scope = ref.scope
-        if scope is None and self._default_org is not None:
-            # Most launch FKs are org-scoped; default to the active profile's org
-            # when the user didn't specify a scope on the !ref.
-            scope = {"organization": self._default_org}
-        return self._fk.name_to_id(ref.kind, ref.name, scope=scope)
+        return self._fk.name_to_id(ref.kind, ref.name, scope=self.scope_for_ref(ref))
+
+    def scope_for_ref(self, ref: RefSentinel) -> dict[str, str] | None:
+        """Return the lookup scope a ``!ref`` should be resolved with.
+
+        Public so the runner's prefetch plan can match the resolver's
+        cache keys exactly.
+        """
+        if ref.scope:
+            return dict(ref.scope)
+        if self._default_org is not None and self._is_org_scoped(ref.kind):
+            return {"organization": self._default_org}
+        return None
+
+    def scope_for_fk_field(self, ref: FkRef) -> dict[str, str] | None:
+        """Public accessor for the FK-field scope (used by prefetch planning)."""
+        return self._scope_for(ref)
+
+    def _is_org_scoped(self, kind: str) -> bool:
+        """True iff the kind's identity includes ``organization``.
+
+        Mirrors :func:`untaped_awx.cli._context.scope_for_spec` — global
+        kinds (``ExecutionEnvironment``, ``InstanceGroup``, …) must not
+        receive the active profile's default organization as a filter.
+        """
+        try:
+            spec = self._catalog.get(kind)
+        except AwxApiError:
+            return False
+        return "organization" in spec.identity_keys
 
     def _scope_for(self, ref: FkRef) -> dict[str, str] | None:
         if ref.scope_field == "organization" and self._default_org is not None:
@@ -208,7 +238,7 @@ def _emit_unknown_field_warnings(payload: Mapping[str, Any], fk_index: Mapping[s
 
 def _walk_and_resolve_refs(
     value: Any,
-    resolve: Any,
+    resolve: Callable[[RefSentinel], int],
 ) -> Any:
     """Recursively replace any :class:`RefSentinel` with its resolved id."""
     if isinstance(value, RefSentinel):

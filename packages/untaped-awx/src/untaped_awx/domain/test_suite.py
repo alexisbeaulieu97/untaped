@@ -29,6 +29,12 @@ class RefSentinel:
     name: str
     scope: dict[str, str] | None = None
 
+    def __post_init__(self) -> None:
+        if not self.kind:
+            raise ValueError("RefSentinel.kind must be a non-empty string")
+        if not self.name:
+            raise ValueError("RefSentinel.name must be a non-empty string")
+
 
 VariableType = Literal["string", "int", "bool", "choice", "list"]
 """Variable types supported by the frontmatter ``variables`` block."""
@@ -58,6 +64,10 @@ class VariableSpec(BaseModel):
     def _choices_required_for_choice_type(self) -> VariableSpec:
         if self.type == "choice" and not self.choices:
             raise ValueError("type='choice' requires a non-empty 'choices' tuple")
+        if self.type == "choice" and self.default is not None and self.default not in self.choices:
+            raise ValueError(
+                f"default {self.default!r} is not one of choices {list(self.choices)!r}"
+            )
         return self
 
 
@@ -124,5 +134,12 @@ class TestRunOutcome(BaseModel):
     results: Sequence[CaseResult]
 
     def exit_code(self) -> int:
-        """0 only if every case has ``result == 'pass'``."""
+        """0 only if at least one case ran and every case passed.
+
+        Empty results are treated as failure: a test runner that reports
+        ``ok`` after launching zero jobs would silently green-light typos
+        in ``--case`` filters or empty test files.
+        """
+        if not self.results:
+            return 1
         return 0 if all(r.result == "pass" for r in self.results) else 1
