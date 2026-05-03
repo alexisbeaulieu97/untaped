@@ -27,7 +27,16 @@ class Filesystem(Protocol):
 
 
 def shell_runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Default :data:`ShellRunner`: run ``cmd`` via the shell, capture output."""
+    """Default :data:`ShellRunner`: run ``cmd`` via the shell, capture output.
+
+    ``shell=True`` is intentional: ``workspace foreach`` accepts user-authored
+    command strings that rely on shell features (pipes, redirects, glob
+    expansion). **``cmd`` must come from a trusted source** — the user's own
+    CLI input or a workspace manifest the user controls. Never thread
+    third-party or externally-fetched content through this runner without
+    sanitising / argv-quoting first; ``shell=True`` makes shell injection
+    (CWE-78) trivial otherwise.
+    """
     return subprocess.run(cmd, shell=True, cwd=cwd, text=True, capture_output=True, check=False)
 
 

@@ -20,13 +20,13 @@ class GetResource:
         spec: AwxResourceSpec,
         *,
         name: str | None = None,
-        id: int | None = None,
+        id_: int | None = None,
         scope: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        if id is not None:
-            return self._client.get(spec, id).model_dump()
+        if id_ is not None:
+            return self._client.get(spec, id_).model_dump()
         if name is None:
-            raise ValueError("GetResource requires either name= or id=")
+            raise ValueError("GetResource requires either name= or id_=")
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
