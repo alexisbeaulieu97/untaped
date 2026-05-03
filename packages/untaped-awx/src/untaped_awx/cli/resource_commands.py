@@ -184,11 +184,33 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None, "--organization", help="Scope to organization."
         ),
         extra_vars: list[str] | None = typer.Option(
-            None,
-            "--extra-vars",
-            help="KEY=VAL override (repeatable).",
+            None, "--extra-vars", help="KEY=VAL override (repeatable)."
         ),
         limit: str | None = typer.Option(None, "--limit", help="Hosts pattern to limit to."),
+        inventory: str | None = typer.Option(
+            None, "--inventory", help="Override inventory by name (resolved to id)."
+        ),
+        credential: list[str] | None = typer.Option(
+            None,
+            "--credential",
+            help="Override credential by name (repeatable; resolved to ids).",
+        ),
+        scm_branch: str | None = typer.Option(None, "--scm-branch", help="SCM branch to run from."),
+        job_tag: list[str] | None = typer.Option(
+            None, "--job-tag", help="Run only tasks with these tags (repeatable)."
+        ),
+        skip_tag: list[str] | None = typer.Option(
+            None, "--skip-tag", help="Skip tasks with these tags (repeatable)."
+        ),
+        verbosity: int | None = typer.Option(None, "--verbosity", help="0-4 (passed verbatim)."),
+        diff_mode: bool | None = typer.Option(
+            None,
+            "--diff-mode/--no-diff-mode",
+            help="Override diff_mode for this run.",
+        ),
+        job_type: str | None = typer.Option(
+            None, "--job-type", help="Override job_type (e.g. run, check)."
+        ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
         monitor: bool = typer.Option(
             False, "--monitor", help="Stream + wait (alias for --wait in v0)."
@@ -199,14 +221,24 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
         columns: ColumnsOption = None,
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
-        payload: dict[str, Any] = {}
-        if extra_vars and "extra_vars" in accepts:
-            payload["extra_vars"] = "\n".join(extra_vars)
-        if limit and "limit" in accepts:
-            payload["limit"] = limit
         jobs: list[Any] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
+            payload = _build_launch_payload(
+                accepts=accepts,
+                extra_vars=extra_vars,
+                limit=limit,
+                inventory=inventory,
+                credential=credential,
+                scm_branch=scm_branch,
+                job_tag=job_tag,
+                skip_tag=skip_tag,
+                verbosity=verbosity,
+                diff_mode=diff_mode,
+                job_type=job_type,
+                fk=ctx.fk,
+                org_scope=_scope(ctx, organization, spec),
+            )
             ids = read_identifiers(list(names or []), stdin=stdin)
             scope = _scope(ctx, organization, spec)
             for n in ids:
@@ -228,6 +260,57 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
         if any_failed:
             raise typer.Exit(code=1)
+
+
+def _build_launch_payload(
+    *,
+    accepts: frozenset[str],
+    extra_vars: list[str] | None,
+    limit: str | None,
+    inventory: str | None,
+    credential: list[str] | None,
+    scm_branch: str | None,
+    job_tag: list[str] | None,
+    skip_tag: list[str] | None,
+    verbosity: int | None,
+    diff_mode: bool | None,
+    job_type: str | None,
+    fk: Any,
+    org_scope: dict[str, str] | None,
+) -> dict[str, Any]:
+    """Translate the launch CLI flags into the payload AAP expects.
+
+    Only fields listed in this kind's ``ActionSpec.accepts`` are
+    forwarded; flags for fields not in ``accepts`` are silently ignored
+    so a kind that doesn't support ``--inventory`` simply drops the
+    value rather than erroring on input the user typed naturally.
+    FK flags (``--inventory``, ``--credential``) resolve names to ids
+    using the per-process :class:`FkResolver`.
+    """
+    payload: dict[str, Any] = {}
+    if extra_vars and "extra_vars" in accepts:
+        payload["extra_vars"] = "\n".join(extra_vars)
+    if limit and "limit" in accepts:
+        payload["limit"] = limit
+    if inventory and "inventory" in accepts:
+        payload["inventory"] = fk.name_to_id("Inventory", inventory, scope=org_scope)
+    if credential and "credentials" in accepts:
+        payload["credentials"] = [
+            fk.name_to_id("Credential", c, scope=org_scope) for c in credential
+        ]
+    if scm_branch and "scm_branch" in accepts:
+        payload["scm_branch"] = scm_branch
+    if job_tag and "job_tags" in accepts:
+        payload["job_tags"] = ",".join(job_tag)
+    if skip_tag and "skip_tags" in accepts:
+        payload["skip_tags"] = ",".join(skip_tag)
+    if verbosity is not None and "verbosity" in accepts:
+        payload["verbosity"] = verbosity
+    if diff_mode is not None and "diff_mode" in accepts:
+        payload["diff_mode"] = diff_mode
+    if job_type and "job_type" in accepts:
+        payload["job_type"] = job_type
+    return payload
 
 
 # ---- update (Project SCM sync) ----
