@@ -130,12 +130,16 @@ def load_yaml_with_refs(text: str) -> Any:
 def _to_yaml(value: Any) -> str:
     """Render *value* as a single-line YAML literal for safe interpolation.
 
-    PyYAML emits ``<scalar>\\n...\\n`` (a trailing end-of-document marker
-    plus newline) for bare scalars; strip it so the result can be
-    embedded mid-document without splitting it in two.
+    PyYAML emits ``<scalar>\\n...\\n`` (the bare scalar followed by an
+    end-of-document marker on its own line) for plain scalars; strip the
+    ``\\n...`` end marker so the result can be embedded mid-document.
+
+    Strip *only* the end-of-document marker — ``removesuffix("...")``
+    here would also eat a user's literal trailing dots (e.g. a value
+    like ``release...``), silently corrupting the launch payload.
     """
     out = yaml.safe_dump(value, default_flow_style=True, width=10_000).rstrip("\n")
-    return out.removesuffix("\n...").removesuffix("...").rstrip("\n")
+    return out.removesuffix("\n...").rstrip("\n")
 
 
 def _to_json(value: Any) -> str:

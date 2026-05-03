@@ -22,7 +22,15 @@ class TyperPrompt:
 
     def ask(self, spec: VariableSpec) -> str:
         prompt_text = spec.description or spec.name
-        kwargs: dict[str, object] = {"hide_input": spec.secret, "type": str}
+        # ``err=True`` routes the prompt to stderr so commands that
+        # render data on stdout (``--format json > out.json``) keep that
+        # stream clean. Same convention as the rest of the CLI: stdout
+        # is data-only; stderr is logs / prompts / progress.
+        kwargs: dict[str, object] = {
+            "hide_input": spec.secret,
+            "type": str,
+            "err": True,
+        }
         if spec.choices:
             joined = "/".join(str(c) for c in spec.choices)
             prompt_text = f"{prompt_text} [{joined}]"

@@ -111,6 +111,19 @@ def test_to_json_filter() -> None:
     assert parsed["v"] == {"a": 1, "b": [2, 3]}
 
 
+def test_to_yaml_filter_preserves_user_trailing_ellipsis() -> None:
+    """A literal ``release...`` value must not have its dots stripped.
+
+    PyYAML emits ``release...\\n...\\n`` for that scalar; the end-of-doc
+    marker must come off without touching the user's own trailing dots.
+    """
+    env = build_jinja_env()
+    template = env.from_string("value: {{ tag | to_yaml }}\n")
+    rendered = template.render({"tag": "release..."})
+    parsed = yaml.safe_load(rendered)
+    assert parsed["value"] == "release..."
+
+
 def test_to_yaml_filter_does_not_emit_document_end_marker() -> None:
     """``...`` would split the rendered body into two YAML documents."""
     env = build_jinja_env()
