@@ -30,8 +30,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+import pytest
 from untaped_awx.application import ApplyResource
 from untaped_awx.domain import Metadata, Resource, ResourceSpec
+from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
 # ----- Stubs (copies of those in test_apply_resource.py) -----
@@ -220,7 +222,10 @@ def test_intermediate_list_wildcard_preserves_survey_default_under_sibling_chang
 
     assert outcome.action == "updated"
     # Both placeholders are reported as preserved (one per list item).
-    assert any(p.startswith("survey_spec.spec.") for p in outcome.preserved_secrets)
+    # `_walk` emits the same dotted path for every list element, so the
+    # list contains the path twice when both items carry the placeholder.
+    survey_preserved = [p for p in outcome.preserved_secrets if p.startswith("survey_spec.spec.")]
+    assert len(survey_preserved) == 2, f"expected 2 preserved survey paths, got {survey_preserved}"
     assert strategy.updated is not None
     _, patch_payload = strategy.updated
     # `survey_spec` is preserved (omitted from PATCH; no `$encrypted$` leaks).
@@ -237,8 +242,6 @@ def test_intermediate_list_wildcard_blocks_sibling_change_inside_survey() -> Non
 
     Pins the conflict-detection behaviour for the wildcard path.
     """
-    from untaped_awx.errors import BadRequest
-
     existing = {
         "id": 7,
         "name": "deploy",
@@ -276,9 +279,7 @@ def test_intermediate_list_wildcard_blocks_sibling_change_inside_survey() -> Non
             },
         },
     )
-    import pytest as _pytest
-
-    with _pytest.raises(BadRequest, match="survey_spec"):
+    with pytest.raises(BadRequest, match="survey_spec"):
         apply(resource, write=True)
 
 
