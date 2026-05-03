@@ -14,8 +14,11 @@ sub-app. A single binary, `untaped`, aggregates all sub-apps so the user
 sees one tool.
 
 **Goals**
-- Make daily DevOps work composable: every command produces stdout suitable
-  for piping into `fzf`, `jq`, `awk`, `cut`, or another `untaped` command.
+- Make daily DevOps work composable: commands that emit data should support
+  at least one mode whose stdout is suitable for piping into `fzf`, `jq`,
+  `awk`, `cut`, or another `untaped` command. Not every command needs to
+  be pipe-friendly — interactive flows, side-effecting actions with no
+  meaningful return value, and human-only summaries are fine as-is.
 - Stay easy to extend: adding a new domain is a recipe (see below), not a
   project.
 - Catch errors at the boundary, not in the middle: validate config and API
@@ -237,6 +240,19 @@ library. Bare clones are cached in `workspace.cache_dir`
 `git clone --reference` against the bare so disk + bandwidth are shared
 without `git worktree` branch conflicts.
 
+Other side-effecting calls (shell-out for `foreach`, editor launch for
+`edit`, `rmtree` for `remove --prune` / `sync --prune`) live behind
+`infrastructure.system_adapters` as three small Protocols (`ShellRunner`,
+`EditorRunner`, `Filesystem`) plus default implementations. Application
+use cases require those adapters as constructor arguments — none of
+them imports `subprocess` or `shutil` directly. The CLI composition
+root wires the defaults; tests inject stubs.
+
+`workspace foreach` honours the standard piping contract: `--format
+table` (default) keeps live `[<repo>] line` streaming for human use,
+and `--format json|yaml|raw` always batches to one row per repo (each
+row is a `ForeachOutcome`, including `command` and `duration_s`).
+
 Branch cascade is **clone-time only**: per-repo `branch` > workspace
 `defaults.branch` > the remote's HEAD. Subsequent `sync`s do not
 auto-switch branches — they skip-with-warning when the on-disk branch
@@ -251,15 +267,26 @@ The AWX bounded context follows the same DDD layout but builds a small
 + launch) is too uniform to hand-write per-kind without copy-paste.
 
 - **`ResourceSpec`** (in `domain/spec.py`) declares each kind's
-  contract: `kind`, `cli_name`, `api_path`, `identity_keys`,
-  `canonical_fields`, `read_only_fields`, `fk_refs`, `secret_paths`,
-  `actions`, `apply_strategy`, `commands`, `fidelity`, `list_columns`.
-  Per-kind specs live in
-  `infrastructure/specs/{job_template,workflow,project,credential,
-  schedule,_support}.py` and are aggregated into `ALL_SPECS`. Spec
-  fields stay honest with the CLI: a knob only lives in `ResourceSpec`
-  if the factory actually wires it (see `accepts` in the deferred-items
-  table for the same principle).
+  *domain* contract: `kind`, `identity_keys`, `canonical_fields`,
+  `read_only_fields`, `fk_refs`, `secret_paths`, `actions`,
+  `fidelity`, `fidelity_note`. Application use cases depend only on
+  this view. **`AwxResourceSpec`** (in `infrastructure/spec.py`)
+  extends it with the transport / CLI fields the framework needs to
+  talk to AWX and wire Typer sub-apps: `cli_name`, `api_path`,
+  `apply_strategy`, `list_columns`, `commands`. Per-kind specs live
+  in `infrastructure/specs/{job_template,workflow,project,credential,
+  schedule,_support}.py` (each constructs an `AwxResourceSpec`) and
+  are aggregated into `ALL_SPECS`. Spec fields stay honest with the
+  CLI: a knob only lives in the spec if the factory actually wires it.
+- **Typed boundary** (`domain/payloads.py`): `ResourceClient` reads
+  return `ServerRecord` (Pydantic, `extra="allow"`, dict-style access
+  preserved via `__getitem__`/`get`); writes accept `WritePayload`
+  (create/update) or `ActionPayload` (custom actions). `request` and
+  `request_text` keep raw `dict` returns as documented escape hatches.
+  Strategies bridge: dicts produced by the apply pipeline are wrapped
+  in `WritePayload` before calling the client; `ServerRecord` results
+  are flattened via `model_dump()` for the in-place strip / diff /
+  preserve passes.
 - **kubectl-style envelope** for saved files (`domain/envelope.py`):
   `{kind, apiVersion, metadata: {name, organization, parent?}, spec}`.
   FK references are by name (scoped to `metadata.organization`); the
@@ -284,34 +311,29 @@ The AWX bounded context follows the same DDD layout but builds a small
   `/api/controller/v2/` for AAP; users on upstream AWX set
   `/api/v2/`). Every URL flows through `AwxClient._url(path)` so the
   prefix is honoured uniformly.
+- **`AwxConfig`** (`infrastructure/config.py`) is the package-local
+  config struct (`base_url`, `token`, `api_prefix`,
+  `default_organization`, `page_size`). The CLI composition root
+  (`cli/_context.awx_config_from_settings`) is the *only* place that
+  reads `untaped_core.Settings`; every other module in the package
+  depends on `AwxConfig` so `untaped-awx` is extractable as a
+  standalone library.
+- **Bulk FK prefetch** (`FkResolver.prefetch`): before the apply loop
+  in `application/apply_file.py`, the FK plan derived from each doc's
+  `fk_refs` is pre-fetched in one paginated `list` per `(kind,
+  scope)`. Per-record lookups still fall through on cache miss;
+  prefetch failures are best-effort (the per-call path is the
+  authoritative one).
 - **Restore fidelity tiers**: `full` (JT, Project, Schedule), `partial`
-  (WorkflowJobTemplate header — node graph deferred to v0.5),
-  `read_only` (Credential — `$encrypted$` roundtrip deferred,
-  Organization, Inventory, CredentialType — CRUD deferred). Saves
-  below `full` echo the tier to stderr and embed an inline YAML
-  comment.
+  (WorkflowJobTemplate), `read_only` (Credential, Organization, Inventory,
+  CredentialType). Saves below `full` echo the tier to stderr and embed an
+  inline YAML comment.
 - **Apply ordering** for multi-doc files / directories: hardcoded
   dependency order in `application/apply_file.py` —
   `Organization → CredentialType → Credential → Project → Inventory →
   JobTemplate → WorkflowJobTemplate → Schedule`.
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
   for end-to-end CLI flows.
-
-#### Deferred review items (post-`REVIEW.md`)
-
-These were called out in the architectural review and intentionally
-deferred. Each item names the trigger that would justify revisiting:
-
-| Item | Trigger to revisit |
-|---|---|
-| Split `ResourceSpec` into domain (identity/fidelity/FKs/secrets) + infrastructure (api_path/transport) | A second consumer of resource contracts (offline validator, alternate backend, MCP server). |
-| Move `RemoveRepo`/`EditWorkspace`/`Foreach`/`SyncWorkspace` `shutil`/`subprocess`/`shell_runner` calls behind infrastructure adapters | A second policy needs to plug in (dry-run, audit log, trash-before-delete, command sandboxing, non-shell runner). |
-| Typed wrappers at the AWX use-case boundary (`ServerRecord`, `WritePayload`, `ActionPayload`) instead of `dict[str, Any]` | A second client implementation, or an MCP-served read path. |
-| `workspace foreach` structured output (`--format`/`--columns`) | A scripted consumer hits the prefix-mixed stdout shape. |
-| Bulk FK prefetch in save/apply | Bulk operations on 100+ resources start showing FK-resolution latency. |
-| Decouple `AwxClient`/`cli/_context` from `untaped_core.Settings` (extractability) | Plan to ship `untaped-awx` as a standalone library or embed it elsewhere. |
-| Workflow node graph round-trip (`save_hook`/`apply_hook` for `WorkflowJobTemplateNode`) — design space already shaped by polymorphic `FkRef` | User explicitly needs the v0.5 workflow-nodes milestone. |
-| Generate Typer flags for every `ActionSpec.accepts` field (including list-typed `credentials`/`job_tags`) — `accepts` was shrunk to match the CLI to keep the contract honest, same convention that removed the inert `aliases` and `list_filters` spec fields. | First user request for inventory/credentials/scm_branch/tags/verbosity at launch time. |
 
 ## Development Workflow
 
@@ -368,7 +390,7 @@ UNTAPED_PROFILE=stage uv run untaped config list
 4. Refactor with the test still green.
 
 **Test layout:**
-- Tests live in `packages/<pkg>/tests/unit/` (and `…/integration/` later).
+- Tests live in `packages/<pkg>/tests/unit/`.
 - No `__init__.py` files inside `tests/` — pytest uses `--import-mode=importlib`.
 - Mock httpx with `respx` (already a dev dep).
 - For CLI tests, use `typer.testing.CliRunner`.
@@ -425,11 +447,16 @@ Then:
 3. If the command needs new domain logic: add an entity/method in
    `domain/`, a use case in `application/`.
 4. Add the Typer command in `cli/commands.py`. Always:
-   - accept `--format` (`OutputFormat`) and `--columns` options
-   - support `--stdin` if the command takes a list of identifiers
    - decorate with `@app.command(..., no_args_is_help=True)` if it has
      required args
    - log to stderr; print only data to stdout
+   If the command emits data the user might want to pipe:
+   - accept `--format` (`OutputFormat`) and `--columns` options so at
+     least one machine-parseable mode is available (`raw` or `json`)
+   - support `--stdin` if the command takes a list of identifiers
+   Pure side-effect commands (e.g. `use`, `delete`, `rename`) and
+   interactive-only flows can skip these — match existing peers in the
+   same domain.
 5. Run tests, lint, format. Verify in the integrated CLI:
    `uv run untaped <X> <new-command> --help`.
 
@@ -459,11 +486,14 @@ Then:
 - **stdout = data only.** Never print logs, prompts, or progress to stdout.
 - **stderr = everything else.** Logs, progress bars, prompts. Loguru is
   configured to stderr.
-- Every command exposes:
+- **Commands that emit data** (lists, gets, status, …) should expose:
   - `--format / -f` (`json | yaml | table | raw`); default `table`
   - `--columns / -c` (repeatable) to project specific fields
   - `--stdin` to consume newline-separated identifiers from stdin (when
     the command takes a list)
+- **Side-effect-only commands** (`use`, `delete`, `rename`, `apply --yes`,
+  …) and interactive-only flows are exempt — they can print a short
+  human confirmation to stderr and exit, with no `--format` knob.
 
 **Pipeline examples** (the goal we're building toward):
 
@@ -472,11 +502,6 @@ Then:
 untaped awx job-templates list --format raw --columns name \
   | fzf \
   | untaped awx job-templates get --stdin --format json
-
-# launch every job template whose name matches "deploy-*" in parallel (later)
-untaped awx job-templates list --format raw --columns name \
-  | grep '^deploy-' \
-  | untaped awx launch --stdin --parallel 5
 
 # `cd` into a workspace (after eval'ing the shell-init snippet)
 eval "$(untaped workspace shell-init zsh)"     # in your .zshrc
