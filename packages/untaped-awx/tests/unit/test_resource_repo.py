@@ -22,7 +22,8 @@ def test_find_returns_unique_record(awx_config: AwxConfig) -> None:
         with AwxClient(awx_config) as awx:
             repo = ResourceRepository(awx)
             record = repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
-    assert record == {"id": 7, "name": "deploy"}
+    assert record is not None
+    assert record.model_dump() == {"id": 7, "name": "deploy"}
 
 
 def test_find_returns_none_for_zero_results(awx_config: AwxConfig) -> None:
@@ -118,4 +119,5 @@ def test_find_by_identity_no_scope(awx_config: AwxConfig) -> None:
         with AwxClient(awx_config) as awx:
             repo = ResourceRepository(awx)
             record = repo.find_by_identity(JOB_TEMPLATE_SPEC, name="deploy")
-    assert record == {"id": 7, "name": "deploy"}
+    assert record is not None
+    assert record.model_dump() == {"id": 7, "name": "deploy"}

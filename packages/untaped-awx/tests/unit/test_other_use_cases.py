@@ -15,7 +15,7 @@ from untaped_awx.application import (
     SaveResource,
     WatchJob,
 )
-from untaped_awx.domain import Job, Resource, ResourceSpec
+from untaped_awx.domain import ActionPayload, Job, Resource, ResourceSpec, ServerRecord
 from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.specs import (
@@ -47,18 +47,18 @@ class _Client:
 
     def list(
         self, spec: ResourceSpec, *, params: Any = None, limit: Any = None
-    ) -> Iterator[dict[str, Any]]:
+    ) -> Iterator[ServerRecord]:
         self.list_calls.append(dict(params or {}))
-        return iter(self._list)
+        return iter(ServerRecord(**r) for r in self._list)
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+    def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         if self.get_result is None:
             raise KeyError(id_)
-        return self.get_result
+        return ServerRecord(**self.get_result)
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         self.find_calls.append(params)
-        return self.find_result
+        return ServerRecord(**self.find_result) if self.find_result else None
 
     def find_by_identity(
         self,
@@ -66,16 +66,16 @@ class _Client:
         *,
         name: str,
         scope: dict[str, str] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> ServerRecord | None:
         params: dict[str, str] = {"name": name}
         for k, v in (scope or {}).items():
             params[f"{k}__name"] = v
         return self.find(spec, params=params)
 
-    def create(self, *a: Any, **kw: Any) -> dict[str, Any]:
+    def create(self, *a: Any, **kw: Any) -> ServerRecord:
         raise NotImplementedError
 
-    def update(self, *a: Any, **kw: Any) -> dict[str, Any]:
+    def update(self, *a: Any, **kw: Any) -> ServerRecord:
         raise NotImplementedError
 
     def delete(self, *a: Any, **kw: Any) -> None:
@@ -86,9 +86,10 @@ class _Client:
         spec: ResourceSpec,
         id_: int,
         action: str,
-        payload: dict[str, Any] | None = None,
+        payload: ActionPayload | None = None,
     ) -> dict[str, Any]:
-        self.action_calls.append((id_, action, payload or {}))
+        body = payload.model_dump() if payload is not None else {}
+        self.action_calls.append((id_, action, body))
         return self.action_result or {}
 
     def request(

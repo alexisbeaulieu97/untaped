@@ -22,10 +22,10 @@ class GetResource:
         scope: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         if id is not None:
-            return self._client.get(spec, id)
+            return self._client.get(spec, id).model_dump()
         if name is None:
             raise ValueError("GetResource requires either name= or id=")
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
-        return record
+        return record.model_dump()

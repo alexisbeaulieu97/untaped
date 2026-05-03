@@ -3,6 +3,12 @@
 The default strategy works for any kind whose write path is plain CRUD
 against ``<api_path>/``. Schedule has its own strategy because creates
 must POST against the parent's nested ``/schedules/`` endpoint.
+
+Strategies bridge the dict-shaped payloads produced by application use
+cases to the typed :class:`ResourceClient` boundary: dicts are wrapped
+in :class:`WritePayload` on the way out, and :class:`ServerRecord`
+results from the client are flattened to dict for the apply pipeline's
+in-place strip / diff / preserve passes.
 """
 
 from __future__ import annotations
@@ -10,6 +16,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
+from untaped_awx.domain import ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -38,7 +45,8 @@ class DefaultApplyStrategy:
                 params["name"] = str(value)
             else:
                 params[f"{key}__name"] = str(value)
-        return client.find(spec, params=params)
+        record = client.find(spec, params=params)
+        return _record_to_dict(record)
 
     def create(
         self,
@@ -49,7 +57,8 @@ class DefaultApplyStrategy:
         client: ResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        return client.create(spec, payload)
+        record = client.create(spec, WritePayload(**payload))
+        return record.model_dump()
 
     def update(
         self,
@@ -60,7 +69,8 @@ class DefaultApplyStrategy:
         client: ResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        return client.update(spec, existing["id"], payload)
+        record = client.update(spec, existing["id"], WritePayload(**payload))
+        return record.model_dump()
 
 
 class ScheduleApplyStrategy:
@@ -135,7 +145,8 @@ class ScheduleApplyStrategy:
         client: ResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        return client.update(spec, existing["id"], payload)
+        record = client.update(spec, existing["id"], WritePayload(**payload))
+        return record.model_dump()
 
     @classmethod
     def _parent_path(cls, parent_kind: str) -> str:
@@ -146,6 +157,12 @@ class ScheduleApplyStrategy:
                 f"schedule parent kind {parent_kind!r} not supported "
                 f"(use one of {sorted(cls._PARENT_PATHS)})"
             ) from exc
+
+
+def _record_to_dict(record: ServerRecord | None) -> dict[str, Any] | None:
+    """Flatten a :class:`ServerRecord` (or None) to the dict shape the
+    apply pipeline expects in-place mutation on."""
+    return record.model_dump() if record is not None else None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
