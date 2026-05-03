@@ -174,9 +174,8 @@ def run_command(
                 columns=columns,
             )
         )
-
-    if outcome.exit_code() != 0:
-        raise typer.Exit(code=1)
+        if outcome.exit_code() != 0:
+            raise typer.Exit(code=1)
 
 
 def _print_failure_logs(ctx: AwxContext, suite: str, case: str, job_id: int) -> None:
