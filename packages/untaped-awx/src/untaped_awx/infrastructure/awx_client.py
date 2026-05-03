@@ -1,7 +1,7 @@
 """HTTP client for the AAP / AWX REST API.
 
 URL composition flows through :meth:`AwxClient._url` so every call respects
-the configured ``awx.api_prefix`` (default ``/api/controller/v2/`` for AAP;
+the configured ``api_prefix`` (default ``/api/controller/v2/`` for AAP;
 upstream AWX users set it to ``/api/v2/``).
 """
 
@@ -10,29 +10,30 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from untaped_core import ConfigError, HttpClient, Settings, get_settings
+from untaped_core import ConfigError, HttpClient, HttpSettings
 from untaped_core.http import resolve_verify
+
+from untaped_awx.infrastructure.config import AwxConfig
 
 
 class AwxClient:
     """Talks to AAP/AWX REST endpoints using the configured token."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        s = settings or get_settings()
-        if not s.awx.base_url:
+    def __init__(self, config: AwxConfig, *, http: HttpSettings | None = None) -> None:
+        if not config.base_url:
             raise ConfigError(
                 "awx.base_url is not configured (set it via "
                 "`untaped config set awx.base_url <url>` or UNTAPED_AWX__BASE_URL)"
             )
         headers: dict[str, str] = {"Accept": "application/json"}
-        if s.awx.token is not None:
-            headers["Authorization"] = f"Bearer {s.awx.token.get_secret_value()}"
+        if config.token is not None:
+            headers["Authorization"] = f"Bearer {config.token.get_secret_value()}"
         self._http = HttpClient(
-            base_url=s.awx.base_url.rstrip("/"),
+            base_url=config.base_url.rstrip("/"),
             headers=headers,
-            verify=resolve_verify(s.http),
+            verify=resolve_verify(http or HttpSettings()),
         )
-        self._api_prefix = s.awx.api_prefix
+        self._api_prefix = config.api_prefix
 
     def _url(self, path: str) -> str:
         """Join ``api_prefix`` with a relative resource path.
