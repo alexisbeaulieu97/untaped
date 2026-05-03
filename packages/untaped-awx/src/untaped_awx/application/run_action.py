@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from untaped_awx.application.ports import ResourceClient
-from untaped_awx.domain import Job
+from untaped_awx.domain import ActionPayload, Job
 from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -43,7 +43,8 @@ class RunAction:
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
-        result = self._client.action(spec, int(record["id"]), action_spec.path, payload=payload)
+        action_payload = ActionPayload(**payload) if payload else None
+        result = self._client.action(spec, record.id, action_spec.path, payload=action_payload)
         return _to_job(result, action=action)
 
 

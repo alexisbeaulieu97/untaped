@@ -13,7 +13,13 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from untaped_awx.domain import Job, Resource
+from untaped_awx.domain import (
+    ActionPayload,
+    Job,
+    Resource,
+    ServerRecord,
+    WritePayload,
+)
 
 if TYPE_CHECKING:
     # AwxResourceSpec lives in infrastructure but is the concrete spec type
@@ -39,9 +45,10 @@ class Catalog(Protocol):
 class ResourceClient(Protocol):
     """Generic CRUD + custom-action transport against AWX endpoints.
 
-    All methods take the kind's :class:`ResourceSpec` so the client can
-    derive the API path. The client never branches on kind — it follows
-    the spec verbatim.
+    Reads return :class:`ServerRecord`; writes accept
+    :class:`WritePayload` (for create/update) or :class:`ActionPayload`
+    (for custom actions). The client never branches on kind — it
+    follows the spec verbatim.
     """
 
     def list(
@@ -50,11 +57,11 @@ class ResourceClient(Protocol):
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]: ...
+    ) -> Iterator[ServerRecord]: ...
 
-    def get(self, spec: AwxResourceSpec, id_: int) -> dict[str, Any]: ...
+    def get(self, spec: AwxResourceSpec, id_: int) -> ServerRecord: ...
 
-    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         """Return the unique record matching ``params`` or ``None``.
 
         Implementations must raise an ambiguity error when more than one
@@ -69,15 +76,13 @@ class ResourceClient(Protocol):
         *,
         name: str,
         scope: dict[str, str] | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> ServerRecord | None:
         """Look up a record by ``name`` plus optional FK-name scope."""
         ...
 
-    def create(self, spec: AwxResourceSpec, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def create(self, spec: AwxResourceSpec, payload: WritePayload) -> ServerRecord: ...
 
-    def update(
-        self, spec: AwxResourceSpec, id_: int, payload: dict[str, Any]
-    ) -> dict[str, Any]: ...
+    def update(self, spec: AwxResourceSpec, id_: int, payload: WritePayload) -> ServerRecord: ...
 
     def delete(self, spec: AwxResourceSpec, id_: int) -> None: ...
 
@@ -86,8 +91,12 @@ class ResourceClient(Protocol):
         spec: AwxResourceSpec,
         id_: int,
         action: str,
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]: ...
+        payload: ActionPayload | None = None,
+    ) -> dict[str, Any]:
+        """Custom-action POST. The response shape varies by action
+        (Job vs project_update vs ad-hoc dict), so the raw dict is
+        returned and the caller normalises into a typed result."""
+        ...
 
     def request(
         self,
@@ -152,10 +161,11 @@ class FkResolver(Protocol):
 class ApplyStrategy(Protocol):
     """Owns the write path for a kind.
 
-    Strategies are responsible for both lookup (find existing by
-    identity) and write (create / update). The default strategy uses
-    plain CRUD; the Schedule strategy POSTs against the parent
-    endpoint.
+    Strategies are the bridge between the dict-shaped payloads produced
+    by application use cases (which copy, strip secrets, and diff
+    in-place) and the typed :class:`ResourceClient` boundary. Strategy
+    implementations wrap on the way in (``WritePayload(**payload)``)
+    and unwrap on the way out (``record.model_dump()``).
     """
 
     def find_existing(
