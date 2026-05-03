@@ -11,8 +11,9 @@ from __future__ import annotations
 from typing import Any
 
 from untaped_awx.application.ports import ResourceClient
-from untaped_awx.domain import Job, ResourceSpec
+from untaped_awx.domain import Job
 from untaped_awx.errors import AwxApiError, ResourceNotFound
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 _KIND_OF_ACTION_RESULT: dict[str, str] = {
     "launch": "job",
@@ -26,7 +27,7 @@ class RunAction:
 
     def __call__(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         name: str,
         action: str,

@@ -7,9 +7,10 @@ include a YAML comment noting the omission. Adding sub-resource +
 
 from __future__ import annotations
 
-from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
+from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-WORKFLOW_JOB_TEMPLATE_SPEC = ResourceSpec(
+WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="WorkflowJobTemplate",
     cli_name="workflow-templates",
     api_path="workflow_job_templates",

@@ -11,17 +11,29 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from untaped_awx.domain import Job, Resource, ResourceSpec
+from untaped_awx.domain import Job, Resource
+
+if TYPE_CHECKING:
+    # AwxResourceSpec lives in infrastructure but is the concrete spec type
+    # passed to transport-aware ports below. Type-only import keeps the
+    # runtime decoupling intact (application doesn't import infrastructure).
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class Catalog(Protocol):
-    """Looks up :class:`ResourceSpec` instances by kind or CLI name."""
+    """Looks up resource specs by kind or CLI name.
 
-    def get(self, kind: str) -> ResourceSpec: ...
+    Returns the transport-aware :class:`AwxResourceSpec` so callers
+    constructing requests have ``api_path`` and friends available.
+    Application code that only needs domain semantics still works
+    because ``AwxResourceSpec`` is a :class:`ResourceSpec`.
+    """
+
+    def get(self, kind: str) -> AwxResourceSpec: ...
     def kinds(self) -> tuple[str, ...]: ...
-    def by_cli_name(self, cli_name: str) -> ResourceSpec: ...
+    def by_cli_name(self, cli_name: str) -> AwxResourceSpec: ...
 
 
 class ResourceClient(Protocol):
@@ -34,15 +46,15 @@ class ResourceClient(Protocol):
 
     def list(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]: ...
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]: ...
+    def get(self, spec: AwxResourceSpec, id_: int) -> dict[str, Any]: ...
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
         """Return the unique record matching ``params`` or ``None``.
 
         Implementations must raise an ambiguity error when more than one
@@ -53,7 +65,7 @@ class ResourceClient(Protocol):
 
     def find_by_identity(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         name: str,
         scope: dict[str, str] | None = None,
@@ -61,15 +73,17 @@ class ResourceClient(Protocol):
         """Look up a record by ``name`` plus optional FK-name scope."""
         ...
 
-    def create(self, spec: ResourceSpec, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def create(self, spec: AwxResourceSpec, payload: dict[str, Any]) -> dict[str, Any]: ...
 
-    def update(self, spec: ResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update(
+        self, spec: AwxResourceSpec, id_: int, payload: dict[str, Any]
+    ) -> dict[str, Any]: ...
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None: ...
+    def delete(self, spec: AwxResourceSpec, id_: int) -> None: ...
 
     def action(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         id_: int,
         action: str,
         payload: dict[str, Any] | None = None,
@@ -135,7 +149,7 @@ class ApplyStrategy(Protocol):
 
     def find_existing(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         identity: dict[str, Any],
         *,
         client: ResourceClient,
@@ -144,7 +158,7 @@ class ApplyStrategy(Protocol):
 
     def create(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
@@ -154,7 +168,7 @@ class ApplyStrategy(Protocol):
 
     def update(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,

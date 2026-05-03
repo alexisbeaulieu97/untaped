@@ -311,8 +311,9 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
     from untaped_awx.application.apply_file import _topological_sort
     from untaped_awx.domain import FkRef
     from untaped_awx.domain.envelope import Metadata
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-    spec_a = ResourceSpec(
+    spec_a = AwxResourceSpec(
         kind="A",
         cli_name="a",
         api_path="a",
@@ -320,7 +321,7 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
         canonical_fields=(),
         fk_refs=(FkRef(field="b", kind="B"),),
     )
-    spec_b = ResourceSpec(
+    spec_b = AwxResourceSpec(
         kind="B",
         cli_name="b",
         api_path="b",

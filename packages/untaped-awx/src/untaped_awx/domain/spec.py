@@ -1,11 +1,14 @@
 """Declarative description of a single AWX resource kind.
 
-A :class:`ResourceSpec` is a pure value object — it tells the framework
-how a kind behaves (API path, identity keys, FKs, columns, secret paths)
-without any side effects of its own. Concrete instances live in
-``infrastructure/specs/`` because they describe AWX's REST shape, but
-the type itself is in domain so application use cases can depend on it
-without crossing into infrastructure.
+A :class:`ResourceSpec` is the **domain** view of a kind: identity,
+foreign-key references, secret paths, fidelity, available actions. It
+carries no transport detail (URL paths, HTTP verbs, CLI names) — those
+live in :class:`untaped_awx.infrastructure.spec.AwxResourceSpec`, which
+extends ``ResourceSpec`` with the additional fields the framework needs
+to actually talk to AWX and wire CLI commands.
+
+Use cases in ``application/`` annotate ``ResourceSpec`` so they can be
+exercised against any kind without depending on AWX-specific transport.
 """
 
 from __future__ import annotations
@@ -66,21 +69,16 @@ class ActionSpec(BaseModel):
 
 
 class ResourceSpec(BaseModel):
-    """Per-kind declarative configuration for the framework."""
+    """Per-kind domain configuration consumed by application use cases."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str
-    cli_name: str
-    api_path: str
     identity_keys: tuple[str, ...]
     canonical_fields: tuple[str, ...]
     read_only_fields: tuple[str, ...] = ()
     fk_refs: tuple[FkRef, ...] = ()
     secret_paths: tuple[str, ...] = ()
     actions: tuple[ActionSpec, ...] = ()
-    apply_strategy: str = "default"
-    list_columns: tuple[str, ...] = ()
-    commands: tuple[CommandName, ...] = ("list", "get", "save", "apply")
     fidelity: Fidelity = "full"
     fidelity_note: str | None = None

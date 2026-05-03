@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from untaped_awx.application.ports import ResourceClient
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class ListResources:
@@ -23,7 +23,7 @@ class ListResources:
 
     def __call__(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         search: str | None = None,
         filters: dict[str, str] | None = None,

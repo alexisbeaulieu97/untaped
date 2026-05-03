@@ -24,11 +24,11 @@ from untaped_awx.application import (
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
-from untaped_awx.domain import ResourceSpec
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
 
-def make_resource_app(spec: ResourceSpec) -> typer.Typer:
+def make_resource_app(spec: AwxResourceSpec) -> typer.Typer:
     """Build the Typer sub-app for a single kind based on ``spec.commands``."""
     app = typer.Typer(
         name=spec.cli_name,
@@ -60,7 +60,7 @@ def make_resource_app(spec: ResourceSpec) -> typer.Typer:
 # ---- list ----
 
 
-def _add_list(app: typer.Typer, spec: ResourceSpec) -> None:
+def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("list")
     def list_command(
         search: str | None = typer.Option(None, "--search", help="Fuzzy server-side search."),
@@ -84,7 +84,7 @@ def _add_list(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- get ----
 
 
-def _add_get(app: typer.Typer, spec: ResourceSpec) -> None:
+def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("get", no_args_is_help=True)
     def get_command(
         names: list[str] | None = typer.Argument(None, help=f"{spec.kind} name(s)."),
@@ -116,7 +116,7 @@ def _add_get(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- save ----
 
 
-def _add_save(app: typer.Typer, spec: ResourceSpec) -> None:
+def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("save", no_args_is_help=True)
     def save_command(
         name: str = typer.Argument(..., help=f"{spec.kind} name."),
@@ -143,7 +143,7 @@ def _add_save(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- apply (per-kind, single file) ----
 
 
-def _add_apply(app: typer.Typer, spec: ResourceSpec) -> None:
+def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("apply", no_args_is_help=True)
     def apply_command(
         file: Path = typer.Option(..., "--file", help="YAML file to apply."),
@@ -173,7 +173,7 @@ def _add_apply(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- launch ----
 
 
-def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
+def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
     @app.command("launch", no_args_is_help=True)
@@ -233,7 +233,7 @@ def _add_launch(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- update (Project SCM sync) ----
 
 
-def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
+def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("update", no_args_is_help=True)
     def update_command(
         name: str = typer.Argument(..., help=f"{spec.kind} name."),
@@ -258,5 +258,5 @@ def _add_update(app: typer.Typer, spec: ResourceSpec) -> None:
 # ---- helpers ----
 
 
-def _scope(ctx: Any, organization: str | None, spec: ResourceSpec) -> dict[str, str] | None:
+def _scope(ctx: Any, organization: str | None, spec: AwxResourceSpec) -> dict[str, str] | None:
     return scope_for_spec(spec, organization, ctx.default_organization)

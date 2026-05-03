@@ -10,11 +10,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from untaped_awx.domain import ResourceSpec
 from untaped_awx.errors import AmbiguousIdentityError
 from untaped_awx.infrastructure.awx_client import AwxClient
 from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.infrastructure.pagination import paginate
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class ResourceRepository:
@@ -24,7 +24,7 @@ class ResourceRepository:
 
     def list(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
@@ -38,11 +38,11 @@ class ResourceRepository:
                 limit=limit,
             )
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
+    def get(self, spec: AwxResourceSpec, id_: int) -> dict[str, Any]:
         with map_awx_errors():
             return self._client.get_json(f"{spec.api_path}/{id_}/")  # type: ignore[no-any-return]
 
-    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
+    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
         """Return the unique record matching ``params`` or ``None``.
 
         Requests two records to detect ambiguity: more than one match
@@ -60,7 +60,7 @@ class ResourceRepository:
 
     def find_by_identity(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         *,
         name: str,
         scope: dict[str, str] | None = None,
@@ -76,23 +76,23 @@ class ResourceRepository:
             params[f"{k}__name"] = v
         return self.find(spec, params=params)
 
-    def create(self, spec: ResourceSpec, payload: dict[str, Any]) -> dict[str, Any]:
+    def create(self, spec: AwxResourceSpec, payload: dict[str, Any]) -> dict[str, Any]:
         with map_awx_errors():
             return self._client.post_json(f"{spec.api_path}/", json=payload)  # type: ignore[no-any-return]
 
-    def update(self, spec: ResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]:
+    def update(self, spec: AwxResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]:
         with map_awx_errors():
             return self._client.request_json(  # type: ignore[no-any-return]
                 "PATCH", f"{spec.api_path}/{id_}/", json=payload
             )
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: AwxResourceSpec, id_: int) -> None:
         with map_awx_errors():
             self._client.request_json("DELETE", f"{spec.api_path}/{id_}/")
 
     def action(
         self,
-        spec: ResourceSpec,
+        spec: AwxResourceSpec,
         id_: int,
         action: str,
         payload: dict[str, Any] | None = None,

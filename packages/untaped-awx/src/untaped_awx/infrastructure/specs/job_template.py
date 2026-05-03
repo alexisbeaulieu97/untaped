@@ -3,9 +3,10 @@ project/inventory/credentials. Headline kind for ``launch``."""
 
 from __future__ import annotations
 
-from untaped_awx.domain import ActionSpec, FkRef, ResourceSpec
+from untaped_awx.domain import ActionSpec, FkRef
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 
-JOB_TEMPLATE_SPEC = ResourceSpec(
+JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="JobTemplate",
     cli_name="job-templates",
     api_path="job_templates",
