@@ -14,6 +14,8 @@ import pytest
 from typer.testing import CliRunner
 from untaped_awx import app
 
+pytestmark = pytest.mark.integration
+
 
 def _seed_basic(fake: Any) -> None:
     fake.seed("organizations", id=1, name="Default", description="")
