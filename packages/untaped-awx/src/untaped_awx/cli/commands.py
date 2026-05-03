@@ -17,6 +17,7 @@ from untaped_core import (
     FormatOption,
     OutputFormat,
     format_output,
+    get_settings,
     report_errors,
 )
 
@@ -26,7 +27,7 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
-from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._context import awx_config_from_settings, open_context, scope_for_spec
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.domain import Job, Metadata, ResourceSpec
 from untaped_awx.errors import AwxApiError
@@ -56,7 +57,9 @@ def ping_command(
 ) -> None:
     """Check control-plane health."""
     with report_errors():
-        with AwxClient() as client:
+        settings = get_settings()
+        config = awx_config_from_settings(settings)
+        with AwxClient(config, http=settings.http) as client:
             status = Ping(client)()
         typer.echo(format_output([status.model_dump()], fmt=fmt, columns=columns))
 
