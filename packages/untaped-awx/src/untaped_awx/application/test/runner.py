@@ -132,11 +132,7 @@ class RunTestSuite:
         ``extra_vars`` is *not* otherwise inspected.
         """
         by_kind: dict[str, list[dict[str, str] | None]] = {}
-        fk_index = {
-            ref.field: ref
-            for ref in (*self._spec.fk_refs, *self._spec.launch_fk_refs)
-            if not ref.polymorphic and ref.kind is not None
-        }
+        fk_index = ResolveCasePayload.fk_index_for(self._spec)
         for suite, _, case in plan:
             merged = _merge_top_level(suite.defaults, case)
             for field, value in merged.items():

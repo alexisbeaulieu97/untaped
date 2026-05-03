@@ -120,6 +120,31 @@ def test_run_passes_when_job_succeeds(cli: CliRunner, fake_aap: FakeAap, tmp_pat
     assert any(action == "launch" for _, _, action, _ in fake_aap.actions_called)
 
 
+def test_run_against_directory_picks_up_yaml_children(
+    cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """Passing a directory should expand to its ``*.yml`` children."""
+    _seed_jt(fake_aap)
+    test_dir = tmp_path / "suites"
+    test_dir.mkdir()
+    _write(
+        test_dir / "first.yml",
+        "kind: AwxTestSuite\nname: f\njobTemplate: Deploy app\ncases:\n  c:\n    launch: {}\n",
+    )
+    _write(
+        test_dir / "second.yaml",
+        "kind: AwxTestSuite\nname: s\njobTemplate: Deploy app\ncases:\n  c:\n    launch: {}\n",
+    )
+    # Non-YAML siblings must be ignored.
+    (test_dir / "README.md").write_text("# notes\n")
+
+    result = cli.invoke(app, ["test", "run", str(test_dir), "--non-interactive"])
+
+    assert result.exit_code == 0, result.stderr or result.output
+    launches = [a for _, _, a, _ in fake_aap.actions_called if a == "launch"]
+    assert len(launches) == 2  # one per YAML file
+
+
 def test_run_filters_to_one_case(cli: CliRunner, fake_aap: FakeAap, tmp_path: Path) -> None:
     _seed_jt(fake_aap)
     test_file = _write(

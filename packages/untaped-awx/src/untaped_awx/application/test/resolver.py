@@ -81,11 +81,25 @@ class ResolveCasePayload:
             defaults.launch if defaults is not None else {},
             case.launch,
         )
-        fk_index = _build_fk_index(spec)
+        fk_index = self.fk_index_for(spec)
         _emit_unknown_field_warnings(merged, fk_index)
         resolved_top = self._resolve_top_level_fks(merged, fk_index)
         result: dict[str, Any] = _walk_and_resolve_refs(resolved_top, self._resolve_ref)
         return result
+
+    @staticmethod
+    def fk_index_for(spec: AwxResourceSpec) -> dict[str, FkRef]:
+        """Build the ``field → FkRef`` index used by both resolution and prefetch.
+
+        Public so the runner's prefetch plan can use the same view of FK
+        fields the resolver does — keeping the two paths in step without
+        re-implementing the filter at every call site.
+        """
+        return {
+            ref.field: ref
+            for ref in (*spec.fk_refs, *spec.launch_fk_refs)
+            if not ref.polymorphic and ref.kind is not None
+        }
 
     # ---- internal helpers -----------------------------------------------
 
@@ -217,22 +231,17 @@ def _dedup_key(value: Any) -> Any:
     return value
 
 
-def _build_fk_index(spec: AwxResourceSpec) -> dict[str, FkRef]:
-    return {
-        ref.field: ref
-        for ref in (*spec.fk_refs, *spec.launch_fk_refs)
-        if not ref.polymorphic and ref.kind is not None
-    }
-
-
 def _emit_unknown_field_warnings(payload: Mapping[str, Any], fk_index: Mapping[str, FkRef]) -> None:
     for field in payload:
         if field in KNOWN_LAUNCH_FIELDS or field in fk_index:
             continue
+        # ``stacklevel`` is intentionally the default — the
+        # :class:`UnknownLaunchFieldWarning` category, not the call site,
+        # is what users filter on.
         warnings.warn(
             f"unknown launch field {field!r} — typo? passing through to AWX",
             UnknownLaunchFieldWarning,
-            stacklevel=4,
+            stacklevel=2,
         )
 
 
