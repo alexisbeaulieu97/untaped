@@ -275,23 +275,16 @@ def foreach_command(
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Don't stop after a non-zero exit."
     ),
-    fmt: OutputFormat | None = typer.Option(
-        None,
-        "--format",
-        "-f",
-        help=(
-            "Render ForeachOutcome rows in the given format (json|yaml|table|raw). "
-            "Default is passthrough: each line of the user command's stdout is "
-            "prefixed with [repo] and forwarded to stdout."
-        ),
-    ),
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
-    Default output is the raw command stdout/stderr per repo, prefixed
-    with ``[<repo>]``. Pass ``--format`` to emit ``ForeachOutcome`` rows
-    (``json|yaml|table|raw``) suitable for piping into ``jq`` / ``awk``.
+    The default ``--format table`` keeps the human-friendly streaming
+    behaviour: each line of stdout/stderr is prefixed with ``[<repo>]``
+    and forwarded as the command runs. Pass ``--format json|yaml|raw``
+    to emit ``ForeachOutcome`` rows after every repo finishes — suitable
+    for piping into ``jq`` / ``awk`` / another ``untaped`` command.
     """
     with report_errors():
         ws = _resolve(name, path)
@@ -302,7 +295,7 @@ def foreach_command(
             continue_on_error=continue_on_error,
         )
         any_failed = any(o.returncode != 0 for o in outcomes)
-        if fmt is None:
+        if fmt == "table":
             for o in outcomes:
                 for line in o.stdout.splitlines():
                     typer.echo(f"[{o.repo}] {line}")

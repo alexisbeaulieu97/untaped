@@ -311,8 +311,46 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
     parsed = _json.loads(result.stdout)
     assert isinstance(parsed, list) and parsed
     row = parsed[0]
-    assert {"workspace", "repo", "returncode", "stdout", "stderr"} <= set(row)
+    assert {
+        "workspace",
+        "repo",
+        "command",
+        "returncode",
+        "stdout",
+        "stderr",
+        "duration_s",
+    } <= set(row)
     assert row["repo"] == "upstream"
+    assert row["command"] == "git rev-parse --abbrev-ref HEAD"
+    assert row["duration_s"] >= 0.0
+    assert "[upstream]" not in result.stdout
+
+
+def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
+    """`--format raw --columns repo,returncode` produces tab-separated rows."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(
+        app,
+        [
+            "foreach",
+            "git rev-parse --abbrev-ref HEAD",
+            "--name",
+            "smoke",
+            "--format",
+            "raw",
+            "--columns",
+            "repo",
+            "--columns",
+            "returncode",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "upstream\t0" in result.stdout
     assert "[upstream]" not in result.stdout
 
 
