@@ -310,8 +310,21 @@ def test_delete_removes_profile(_isolate_config: Path) -> None:
     assert "stage" not in yaml.safe_load(_isolate_config.read_text())["profiles"]
 
 
-def test_delete_default_refused(_isolate_config: Path) -> None:
-    _seed(_isolate_config)
+def test_delete_default_when_not_active(_isolate_config: Path) -> None:
+    """`default` is now an optional profile — deleting it when another
+    profile is active just clears the shared-overrides layer."""
+    _seed(_isolate_config)  # active: prod
+    result = CliRunner().invoke(app, ["delete", "default"])
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolate_config.read_text())
+    assert "default" not in data["profiles"]
+    assert data["profiles"]["prod"] == {"awx": {"base_url": "https://prod"}}
+
+
+def test_delete_default_refused_when_active(_isolate_config: Path) -> None:
+    _isolate_config.write_text(
+        "profiles:\n  default:\n    log_level: INFO\n  prod: {}\nactive: default\n"
+    )
     result = CliRunner().invoke(app, ["delete", "default"])
     assert result.exit_code != 0
 

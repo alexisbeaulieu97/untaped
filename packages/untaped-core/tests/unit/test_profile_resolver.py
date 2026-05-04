@@ -79,11 +79,36 @@ def test_active_explicitly_named_default_works() -> None:
     assert provenance == {("awx", "token"): "default"}
 
 
-def test_missing_default_with_profiles_present_errors() -> None:
+def test_missing_default_with_active_resolves_to_active_alone() -> None:
+    """`default` is optional. If only `prod` is defined and `prod` is
+    active, the resolver returns prod's data — schema defaults sit
+    beneath via the Settings layer, not the resolver."""
+    config = {
+        "profiles": {"prod": {"awx": {"token": "p"}}},
+        "active": "prod",
+    }
+    effective, provenance = resolve_profiles(config)
+    assert effective == {"awx": {"token": "p"}}
+    assert provenance == {("awx", "token"): "prod"}
+
+
+def test_missing_default_no_active_returns_empty() -> None:
+    """No `default`, no `active:` key, no env override → no profile to
+    layer. Caller falls through to schema defaults; resolver returns
+    nothing."""
     config = {"profiles": {"prod": {"awx": {"token": "p"}}}}
-    with pytest.raises(ConfigError) as excinfo:
-        resolve_profiles(config)
-    assert "default" in str(excinfo.value)
+    effective, provenance = resolve_profiles(config)
+    assert effective == {}
+    assert provenance == {}
+
+
+def test_missing_default_with_explicit_override_resolves() -> None:
+    """`UNTAPED_PROFILE=prod` (or `--profile prod`) on a config that
+    doesn't carry `default` resolves to prod alone."""
+    config = {"profiles": {"prod": {"awx": {"token": "p"}}}}
+    effective, provenance = resolve_profiles(config, active_override="prod")
+    assert effective == {"awx": {"token": "p"}}
+    assert provenance == {("awx", "token"): "prod"}
 
 
 def test_missing_active_profile_errors() -> None:
