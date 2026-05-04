@@ -78,6 +78,13 @@ class ResourceSpec(BaseModel):
     canonical_fields: tuple[str, ...]
     read_only_fields: tuple[str, ...] = ()
     fk_refs: tuple[FkRef, ...] = ()
+    launch_fk_refs: tuple[FkRef, ...] = ()
+    """Foreign keys exposed only on the ``launch`` action payload.
+
+    Distinct from ``fk_refs`` because the launch endpoint accepts FK
+    overrides that aren't fields of the resource itself (e.g. ``labels``,
+    ``instance_groups``). Used by the test runner's name resolver.
+    """
     secret_paths: tuple[str, ...] = ()
     actions: tuple[ActionSpec, ...] = ()
     apply_strategy: str = "default"

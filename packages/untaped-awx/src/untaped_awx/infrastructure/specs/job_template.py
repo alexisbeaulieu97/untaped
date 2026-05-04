@@ -88,6 +88,11 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
             multi=True,
         ),
     ),
+    launch_fk_refs=(
+        FkRef(field="execution_environment", kind="ExecutionEnvironment"),
+        FkRef(field="labels", kind="Label", scope_field="organization", multi=True),
+        FkRef(field="instance_groups", kind="InstanceGroup", multi=True),
+    ),
     secret_paths=("webhook_key", "survey_spec.spec.*.default"),
     actions=(
         # ``accepts`` is the public CLI contract: each name listed here

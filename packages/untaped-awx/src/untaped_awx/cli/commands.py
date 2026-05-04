@@ -29,6 +29,7 @@ from untaped_awx.application import (
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import awx_config_from_settings, open_context, scope_for_spec
 from untaped_awx.cli.resource_commands import make_resource_app
+from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.domain import Job, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
@@ -267,11 +268,17 @@ def jobs_wait(
 
 
 app.add_typer(jobs_app, name="jobs")
+app.add_typer(test_app, name="test")
 
 
 # ---- per-resource sub-apps (factory-generated) ----
 
 
 for spec in ALL_SPECS:
+    if not spec.commands:
+        # Catalog-only stubs (e.g. ExecutionEnvironment, Label) exist purely
+        # so :class:`FkResolver` can resolve names → ids for launch-payload
+        # FKs. They have no user-facing CLI surface.
+        continue
     sub_app = make_resource_app(spec)
     app.add_typer(sub_app, name=spec.cli_name)

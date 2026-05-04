@@ -5,6 +5,9 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        # ``examples/`` ships Jinja2-templated YAML (e.g. test-deploy-app.yml)
+        # that isn't valid plain YAML before rendering.
+        exclude: ^examples/
       - id: check-toml
       - id: check-added-large-files
 
