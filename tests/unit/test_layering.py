@@ -119,6 +119,47 @@ def test_application_does_not_import_infrastructure_at_runtime(
     )
 
 
+def test_awx_application_does_not_read_infrastructure_only_spec_fields() -> None:
+    """``untaped_awx/application/`` must not read fields that exist only on
+    ``AwxResourceSpec`` (infrastructure), not on the domain ``ResourceSpec``.
+
+    The infra-only field set is derived from the two Pydantic models so a
+    future infra-only field is automatically guarded — no test edit needed.
+
+    The matcher is by attribute *name* only, regardless of receiver type.
+    Today no ``application/`` file has an unrelated ``.api_path`` /
+    ``.cli_name`` / ``.list_columns`` / ``.commands`` access, so this is
+    precise enough. If a future use case legitimately needs one of those
+    names on an unrelated object, rename the local field rather than
+    silencing this test — or add an explicit ``(file, lineno)`` allowlist.
+    Don't tighten the matcher to ``node.value.id == "spec"`` (parameter
+    renames silently break the guard) and don't widen the scope back to
+    every domain (the names are AWX-specific — a ``.commands`` access in
+    another package would false-positive).
+    """
+    from untaped_awx.domain.spec import ResourceSpec
+    from untaped_awx.infrastructure.spec import AwxResourceSpec
+
+    infra_only = frozenset(AwxResourceSpec.model_fields.keys() - ResourceSpec.model_fields.keys())
+    assert infra_only, "expected AwxResourceSpec to add fields beyond ResourceSpec"
+
+    application_dir = PACKAGES_DIR / "untaped-awx" / "src" / "untaped_awx" / "application"
+    violations: list[str] = []
+    for py_file in sorted(application_dir.rglob("*.py")):
+        rel = py_file.relative_to(application_dir.parent)
+        tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in infra_only:
+                violations.append(f"{rel}:{node.lineno} reads .{node.attr}")
+
+    assert not violations, (
+        f"untaped_awx/application must not read AwxResourceSpec-only fields "
+        f"({sorted(infra_only)}). These live on AwxResourceSpec (infrastructure), "
+        f"not the domain ResourceSpec — reading them couples application logic to "
+        f"transport/CLI wiring.\n  " + "\n  ".join(violations)
+    )
+
+
 # Workspace packages that intentionally have no ``application/`` layer
 # (flat shared kits without DDD layering). Every other package in
 # ``packages/`` must have one — adding a new domain without one trips

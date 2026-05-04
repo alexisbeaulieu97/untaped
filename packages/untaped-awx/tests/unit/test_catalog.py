@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxResourceCatalog
+from untaped_awx.infrastructure.specs import ALL_SPECS
 
 
 def test_lookup_by_kind() -> None:
@@ -79,3 +80,21 @@ def test_job_template_launch_fk_refs() -> None:
     assert fields["execution_environment"].kind == "ExecutionEnvironment"
     assert fields["labels"].kind == "Label" and fields["labels"].multi
     assert fields["instance_groups"].kind == "InstanceGroup" and fields["instance_groups"].multi
+
+
+def test_specs_without_apply_command_are_read_only() -> None:
+    """Every spec opting out of apply via ``commands`` must also be ``read_only``.
+
+    ``application/apply_resource`` gates on ``fidelity == "read_only"`` only —
+    if a future spec sets ``commands=("list", "get")`` but ``fidelity="full"``,
+    the apply use case would silently issue create/update calls. The CLI-level
+    gate (per-kind sub-apps hide ``apply``) is independent, but
+    ``untaped awx apply <file>`` flows through the use case directly.
+    """
+    for spec in ALL_SPECS:
+        if "apply" not in spec.commands:
+            assert spec.fidelity == "read_only", (
+                f"{spec.kind}: 'apply' not in commands but fidelity={spec.fidelity!r}. "
+                f"Either add 'apply' to commands or set fidelity='read_only', "
+                f"otherwise `untaped awx apply <file>` will issue writes."
+            )

@@ -8,6 +8,8 @@ import pytest
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure import GitRunner
 
+pytestmark = pytest.mark.integration
+
 if shutil.which("git") is None:
     pytest.skip("git not on PATH", allow_module_level=True)
 
