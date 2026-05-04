@@ -59,14 +59,14 @@ class ApplyResource:
         write: bool = False,
     ) -> ApplyOutcome:
         spec = self._catalog.get(resource.kind)
-        # ``read_only`` kinds (Credential, Inventory, Organization, CredentialType)
-        # are not roundtrippable yet — per-kind sub-apps already hide ``apply``,
-        # but the top-level ``untaped awx apply <file>`` reaches this use case
-        # directly via ``apply_file`` and would otherwise issue create/update
-        # calls for resources whose CRUD is deferred. Reject at the boundary.
-        # The ``commands`` check covers any future kind that opts out of apply
-        # without using the read_only fidelity tier.
-        if spec.fidelity == "read_only" or "apply" not in spec.commands:
+        # ``read_only`` kinds (Credential, Inventory, Organization,
+        # CredentialType, plus the catalog-only stubs
+        # ExecutionEnvironment/Label/InstanceGroup) are not roundtrippable
+        # yet — per-kind sub-apps already hide ``apply``, but the top-level
+        # ``untaped awx apply <file>`` reaches this use case directly via
+        # ``apply_file`` and would otherwise issue create/update calls for
+        # resources whose CRUD is deferred. Reject at the boundary.
+        if spec.fidelity == "read_only":
             raise BadRequest(
                 f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
                 "edit this resource via the AWX UI or API directly."

@@ -101,9 +101,12 @@ to manage the profile inventory itself.
 
 ## Pipe-friendly by design
 
-Every command supports `--format json|yaml|table|raw` and `--columns name`.
-`--format raw` is what you pipe into `fzf`, `awk`, or another `untaped`
-command. Logs go to stderr; only data hits stdout.
+Data-emitting commands (lists, gets, status) support
+`--format json|yaml|table|raw` and `--columns name`. `--format raw` is
+what you pipe into `fzf`, `awk`, or another `untaped` command.
+Side-effect commands (`profile use`, `config set/unset`, …) print a
+short confirmation to stderr and exit. Logs go to stderr; only data
+hits stdout.
 
 ## Contributing
 
