@@ -50,7 +50,7 @@ untaped/
 │       └── main.py
 ├── tests/                        # tests for the root CLI
 └── packages/
-    ├── untaped-core/             # shared infra (settings, http, config, profiles, output, stdin, logging, errors)
+    ├── untaped-core/             # shared infra (settings, http, config, profiles, output, stdin, errors)
     ├── untaped-config/           # `untaped config list/set/unset` (operates on profiles)
     ├── untaped-profile/          # `untaped profile list/show/use/create/delete/rename`
     ├── untaped-workspace/        # manage local git workspaces
@@ -61,7 +61,7 @@ untaped/
 | Package             | Type | Owns                                                                  |
 | ------------------- | ---- | --------------------------------------------------------------------- |
 | `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps via `add_typer`. Hosts the root `--profile` flag. |
-| `untaped-core`      | lib  | Cross-cutting: settings, http (incl. TLS), config schema/file, profiles (resolver + helpers), logging, output, stdin. |
+| `untaped-core`      | lib  | Cross-cutting: settings, http (incl. TLS), config schema/file, profiles (resolver + helpers), output, stdin. |
 | `untaped-config`    | lib  | The `config` meta-domain: introspect/edit profile contents in `~/.untaped/config.yml`. |
 | `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/create/delete/rename profiles. |
 | `untaped-workspace` | lib  | Workspace bounded context: per-workspace `untaped.yml` manifests, central `name → path` registry, sync/status/foreach via subprocess `git`. |
@@ -159,13 +159,14 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Wrap a Typer command body so `UntapedError` → clean exit code 1 | `from untaped_core import report_errors`                  |
 | Read piped values from stdin               | `from untaped_core import read_stdin`                            |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
-| Log to stderr                              | `from untaped_core import get_logger`                            |
+| Print a one-line message to stderr         | `typer.echo(msg, err=True)` — keep it boring; no helper          |
+| Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` (see `packages/untaped-awx/src/untaped_awx/cli/_apply_runner.py:75`) |
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped_core.config_schema import walk_settings`           |
 | Read/write `~/.untaped/config.yml`         | `from untaped_core.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
 | Atomic read-modify-write the config file   | `from untaped_core.config_file import mutate_config` (file-locked; use this for any new write path that touches the YAML) |
 | Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
-| Merge `default` ⤥ active to an effective dict | `from untaped_core.profile_resolver import resolve_profiles` |
+| Merge `default` ⤥ active to an effective dict | `from untaped_core import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr` (auto-redacted by `untaped config list`)    |
 
 If you find yourself writing one of these inside a domain, stop — pull the
@@ -568,8 +569,8 @@ Then:
 ## Output & Piping Conventions
 
 - **stdout = data only.** Never print logs, prompts, or progress to stdout.
-- **stderr = everything else.** Logs, progress bars, prompts. Loguru is
-  configured to stderr.
+- **stderr = everything else.** Logs, progress bars, prompts. Stderr writes
+  go through `typer.echo(msg, err=True)` — see Cross-Cutting helpers.
 - **Commands that emit data** (lists, gets, status, …) should expose:
   - `--format / -f` (`json | yaml | table | raw`); default `table`
   - `--columns / -c` (repeatable) to project specific fields
