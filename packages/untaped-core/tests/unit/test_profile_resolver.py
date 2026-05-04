@@ -1,8 +1,10 @@
 """Tests for the pure ``profile_resolver`` helper.
 
-The resolver merges ``profiles.default`` (bottom) with ``profiles.<active>``
-(top) and returns ``(effective_dict, provenance_dict)``. ``provenance_dict``
-maps every leaf path to the profile name that supplied that value.
+The resolver layers ``profiles.<active>`` (top) over the optional
+``profiles.default`` (bottom) and returns ``(effective_dict,
+provenance_dict)``. ``provenance_dict`` maps every leaf path to the
+profile name that supplied that value. ``default`` may be absent — in
+that case only the active profile (if any) is layered.
 """
 
 from __future__ import annotations
