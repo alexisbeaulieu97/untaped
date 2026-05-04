@@ -257,6 +257,20 @@ def test_current_stdout_is_pipe_friendly(
     assert result.stdout == "prod\n"
 
 
+def test_current_errors_on_typoed_env_var(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If UNTAPED_PROFILE names a missing profile, `current` must fail
+    loudly instead of printing the typo'd name with exit 0. The
+    documented pipe usage `untaped --profile $(untaped profile current)`
+    would otherwise blow up downstream with a less helpful error."""
+    _seed(_isolate_config)
+    monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code != 0
+    assert "ghost" in result.output or "ghost" in result.stderr
+
+
 # ---- create ----
 
 

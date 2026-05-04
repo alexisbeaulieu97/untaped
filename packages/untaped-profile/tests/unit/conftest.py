@@ -39,6 +39,13 @@ class FakeProfileRepository:
     def persisted_active_name(self) -> str | None:
         return self._persisted_active
 
+    def classify_active(self) -> tuple[str | None, str]:
+        if self._effective_override:
+            return self._effective_override, "env"
+        if self._persisted_active:
+            return self._persisted_active, "config"
+        return None, "fallback"
+
     def read(self, name: str) -> dict[str, Any] | None:
         profile = self._profiles.get(name)
         return copy.deepcopy(profile) if profile is not None else None
