@@ -87,4 +87,5 @@ class VarsResolver(Protocol):
         cli: Mapping[str, str],
         files: Iterable[Path],
         prompt: Prompt,
+        extra_known_names: Iterable[str] = (),
     ) -> dict[str, Any]: ...

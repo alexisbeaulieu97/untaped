@@ -94,7 +94,22 @@ def _load_suites(
         vars_resolver=resolve_variables,
         prompt=TyperPrompt(force_non_interactive=non_interactive),
     )
-    return [loader(path, cli_vars=cli_vars, vars_files=vars_files) for path in paths]
+    file_list = list(paths)
+    # Pre-pass: build the union of declared variable names across all files
+    # so a ``--var foo=bar`` accepted by *some* suite isn't rejected by a
+    # sibling that doesn't declare ``foo``.
+    union_names: set[str] = set()
+    for path in file_list:
+        union_names.update(loader.parse_specs(path).keys())
+    return [
+        loader(
+            path,
+            cli_vars=cli_vars,
+            vars_files=vars_files,
+            extra_known_names=union_names,
+        )
+        for path in file_list
+    ]
 
 
 def _jt_spec(ctx: AwxContext) -> AwxResourceSpec:

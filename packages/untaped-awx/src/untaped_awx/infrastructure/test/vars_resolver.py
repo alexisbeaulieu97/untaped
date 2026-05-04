@@ -28,15 +28,24 @@ def resolve_variables(
     cli: Mapping[str, str],
     files: Iterable[Path],
     prompt: Prompt,
+    extra_known_names: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """Build the variable context that will be passed to Jinja2."""
+    """Build the variable context that will be passed to Jinja2.
 
-    _reject_unknown(cli.keys(), specs, "cli")
+    ``extra_known_names`` lets the caller validate against the union of
+    variables declared across multiple suites: a CLI ``--var foo=bar`` is
+    accepted (but ignored) here as long as *some* suite declares ``foo``,
+    even if this particular suite doesn't. Without it, a multi-file run
+    where each file declares a disjoint set of variables would fail.
+    """
+    known_names: set[str] = set(specs.keys()) | set(extra_known_names)
+
+    _reject_unknown(cli.keys(), known_names, "cli")
 
     file_values: dict[str, Any] = {}
     for path in files:
         loaded = _load_vars_file(path)
-        _reject_unknown(loaded.keys(), specs, f"vars-file {path}")
+        _reject_unknown(loaded.keys(), known_names, f"vars-file {path}")
         file_values.update(loaded)
 
     resolved: dict[str, Any] = {}
@@ -66,13 +75,14 @@ def resolve_variables(
     return resolved
 
 
-def _reject_unknown(names: Iterable[str], specs: Mapping[str, VariableSpec], origin: str) -> None:
-    unknown = sorted(set(names) - set(specs.keys()))
+def _reject_unknown(names: Iterable[str], known: Iterable[str], origin: str) -> None:
+    known_set = set(known)
+    unknown = sorted(set(names) - known_set)
     if unknown:
         joined = ", ".join(unknown)
         raise AwxApiError(
             f"unknown variable(s) in {origin}: {joined}. "
-            f"Declared variables: {', '.join(sorted(specs.keys())) or '(none)'}"
+            f"Declared variables: {', '.join(sorted(known_set)) or '(none)'}"
         )
 
 

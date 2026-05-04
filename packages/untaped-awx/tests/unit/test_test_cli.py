@@ -120,6 +120,45 @@ def test_run_passes_when_job_succeeds(cli: CliRunner, fake_aap: FakeAap, tmp_pat
     assert any(action == "launch" for _, _, action, _ in fake_aap.actions_called)
 
 
+def test_run_with_disjoint_variables_across_files_succeeds(
+    cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """``--var`` declared by one file but not another must not fail the sibling load."""
+    _seed_jt(fake_aap)
+    suite_a = _write(
+        tmp_path / "a.yml",
+        "---\nvariables:\n  env: { type: string }\n---\n"
+        "kind: AwxTestSuite\nname: a\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      limit: '{{ env }}'\n",
+    )
+    suite_b = _write(
+        tmp_path / "b.yml",
+        "---\nvariables:\n  region: { type: string }\n---\n"
+        "kind: AwxTestSuite\nname: b\njobTemplate: Deploy app\n"
+        "cases:\n  c:\n    launch:\n      limit: '{{ region }}'\n",
+    )
+
+    result = cli.invoke(
+        app,
+        [
+            "test",
+            "run",
+            str(suite_a),
+            str(suite_b),
+            "--var",
+            "env=prod",
+            "--var",
+            "region=us-east-1",
+            "--non-interactive",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr or result.output
+    payloads = [body for _, _, action, body in fake_aap.actions_called if action == "launch"]
+    limits = sorted(p["limit"] for p in payloads)
+    assert limits == ["prod", "us-east-1"]
+
+
 def test_run_against_directory_picks_up_yaml_children(
     cli: CliRunner, fake_aap: FakeAap, tmp_path: Path
 ) -> None:

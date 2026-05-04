@@ -43,6 +43,7 @@ class LoadTestSuite:
         *,
         cli_vars: Mapping[str, str] | None = None,
         vars_files: Iterable[Path] = (),
+        extra_known_names: Iterable[str] = (),
     ) -> TestSuite:
         text = self._fs.read_text(path)
         meta_yaml, body = self._parser.split_frontmatter(text)
@@ -52,6 +53,7 @@ class LoadTestSuite:
             cli=cli_vars or {},
             files=vars_files,
             prompt=self._prompt,
+            extra_known_names=extra_known_names,
         )
         rendered = self._parser.render_body(body, values)
         data = self._parser.parse_yaml(rendered)
@@ -71,6 +73,18 @@ class LoadTestSuite:
             raise AwxApiError(f"{path}: {exc}") from exc
         _reject_non_empty_assert(path, suite)
         return suite
+
+    def parse_specs(self, path: Path) -> dict[str, VariableSpec]:
+        """Read *path* and return its frontmatter variable specs only.
+
+        Lets the CLI build the union of variables across multiple files
+        before resolution, so a global ``--var foo=bar`` is accepted as
+        long as *some* file declares ``foo`` — even if this particular
+        file doesn't.
+        """
+        text = self._fs.read_text(path)
+        meta_yaml, _ = self._parser.split_frontmatter(text)
+        return self._parse_variable_specs(meta_yaml)
 
     def _parse_variable_specs(self, meta_yaml: str) -> dict[str, VariableSpec]:
         if not meta_yaml.strip():
