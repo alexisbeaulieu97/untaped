@@ -138,7 +138,8 @@ class ProfilesSettingsSource(InitSettingsSource):
 
     1. ``UNTAPED_PROFILE`` env var (per-process override),
     2. ``active:`` key in the YAML,
-    3. fallback to ``"default"``.
+    3. fallback to ``"default"`` if it exists, otherwise no profile layer
+       is applied and schema defaults take over.
     """
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:

@@ -52,7 +52,7 @@ untaped/
 └── packages/
     ├── untaped-core/             # shared infra (settings, http, config, profiles, output, stdin, errors)
     ├── untaped-config/           # `untaped config list/set/unset` (operates on profiles)
-    ├── untaped-profile/          # `untaped profile list/show/use/create/delete/rename`
+    ├── untaped-profile/          # `untaped profile list/show/use/current/create/delete/rename`
     ├── untaped-workspace/        # manage local git workspaces
     ├── untaped-awx/              # Ansible Automation Platform / AWX API
     └── untaped-github/           # GitHub authenticated-user inspection
@@ -63,7 +63,7 @@ untaped/
 | `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps via `add_typer`. Hosts the root `--profile` flag. |
 | `untaped-core`      | lib  | Cross-cutting: settings, http (incl. TLS), config schema/file, profiles (resolver + helpers), output, stdin. |
 | `untaped-config`    | lib  | The `config` meta-domain: introspect/edit profile contents in `~/.untaped/config.yml`. |
-| `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/create/delete/rename profiles. |
+| `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/current/create/delete/rename profiles. |
 | `untaped-workspace` | lib  | Workspace bounded context: per-workspace `untaped.yml` manifests, central `name → path` registry, sync/status/foreach via subprocess `git`. |
 | `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            |
 | `untaped-github`    | lib  | GitHub bounded context — currently only the authenticated user (`whoami`); search/repos/etc. unimplemented. |
@@ -188,7 +188,7 @@ keys live outside that block:
 
 Resolution order, high → low:
 
-```
+```text
 env vars (UNTAPED_…)  >  active profile  >  default profile (optional)  >  schema default
 ```
 
@@ -466,6 +466,7 @@ uv run untaped config unset awx.token               # remove from the active pro
 uv run untaped profile list                         # list profiles, ✓ marks active
 uv run untaped profile show prod                    # effective view (default ⤥ prod)
 uv run untaped profile use prod                     # persist `active: prod`
+uv run untaped profile current                      # print the active profile name (pipe-friendly)
 uv run untaped profile create homelab --copy-from default
 uv run untaped profile delete stage
 uv run untaped profile rename prod production       # also updates `active:` if it pointed there
