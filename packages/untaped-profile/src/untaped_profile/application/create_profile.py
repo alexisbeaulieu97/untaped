@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 
 from untaped_core import ConfigError
+from untaped_core.profile_resolver import DEFAULT_PROFILE
 
 from untaped_profile.application.ports import ProfileRepository
 
@@ -35,4 +36,9 @@ class CreateProfile:
             data = copy.deepcopy(source)
         else:
             data = {}
+        # Bootstrap an empty `default` so the resolver invariant
+        # "non-empty profiles ⇒ default exists" holds. Mirrors the
+        # auto-bootstrap that `untaped config set` already performs.
+        if name != DEFAULT_PROFILE and self._repo.read(DEFAULT_PROFILE) is None:
+            self._repo.write(DEFAULT_PROFILE, {})
         self._repo.write(name, data)
