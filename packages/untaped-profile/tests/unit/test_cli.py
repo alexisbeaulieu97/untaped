@@ -296,22 +296,21 @@ def test_create_rejects_existing(_isolate_config: Path) -> None:
     assert result.exit_code != 0
 
 
-def test_create_on_empty_config_bootstraps_default(_isolate_config: Path) -> None:
+def test_create_on_empty_config_does_not_materialise_default(_isolate_config: Path) -> None:
     """Regression: on a fresh install with no config file, ``profile create
-    stage`` followed by ``Settings()`` (the path ``untaped config list``
-    takes) must not raise ``the default profile is required``. The
-    bootstrap puts an empty ``default`` profile alongside ``stage`` so the
-    resolver invariant holds."""
+    stage`` produces a config with only ``stage`` — no auto-materialised
+    ``default``. The resolver no longer requires ``default`` to exist, so
+    a follow-up ``Settings()`` load (the path ``untaped config list`` takes)
+    succeeds without raising."""
     assert not _isolate_config.exists()
     result = CliRunner().invoke(app, ["create", "stage"])
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_config.read_text())
-    assert "default" in data["profiles"]
-    assert data["profiles"]["default"] == {}
+    assert list(data["profiles"]) == ["stage"]
     assert data["profiles"]["stage"] == {}
-    # The smoking gun: subsequent Settings() resolution succeeds.
+    # The whole reason this is safe: subsequent Settings() resolution succeeds.
     get_settings.cache_clear()
-    get_settings()  # would raise ConfigError without the bootstrap
+    get_settings()
 
 
 # ---- delete ----
