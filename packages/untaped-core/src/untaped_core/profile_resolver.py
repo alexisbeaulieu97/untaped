@@ -52,7 +52,8 @@ def resolve_profiles(
     if DEFAULT_PROFILE not in profiles:
         raise ConfigError(
             "config has a `profiles` section but no `default` profile; "
-            "the default profile is required."
+            "the default profile is required. "
+            "Run `untaped profile create default` to bootstrap it."
         )
 
     active_name = _select_active(config_data, active_override, profiles)

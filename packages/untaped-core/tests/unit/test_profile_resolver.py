@@ -86,6 +86,21 @@ def test_missing_default_with_profiles_present_errors() -> None:
     assert "default" in str(excinfo.value)
 
 
+def test_missing_default_error_points_at_recovery_command() -> None:
+    """The error must hand the user the exact command to recover.
+
+    Reaching this error from CLI usage alone is no longer possible (every
+    write path bootstraps `default`), but legacy configs and hand-edited
+    files can still land here — and "the default profile is required"
+    by itself is a dead end. Naming the recovery command turns it into
+    a one-step fix.
+    """
+    config = {"profiles": {"prod": {"awx": {"token": "p"}}}}
+    with pytest.raises(ConfigError) as excinfo:
+        resolve_profiles(config)
+    assert "untaped profile create default" in str(excinfo.value)
+
+
 def test_missing_active_profile_errors() -> None:
     config = {
         "profiles": {"default": {"awx": {"token": "d"}}},
