@@ -119,6 +119,39 @@ def test_application_does_not_import_infrastructure_at_runtime(
     )
 
 
+# Spec attribute names that exist only on `AwxResourceSpec`
+# (infrastructure) and not on the domain `ResourceSpec`. Application
+# code reading any of these is a boundary leak, even if the
+# annotation is `TYPE_CHECKING`-only — the `Attribute` access happens
+# at runtime.
+_INFRASTRUCTURE_ONLY_SPEC_FIELDS = frozenset({"api_path", "cli_name", "list_columns", "commands"})
+
+
+@pytest.mark.parametrize(
+    ("import_root", "application_dir"),
+    _discover_application_dirs(),
+    ids=lambda value: value if isinstance(value, str) else value.parent.name,
+)
+def test_application_does_not_read_infrastructure_only_spec_fields(
+    import_root: str, application_dir: Path
+) -> None:
+    violations: list[str] = []
+    for py_file in sorted(application_dir.rglob("*.py")):
+        rel = py_file.relative_to(application_dir.parent)
+        tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in _INFRASTRUCTURE_ONLY_SPEC_FIELDS:
+                violations.append(f"{rel}:{node.lineno} reads .{node.attr}")
+
+    assert not violations, (
+        f"{import_root}/application must not read infrastructure-only spec "
+        f"fields ({sorted(_INFRASTRUCTURE_ONLY_SPEC_FIELDS)}). These live on "
+        f"AwxResourceSpec (infrastructure), not the domain ResourceSpec — "
+        f"reading them couples application logic to transport/CLI wiring.\n  "
+        + "\n  ".join(violations)
+    )
+
+
 # Workspace packages that intentionally have no ``application/`` layer
 # (flat shared kits without DDD layering). Every other package in
 # ``packages/`` must have one — adding a new domain without one trips
