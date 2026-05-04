@@ -85,3 +85,52 @@ CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
     fidelity="read_only",
     fidelity_note="credential type CRUD is out of v0 scope",
 )
+
+
+# Catalog-only stubs that exist purely so :class:`FkResolver` can map a
+# ``name`` to an ``id`` for launch-time foreign keys (referenced by
+# ``launch_fk_refs`` on :data:`JOB_TEMPLATE_SPEC` and friends). They have
+# no CLI sub-app — ``commands=()`` keeps the resource-app factory from
+# generating ``list``/``get``/``save``/``apply``.
+
+EXECUTION_ENVIRONMENT_SPEC = AwxResourceSpec(
+    kind="ExecutionEnvironment",
+    cli_name="execution-environments",
+    api_path="execution_environments",
+    identity_keys=("name",),
+    canonical_fields=("description", "image"),
+    read_only_fields=("id", "created", "modified", "summary_fields", "related", "type", "url"),
+    list_columns=("id", "name", "image"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="execution environment CRUD is out of v0 scope",
+)
+
+
+LABEL_SPEC = AwxResourceSpec(
+    kind="Label",
+    cli_name="labels",
+    api_path="labels",
+    identity_keys=("name", "organization"),
+    canonical_fields=("name",),
+    read_only_fields=("id", "created", "modified", "summary_fields", "related", "type", "url"),
+    fk_refs=(FkRef(field="organization", kind="Organization"),),
+    list_columns=("id", "name", "organization"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="label CRUD is out of v0 scope",
+)
+
+
+INSTANCE_GROUP_SPEC = AwxResourceSpec(
+    kind="InstanceGroup",
+    cli_name="instance-groups",
+    api_path="instance_groups",
+    identity_keys=("name",),  # globally unique in AWX
+    canonical_fields=("name",),
+    read_only_fields=("id", "created", "modified", "summary_fields", "related", "type", "url"),
+    list_columns=("id", "name"),
+    commands=(),
+    fidelity="read_only",
+    fidelity_note="instance group CRUD is out of v0 scope",
+)

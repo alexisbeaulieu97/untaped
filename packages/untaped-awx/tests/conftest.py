@@ -38,6 +38,12 @@ class FakeAap:
         self.store: dict[str, dict[int, dict[str, Any]]] = defaultdict(dict)
         self._next_id = 1
         self.actions_called: list[tuple[str, int, str, dict[str, Any]]] = []
+        # One-shot test override consumed by the very next ``_action`` call.
+        # After consumption, both fields reset to the defaults so back-to-back
+        # launches don't share state. Tests that need persistent overrides
+        # set these before each call.
+        self.next_action_status: str = "successful"
+        self.next_action_stdout: str | None = None
 
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
@@ -149,14 +155,27 @@ class FakeAap:
         if record is None:
             return _err(404, f"{api_path}/{id_}/{action}/")
         self.actions_called.append((api_path, id_, action, body))
+        # Consume the one-shot overrides so a subsequent launch sees defaults.
+        status = self.next_action_status
+        stdout = self.next_action_stdout
+        self.next_action_status = "successful"
+        self.next_action_stdout = None
         new_id = self._next_id
         self._next_id += 1
         result = {
             "id": new_id,
             "type": "job" if action == "launch" else "project_update",
             "name": f"{record.get('name', '')}-{action}",
-            "status": "successful",
+            "status": status,
         }
+        if stdout is not None:
+            store_path = "jobs" if action == "launch" else f"{action}s"
+            self.seed(
+                store_path,
+                id=new_id,
+                status=status,
+                stdout=stdout,
+            )
         return httpx.Response(200, json=result)
 
     def _sub_list(

@@ -1,0 +1,48 @@
+---
+# Variable metadata. Frontmatter is parsed as raw YAML — Jinja2 does
+# NOT touch this block. ``description`` is shown when ``untaped awx
+# test`` prompts interactively or in ``awx test list --format json``.
+variables:
+  env:
+    description: Target environment
+    type: choice
+    choices: [dev, staging, prod]
+    default: dev
+  regions:
+    description: Comma-separated AWS regions to launch against
+    type: list
+    default: [us-east-1]
+  api_token:
+    description: One-time API token (no-echo prompt)
+    type: string
+    secret: true
+---
+kind: AwxTestSuite
+name: deploy-app
+jobTemplate: "Deploy app"
+defaults:
+  launch:
+    extra_vars:
+      log_level: info
+cases:
+{% for region in regions %}
+  {{ env }}-{{ region }}:
+    launch:
+      # Bare strings on FK fields resolve via fk_refs / launch_fk_refs:
+      inventory: "Web Inventory"
+      # Names and IDs may be mixed in list FKs:
+      credentials: ["github-pat", 42]
+      labels: ["smoke"]
+      # Use the to_yaml filter on user/Jinja-derived values to escape
+      # colons, newlines, quotes, and emit proper YAML literals.
+      limit: {{ ("app-" ~ env ~ "-*") | to_yaml }}
+      extra_vars:
+        env: {{ env | to_yaml }}
+        region: {{ region | to_yaml }}
+        api_token: {{ api_token | to_yaml }}
+        # !ref is the escape hatch for FKs nested in opaque dicts —
+        # structurally distinct from a regular dict, so user content
+        # like ``{name: Alice}`` is never misinterpreted.
+        target_inventory_id: !ref { kind: Inventory, name: "Web Inventory" }
+    # assert: block is reserved for v2; non-empty in v1 is a hard error.
+{% endfor %}
