@@ -20,6 +20,7 @@ from untaped_core import (
 
 from untaped_profile.application import (
     CreateProfile,
+    CurrentProfile,
     DeleteProfile,
     ListProfiles,
     RenameProfile,
@@ -128,6 +129,21 @@ def use_command(
     with report_errors():
         UseProfile(ProfileFileRepository())(name)
         typer.echo(f"active profile: {name} (config: {resolve_config_path()})", err=True)
+
+
+@app.command("current")
+def current_command() -> None:
+    """Print the effective active profile name to stdout (pipe-friendly).
+
+    Honours ``UNTAPED_PROFILE`` and the root ``--profile`` flag, falling
+    back to ``default`` when neither is set. The source of the answer
+    (``env`` / ``config`` / ``fallback``) goes to stderr so stdout stays
+    a single bare profile name suitable for piping.
+    """
+    with report_errors():
+        result = CurrentProfile(ProfileFileRepository())()
+        typer.echo(result.name)
+        typer.echo(f"(source: {result.source})", err=True)
 
 
 @app.command("create", no_args_is_help=True)
