@@ -3,20 +3,21 @@
 Powers ``untaped profile current`` — a one-line answer to "which profile
 am I using right now?" with a stderr breadcrumb explaining whether the
 answer came from the env var, the persisted ``active:`` key, or the
-implicit ``default`` fallback.
+implicit ``default`` fallback. When env or config explicitly names a
+profile, the use case also validates that the profile actually exists,
+so the documented pipe usage
+``untaped --profile $(untaped profile current)`` can't silently print a
+typo'd name that other commands then reject.
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from typing import Literal
 
-from untaped_core.profile_resolver import ACTIVE_PROFILE_ENV, DEFAULT_PROFILE
+from untaped_core import ConfigError
+from untaped_core.profile_resolver import DEFAULT_PROFILE, ProfileSource
 
 from untaped_profile.application.ports import ProfileRepository
-
-ProfileSource = Literal["env", "config", "fallback"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,10 +33,18 @@ class CurrentProfile:
         self._repo = repo
 
     def __call__(self) -> CurrentProfileResult:
-        env_value = os.environ.get(ACTIVE_PROFILE_ENV)
-        if env_value:
-            return CurrentProfileResult(name=env_value, source="env")
-        persisted = self._repo.persisted_active_name()
-        if persisted:
-            return CurrentProfileResult(name=persisted, source="config")
+        name, source = self._repo.classify_active()
+        if source in ("env", "config"):
+            assert name is not None  # invariant of classify_active
+            if name not in self._repo.names():
+                known = ", ".join(sorted(self._repo.names())) or "(none)"
+                raise ConfigError(
+                    f"active profile {name!r} (from {source}) is not defined; known: {known}"
+                )
+            return CurrentProfileResult(name=name, source=source)
+        # Fallback: nothing explicitly names a profile. Report the
+        # conceptual `default` placeholder regardless of whether a
+        # `default` profile exists on disk — schema defaults are in
+        # effect either way, and that case is not a user typo to
+        # protect against.
         return CurrentProfileResult(name=DEFAULT_PROFILE, source="fallback")

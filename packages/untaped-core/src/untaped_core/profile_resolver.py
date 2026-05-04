@@ -23,25 +23,46 @@ Top-level keys outside ``profiles`` are ignored — splicing app-state like
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Literal
 
 from untaped_core.errors import ConfigError
 
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 DEFAULT_PROFILE = "default"
 
+ProfileSource = Literal["env", "config", "fallback"]
+
+
+def classify_active_profile(
+    data: dict[str, Any],
+) -> tuple[str | None, ProfileSource]:
+    """Return the active profile name **and** which layer supplied it.
+
+    Same precedence as :func:`effective_active_profile_name` (env var >
+    ``data['active']`` > unset), but also tells the caller whether the
+    answer came from the env var, the persisted ``active:`` key, or
+    neither (fallback). Powers ``untaped profile current``'s
+    ``(source: …)`` breadcrumb and any other code path that needs to
+    classify the layer.
+    """
+    env_override = os.environ.get(ACTIVE_PROFILE_ENV)
+    if env_override:
+        return env_override, "env"
+    raw = data.get("active")
+    if isinstance(raw, str) and raw:
+        return raw, "config"
+    return None, "fallback"
+
 
 def effective_active_profile_name(data: dict[str, Any]) -> str | None:
     """Return the active profile honouring ``UNTAPED_PROFILE``.
 
     Precedence: env var > ``data['active']`` > ``None``. Callers fall back
-    to ``"default"`` themselves when they need a guaranteed name.
+    to ``"default"`` themselves when they need a guaranteed name. Thin
+    wrapper over :func:`classify_active_profile`.
     """
-    env_override = os.environ.get(ACTIVE_PROFILE_ENV)
-    if env_override:
-        return env_override
-    raw = data.get("active")
-    return raw if isinstance(raw, str) and raw else None
+    name, _ = classify_active_profile(data)
+    return name
 
 
 def resolve_profiles(

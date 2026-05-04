@@ -30,6 +30,19 @@ def test_refuses_to_delete_default_when_active(empty_repo_factory: Any) -> None:
     assert "default" in repo.names()
 
 
+def test_allows_deleting_default_when_no_active_key(empty_repo_factory: Any) -> None:
+    """No `active:` key persisted means no profile is active. Under the
+    optional-default model the resolver returns ``({}, {})`` when no
+    layer is selected, so deleting ``default`` is safe — values fall
+    through to schema defaults. The previous ``or DEFAULT_PROFILE``
+    fallback in the active-guard incorrectly refused this case.
+    """
+    repo = empty_repo_factory(profiles={"default": {}, "stage": {}}, active=None)
+    DeleteProfile(repo)("default")
+    assert "default" not in repo.names()
+    assert "stage" in repo.names()
+
+
 def test_refuses_to_delete_active(repo: Any) -> None:
     """``prod`` is the active profile in the fixture."""
     with pytest.raises(ConfigError, match="active"):
