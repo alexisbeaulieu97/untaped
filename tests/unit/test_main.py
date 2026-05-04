@@ -50,8 +50,24 @@ def test_config_subcommand_help() -> None:
 def test_profile_subcommand_help() -> None:
     result = CliRunner().invoke(app, ["profile", "--help"])
     assert result.exit_code == 0
-    for cmd in ("list", "show", "use", "create", "delete", "rename"):
+    for cmd in ("list", "show", "use", "current", "create", "delete", "rename"):
         assert cmd in result.stdout
+
+
+def test_root_profile_flag_reflected_by_profile_current(_isolate_config: Path) -> None:
+    """`untaped --profile stage profile current` must report 'stage' with
+    source=env (the root flag stuffs UNTAPED_PROFILE into os.environ)."""
+    _isolate_config.write_text(
+        "profiles:\n"
+        "  default:\n    log_level: INFO\n"
+        "  prod:\n    log_level: WARNING\n"
+        "  stage:\n    log_level: DEBUG\n"
+        "active: prod\n"
+    )
+    result = CliRunner().invoke(app, ["--profile", "stage", "profile", "current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["stage"]
+    assert "(source: env)" in result.stderr
 
 
 def test_root_profile_flag_overrides_active(_isolate_config: Path) -> None:

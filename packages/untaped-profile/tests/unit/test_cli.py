@@ -207,6 +207,56 @@ def test_use_unknown_profile_errors(_isolate_config: Path) -> None:
     assert result.exit_code != 0
 
 
+# ---- current ----
+
+
+def test_current_prints_active_from_config(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`active: prod` in the config → stdout 'prod', stderr names config."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["prod"]
+    assert "(source: config)" in result.stderr
+
+
+def test_current_falls_back_to_default_with_no_config(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No config file at all → 'default' on stdout, source 'fallback'."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    assert not _isolate_config.exists()
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["default"]
+    assert "(source: fallback)" in result.stderr
+
+
+def test_current_env_var_overrides(_isolate_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """UNTAPED_PROFILE wins over `active:` and is reported as `env`."""
+    _seed(_isolate_config)  # active: prod
+    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["stage"]
+    assert "(source: env)" in result.stderr
+
+
+def test_current_stdout_is_pipe_friendly(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of this command: stdout is *only* the name, so
+    `untaped profile current | xargs untaped --profile` works without
+    awk/cut. Source breadcrumbs go to stderr."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0
+    assert result.stdout == "prod\n"
+
+
 # ---- create ----
 
 
@@ -303,7 +353,7 @@ def test_rename_collision_refused(_isolate_config: Path) -> None:
 def test_help_lists_all_commands() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("list", "show", "use", "create", "delete", "rename"):
+    for cmd in ("list", "show", "use", "current", "create", "delete", "rename"):
         assert cmd in result.stdout
 
 
