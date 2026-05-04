@@ -12,8 +12,20 @@ def test_removes_profile(repo: Any) -> None:
     assert "stage" not in repo.names()
 
 
-def test_refuses_to_delete_default(repo: Any) -> None:
-    with pytest.raises(ConfigError, match="default"):
+def test_allows_deleting_default_when_not_active(repo: Any) -> None:
+    """`default` is just a regular profile when it's not active. Deleting
+    it clears any shared overrides — values fall through to schema
+    defaults — without breaking the active profile (``prod`` here)."""
+    DeleteProfile(repo)("default")
+    assert "default" not in repo.names()
+    assert "prod" in repo.names()
+
+
+def test_refuses_to_delete_default_when_active(empty_repo_factory: Any) -> None:
+    """When `default` is the active profile, the active-profile guard
+    fires (same as it would for any other active profile)."""
+    repo = empty_repo_factory(profiles={"default": {}, "stage": {}}, active="default")
+    with pytest.raises(ConfigError, match="active"):
         DeleteProfile(repo)("default")
     assert "default" in repo.names()
 

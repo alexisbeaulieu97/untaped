@@ -11,19 +11,16 @@ from untaped_profile.application.ports import ProfileRepository
 class DeleteProfile:
     """Remove ``profiles.<name>``.
 
-    Refuses two cases that would leave the user in a broken state:
-    deleting ``default`` (the required fallback layer) and deleting the
-    currently active profile (would orphan the ``active:`` pointer).
+    Refuses to delete the active profile (would orphan the ``active:``
+    pointer). ``default`` is not special-cased — when it's not the
+    active profile, deleting it just clears any shared overrides and
+    values fall through to schema defaults.
     """
 
     def __init__(self, repo: ProfileRepository) -> None:
         self._repo = repo
 
     def __call__(self, name: str) -> None:
-        if name == DEFAULT_PROFILE:
-            raise ConfigError(
-                "cannot delete the `default` profile; it's the required fallback layer"
-            )
         if self._repo.read(name) is None:
             known = ", ".join(sorted(self._repo.names())) or "(none)"
             raise ConfigError(f"profile {name!r} does not exist. Known: {known}")

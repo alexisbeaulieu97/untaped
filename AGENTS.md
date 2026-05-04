@@ -179,8 +179,9 @@ lives under `profiles.<name>`, never at the top level. Two profile-related
 keys live outside that block:
 
 - `active: <name>` — selects which profile is active. May be unset (then
-  `default` is used). The `UNTAPED_PROFILE` env var or the root
-  `untaped --profile <name>` flag override this for one process.
+  `default` is used if it exists, otherwise no profile layer applies and
+  values come straight from the schema). The `UNTAPED_PROFILE` env var or
+  the root `untaped --profile <name>` flag override this for one process.
 - `workspace.workspaces` — the workspace registry. This is **app state**,
   not user-tunable config, so it stays at the top level and is hoisted
   back into the merged dict by `ProfilesSettingsSource`.
@@ -188,21 +189,27 @@ keys live outside that block:
 Resolution order, high → low:
 
 ```
-env vars (UNTAPED_…)  >  active profile  >  default profile  >  schema default
+env vars (UNTAPED_…)  >  active profile  >  default profile (optional)  >  schema default
 ```
 
-Two-layer fallback only — `prod` ⤥ `default` ⤥ schema. There is no
-profile-to-profile inheritance beyond the implicit `default` fallback.
-
-The `default` profile is required (the resolver raises if `profiles.*` is
-non-empty without it). It is also the bottom layer for everything: any
-named profile can declare just the keys that differ.
+The `default` profile is **optional**. Schema defaults
+(`packages/untaped-core/src/untaped_core/settings.py`) are the implicit
+floor for every profile. If `profiles.default` is present, it merges as a
+shared overrides layer beneath the active profile — useful for values
+every profile should inherit (e.g. `default: { http: { ca_bundle: /corp.pem } }`).
+There is no profile-to-profile inheritance beyond the implicit `default`
+fallback.
 
 `untaped config set <key> <value>` writes to the active profile by default;
 `--profile <name>` targets a different one (the named profile must already
-exist; `default` is auto-bootstrapped). `untaped profile <…>` manages the
-profile inventory itself: `list`, `show`, `use`, `create [--copy-from]`,
-`delete`, `rename`. Deleting `default` or the active profile is refused.
+exist; `--profile default` is the one exception — it auto-creates `default`
+on first write since that's the canonical way to seed shared overrides).
+`untaped profile <…>` manages the profile inventory itself: `list`, `show`,
+`use`, `current`, `create [--copy-from]`, `delete`, `rename`. Deleting the
+active profile is refused (which transitively means `default` is refused
+when it's also active); `default` can be renamed only by deleting and
+creating a new profile, since renaming the shared-overrides layer into a
+named profile is semantically muddy.
 
 The root `--profile` flag mutates `os.environ["UNTAPED_PROFILE"]` and
 clears `get_settings`'s `lru_cache` immediately, so per-call overrides

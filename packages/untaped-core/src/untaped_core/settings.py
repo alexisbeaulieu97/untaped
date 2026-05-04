@@ -1,11 +1,14 @@
 """User-facing configuration loaded from ``~/.untaped/config.yml``.
 
 The YAML schema is profile-based: every configurable value lives inside a
-``profiles.<name>`` block. ``profiles.default`` is required and used as the
-fallback layer; ``active: <name>`` (or the ``UNTAPED_PROFILE`` env var)
-selects the overlay profile. Individual fields can still be overridden with
-``UNTAPED_<SECTION>__<FIELD>`` env vars (e.g. ``UNTAPED_AWX__TOKEN``);
-precedence is: env > active profile > default profile > schema default.
+``profiles.<name>`` block. ``profiles.default`` is **optional** — when
+present, it serves as a shared overrides layer beneath the active profile;
+when absent, the active profile is layered alone. The Pydantic schema
+defaults below sit beneath everything. ``active: <name>`` (or the
+``UNTAPED_PROFILE`` env var) selects the overlay profile. Individual fields
+can still be overridden with ``UNTAPED_<SECTION>__<FIELD>`` env vars
+(e.g. ``UNTAPED_AWX__TOKEN``); precedence is:
+env > active profile > default profile (if present) > schema default.
 
 The ``workspace.workspaces`` registry is **app state** (not user-tunable
 config), so it lives at the top level of the YAML and is spliced back into

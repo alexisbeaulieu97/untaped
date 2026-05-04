@@ -10,6 +10,11 @@ The resolver is layer-agnostic: callers (tests, ``ProfilesSettingsSource``,
   that supplied each leaf in ``effective``. Missing entries mean the leaf
   came from the schema default (i.e. neither profile set it).
 
+``profiles.default`` is optional. When present, it serves as a shared
+overrides layer beneath the active profile; when absent, the active profile
+is layered alone (and the Pydantic schema's defaults sit beneath both via
+the Settings class).
+
 Top-level keys outside ``profiles`` are ignored — splicing app-state like
 ``workspace.workspaces`` back into the merged dict is
 ``ProfilesSettingsSource``'s responsibility, not ours.
@@ -49,19 +54,14 @@ def resolve_profiles(
     if not profiles:
         return {}, {}
 
-    if DEFAULT_PROFILE not in profiles:
-        raise ConfigError(
-            "config has a `profiles` section but no `default` profile; "
-            "the default profile is required."
-        )
-
     active_name = _select_active(config_data, active_override, profiles)
 
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
 
-    _layer(profiles[DEFAULT_PROFILE], DEFAULT_PROFILE, effective, provenance, ())
-    if active_name != DEFAULT_PROFILE:
+    if DEFAULT_PROFILE in profiles:
+        _layer(profiles[DEFAULT_PROFILE], DEFAULT_PROFILE, effective, provenance, ())
+    if active_name is not None and active_name != DEFAULT_PROFILE:
         _layer(profiles[active_name], active_name, effective, provenance, ())
 
     return effective, provenance
@@ -88,14 +88,26 @@ def _select_active(
     config_data: dict[str, Any],
     active_override: str | None,
     profiles: dict[str, Any],
-) -> str:
-    name = active_override if active_override else config_data.get("active") or DEFAULT_PROFILE
-    if name not in profiles:
-        raise ConfigError(
-            f"active profile {name!r} is not defined in `profiles`. "
-            f"Known profiles: {', '.join(sorted(profiles))}"
-        )
-    return name
+) -> str | None:
+    """Pick the profile whose values overlay the optional ``default`` layer.
+
+    Returns ``None`` when nothing names an active profile and ``default``
+    is also missing — there's no layer to apply, so the caller resolves
+    to ``({}, {})`` and lets the schema defaults take over.
+
+    Raises ``ConfigError`` when an explicit override (env var, root
+    ``--profile`` flag, or the persisted ``active:`` key) names a
+    profile that isn't defined.
+    """
+    explicit = active_override if active_override else config_data.get("active")
+    if explicit:
+        if explicit not in profiles:
+            raise ConfigError(
+                f"active profile {explicit!r} is not defined in `profiles`. "
+                f"Known profiles: {', '.join(sorted(profiles))}"
+            )
+        return explicit
+    return DEFAULT_PROFILE if DEFAULT_PROFILE in profiles else None
 
 
 def _layer(
