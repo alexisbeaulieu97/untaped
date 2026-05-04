@@ -207,6 +207,56 @@ def test_use_unknown_profile_errors(_isolate_config: Path) -> None:
     assert result.exit_code != 0
 
 
+# ---- current ----
+
+
+def test_current_prints_active_from_config(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`active: prod` in the config → stdout 'prod', stderr names config."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["prod"]
+    assert "(source: config)" in result.stderr
+
+
+def test_current_falls_back_to_default_with_no_config(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No config file at all → 'default' on stdout, source 'fallback'."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    assert not _isolate_config.exists()
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["default"]
+    assert "(source: fallback)" in result.stderr
+
+
+def test_current_env_var_overrides(_isolate_config: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """UNTAPED_PROFILE wins over `active:` and is reported as `env`."""
+    _seed(_isolate_config)  # active: prod
+    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["stage"]
+    assert "(source: env)" in result.stderr
+
+
+def test_current_stdout_is_pipe_friendly(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point of this command: stdout is *only* the name, so
+    `untaped profile current | xargs untaped --profile` works without
+    awk/cut. Source breadcrumbs go to stderr."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    _seed(_isolate_config)
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code == 0
+    assert result.stdout == "prod\n"
+
+
 # ---- create ----
 
 
@@ -230,6 +280,24 @@ def test_create_rejects_existing(_isolate_config: Path) -> None:
     _seed(_isolate_config)
     result = CliRunner().invoke(app, ["create", "prod"])
     assert result.exit_code != 0
+
+
+def test_create_on_empty_config_bootstraps_default(_isolate_config: Path) -> None:
+    """Regression: on a fresh install with no config file, ``profile create
+    stage`` followed by ``Settings()`` (the path ``untaped config list``
+    takes) must not raise ``the default profile is required``. The
+    bootstrap puts an empty ``default`` profile alongside ``stage`` so the
+    resolver invariant holds."""
+    assert not _isolate_config.exists()
+    result = CliRunner().invoke(app, ["create", "stage"])
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolate_config.read_text())
+    assert "default" in data["profiles"]
+    assert data["profiles"]["default"] == {}
+    assert data["profiles"]["stage"] == {}
+    # The smoking gun: subsequent Settings() resolution succeeds.
+    get_settings.cache_clear()
+    get_settings()  # would raise ConfigError without the bootstrap
 
 
 # ---- delete ----
@@ -285,7 +353,7 @@ def test_rename_collision_refused(_isolate_config: Path) -> None:
 def test_help_lists_all_commands() -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("list", "show", "use", "create", "delete", "rename"):
+    for cmd in ("list", "show", "use", "current", "create", "delete", "rename"):
         assert cmd in result.stdout
 
 

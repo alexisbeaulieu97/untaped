@@ -46,3 +46,34 @@ def test_copy_is_independent(repo: Any) -> None:
     CreateProfile(repo)("homelab", copy_from="prod")
     repo.write("prod", {"awx": {"base_url": "https://changed"}})
     assert repo.read("homelab") == {"awx": {"base_url": "https://prod"}}
+
+
+def test_bootstraps_default_on_empty_repo(empty_repo_factory: Any) -> None:
+    """`profile create stage` on a fresh install must auto-create `default`.
+
+    Without this, the resulting config has `profiles: {stage: {}}` and no
+    `default`, which makes any subsequent settings load (e.g. `untaped
+    config list`) raise ConfigError("…the default profile is required").
+    The invariant — non-empty `profiles` ⇒ `default` exists — is the
+    same one `untaped config set` already preserves.
+    """
+    repo = empty_repo_factory()
+    CreateProfile(repo)("stage")
+    assert sorted(repo.names()) == ["default", "stage"]
+    assert repo.read("default") == {}
+    assert repo.read("stage") == {}
+
+
+def test_bootstrap_skipped_when_creating_default(empty_repo_factory: Any) -> None:
+    """Creating `default` itself must not double-write."""
+    repo = empty_repo_factory()
+    CreateProfile(repo)("default")
+    assert repo.names() == ["default"]
+    assert repo.read("default") == {}
+
+
+def test_bootstrap_skipped_when_default_already_exists(repo: Any) -> None:
+    """Existing `default` must not be overwritten by the bootstrap."""
+    original_default = repo.read("default")
+    CreateProfile(repo)("homelab")
+    assert repo.read("default") == original_default

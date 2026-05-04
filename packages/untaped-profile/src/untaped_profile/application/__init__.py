@@ -1,4 +1,8 @@
 from untaped_profile.application.create_profile import CreateProfile
+from untaped_profile.application.current_profile import (
+    CurrentProfile,
+    CurrentProfileResult,
+)
 from untaped_profile.application.delete_profile import DeleteProfile
 from untaped_profile.application.list_profiles import ListProfiles
 from untaped_profile.application.ports import ProfileRepository
@@ -8,6 +12,8 @@ from untaped_profile.application.use_profile import UseProfile
 
 __all__ = [
     "CreateProfile",
+    "CurrentProfile",
+    "CurrentProfileResult",
     "DeleteProfile",
     "ListProfiles",
     "ProfileRepository",
