@@ -241,6 +241,35 @@ def test_known_field_emits_no_warning() -> None:
     assert not any(isinstance(w.message, UnknownLaunchFieldWarning) for w in caught)
 
 
+def test_resource_only_fk_emits_unknown_field_warning() -> None:
+    """``project`` is a resource FK but not a launch field — must warn, not resolve."""
+    fk = StubFkResolver()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        payload = _resolve({"launch": {"project": "Some Project"}}, fk=fk)
+    # Project string passes through (no resolution attempted).
+    assert payload["project"] == "Some Project"
+    assert fk.calls == []
+    # Unknown-field warning fires for resource-only FKs.
+    assert any(
+        isinstance(w.message, UnknownLaunchFieldWarning) and "project" in str(w.message)
+        for w in caught
+    )
+
+
+def test_organization_resource_fk_does_not_resolve_at_launch() -> None:
+    fk = StubFkResolver()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        payload = _resolve({"launch": {"organization": "Default"}}, fk=fk)
+    assert payload["organization"] == "Default"
+    assert fk.calls == []
+    assert any(
+        isinstance(w.message, UnknownLaunchFieldWarning) and "organization" in str(w.message)
+        for w in caught
+    )
+
+
 def test_known_launch_fields_includes_core_set() -> None:
     """Smoke test the allowlist isn't accidentally empty."""
     for field in (

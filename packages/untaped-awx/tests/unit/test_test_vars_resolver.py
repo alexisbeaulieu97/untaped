@@ -140,6 +140,34 @@ def test_unknown_variable_in_cli_raises() -> None:
         resolve_variables(specs, cli={"frooks": "x"}, files=(), prompt=prompt)
 
 
+def test_extra_known_names_accepted_for_disjoint_multi_file_runs() -> None:
+    """A var declared by a sibling suite may appear on the CLI without rejection."""
+    prompt = StubPrompt(answers={})
+    specs = {"env": _spec("env", default="dev")}
+    values = resolve_variables(
+        specs,
+        cli={"region": "us-east-1"},  # not in this suite, but declared elsewhere
+        files=(),
+        prompt=prompt,
+        extra_known_names={"region"},
+    )
+    # Only this suite's declared vars get resolved.
+    assert values == {"env": "dev"}
+
+
+def test_extra_known_names_does_not_silence_unrelated_typos() -> None:
+    prompt = StubPrompt(answers={})
+    specs = {"env": _spec("env", default="dev")}
+    with pytest.raises(AwxApiError, match="enviornment"):
+        resolve_variables(
+            specs,
+            cli={"enviornment": "prod"},  # genuine typo, not in any suite
+            files=(),
+            prompt=prompt,
+            extra_known_names={"region"},
+        )
+
+
 @pytest.fixture
 def _no_real_prompt(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Guard: the test module never calls the real TyperPrompt."""

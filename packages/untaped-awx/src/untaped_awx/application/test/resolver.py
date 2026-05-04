@@ -89,15 +89,31 @@ class ResolveCasePayload:
 
     @staticmethod
     def fk_index_for(spec: AwxResourceSpec) -> dict[str, FkRef]:
-        """Build the ``field → FkRef`` index used by both resolution and prefetch.
+        """Build the ``field → FkRef`` index of FKs valid at launch time.
 
-        Public so the runner's prefetch plan can use the same view of FK
-        fields the resolver does — keeping the two paths in step without
-        re-implementing the filter at every call site.
+        ``spec.fk_refs`` describes every foreign-key field on the saved
+        resource document — including ones the launch endpoint does NOT
+        accept (``project``, ``organization``, ``webhook_credential``).
+        Including those here would silently resolve user-supplied values
+        and POST them to ``/launch/``, where AWX rejects them. Restrict
+        to:
+
+        - every entry in ``launch_fk_refs`` (those are launch-only by
+          construction);
+        - entries in ``fk_refs`` whose field is also in the launch
+          action's ``accepts`` set (``inventory``, ``credentials`` for
+          JobTemplate).
+
+        Resource-only FKs left out of this index fall through to the
+        ``UnknownLaunchFieldWarning`` path, which is the correct
+        diagnostic for "AWX won't accept this on launch".
         """
+        launch_action = next((a for a in spec.actions if a.name == "launch"), None)
+        accepted = launch_action.accepts if launch_action is not None else frozenset()
+        accepted_fk_refs = (ref for ref in spec.fk_refs if ref.field in accepted)
         return {
             ref.field: ref
-            for ref in (*spec.fk_refs, *spec.launch_fk_refs)
+            for ref in (*accepted_fk_refs, *spec.launch_fk_refs)
             if not ref.polymorphic and ref.kind is not None
         }
 
