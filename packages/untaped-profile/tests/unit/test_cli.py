@@ -257,6 +257,20 @@ def test_current_stdout_is_pipe_friendly(
     assert result.stdout == "prod\n"
 
 
+def test_current_errors_on_typoed_env_var(
+    _isolate_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If UNTAPED_PROFILE names a missing profile, `current` must fail
+    loudly instead of printing the typo'd name with exit 0. The
+    documented pipe usage `untaped --profile $(untaped profile current)`
+    would otherwise blow up downstream with a less helpful error."""
+    _seed(_isolate_config)
+    monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
+    result = CliRunner().invoke(app, ["current"])
+    assert result.exit_code != 0
+    assert "ghost" in result.output or "ghost" in result.stderr
+
+
 # ---- create ----
 
 
@@ -282,22 +296,21 @@ def test_create_rejects_existing(_isolate_config: Path) -> None:
     assert result.exit_code != 0
 
 
-def test_create_on_empty_config_bootstraps_default(_isolate_config: Path) -> None:
+def test_create_on_empty_config_does_not_materialise_default(_isolate_config: Path) -> None:
     """Regression: on a fresh install with no config file, ``profile create
-    stage`` followed by ``Settings()`` (the path ``untaped config list``
-    takes) must not raise ``the default profile is required``. The
-    bootstrap puts an empty ``default`` profile alongside ``stage`` so the
-    resolver invariant holds."""
+    stage`` produces a config with only ``stage`` — no auto-materialised
+    ``default``. The resolver no longer requires ``default`` to exist, so
+    a follow-up ``Settings()`` load (the path ``untaped config list`` takes)
+    succeeds without raising."""
     assert not _isolate_config.exists()
     result = CliRunner().invoke(app, ["create", "stage"])
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_config.read_text())
-    assert "default" in data["profiles"]
-    assert data["profiles"]["default"] == {}
+    assert list(data["profiles"]) == ["stage"]
     assert data["profiles"]["stage"] == {}
-    # The smoking gun: subsequent Settings() resolution succeeds.
+    # The whole reason this is safe: subsequent Settings() resolution succeeds.
     get_settings.cache_clear()
-    get_settings()  # would raise ConfigError without the bootstrap
+    get_settings()
 
 
 # ---- delete ----
@@ -310,8 +323,21 @@ def test_delete_removes_profile(_isolate_config: Path) -> None:
     assert "stage" not in yaml.safe_load(_isolate_config.read_text())["profiles"]
 
 
-def test_delete_default_refused(_isolate_config: Path) -> None:
-    _seed(_isolate_config)
+def test_delete_default_when_not_active(_isolate_config: Path) -> None:
+    """`default` is now an optional profile — deleting it when another
+    profile is active just clears the shared-overrides layer."""
+    _seed(_isolate_config)  # active: prod
+    result = CliRunner().invoke(app, ["delete", "default"])
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolate_config.read_text())
+    assert "default" not in data["profiles"]
+    assert data["profiles"]["prod"] == {"awx": {"base_url": "https://prod"}}
+
+
+def test_delete_default_refused_when_active(_isolate_config: Path) -> None:
+    _isolate_config.write_text(
+        "profiles:\n  default:\n    log_level: INFO\n  prod: {}\nactive: default\n"
+    )
     result = CliRunner().invoke(app, ["delete", "default"])
     assert result.exit_code != 0
 

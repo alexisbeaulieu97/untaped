@@ -52,7 +52,7 @@ untaped/
 └── packages/
     ├── untaped-core/             # shared infra (settings, http, config, profiles, output, stdin, errors)
     ├── untaped-config/           # `untaped config list/set/unset` (operates on profiles)
-    ├── untaped-profile/          # `untaped profile list/show/use/create/delete/rename`
+    ├── untaped-profile/          # `untaped profile list/show/use/current/create/delete/rename`
     ├── untaped-workspace/        # manage local git workspaces
     ├── untaped-awx/              # Ansible Automation Platform / AWX API
     └── untaped-github/           # GitHub authenticated-user inspection
@@ -63,7 +63,7 @@ untaped/
 | `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps via `add_typer`. Hosts the root `--profile` flag. |
 | `untaped-core`      | lib  | Cross-cutting: settings, http (incl. TLS), config schema/file, profiles (resolver + helpers), output, stdin. |
 | `untaped-config`    | lib  | The `config` meta-domain: introspect/edit profile contents in `~/.untaped/config.yml`. |
-| `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/create/delete/rename profiles. |
+| `untaped-profile`   | lib  | The `profile` meta-domain: list/show/use/current/create/delete/rename profiles. |
 | `untaped-workspace` | lib  | Workspace bounded context: per-workspace `untaped.yml` manifests, central `name → path` registry, sync/status/foreach via subprocess `git`. |
 | `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            |
 | `untaped-github`    | lib  | GitHub bounded context — currently only the authenticated user (`whoami`); search/repos/etc. unimplemented. |
@@ -179,30 +179,37 @@ lives under `profiles.<name>`, never at the top level. Two profile-related
 keys live outside that block:
 
 - `active: <name>` — selects which profile is active. May be unset (then
-  `default` is used). The `UNTAPED_PROFILE` env var or the root
-  `untaped --profile <name>` flag override this for one process.
+  `default` is used if it exists, otherwise no profile layer applies and
+  values come straight from the schema). The `UNTAPED_PROFILE` env var or
+  the root `untaped --profile <name>` flag override this for one process.
 - `workspace.workspaces` — the workspace registry. This is **app state**,
   not user-tunable config, so it stays at the top level and is hoisted
   back into the merged dict by `ProfilesSettingsSource`.
 
 Resolution order, high → low:
 
-```
-env vars (UNTAPED_…)  >  active profile  >  default profile  >  schema default
+```text
+env vars (UNTAPED_…)  >  active profile  >  default profile (optional)  >  schema default
 ```
 
-Two-layer fallback only — `prod` ⤥ `default` ⤥ schema. There is no
-profile-to-profile inheritance beyond the implicit `default` fallback.
-
-The `default` profile is required (the resolver raises if `profiles.*` is
-non-empty without it). It is also the bottom layer for everything: any
-named profile can declare just the keys that differ.
+The `default` profile is **optional**. Schema defaults
+(`packages/untaped-core/src/untaped_core/settings.py`) are the implicit
+floor for every profile. If `profiles.default` is present, it merges as a
+shared overrides layer beneath the active profile — useful for values
+every profile should inherit (e.g. `default: { http: { ca_bundle: /corp.pem } }`).
+There is no profile-to-profile inheritance beyond the implicit `default`
+fallback.
 
 `untaped config set <key> <value>` writes to the active profile by default;
 `--profile <name>` targets a different one (the named profile must already
-exist; `default` is auto-bootstrapped). `untaped profile <…>` manages the
-profile inventory itself: `list`, `show`, `use`, `create [--copy-from]`,
-`delete`, `rename`. Deleting `default` or the active profile is refused.
+exist; `--profile default` is the one exception — it auto-creates `default`
+on first write since that's the canonical way to seed shared overrides).
+`untaped profile <…>` manages the profile inventory itself: `list`, `show`,
+`use`, `current`, `create [--copy-from]`, `delete`, `rename`. Deleting the
+active profile is refused (which transitively means `default` is refused
+when it's also active); `default` can be renamed only by deleting and
+creating a new profile, since renaming the shared-overrides layer into a
+named profile is semantically muddy.
 
 The root `--profile` flag mutates `os.environ["UNTAPED_PROFILE"]` and
 clears `get_settings`'s `lru_cache` immediately, so per-call overrides
@@ -459,6 +466,7 @@ uv run untaped config unset awx.token               # remove from the active pro
 uv run untaped profile list                         # list profiles, ✓ marks active
 uv run untaped profile show prod                    # effective view (default ⤥ prod)
 uv run untaped profile use prod                     # persist `active: prod`
+uv run untaped profile current                      # print the active profile name (pipe-friendly)
 uv run untaped profile create homelab --copy-from default
 uv run untaped profile delete stage
 uv run untaped profile rename prod production       # also updates `active:` if it pointed there

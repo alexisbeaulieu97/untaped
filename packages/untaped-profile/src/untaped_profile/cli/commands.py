@@ -1,4 +1,4 @@
-"""Typer commands: ``untaped profile list / show / use / create / delete / rename``."""
+"""Typer commands: ``untaped profile list / show / use / current / create / delete / rename``."""
 
 from __future__ import annotations
 
@@ -166,7 +166,7 @@ def create_command(
 def delete_command(
     name: str = typer.Argument(..., help="Profile to remove."),
 ) -> None:
-    """Delete a profile. Refuses to delete ``default`` or the active profile."""
+    """Delete a profile. Refuses to delete the active profile."""
     with report_errors():
         DeleteProfile(ProfileFileRepository())(name)
         typer.echo(f"deleted profile: {name}", err=True)

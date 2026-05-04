@@ -19,7 +19,12 @@ from untaped_core.config_file import (
     set_active_profile,
     write_profile,
 )
-from untaped_core.profile_resolver import effective_active_profile_name, resolve_profiles
+from untaped_core.profile_resolver import (
+    ProfileSource,
+    classify_active_profile,
+    effective_active_profile_name,
+    resolve_profiles,
+)
 
 
 class ProfileFileRepository:
@@ -46,6 +51,15 @@ class ProfileFileRepository:
         active pointer behind their back.
         """
         return get_active_profile_name()
+
+    def classify_active(self) -> tuple[str | None, ProfileSource]:
+        """Return the effective active profile name + the layer that supplied it.
+
+        Delegates to :func:`untaped_core.profile_resolver.classify_active_profile`,
+        which is the single source of truth for the env/active/fallback
+        precedence.
+        """
+        return classify_active_profile(read_config_dict())
 
     def read(self, name: str) -> dict[str, Any] | None:
         return read_profile(name)
