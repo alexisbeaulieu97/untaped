@@ -193,8 +193,12 @@ def test_empty_config_file_yields_schema_defaults(
     assert s.workspace.workspaces == []
 
 
-def test_missing_default_profile_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The resolver complains; surfaced as a Settings construction error."""
+def test_missing_default_profile_no_active_uses_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`default` is optional. With profiles defined but no `default` and
+    no `active:` key, no profile layer applies — Settings falls through
+    to schema defaults (`log_level == "INFO"`, `awx.token is None`)."""
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
@@ -203,9 +207,29 @@ def test_missing_default_profile_raises(tmp_path: Path, monkeypatch: pytest.Monk
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    with pytest.raises(Exception) as exc:
-        Settings()
-    assert "default" in str(exc.value)
+    s = Settings()
+    assert s.log_level == "INFO"
+    assert s.awx.token is None
+
+
+def test_missing_default_profile_with_active_uses_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With `active: prod` and no `default`, prod's values still apply
+    — schema defaults fill the rest."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        profiles:
+          prod: {awx: {token: x}}
+        active: prod
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    s = Settings()
+    assert s.log_level == "INFO"
+    assert s.awx.token is not None
+    assert s.awx.token.get_secret_value() == "x"
 
 
 def test_unknown_active_profile_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
