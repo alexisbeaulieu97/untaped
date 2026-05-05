@@ -168,7 +168,8 @@ Use the top-level `awx apply` when you want the dependency ordering.
 ### `untaped awx save --all` (bulk dump)
 
 ```bash
-untaped awx save --out-dir backup/ --all [--organization <org>]
+untaped awx save --out-dir backup/ --all
+untaped awx save --out-dir backup/ --all --filter organization__name=Engineering
 untaped awx save --out-dir backup/ --kind JobTemplate
 ```
 
@@ -176,6 +177,12 @@ Writes one file per resource. Filenames encode the full identity so
 same-named records across organizations don't collide:
 `<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml`.
 Read-only kinds (Credential, etc.) are skipped with a one-line note.
+
+`--filter KEY=VALUE` (repeatable) is passed verbatim to AWX for every
+saved kind. AWX's `/schedules/` endpoint has no `organization` field,
+so `--filter organization__name=…` is rejected by that endpoint —
+schedules don't get included in an org-scoped backup. Run a separate
+`save --kind Schedule` (no filter) if you also need schedules.
 
 ### `untaped awx jobs`
 
