@@ -23,7 +23,7 @@ want; the registry is local-only.
 
 ```bash
 untaped workspace init ~/work/prod              # new workspace
-untaped workspace add git@github.com:acme/api ~/work/prod  # add a repo
+untaped workspace add git@github.com:acme/api --path ~/work/prod  # add a repo
 untaped workspace sync --name prod              # clone everything in the manifest
 untaped workspace status --name prod            # per-repo git status
 ```
@@ -156,7 +156,8 @@ Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
 
 ```bash
 # Repos with upstream commits you haven't pulled
-untaped workspace status --all --format raw --columns workspace,repo,behind \
+untaped workspace status --all --format raw \
+    --columns workspace --columns repo --columns behind \
   | awk '$3 > 0 { print }'
 ```
 
@@ -225,7 +226,8 @@ Opens the workspace directory in your editor. Honours `$VISUAL` then
 
 ```bash
 untaped workspace sync --all
-untaped workspace status --all --format raw --columns workspace,repo,behind,modified \
+untaped workspace status --all --format raw \
+    --columns workspace --columns repo --columns behind --columns modified \
   | awk '$3 > 0 || $4 > 0 { print }'
 ```
 

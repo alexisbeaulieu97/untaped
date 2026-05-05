@@ -95,7 +95,7 @@ against `stage` without touching your persisted `active:`.
 untaped profile list                          # list profiles, ✓ marks active
 untaped profile current                       # print the active profile name (pipe-friendly)
 untaped profile show <name>                   # effective view (default ⤥ named)
-untaped profile show <name> --raw             # only the keys this profile literally sets
+untaped profile show <name> --raw             # only the keys this profile literally sets (no `default` merge)
 untaped profile show <name> --show-secrets    # reveal token values
 untaped profile use <name>                    # persist `active: <name>`
 untaped profile create <name>                 # empty profile
@@ -106,7 +106,9 @@ untaped profile rename <old> <new>            # also updates `active:` if it poi
 
 `profile show` defaults to YAML output; `--format json` wraps the data
 in an envelope (`{name, active, raw, data}`) so downstream tools can
-address metadata fields with `jq '.data.awx.base_url'`.
+address metadata fields with `jq '.data.awx.base_url'`. `show default`
+looks the same with or without `--raw` — `default` has no parent layer
+to merge under itself.
 
 `profile current` prints just the name to stdout (with the source —
 `env` / `config` / `fallback` — going to stderr), so you can use it in
@@ -122,7 +124,9 @@ echo "[$(untaped profile current 2>/dev/null)] $ "
 untaped config list                          # effective values from the active profile
 untaped config list --all-profiles           # one row per (profile, key)
 untaped config list --show-secrets           # reveal redacted values
-untaped config list --format json            # machine-readable
+untaped config list --format json|yaml|table|raw
+untaped config list --format raw --columns key --columns value
+                                             # available columns: key, value, default, source, profile
 untaped config set <key> <value>             # write to the active profile
 untaped config set <key> <value> --profile <name>
 untaped config unset <key>                   # remove from the active profile
@@ -135,9 +139,12 @@ Keys are dotted paths into the schema, e.g. `awx.token`,
 so `untaped config set http.verify_ssl false` writes a real `false`,
 not the string `"false"`.
 
-Setting a key on a profile that doesn't exist creates the profile
-(except for `default`, which is auto-bootstrapped if any profile is
-written to).
+Writing to a profile that doesn't exist is rejected — create it first
+with `untaped profile create <name>`. The one exception is `default`,
+which is auto-bootstrapped on the first write so a fresh install
+doesn't need a setup step. So `untaped config set awx.token <tok>` on
+a brand-new system writes to `default`; `untaped config set awx.token
+<tok> --profile prod` requires `prod` to already exist.
 
 ## Secrets
 
@@ -166,8 +173,11 @@ untaped config set http.ca_bundle /path/to/corp-ca.pem
 untaped config set http.verify_ssl false       # last-resort escape hatch
 ```
 
-`http.verify_ssl: false` disables certificate validation entirely; only
-use it on a network you trust, since traffic is then open to MITM.
+`http.verify_ssl: false` disables certificate validation entirely. Only
+use it on a network you trust completely: traffic is open to MITM, and
+any tokens you've configured (AWX, GitHub) become visible to anyone
+on-path. Prefer `http.ca_bundle` whenever the certificate is the real
+problem.
 
 ## Environment-variable overrides
 
@@ -198,12 +208,15 @@ untaped config set awx.token    <dev-token>
 untaped config set github.token ghp_xxx
 
 # Branch a prod profile from default and override what differs.
+# `prod` must exist before any --profile prod write; create it first.
 untaped profile create prod --copy-from default
 untaped config set awx.base_url https://aap.prod.example.com --profile prod
 untaped config set awx.token    <prod-token>                  --profile prod
 
-# Day-to-day: stay on default.
-untaped profile use default
+# Day-to-day: do nothing — with no `active:` set, `default` is the
+# implicit fallback. (Only run `untaped profile use default` if you
+# previously persisted a different active profile and want to switch
+# back.)
 
 # One-off prod call without switching profiles globally:
 untaped --profile prod awx ping

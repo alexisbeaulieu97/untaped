@@ -23,6 +23,11 @@ typically:
 untaped config set github.base_url https://github.example.com/api/v3
 ```
 
+GHE URLs include the explicit `/api/v3` suffix because each GHE
+instance hosts its API under that path; the public github.com default
+(`https://api.github.com`) doesn't because the version sits behind a
+versioned subdomain instead.
+
 ## Commands
 
 ### `whoami`
