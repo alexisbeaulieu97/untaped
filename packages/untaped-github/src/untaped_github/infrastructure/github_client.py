@@ -5,16 +5,17 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from untaped_core import ConfigError, HttpClient, Settings, get_settings
+from untaped_core import ConfigError, HttpClient, HttpSettings
 from untaped_core.http import resolve_verify
+
+from untaped_github.infrastructure.config import GithubConfig
 
 
 class GithubClient:
     """Talks to ``api.github.com`` (or a GHE base) using the configured token."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        s = settings or get_settings()
-        if s.github.token is None:
+    def __init__(self, config: GithubConfig, *, http: HttpSettings | None = None) -> None:
+        if config.token is None:
             raise ConfigError(
                 "github.token is not configured (set it via "
                 "`untaped config set github.token <token>` or UNTAPED_GITHUB__TOKEN)"
@@ -22,12 +23,12 @@ class GithubClient:
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "Authorization": f"Bearer {s.github.token.get_secret_value()}",
+            "Authorization": f"Bearer {config.token.get_secret_value()}",
         }
         self._http = HttpClient(
-            base_url=s.github.base_url.rstrip("/"),
+            base_url=config.base_url.rstrip("/"),
             headers=headers,
-            verify=resolve_verify(s.http),
+            verify=resolve_verify(http or HttpSettings()),
         )
 
     def me(self) -> dict[str, Any]:

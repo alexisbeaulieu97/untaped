@@ -195,3 +195,98 @@ def test_every_domain_has_application_layer() -> None:
         "packages without application/ (add the layer or list in "
         f"_PACKAGES_WITHOUT_APPLICATION_LAYER): {missing}"
     )
+
+
+# AGENTS.md: "Only ``cli/`` modules read ``untaped_core.Settings``."
+# Infrastructure adapters must accept a package-local config struct
+# (e.g. ``AwxConfig``, ``GithubConfig``) instead, so they can be
+# constructed in tests without touching the global settings cache.
+#
+# Allowlist entries live below ``infrastructure/`` and are written as
+# ``"<import_root>/<rel_path_under_src>"`` (POSIX separators):
+_INFRA_MAY_READ_SETTINGS: frozenset[str] = frozenset(
+    {
+        # Meta-domain: the whole purpose of ``untaped-config`` is to read
+        # and edit ``Settings``; the introspection adapter has to import it.
+        "untaped_config/infrastructure/settings_repo.py",
+        # Pre-existing tech debt: ``cache_path_for`` falls back to
+        # ``get_settings().workspace.cache_dir`` when no ``cache_dir``
+        # kwarg is passed. Callers (``GitRunner.ensure_bare``) already
+        # accept ``cache_dir``; remove the fallback and drop this entry
+        # in a follow-up PR.
+        "untaped_workspace/infrastructure/bare_cache.py",
+    }
+)
+
+
+def _discover_infrastructure_dirs() -> list[tuple[str, Path]]:
+    """Return ``(import_root, infrastructure_dir)`` pairs for every domain."""
+    pairs: list[tuple[str, Path]] = []
+    for infra_dir in sorted(PACKAGES_DIR.glob("*/src/*/infrastructure")):
+        if not infra_dir.is_dir():
+            continue
+        import_root = infra_dir.parent.name
+        pairs.append((import_root, infra_dir))
+    return pairs
+
+
+def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:
+    """Return ``"file:line imports X"`` strings for forbidden Settings imports.
+
+    Forbidden:
+      - ``from untaped_core import Settings`` / ``get_settings``
+      - ``from untaped_core.settings import Settings`` / ``get_settings``
+
+    Plain ``import untaped_core`` is NOT flagged — it doesn't pull
+    ``Settings`` into the namespace and adapters that need ``HttpSettings``
+    (which is fine) would otherwise be tripped.
+    """
+    forbidden_names = frozenset({"Settings", "get_settings"})
+    rel = py_file.relative_to(src_dir.parent)
+    tree = ast.parse(py_file.read_text(encoding="utf-8"))
+    found: list[str] = []
+    for imp in _runtime_imports(tree):
+        if not isinstance(imp, ast.ImportFrom):
+            continue
+        if imp.module not in {"untaped_core", "untaped_core.settings"}:
+            continue
+        bad = sorted({alias.name for alias in imp.names if alias.name in forbidden_names})
+        if bad:
+            found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)} from {imp.module}")
+    return found
+
+
+@pytest.mark.parametrize(
+    ("import_root", "infrastructure_dir"),
+    _discover_infrastructure_dirs(),
+    ids=lambda value: value if isinstance(value, str) else value.parent.name,
+)
+def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_dir: Path) -> None:
+    """Infrastructure adapters must not import ``Settings`` / ``get_settings``.
+
+    AGENTS.md: only ``cli/`` modules read ``untaped_core.Settings``;
+    everything downstream consumes a package-local config struct (e.g.
+    :class:`untaped_awx.infrastructure.AwxConfig`,
+    :class:`untaped_github.infrastructure.GithubConfig`). Adapters that
+    read settings directly couple to the global cache and can't be
+    constructed in unit tests without monkey-patching it.
+
+    Documented exceptions live in ``_INFRA_MAY_READ_SETTINGS``. New
+    violations should be fixed (composition root reads settings, builds
+    a config, passes it to the adapter); only add to the allowlist with
+    a rationale comment.
+    """
+    src_dir = infrastructure_dir.parent
+    violations: list[str] = []
+    for py_file in sorted(infrastructure_dir.rglob("*.py")):
+        rel_under_src = py_file.relative_to(src_dir.parent).as_posix()
+        if rel_under_src in _INFRA_MAY_READ_SETTINGS:
+            continue
+        violations.extend(_settings_violations_in_file(py_file, src_dir))
+
+    assert not violations, (
+        f"{import_root}/infrastructure must not import Settings / get_settings "
+        "from untaped_core (only cli/ may read settings; pass a package-local "
+        "config struct in instead). To document an intentional exception, add "
+        "the path to _INFRA_MAY_READ_SETTINGS above with a rationale.\n  " + "\n  ".join(violations)
+    )
