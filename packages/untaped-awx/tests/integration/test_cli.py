@@ -709,18 +709,10 @@ def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
     assert "no such command" in result.output.lower() or "usage" in result.output.lower()
 
 
-def test_save_all_organization_filter_applies_per_spec_identity(
-    fake_aap: Any, tmp_path: Path
-) -> None:
-    """`awx save --all --organization X` must apply the org filter only to
-    specs whose ``identity_keys`` include ``organization``. Schedule's
-    identity is ``("name",)`` (parent org lives in ``metadata.parent``);
-    applying the same filter as JT/Project there silently excludes every
-    schedule. JT in a *different* org must still be filtered out.
-
-    This pins both halves of the regression: schedules included AND
-    other-org JTs excluded.
-    """
+def test_save_all_filter_scopes_org_kinds_server_side(fake_aap: Any, tmp_path: Path) -> None:
+    """`save --all --filter organization__name=X` is passed verbatim to AWX
+    for every saved kind, so org-scoped kinds (JT, Project) get filtered
+    server-side and other-org records don't leak through."""
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("organizations", id=2, name="Other")
     fake_aap.seed(
@@ -741,7 +733,7 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         project=10,
         project_name="playbooks",
     )
-    # Same JT name, different org — must be excluded by `--organization Default`.
+    # Same JT name, different org — must be excluded by `--filter organization__name=Default`.
     fake_aap.seed(
         "job_templates",
         id=31,
@@ -752,34 +744,21 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         project=10,
         project_name="playbooks",
     )
-    # Schedule attached to the JT — note no `organization_name` on the
-    # record itself; AWX surfaces parent org via summary_fields only.
-    fake_aap.seed(
-        "schedules",
-        id=50,
-        name="nightly",
-        unified_job_template=30,
-        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
-        enabled=True,
-        summary_fields={
-            "unified_job_template": {
-                "id": 30,
-                "name": "deploy",
-                "unified_job_type": "job_template",
-                "organization_name": "Default",
-            }
-        },
-    )
 
     out_dir = tmp_path / "backup"
     result = CliRunner().invoke(
         app,
-        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "organization__name=Default",
+        ],
     )
     assert result.exit_code == 0, result.output
 
-    # Org filter still applied to org-scoped kinds: JT in `Default` saved,
-    # JT in `Other` not saved. Filenames now encode the org for org-scoped kinds.
     assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
     assert (out_dir / "Project__Default__playbooks.yml").exists()
     other_org_jt_files = [
@@ -790,19 +769,14 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         f"{[p.name for p in out_dir.iterdir()]}"
     )
 
-    # Schedule must be saved despite --organization filter (the bug filtered it out).
-    schedule_files = list(out_dir.glob("Schedule__*.yml"))
-    assert schedule_files, (
-        "schedule excluded by organization__name filter; saved files: "
-        f"{[p.name for p in out_dir.iterdir()]}"
-    )
-    assert any("nightly" in f.name for f in schedule_files)
 
-
-def test_save_all_does_not_default_to_active_organization(
+def test_save_all_with_no_filter_captures_every_kind(
     fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`save --all` ignores `default_organization`; only `--organization` narrows."""
+    """Bulk save with no ``--filter`` is "back up everything": JTs across
+    every org plus parent-scoped kinds (Schedule). ``default_organization``
+    must not silently narrow the backup — it's a name-disambiguation hint
+    for ``get``/``launch``/``update``, not a save scope."""
     monkeypatch.setenv("UNTAPED_AWX__DEFAULT_ORGANIZATION", "Default")
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("organizations", id=2, name="Other")
@@ -822,91 +796,47 @@ def test_save_all_does_not_default_to_active_organization(
         organization_name="Other",
         playbook="b.yml",
     )
-
-    out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
-    assert result.exit_code == 0, result.output
-
-    # Both JTs must be saved — bulk save without an explicit --organization
-    # is "everything", regardless of `default_organization`.
-    saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
-    assert saved == [
-        "JobTemplate__Default__deploy-default.yml",
-        "JobTemplate__Other__deploy-other.yml",
-    ], f"expected both JTs saved, got {saved}"
-
-
-def test_save_all_with_organization_filters_schedules_by_parent_org(
-    fake_aap: Any, tmp_path: Path
-) -> None:
-    """`awx save --all --organization X` filters schedules client-side by parent org."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed("organizations", id=2, name="Other")
-    fake_aap.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-    )
-    fake_aap.seed(
-        "job_templates",
-        id=31,
-        name="deploy-other",
-        organization=2,
-        organization_name="Other",
-        playbook="b.yml",
-    )
-    # Schedule attached to JT in `Default`.
     fake_aap.seed(
         "schedules",
         id=50,
-        name="nightly-default",
+        name="nightly",
         unified_job_template=30,
         rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
         enabled=True,
         summary_fields={
             "unified_job_template": {
                 "id": 30,
-                "name": "deploy",
+                "name": "deploy-default",
                 "unified_job_type": "job_template",
                 "organization_name": "Default",
             }
         },
     )
-    # Schedule attached to JT in `Other` — must be excluded by `--organization Default`.
-    fake_aap.seed(
-        "schedules",
-        id=51,
-        name="nightly-other",
-        unified_job_template=31,
-        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
-        enabled=True,
-        summary_fields={
-            "unified_job_template": {
-                "id": 31,
-                "name": "deploy-other",
-                "unified_job_type": "job_template",
-                "organization_name": "Other",
-            }
-        },
-    )
 
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(
-        app,
-        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
-    )
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
-    saved_schedules = sorted(p.name for p in out_dir.glob("Schedule__*.yml"))
-    assert saved_schedules == [
-        "Schedule__JobTemplate__Default__deploy__nightly-default.yml",
-    ], (
-        "schedule from a different org leaked into org-scoped bulk save; "
-        f"saved schedule files: {saved_schedules}"
+    saved_jts = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
+    assert saved_jts == [
+        "JobTemplate__Default__deploy-default.yml",
+        "JobTemplate__Other__deploy-other.yml",
+    ], f"expected both JTs saved, got {saved_jts}"
+    assert list(out_dir.glob("Schedule__*.yml")), (
+        "schedule excluded from no-filter backup; "
+        f"saved files: {[p.name for p in out_dir.iterdir()]}"
     )
+
+
+def test_save_all_filter_rejects_malformed_entry(fake_aap: Any, tmp_path: Path) -> None:
+    """Same KEY=VALUE validation as ``<kind> list --filter``."""
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app, ["save", "--all", "--out-dir", str(out_dir), "--filter", "bogus"]
+    )
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "KEY=VALUE" in output
 
 
 def test_save_all_distinguishes_same_named_resources_across_orgs(

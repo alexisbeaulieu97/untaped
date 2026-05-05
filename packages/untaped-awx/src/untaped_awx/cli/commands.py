@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
 import typer
 from untaped_core import (
@@ -27,13 +26,13 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
-from untaped_awx.cli._context import awx_config_from_settings, open_context, scope_for_spec
+from untaped_awx.cli._context import awx_config_from_settings, open_context
+from untaped_awx.cli._filters import parse_filters
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.domain import Job, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
-from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import ALL_SPECS
 from untaped_awx.infrastructure.yaml_io import write_resource
 
@@ -101,7 +100,17 @@ def save_top_command(
     kind: str | None = typer.Option(
         None, "--kind", help="Limit save to a single kind (e.g. JobTemplate)."
     ),
-    organization: str | None = typer.Option(None, "--organization", help="Scope to organization."),
+    filter_: list[str] | None = typer.Option(
+        None,
+        "--filter",
+        help=(
+            "Server-side filter, KEY=VALUE (repeatable). Passed verbatim to "
+            "AWX for each saved kind. Note: AWX's /schedules/ endpoint has "
+            "no organization field, so filters like organization__name=… "
+            "are 400'd by that endpoint — do a separate per-kind save if "
+            "you need org-scoped schedules."
+        ),
+    ),
 ) -> None:
     """Bulk-save resources to a directory.
 
@@ -114,6 +123,7 @@ def save_top_command(
     """
     if not all_kinds and not kind:
         raise typer.BadParameter("pass --all or --kind")
+    filters = parse_filters(filter_)
 
     with report_errors(), open_context() as ctx:
         target_specs = (
@@ -135,14 +145,7 @@ def save_top_command(
                 continue
             if "save" not in spec.commands:
                 continue
-            # Bulk save is "back up everything" by intent. Pass
-            # `default_organization=None` so an active default never
-            # silently narrows the backup — only an explicit
-            # ``--organization`` does.
-            scope = scope_for_spec(spec, organization, None)
-            records = save.find_all(spec, scope=scope)
-            if organization:
-                records = _narrow_to_organization(spec, records, organization)
+            records = save.find_all(spec, params=filters or None)
             for record in records:
                 resource = save.from_record(spec, record)
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
@@ -178,28 +181,6 @@ def _assert_inside(parent: Path, target: Path) -> None:
         target.resolve().relative_to(parent_resolved)
     except ValueError as exc:  # pragma: no cover — defensive guard
         raise AwxApiError(f"refusing to write {target} — outside {parent_resolved}") from exc
-
-
-def _narrow_to_organization(
-    spec: AwxResourceSpec,
-    records: list[dict[str, Any]],
-    organization: str,
-) -> list[dict[str, Any]]:
-    """Filter parent-scoped kinds (Schedule) by parent's org client-side."""
-    if "organization" in spec.identity_keys:
-        return records  # already filtered server-side
-    if spec.kind != "Schedule":
-        return records  # global kinds (Organization, CredentialType) ignore org
-    return [
-        r
-        for r in records
-        if (
-            ((r.get("summary_fields") or {}).get("unified_job_template") or {}).get(
-                "organization_name"
-            )
-        )
-        == organization
-    ]
 
 
 def _resource_filename(kind: str, metadata: Metadata) -> str:
