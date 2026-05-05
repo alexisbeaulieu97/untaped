@@ -62,6 +62,208 @@ def test_job_templates_list(fake_aap: Any) -> None:
     assert result.stdout.strip() == "deploy"
 
 
+def test_list_with_names_flips_fk_ids_to_names(fake_aap: Any) -> None:
+    """``--with-names`` swaps FK columns from numeric ids to the names
+    AWX returns under ``summary_fields``. Without the flag, the column
+    holds the raw id (the FK-piping shape)."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "inventories",
+        id=20,
+        name="prod",
+        organization=1,
+        organization_name="Default",
+        kind="",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        project=10,
+        project_name="playbooks",
+        inventory=20,
+        inventory_name="prod",
+        playbook="a.yml",
+        summary_fields={
+            "organization": {"id": 1, "name": "Default"},
+            "project": {"id": 10, "name": "playbooks"},
+            "inventory": {"id": 20, "name": "prod"},
+        },
+    )
+    raw_default = CliRunner().invoke(
+        app,
+        ["job-templates", "list", "--format", "raw", "--columns", "project,inventory"],
+    )
+    assert raw_default.exit_code == 0, raw_default.output
+    assert raw_default.stdout.strip() == "10\t20"
+
+    raw_named = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "project,inventory",
+        ],
+    )
+    assert raw_named.exit_code == 0, raw_named.output
+    assert raw_named.stdout.strip() == "playbooks\tprod"
+
+
+def test_list_with_names_handles_multi_fk(fake_aap: Any) -> None:
+    """Multi-valued FKs (credentials) become a list of names."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("credentials", id=30, name="ssh", organization=1, organization_name="Default")
+    fake_aap.seed("credentials", id=31, name="vault", organization=1, organization_name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+        credentials=[30, 31],
+        summary_fields={
+            "organization": {"id": 1, "name": "Default"},
+            "credentials": [
+                {"id": 30, "name": "ssh"},
+                {"id": 31, "name": "vault"},
+            ],
+        },
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "credentials",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # Scalar lists render comma-separated for raw/table.
+    assert result.stdout.strip() == "ssh, vault"
+
+
+def test_list_with_names_falls_back_to_id_when_summary_missing(fake_aap: Any) -> None:
+    """If summary_fields is absent (degraded server response), the row
+    keeps the raw id rather than disappearing or rendering empty."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+        # No summary_fields seeded.
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "organization",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "1"
+
+
+def test_list_dotted_columns_resolve_summary_fields(fake_aap: Any) -> None:
+    """``--columns summary_fields.project.name`` works without --with-names —
+    the dotted accessor traverses nested dicts in the row."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+        project=20,
+        summary_fields={"project": {"id": 20, "name": "playbooks"}},
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--format",
+            "raw",
+            "--columns",
+            "name,summary_fields.project.name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "deploy\tplaybooks"
+
+
+def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
+    """``get --format table`` without ``--columns`` must project to the
+    spec's list_columns. Rendering the full AWX record (50+ fields with
+    nested dicts stringified) is unreadable noise."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "deploy", "--organization", "Default", "--format", "table"],
+    )
+    assert result.exit_code == 0, result.output
+    # list_columns for JT is ("name", "organization", "project", "inventory", "last_job_status").
+    # No noisy columns like "summary_fields" or "related" should appear.
+    assert "summary_fields" not in result.stdout
+    assert "related" not in result.stdout
+    assert "deploy" in result.stdout
+
+
+def test_get_with_names_translates_fks(fake_aap: Any) -> None:
+    """``get --with-names`` works the same way as on list."""
+    _seed_basic(fake_aap)
+    # Inject summary_fields so the translation has data to read.
+    fake_aap.get_record("job_templates", 30)["summary_fields"] = {
+        "organization": {"id": 1, "name": "Default"},
+        "project": {"id": 10, "name": "playbooks"},
+        "inventory": {"id": 20, "name": "prod"},
+    }
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "get",
+            "deploy",
+            "--organization",
+            "Default",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "project",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
 def test_job_templates_get(fake_aap: Any) -> None:
     _seed_basic(fake_aap)
     result = CliRunner().invoke(

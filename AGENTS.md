@@ -580,8 +580,11 @@ Then:
 - **stderr = everything else.** Logs, progress bars, prompts. Stderr writes
   go through `typer.echo(msg, err=True)` — see Cross-Cutting helpers.
 - **Commands that emit data** (lists, gets, status, …) should expose:
-  - `--format / -f` (`json | yaml | table | raw`); default `table`
-  - `--columns / -c` (repeatable) to project specific fields
+  - `--format / -f` (`json | yaml | table | raw`); default `table` (for
+    `list`) or `yaml` (for `get`).
+  - `--columns / -c` (repeatable) to project specific fields. Column
+    names support dotted paths (`summary_fields.project.name`) so
+    callers can address nested values without a custom flag per field.
   - `--stdin` to consume newline-separated identifiers from stdin (when
     the command takes a list)
 - **Side-effect-only commands** (`use`, `delete`, `rename`, `apply --yes`,
@@ -603,6 +606,14 @@ untaped awx job-templates list --format raw --columns name \
 untaped awx job-templates list --format raw --columns project \
   | sort -u \
   | untaped awx projects get --stdin --format raw --columns name
+
+# show FK names instead of ids when reading interactively
+untaped awx job-templates list --with-names
+
+# read nested AWX fields without a custom flag — dotted columns walk
+# the row's dict tree (works on `summary_fields`, `last_job`, etc.)
+untaped awx job-templates list \
+  --columns name,summary_fields.last_job.status --format table
 
 # `cd` into a workspace (after eval'ing the shell-init snippet)
 eval "$(untaped workspace shell-init zsh)"     # in your .zshrc

@@ -25,6 +25,7 @@ from untaped_awx.application import (
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._filters import parse_filters
+from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
@@ -75,6 +76,14 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             ),
         ),
         limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+        with_names: bool = typer.Option(
+            False,
+            "--with-names",
+            help=(
+                "Replace FK ids with names from summary_fields. Multi-valued "
+                "FKs (e.g. credentials) become lists of names."
+            ),
+        ),
         fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
         columns: list[str] | None = typer.Option(
             None, "--columns", "-c", help="Columns to include (repeatable)."
@@ -86,6 +95,8 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             records = list(
                 ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
             )
+        if with_names:
+            records = flatten_fks(records, spec)
         cols = list(columns) if columns else list(spec.list_columns)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
 
@@ -104,6 +115,11 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization (ignored for numeric ids)."
+        ),
+        with_names: bool = typer.Option(
+            False,
+            "--with-names",
+            help="Replace FK ids with names from summary_fields.",
         ),
         fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
         columns: list[str] | None = typer.Option(None, "--columns", "-c"),
@@ -127,9 +143,26 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
-            typer.echo(format_output(records, fmt=fmt, columns=columns))
+            if with_names:
+                records = flatten_fks(records, spec)
+            cols = list(columns) if columns else _default_columns(spec, fmt)
+            typer.echo(format_output(records, fmt=fmt, columns=cols))
         if any_failed:
             raise typer.Exit(code=1)
+
+
+def _default_columns(spec: AwxResourceSpec, fmt: OutputFormat) -> list[str] | None:
+    """Default column projection for ``get`` when the user didn't pass ``--columns``.
+
+    Tabular formats (``table``, ``raw``) need a sensible projection because
+    a full AWX record has 50+ fields including stringified nested dicts —
+    rendering all of them collapses into an unreadable wall. Structured
+    formats (``yaml``, ``json``) keep the full record so users can inspect
+    every field of the resource they just fetched.
+    """
+    if fmt in ("table", "raw"):
+        return list(spec.list_columns)
+    return None
 
 
 def _get_one(
