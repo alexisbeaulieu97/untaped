@@ -66,10 +66,12 @@ the sub-apps above.
 
 ```bash
 untaped awx <kind> list [--search <q>] [--filter KEY=VALUE]... [--limit N]
-                        [--format json|yaml|table|raw] [--columns ...]
+                        [--with-names] [--format json|yaml|table|raw]
+                        [--columns ...]
 
 untaped awx <kind> get <name>... [--stdin] [--organization <org>]
-                                 [--format yaml|json|table|raw]
+                                 [--with-names]
+                                 [--format yaml|json|table|raw] [--columns ...]
 
 untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 
@@ -85,6 +87,33 @@ untaped awx job-templates list --filter organization__name=Engineering
 untaped awx job-templates list --filter name__icontains=deploy \
                                --filter playbook__contains=deploy.yml
 untaped awx projects list --filter scm_type=git --filter status=successful
+```
+
+`--with-names` flips FK columns from numeric ids to the names AWX
+returns under `summary_fields`. Multi-valued FKs (e.g. `credentials`)
+become lists of names. Skip the flag (the default) to keep raw ids,
+which is what the FK-piping shape relies on:
+
+```bash
+# Human-readable list — names instead of ids
+untaped awx job-templates list --with-names
+
+# Pipe-friendly: ids feed the next `get --stdin`
+untaped awx job-templates list --columns project --format raw \
+  | sort -u \
+  | untaped awx projects get --stdin --columns name
+```
+
+For nested fields outside the FK set (e.g. last-job status, polymorphic
+schedule parents), use dotted column paths — `format_output` walks
+nested dicts:
+
+```bash
+untaped awx job-templates list \
+  --columns name,summary_fields.last_job.status --format table
+
+untaped awx schedules list \
+  --columns name,summary_fields.unified_job_template.name --format table
 ```
 
 `save` writes (or prints to stdout) a kubectl-style envelope:
