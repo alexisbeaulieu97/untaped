@@ -156,6 +156,154 @@ def test_get_reads_names_from_stdin(fake_aap: Any) -> None:
     assert "beta" in result.stdout
 
 
+def test_get_accepts_numeric_id_positional(fake_aap: Any) -> None:
+    """Numeric identifiers must be looked up by id, not by name.
+
+    Lets users pipe FK columns straight into another resource's `get`:
+    `job-templates list --columns project --format raw | projects get --stdin`.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app, ["projects", "get", "10", "--format", "raw", "--columns", "name"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
+def test_get_by_id_ignores_organization_scope(fake_aap: Any) -> None:
+    """Numeric ids are globally unique, so the org scope must not be applied
+    (otherwise looking up by id requires the user to know the org, which
+    defeats the purpose of having an id)."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=2,
+        organization_name="Org-B",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "get",
+            "10",
+            "--organization",
+            "Org-A",  # wrong org, must be ignored
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
+def test_get_reads_ids_from_stdin(fake_aap: Any) -> None:
+    """Pipeline shape: `job-templates list --columns project --format raw |
+    projects get --stdin` must look each entry up by id."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="ops",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["projects", "get", "--stdin", "--format", "raw", "--columns", "name"],
+        input="10\n11\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "playbooks" in result.stdout
+    assert "ops" in result.stdout
+
+
+def test_get_mixes_names_and_ids(fake_aap: Any) -> None:
+    """A single batch can mix names and numeric ids — name entries still
+    honour the resolved organization scope."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="ops",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "get",
+            "playbooks",
+            "11",
+            "--organization",
+            "Default",
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "playbooks" in result.stdout
+    assert "ops" in result.stdout
+
+
+def test_get_by_missing_id_reports_error(fake_aap: Any) -> None:
+    """A missing numeric id must surface as a per-item error and a
+    non-zero exit, just like a missing name does."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["projects", "get", "--stdin", "--format", "raw", "--columns", "name"],
+        input="10\n9999\n",
+    )
+    assert result.exit_code != 0
+    # Successful lookup still reaches stdout.
+    assert "playbooks" in result.stdout
+    # The missing id surfaces on stderr.
+    assert "9999" in (result.output + (result.stderr or ""))
+
+
 def test_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")

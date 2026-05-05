@@ -87,15 +87,25 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
 def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("get", no_args_is_help=True)
     def get_command(
-        names: list[str] | None = typer.Argument(None, help=f"{spec.kind} name(s)."),
-        stdin: bool = typer.Option(False, "--stdin", help="Read names from stdin (one per line)."),
+        names: list[str] | None = typer.Argument(
+            None, help=f"{spec.kind} name(s) or numeric id(s)."
+        ),
+        stdin: bool = typer.Option(
+            False, "--stdin", help="Read names or numeric ids from stdin (one per line)."
+        ),
         organization: str | None = typer.Option(
-            None, "--organization", help="Scope to organization."
+            None, "--organization", help="Scope to organization (ignored for numeric ids)."
         ),
         fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
         columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
-        """Fetch one or more resources by name."""
+        """Fetch one or more resources by name or numeric id.
+
+        All-digit identifiers are looked up by id (so a list of FK columns
+        like ``list --columns project --format raw`` can be piped straight
+        into another resource's ``get --stdin``); everything else is
+        looked up by name within the resolved organization scope.
+        """
         records: list[Any] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
@@ -103,7 +113,7 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
             scope = _scope(ctx, organization, spec)
             for n in ids:
                 try:
-                    records.append(GetResource(ctx.repo)(spec, name=n, scope=scope))
+                    records.append(_get_one(ctx.repo, spec, n, scope))
                 except UntapedError as exc:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
@@ -111,6 +121,14 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
             typer.echo(format_output(records, fmt=fmt, columns=columns))
         if any_failed:
             raise typer.Exit(code=1)
+
+
+def _get_one(
+    repo: Any, spec: AwxResourceSpec, identifier: str, scope: dict[str, str] | None
+) -> dict[str, Any]:
+    if identifier.isdigit():
+        return GetResource(repo)(spec, id_=int(identifier))
+    return GetResource(repo)(spec, name=identifier, scope=scope)
 
 
 # ---- save ----

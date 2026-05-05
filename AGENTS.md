@@ -596,6 +596,14 @@ untaped awx job-templates list --format raw --columns name \
   | fzf \
   | untaped awx job-templates get --stdin --format json
 
+# fan out a FK column into a bulk lookup of the referenced kind. AWX
+# returns FK fields as numeric ids, so `awx <kind> get --stdin` accepts
+# all-digit identifiers and looks them up by id (org scope ignored —
+# ids are globally unique). Names and ids may be mixed in the same batch.
+untaped awx job-templates list --format raw --columns project \
+  | sort -u \
+  | untaped awx projects get --stdin --format raw --columns name
+
 # `cd` into a workspace (after eval'ing the shell-init snippet)
 eval "$(untaped workspace shell-init zsh)"     # in your .zshrc
 uwcd prod                                      # cd to the prod workspace dir
