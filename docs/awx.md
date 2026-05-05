@@ -21,7 +21,9 @@ untaped config set awx.token <bearer-token>
 # Upstream AWX users only — AAP defaults to /api/controller/v2/
 untaped config set awx.api_prefix /api/v2/
 
-# Optional: scope every list/get/save/apply to one organization by default.
+# Optional: name disambiguation for get/launch/update/save/apply when
+# the same name exists in multiple orgs. Does NOT scope `list` — use
+# `--filter organization__name=<org>` for that.
 untaped config set awx.default_organization Engineering
 
 # Health check
@@ -63,7 +65,7 @@ Every CRUDable kind has the same shape; replace `<kind>` with one of
 the sub-apps above.
 
 ```bash
-untaped awx <kind> list [--search <q>] [--organization <org>] [--limit N]
+untaped awx <kind> list [--search <q>] [--filter KEY=VALUE]... [--limit N]
                         [--format json|yaml|table|raw] [--columns ...]
 
 untaped awx <kind> get <name>... [--stdin] [--organization <org>]
@@ -73,6 +75,16 @@ untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 
 untaped awx <kind> apply --file FILE [--yes] [--fail-fast]
                          [--format json|yaml|table|raw] [--columns ...]
+```
+
+`--filter` is repeatable and passed verbatim to AWX's REST API, so any
+Django-style lookup it supports works without code changes:
+
+```bash
+untaped awx job-templates list --filter organization__name=Engineering
+untaped awx job-templates list --filter name__icontains=deploy \
+                               --filter playbook__contains=deploy.yml
+untaped awx projects list --filter scm_type=git --filter status=successful
 ```
 
 `save` writes (or prints to stdout) a kubectl-style envelope:
