@@ -39,16 +39,16 @@ store).
 `untaped` exposes one sub-app per AWX resource kind. What's CRUDable
 versus read-only depends on a per-kind **fidelity** tier:
 
-| Sub-app                | Kind                  | Fidelity   | Save / Apply                                       |
-| ---------------------- | --------------------- | ---------- | -------------------------------------------------- |
-| `job-templates`        | `JobTemplate`         | full       | yes                                                |
-| `projects`             | `Project`             | full       | yes (also `update` for SCM sync)                   |
-| `schedules`            | `Schedule`            | full       | yes (parent must exist)                            |
-| `workflow-templates`   | `WorkflowJobTemplate` | partial    | save / apply (node graph + edges not roundtripped) |
-| `credentials`          | `Credential`          | read_only  | save only (apply deferred — `$encrypted$`)         |
-| `organizations`        | `Organization`        | read_only  | list / get only                                    |
-| `inventories`          | `Inventory`           | read_only  | list / get only                                    |
-| `credential-types`     | `CredentialType`      | read_only  | list / get only                                    |
+| Sub-app              | Kind                  | Fidelity  | save | apply | notes                                                       |
+| -------------------- | --------------------- | --------- | ---- | ----- | ----------------------------------------------------------- |
+| `job-templates`      | `JobTemplate`         | full      | yes  | yes   | also supports `launch`                                      |
+| `projects`           | `Project`             | full      | yes  | yes   | also supports `update` (SCM sync)                           |
+| `schedules`          | `Schedule`            | full      | yes  | yes   | parent (JT or workflow) must exist                          |
+| `workflow-templates` | `WorkflowJobTemplate` | partial   | yes  | yes   | also `launch`; node graph + edges not roundtripped          |
+| `credentials`        | `Credential`          | read_only | no   | no    | list / get only — `$encrypted$` roundtrip deferred to v0.5  |
+| `organizations`      | `Organization`        | read_only | no   | no    | list / get only                                             |
+| `inventories`        | `Inventory`           | read_only | no   | no    | list / get only                                             |
+| `credential-types`   | `CredentialType`      | read_only | no   | no    | list / get only                                             |
 
 Read-only kinds are still useful for FK resolution: when you `apply` a
 JobTemplate that references `Engineering` as its organization,
@@ -72,6 +72,7 @@ untaped awx <kind> get <name>... [--stdin] [--organization <org>]
 untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 
 untaped awx <kind> apply --file FILE [--yes] [--fail-fast]
+                         [--format json|yaml|table|raw] [--columns ...]
 ```
 
 `save` writes (or prints to stdout) a kubectl-style envelope:
@@ -144,6 +145,10 @@ Organization → CredentialType → Credential → Project → Inventory
             → JobTemplate → WorkflowJobTemplate → Schedule
 ```
 
+Catalog-only kinds (`ExecutionEnvironment`, `Label`, `InstanceGroup`)
+exist solely so launch and apply payloads can resolve names to ids;
+they have no CLI sub-app and don't take part in the ordering above.
+
 Per-kind `apply` (e.g. `awx job-templates apply`) only writes its own
 kind — wrong-kind docs in the file are warned about and never written.
 Use the top-level `awx apply` when you want the dependency ordering.
@@ -178,13 +183,14 @@ pass/fail report. v1 verdict is AWX's `successful` job status; richer
 assertions land in v2 (the `assert:` block is reserved).
 
 ```bash
-untaped awx test list FILE_OR_DIR...               # cases that would run
+untaped awx test list     FILE_OR_DIR...           # cases that would run
 untaped awx test validate FILE_OR_DIR...           # render + parse + resolve, no launch
-untaped awx test run FILE_OR_DIR... [--case NAME]...
-                                    [--var k=v]... [--vars-file PATH]...
-                                    [--non-interactive]
-                                    [--parallel N] [--timeout SECS]
-                                    [--show-logs] [--format ...]
+untaped awx test run      FILE_OR_DIR... [--case NAME]...
+                                         [--parallel N] [--timeout SECS]
+                                         [--show-logs] [--format ...]
+
+# Variable-resolution flags accepted by all three subcommands:
+#   [--var k=v]...  [--vars-file PATH]...  [--non-interactive]
 ```
 
 Exit code is `0` only when every case passes. `--show-logs` (`-v`)

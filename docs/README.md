@@ -34,7 +34,8 @@ untaped awx job-templates list --format raw --columns name \
 
 # Morning routine: sync every workspace, flag anything behind upstream.
 untaped workspace sync --all
-untaped workspace status --all --format raw --columns workspace,repo,behind \
+untaped workspace status --all --format raw \
+    --columns workspace --columns repo --columns behind \
   | awk '$3 > 0 { print }'
 ```
 
