@@ -64,8 +64,14 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("list")
     def list_command(
         search: str | None = typer.Option(None, "--search", help="Fuzzy server-side search."),
-        organization: str | None = typer.Option(
-            None, "--organization", help="Filter by organization name."
+        filter_: list[str] | None = typer.Option(
+            None,
+            "--filter",
+            help=(
+                "Server-side filter, KEY=VALUE (repeatable). Passed verbatim to "
+                "AWX, so any Django-style lookup works: --filter "
+                "organization__name=Default --filter name__icontains=deploy."
+            ),
         ),
         limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
         fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
@@ -74,11 +80,34 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
     ) -> None:
         """List resources."""
+        filters = _parse_filters(filter_)
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
-            records = list(ListResources(ctx.repo)(spec, search=search, scope=scope, limit=limit))
+            records = list(
+                ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
+            )
         cols = list(columns) if columns else list(spec.list_columns)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
+
+
+def _parse_filters(raw: list[str] | None) -> dict[str, str]:
+    """Split repeated ``--filter KEY=VALUE`` entries into a params dict.
+
+    Splits on the first ``=`` so values containing ``=`` survive intact
+    (e.g. ``--filter description__icontains=foo=bar``). Malformed entries
+    are rejected up front rather than silently posted to AWX, where they
+    would surface as an opaque 400.
+    """
+    if not raw:
+        return {}
+    out: dict[str, str] = {}
+    for entry in raw:
+        key, sep, value = entry.partition("=")
+        if not sep or not key:
+            raise typer.BadParameter(
+                f"--filter expects KEY=VALUE (got {entry!r})", param_hint="--filter"
+            )
+        out[key] = value
+    return out
 
 
 # ---- get ----
