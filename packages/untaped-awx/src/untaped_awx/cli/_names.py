@@ -1,17 +1,4 @@
-"""Translate FK ids in result rows to human names via ``summary_fields``.
-
-AWX returns FK columns as numeric ids (``project: 10``) plus a parallel
-``summary_fields`` map (``summary_fields.project.name = "playbooks"``)
-populated by the server. The ``--with-names`` flag flips every FK
-column declared in the spec to its name in-place — turning a wall of
-ids into something readable in ``--format table`` and pipe-friendly
-when grepping.
-
-Polymorphic FKs (Schedule's ``parent``) live under a different wire key
-than the spec's logical name and aren't translated here; users wanting
-the parent's name should reach for the dotted-column accessor
-instead, e.g. ``--columns summary_fields.unified_job_template.name``.
-"""
+"""Replace FK ids in result rows with names from ``summary_fields``."""
 
 from __future__ import annotations
 
@@ -32,35 +19,35 @@ def flatten_fks(rows: Iterable[dict[str, Any]], spec: AwxResourceSpec) -> list[d
     rows are copied at the top level — nested values are shared with
     the input, so don't reuse a row dict you intend to mutate.
     """
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        out.append(_flatten_one(row, spec))
-    return out
+    return [_flatten_one(row, spec) for row in rows]
 
 
 def _flatten_one(row: dict[str, Any], spec: AwxResourceSpec) -> dict[str, Any]:
     summary = row.get("summary_fields") or {}
     new_row = dict(row)
     for fk in spec.fk_refs:
+        # Polymorphic FKs (Schedule's "parent") live under a different
+        # wire key than the spec's logical name; users wanting the
+        # parent's name reach for a dotted column instead.
         if fk.polymorphic:
-            # The wire key for a polymorphic FK isn't the FK's logical
-            # field name (Schedule's "parent" lives under
-            # "unified_job_template" on the wire); --with-names skips
-            # these and defers to dotted columns.
             continue
         value = new_row.get(fk.field)
-        if value is None:
-            continue
         sf_entry = summary.get(fk.field)
-        if sf_entry is None:
+        if value is None or sf_entry is None:
             continue
         if fk.multi:
-            if not isinstance(value, list) or not isinstance(sf_entry, list):
-                continue
-            new_row[fk.field] = [_name_or_id(s, v) for s, v in zip(sf_entry, value, strict=False)]
+            # Walk the id list and look up each summary entry by index.
+            # AWX sometimes returns a shorter `summary_fields` list than
+            # the raw id list (degraded response); we must preserve the
+            # original cardinality so callers don't lose ids silently.
+            if isinstance(value, list):
+                summary_list = sf_entry if isinstance(sf_entry, list) else []
+                new_row[fk.field] = [
+                    _name_or_id(summary_list[i] if i < len(summary_list) else None, v)
+                    for i, v in enumerate(value)
+                ]
         else:
-            if isinstance(sf_entry, dict) and "name" in sf_entry:
-                new_row[fk.field] = sf_entry["name"]
+            new_row[fk.field] = _name_or_id(sf_entry, value)
     return new_row
 
 

@@ -11,6 +11,7 @@ from untaped_core import (
     OutputFormat,
     UntapedError,
     format_output,
+    parse_kv_pairs,
     read_identifiers,
     report_errors,
 )
@@ -24,7 +25,6 @@ from untaped_awx.application import (
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
-from untaped_awx.cli._filters import parse_filters
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
@@ -90,7 +90,7 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
     ) -> None:
         """List resources."""
-        filters = parse_filters(filter_)
+        filters = parse_kv_pairs(filter_, flag="--filter")
         with report_errors(), open_context() as ctx:
             records = list(
                 ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
@@ -126,19 +126,18 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
     ) -> None:
         """Fetch one or more resources by name or numeric id.
 
-        All-digit identifiers are looked up by id (so a list of FK columns
-        like ``list --columns project --format raw`` can be piped straight
-        into another resource's ``get --stdin``); everything else is
-        looked up by name within the resolved organization scope.
+        All-digit identifiers are looked up by id, everything else by
+        name within the resolved organization scope.
         """
         records: list[Any] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
             scope = _scope(ctx, organization, spec)
+            getter = GetResource(ctx.repo)
             for n in ids:
                 try:
-                    records.append(_get_one(ctx.repo, spec, n, scope))
+                    records.append(_get_one(getter, spec, n, scope))
                 except UntapedError as exc:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
@@ -152,25 +151,24 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
 
 
 def _default_columns(spec: AwxResourceSpec, fmt: OutputFormat) -> list[str] | None:
-    """Default column projection for ``get`` when the user didn't pass ``--columns``.
-
-    Tabular formats (``table``, ``raw``) need a sensible projection because
-    a full AWX record has 50+ fields including stringified nested dicts —
-    rendering all of them collapses into an unreadable wall. Structured
-    formats (``yaml``, ``json``) keep the full record so users can inspect
-    every field of the resource they just fetched.
-    """
-    if fmt in ("table", "raw"):
+    # Table needs a projection — a full AWX record (50+ fields) renders as
+    # an unreadable wall. raw stays one-column-per-line so pipelines that
+    # do `get --format raw | …` keep their established shape; yaml/json
+    # keep the full record so users can inspect every field.
+    if fmt == "table":
         return list(spec.list_columns)
     return None
 
 
 def _get_one(
-    repo: Any, spec: AwxResourceSpec, identifier: str, scope: dict[str, str] | None
+    getter: GetResource,
+    spec: AwxResourceSpec,
+    identifier: str,
+    scope: dict[str, str] | None,
 ) -> dict[str, Any]:
     if identifier.isdigit():
-        return GetResource(repo)(spec, id_=int(identifier))
-    return GetResource(repo)(spec, name=identifier, scope=scope)
+        return getter(spec, id_=int(identifier))
+    return getter(spec, name=identifier, scope=scope)
 
 
 # ---- save ----

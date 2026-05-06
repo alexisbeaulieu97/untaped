@@ -159,6 +159,7 @@ that satisfies the `Protocol` — no httpx, no fixtures, no settings file.
 | Wrap a Typer command body so `UntapedError` → clean exit code 1 | `from untaped_core import report_errors`                  |
 | Read piped values from stdin               | `from untaped_core import read_stdin`                            |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
+| Parse repeated `KEY=VALUE` flags (e.g. `--filter`, `--var`) | `from untaped_core import parse_kv_pairs` |
 | Print a one-line message to stderr         | `typer.echo(msg, err=True)` — keep it boring; no helper          |
 | Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` (see `packages/untaped-awx/src/untaped_awx/cli/_apply_runner.py:75`) |
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
@@ -613,7 +614,7 @@ untaped awx job-templates list --with-names
 # read nested AWX fields without a custom flag — dotted columns walk
 # the row's dict tree (works on `summary_fields`, `last_job`, etc.)
 untaped awx job-templates list \
-  --columns name,summary_fields.last_job.status --format table
+  --columns name --columns summary_fields.last_job.status --format table
 
 # `cd` into a workspace (after eval'ing the shell-init snippet)
 eval "$(untaped workspace shell-init zsh)"     # in your .zshrc
@@ -621,13 +622,14 @@ uwcd prod                                      # cd to the prod workspace dir
 
 # morning routine: fetch + ff-only across every workspace
 untaped workspace sync --all
-untaped workspace status --all --format raw --columns workspace,repo,behind \
+untaped workspace status --all --format raw \
+  --columns workspace --columns repo --columns behind \
   | awk '$3 > 0 { print }'
 ```
 
 If a command produces tabular data, it must be parseable by:
 - `--format raw --columns x` → newline-separated single column
-- `--format raw --columns x,y,z` → tab-separated rows (`cut -f1`, `awk` work)
+- `--format raw --columns x --columns y --columns z` → tab-separated rows (`cut -f1`, `awk` work)
 - `--format json` → valid JSON array
 
 ## Decision Tree: Where does this code go?

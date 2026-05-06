@@ -17,6 +17,7 @@ from untaped_core import (
     OutputFormat,
     format_output,
     get_settings,
+    parse_kv_pairs,
     report_errors,
 )
 
@@ -27,12 +28,13 @@ from untaped_awx.application import (
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import awx_config_from_settings, open_context
-from untaped_awx.cli._filters import parse_filters
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.domain import Job, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
+from untaped_awx.infrastructure.catalog import AwxResourceCatalog
+from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import ALL_SPECS
 from untaped_awx.infrastructure.yaml_io import write_resource
 
@@ -98,7 +100,12 @@ def save_top_command(
     ),
     all_kinds: bool = typer.Option(False, "--all", help="Save every saveable kind."),
     kind: str | None = typer.Option(
-        None, "--kind", help="Limit save to a single kind (e.g. JobTemplate)."
+        None,
+        "--kind",
+        help=(
+            "Limit save to a single kind. Accepts a CLI name "
+            "(job-templates) or a domain kind (JobTemplate)."
+        ),
     ),
     filter_: list[str] | None = typer.Option(
         None,
@@ -123,15 +130,11 @@ def save_top_command(
     """
     if not all_kinds and not kind:
         raise typer.BadParameter("pass --all or --kind")
-    filters = parse_filters(filter_)
+    filters = parse_kv_pairs(filter_, flag="--filter")
 
     with report_errors(), open_context() as ctx:
         target_specs = (
-            list(ALL_SPECS)
-            if all_kinds
-            else [
-                ctx.catalog.get(kind)  # type: ignore[arg-type]
-            ]
+            list(ALL_SPECS) if all_kinds else [_resolve_kind(ctx.catalog, kind)]  # type: ignore[arg-type]
         )
         save = SaveResource(ctx.repo, ctx.fk)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -145,6 +148,13 @@ def save_top_command(
                 continue
             if "save" not in spec.commands:
                 continue
+            incompatible = _filter_field_not_on_spec(filters, spec)
+            if incompatible is not None:
+                typer.echo(
+                    f"skipping {spec.kind}: filter field {incompatible!r} not on this kind",
+                    err=True,
+                )
+                continue
             records = save.find_all(spec, params=filters or None)
             for record in records:
                 resource = save.from_record(spec, record)
@@ -155,6 +165,34 @@ def save_top_command(
                 written.append(str(target))
     for path in written:
         typer.echo(path)
+
+
+def _resolve_kind(catalog: AwxResourceCatalog, kind: str) -> AwxResourceSpec:
+    """Accept either the public CLI name (``job-templates``) or the
+    domain kind (``JobTemplate``)."""
+    try:
+        return catalog.by_cli_name(kind)
+    except AwxApiError:
+        return catalog.get(kind)
+
+
+def _filter_field_not_on_spec(filters: dict[str, str], spec: AwxResourceSpec) -> str | None:
+    """Return a filter field that doesn't exist on ``spec``, or None.
+
+    AWX's ``/schedules/`` has no ``organization`` field — sending
+    ``?organization__name=…`` 400s. Generalises that quirk: a filter
+    key like ``organization__name`` references the top-level field
+    ``organization``; if no FK ref / canonical field / identity key on
+    this kind exposes that name, the request is doomed.
+    """
+    fields = (
+        set(spec.canonical_fields) | set(spec.identity_keys) | {fk.field for fk in spec.fk_refs}
+    )
+    for key in filters:
+        base = key.split("__", 1)[0]
+        if base not in fields:
+            return base
+    return None
 
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
@@ -240,12 +278,19 @@ def jobs_wait(
     ),
     columns: ColumnsOption = None,
 ) -> None:
-    """Block until the job reaches a terminal state."""
+    """Block until the job reaches a terminal state.
+
+    Exits non-zero when ``--timeout`` is reached without the job
+    reaching a terminal state — same contract as ``awx test``.
+    """
     with report_errors(), open_context() as ctx:
         record = ctx.repo.request("GET", f"jobs/{job_id}/")
         job = Job.model_validate({**record, "kind": "job"})
         final = WatchJob(ctx.repo)(job, timeout=timeout)
     typer.echo(format_output([final.model_dump()], fmt=fmt, columns=columns))
+    if not final.is_terminal:
+        typer.echo(f"timeout: job {job_id} did not reach terminal state", err=True)
+        raise typer.Exit(code=1)
 
 
 app.add_typer(jobs_app, name="jobs")

@@ -38,32 +38,36 @@ def format_output(
     columns: list[str] | None = None,
 ) -> str:
     """Render ``rows`` as a string in the requested format."""
-    selected = _select_columns(rows, columns) if columns else list(rows)
+    parsed = [(c, c.split(".")) for c in columns] if columns else None
+
+    if fmt == "raw":
+        return _format_raw(rows, parsed)
+
+    selected = (
+        [{name: _resolve_path(row, segments) for name, segments in parsed} for row in rows]
+        if parsed
+        else list(rows)
+    )
 
     if fmt == "json":
         return json.dumps(selected, default=str)
     if fmt == "yaml":
         return yaml.safe_dump(selected, sort_keys=False, default_flow_style=False).rstrip()
-    if fmt == "raw":
-        return _format_raw(rows, columns)
     if fmt == "table":
         return _format_table(selected)
 
     raise ValueError(f"unknown format: {fmt!r}")
 
 
-def _select_columns(rows: Sequence[Row], columns: list[str]) -> list[Row]:
-    return [{c: _resolve_path(row, c) for c in columns} for row in rows]
-
-
-def _format_raw(rows: Sequence[Row], columns: list[str] | None) -> str:
+def _format_raw(rows: Sequence[Row], parsed: list[tuple[str, list[str]]] | None) -> str:
     if not rows:
         return ""
-    if columns is None:
+    if parsed is None:
         first_key = next(iter(rows[0]))
         return "\n".join(_render_cell(row.get(first_key, "")) for row in rows)
     return "\n".join(
-        "\t".join(_render_cell(_resolve_path(row, c)) for c in columns) for row in rows
+        "\t".join(_render_cell(_resolve_path(row, segments)) for _, segments in parsed)
+        for row in rows
     )
 
 
@@ -81,19 +85,9 @@ def _format_table(rows: Sequence[Row]) -> str:
     return buf.getvalue().rstrip()
 
 
-def _resolve_path(row: Row, path: str) -> Any:
-    """Resolve a dotted column path against ``row``.
-
-    A leading literal lookup is attempted first so legitimate keys that
-    happen to contain dots still match (none today, but the preservation
-    is cheap). Falls through to dotted traversal — each segment indexes
-    into the previous dict; non-dict intermediates short-circuit to
-    ``None``.
-    """
-    if path in row:
-        return row[path]
+def _resolve_path(row: Row, segments: list[str]) -> Any:
     value: Any = row
-    for key in path.split("."):
+    for key in segments:
         if not isinstance(value, dict):
             return None
         value = value.get(key)

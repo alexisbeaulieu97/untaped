@@ -13,7 +13,7 @@ Public API:
 - ``errors``           — base exception hierarchy
 """
 
-from untaped_core.cli import ColumnsOption, FormatOption, report_errors
+from untaped_core.cli import ColumnsOption, FormatOption, parse_kv_pairs, report_errors
 from untaped_core.config_schema import redact_secrets, secret_field_paths
 from untaped_core.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped_core.http import HttpClient, resolve_verify
@@ -42,6 +42,7 @@ __all__ = [
     "first_validation_error",
     "format_output",
     "get_settings",
+    "parse_kv_pairs",
     "read_identifiers",
     "read_stdin",
     "redact_secrets",
