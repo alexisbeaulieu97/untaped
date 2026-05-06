@@ -101,6 +101,16 @@ def test_dotted_column_in_json_uses_full_dotted_key(
     ]
 
 
+def test_dotted_column_resolves_for_table(
+    nested_rows: list[dict[str, object]],
+) -> None:
+    """Table format must resolve dotted paths the same way raw/json/yaml do."""
+    out = format_output(nested_rows, fmt="table", columns=["name", "summary_fields.project.name"])
+    assert "playbooks" in out
+    assert "deploy" not in out  # not a column we projected
+    assert "alpha" in out and "beta" in out
+
+
 def test_scalar_list_renders_comma_separated_for_human_formats() -> None:
     rows = [{"name": "alpha", "credentials": ["ssh", "vault"]}]
     raw = format_output(rows, fmt="raw", columns=["credentials"])

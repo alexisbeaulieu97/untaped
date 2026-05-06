@@ -116,6 +116,11 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization (ignored for numeric ids)."
         ),
+        by_name: bool = typer.Option(
+            False,
+            "--by-name",
+            help="Force name lookup (escape hatch for resources whose name is all digits).",
+        ),
         with_names: bool = typer.Option(
             False,
             "--with-names",
@@ -127,7 +132,9 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         """Fetch one or more resources by name or numeric id.
 
         All-digit identifiers are looked up by id, everything else by
-        name within the resolved organization scope.
+        name within the resolved organization scope. Pass ``--by-name``
+        to force name lookup when a resource's name happens to be all
+        digits.
         """
         records: list[Any] = []
         any_failed = False
@@ -137,7 +144,7 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
             getter = GetResource(ctx.repo)
             for n in ids:
                 try:
-                    records.append(_get_one(getter, spec, n, scope))
+                    records.append(_get_one(getter, spec, n, scope, by_name=by_name))
                 except UntapedError as exc:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
@@ -165,8 +172,10 @@ def _get_one(
     spec: AwxResourceSpec,
     identifier: str,
     scope: dict[str, str] | None,
+    *,
+    by_name: bool = False,
 ) -> dict[str, Any]:
-    if identifier.isdigit():
+    if not by_name and identifier.isdigit():
         return getter(spec, id_=int(identifier))
     return getter(spec, name=identifier, scope=scope)
 

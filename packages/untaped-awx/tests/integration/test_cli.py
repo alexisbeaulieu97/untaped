@@ -408,6 +408,56 @@ def test_get_accepts_numeric_id_positional(fake_aap: Any) -> None:
     assert result.stdout.strip() == "playbooks"
 
 
+def test_get_by_name_forces_name_lookup_for_all_digit_names(fake_aap: Any) -> None:
+    """Resources whose AWX name happens to be all digits would otherwise
+    be unreachable: ``get 10`` always means id-10. ``--by-name`` is the
+    escape hatch — disables digit detection so the identifier is used as
+    a name lookup (scoped to ``--organization`` like any other name)."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    # A project whose name is "10" — and a different project with id 10.
+    fake_aap.seed(
+        "projects",
+        id=99,
+        name="10",  # all-digit name
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    # Without --by-name: "10" is treated as id, returns playbooks.
+    default_result = CliRunner().invoke(
+        app, ["projects", "get", "10", "--format", "raw", "--columns", "name"]
+    )
+    assert default_result.exit_code == 0, default_result.output
+    assert default_result.stdout.strip() == "playbooks"
+
+    # With --by-name: "10" is treated as a name, returns the all-digit-named project.
+    by_name_result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "get",
+            "10",
+            "--by-name",
+            "--organization",
+            "Default",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert by_name_result.exit_code == 0, by_name_result.output
+    assert by_name_result.stdout.strip() == "99"
+
+
 def test_get_by_id_ignores_organization_scope(fake_aap: Any) -> None:
     """Numeric ids are globally unique, so the org scope must not be applied
     (otherwise looking up by id requires the user to know the org, which
@@ -1078,6 +1128,68 @@ def test_save_kind_accepts_cli_name(fake_aap: Any, tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "job-templates"])
     assert result.exit_code == 0, result.output
     assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
+
+
+def test_save_kind_accepts_domain_kind(fake_aap: Any, tmp_path: Path) -> None:
+    """The ``_resolve_kind`` fallback path: ``--kind JobTemplate`` resolves
+    via ``catalog.get`` after ``catalog.by_cli_name`` raises."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "JobTemplate"])
+    assert result.exit_code == 0, result.output
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
+
+
+def test_save_kind_rejects_unknown_kind(fake_aap: Any, tmp_path: Path) -> None:
+    """Neither ``by_cli_name`` nor ``get`` can resolve a bogus kind —
+    the second arm of ``_resolve_kind`` re-raises."""
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "Bogus"])
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "Bogus" in output
+
+
+def test_save_all_filter_passes_through_read_only_field(fake_aap: Any, tmp_path: Path) -> None:
+    """Read-only fields (``modified``, ``created``, ``last_job_status``)
+    are valid AWX list filters even though they aren't accepted on writes.
+    A time-windowed backup like ``--filter modified__gte=…`` must pass
+    through, not get short-circuited as "field not on this kind"."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "modified__gte=2024-01-01",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = result.output + (result.stderr or "")
+    # Read-only fields like `modified` must not be pre-rejected by the
+    # filter-applicability check — they're valid AWX list filters even
+    # though they aren't accepted on writes.
+    assert "filter field 'modified'" not in output
 
 
 def test_save_all_with_no_filter_captures_every_kind(
