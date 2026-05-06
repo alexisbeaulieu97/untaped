@@ -175,7 +175,10 @@ def _get_one(
     *,
     by_name: bool = False,
 ) -> dict[str, Any]:
-    if not by_name and identifier.isdigit():
+    # `isdecimal()` matches Unicode category Nd — exactly the set
+    # `int()` accepts. `isdigit()` admits superscripts/subscripts
+    # like "²" that `int()` would reject with ValueError.
+    if not by_name and identifier.isdecimal():
         return getter(spec, id_=int(identifier))
     return getter(spec, name=identifier, scope=scope)
 
