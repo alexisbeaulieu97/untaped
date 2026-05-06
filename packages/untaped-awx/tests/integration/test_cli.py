@@ -408,6 +408,23 @@ def test_get_accepts_numeric_id_positional(fake_aap: Any) -> None:
     assert result.stdout.strip() == "playbooks"
 
 
+def test_get_treats_unicode_non_decimal_digit_as_name(fake_aap: Any) -> None:
+    """``isdigit()`` matches Unicode digits like ``²`` that ``int()`` rejects.
+    Those identifiers must take the name-lookup path so the user sees a
+    clean ``error: <id>: not found`` (or a hit on a literally-named
+    resource) instead of an unhandled ``ValueError`` traceback."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    result = CliRunner().invoke(
+        app,
+        ["projects", "get", "²", "--organization", "Default", "--format", "raw"],
+    )
+    # Name lookup miss → per-item error line + exit 1, no traceback.
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    output = result.output + (result.stderr or "")
+    assert "error" in output
+
+
 def test_get_by_name_forces_name_lookup_for_all_digit_names(fake_aap: Any) -> None:
     """Resources whose AWX name happens to be all digits would otherwise
     be unreachable: ``get 10`` always means id-10. ``--by-name`` is the
@@ -1190,6 +1207,42 @@ def test_save_all_filter_passes_through_read_only_field(fake_aap: Any, tmp_path:
     # filter-applicability check — they're valid AWX list filters even
     # though they aren't accepted on writes.
     assert "filter field 'modified'" not in output
+
+
+def test_save_all_filter_passes_through_list_only_field(fake_aap: Any, tmp_path: Path) -> None:
+    """``last_job_status`` is a real AWX field exposed in JobTemplate's
+    ``list_columns`` but not enumerated in ``canonical_fields`` or
+    ``read_only_fields``. A status-scoped backup must not pre-reject
+    the kind that actually exposes the field — that would silently
+    empty the most likely use case for the flag. Other kinds (Project,
+    Schedule, …) legitimately don't have ``last_job_status`` and may
+    still be skipped."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "last_job_status=successful",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = result.output + (result.stderr or "")
+    # JobTemplate exposes last_job_status (in its list_columns) — it must
+    # NOT be in the skip list. Other kinds without the field may be skipped.
+    assert "JobTemplate: filter field 'last_job_status'" not in output
 
 
 def test_save_all_with_no_filter_captures_every_kind(

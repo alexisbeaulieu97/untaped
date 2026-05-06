@@ -180,17 +180,28 @@ def _filter_field_not_on_spec(filters: dict[str, str], spec: AwxResourceSpec) ->
     """Return a filter field that doesn't exist on ``spec``, or None.
 
     AWX's ``/schedules/`` has no ``organization`` field — sending
-    ``?organization__name=…`` 400s. Generalises that quirk: a filter
-    key references a top-level field; if no canonical / identity / FK /
-    read-only field on this kind exposes that name, the request is doomed.
-    Read-only fields (``id``, ``created``, ``modified``, ``last_job_status``)
-    are valid filter targets even though they aren't accepted on writes,
-    so a time-windowed backup like ``--filter modified__gte=…`` works.
+    ``?organization__name=…`` 400s. This is a *conservative* heuristic
+    to skip kinds whose API can't possibly accept a given filter key,
+    union'ing every field name we know each kind exposes:
+
+    - ``canonical_fields`` (writable input fields)
+    - ``identity_keys`` (always queryable)
+    - ``read_only_fields`` (server-set; ``modified``, ``status``, …)
+    - ``fk_refs.field`` (FK columns)
+    - ``list_columns`` (we wouldn't display a column that doesn't exist)
+
+    AWX exposes more filterable fields than any spec enumerates, so a
+    false positive is possible — kinds whose specs lag the API will be
+    spuriously skipped on otherwise-valid filters. The recovery is
+    either to add the missing field to the spec or to run a per-kind
+    save without the filter. False *negatives* (sending an invalid
+    filter that AWX 400s on) are caught by the per-call error path.
     """
     fields = (
         set(spec.canonical_fields)
         | set(spec.identity_keys)
         | set(spec.read_only_fields)
+        | set(spec.list_columns)
         | {fk.field for fk in spec.fk_refs}
     )
     for key in filters:

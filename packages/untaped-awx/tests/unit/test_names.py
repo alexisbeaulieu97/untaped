@@ -139,6 +139,21 @@ def test_fk_field_missing_from_row_is_left_alone() -> None:
     assert flatten_fks(rows, spec) == [{"name": "deploy"}]
 
 
+def test_multi_fk_with_non_list_value_is_left_alone() -> None:
+    """If the server returns a scalar where a list was expected, leave
+    it untouched rather than coercing — degraded responses must not
+    silently mutate to a different shape."""
+    spec = _spec(FkRef(field="credentials", kind="Credential", multi=True))
+    rows = [
+        {
+            "name": "deploy",
+            "credentials": 30,  # scalar where a list was expected
+            "summary_fields": {"credentials": [{"id": 30, "name": "ssh"}]},
+        }
+    ]
+    assert flatten_fks(rows, spec)[0]["credentials"] == 30
+
+
 def test_returns_a_top_level_copy() -> None:
     spec = _spec(FkRef(field="project", kind="Project"))
     row = {
