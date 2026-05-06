@@ -15,7 +15,8 @@ class GithubClient:
     """Talks to ``api.github.com`` (or a GHE base) using the configured token."""
 
     def __init__(self, config: GithubConfig, *, http: HttpSettings | None = None) -> None:
-        if config.token is None:
+        token = config.token.get_secret_value().strip() if config.token is not None else ""
+        if not token:
             raise ConfigError(
                 "github.token is not configured (set it via "
                 "`untaped config set github.token <token>` or UNTAPED_GITHUB__TOKEN)"
@@ -23,7 +24,7 @@ class GithubClient:
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "Authorization": f"Bearer {config.token.get_secret_value()}",
+            "Authorization": f"Bearer {token}",
         }
         self._http = HttpClient(
             base_url=config.base_url.rstrip("/"),

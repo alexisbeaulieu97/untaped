@@ -39,3 +39,12 @@ def test_whoami_requires_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     result = CliRunner().invoke(app, ["whoami"])
     assert result.exit_code != 0
     assert "token" in str(result.exception) or "token" in result.output
+
+
+def test_whoami_rejects_blank_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text('profiles:\n  default:\n    github:\n      token: "   "\n')
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    result = CliRunner().invoke(app, ["whoami"])
+    assert result.exit_code != 0
+    assert "token" in str(result.exception) or "token" in result.output
