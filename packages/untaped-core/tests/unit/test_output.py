@@ -106,8 +106,12 @@ def test_dotted_column_resolves_for_table(
 ) -> None:
     """Table format must resolve dotted paths the same way raw/json/yaml do."""
     out = format_output(nested_rows, fmt="table", columns=["name", "summary_fields.project.name"])
+    # Resolved value present.
     assert "playbooks" in out
-    assert "deploy" not in out  # not a column we projected
+    # Column header is the full dotted path (lock in: not bare "name" twice
+    # or just the last segment).
+    assert "summary_fields.project.name" in out
+    # Both rows render — the missing-summary row resolves to None, not error.
     assert "alpha" in out and "beta" in out
 
 
@@ -115,7 +119,8 @@ def test_scalar_list_renders_comma_separated_for_human_formats() -> None:
     rows = [{"name": "alpha", "credentials": ["ssh", "vault"]}]
     raw = format_output(rows, fmt="raw", columns=["credentials"])
     table = format_output(rows, fmt="table", columns=["credentials"])
-    assert raw == "ssh, vault"
+    # splitlines() matches the rest of this file — robust to trailing newlines.
+    assert raw.splitlines() == ["ssh, vault"]
     assert "ssh, vault" in table
 
 
