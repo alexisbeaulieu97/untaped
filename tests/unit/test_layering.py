@@ -56,13 +56,21 @@ def _is_type_checking_guard(test: ast.expr) -> bool:
 
 
 def _typecheck_block_lines(tree: ast.Module) -> set[int]:
-    """Return line numbers belonging to ``if TYPE_CHECKING:`` blocks."""
+    """Return line numbers belonging to ``if TYPE_CHECKING:`` blocks.
+
+    Only the *if* branch (``node.body``) is type-check-only — the
+    ``else`` branch executes at runtime when ``TYPE_CHECKING`` is False,
+    so its statements must not be excluded from runtime-import
+    scanning. Walking the whole ``If`` node would conflate the two and
+    let a contributor smuggle a forbidden import through ``else:``.
+    """
     lines: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and _is_type_checking_guard(node.test):
-            for child in ast.walk(node):
-                if hasattr(child, "lineno"):
-                    lines.add(child.lineno)
+            for stmt in node.body:
+                for child in ast.walk(stmt):
+                    if hasattr(child, "lineno"):
+                        lines.add(child.lineno)
     return lines
 
 
@@ -380,6 +388,20 @@ _BYPASS_SOURCES: list[tuple[str, str]] = [
     (
         "direct-import",
         "from untaped_core import get_settings\ndef f() -> None:\n    get_settings()\n",
+    ),
+    (
+        # Regression: only the `if TYPE_CHECKING:` branch is type-check-only.
+        # An import in the `else:` branch executes at runtime and must be
+        # flagged. Walking the whole ``If`` node (instead of just ``node.body``)
+        # would let this slip through.
+        "type-checking-else-branch",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from untaped_core import HttpSettings\n"
+        "else:\n"
+        "    from untaped_core import get_settings\n"
+        "def f() -> None:\n"
+        "    get_settings()\n",
     ),
 ]
 
