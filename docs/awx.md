@@ -21,7 +21,9 @@ untaped config set awx.token <bearer-token>
 # Upstream AWX users only — AAP defaults to /api/controller/v2/
 untaped config set awx.api_prefix /api/v2/
 
-# Optional: scope every list/get/save/apply to one organization by default.
+# Optional: name disambiguation for get/launch/update/save/apply when
+# the same name exists in multiple orgs. Does NOT scope `list` — use
+# `--filter organization__name=<org>` for that.
 untaped config set awx.default_organization Engineering
 
 # Health check
@@ -63,16 +65,55 @@ Every CRUDable kind has the same shape; replace `<kind>` with one of
 the sub-apps above.
 
 ```bash
-untaped awx <kind> list [--search <q>] [--organization <org>] [--limit N]
-                        [--format json|yaml|table|raw] [--columns ...]
+untaped awx <kind> list [--search <q>] [--filter KEY=VALUE]... [--limit N]
+                        [--with-names] [--format json|yaml|table|raw]
+                        [--columns ...]
 
 untaped awx <kind> get <name>... [--stdin] [--organization <org>]
-                                 [--format yaml|json|table|raw]
+                                 [--with-names]
+                                 [--format yaml|json|table|raw] [--columns ...]
 
 untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 
 untaped awx <kind> apply --file FILE [--yes] [--fail-fast]
                          [--format json|yaml|table|raw] [--columns ...]
+```
+
+`--filter` is repeatable and passed verbatim to AWX's REST API, so any
+Django-style lookup it supports works without code changes:
+
+```bash
+untaped awx job-templates list --filter organization__name=Engineering
+untaped awx job-templates list --filter name__icontains=deploy \
+                               --filter playbook__contains=deploy.yml
+untaped awx projects list --filter scm_type=git --filter status=successful
+```
+
+`--with-names` flips FK columns from numeric ids to the names AWX
+returns under `summary_fields`. Multi-valued FKs (e.g. `credentials`)
+become lists of names. Skip the flag (the default) to keep raw ids,
+which is what the FK-piping shape relies on:
+
+```bash
+# Human-readable list — names instead of ids
+untaped awx job-templates list --with-names
+
+# Pipe-friendly: ids feed the next `get --stdin`
+untaped awx job-templates list --columns project --format raw \
+  | sort -u \
+  | untaped awx projects get --stdin --columns name
+```
+
+For nested fields outside the FK set (e.g. last-job status, polymorphic
+schedule parents), use dotted column paths — `format_output` walks
+nested dicts:
+
+```bash
+untaped awx job-templates list \
+  --columns name --columns summary_fields.last_job.status --format table
+
+untaped awx schedules list \
+  --columns name --columns summary_fields.unified_job_template.name --format table
 ```
 
 `save` writes (or prints to stdout) a kubectl-style envelope:
@@ -156,7 +197,8 @@ Use the top-level `awx apply` when you want the dependency ordering.
 ### `untaped awx save --all` (bulk dump)
 
 ```bash
-untaped awx save --out-dir backup/ --all [--organization <org>]
+untaped awx save --out-dir backup/ --all
+untaped awx save --out-dir backup/ --all --filter organization__name=Engineering
 untaped awx save --out-dir backup/ --kind JobTemplate
 ```
 
@@ -164,6 +206,12 @@ Writes one file per resource. Filenames encode the full identity so
 same-named records across organizations don't collide:
 `<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml`.
 Read-only kinds (Credential, etc.) are skipped with a one-line note.
+
+`--filter KEY=VALUE` (repeatable) is passed verbatim to AWX for every
+saved kind. AWX's `/schedules/` endpoint has no `organization` field,
+so `--filter organization__name=…` is rejected by that endpoint —
+schedules don't get included in an org-scoped backup. Run a separate
+`save --kind Schedule` (no filter) if you also need schedules.
 
 ### `untaped awx jobs`
 

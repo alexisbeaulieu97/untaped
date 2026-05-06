@@ -62,6 +62,236 @@ def test_job_templates_list(fake_aap: Any) -> None:
     assert result.stdout.strip() == "deploy"
 
 
+def test_list_with_names_flips_fk_ids_to_names(fake_aap: Any) -> None:
+    """``--with-names`` swaps FK columns from numeric ids to the names
+    AWX returns under ``summary_fields``. Without the flag, the column
+    holds the raw id (the FK-piping shape)."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "inventories",
+        id=20,
+        name="prod",
+        organization=1,
+        organization_name="Default",
+        kind="",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        project=10,
+        project_name="playbooks",
+        inventory=20,
+        inventory_name="prod",
+        playbook="a.yml",
+        summary_fields={
+            "organization": {"id": 1, "name": "Default"},
+            "project": {"id": 10, "name": "playbooks"},
+            "inventory": {"id": 20, "name": "prod"},
+        },
+    )
+    raw_default = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--format",
+            "raw",
+            "--columns",
+            "project",
+            "--columns",
+            "inventory",
+        ],
+    )
+    assert raw_default.exit_code == 0, raw_default.output
+    assert raw_default.stdout.strip() == "10\t20"
+
+    raw_named = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "project",
+            "--columns",
+            "inventory",
+        ],
+    )
+    assert raw_named.exit_code == 0, raw_named.output
+    assert raw_named.stdout.strip() == "playbooks\tprod"
+
+
+def test_list_with_names_handles_multi_fk(fake_aap: Any) -> None:
+    """Multi-valued FKs (credentials) become a list of names."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("credentials", id=30, name="ssh", organization=1, organization_name="Default")
+    fake_aap.seed("credentials", id=31, name="vault", organization=1, organization_name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+        credentials=[30, 31],
+        summary_fields={
+            "organization": {"id": 1, "name": "Default"},
+            "credentials": [
+                {"id": 30, "name": "ssh"},
+                {"id": 31, "name": "vault"},
+            ],
+        },
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "credentials",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # Scalar lists render comma-separated for raw/table.
+    assert result.stdout.strip() == "ssh, vault"
+
+
+def test_list_with_names_falls_back_to_id_when_summary_missing(fake_aap: Any) -> None:
+    """If summary_fields is absent (degraded server response), the row
+    keeps the raw id rather than disappearing or rendering empty."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+        # No summary_fields seeded.
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "organization",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "1"
+
+
+def test_list_dotted_columns_resolve_summary_fields(fake_aap: Any) -> None:
+    """``--columns summary_fields.project.name`` works without --with-names —
+    the dotted accessor traverses nested dicts in the row."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+        project=20,
+        summary_fields={"project": {"id": 20, "name": "playbooks"}},
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+            "--columns",
+            "summary_fields.project.name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "deploy\tplaybooks"
+
+
+def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
+    """``get --format table`` without ``--columns`` must project to the
+    spec's list_columns. Rendering the full AWX record (50+ fields with
+    nested dicts stringified) is unreadable noise."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "deploy", "--organization", "Default", "--format", "table"],
+    )
+    assert result.exit_code == 0, result.output
+    # list_columns for JT is ("name", "organization", "project", "inventory", "last_job_status").
+    # No noisy columns like "summary_fields" or "related" should appear.
+    assert "summary_fields" not in result.stdout
+    assert "related" not in result.stdout
+    assert "deploy" in result.stdout
+
+
+def test_get_format_raw_keeps_first_key_default(fake_aap: Any) -> None:
+    """``get --format raw`` without ``--columns`` must keep
+    ``format_output``'s first-key behavior so pipelines like
+    ``get --stdin --format raw | …`` retain their established shape."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "deploy", "--organization", "Default", "--format", "raw"],
+    )
+    assert result.exit_code == 0, result.output
+    # Single line, single column — not a tab-separated multi-column wall.
+    assert "\t" not in result.stdout.strip()
+    assert "\n" not in result.stdout.strip()
+
+
+def test_get_with_names_translates_fks(fake_aap: Any) -> None:
+    """``get --with-names`` works the same way as on list."""
+    _seed_basic(fake_aap)
+    # Inject summary_fields so the translation has data to read.
+    fake_aap.get_record("job_templates", 30)["summary_fields"] = {
+        "organization": {"id": 1, "name": "Default"},
+        "project": {"id": 10, "name": "playbooks"},
+        "inventory": {"id": 20, "name": "prod"},
+    }
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "get",
+            "deploy",
+            "--organization",
+            "Default",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "project",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
 def test_job_templates_get(fake_aap: Any) -> None:
     _seed_basic(fake_aap)
     result = CliRunner().invoke(
@@ -154,6 +384,221 @@ def test_get_reads_names_from_stdin(fake_aap: Any) -> None:
     assert result.exit_code == 0, result.output
     assert "alpha" in result.stdout
     assert "beta" in result.stdout
+
+
+def test_get_accepts_numeric_id_positional(fake_aap: Any) -> None:
+    """Numeric identifiers must be looked up by id, not by name.
+
+    Lets users pipe FK columns straight into another resource's `get`:
+    `job-templates list --columns project --format raw | projects get --stdin`.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app, ["projects", "get", "10", "--format", "raw", "--columns", "name"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
+def test_get_treats_unicode_non_decimal_digit_as_name(fake_aap: Any) -> None:
+    """``isdigit()`` matches Unicode digits like ``²`` that ``int()`` rejects.
+    Those identifiers must take the name-lookup path so the user sees a
+    clean ``error: <id>: not found`` (or a hit on a literally-named
+    resource) instead of an unhandled ``ValueError`` traceback."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    result = CliRunner().invoke(
+        app,
+        ["projects", "get", "²", "--organization", "Default", "--format", "raw"],
+    )
+    # Name lookup miss → per-item error line + exit 1, no traceback.
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    output = result.output + (result.stderr or "")
+    assert "error" in output
+
+
+def test_get_by_name_forces_name_lookup_for_all_digit_names(fake_aap: Any) -> None:
+    """Resources whose AWX name happens to be all digits would otherwise
+    be unreachable: ``get 10`` always means id-10. ``--by-name`` is the
+    escape hatch — disables digit detection so the identifier is used as
+    a name lookup (scoped to ``--organization`` like any other name)."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    # A project whose name is "10" — and a different project with id 10.
+    fake_aap.seed(
+        "projects",
+        id=99,
+        name="10",  # all-digit name
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    # Without --by-name: "10" is treated as id, returns playbooks.
+    default_result = CliRunner().invoke(
+        app, ["projects", "get", "10", "--format", "raw", "--columns", "name"]
+    )
+    assert default_result.exit_code == 0, default_result.output
+    assert default_result.stdout.strip() == "playbooks"
+
+    # With --by-name: "10" is treated as a name, returns the all-digit-named project.
+    by_name_result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "get",
+            "10",
+            "--by-name",
+            "--organization",
+            "Default",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert by_name_result.exit_code == 0, by_name_result.output
+    assert by_name_result.stdout.strip() == "99"
+
+
+def test_get_by_id_ignores_organization_scope(fake_aap: Any) -> None:
+    """Numeric ids are globally unique, so the org scope must not be applied
+    (otherwise looking up by id requires the user to know the org, which
+    defeats the purpose of having an id)."""
+    fake_aap.seed("organizations", id=1, name="Org-A")
+    fake_aap.seed("organizations", id=2, name="Org-B")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=2,
+        organization_name="Org-B",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "get",
+            "10",
+            "--organization",
+            "Org-A",  # wrong org, must be ignored
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
+def test_get_reads_ids_from_stdin(fake_aap: Any) -> None:
+    """Pipeline shape: `job-templates list --columns project --format raw |
+    projects get --stdin` must look each entry up by id."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="ops",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["projects", "get", "--stdin", "--format", "raw", "--columns", "name"],
+        input="10\n11\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "playbooks" in result.stdout
+    assert "ops" in result.stdout
+
+
+def test_get_mixes_names_and_ids(fake_aap: Any) -> None:
+    """A single batch can mix names and numeric ids — name entries still
+    honour the resolved organization scope."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake_aap.seed(
+        "projects",
+        id=11,
+        name="ops",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "projects",
+            "get",
+            "playbooks",
+            "11",
+            "--organization",
+            "Default",
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "playbooks" in result.stdout
+    assert "ops" in result.stdout
+
+
+def test_get_by_missing_id_reports_error(fake_aap: Any) -> None:
+    """A missing numeric id must surface as a per-item error and a
+    non-zero exit, just like a missing name does."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["projects", "get", "--stdin", "--format", "raw", "--columns", "name"],
+        input="10\n9999\n",
+    )
+    assert result.exit_code != 0
+    # Successful lookup still reaches stdout.
+    assert "playbooks" in result.stdout
+    # The missing id surfaces on stderr.
+    assert "9999" in (result.output + (result.stderr or ""))
 
 
 def test_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
@@ -338,6 +783,16 @@ def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
     parsed = _json.loads(result.stdout)
     assert isinstance(parsed, list) and parsed
     assert parsed[0].get("id") == 42
+
+
+def test_jobs_wait_exits_nonzero_on_timeout(fake_aap: Any) -> None:
+    """A non-terminal job at the deadline must exit non-zero — `awx test`
+    already classifies that as ``timeout``; `jobs wait` should agree so
+    scripts can ``set -e`` and detect the failure."""
+    fake_aap.seed("jobs", id=42, name="run", status="running", type="job")
+    result = CliRunner().invoke(app, ["jobs", "wait", "42", "--timeout", "0"])
+    assert result.exit_code == 1, result.output
+    assert "timeout" in (result.output + (result.stderr or ""))
 
 
 def test_project_update_supports_format_json(fake_aap: Any) -> None:
@@ -561,18 +1016,10 @@ def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
     assert "no such command" in result.output.lower() or "usage" in result.output.lower()
 
 
-def test_save_all_organization_filter_applies_per_spec_identity(
-    fake_aap: Any, tmp_path: Path
-) -> None:
-    """`awx save --all --organization X` must apply the org filter only to
-    specs whose ``identity_keys`` include ``organization``. Schedule's
-    identity is ``("name",)`` (parent org lives in ``metadata.parent``);
-    applying the same filter as JT/Project there silently excludes every
-    schedule. JT in a *different* org must still be filtered out.
-
-    This pins both halves of the regression: schedules included AND
-    other-org JTs excluded.
-    """
+def test_save_all_filter_scopes_org_kinds_server_side(fake_aap: Any, tmp_path: Path) -> None:
+    """`save --all --filter organization__name=X` is passed verbatim to AWX
+    for every saved kind, so org-scoped kinds (JT, Project) get filtered
+    server-side and other-org records don't leak through."""
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("organizations", id=2, name="Other")
     fake_aap.seed(
@@ -593,7 +1040,7 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         project=10,
         project_name="playbooks",
     )
-    # Same JT name, different org — must be excluded by `--organization Default`.
+    # Same JT name, different org — must be excluded by `--filter organization__name=Default`.
     fake_aap.seed(
         "job_templates",
         id=31,
@@ -604,8 +1051,48 @@ def test_save_all_organization_filter_applies_per_spec_identity(
         project=10,
         project_name="playbooks",
     )
-    # Schedule attached to the JT — note no `organization_name` on the
-    # record itself; AWX surfaces parent org via summary_fields only.
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "organization__name=Default",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
+    assert (out_dir / "Project__Default__playbooks.yml").exists()
+    other_org_jt_files = [
+        p for p in out_dir.glob("JobTemplate__*.yml") if "deploy-elsewhere" in p.name
+    ]
+    assert not other_org_jt_files, (
+        "different-org JT leaked through bulk-save filter; saved files: "
+        f"{[p.name for p in out_dir.iterdir()]}"
+    )
+
+
+def test_save_all_filter_skips_schedules_when_filter_field_absent(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """Schedule's API has no ``organization`` field, so AWX would 400 on
+    ``?organization__name=…``. Bulk save must detect that the filter
+    references a field this kind doesn't have, skip the kind with a
+    stderr warning, and continue with the kinds that do support it."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
     fake_aap.seed(
         "schedules",
         id=50,
@@ -626,35 +1113,145 @@ def test_save_all_organization_filter_applies_per_spec_identity(
     out_dir = tmp_path / "backup"
     result = CliRunner().invoke(
         app,
-        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "organization__name=Default",
+        ],
     )
     assert result.exit_code == 0, result.output
-
-    # Org filter still applied to org-scoped kinds: JT in `Default` saved,
-    # JT in `Other` not saved. Filenames now encode the org for org-scoped kinds.
+    output = result.output + (result.stderr or "")
+    assert "skipping Schedule" in output
+    # Org-scoped kinds were saved; Schedule was not.
     assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
-    assert (out_dir / "Project__Default__playbooks.yml").exists()
-    other_org_jt_files = [
-        p for p in out_dir.glob("JobTemplate__*.yml") if "deploy-elsewhere" in p.name
-    ]
-    assert not other_org_jt_files, (
-        "different-org JT leaked through bulk-save filter; saved files: "
-        f"{[p.name for p in out_dir.iterdir()]}"
+    assert not list(out_dir.glob("Schedule__*.yml"))
+
+
+def test_save_kind_accepts_cli_name(fake_aap: Any, tmp_path: Path) -> None:
+    """``save --kind job-templates`` should work as well as ``--kind JobTemplate``."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
     )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "job-templates"])
+    assert result.exit_code == 0, result.output
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
 
-    # Schedule must be saved despite --organization filter (the bug filtered it out).
-    schedule_files = list(out_dir.glob("Schedule__*.yml"))
-    assert schedule_files, (
-        "schedule excluded by organization__name filter; saved files: "
-        f"{[p.name for p in out_dir.iterdir()]}"
+
+def test_save_kind_accepts_domain_kind(fake_aap: Any, tmp_path: Path) -> None:
+    """The ``_resolve_kind`` fallback path: ``--kind JobTemplate`` resolves
+    via ``catalog.get`` after ``catalog.by_cli_name`` raises."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
     )
-    assert any("nightly" in f.name for f in schedule_files)
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "JobTemplate"])
+    assert result.exit_code == 0, result.output
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
 
 
-def test_save_all_does_not_default_to_active_organization(
+def test_save_kind_rejects_unknown_kind(fake_aap: Any, tmp_path: Path) -> None:
+    """Neither ``by_cli_name`` nor ``get`` can resolve a bogus kind —
+    the second arm of ``_resolve_kind`` re-raises."""
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "Bogus"])
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "Bogus" in output
+
+
+def test_save_all_filter_passes_through_read_only_field(fake_aap: Any, tmp_path: Path) -> None:
+    """Read-only fields (``modified``, ``created``, ``last_job_status``)
+    are valid AWX list filters even though they aren't accepted on writes.
+    A time-windowed backup like ``--filter modified__gte=…`` must pass
+    through, not get short-circuited as "field not on this kind"."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "modified__gte=2024-01-01",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = result.output + (result.stderr or "")
+    # Read-only fields like `modified` must not be pre-rejected by the
+    # filter-applicability check — they're valid AWX list filters even
+    # though they aren't accepted on writes.
+    assert "filter field 'modified'" not in output
+
+
+def test_save_all_filter_passes_through_list_only_field(fake_aap: Any, tmp_path: Path) -> None:
+    """``last_job_status`` is a real AWX field exposed in JobTemplate's
+    ``list_columns`` but not enumerated in ``canonical_fields`` or
+    ``read_only_fields``. A status-scoped backup must not pre-reject
+    the kind that actually exposes the field — that would silently
+    empty the most likely use case for the flag. Other kinds (Project,
+    Schedule, …) legitimately don't have ``last_job_status`` and may
+    still be skipped."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "last_job_status=successful",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = result.output + (result.stderr or "")
+    # JobTemplate exposes last_job_status (in its list_columns) — it must
+    # NOT be in the skip list. Other kinds without the field may be skipped.
+    assert "JobTemplate: filter field 'last_job_status'" not in output
+
+
+def test_save_all_with_no_filter_captures_every_kind(
     fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`save --all` ignores `default_organization`; only `--organization` narrows."""
+    """Bulk save with no ``--filter`` is "back up everything": JTs across
+    every org plus parent-scoped kinds (Schedule). ``default_organization``
+    must not silently narrow the backup — it's a name-disambiguation hint
+    for ``get``/``launch``/``update``, not a save scope."""
     monkeypatch.setenv("UNTAPED_AWX__DEFAULT_ORGANIZATION", "Default")
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("organizations", id=2, name="Other")
@@ -674,91 +1271,47 @@ def test_save_all_does_not_default_to_active_organization(
         organization_name="Other",
         playbook="b.yml",
     )
-
-    out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
-    assert result.exit_code == 0, result.output
-
-    # Both JTs must be saved — bulk save without an explicit --organization
-    # is "everything", regardless of `default_organization`.
-    saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
-    assert saved == [
-        "JobTemplate__Default__deploy-default.yml",
-        "JobTemplate__Other__deploy-other.yml",
-    ], f"expected both JTs saved, got {saved}"
-
-
-def test_save_all_with_organization_filters_schedules_by_parent_org(
-    fake_aap: Any, tmp_path: Path
-) -> None:
-    """`awx save --all --organization X` filters schedules client-side by parent org."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed("organizations", id=2, name="Other")
-    fake_aap.seed(
-        "job_templates",
-        id=30,
-        name="deploy",
-        organization=1,
-        organization_name="Default",
-        playbook="a.yml",
-    )
-    fake_aap.seed(
-        "job_templates",
-        id=31,
-        name="deploy-other",
-        organization=2,
-        organization_name="Other",
-        playbook="b.yml",
-    )
-    # Schedule attached to JT in `Default`.
     fake_aap.seed(
         "schedules",
         id=50,
-        name="nightly-default",
+        name="nightly",
         unified_job_template=30,
         rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
         enabled=True,
         summary_fields={
             "unified_job_template": {
                 "id": 30,
-                "name": "deploy",
+                "name": "deploy-default",
                 "unified_job_type": "job_template",
                 "organization_name": "Default",
             }
         },
     )
-    # Schedule attached to JT in `Other` — must be excluded by `--organization Default`.
-    fake_aap.seed(
-        "schedules",
-        id=51,
-        name="nightly-other",
-        unified_job_template=31,
-        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
-        enabled=True,
-        summary_fields={
-            "unified_job_template": {
-                "id": 31,
-                "name": "deploy-other",
-                "unified_job_type": "job_template",
-                "organization_name": "Other",
-            }
-        },
-    )
 
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(
-        app,
-        ["save", "--all", "--out-dir", str(out_dir), "--organization", "Default"],
-    )
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
-    saved_schedules = sorted(p.name for p in out_dir.glob("Schedule__*.yml"))
-    assert saved_schedules == [
-        "Schedule__JobTemplate__Default__deploy__nightly-default.yml",
-    ], (
-        "schedule from a different org leaked into org-scoped bulk save; "
-        f"saved schedule files: {saved_schedules}"
+    saved_jts = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
+    assert saved_jts == [
+        "JobTemplate__Default__deploy-default.yml",
+        "JobTemplate__Other__deploy-other.yml",
+    ], f"expected both JTs saved, got {saved_jts}"
+    assert list(out_dir.glob("Schedule__*.yml")), (
+        "schedule excluded from no-filter backup; "
+        f"saved files: {[p.name for p in out_dir.iterdir()]}"
     )
+
+
+def test_save_all_filter_rejects_malformed_entry(fake_aap: Any, tmp_path: Path) -> None:
+    """Same KEY=VALUE validation as ``<kind> list --filter``."""
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app, ["save", "--all", "--out-dir", str(out_dir), "--filter", "bogus"]
+    )
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "KEY=VALUE" in output
 
 
 def test_save_all_distinguishes_same_named_resources_across_orgs(

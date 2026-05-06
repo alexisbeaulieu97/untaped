@@ -11,6 +11,7 @@ from untaped_core import (
     OutputFormat,
     UntapedError,
     format_output,
+    parse_kv_pairs,
     read_identifiers,
     report_errors,
 )
@@ -24,6 +25,7 @@ from untaped_awx.application import (
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
@@ -64,19 +66,37 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("list")
     def list_command(
         search: str | None = typer.Option(None, "--search", help="Fuzzy server-side search."),
-        organization: str | None = typer.Option(
-            None, "--organization", help="Filter by organization name."
+        filter_: list[str] | None = typer.Option(
+            None,
+            "--filter",
+            help=(
+                "Server-side filter, KEY=VALUE (repeatable). Passed verbatim to "
+                "AWX, so any Django-style lookup works: --filter "
+                "organization__name=Default --filter name__icontains=deploy."
+            ),
         ),
         limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+        with_names: bool = typer.Option(
+            False,
+            "--with-names",
+            help=(
+                "Replace FK ids with names from summary_fields. Multi-valued "
+                "FKs (e.g. credentials) become lists of names."
+            ),
+        ),
         fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
         columns: list[str] | None = typer.Option(
             None, "--columns", "-c", help="Columns to include (repeatable)."
         ),
     ) -> None:
         """List resources."""
+        filters = parse_kv_pairs(filter_, flag="--filter")
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
-            records = list(ListResources(ctx.repo)(spec, search=search, scope=scope, limit=limit))
+            records = list(
+                ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
+            )
+        if with_names:
+            records = flatten_fks(records, spec)
         cols = list(columns) if columns else list(spec.list_columns)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
 
@@ -87,30 +107,80 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
 def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("get", no_args_is_help=True)
     def get_command(
-        names: list[str] | None = typer.Argument(None, help=f"{spec.kind} name(s)."),
-        stdin: bool = typer.Option(False, "--stdin", help="Read names from stdin (one per line)."),
+        names: list[str] | None = typer.Argument(
+            None, help=f"{spec.kind} name(s) or numeric id(s)."
+        ),
+        stdin: bool = typer.Option(
+            False, "--stdin", help="Read names or numeric ids from stdin (one per line)."
+        ),
         organization: str | None = typer.Option(
-            None, "--organization", help="Scope to organization."
+            None, "--organization", help="Scope to organization (ignored for numeric ids)."
+        ),
+        by_name: bool = typer.Option(
+            False,
+            "--by-name",
+            help="Force name lookup (escape hatch for resources whose name is all digits).",
+        ),
+        with_names: bool = typer.Option(
+            False,
+            "--with-names",
+            help="Replace FK ids with names from summary_fields.",
         ),
         fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
         columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
-        """Fetch one or more resources by name."""
+        """Fetch one or more resources by name or numeric id.
+
+        All-digit identifiers are looked up by id, everything else by
+        name within the resolved organization scope. Pass ``--by-name``
+        to force name lookup when a resource's name happens to be all
+        digits.
+        """
         records: list[Any] = []
         any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
             scope = _scope(ctx, organization, spec)
+            getter = GetResource(ctx.repo)
             for n in ids:
                 try:
-                    records.append(GetResource(ctx.repo)(spec, name=n, scope=scope))
+                    records.append(_get_one(getter, spec, n, scope, by_name=by_name))
                 except UntapedError as exc:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
-            typer.echo(format_output(records, fmt=fmt, columns=columns))
+            if with_names:
+                records = flatten_fks(records, spec)
+            cols = list(columns) if columns else _default_columns(spec, fmt)
+            typer.echo(format_output(records, fmt=fmt, columns=cols))
         if any_failed:
             raise typer.Exit(code=1)
+
+
+def _default_columns(spec: AwxResourceSpec, fmt: OutputFormat) -> list[str] | None:
+    # Table needs a projection — a full AWX record (50+ fields) renders as
+    # an unreadable wall. raw stays one-column-per-line so pipelines that
+    # do `get --format raw | …` keep their established shape; yaml/json
+    # keep the full record so users can inspect every field.
+    if fmt == "table":
+        return list(spec.list_columns)
+    return None
+
+
+def _get_one(
+    getter: GetResource,
+    spec: AwxResourceSpec,
+    identifier: str,
+    scope: dict[str, str] | None,
+    *,
+    by_name: bool = False,
+) -> dict[str, Any]:
+    # `isdecimal()` matches Unicode category Nd — exactly the set
+    # `int()` accepts. `isdigit()` admits superscripts/subscripts
+    # like "²" that `int()` would reject with ValueError.
+    if not by_name and identifier.isdecimal():
+        return getter(spec, id_=int(identifier))
+    return getter(spec, name=identifier, scope=scope)
 
 
 # ---- save ----

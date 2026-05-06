@@ -53,15 +53,14 @@ class SaveResource:
         self,
         spec: AwxResourceSpec,
         *,
-        scope: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Return every record of ``spec.kind`` matching ``scope`` (no pagination cap).
+        """Return every record of ``spec.kind`` matching ``params`` (no pagination cap).
 
-        Used by ``save --all``.
+        Used by ``save --all``. Params are passed verbatim to AWX so the
+        caller (the CLI's ``--filter`` flag) can use any Django-style
+        lookup the API supports.
         """
-        params: dict[str, str] = {}
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
         return list(self._client.list(spec, params=params or None))
 
     def from_record(self, spec: AwxResourceSpec, record: dict[str, Any]) -> Resource:

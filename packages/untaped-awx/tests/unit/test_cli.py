@@ -67,16 +67,18 @@ def test_ping_requires_base_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert "base_url" in str(result.exception) or "base_url" in result.output
 
 
-@pytest.mark.parametrize("cli_name", ["organizations", "credential-types"])
-def test_default_organization_not_applied_to_global_specs(
+@pytest.mark.parametrize("cli_name", ["organizations", "credential-types", "job-templates"])
+def test_list_does_not_auto_apply_default_organization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     cli_name: str,
 ) -> None:
-    """``awx.default_organization`` must not leak into queries for kinds
-    whose ``identity_keys`` don't include ``organization`` — those records
-    have no ``organization_name`` column and the filter would silently
-    return zero results.
+    """``awx.default_organization`` is for name disambiguation on
+    ``get`` / ``launch`` / ``update`` only — ``list`` filters are now
+    explicit via ``--filter``. Auto-applying the default would (a) break
+    global kinds (Organization, CredentialType have no organization
+    column), and (b) silently scope a list the user expected to be
+    cluster-wide.
     """
     cfg = tmp_path / "config.yml"
     cfg.write_text(
@@ -101,7 +103,10 @@ def test_default_organization_not_applied_to_global_specs(
             json={"count": 0, "next": None, "previous": None, "results": []},
         )
 
-    api_path = "credential_types" if cli_name == "credential-types" else cli_name
+    api_path = {
+        "credential-types": "credential_types",
+        "job-templates": "job_templates",
+    }.get(cli_name, cli_name)
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get(f"/api/v2/{api_path}/").mock(side_effect=_record)
         result = CliRunner().invoke(app, [cli_name, "list", "--format", "raw"])
@@ -110,5 +115,75 @@ def test_default_organization_not_applied_to_global_specs(
     assert captured, "no request captured"
     for req in captured:
         assert "organization__name" not in req.url.params, (
-            f"global spec {cli_name!r} got an org filter: {req.url.params}"
+            f"{cli_name!r} list auto-applied default_organization: {req.url.params}"
         )
+
+
+def test_list_filter_passes_through_to_awx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--filter KEY=VALUE`` must reach AWX as a verbatim URL param so any
+    Django-style lookup (``__name``, ``__icontains``, ``__contains``,
+    exact match, …) works without code changes."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        profiles:
+          default:
+            awx:
+              base_url: https://aap.example.com
+              token: secret
+              api_prefix: /api/v2/
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    captured: list[httpx.Request] = []
+
+    def _record(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"count": 0, "next": None, "previous": None, "results": []})
+
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/job_templates/").mock(side_effect=_record)
+        result = CliRunner().invoke(
+            app,
+            [
+                "job-templates",
+                "list",
+                "--filter",
+                "organization__name=Default",
+                "--filter",
+                "name__icontains=deploy",
+                "--format",
+                "raw",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert captured
+    params = captured[-1].url.params
+    assert params.get("organization__name") == "Default"
+    assert params.get("name__icontains") == "deploy"
+
+
+def test_list_filter_rejects_malformed_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed ``--filter`` (no ``=``) must fail up front — silently
+    posting it to AWX surfaces as an opaque HTTP 400."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        profiles:
+          default:
+            awx:
+              base_url: https://aap.example.com
+              token: secret
+              api_prefix: /api/v2/
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliRunner().invoke(app, ["job-templates", "list", "--filter", "bogus"])
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "KEY=VALUE" in output
