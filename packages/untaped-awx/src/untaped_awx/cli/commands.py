@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
 import typer
 from untaped_core import (
@@ -18,6 +17,7 @@ from untaped_core import (
     OutputFormat,
     format_output,
     get_settings,
+    parse_kv_pairs,
     report_errors,
 )
 
@@ -27,12 +27,13 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
-from untaped_awx.cli._context import awx_config_from_settings, open_context, scope_for_spec
+from untaped_awx.cli._context import awx_config_from_settings, open_context
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.domain import Job, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
+from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import ALL_SPECS
 from untaped_awx.infrastructure.yaml_io import write_resource
@@ -99,9 +100,24 @@ def save_top_command(
     ),
     all_kinds: bool = typer.Option(False, "--all", help="Save every saveable kind."),
     kind: str | None = typer.Option(
-        None, "--kind", help="Limit save to a single kind (e.g. JobTemplate)."
+        None,
+        "--kind",
+        help=(
+            "Limit save to a single kind. Accepts a CLI name "
+            "(job-templates) or a domain kind (JobTemplate)."
+        ),
     ),
-    organization: str | None = typer.Option(None, "--organization", help="Scope to organization."),
+    filter_: list[str] | None = typer.Option(
+        None,
+        "--filter",
+        help=(
+            "Server-side filter, KEY=VALUE (repeatable). Passed verbatim to "
+            "AWX for each saved kind. Note: AWX's /schedules/ endpoint has "
+            "no organization field, so filters like organization__name=… "
+            "are 400'd by that endpoint — do a separate per-kind save if "
+            "you need org-scoped schedules."
+        ),
+    ),
 ) -> None:
     """Bulk-save resources to a directory.
 
@@ -114,14 +130,11 @@ def save_top_command(
     """
     if not all_kinds and not kind:
         raise typer.BadParameter("pass --all or --kind")
+    filters = parse_kv_pairs(filter_, flag="--filter")
 
     with report_errors(), open_context() as ctx:
         target_specs = (
-            list(ALL_SPECS)
-            if all_kinds
-            else [
-                ctx.catalog.get(kind)  # type: ignore[arg-type]
-            ]
+            list(ALL_SPECS) if all_kinds else [_resolve_kind(ctx.catalog, kind)]  # type: ignore[arg-type]
         )
         save = SaveResource(ctx.repo, ctx.fk)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -135,14 +148,14 @@ def save_top_command(
                 continue
             if "save" not in spec.commands:
                 continue
-            # Bulk save is "back up everything" by intent. Pass
-            # `default_organization=None` so an active default never
-            # silently narrows the backup — only an explicit
-            # ``--organization`` does.
-            scope = scope_for_spec(spec, organization, None)
-            records = save.find_all(spec, scope=scope)
-            if organization:
-                records = _narrow_to_organization(spec, records, organization)
+            incompatible = _filter_field_not_on_spec(filters, spec)
+            if incompatible is not None:
+                typer.echo(
+                    f"skipping {spec.kind}: filter field {incompatible!r} not on this kind",
+                    err=True,
+                )
+                continue
+            records = save.find_all(spec, params=filters or None)
             for record in records:
                 resource = save.from_record(spec, record)
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
@@ -152,6 +165,50 @@ def save_top_command(
                 written.append(str(target))
     for path in written:
         typer.echo(path)
+
+
+def _resolve_kind(catalog: AwxResourceCatalog, kind: str) -> AwxResourceSpec:
+    """Accept either the public CLI name (``job-templates``) or the
+    domain kind (``JobTemplate``)."""
+    try:
+        return catalog.by_cli_name(kind)
+    except AwxApiError:
+        return catalog.get(kind)
+
+
+def _filter_field_not_on_spec(filters: dict[str, str], spec: AwxResourceSpec) -> str | None:
+    """Return a filter field that doesn't exist on ``spec``, or None.
+
+    AWX's ``/schedules/`` has no ``organization`` field — sending
+    ``?organization__name=…`` 400s. This is a *conservative* heuristic
+    to skip kinds whose API can't possibly accept a given filter key,
+    union'ing every field name we know each kind exposes:
+
+    - ``canonical_fields`` (writable input fields)
+    - ``identity_keys`` (always queryable)
+    - ``read_only_fields`` (server-set; ``modified``, ``status``, …)
+    - ``fk_refs.field`` (FK columns)
+    - ``list_columns`` (we wouldn't display a column that doesn't exist)
+
+    AWX exposes more filterable fields than any spec enumerates, so a
+    false positive is possible — kinds whose specs lag the API will be
+    spuriously skipped on otherwise-valid filters. The recovery is
+    either to add the missing field to the spec or to run a per-kind
+    save without the filter. False *negatives* (sending an invalid
+    filter that AWX 400s on) are caught by the per-call error path.
+    """
+    fields = (
+        set(spec.canonical_fields)
+        | set(spec.identity_keys)
+        | set(spec.read_only_fields)
+        | set(spec.list_columns)
+        | {fk.field for fk in spec.fk_refs}
+    )
+    for key in filters:
+        base = key.split("__", 1)[0]
+        if base not in fields:
+            return base
+    return None
 
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
@@ -178,28 +235,6 @@ def _assert_inside(parent: Path, target: Path) -> None:
         target.resolve().relative_to(parent_resolved)
     except ValueError as exc:  # pragma: no cover — defensive guard
         raise AwxApiError(f"refusing to write {target} — outside {parent_resolved}") from exc
-
-
-def _narrow_to_organization(
-    spec: AwxResourceSpec,
-    records: list[dict[str, Any]],
-    organization: str,
-) -> list[dict[str, Any]]:
-    """Filter parent-scoped kinds (Schedule) by parent's org client-side."""
-    if "organization" in spec.identity_keys:
-        return records  # already filtered server-side
-    if spec.kind != "Schedule":
-        return records  # global kinds (Organization, CredentialType) ignore org
-    return [
-        r
-        for r in records
-        if (
-            ((r.get("summary_fields") or {}).get("unified_job_template") or {}).get(
-                "organization_name"
-            )
-        )
-        == organization
-    ]
 
 
 def _resource_filename(kind: str, metadata: Metadata) -> str:
@@ -259,12 +294,19 @@ def jobs_wait(
     ),
     columns: ColumnsOption = None,
 ) -> None:
-    """Block until the job reaches a terminal state."""
+    """Block until the job reaches a terminal state.
+
+    Exits non-zero when ``--timeout`` is reached without the job
+    reaching a terminal state — same contract as ``awx test``.
+    """
     with report_errors(), open_context() as ctx:
         record = ctx.repo.request("GET", f"jobs/{job_id}/")
         job = Job.model_validate({**record, "kind": "job"})
         final = WatchJob(ctx.repo)(job, timeout=timeout)
     typer.echo(format_output([final.model_dump()], fmt=fmt, columns=columns))
+    if not final.is_terminal:
+        typer.echo(f"timeout: job {job_id} did not reach terminal state", err=True)
+        raise typer.Exit(code=1)
 
 
 app.add_typer(jobs_app, name="jobs")

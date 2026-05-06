@@ -1,4 +1,4 @@
-"""Use case: paginated list with optional search/filter/scope."""
+"""Use case: paginated list with optional server-side search and filters."""
 
 from __future__ import annotations
 
@@ -20,8 +20,6 @@ class ListResources:
 
     AWX supports ``?search=`` for fuzzy substring matches and ``?<field>=value``
     for exact filters (plus ``__icontains``, ``__name``, etc. lookups).
-    Scope filters use the ``<field>__name=`` form so callers can pass
-    human names rather than IDs.
     """
 
     def __init__(self, client: ResourceClient) -> None:
@@ -33,12 +31,9 @@ class ListResources:
         *,
         search: str | None = None,
         filters: dict[str, str] | None = None,
-        scope: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         params: dict[str, str] = dict(filters or {})
         if search:
             params["search"] = search
-        for k, v in (scope or {}).items():
-            params[f"{k}__name"] = v
         return self._client.list(spec, params=params, limit=limit)

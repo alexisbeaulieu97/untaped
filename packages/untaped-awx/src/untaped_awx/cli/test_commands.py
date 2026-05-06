@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from untaped_core import ColumnsOption, FormatOption, format_output, report_errors
+from untaped_core import ColumnsOption, FormatOption, format_output, parse_kv_pairs, report_errors
 
 from untaped_awx.cli._context import AwxContext, open_context
 from untaped_awx.domain.test_suite import TestSuite
@@ -42,19 +42,6 @@ _NON_INTERACTIVE_OPT = typer.Option(
 
 
 # ---- shared helpers ------------------------------------------------------
-
-
-def _parse_var_pairs(pairs: Iterable[str]) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for raw in pairs:
-        if "=" not in raw:
-            raise typer.BadParameter(f"--var expects key=value, got {raw!r}")
-        key, value = raw.split("=", 1)
-        key = key.strip()
-        if not key:
-            raise typer.BadParameter(f"--var key must be non-empty (got {raw!r})")
-        out[key] = value
-    return out
 
 
 def _expand_paths(paths: Iterable[Path]) -> list[Path]:
@@ -145,7 +132,7 @@ def run_command(
     from untaped_awx.application.test.resolver import ResolveCasePayload
     from untaped_awx.application.test.runner import RunTestSuite
 
-    cli_vars = _parse_var_pairs(var)
+    cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
     case_filter = set(cases) if cases else None
 
@@ -221,7 +208,7 @@ def list_command(
     columns: ColumnsOption = None,
 ) -> None:
     """List the cases that would run, without launching anything."""
-    cli_vars = _parse_var_pairs(var)
+    cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
 
     with report_errors():
@@ -269,7 +256,7 @@ def validate_command(
     """Render + parse + resolve each case; report errors without launching."""
     from untaped_awx.application.test.resolver import ResolveCasePayload
 
-    cli_vars = _parse_var_pairs(var)
+    cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
 
     with report_errors(), open_context() as ctx:
