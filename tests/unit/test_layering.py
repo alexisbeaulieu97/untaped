@@ -55,6 +55,17 @@ def _is_type_checking_guard(test: ast.expr) -> bool:
     return False
 
 
+def _typecheck_block_lines(tree: ast.Module) -> set[int]:
+    """Return line numbers belonging to ``if TYPE_CHECKING:`` blocks."""
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and _is_type_checking_guard(node.test):
+            for child in ast.walk(node):
+                if hasattr(child, "lineno"):
+                    lines.add(child.lineno)
+    return lines
+
+
 def _runtime_imports(tree: ast.Module) -> list[ast.Import | ast.ImportFrom]:
     """Return ``Import`` / ``ImportFrom`` nodes that execute at runtime.
 
@@ -64,13 +75,7 @@ def _runtime_imports(tree: ast.Module) -> list[ast.Import | ast.ImportFrom]:
     ``from x.y.z import ...`` (``ast.ImportFrom``) so neither form can
     bypass the rule.
     """
-    typecheck_block_lines: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.If) and _is_type_checking_guard(node.test):
-            for child in ast.walk(node):
-                if hasattr(child, "lineno"):
-                    typecheck_block_lines.add(child.lineno)
-
+    typecheck_block_lines = _typecheck_block_lines(tree)
     return [
         node
         for node in ast.walk(tree)
@@ -231,28 +236,78 @@ def _discover_infrastructure_dirs() -> list[tuple[str, Path]]:
 
 
 def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:
-    """Return ``"file:line imports X"`` strings for forbidden Settings imports.
+    """Return ``"file:line ..."`` strings for forbidden Settings reads.
 
-    Forbidden:
+    Direct imports (flagged at the import site):
       - ``from untaped_core import Settings`` / ``get_settings``
       - ``from untaped_core.settings import Settings`` / ``get_settings``
 
-    Plain ``import untaped_core`` is NOT flagged — it doesn't pull
-    ``Settings`` into the namespace and adapters that need ``HttpSettings``
-    (which is fine) would otherwise be tripped.
+    Module-alias bypasses (flagged at the *attribute access* site, since
+    the import alone is harmless):
+      - ``import untaped_core`` → ``untaped_core.get_settings(...)``
+      - ``import untaped_core as c`` → ``c.Settings(...)``
+      - ``import untaped_core.settings`` → ``untaped_core.settings.get_settings(...)``
+      - ``import untaped_core.settings as s`` → ``s.get_settings(...)``
+      - ``from untaped_core import settings`` → ``settings.get_settings(...)``
+
+    Plain ``import untaped_core`` *without* a ``Settings`` /
+    ``get_settings`` attribute access is fine — adapters legitimately use
+    ``HttpSettings`` and other public re-exports.
     """
     forbidden_names = frozenset({"Settings", "get_settings"})
     rel = py_file.relative_to(src_dir.parent)
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
+    typecheck_lines = _typecheck_block_lines(tree)
     found: list[str] = []
+
+    # Local names bound to ``untaped_core`` (the package) and
+    # ``untaped_core.settings`` (the submodule). Tracked so attribute
+    # access through aliases (``c.get_settings``, ``s.Settings``) is
+    # caught even when the import line itself is harmless.
+    top_aliases: set[str] = set()
+    sub_aliases: set[str] = set()
+
     for imp in _runtime_imports(tree):
-        if not isinstance(imp, ast.ImportFrom):
-            continue
-        if imp.module not in {"untaped_core", "untaped_core.settings"}:
-            continue
-        bad = sorted({alias.name for alias in imp.names if alias.name in forbidden_names})
-        if bad:
-            found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)} from {imp.module}")
+        if isinstance(imp, ast.ImportFrom):
+            if imp.module in {"untaped_core", "untaped_core.settings"}:
+                bad = sorted({alias.name for alias in imp.names if alias.name in forbidden_names})
+                if bad:
+                    found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)} from {imp.module}")
+            if imp.module == "untaped_core":
+                for alias in imp.names:
+                    if alias.name == "settings":
+                        sub_aliases.add(alias.asname or "settings")
+        elif isinstance(imp, ast.Import):
+            for alias in imp.names:
+                if alias.name == "untaped_core":
+                    top_aliases.add(alias.asname or "untaped_core")
+                elif alias.name == "untaped_core.settings":
+                    if alias.asname:
+                        sub_aliases.add(alias.asname)
+                    else:
+                        # ``import untaped_core.settings`` binds the
+                        # top-level ``untaped_core`` name; the submodule
+                        # is reached via attribute access.
+                        top_aliases.add("untaped_core")
+
+    if top_aliases or sub_aliases:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute):
+                continue
+            if node.lineno in typecheck_lines:
+                continue
+            if node.attr not in forbidden_names:
+                continue
+            # Direct: ``<alias>.Settings`` / ``<alias>.get_settings``.
+            if isinstance(node.value, ast.Name):
+                name = node.value.id
+                if name in top_aliases or name in sub_aliases:
+                    found.append(f"{rel}:{node.lineno} reads {name}.{node.attr}")
+            # Chained: ``<top>.settings.Settings`` / ``<top>.settings.get_settings``.
+            elif isinstance(node.value, ast.Attribute) and node.value.attr == "settings":
+                inner = node.value.value
+                if isinstance(inner, ast.Name) and inner.id in top_aliases:
+                    found.append(f"{rel}:{node.lineno} reads {inner.id}.settings.{node.attr}")
     return found
 
 
@@ -290,3 +345,83 @@ def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_
         "config struct in instead). To document an intentional exception, add "
         "the path to _INFRA_MAY_READ_SETTINGS above with a rationale.\n  " + "\n  ".join(violations)
     )
+
+
+# Patterns the helper must catch. Each entry is (label, source). Sources
+# simulate files written by a future contributor trying to bypass the
+# direct-import check via module aliases or chained attribute access.
+_BYPASS_SOURCES: list[tuple[str, str]] = [
+    (
+        "import-alias-direct",
+        "import untaped_core as core\ndef f() -> None:\n    core.get_settings()\n",
+    ),
+    (
+        "import-alias-class",
+        "import untaped_core as core\ndef f() -> None:\n    core.Settings()\n",
+    ),
+    (
+        "from-import-submodule",
+        "from untaped_core import settings\ndef f() -> None:\n    settings.get_settings()\n",
+    ),
+    (
+        "from-import-submodule-aliased",
+        "from untaped_core import settings as cfg\ndef f() -> None:\n    cfg.get_settings()\n",
+    ),
+    (
+        "import-submodule-chained",
+        "import untaped_core.settings\n"
+        "def f() -> None:\n"
+        "    untaped_core.settings.get_settings()\n",
+    ),
+    (
+        "import-submodule-aliased",
+        "import untaped_core.settings as s\ndef f() -> None:\n    s.Settings()\n",
+    ),
+    (
+        "direct-import",
+        "from untaped_core import get_settings\ndef f() -> None:\n    get_settings()\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    _BYPASS_SOURCES,
+    ids=[lbl for lbl, _ in _BYPASS_SOURCES],
+)
+def test_settings_violation_helper_catches_alias_bypasses(
+    tmp_path: Path, label: str, source: str
+) -> None:
+    """``_settings_violations_in_file`` must flag every alias-bypass form.
+
+    The direct ``from untaped_core import get_settings`` form is an
+    existing case kept here so the parametrised set is self-contained;
+    the rest are the patterns added in response to the PR review.
+    """
+    src_dir = tmp_path / "untaped_fake"
+    infra_dir = src_dir / "infrastructure"
+    infra_dir.mkdir(parents=True)
+    py_file = infra_dir / "client.py"
+    py_file.write_text(source, encoding="utf-8")
+
+    violations = _settings_violations_in_file(py_file, src_dir)
+    assert violations, f"expected {label} pattern to be flagged"
+
+
+def test_settings_violation_helper_ignores_legitimate_imports(tmp_path: Path) -> None:
+    """``HttpSettings`` / ``ConfigError`` re-exports and ``HttpClient``
+    construction must not be flagged — they're the canonical adapter shape.
+    """
+    src_dir = tmp_path / "untaped_fake"
+    infra_dir = src_dir / "infrastructure"
+    infra_dir.mkdir(parents=True)
+    py_file = infra_dir / "client.py"
+    py_file.write_text(
+        "from untaped_core import ConfigError, HttpClient, HttpSettings\n"
+        "import untaped_core\n"
+        "def f() -> None:\n"
+        "    untaped_core.HttpClient(base_url='x')\n",
+        encoding="utf-8",
+    )
+
+    assert _settings_violations_in_file(py_file, src_dir) == []
