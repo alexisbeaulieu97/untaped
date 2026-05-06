@@ -181,12 +181,17 @@ def _filter_field_not_on_spec(filters: dict[str, str], spec: AwxResourceSpec) ->
 
     AWX's ``/schedules/`` has no ``organization`` field — sending
     ``?organization__name=…`` 400s. Generalises that quirk: a filter
-    key like ``organization__name`` references the top-level field
-    ``organization``; if no FK ref / canonical field / identity key on
-    this kind exposes that name, the request is doomed.
+    key references a top-level field; if no canonical / identity / FK /
+    read-only field on this kind exposes that name, the request is doomed.
+    Read-only fields (``id``, ``created``, ``modified``, ``last_job_status``)
+    are valid filter targets even though they aren't accepted on writes,
+    so a time-windowed backup like ``--filter modified__gte=…`` works.
     """
     fields = (
-        set(spec.canonical_fields) | set(spec.identity_keys) | {fk.field for fk in spec.fk_refs}
+        set(spec.canonical_fields)
+        | set(spec.identity_keys)
+        | set(spec.read_only_fields)
+        | {fk.field for fk in spec.fk_refs}
     )
     for key in filters:
         base = key.split("__", 1)[0]
