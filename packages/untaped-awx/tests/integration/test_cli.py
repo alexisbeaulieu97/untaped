@@ -102,7 +102,16 @@ def test_list_with_names_flips_fk_ids_to_names(fake_aap: Any) -> None:
     )
     raw_default = CliRunner().invoke(
         app,
-        ["job-templates", "list", "--format", "raw", "--columns", "project,inventory"],
+        [
+            "job-templates",
+            "list",
+            "--format",
+            "raw",
+            "--columns",
+            "project",
+            "--columns",
+            "inventory",
+        ],
     )
     assert raw_default.exit_code == 0, raw_default.output
     assert raw_default.stdout.strip() == "10\t20"
@@ -116,7 +125,9 @@ def test_list_with_names_flips_fk_ids_to_names(fake_aap: Any) -> None:
             "--format",
             "raw",
             "--columns",
-            "project,inventory",
+            "project",
+            "--columns",
+            "inventory",
         ],
     )
     assert raw_named.exit_code == 0, raw_named.output
@@ -212,7 +223,9 @@ def test_list_dotted_columns_resolve_summary_fields(fake_aap: Any) -> None:
             "--format",
             "raw",
             "--columns",
-            "name,summary_fields.project.name",
+            "name",
+            "--columns",
+            "summary_fields.project.name",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -234,6 +247,21 @@ def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
     assert "summary_fields" not in result.stdout
     assert "related" not in result.stdout
     assert "deploy" in result.stdout
+
+
+def test_get_format_raw_keeps_first_key_default(fake_aap: Any) -> None:
+    """``get --format raw`` without ``--columns`` must keep
+    ``format_output``'s first-key behavior so pipelines like
+    ``get --stdin --format raw | …`` retain their established shape."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "get", "deploy", "--organization", "Default", "--format", "raw"],
+    )
+    assert result.exit_code == 0, result.output
+    # Single line, single column — not a tab-separated multi-column wall.
+    assert "\t" not in result.stdout.strip()
+    assert "\n" not in result.stdout.strip()
 
 
 def test_get_with_names_translates_fks(fake_aap: Any) -> None:
@@ -690,6 +718,16 @@ def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
     assert parsed[0].get("id") == 42
 
 
+def test_jobs_wait_exits_nonzero_on_timeout(fake_aap: Any) -> None:
+    """A non-terminal job at the deadline must exit non-zero — `awx test`
+    already classifies that as ``timeout``; `jobs wait` should agree so
+    scripts can ``set -e`` and detect the failure."""
+    fake_aap.seed("jobs", id=42, name="run", status="running", type="job")
+    result = CliRunner().invoke(app, ["jobs", "wait", "42", "--timeout", "0"])
+    assert result.exit_code == 1, result.output
+    assert "timeout" in (result.output + (result.stderr or ""))
+
+
 def test_project_update_supports_format_json(fake_aap: Any) -> None:
     """The generated `<kind> update` command on Project must honour
     --format too. Symmetric with launch."""
@@ -970,6 +1008,76 @@ def test_save_all_filter_scopes_org_kinds_server_side(fake_aap: Any, tmp_path: P
         "different-org JT leaked through bulk-save filter; saved files: "
         f"{[p.name for p in out_dir.iterdir()]}"
     )
+
+
+def test_save_all_filter_skips_schedules_when_filter_field_absent(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """Schedule's API has no ``organization`` field, so AWX would 400 on
+    ``?organization__name=…``. Bulk save must detect that the filter
+    references a field this kind doesn't have, skip the kind with a
+    stderr warning, and continue with the kinds that do support it."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    fake_aap.seed(
+        "schedules",
+        id=50,
+        name="nightly",
+        unified_job_template=30,
+        rrule="DTSTART:20230101T000000Z RRULE:FREQ=DAILY",
+        enabled=True,
+        summary_fields={
+            "unified_job_template": {
+                "id": 30,
+                "name": "deploy",
+                "unified_job_type": "job_template",
+                "organization_name": "Default",
+            }
+        },
+    )
+
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--all",
+            "--out-dir",
+            str(out_dir),
+            "--filter",
+            "organization__name=Default",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    output = result.output + (result.stderr or "")
+    assert "skipping Schedule" in output
+    # Org-scoped kinds were saved; Schedule was not.
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
+    assert not list(out_dir.glob("Schedule__*.yml"))
+
+
+def test_save_kind_accepts_cli_name(fake_aap: Any, tmp_path: Path) -> None:
+    """``save --kind job-templates`` should work as well as ``--kind JobTemplate``."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--out-dir", str(out_dir), "--kind", "job-templates"])
+    assert result.exit_code == 0, result.output
+    assert (out_dir / "JobTemplate__Default__deploy.yml").exists()
 
 
 def test_save_all_with_no_filter_captures_every_kind(

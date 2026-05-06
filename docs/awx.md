@@ -110,10 +110,10 @@ nested dicts:
 
 ```bash
 untaped awx job-templates list \
-  --columns name,summary_fields.last_job.status --format table
+  --columns name --columns summary_fields.last_job.status --format table
 
 untaped awx schedules list \
-  --columns name,summary_fields.unified_job_template.name --format table
+  --columns name --columns summary_fields.unified_job_template.name --format table
 ```
 
 `save` writes (or prints to stdout) a kubectl-style envelope:

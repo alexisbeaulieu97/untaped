@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
@@ -22,6 +22,24 @@ ColumnsOption = Annotated[
     typer.Option("--columns", "-c", help="Columns to include (repeatable)."),
 ]
 """Shared ``--columns / -c`` option for any command that prints rows."""
+
+
+def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]:
+    """Parse repeated ``KEY=VALUE`` flag entries into a dict.
+
+    Splits on the first ``=`` so values containing ``=`` survive intact.
+    Malformed entries are rejected up front rather than passed through.
+    """
+    if not values:
+        return {}
+    out: dict[str, str] = {}
+    for entry in values:
+        key, sep, value = entry.partition("=")
+        key = key.strip()
+        if not sep or not key:
+            raise typer.BadParameter(f"{flag} expects KEY=VALUE (got {entry!r})", param_hint=flag)
+        out[key] = value
+    return out
 
 
 @contextmanager

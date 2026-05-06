@@ -108,15 +108,14 @@ class _Client:
 # ---- ListResources ----
 
 
-def test_list_resources_passes_search_filters_scope() -> None:
+def test_list_resources_passes_search_and_filters() -> None:
     client = _Client(list_results=[{"id": 1, "name": "deploy"}])
     use = ListResources(client)  # type: ignore[arg-type]
     list(
         use(
             JOB_TEMPLATE_SPEC,
             search="deploy",
-            filters={"playbook": "deploy.yml"},
-            scope={"organization": "Default"},
+            filters={"playbook": "deploy.yml", "organization__name": "Default"},
         )
     )
     assert client.list_calls[0] == {
