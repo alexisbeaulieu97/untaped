@@ -78,10 +78,10 @@ def test_server_record_is_frozen() -> None:
 
 
 def test_server_record_model_dump_round_trip() -> None:
-    """The strategy bridge path (per AGENTS.md `Typed boundary`): a
-    ``ServerRecord`` from a read is flattened via ``model_dump()`` for the
-    apply pipeline's strip / diff / preserve passes. The dict must include
-    extras."""
+    """The strategy bridge path (per packages/untaped-awx/AGENTS.md
+    "Typed boundary"): a ``ServerRecord`` from a read is flattened via
+    ``model_dump()`` for the apply pipeline's strip / diff / preserve passes.
+    The dict must include extras."""
     record = _record(id=1, name="thing", organization=7, custom_field="val")
     dumped = record.model_dump()
     assert dumped["id"] == 1

@@ -353,5 +353,7 @@ Job Templates that reference them.
   TLS for corporate CAs.
 - [`workspace.md`](./workspace.md) — keep your AAP YAML envelopes in a
   workspace alongside the playbooks they configure.
-- [AGENTS.md](../AGENTS.md) — the resource framework internals
-  (`ResourceSpec`, `ApplyStrategy`, `FkResolver`, runner phases).
+- [`packages/untaped-awx/AGENTS.md`](../packages/untaped-awx/AGENTS.md) —
+  the resource framework internals (`ResourceSpec`, `ApplyStrategy`,
+  `FkResolver`, apply ordering, runner phases).
+- [AGENTS.md](../AGENTS.md) — workspace-wide rules and recipes.
