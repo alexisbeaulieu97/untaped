@@ -186,6 +186,22 @@ def test_jobs_logs_prints_full_stdout_by_default(fake_aap: Any) -> None:
     assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
 
 
+def test_jobs_logs_supports_standard_raw_columns_options(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--format", "raw", "--columns", "line"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
+
+
+def test_jobs_logs_supports_structured_formatter_output(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(
+        app, ["jobs", "logs", "42", "--format", "json", "--columns", "line"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == ('[{"line": "line-0"}, {"line": "line-1"}, {"line": "line-2"}]')
+
+
 def test_jobs_logs_tail_returns_only_last_n(fake_aap: Any) -> None:
     _seed_running_job(fake_aap)
     result = CliRunner().invoke(app, ["jobs", "logs", "42", "--tail", "2"])

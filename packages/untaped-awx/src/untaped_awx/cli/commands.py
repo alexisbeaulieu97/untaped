@@ -402,6 +402,10 @@ def jobs_logs(
     ),
     ignore_case: bool = typer.Option(False, "--ignore-case", "-i", help="Case-insensitive --grep."),
     kind: str = typer.Option("job", "--kind", help=_JOB_KIND_HELP),
+    fmt: OutputFormat = typer.Option(
+        "raw", "--format", help="Output format (json|yaml|table|raw)."
+    ),
+    columns: ColumnsOption = None,
 ) -> None:
     """Print the job's stdout. Supports follow / tail / grep."""
     if grep is not None:
@@ -415,10 +419,17 @@ def jobs_logs(
     with report_errors(), open_context() as ctx:
         record = ctx.repo.request("GET", f"{_kind_path(kind)}/{job_id}/")
         job = Job.model_validate({**record, "kind": kind})
-        for line in TailJobLogs(ctx.monitor)(
+        lines = TailJobLogs(ctx.monitor)(
             job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
-        ):
-            typer.echo(line)
+        )
+        cols = list(columns) if columns else None
+        if follow:
+            for line in lines:
+                typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
+            return
+        rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
+        if rendered:
+            typer.echo(rendered)
 
 
 @jobs_app.command("wait", no_args_is_help=True)
