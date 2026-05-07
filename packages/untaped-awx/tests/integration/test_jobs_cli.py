@@ -46,7 +46,8 @@ def _seed_events(fake: Any, *, job_id: int = 42) -> None:
         job=job_id,
         counter=3,
         event="runner_on_ok",
-        host="web-01",
+        host=5,
+        host_name="web-01",
         task="install",
     )
     fake.seed(
@@ -55,7 +56,8 @@ def _seed_events(fake: Any, *, job_id: int = 42) -> None:
         job=job_id,
         counter=4,
         event="runner_on_failed",
-        host="api-01",
+        host=6,
+        host_name="api-01",
         task="install",
         failed=True,
     )
@@ -105,7 +107,7 @@ def test_jobs_events_server_side_filter(fake_aap: Any) -> None:
             "--format",
             "raw",
             "--columns",
-            "host",
+            "host_name",
         ],
     )
     assert result.exit_code == 0, result.output
