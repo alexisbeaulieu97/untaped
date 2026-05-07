@@ -40,6 +40,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         "related",
         "type",
         "url",
+        "last_run",
         "next_run",
         "dtstart",
         "dtend",

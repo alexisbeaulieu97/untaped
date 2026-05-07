@@ -31,7 +31,14 @@ def _seed_inventory_with_hosts(fake: Any) -> None:
         description="frontend",
         enabled=True,
         variables="",
-        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+        summary_fields={
+            "inventory": {
+                "id": 20,
+                "name": "prod",
+                "organization_id": 1,
+                "organization_name": "Default",
+            }
+        },
     )
     fake.seed(
         "hosts",
@@ -42,7 +49,14 @@ def _seed_inventory_with_hosts(fake: Any) -> None:
         description="api",
         enabled=False,
         variables="",
-        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+        summary_fields={
+            "inventory": {
+                "id": 20,
+                "name": "prod",
+                "organization_id": 1,
+                "organization_name": "Default",
+            }
+        },
     )
 
 
@@ -198,6 +212,39 @@ def test_hosts_save_round_trips_to_yaml(fake_aap: Any) -> None:
     assert "web-01" in out
 
 
+def test_hosts_save_emits_metadata_parent_inventory(fake_aap: Any) -> None:
+    """Critical for round-trip: a saved Host must include
+    ``metadata.parent.kind: Inventory`` so applying it back through
+    ``InventoryChildApplyStrategy`` succeeds. The strategy rejects with
+    ``identity missing 'parent'`` otherwise — silent restore breakage."""
+    _seed_inventory_with_hosts(fake_aap)
+    result = CliRunner().invoke(app, ["hosts", "save", "web-01"])
+    assert result.exit_code == 0, result.output
+    import yaml as _yaml
+
+    parsed = _yaml.safe_load(result.stdout)
+    assert parsed["kind"] == "Host"
+    assert parsed["metadata"]["name"] == "web-01"
+    assert parsed["metadata"]["parent"]["kind"] == "Inventory"
+    assert parsed["metadata"]["parent"]["name"] == "prod"
+    assert parsed["metadata"]["parent"]["organization"] == "Default"
+
+
+def test_hosts_save_round_trips_through_apply(fake_aap: Any, tmp_path: Path) -> None:
+    """Save → apply round-trip: a saved Host must reapply cleanly with
+    ``unchanged`` (or at worst no diff) against the same AWX state."""
+    _seed_inventory_with_hosts(fake_aap)
+    save_result = CliRunner().invoke(app, ["hosts", "save", "web-01"])
+    assert save_result.exit_code == 0, save_result.output
+    saved = tmp_path / "host.yml"
+    saved.write_text(save_result.stdout)
+    # Apply with --yes so we'd error loudly if metadata.parent were missing.
+    apply_result = CliRunner().invoke(app, ["hosts", "apply", "--file", str(saved), "--yes"])
+    assert apply_result.exit_code == 0, apply_result.output
+    # The host already exists with the same body — should be unchanged.
+    assert "unchanged" in apply_result.output
+
+
 def test_hosts_list_with_names_resolves_inventory(fake_aap: Any) -> None:
     """Host's ``inventory`` is in ``read_only_fields`` (FK identity comes
     from ``metadata.parent``), so ``--with-names`` previously couldn't
@@ -225,3 +272,76 @@ def test_hosts_list_default_columns_no_dotted_summary_path(fake_aap: Any) -> Non
     assert HOST_SPEC.list_columns == ("id", "name", "inventory", "enabled")
     for col in HOST_SPEC.list_columns:
         assert "." not in col, f"dotted path {col!r} leaked into default columns"
+
+
+def test_hosts_get_with_inventory_scope_disambiguates_across_inventories(
+    fake_aap: Any,
+) -> None:
+    """Two inventories with the same host name → ``--inventory`` picks the
+    right one. Without the flag, name lookup is global (first match wins),
+    which is ambiguous."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
+    fake_aap.seed("inventories", id=21, name="staging", organization=1, organization_name="Default")
+    fake_aap.seed(
+        "hosts",
+        id=101,
+        name="web-01",
+        inventory=20,
+        inventory_name="prod",
+        description="prod web",
+    )
+    fake_aap.seed(
+        "hosts",
+        id=102,
+        name="web-01",
+        inventory=21,
+        inventory_name="staging",
+        description="staging web",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "hosts",
+            "get",
+            "web-01",
+            "--inventory",
+            "staging",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "102"
+
+
+def test_hosts_get_with_inventory_organization_disambiguates_across_orgs(
+    fake_aap: Any,
+) -> None:
+    """Same inventory name in two orgs → ``--inventory-organization`` picks."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
+    fake_aap.seed("inventories", id=21, name="prod", organization=2, organization_name="Other")
+    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    fake_aap.seed("hosts", id=102, name="web-01", inventory=21, inventory_name="prod")
+    result = CliRunner().invoke(
+        app,
+        [
+            "hosts",
+            "get",
+            "web-01",
+            "--inventory",
+            "prod",
+            "--inventory-organization",
+            "Other",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "102"

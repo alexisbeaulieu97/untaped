@@ -83,14 +83,31 @@ def scope_for_spec(
     spec: ResourceSpec,
     organization: str | None,
     default_organization: str | None,
+    *,
+    inventory: str | None = None,
+    inventory_organization: str | None = None,
 ) -> dict[str, str] | None:
-    """Org-scoping only applies to specs whose identity includes ``organization``.
+    """Build the FK lookup scope for ``get`` / ``save``.
 
-    Global resources (Organization, CredentialType) and parent-scoped ones
-    (Schedule) must not pick up ``awx.default_organization`` as a filter —
-    AWX would interpret ``organization__name=...`` against records that have
-    no such column and silently return zero results.
+    - Org-scoping only applies to specs whose identity includes
+      ``organization``. Global resources (Organization, CredentialType)
+      and parent-scoped ones (Schedule) must not pick up
+      ``awx.default_organization`` as a filter — AWX would interpret
+      ``organization__name=...`` against records that have no such column
+      and silently return zero results.
+    - Inventory-child specs (Host, Group; ``apply_strategy="inventory_child"``)
+      take an explicit ``--inventory`` flag instead. ``--inventory-organization``
+      adds ``?inventory__organization__name=…`` so a same-named inventory
+      across orgs is disambiguated. Without ``--inventory``, the lookup is
+      global by name (the legacy behaviour); first match wins.
     """
+    if getattr(spec, "apply_strategy", None) == "inventory_child":
+        if inventory is None:
+            return None
+        scope: dict[str, str] = {"inventory": inventory}
+        if inventory_organization:
+            scope["inventory__organization"] = inventory_organization
+        return scope
     if "organization" not in spec.identity_keys:
         return None
     org = organization or default_organization

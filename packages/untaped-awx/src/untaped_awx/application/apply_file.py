@@ -22,7 +22,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
-from untaped_awx.application.apply_resource import ApplyResource
+from untaped_awx.application.apply_resource import ApplyResource, scope_for
 from untaped_awx.application.ports import Catalog, FkResolver, ResourceDocumentReader
 from untaped_awx.domain import ApplyOutcome, Resource
 from untaped_awx.errors import AwxApiError
@@ -53,10 +53,18 @@ class ApplyFile:
         plan = _prefetch_plan(ordered, catalog=self._catalog)
         if plan:
             self._fk.prefetch(plan)
+        # Two-phase apply when writing: phase 1 writes every doc's body
+        # in topo order with membership writes deferred; phase 2
+        # reconciles memberships once every body exists. This breaks
+        # cyclic dependencies where a Group's ``children:`` references
+        # a sibling Group declared later in the same file (the topo
+        # sorter can't resolve self-referencing sub-endpoint refs without
+        # tripping its cycle detector). Preview mode (write=False) is
+        # single-pass — diff output should still include membership rows.
         outcomes: list[ApplyOutcome] = []
         for doc in ordered:
             try:
-                outcomes.append(self._apply_one(doc, write=write))
+                outcomes.append(self._apply_one(doc, write=write, defer_memberships=write))
             except AwxApiError as exc:
                 outcomes.append(
                     ApplyOutcome(
@@ -67,7 +75,25 @@ class ApplyFile:
                     )
                 )
                 if fail_fast:
+                    return outcomes
+        if not write:
+            return outcomes
+        # Phase 2: reconcile sub-endpoint memberships now that every
+        # doc has been written. Splice membership FieldChange rows back
+        # into each doc's outcome so users see the full picture.
+        for doc, outcome in zip(ordered, outcomes, strict=True):
+            if outcome.action == "failed":
+                continue
+            try:
+                membership_changes = self._apply_one.reconcile_memberships(doc)
+            except AwxApiError as exc:
+                outcome.action = "failed"
+                outcome.detail = str(exc)
+                if fail_fast:
                     break
+                continue
+            if membership_changes:
+                outcome.changes = list(outcome.changes) + list(membership_changes)
         return outcomes
 
 
@@ -90,11 +116,11 @@ def _prefetch_plan(
                 continue
             if ref.kind is None or ref.field not in body or body[ref.field] is None:
                 continue
-            scope: dict[str, str] = {}
-            if ref.scope_field is not None:
-                scope_value = body.get(ref.scope_field)
-                if isinstance(scope_value, str) and scope_value:
-                    scope[ref.scope_field] = scope_value
+            # Reuse apply-time scope resolution so prefetch warms the same
+            # cache buckets the apply pass will hit. Body-only lookup misses
+            # inventory-child refs (Group.hosts/children) where scope lives
+            # on metadata.parent rather than in the body.
+            scope = scope_for(ref, doc) or {}
             seen[ref.kind].add(frozenset(scope.items()))
     return {
         kind: [dict(items) if items else None for items in scopes] for kind, scopes in seen.items()

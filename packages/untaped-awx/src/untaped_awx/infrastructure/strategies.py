@@ -221,9 +221,14 @@ def _find_unique(
 def _parent(identity: dict[str, Any]) -> Any:
     parent = identity.get("parent")
     if parent is None:
-        raise BadRequest("inventory_child identity missing 'parent'")
+        raise BadRequest(
+            "Host and Group docs require metadata.parent (kind: Inventory) — "
+            "see examples/inventory-prod.yml"
+        )
     if hasattr(parent, "kind") and parent.kind != "Inventory":
-        raise BadRequest(f"inventory_child parent must be an Inventory (got {parent.kind!r})")
+        raise BadRequest(
+            f"Host and Group docs require metadata.parent.kind == 'Inventory' (got {parent.kind!r})"
+        )
     return parent
 
 

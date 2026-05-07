@@ -424,8 +424,9 @@ SSE/websocket in v2 — "live" is always polling.
 
 `launch --track / -t` on every launch-capable kind streams events to
 **stderr** (rendered by `cli/_event_render.render_event` as
-`PLAY [..]` / `TASK [..]` / `  ok|changed|failed: <host>` lines, no
-TUI / no ANSI), then **propagates job status into the exit code**:
+`PLAY [..]` / `TASK [..]` / two-space indented `ok|changed|failed:
+<host>` lines, no TUI / no ANSI), then **propagates job status into the
+exit code**:
 exit 0 only when every tracked job ends `successful`; otherwise exit
 1. `--wait` keeps its old quiet-block semantics; `--monitor` (the v0
 silent alias for `--wait`) is removed.

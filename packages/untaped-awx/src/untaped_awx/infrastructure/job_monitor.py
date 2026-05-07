@@ -13,9 +13,10 @@ endpoints, kept in lock-step with the job's terminal status:
   paginated structured-event stream. ``counter`` is monotonic per job
   so we tail by ``counter__gt``.
 
-Bare ``api_path`` strings (``jobs``, ``workflow_jobs``, …) are reused
-from :data:`untaped_awx.application.watch_job._KIND_TO_API_PATH` so the
-same monitor handles every execution kind.
+Bare ``api_path`` strings (``jobs``, ``workflow_jobs``, …) come from
+:data:`untaped_awx.domain.job.KIND_TO_API_PATH` so the same monitor
+handles every execution kind without crossing layer boundaries — the
+map is a domain fact about AWX execution records.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from untaped_awx.application.ports import ResourceClient
-from untaped_awx.application.watch_job import _KIND_TO_API_PATH
 from untaped_awx.domain import Job, JobEvent
+from untaped_awx.domain.job import KIND_TO_API_PATH
 
 SleepFn = Callable[[float], None]
 
@@ -102,7 +103,7 @@ class PollingJobMonitor:
 
 
 def _api_path_for(job: Job) -> str:
-    return _KIND_TO_API_PATH.get(job.kind, job.kind)
+    return KIND_TO_API_PATH.get(job.kind, job.kind)
 
 
 def _follow_pages(
