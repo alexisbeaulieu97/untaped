@@ -430,6 +430,36 @@ exit 0 only when every tracked job ends `successful`; otherwise exit
 1. `--wait` keeps its old quiet-block semantics; `--monitor` (the v0
 silent alias for `--wait`) is removed.
 
+### `untaped awx unified-templates` — polymorphic templates browser
+
+Read-only sub-app over AWX's `/unified_job_templates/` virtual
+collection, which aggregates `JobTemplate`, `WorkflowJobTemplate`,
+`Project`, and `InventorySource` rows behind a single `type`
+discriminator. Two commands:
+
+- `unified-templates list [--type TYPE --filter K=V --limit N]` —
+  alphabetical (`order_by=name`) so the four kinds interleave
+  predictably. `--type` is sugar for `--filter type=…`; passing both
+  with conflicting values is rejected. Default columns project the
+  union of fields across kinds (`id, type, name,
+  summary_fields.organization.name, last_job_status, status,
+  last_job_run`) — JT/WJT use `last_job_status`, Project /
+  InventorySource use `status`, and `format_output` emits empty cells
+  for whichever side doesn't carry a given field.
+- `unified-templates get <id> [<id>…] [--stdin]` — **id-only** by
+  design (names are not unique across kinds). Fast-fails on a
+  non-decimal identifier with a message pointing at the per-kind
+  sub-apps for name lookup. Multi-id positional + `--stdin` keeps the
+  `list -f raw -c id | fzf | get --stdin` pipe shape consistent with
+  every other multi-id `get`.
+
+Implemented in `cli/unified_templates_commands.py` (sibling of
+`test_commands.py`), **not** via `make_resource_app` — the factory
+bakes in CRUD assumptions UJT can't satisfy. No `ALL_SPECS` entry,
+no catalog registration. Launch dispatch is intentionally out of
+scope: the per-kind sub-apps (`job-templates launch`,
+`projects update`, …) already cover that path.
+
 ### `untaped awx test` — declarative AWX test suites
 
 `awx test run|list|validate` reads YAML files declaring a

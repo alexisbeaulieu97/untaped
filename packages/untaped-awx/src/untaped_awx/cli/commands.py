@@ -34,6 +34,7 @@ from untaped_awx.cli._context import awx_config_from_settings, open_context
 from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
+from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped_awx.domain import Job, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
@@ -414,6 +415,7 @@ def jobs_wait(
 
 
 app.add_typer(jobs_app, name="jobs")
+app.add_typer(unified_templates_app, name="unified-templates")
 app.add_typer(test_app, name="test")
 
 
