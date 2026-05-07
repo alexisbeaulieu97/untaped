@@ -33,9 +33,30 @@ class Job(BaseModel):
 
 
 class JobEvent(BaseModel):
-    """A line of stdout / structured event from a running job."""
+    """A structured per-task event from a running job.
+
+    AWX emits one event per playbook lifecycle transition (``playbook_on_play_start``,
+    ``playbook_on_task_start``, ``runner_on_ok`` / ``runner_on_failed`` / …)
+    plus the per-host result rows. ``counter`` is monotonically increasing
+    inside a job so callers tail by ``counter__gt=N`` to fetch only new
+    events.
+
+    ``extra="ignore"`` keeps us tolerant to AWX's verbose row shape (it
+    returns 30+ fields per event, most of them noise) without having to
+    enumerate them all.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
     counter: int
-    stdout: str
+    event: str = ""
+    """AWX event-name discriminator (e.g. ``playbook_on_task_start``)."""
+
+    task: str | None = None
+    host: str | None = None
+    role: str | None = None
+    play: str | None = None
+    changed: bool = False
+    failed: bool = False
+    created: str | None = None
+    stdout: str = ""

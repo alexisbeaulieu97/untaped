@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +79,7 @@ class FakeAap:
             if len(parts) == 2 and parts[1].isdigit():
                 return self._get(parts[0], int(parts[1]))
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
-                return self._stdout(parts[0], int(parts[1]))
+                return self._stdout(parts[0], int(parts[1]), params)
             if len(parts) == 3 and parts[1].isdigit():
                 return self._sub_list(parts[0], int(parts[1]), parts[2], params)
             if len(parts) == 4 and parts[1].isdigit() and parts[3].isdigit():
@@ -134,12 +134,25 @@ class FakeAap:
             return _err(404, f"{api_path}/{id_}/ not found")
         return httpx.Response(200, json=record)
 
-    def _stdout(self, api_path: str, id_: int) -> httpx.Response:
-        """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``)."""
+    def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
+        """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``).
+
+        Honours AWX's ``start_line`` query param: lines numbered
+        ``[0, start_line)`` are skipped so callers can tail the log
+        incrementally without re-receiving everything they've already
+        seen.
+        """
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/stdout/ not found")
         text = str(record.get("stdout", ""))
+        try:
+            start_line = int(params.get("start_line", "0"))
+        except ValueError:
+            start_line = 0
+        if start_line > 0:
+            lines = text.splitlines(keepends=True)
+            text = "".join(lines[start_line:])
         return httpx.Response(200, text=text, headers={"content-type": "text/plain"})
 
     def _create(self, api_path: str, body: dict[str, Any]) -> httpx.Response:
@@ -177,20 +190,21 @@ class FakeAap:
         self.next_action_stdout = None
         new_id = self._next_id
         self._next_id += 1
+        store_path = "jobs" if action == "launch" else f"{action}s"
+        name = f"{record.get('name', '')}-{action}"
         result = {
             "id": new_id,
             "type": "job" if action == "launch" else "project_update",
-            "name": f"{record.get('name', '')}-{action}",
+            "name": name,
             "status": status,
         }
+        # Always materialise a record so subsequent ``GET <store_path>/<id>/``
+        # round trips (e.g. ``WatchJob`` / ``PollingJobMonitor``) succeed.
+        # ``stdout`` is optional — only seeded when the test asks for it.
+        seed_fields: dict[str, Any] = {"id": new_id, "name": name, "status": status}
         if stdout is not None:
-            store_path = "jobs" if action == "launch" else f"{action}s"
-            self.seed(
-                store_path,
-                id=new_id,
-                status=status,
-                stdout=stdout,
-            )
+            seed_fields["stdout"] = stdout
+        self.seed(store_path, **seed_fields)
         return httpx.Response(200, json=result)
 
     def _sub_list(
@@ -303,7 +317,7 @@ _AWX_FK_SINGULAR: dict[str, str] = {
 
 def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
     for key, value in params.items():
-        if key in {"page", "page_size"}:
+        if key in {"page", "page_size", "order_by"}:
             continue
         if key == "search":
             term = value.lower()
@@ -323,9 +337,37 @@ def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
             if value.lower() not in str(record.get(base, "")).lower():
                 return False
             continue
+        if key.endswith("__gt"):
+            base = key[: -len("__gt")]
+            if not _numeric_compare(record.get(base), value, lambda a, b: a > b):
+                return False
+            continue
+        if key.endswith("__gte"):
+            base = key[: -len("__gte")]
+            if not _numeric_compare(record.get(base), value, lambda a, b: a >= b):
+                return False
+            continue
         if str(record.get(key, "")) != value:
             return False
     return True
+
+
+def _numeric_compare(
+    field_value: Any,
+    raw_param: str,
+    op: Callable[[int, int], bool],
+) -> bool:
+    """Compare numeric ``field_value`` to a string-typed query param.
+
+    AWX returns counters / ids as integers but URL params arrive as
+    strings; coerce both to int for the comparison and treat any
+    non-coercible value as not matching (mirrors AWX's behaviour for
+    type-mismatched filters).
+    """
+    try:
+        return op(int(field_value), int(raw_param))
+    except TypeError, ValueError:
+        return False
 
 
 def _err(status: int, detail: str) -> httpx.Response:

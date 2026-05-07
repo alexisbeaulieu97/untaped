@@ -396,6 +396,40 @@ The AWX bounded context follows the same DDD layout but builds a small
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
   for end-to-end CLI flows.
 
+### `untaped awx jobs` — execution-record inspection
+
+Read-only sub-app over AWX's execution endpoints (`/jobs/`,
+`/jobs/<id>/stdout/`, `/jobs/<id>/job_events/`). Five commands:
+
+- `jobs list [--status … --filter K=V --limit N]` — newest-first job
+  index. Default columns: `id,name,status,started,finished`.
+- `jobs get <id>` — single job record (full YAML/JSON payload).
+- `jobs events <id> [--filter K=V --follow --from-counter N]` —
+  structured per-task events. `--filter` reaches AWX server-side
+  (e.g. `event=runner_on_failed`, `host=web-01`); `--follow` polls
+  until terminal. Default columns: `counter,event,host,task,changed,failed`.
+- `jobs logs <id> [--follow|-f --tail N --grep PATTERN -i]` —
+  plain stdout. `--follow` polls `?start_line=N` until terminal;
+  `--grep` is client-side regex; `--tail N` keeps only the last N
+  historical lines before any follow phase.
+- `jobs wait <id> [--timeout N]` — status-only block (kept for
+  scripts that already use it).
+
+Polling lives in **`PollingJobMonitor`**
+(`infrastructure/job_monitor.py`), the concrete `JobMonitor` adapter:
+`fetch` (terminal status), `fetch_stdout` (one-shot text drain),
+`stream_stdout` (poll-until-terminal text), `stream_events` (paginated,
+poll-until-terminal). The 2.0s cadence matches `WatchJob`. AWX has no
+SSE/websocket in v2 — "live" is always polling.
+
+`launch --track / -t` on every launch-capable kind streams events to
+**stderr** (rendered by `cli/_event_render.render_event` as
+`PLAY [..]` / `TASK [..]` / `  ok|changed|failed: <host>` lines, no
+TUI / no ANSI), then **propagates job status into the exit code**:
+exit 0 only when every tracked job ends `successful`; otherwise exit
+1. `--wait` keeps its old quiet-block semantics; `--monitor` (the v0
+silent alias for `--wait`) is removed.
+
 ### `untaped awx test` — declarative AWX test suites
 
 `awx test run|list|validate` reads YAML files declaring a
