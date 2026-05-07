@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from untaped_awx.domain import (
     ActionPayload,
     Job,
+    JobEvent,
     Resource,
     ServerRecord,
     WritePayload,
@@ -226,10 +227,50 @@ class StrategyResolver(Protocol):
 
 
 class JobMonitor(Protocol):
-    """Polls / streams a Job until it reaches a terminal state."""
+    """Polls a Job, its stdout, and its structured events until terminal.
 
-    def fetch(self, job: Job) -> Job: ...
-    def stream_stdout(self, job: Job) -> Iterable[str]: ...
+    AWX has no SSE/websocket surface in v2 — "live" means polling. This
+    Protocol abstracts the polling cadence so use cases can be unit-tested
+    against a synchronous stub (a list-of-events stand-in is enough).
+    """
+
+    def fetch(self, job: Job) -> Job:
+        """Re-fetch ``job``'s record so callers can see status transitions."""
+        ...
+
+    def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
+        """One-shot: return stdout lines starting at ``start_line``.
+
+        No polling — used both by ``jobs logs`` (drain the existing log
+        for a finished job) and as the historical phase of
+        ``--follow --tail N`` before the live polling loop kicks in.
+        """
+        ...
+
+    def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterable[str]:
+        """Yield stdout lines from ``start_line`` onward until terminal.
+
+        Polls ``/jobs/<id>/stdout/?start_line=N``; emits one string per
+        line (no trailing newline). Final block of lines after the job
+        reaches a terminal state is yielded before the iterator returns.
+        """
+        ...
+
+    def stream_events(
+        self,
+        job: Job,
+        *,
+        from_counter: int = 0,
+        params: dict[str, str] | None = None,
+    ) -> Iterable[JobEvent]:
+        """Yield :class:`JobEvent` rows in counter order until terminal.
+
+        ``from_counter`` is exclusive (matches AWX's ``counter__gt`` query
+        param). Extra ``params`` are forwarded server-side so callers can
+        push native filters like ``event=runner_on_failed`` without
+        client-side post-filtering.
+        """
+        ...
 
 
 class ResourceDocumentReader(Protocol):

@@ -24,6 +24,8 @@ from untaped_core import (
 from untaped_awx.application import (
     Ping,
     SaveResource,
+    StreamJobEvents,
+    TailJobLogs,
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
@@ -262,6 +264,37 @@ def _jobs_callback() -> None:
     """Inspect AWX jobs."""
 
 
+@jobs_app.command("list")
+def jobs_list(
+    status: str | None = typer.Option(
+        None,
+        "--status",
+        help="Filter by AWX status (e.g. running, successful, failed).",
+    ),
+    filter_: list[str] | None = typer.Option(
+        None,
+        "--filter",
+        help="Server-side filter, KEY=VALUE (repeatable). Forwarded verbatim.",
+    ),
+    limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
+    columns: ColumnsOption = None,
+) -> None:
+    """List recent AWX jobs (newest first)."""
+    filters = parse_kv_pairs(filter_, flag="--filter")
+    if status:
+        filters["status"] = status
+    # AWX defaults to id-asc; flip so the most recent jobs lead.
+    filters.setdefault("order_by", "-id")
+    with report_errors(), open_context() as ctx:
+        page = ctx.repo.request("GET", "jobs/", params={**filters, "page_size": "200"})
+    records = list(page.get("results") or [])
+    if limit is not None:
+        records = records[:limit]
+    cols = list(columns) if columns else ["id", "name", "status", "started", "finished"]
+    typer.echo(format_output(records, fmt=fmt, columns=cols))
+
+
 @jobs_app.command("get", no_args_is_help=True)
 def jobs_get(
     job_id: int = typer.Argument(..., help="Job ID."),
@@ -273,14 +306,60 @@ def jobs_get(
     typer.echo(format_output([record], fmt=fmt, columns=[]))
 
 
+@jobs_app.command("events", no_args_is_help=True)
+def jobs_events(
+    job_id: int = typer.Argument(..., help="Job ID."),
+    follow: bool = typer.Option(False, "--follow", help="Tail events live until terminal."),
+    from_counter: int = typer.Option(
+        0, "--from-counter", help="Skip events with counter <= this value."
+    ),
+    filter_: list[str] | None = typer.Option(
+        None,
+        "--filter",
+        help="Server-side AWX filter, KEY=VALUE (repeatable). E.g. event=runner_on_failed.",
+    ),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Stream the structured per-task event log for a job.
+
+    Without ``--follow`` this drains the current event log and exits;
+    with ``--follow`` it polls AWX every 2s until the job is terminal.
+    Filters reach AWX directly so you can scope server-side, e.g.
+    ``--filter event=runner_on_failed --filter host=web-01``.
+    """
+    filters = parse_kv_pairs(filter_, flag="--filter")
+    cols = list(columns) if columns else ["counter", "event", "host", "task", "changed", "failed"]
+    with report_errors(), open_context() as ctx:
+        record = ctx.repo.request("GET", f"jobs/{job_id}/")
+        job = Job.model_validate({**record, "kind": "job"})
+        events = StreamJobEvents(ctx.monitor)(
+            job, from_counter=from_counter, filters=filters, follow=follow
+        )
+        rows = [ev.model_dump() for ev in events]
+    typer.echo(format_output(rows, fmt=fmt, columns=cols))
+
+
 @jobs_app.command("logs", no_args_is_help=True)
 def jobs_logs(
     job_id: int = typer.Argument(..., help="Job ID."),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Tail until terminal."),
+    tail: int | None = typer.Option(
+        None, "--tail", help="Show only the last N historical lines before following."
+    ),
+    grep: str | None = typer.Option(
+        None, "--grep", help="Client-side regex; only matching lines are printed."
+    ),
+    ignore_case: bool = typer.Option(False, "--ignore-case", "-i", help="Case-insensitive --grep."),
 ) -> None:
-    """Print the job's stdout (plain text from AWX)."""
+    """Print the job's stdout. Supports follow / tail / grep."""
     with report_errors(), open_context() as ctx:
-        text = ctx.repo.request_text("GET", f"jobs/{job_id}/stdout/", params={"format": "txt"})
-    typer.echo(text)
+        record = ctx.repo.request("GET", f"jobs/{job_id}/")
+        job = Job.model_validate({**record, "kind": "job"})
+        for line in TailJobLogs(ctx.monitor)(
+            job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
+        ):
+            typer.echo(line)
 
 
 @jobs_app.command("wait", no_args_is_help=True)

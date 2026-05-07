@@ -21,10 +21,12 @@ from untaped_awx.application import (
     ListResources,
     RunAction,
     SaveResource,
+    StreamJobEvents,
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._event_render import render_event
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
@@ -282,8 +284,14 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None, "--job-type", help="Override job_type (e.g. run, check)."
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
-        monitor: bool = typer.Option(
-            False, "--monitor", help="Stream + wait (alias for --wait in v0)."
+        track: bool = typer.Option(
+            False,
+            "--track",
+            "-t",
+            help=(
+                "Stream structured events to stderr while waiting; exit 1 "
+                "if any tracked job ends in a non-successful terminal state."
+            ),
         ),
         fmt: OutputFormat = typer.Option(
             "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
@@ -332,7 +340,13 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                         scope=scope,
                         payload=payload,
                     )
-                    if wait or monitor:
+                    if track:
+                        # Render each event to stderr as it lands, then
+                        # let the monitor's terminal flip end the loop.
+                        for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
+                            typer.echo(render_event(ev), err=True)
+                        job = ctx.monitor.fetch(job)
+                    elif wait:
                         job = WatchJob(ctx.repo)(job)
                     jobs.append(job)
                 except UntapedError as exc:
@@ -340,6 +354,12 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     any_failed = True
         if jobs:
             typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
+        if track and any(j.status != "successful" for j in jobs):
+            # --track promises CI-friendly exit codes: anything other than a
+            # clean ``successful`` (failed/error/canceled, or still-running
+            # if the monitor returned without terminal — which it shouldn't,
+            # but be defensive) propagates as exit 1.
+            raise typer.Exit(code=1)
         if any_failed:
             raise typer.Exit(code=1)
 
