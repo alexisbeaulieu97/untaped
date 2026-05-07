@@ -281,6 +281,15 @@ doesn't match the manifest's target. This stops a stale `defaults.branch`
 from kidnapping a user mid-`feature/x`. See
 `application.SyncWorkspace._sync_repo` for the state machine.
 
+`workspace adopt <path>` initialises a workspace from already-cloned
+repos. Each immediate subdirectory containing `.git` is recorded in the
+new manifest with its current `origin` URL and checked-out branch
+(`infrastructure.LocalRepoDiscoverer` walks the directory and reads
+both via `GitRunner.read_remote_url` / `read_current_branch`; a
+detached HEAD becomes `branch: null`). Adopted clones do not share
+objects with the bare cache — the cascade only links new clones via
+`git clone --reference`.
+
 ### `untaped-awx` — declarative resource framework
 
 The AWX bounded context follows the same DDD layout but builds a small

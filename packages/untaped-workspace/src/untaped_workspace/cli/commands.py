@@ -21,6 +21,7 @@ from untaped_core import (
 
 from untaped_workspace.application import (
     AddRepo,
+    AdoptWorkspace,
     EditWorkspace,
     Foreach,
     ImportWorkspace,
@@ -37,6 +38,7 @@ from untaped_workspace.domain import SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
+    LocalRepoDiscoverer,
     ManifestRepository,
     WorkspaceRegistryRepository,
     WorkspaceResolver,
@@ -105,6 +107,35 @@ def init_command(
             path, name=name, branch=branch
         )
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
+
+
+# adopt ----------------------------------------------------------------------
+
+
+@app.command("adopt", no_args_is_help=True)
+def adopt_command(
+    path: Path = typer.Argument(..., help="Existing directory containing already-cloned repos."),
+    name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
+) -> None:
+    """Initialise a workspace from already-cloned repos under `path`.
+
+    Each immediate subdirectory containing `.git` is recorded in the new
+    `untaped.yml` with its current `origin` URL and checked-out branch.
+    """
+    with report_errors():
+        discoverer = LocalRepoDiscoverer(
+            GitRunner(),
+            warn=lambda m: typer.echo(f"warning: {m}", err=True),
+        )
+        ws = AdoptWorkspace(ManifestRepository(), WorkspaceRegistryRepository(), discoverer)(
+            path, name=name
+        )
+        manifest = ManifestRepository().read(ws.path)
+        typer.echo(
+            f"adopted workspace {ws.name!r} at {ws.path} "
+            f"({len(manifest.repos)} repo{'s' if len(manifest.repos) != 1 else ''})",
+            err=True,
+        )
 
 
 # add ------------------------------------------------------------------------

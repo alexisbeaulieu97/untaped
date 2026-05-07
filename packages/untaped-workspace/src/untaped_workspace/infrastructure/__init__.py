@@ -7,6 +7,7 @@ from untaped_workspace.infrastructure.manifest_repo import (
 from untaped_workspace.infrastructure.registry_repo import (
     WorkspaceRegistryRepository,
 )
+from untaped_workspace.infrastructure.repo_discoverer import LocalRepoDiscoverer
 from untaped_workspace.infrastructure.system_adapters import (
     EditorRunner,
     Filesystem,
@@ -25,6 +26,7 @@ __all__ = [
     "Filesystem",
     "GitRunner",
     "LocalFilesystem",
+    "LocalRepoDiscoverer",
     "ManifestRepository",
     "ShellRunner",
     "WorkspaceRegistryRepository",

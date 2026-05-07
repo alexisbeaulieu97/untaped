@@ -1,4 +1,8 @@
 from untaped_workspace.application.add_repo import AddRepo
+from untaped_workspace.application.adopt_workspace import (
+    AdoptWorkspace,
+    DiscoveredRepo,
+)
 from untaped_workspace.application.edit_workspace import EditWorkspace
 from untaped_workspace.application.foreach import Foreach
 from untaped_workspace.application.import_workspace import ImportWorkspace
@@ -15,6 +19,8 @@ from untaped_workspace.application.workspace_path import WorkspacePath
 
 __all__ = [
     "AddRepo",
+    "AdoptWorkspace",
+    "DiscoveredRepo",
     "EditWorkspace",
     "Foreach",
     "ImportWorkspace",

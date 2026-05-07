@@ -29,6 +29,7 @@ def test_help_lists_all_commands() -> None:
     for cmd in (
         "list",
         "init",
+        "adopt",
         "add",
         "remove",
         "sync",
@@ -43,7 +44,8 @@ def test_help_lists_all_commands() -> None:
 
 
 @pytest.mark.parametrize(
-    "cmd", ["init", "add", "remove", "foreach", "import", "path", "shell-init", "edit"]
+    "cmd",
+    ["init", "adopt", "add", "remove", "foreach", "import", "path", "shell-init", "edit"],
 )
 def test_no_args_shows_help(cmd: str) -> None:
     result = CliRunner().invoke(app, [cmd])
@@ -82,6 +84,96 @@ def test_init_duplicate_name_errors(tmp_path: Path) -> None:
     second = runner.invoke(app, ["init", str(b), "--name", "prod"])
     assert second.exit_code == 1
     assert "error:" in (second.output or second.stderr)
+
+
+# ── adopt ───────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def existing_clones(tmp_path: Path) -> Path:
+    """A directory pre-populated with two real git clones on different branches."""
+    if shutil.which("git") is None:
+        pytest.skip("git not on PATH")
+
+    upstream_a = tmp_path / "_up_a.git"
+    upstream_b = tmp_path / "_up_b.git"
+    for upstream, branch in ((upstream_a, "main"), (upstream_b, "trunk")):
+        subprocess.run(
+            ["git", "init", "--bare", f"--initial-branch={branch}", str(upstream)],
+            check=True,
+            capture_output=True,
+        )
+        seed = tmp_path / f"_seed_{upstream.name}"
+        subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+        subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+        (seed / "README.md").write_text("hi")
+        subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", "init"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(seed), "push", "origin", branch],
+            check=True,
+            capture_output=True,
+        )
+        shutil.rmtree(seed)
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    subprocess.run(
+        ["git", "clone", "--branch", "main", str(upstream_a), str(ws / "alpha")],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "clone", "--branch", "trunk", str(upstream_b), str(ws / "beta")],
+        check=True,
+        capture_output=True,
+    )
+    return ws
+
+
+def test_adopt_records_existing_clones(tmp_path: Path, existing_clones: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
+    assert result.exit_code == 0, result.output
+
+    manifest_text = (existing_clones / "untaped.yml").read_text()
+    assert "alpha" in manifest_text
+    assert "beta" in manifest_text
+    assert "main" in manifest_text
+    assert "trunk" in manifest_text
+
+    listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert "lab" in listed.stdout.splitlines()
+
+
+def test_adopt_skips_dirs_without_git(tmp_path: Path, existing_clones: Path) -> None:
+    (existing_clones / "notes").mkdir()
+    (existing_clones / "notes" / "todo.md").write_text("hi")
+
+    result = CliRunner().invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
+    assert result.exit_code == 0, result.output
+
+    manifest_text = (existing_clones / "untaped.yml").read_text()
+    assert "notes" not in manifest_text
+
+
+def test_adopt_refuses_when_manifest_exists(tmp_path: Path, existing_clones: Path) -> None:
+    (existing_clones / "untaped.yml").write_text("name: prior\nrepos: []\n")
+    result = CliRunner().invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
+    assert result.exit_code == 1
+    assert "already initialised" in (result.output or result.stderr)
+
+
+def test_adopt_missing_path_errors(tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, ["adopt", str(tmp_path / "ghost"), "--name", "lab"])
+    assert result.exit_code == 1
+    assert "does not exist" in (result.output or result.stderr)
 
 
 # ── add / remove (manifest only) ────────────────────────────────────────────
