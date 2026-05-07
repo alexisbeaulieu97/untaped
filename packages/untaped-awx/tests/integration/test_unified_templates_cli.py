@@ -163,6 +163,25 @@ def test_get_rejects_non_decimal_identifier(fake_aap: Any) -> None:
     assert "id-only" in result.output
 
 
+def test_get_reports_missing_id_and_exits_nonzero(fake_aap: Any) -> None:
+    """AWX has no ``/unified_job_templates/<id>/`` resource URL — we filter
+    against the collection endpoint, so a missing id surfaces as an empty
+    ``results`` list rather than a 404. The CLI must still emit a per-id
+    stderr error and exit non-zero, while printing whichever ids did
+    resolve.
+    """
+    _seed_all_kinds(fake_aap)  # ids 10, 20, 30, 40
+    result = CliRunner().invoke(
+        app,
+        ["unified-templates", "get", "10", "999", "--format", "raw", "--columns", "id"],
+    )
+    assert result.exit_code == 1
+    assert "999" in result.stderr
+    assert "not found" in result.stderr
+    # The found id (10) still prints to stdout.
+    assert result.stdout.strip() == "10"
+
+
 def test_get_stdin_round_trips_from_list_output(fake_aap: Any) -> None:
     """End-to-end pipe shape: ``list -f raw -c id | get --stdin``."""
     _seed_all_kinds(fake_aap)

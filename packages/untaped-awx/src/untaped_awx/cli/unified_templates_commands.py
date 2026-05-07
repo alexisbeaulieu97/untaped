@@ -28,7 +28,6 @@ from untaped_core import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
-    UntapedError,
     format_output,
     parse_kv_pairs,
     read_identifiers,
@@ -140,11 +139,23 @@ def get_command(
                     "names are not unique across kinds — use the per-kind sub-app "
                     "for name lookup.",
                 )
-            try:
-                record = ctx.repo.request("GET", f"unified_job_templates/{int(raw)}/")
-                records.append(record)
-            except UntapedError as exc:
-                typer.echo(f"error: {raw}: {exc}", err=True)
+            # AWX exposes the collection endpoint only — there's no
+            # ``/unified_job_templates/<id>/`` resource URL (UJT is a
+            # virtual aggregate). Filter via ``?id=<value>`` on the list
+            # endpoint and read the single match. ``page_size=1`` keeps
+            # the response tight; AWX returns ``{count, results: []}``
+            # so an empty ``results`` cleanly distinguishes a missing
+            # id from any other failure.
+            page = ctx.repo.request(
+                "GET",
+                "unified_job_templates/",
+                params={"id": raw, "page_size": "1"},
+            )
+            results = page.get("results") or []
+            if results:
+                records.append(results[0])
+            else:
+                typer.echo(f"error: {raw}: not found", err=True)
                 any_failed = True
     if records:
         cols = list(columns) if columns else None
