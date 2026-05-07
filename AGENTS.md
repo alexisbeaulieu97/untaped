@@ -299,7 +299,7 @@ The AWX bounded context follows the same DDD layout but builds a small
   wiring: `cli_name`, `api_path`, `list_columns`, `commands`.
   Per-kind specs live in
   `infrastructure/specs/{job_template,workflow,project,credential,
-  schedule,_support}.py` (each constructs an `AwxResourceSpec`) and
+  schedule,host,group,_support}.py` (each constructs an `AwxResourceSpec`) and
   are aggregated into `ALL_SPECS`. Spec fields stay honest with the
   CLI: a knob only lives in the spec if the factory actually wires it.
 - **Typed boundary** (`domain/payloads.py`): `ResourceClient` reads
