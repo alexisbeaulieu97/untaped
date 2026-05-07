@@ -69,6 +69,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "url",
         "last_job_run",
         "last_job_failed",
+        "last_job_status",
         "next_job_run",
         "status",
     ),
@@ -118,7 +119,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
             ),
         ),
     ),
-    list_columns=("name", "organization", "project", "inventory", "last_job_status"),
+    list_columns=("id", "name"),
     commands=("list", "get", "save", "apply", "launch"),
     fidelity="full",
 )

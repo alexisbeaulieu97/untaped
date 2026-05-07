@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import typer
+from rich.console import Console
 from untaped_core import (
     ColumnsOption,
     OutputFormat,
@@ -21,10 +23,12 @@ from untaped_awx.application import (
     ListResources,
     RunAction,
     SaveResource,
+    StreamJobEvents,
     WatchJob,
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
@@ -95,9 +99,12 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             records = list(
                 ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
             )
-        if with_names:
-            records = flatten_fks(records, spec)
         cols = list(columns) if columns else list(spec.list_columns)
+        if with_names:
+            # Pass ``cols`` so display-only FK columns (e.g. Host's
+            # ``inventory``, which lives in ``read_only_fields`` rather
+            # than ``fk_refs``) get flattened from ``summary_fields``.
+            records = flatten_fks(records, spec, columns=cols)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
 
 
@@ -115,6 +122,20 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization (ignored for numeric ids)."
+        ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help=(
+                "Scope to inventory (Host/Group only). Without this, name "
+                "lookup is global and ambiguous if the same name exists "
+                "across inventories."
+            ),
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
         ),
         by_name: bool = typer.Option(
             False,
@@ -140,7 +161,13 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
-            scope = _scope(ctx, organization, spec)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
             getter = GetResource(ctx.repo)
             for n in ids:
                 try:
@@ -149,21 +176,28 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
+            cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
             if with_names:
-                records = flatten_fks(records, spec)
-            cols = list(columns) if columns else _default_columns(spec, fmt)
+                # ``cols`` may be ``None`` for non-table formats — that's
+                # fine; ``flatten_fks`` then only flattens declared fk_refs.
+                records = flatten_fks(records, spec, columns=cols)
             typer.echo(format_output(records, fmt=fmt, columns=cols))
         if any_failed:
             raise typer.Exit(code=1)
 
 
-def _default_columns(spec: AwxResourceSpec, fmt: OutputFormat) -> list[str] | None:
-    # Table needs a projection — a full AWX record (50+ fields) renders as
-    # an unreadable wall. raw stays one-column-per-line so pipelines that
-    # do `get --format raw | …` keep their established shape; yaml/json
-    # keep the full record so users can inspect every field.
+def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
+    """Default column projection for ``get`` commands.
+
+    Table needs a projection — a full AWX record (50+ fields) renders as
+    an unreadable wall. raw stays one-column-per-line so pipelines that
+    do ``get --format raw | …`` keep their established shape; yaml/json
+    keep the full record so users can inspect every field. Reused by
+    ``unified-templates get`` so the polymorphic browser shares the
+    same logic without duplicating it.
+    """
     if fmt == "table":
-        return list(spec.list_columns)
+        return list(default_cols)
     return None
 
 
@@ -196,10 +230,26 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization."
         ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help="Scope to inventory (Host/Group only).",
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
     ) -> None:
         """Dump the resource as a portable YAML envelope."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
             resource = SaveResource(ctx.repo, ctx.fk)(spec, name=name, scope=scope)
         comment = spec.fidelity_note if spec.fidelity != "full" else None
         if comment:
@@ -282,8 +332,14 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None, "--job-type", help="Override job_type (e.g. run, check)."
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
-        monitor: bool = typer.Option(
-            False, "--monitor", help="Stream + wait (alias for --wait in v0)."
+        track: bool = typer.Option(
+            False,
+            "--track",
+            "-t",
+            help=(
+                "Stream structured events to stderr while waiting; exit 1 "
+                "if any tracked job ends in a non-successful terminal state."
+            ),
         ),
         fmt: OutputFormat = typer.Option(
             "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
@@ -305,6 +361,9 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
         )
         jobs: list[Any] = []
         any_failed = False
+        # Stderr console for ``--track``: ANSI when stderr is a TTY,
+        # plain text when redirected (CI logs, piped through ``tee``).
+        track_console = Console(stderr=True, highlight=False)
         with report_errors(), open_context() as ctx:
             scope = _scope(ctx, organization, spec)
             payload = _build_launch_payload(
@@ -332,7 +391,16 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                         scope=scope,
                         payload=payload,
                     )
-                    if wait or monitor:
+                    if track:
+                        # Render each event to stderr as it lands, then
+                        # let the monitor's terminal flip end the loop.
+                        # ``track_console`` carries the TTY-aware colour
+                        # styling so green-ok / red-failed pop in a real
+                        # terminal but stay plain text when piped.
+                        for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
+                            track_console.print(render_event_text(ev))
+                        job = ctx.monitor.fetch(job)
+                    elif wait:
                         job = WatchJob(ctx.repo)(job)
                     jobs.append(job)
                 except UntapedError as exc:
@@ -340,6 +408,12 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     any_failed = True
         if jobs:
             typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
+        if track and any(j.status != "successful" for j in jobs):
+            # --track promises CI-friendly exit codes: anything other than a
+            # clean ``successful`` (failed/error/canceled, or still-running
+            # if the monitor returned without terminal — which it shouldn't,
+            # but be defensive) propagates as exit 1.
+            raise typer.Exit(code=1)
         if any_failed:
             raise typer.Exit(code=1)
 
@@ -481,5 +555,18 @@ def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
 # ---- helpers ----
 
 
-def _scope(ctx: Any, organization: str | None, spec: AwxResourceSpec) -> dict[str, str] | None:
-    return scope_for_spec(spec, organization, ctx.default_organization)
+def _scope(
+    ctx: Any,
+    organization: str | None,
+    spec: AwxResourceSpec,
+    *,
+    inventory: str | None = None,
+    inventory_organization: str | None = None,
+) -> dict[str, str] | None:
+    return scope_for_spec(
+        spec,
+        organization,
+        ctx.default_organization,
+        inventory=inventory,
+        inventory_organization=inventory_organization,
+    )

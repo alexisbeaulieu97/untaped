@@ -247,11 +247,20 @@ class _RecordingApply:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, bool]] = []
 
-    def __call__(self, resource: Resource, *, write: bool = False) -> Any:
+    def __call__(
+        self,
+        resource: Resource,
+        *,
+        write: bool = False,
+        defer_memberships: bool = False,
+    ) -> Any:
         self.calls.append((resource.kind, resource.metadata.name, write))
         from untaped_awx.domain import ApplyOutcome
 
         return ApplyOutcome(kind=resource.kind, name=resource.metadata.name, action="preview")
+
+    def reconcile_memberships(self, resource: Resource) -> list[Any]:
+        return []
 
 
 def test_apply_file_orders_by_kind(tmp_path: Path) -> None:
@@ -384,7 +393,13 @@ def test_apply_file_continues_on_error_by_default(
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def __call__(self, resource: Resource, *, write: bool = False) -> Any:
+        def __call__(
+            self,
+            resource: Resource,
+            *,
+            write: bool = False,
+            defer_memberships: bool = False,
+        ) -> Any:
             self.calls.append(resource.metadata.name)
             if resource.metadata.name == "boom":
                 raise AwxApiError("boom", status=500)
@@ -419,7 +434,13 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def __call__(self, resource: Resource, *, write: bool = False) -> Any:
+        def __call__(
+            self,
+            resource: Resource,
+            *,
+            write: bool = False,
+            defer_memberships: bool = False,
+        ) -> Any:
             self.calls.append(resource.metadata.name)
             raise AwxApiError("boom", status=500)
 
