@@ -36,6 +36,10 @@ class FakeAap:
         self.base_url = base_url
         self.api_prefix = api_prefix
         self.store: dict[str, dict[int, dict[str, Any]]] = defaultdict(dict)
+        # Many-to-many memberships keyed by (parent_path, parent_id, sub_path)
+        # → set of member ids. Populated by associate/disassociate POSTs to
+        # ``/<parent_path>/<id>/<sub_path>/`` (e.g. ``/groups/<id>/hosts/``).
+        self.memberships: dict[tuple[str, int, str], set[int]] = defaultdict(set)
         self._next_id = 1
         self.actions_called: list[tuple[str, int, str, dict[str, Any]]] = []
         # One-shot test override consumed by the very next ``_action`` call.
@@ -84,6 +88,17 @@ class FakeAap:
             if len(parts) == 1:
                 return self._create(parts[0], body)
             if len(parts) == 3 and parts[1].isdigit():
+                # AWX overloads ``POST /<parent>/<id>/<sub>/`` for two
+                # things: launching a job/action (body has no ``id``) and
+                # associating/disassociating a member (body has ``id``).
+                # Discriminate by body shape.
+                if "id" in body and isinstance(body["id"], int):
+                    return self._sub_post(parts[0], int(parts[1]), parts[2], body)
+                # Nested create on inventory: ``POST /inventories/<id>/hosts/``
+                # with a host body (no ``id`` field) creates a host and
+                # auto-fills ``inventory: <id>``.
+                if parts[0] == "inventories" and parts[2] in {"hosts", "groups"}:
+                    return self._nested_create(parts[2], int(parts[1]), body)
                 return self._action(parts[0], int(parts[1]), parts[2], body)
         elif method == "PATCH":
             if len(parts) == 2 and parts[1].isdigit():
@@ -185,12 +200,21 @@ class FakeAap:
         sub_path: str,
         params: dict[str, str],
     ) -> httpx.Response:
-        records = [
-            r
-            for r in self.store[sub_path].values()
-            if r.get("unified_job_template") == parent_id
-            or r.get(parent_path.rstrip("s")) == parent_id
-        ]
+        membership_key = (parent_path, parent_id, sub_path)
+        if membership_key in self.memberships:
+            members = self.memberships[membership_key]
+            records = [self.store[sub_path][i] for i in members if i in self.store[sub_path]]
+        else:
+            # ``parent_path[:-1]`` strips exactly one trailing letter (so
+            # ``inventories`` → ``inventorie`` is avoided in favour of
+            # ``inventory``); ``rstrip`` would chew through every trailing
+            # ``s``. Fall through to AWX's snake_case singular FK column.
+            singular = _AWX_FK_SINGULAR.get(parent_path, parent_path[:-1])
+            records = [
+                r
+                for r in self.store[sub_path].values()
+                if r.get("unified_job_template") == parent_id or r.get(singular) == parent_id
+            ]
         records = self._apply_filters(records, params)
         return httpx.Response(
             200,
@@ -201,6 +225,46 @@ class FakeAap:
                 "results": records,
             },
         )
+
+    def _sub_post(
+        self,
+        parent_path: str,
+        parent_id: int,
+        sub_path: str,
+        body: dict[str, Any],
+    ) -> httpx.Response:
+        """Associate or disassociate a member via ``POST /<parent>/<id>/<sub>/``.
+
+        AWX uses the same URL for both: a body of ``{"id": N}`` associates,
+        ``{"id": N, "disassociate": true}`` removes. Returns 204 on success.
+        """
+        member_id = int(body["id"])
+        key = (parent_path, parent_id, sub_path)
+        if body.get("disassociate"):
+            self.memberships[key].discard(member_id)
+        else:
+            self.memberships[key].add(member_id)
+        return httpx.Response(204)
+
+    def _nested_create(
+        self,
+        sub_path: str,
+        parent_id: int,
+        body: dict[str, Any],
+    ) -> httpx.Response:
+        """Create a child resource scoped to its parent via the nested URL.
+
+        Used by the ``inventory_child`` apply strategy: ``POST
+        /inventories/<id>/hosts/`` (or ``/groups/``) creates a host or
+        group and auto-injects ``inventory: <parent_id>`` so subsequent
+        listings under the parent see it. Body must not already carry an
+        ``id``.
+        """
+        new_id = self._next_id
+        self._next_id += 1
+        record = {"id": new_id, "inventory": parent_id, **body}
+        self.store[sub_path][new_id] = record
+        return httpx.Response(201, json=record)
 
     def _sub_get(
         self,
@@ -227,6 +291,14 @@ class FakeAap:
             return json.loads(request.content)  # type: ignore[no-any-return]
         except ValueError, TypeError:
             return {}
+
+
+# AWX's snake_case FK column on a child record is the singular form of
+# the parent collection — but English plural rules don't all collapse to
+# "drop the trailing s" (``inventories → inventory``, not ``inventorie``).
+_AWX_FK_SINGULAR: dict[str, str] = {
+    "inventories": "inventory",
+}
 
 
 def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:

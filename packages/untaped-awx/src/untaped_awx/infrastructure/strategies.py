@@ -159,6 +159,87 @@ class ScheduleApplyStrategy:
             ) from exc
 
 
+class InventoryChildApplyStrategy:
+    """Write path for resources whose parent is an Inventory.
+
+    Used by :data:`HOST_SPEC` and :data:`GROUP_SPEC`. AWX accepts creates
+    against either the global ``/<api_path>/`` (with ``inventory: <id>``
+    in the body) or the nested ``/inventories/<id>/<api_path>/`` (which
+    auto-fills the FK). We use the nested form so the user's spec body
+    never carries ``inventory`` — keeping the body free of a redundant
+    FK that's already implied by ``metadata.parent``.
+
+    Identity is ``(name, parent)`` where ``parent`` is the monomorphic
+    :class:`IdentityRef` to an Inventory. Updates use the global
+    ``/<api_path>/<id>/`` endpoint, same as :class:`DefaultApplyStrategy`.
+    """
+
+    def find_existing(
+        self,
+        spec: AwxResourceSpec,
+        identity: dict[str, Any],
+        *,
+        client: ResourceClient,
+        fk: FkResolver,
+    ) -> dict[str, Any] | None:
+        inventory_id = self._resolve_inventory_id(identity, fk=fk)
+        path = f"inventories/{inventory_id}/{spec.api_path}/"
+        page = client.request(
+            "GET",
+            path,
+            params={"name": str(identity["name"]), "page_size": "2"},
+        )
+        results = page.get("results") or []
+        if len(results) >= 2:
+            raise AmbiguousIdentityError(
+                spec.kind,
+                {"name": identity["name"], "inventory": str(_parent(identity).name)},
+                match_count=page.get("count"),
+            )
+        return results[0] if results else None
+
+    def create(
+        self,
+        spec: AwxResourceSpec,
+        payload: dict[str, Any],
+        identity: dict[str, Any],
+        *,
+        client: ResourceClient,
+        fk: FkResolver,
+    ) -> dict[str, Any]:
+        inventory_id = self._resolve_inventory_id(identity, fk=fk)
+        path = f"inventories/{inventory_id}/{spec.api_path}/"
+        body = {"name": identity["name"], **payload}
+        return client.request("POST", path, json=body)
+
+    def update(
+        self,
+        spec: AwxResourceSpec,
+        existing: dict[str, Any],
+        payload: dict[str, Any],
+        *,
+        client: ResourceClient,
+        fk: FkResolver,
+    ) -> dict[str, Any]:
+        record = client.update(spec, existing["id"], WritePayload(**payload))
+        return record.model_dump()
+
+    @staticmethod
+    def _resolve_inventory_id(identity: dict[str, Any], *, fk: FkResolver) -> int:
+        parent = _parent(identity)
+        scope = {"organization": parent.organization} if parent.organization else None
+        return fk.name_to_id("Inventory", parent.name, scope=scope)
+
+
+def _parent(identity: dict[str, Any]) -> Any:
+    parent = identity.get("parent")
+    if parent is None:
+        raise BadRequest("inventory_child identity missing 'parent'")
+    if hasattr(parent, "kind") and parent.kind != "Inventory":
+        raise BadRequest(f"inventory_child parent must be an Inventory (got {parent.kind!r})")
+    return parent
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     """Lift a Pydantic IdentityRef (or dict) to a plain dict for resolution."""
     if hasattr(value, "model_dump"):
