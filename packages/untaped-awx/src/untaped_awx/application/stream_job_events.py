@@ -40,9 +40,6 @@ class StreamJobEvents:
         filters: dict[str, str] | None,
         follow: bool,
     ) -> Iterator[JobEvent]:
-        # Defensive copy: marking the job terminal forces the monitor's
-        # stream_events loop to drain once and return without polling
-        # again. For follow=True we let the real status pass through so
-        # the monitor keeps polling until AWX flips it terminal itself.
-        drain_job = job if follow else job.model_copy(update={"status": "successful"})
-        yield from self._monitor.stream_events(drain_job, from_counter=from_counter, params=filters)
+        yield from self._monitor.stream_events(
+            job, from_counter=from_counter, params=filters, follow=follow
+        )

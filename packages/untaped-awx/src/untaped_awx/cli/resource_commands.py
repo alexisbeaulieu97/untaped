@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -155,7 +156,7 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
-            cols = list(columns) if columns else _default_columns(spec, fmt)
+            cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
             if with_names:
                 # ``cols`` may be ``None`` for non-table formats — that's
                 # fine; ``flatten_fks`` then only flattens declared fk_refs.
@@ -165,13 +166,18 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
             raise typer.Exit(code=1)
 
 
-def _default_columns(spec: AwxResourceSpec, fmt: OutputFormat) -> list[str] | None:
-    # Table needs a projection — a full AWX record (50+ fields) renders as
-    # an unreadable wall. raw stays one-column-per-line so pipelines that
-    # do `get --format raw | …` keep their established shape; yaml/json
-    # keep the full record so users can inspect every field.
+def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
+    """Default column projection for ``get`` commands.
+
+    Table needs a projection — a full AWX record (50+ fields) renders as
+    an unreadable wall. raw stays one-column-per-line so pipelines that
+    do ``get --format raw | …`` keep their established shape; yaml/json
+    keep the full record so users can inspect every field. Reused by
+    ``unified-templates get`` so the polymorphic browser shares the
+    same logic without duplicating it.
+    """
     if fmt == "table":
-        return list(spec.list_columns)
+        return list(default_cols)
     return None
 
 

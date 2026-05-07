@@ -80,6 +80,7 @@ class PollingJobMonitor:
         *,
         from_counter: int = 0,
         params: dict[str, str] | None = None,
+        follow: bool = True,
     ) -> Iterator[JobEvent]:
         api_path = _api_path_for(job)
         last = from_counter
@@ -94,7 +95,7 @@ class PollingJobMonitor:
                 if ev.counter > last:
                     last = ev.counter
                 yield ev
-            if current.is_terminal:
+            if not follow or current.is_terminal:
                 return
             self._sleep(self._interval)
             current = self.fetch(current)

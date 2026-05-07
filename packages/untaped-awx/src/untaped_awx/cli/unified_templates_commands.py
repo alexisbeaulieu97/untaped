@@ -35,6 +35,7 @@ from untaped_core import (
 )
 
 from untaped_awx.cli._context import open_context
+from untaped_awx.cli.resource_commands import default_get_columns
 
 app = typer.Typer(
     name="unified-templates",
@@ -93,12 +94,9 @@ def list_command(
     # interleave creation timelines from four different tables.
     filters.setdefault("order_by", "name")
     with report_errors(), open_context() as ctx:
-        page = ctx.repo.request(
-            "GET", "unified_job_templates/", params={**filters, "page_size": "200"}
+        records = list(
+            ctx.repo.paginate_path("unified_job_templates/", params=filters, limit=limit)
         )
-    records = list(page.get("results") or [])
-    if limit is not None:
-        records = records[:limit]
     cols = list(columns) if columns else list(_DEFAULT_LIST_COLUMNS)
     typer.echo(format_output(records, fmt=fmt, columns=cols))
 
@@ -127,8 +125,7 @@ def get_command(
             if not raw.isdecimal():
                 # Fast-fail before hitting AWX so the error message is
                 # specifically about the id-only contract instead of a
-                # vague 404. Matches ``_get_one`` / ``isdecimal()`` check
-                # in ``cli/resource_commands.py``.
+                # vague 404.
                 raise typer.BadParameter(
                     f"unified-templates get is id-only ({raw!r} isn't a number); "
                     "names are not unique across kinds — use the per-kind sub-app "
@@ -153,21 +150,7 @@ def get_command(
                 typer.echo(f"error: {raw}: not found", err=True)
                 any_failed = True
     if records:
-        if columns:
-            cols: list[str] | None = list(columns)
-        elif fmt == "table":
-            # Without a projection, table mode would render every AWX
-            # field as a column (50+ keys per record) and Rich crushes
-            # them all unreadably at the fixed 120-char render width.
-            # Reuse the list view's default columns — same trick the
-            # resource-app factory's ``_default_columns`` uses for the
-            # generic per-kind ``get`` (see ``cli/resource_commands.py``).
-            # ``yaml`` / ``json`` / ``raw`` still get the full record so
-            # ``get … -f yaml`` remains the canonical "show me everything"
-            # view.
-            cols = list(_DEFAULT_LIST_COLUMNS)
-        else:
-            cols = None
+        cols = list(columns) if columns else default_get_columns(fmt, _DEFAULT_LIST_COLUMNS)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
     if any_failed:
         raise typer.Exit(code=1)

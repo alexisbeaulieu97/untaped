@@ -73,13 +73,14 @@ class DefaultApplyStrategy:
         return record.model_dump()
 
 
-class ScheduleApplyStrategy:
+class ScheduleApplyStrategy(DefaultApplyStrategy):
     """Schedule writes go through the parent's nested endpoint on create.
 
     AWX requires schedule creates at ``/<parent_path>/<parent_id>/schedules/``;
-    updates go through the global ``/schedules/<id>/``. Identity is
-    ``(name, parent)`` where ``parent`` is the polymorphic IdentityRef
-    from ``resource.metadata.parent``.
+    updates go through the global ``/schedules/<id>/`` and so reuse
+    :meth:`DefaultApplyStrategy.update`. Identity is ``(name, parent)``
+    where ``parent`` is the polymorphic IdentityRef from
+    ``resource.metadata.parent``.
     """
 
     _PARENT_PATHS: ClassVar[dict[str, str]] = {
@@ -102,19 +103,13 @@ class ScheduleApplyStrategy:
             raise BadRequest("schedule identity missing 'parent'")
         parent_kind, parent_id = fk.resolve_polymorphic(_as_dict(parent))
         path = self._parent_path(parent_kind)
-        page = client.request(
-            "GET",
-            f"{path}/{parent_id}/schedules/",
-            params={"name": str(identity["name"]), "page_size": "2"},
+        return _find_unique(
+            client,
+            path=f"{path}/{parent_id}/schedules/",
+            name=str(identity["name"]),
+            kind="Schedule",
+            ambiguity_label={"parent": f"{parent_kind}#{parent_id}"},
         )
-        results = page.get("results") or []
-        if len(results) >= 2:
-            raise AmbiguousIdentityError(
-                "Schedule",
-                {"name": identity["name"], "parent": f"{parent_kind}#{parent_id}"},
-                match_count=page.get("count"),
-            )
-        return results[0] if results else None
 
     def create(
         self,
@@ -136,18 +131,6 @@ class ScheduleApplyStrategy:
             json={"name": identity["name"], **payload},
         )
 
-    def update(
-        self,
-        spec: AwxResourceSpec,
-        existing: dict[str, Any],
-        payload: dict[str, Any],
-        *,
-        client: ResourceClient,
-        fk: FkResolver,
-    ) -> dict[str, Any]:
-        record = client.update(spec, existing["id"], WritePayload(**payload))
-        return record.model_dump()
-
     @classmethod
     def _parent_path(cls, parent_kind: str) -> str:
         try:
@@ -159,7 +142,7 @@ class ScheduleApplyStrategy:
             ) from exc
 
 
-class InventoryChildApplyStrategy:
+class InventoryChildApplyStrategy(DefaultApplyStrategy):
     """Write path for resources whose parent is an Inventory.
 
     Used by :data:`HOST_SPEC` and :data:`GROUP_SPEC`. AWX accepts creates
@@ -167,11 +150,9 @@ class InventoryChildApplyStrategy:
     in the body) or the nested ``/inventories/<id>/<api_path>/`` (which
     auto-fills the FK). We use the nested form so the user's spec body
     never carries ``inventory`` — keeping the body free of a redundant
-    FK that's already implied by ``metadata.parent``.
-
-    Identity is ``(name, parent)`` where ``parent`` is the monomorphic
-    :class:`IdentityRef` to an Inventory. Updates use the global
-    ``/<api_path>/<id>/`` endpoint, same as :class:`DefaultApplyStrategy`.
+    FK that's already implied by ``metadata.parent``. Updates reuse
+    :meth:`DefaultApplyStrategy.update` (the global ``/<api_path>/<id>/``
+    endpoint).
     """
 
     def find_existing(
@@ -183,20 +164,13 @@ class InventoryChildApplyStrategy:
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         inventory_id = self._resolve_inventory_id(identity, fk=fk)
-        path = f"inventories/{inventory_id}/{spec.api_path}/"
-        page = client.request(
-            "GET",
-            path,
-            params={"name": str(identity["name"]), "page_size": "2"},
+        return _find_unique(
+            client,
+            path=f"inventories/{inventory_id}/{spec.api_path}/",
+            name=str(identity["name"]),
+            kind=spec.kind,
+            ambiguity_label={"inventory": str(_parent(identity).name)},
         )
-        results = page.get("results") or []
-        if len(results) >= 2:
-            raise AmbiguousIdentityError(
-                spec.kind,
-                {"name": identity["name"], "inventory": str(_parent(identity).name)},
-                match_count=page.get("count"),
-            )
-        return results[0] if results else None
 
     def create(
         self,
@@ -212,23 +186,36 @@ class InventoryChildApplyStrategy:
         body = {"name": identity["name"], **payload}
         return client.request("POST", path, json=body)
 
-    def update(
-        self,
-        spec: AwxResourceSpec,
-        existing: dict[str, Any],
-        payload: dict[str, Any],
-        *,
-        client: ResourceClient,
-        fk: FkResolver,
-    ) -> dict[str, Any]:
-        record = client.update(spec, existing["id"], WritePayload(**payload))
-        return record.model_dump()
-
     @staticmethod
     def _resolve_inventory_id(identity: dict[str, Any], *, fk: FkResolver) -> int:
         parent = _parent(identity)
         scope = {"organization": parent.organization} if parent.organization else None
         return fk.name_to_id("Inventory", parent.name, scope=scope)
+
+
+def _find_unique(
+    client: ResourceClient,
+    *,
+    path: str,
+    name: str,
+    kind: str,
+    ambiguity_label: dict[str, str],
+) -> dict[str, Any] | None:
+    """Resolve a unique record at ``path`` filtered by ``name``.
+
+    Requests two records to detect ambiguity (mirrors
+    :meth:`ResourceRepository.find` for the nested-endpoint paths
+    that don't fit the spec-driven CRUD shape).
+    """
+    page = client.request("GET", path, params={"name": name, "page_size": "2"})
+    results = page.get("results") or []
+    if len(results) >= 2:
+        raise AmbiguousIdentityError(
+            kind,
+            {"name": name, **ambiguity_label},
+            match_count=page.get("count"),
+        )
+    return results[0] if results else None
 
 
 def _parent(identity: dict[str, Any]) -> Any:
