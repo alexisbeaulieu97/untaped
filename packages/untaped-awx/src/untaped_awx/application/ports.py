@@ -113,6 +113,22 @@ class ResourceClient(Protocol):
         """Escape hatch for strategies that need ad-hoc URLs (e.g. Schedule)."""
         ...
 
+    def paginate_path(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every page of a list endpoint at ``path``.
+
+        ``path`` is relative to ``api_prefix``. Use this instead of a
+        single ``request("GET", path, params=…)`` whenever the result
+        could exceed one page — AWX silently truncates at ``page_size``
+        otherwise.
+        """
+        ...
+
     def request_text(
         self,
         method: str,
@@ -140,6 +156,22 @@ class ResourceClient(Protocol):
         rule (``application/`` mustn't read AwxResourceSpec-only fields)
         stays intact while still letting use cases reconcile membership
         generically across kinds.
+        """
+        ...
+
+    def paginate_sub_endpoint(
+        self,
+        spec: AwxResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every page of ``<api_path>/<record_id>/<sub_endpoint>/``.
+
+        Same path-join contract as :meth:`sub_endpoint_request`; use
+        this for membership reads where one page (typically 200 rows)
+        wouldn't fit (e.g. a Group with many hosts).
         """
         ...
 
@@ -262,13 +294,16 @@ class JobMonitor(Protocol):
         *,
         from_counter: int = 0,
         params: dict[str, str] | None = None,
+        follow: bool = True,
     ) -> Iterable[JobEvent]:
-        """Yield :class:`JobEvent` rows in counter order until terminal.
+        """Yield :class:`JobEvent` rows in counter order.
 
         ``from_counter`` is exclusive (matches AWX's ``counter__gt`` query
         param). Extra ``params`` are forwarded server-side so callers can
         push native filters like ``event=runner_on_failed`` without
-        client-side post-filtering.
+        client-side post-filtering. ``follow=False`` drains the existing
+        events once and returns; ``follow=True`` polls until the job is
+        terminal.
         """
         ...
 

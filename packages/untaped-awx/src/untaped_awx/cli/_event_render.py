@@ -73,30 +73,6 @@ def _host_label(ev: JobEvent) -> str:
     return "?"
 
 
-def render_event(ev: JobEvent) -> str:
-    """Return one rendered line for ``ev`` (no trailing newline, no ANSI)."""
-    if ev.event == "playbook_on_play_start":
-        play = ev.play or "(unnamed play)"
-        return f"PLAY [{play}]"
-    if ev.event == "playbook_on_task_start":
-        task = ev.task or "(unnamed task)"
-        return f"TASK [{task}]"
-    if ev.event in _RUNNER_RESULTS:
-        verdict = _RUNNER_RESULTS[ev.event]
-        return f"  {verdict}: {_host_label(ev)}"
-    if ev.event == "playbook_on_stats":
-        return "PLAY RECAP"
-    if ev.event == "playbook_on_no_hosts_matched":
-        return "skipped: no hosts matched"
-    # Fallback for events we don't have a special rendering for.
-    parts = [ev.event or f"#{ev.counter}"]
-    if ev.host_name or ev.host is not None:
-        parts.append(f"host={_host_label(ev)}")
-    if ev.task:
-        parts.append(f"task={ev.task}")
-    return " ".join(parts)
-
-
 def render_event_text(ev: JobEvent) -> Text:
     """Return :class:`rich.text.Text` with status styling.
 
@@ -120,5 +96,14 @@ def render_event_text(ev: JobEvent) -> Text:
         return Text("PLAY RECAP", style=_RECAP_STYLE)
     if ev.event == "playbook_on_no_hosts_matched":
         return Text("skipped: no hosts matched", style=_RUNNER_STYLES["skipped"])
-    # Fallback: same shape as ``render_event`` but unstyled.
-    return Text(render_event(ev))
+    parts = [ev.event or f"#{ev.counter}"]
+    if ev.host_name or ev.host is not None:
+        parts.append(f"host={_host_label(ev)}")
+    if ev.task:
+        parts.append(f"task={ev.task}")
+    return Text(" ".join(parts))
+
+
+def render_event(ev: JobEvent) -> str:
+    """Return one rendered line for ``ev`` (no trailing newline, no ANSI)."""
+    return render_event_text(ev).plain

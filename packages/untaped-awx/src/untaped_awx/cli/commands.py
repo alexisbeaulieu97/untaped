@@ -290,10 +290,7 @@ def jobs_list(
     # AWX defaults to id-asc; flip so the most recent jobs lead.
     filters.setdefault("order_by", "-id")
     with report_errors(), open_context() as ctx:
-        page = ctx.repo.request("GET", "jobs/", params={**filters, "page_size": "200"})
-    records = list(page.get("results") or [])
-    if limit is not None:
-        records = records[:limit]
+        records = list(ctx.repo.paginate_path("jobs/", params=filters, limit=limit))
     cols = list(columns) if columns else ["id", "name", "status"]
     typer.echo(format_output(records, fmt=fmt, columns=cols))
 

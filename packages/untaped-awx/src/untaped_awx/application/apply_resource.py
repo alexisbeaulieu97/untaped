@@ -341,7 +341,7 @@ def _build_payload(spec: AwxResourceSpec, resource: Resource, *, fk: FkResolver)
     return body
 
 
-def _scope_for(ref: Any, resource: Resource) -> dict[str, str] | None:
+def _scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
     if ref.scope_field is None:
         return None
     if ref.scope_field == "organization":
@@ -438,14 +438,11 @@ def _partition_top_level_fields(
     """
     if existing is None:
         return set(), []
-    by_top: dict[str, list[str]] = {}
-    for path in preserved:
-        top = path.split(".", 1)[0]
-        by_top.setdefault(top, []).append(path)
+    top_keys = {path.split(".", 1)[0] for path in preserved}
     existing_stripped = _strip_paths(existing, preserved)
     preserved_fields: set[str] = set()
     conflict_fields: list[str] = []
-    for top in by_top:
+    for top in top_keys:
         if write_payload.get(top) == existing_stripped.get(top):
             preserved_fields.add(top)
         else:
@@ -534,14 +531,7 @@ def _plan_sub_endpoints(
         existing_ids: set[int] = set()
         existing_name_by_id: dict[int, str] = {}
         if record_id is not None:
-            page = client.sub_endpoint_request(
-                spec,
-                record_id,
-                ref.sub_endpoint,
-                "GET",
-                params={"page_size": "200"},
-            )
-            for record in page.get("results") or []:
+            for record in client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint):
                 rid = int(record["id"])
                 existing_ids.add(rid)
                 rname = record.get("name")

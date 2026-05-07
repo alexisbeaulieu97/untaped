@@ -12,7 +12,7 @@ from untaped_awx.domain import Job, JobEvent
 class _FakeMonitor:
     def __init__(self, *, events: list[JobEvent] | None = None) -> None:
         self.events = list(events or [])
-        self.stream_calls: list[tuple[int, dict[str, str] | None, str]] = []
+        self.stream_calls: list[tuple[int, dict[str, str] | None, bool]] = []
 
     def fetch(self, job: Job) -> Job:
         return job
@@ -29,8 +29,9 @@ class _FakeMonitor:
         *,
         from_counter: int = 0,
         params: dict[str, str] | None = None,
+        follow: bool = True,
     ) -> Iterator[JobEvent]:
-        self.stream_calls.append((from_counter, params, job.status))
+        self.stream_calls.append((from_counter, params, follow))
         for ev in self.events:
             if ev.counter > from_counter:
                 yield ev
@@ -44,19 +45,17 @@ def _ev(counter: int, **fields: Any) -> JobEvent:
     return JobEvent(counter=counter, **fields)
 
 
-def test_drain_marks_job_terminal_for_non_follow() -> None:
-    """Without --follow the use case forces a 'successful' shadow status
-    so the monitor's polling loop drains and returns immediately."""
+def test_follow_false_forwards_to_monitor() -> None:
+    """Without --follow the use case asks the monitor to drain once."""
     monitor = _FakeMonitor(events=[_ev(1), _ev(2)])
     list(StreamJobEvents(monitor)(_running(), follow=False))
-    # The job we passed to the monitor was a copy with status flipped.
-    assert monitor.stream_calls[0][2] == "successful"
+    assert monitor.stream_calls[0][2] is False
 
 
-def test_follow_passes_real_status_through() -> None:
+def test_follow_true_forwards_to_monitor() -> None:
     monitor = _FakeMonitor()
     list(StreamJobEvents(monitor)(_running(), follow=True))
-    assert monitor.stream_calls[0][2] == "running"
+    assert monitor.stream_calls[0][2] is True
 
 
 def test_from_counter_skips_already_seen_events() -> None:

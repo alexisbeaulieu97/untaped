@@ -402,12 +402,12 @@ Read-only sub-app over AWX's execution endpoints (`/jobs/`,
 `/jobs/<id>/stdout/`, `/jobs/<id>/job_events/`). Five commands:
 
 - `jobs list [--status … --filter K=V --limit N]` — newest-first job
-  index. Default columns: `id,name,status,started,finished`.
+  index. Default columns: `id,name,status`.
 - `jobs get <id>` — single job record (full YAML/JSON payload).
 - `jobs events <id> [--filter K=V --follow --from-counter N]` —
   structured per-task events. `--filter` reaches AWX server-side
   (e.g. `event=runner_on_failed`, `host=web-01`); `--follow` polls
-  until terminal. Default columns: `counter,event,host,task,changed,failed`.
+  until terminal. Default columns: `counter,event,host_name,task`.
 - `jobs logs <id> [--follow|-f --tail N --grep PATTERN -i]` —
   plain stdout. `--follow` polls `?start_line=N` until terminal;
   `--grep` is client-side regex; `--tail N` keeps only the last N
@@ -440,12 +440,11 @@ discriminator. Two commands:
 - `unified-templates list [--type TYPE --filter K=V --limit N]` —
   alphabetical (`order_by=name`) so the four kinds interleave
   predictably. `--type` is sugar for `--filter type=…`; passing both
-  with conflicting values is rejected. Default columns project the
-  union of fields across kinds (`id, type, name,
-  summary_fields.organization.name, last_job_status, status,
-  last_job_run`) — JT/WJT use `last_job_status`, Project /
-  InventorySource use `status`, and `format_output` emits empty cells
-  for whichever side doesn't carry a given field.
+  with conflicting values is rejected. Default columns: `id, name,
+  type` — strict-minimal (identity + the polymorphic discriminator).
+  Health fields differ across kinds (JT/WJT use `last_job_status`,
+  Project / InventorySource use `status`) so any one of them is empty
+  for half the rows; users opt in via `--columns`.
 - `unified-templates get <id> [<id>…] [--stdin]` — **id-only** by
   design (names are not unique across kinds). Fast-fails on a
   non-decimal identifier with a message pointing at the per-kind
