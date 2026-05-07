@@ -40,7 +40,7 @@ CREDENTIAL_SPEC = AwxResourceSpec(
         FkRef(field="credential_type", kind="CredentialType"),  # global; no scope
     ),
     secret_paths=("inputs.*",),
-    list_columns=("name", "credential_type"),
+    list_columns=("id", "name", "credential_type"),
     commands=("list", "get"),
     fidelity="read_only",
     fidelity_note="$encrypted$ roundtrip deferred to v0.5",

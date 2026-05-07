@@ -56,7 +56,7 @@ INVENTORY_SPEC = AwxResourceSpec(
         "pending_deletion",
     ),
     fk_refs=(FkRef(field="organization", kind="Organization"),),
-    list_columns=("name", "kind", "total_hosts"),
+    list_columns=("id", "name", "organization", "total_hosts"),
     commands=("list", "get"),
     fidelity="read_only",
     fidelity_note="inventory CRUD is out of v0 scope",

@@ -242,8 +242,8 @@ def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
         ["job-templates", "get", "deploy", "--organization", "Default", "--format", "table"],
     )
     assert result.exit_code == 0, result.output
-    # list_columns for JT is ("name", "organization", "project", "inventory", "last_job_status").
-    # No noisy columns like "summary_fields" or "related" should appear.
+    # list_columns for JT is ("id", "name") — minimal default. No noisy
+    # columns like "summary_fields" or "related" should appear.
     assert "summary_fields" not in result.stdout
     assert "related" not in result.stdout
     assert "deploy" in result.stdout

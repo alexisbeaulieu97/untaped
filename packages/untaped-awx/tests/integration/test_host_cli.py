@@ -222,6 +222,6 @@ def test_hosts_list_default_columns_no_dotted_summary_path(fake_aap: Any) -> Non
     headers."""
     from untaped_awx.infrastructure.specs import HOST_SPEC
 
-    assert HOST_SPEC.list_columns == ("name", "inventory", "enabled")
+    assert HOST_SPEC.list_columns == ("id", "name", "inventory", "enabled")
     for col in HOST_SPEC.list_columns:
         assert "." not in col, f"dotted path {col!r} leaked into default columns"
