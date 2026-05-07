@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 import typer
+from rich.console import Console
 from untaped_core import (
     ColumnsOption,
     FormatOption,
@@ -30,6 +31,7 @@ from untaped_awx.application import (
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import awx_config_from_settings, open_context
+from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.domain import Job, Metadata
@@ -345,19 +347,21 @@ def jobs_events(
             rows = [ev.model_dump() for ev in events]
             typer.echo(format_output(rows, fmt=fmt, columns=cols))
             return
-        # Live tail: print each event as it arrives. Table mode would
-        # repeat the header per row (one row at a time has no shared
-        # column-width context), so we coerce to ``raw`` with a stderr
-        # note so the user knows what happened. Other formats stream
-        # cleanly one row at a time.
-        stream_fmt: OutputFormat = "raw" if fmt == "table" else fmt
         if fmt == "table":
-            typer.echo(
-                "note: --follow uses raw output (table mode would repeat headers per event)",
-                err=True,
-            )
+            # Table mode under --follow renders each event as a colored
+            # human-readable line (PLAY [..] / TASK [..] / "  ok: host"),
+            # similar to the AWX UI's Output tab. ``rich.console.Console``
+            # auto-detects TTY: ANSI on a real terminal, plain text when
+            # piped or redirected. No new dependency — Rich is already
+            # used for table rendering elsewhere.
+            console = Console(highlight=False)
+            for ev in events:
+                console.print(render_event_text(ev))
+            return
+        # Other formats (json/yaml/raw) stream one structured row at a
+        # time — useful for ``--follow | jq``-style pipelines.
         for ev in events:
-            line = format_output([ev.model_dump()], fmt=stream_fmt, columns=cols)
+            line = format_output([ev.model_dump()], fmt=fmt, columns=cols)
             typer.echo(line)
 
 

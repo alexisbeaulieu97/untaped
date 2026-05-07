@@ -113,16 +113,22 @@ def test_jobs_events_follow_streams_events_to_stdout(fake_aap: Any) -> None:
     assert out.count('"counter":') == 4
 
 
-def test_jobs_events_follow_with_table_format_falls_back_to_raw(fake_aap: Any) -> None:
-    """Table mode would repeat headers per event; CLI coerces to raw
-    and prints a one-time stderr note so users know."""
+def test_jobs_events_follow_with_table_format_renders_human_lines(fake_aap: Any) -> None:
+    """Table mode under ``--follow`` streams one colored human-readable
+    line per event (PLAY/TASK/ok/changed/failed), via Rich Console — ANSI
+    on a TTY, plain text under ``CliRunner`` (which doesn't simulate one).
+    """
     _seed_running_job(fake_aap)
     _seed_events(fake_aap)
-    result = CliRunner().invoke(app, ["jobs", "events", "42", "--follow", "--columns", "counter"])
+    result = CliRunner().invoke(app, ["jobs", "events", "42", "--follow"])
     assert result.exit_code == 0, result.output
-    assert "raw output" in result.stderr
-    counters = [line for line in result.stdout.strip().splitlines() if line.isdigit()]
-    assert sorted(counters) == ["1", "2", "3", "4"]
+    # ``CliRunner`` has no TTY, so colour is stripped — but the rendered
+    # shape (PLAY/TASK/ok/failed) must still appear.
+    out = result.stdout
+    assert "PLAY [Deploy]" in out
+    assert "TASK [install]" in out
+    assert "ok: web-01" in out
+    assert "failed: api-01" in out
 
 
 def test_jobs_events_server_side_filter(fake_aap: Any) -> None:
