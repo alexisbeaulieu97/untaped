@@ -338,8 +338,27 @@ def jobs_events(
         events = StreamJobEvents(ctx.monitor)(
             job, from_counter=from_counter, filters=filters, follow=follow
         )
-        rows = [ev.model_dump() for ev in events]
-    typer.echo(format_output(rows, fmt=fmt, columns=cols))
+        if not follow:
+            # One-shot drain: collect everything then format as a single
+            # table / json document so columns line up and yaml stays a
+            # well-formed list.
+            rows = [ev.model_dump() for ev in events]
+            typer.echo(format_output(rows, fmt=fmt, columns=cols))
+            return
+        # Live tail: print each event as it arrives. Table mode would
+        # repeat the header per row (one row at a time has no shared
+        # column-width context), so we coerce to ``raw`` with a stderr
+        # note so the user knows what happened. Other formats stream
+        # cleanly one row at a time.
+        stream_fmt: OutputFormat = "raw" if fmt == "table" else fmt
+        if fmt == "table":
+            typer.echo(
+                "note: --follow uses raw output (table mode would repeat headers per event)",
+                err=True,
+            )
+        for ev in events:
+            line = format_output([ev.model_dump()], fmt=stream_fmt, columns=cols)
+            typer.echo(line)
 
 
 @jobs_app.command("logs", no_args_is_help=True)

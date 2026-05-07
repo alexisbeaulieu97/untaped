@@ -93,6 +93,38 @@ def test_jobs_events_drains_existing(fake_aap: Any) -> None:
     assert counters == ["1", "2", "3", "4"]
 
 
+def test_jobs_events_follow_streams_events_to_stdout(fake_aap: Any) -> None:
+    """Regression: ``--follow`` used to build the full row list before
+    printing, so nothing appeared until the job hit terminal. The CLI
+    now emits each event as it's yielded.
+    """
+    _seed_running_job(fake_aap)  # already terminal — drain loop returns
+    _seed_events(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "events", "42", "--follow", "--format", "json", "--columns", "counter"],
+    )
+    assert result.exit_code == 0, result.output
+    # One JSON document per event (each its own line / array), in order.
+    out = result.stdout.strip()
+    assert "1" in out and "2" in out and "3" in out and "4" in out
+    # Each event is its own format_output call, so we get N separate
+    # printed blocks (4 events → 4 non-empty chunks separated by blanks).
+    assert out.count('"counter":') == 4
+
+
+def test_jobs_events_follow_with_table_format_falls_back_to_raw(fake_aap: Any) -> None:
+    """Table mode would repeat headers per event; CLI coerces to raw
+    and prints a one-time stderr note so users know."""
+    _seed_running_job(fake_aap)
+    _seed_events(fake_aap)
+    result = CliRunner().invoke(app, ["jobs", "events", "42", "--follow", "--columns", "counter"])
+    assert result.exit_code == 0, result.output
+    assert "raw output" in result.stderr
+    counters = [line for line in result.stdout.strip().splitlines() if line.isdigit()]
+    assert sorted(counters) == ["1", "2", "3", "4"]
+
+
 def test_jobs_events_server_side_filter(fake_aap: Any) -> None:
     _seed_running_job(fake_aap)
     _seed_events(fake_aap)
