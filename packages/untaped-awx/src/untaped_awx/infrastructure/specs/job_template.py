@@ -118,7 +118,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
             ),
         ),
     ),
-    list_columns=("name", "organization", "project", "inventory", "last_job_status"),
+    list_columns=("name", "last_job_status"),
     commands=("list", "get", "save", "apply", "launch"),
     fidelity="full",
 )

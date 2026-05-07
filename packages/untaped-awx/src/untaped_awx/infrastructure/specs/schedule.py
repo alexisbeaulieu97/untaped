@@ -57,7 +57,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         FkRef(field="inventory", kind="Inventory", scope_field="organization"),
     ),
     apply_strategy="schedule",
-    list_columns=("name", "next_run", "rrule", "enabled"),
+    list_columns=("name", "next_run", "enabled"),
     commands=("list", "get", "save", "apply"),
     fidelity="full",
 )

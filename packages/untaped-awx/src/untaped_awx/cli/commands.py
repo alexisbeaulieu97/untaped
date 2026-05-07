@@ -294,7 +294,7 @@ def jobs_list(
     records = list(page.get("results") or [])
     if limit is not None:
         records = records[:limit]
-    cols = list(columns) if columns else ["id", "name", "status", "started", "finished"]
+    cols = list(columns) if columns else ["id", "name", "status"]
     typer.echo(format_output(records, fmt=fmt, columns=cols))
 
 
@@ -332,9 +332,7 @@ def jobs_events(
     ``--filter event=runner_on_failed --filter host=web-01``.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
-    cols = (
-        list(columns) if columns else ["counter", "event", "host_name", "task", "changed", "failed"]
-    )
+    cols = list(columns) if columns else ["counter", "event", "host_name", "task"]
     with report_errors(), open_context() as ctx:
         record = ctx.repo.request("GET", f"jobs/{job_id}/")
         job = Job.model_validate({**record, "kind": "job"})

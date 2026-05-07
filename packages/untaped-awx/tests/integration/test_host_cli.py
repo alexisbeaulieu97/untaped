@@ -196,3 +196,32 @@ def test_hosts_save_round_trips_to_yaml(fake_aap: Any) -> None:
     # Save dumps YAML — exact field ordering varies, but kind + name must appear.
     assert "kind: Host" in out
     assert "web-01" in out
+
+
+def test_hosts_list_with_names_resolves_inventory(fake_aap: Any) -> None:
+    """Host's ``inventory`` is in ``read_only_fields`` (FK identity comes
+    from ``metadata.parent``), so ``--with-names`` previously couldn't
+    flatten it. The ``flatten_fks`` columns= extension fixes that: the
+    inventory column now renders the name from ``summary_fields``."""
+    _seed_inventory_with_hosts(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["hosts", "list", "--with-names", "--columns", "inventory", "--format", "raw"],
+    )
+    assert result.exit_code == 0, result.output
+    rows = sorted(result.stdout.strip().splitlines())
+    # Both seeded hosts live in inventory id=20 named "prod" — flatten_fks
+    # turns the bare id into the human-readable name.
+    assert rows == ["prod", "prod"]
+
+
+def test_hosts_list_default_columns_no_dotted_summary_path(fake_aap: Any) -> None:
+    """Default-columns audit: Host's default projection is the consistent
+    ``name, inventory, enabled`` triple — no ``summary_fields.*`` paths.
+    Pinning this so a future spec edit doesn't silently regress to dotted
+    headers."""
+    from untaped_awx.infrastructure.specs import HOST_SPEC
+
+    assert HOST_SPEC.list_columns == ("name", "inventory", "enabled")
+    for col in HOST_SPEC.list_columns:
+        assert "." not in col, f"dotted path {col!r} leaked into default columns"

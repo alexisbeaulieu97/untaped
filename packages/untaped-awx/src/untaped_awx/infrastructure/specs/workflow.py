@@ -72,7 +72,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
             ),
         ),
     ),
-    list_columns=("name", "organization", "last_job_status"),
+    list_columns=("name", "last_job_status"),
     commands=("list", "get", "save", "apply", "launch"),
     fidelity="partial",
     fidelity_note="node graph + edges not roundtripped (v0 limitation)",
