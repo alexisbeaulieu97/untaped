@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,10 @@ class FakeAap:
         self.base_url = base_url
         self.api_prefix = api_prefix
         self.store: dict[str, dict[int, dict[str, Any]]] = defaultdict(dict)
+        # Many-to-many memberships keyed by (parent_path, parent_id, sub_path)
+        # → set of member ids. Populated by associate/disassociate POSTs to
+        # ``/<parent_path>/<id>/<sub_path>/`` (e.g. ``/groups/<id>/hosts/``).
+        self.memberships: dict[tuple[str, int, str], set[int]] = defaultdict(set)
         self._next_id = 1
         self.actions_called: list[tuple[str, int, str, dict[str, Any]]] = []
         # One-shot test override consumed by the very next ``_action`` call.
@@ -75,7 +79,7 @@ class FakeAap:
             if len(parts) == 2 and parts[1].isdigit():
                 return self._get(parts[0], int(parts[1]))
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
-                return self._stdout(parts[0], int(parts[1]))
+                return self._stdout(parts[0], int(parts[1]), params)
             if len(parts) == 3 and parts[1].isdigit():
                 return self._sub_list(parts[0], int(parts[1]), parts[2], params)
             if len(parts) == 4 and parts[1].isdigit() and parts[3].isdigit():
@@ -84,6 +88,17 @@ class FakeAap:
             if len(parts) == 1:
                 return self._create(parts[0], body)
             if len(parts) == 3 and parts[1].isdigit():
+                # AWX overloads ``POST /<parent>/<id>/<sub>/`` for two
+                # things: launching a job/action (body has no ``id``) and
+                # associating/disassociating a member (body has ``id``).
+                # Discriminate by body shape.
+                if "id" in body and isinstance(body["id"], int):
+                    return self._sub_post(parts[0], int(parts[1]), parts[2], body)
+                # Nested create on inventory: ``POST /inventories/<id>/hosts/``
+                # with a host body (no ``id`` field) creates a host and
+                # auto-fills ``inventory: <id>``.
+                if parts[0] == "inventories" and parts[2] in {"hosts", "groups"}:
+                    return self._nested_create(parts[2], int(parts[1]), body)
                 return self._action(parts[0], int(parts[1]), parts[2], body)
         elif method == "PATCH":
             if len(parts) == 2 and parts[1].isdigit():
@@ -119,12 +134,25 @@ class FakeAap:
             return _err(404, f"{api_path}/{id_}/ not found")
         return httpx.Response(200, json=record)
 
-    def _stdout(self, api_path: str, id_: int) -> httpx.Response:
-        """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``)."""
+    def _stdout(self, api_path: str, id_: int, params: dict[str, str]) -> httpx.Response:
+        """Plain-text stdout endpoint (e.g. ``jobs/<id>/stdout/``).
+
+        Honours AWX's ``start_line`` query param: lines numbered
+        ``[0, start_line)`` are skipped so callers can tail the log
+        incrementally without re-receiving everything they've already
+        seen.
+        """
         record = self.store.get(api_path, {}).get(id_)
         if record is None:
             return _err(404, f"{api_path}/{id_}/stdout/ not found")
         text = str(record.get("stdout", ""))
+        try:
+            start_line = int(params.get("start_line", "0"))
+        except ValueError:
+            start_line = 0
+        if start_line > 0:
+            lines = text.splitlines(keepends=True)
+            text = "".join(lines[start_line:])
         return httpx.Response(200, text=text, headers={"content-type": "text/plain"})
 
     def _create(self, api_path: str, body: dict[str, Any]) -> httpx.Response:
@@ -162,20 +190,21 @@ class FakeAap:
         self.next_action_stdout = None
         new_id = self._next_id
         self._next_id += 1
+        store_path = "jobs" if action == "launch" else f"{action}s"
+        name = f"{record.get('name', '')}-{action}"
         result = {
             "id": new_id,
             "type": "job" if action == "launch" else "project_update",
-            "name": f"{record.get('name', '')}-{action}",
+            "name": name,
             "status": status,
         }
+        # Always materialise a record so subsequent ``GET <store_path>/<id>/``
+        # round trips (e.g. ``WatchJob`` / ``PollingJobMonitor``) succeed.
+        # ``stdout`` is optional — only seeded when the test asks for it.
+        seed_fields: dict[str, Any] = {"id": new_id, "name": name, "status": status}
         if stdout is not None:
-            store_path = "jobs" if action == "launch" else f"{action}s"
-            self.seed(
-                store_path,
-                id=new_id,
-                status=status,
-                stdout=stdout,
-            )
+            seed_fields["stdout"] = stdout
+        self.seed(store_path, **seed_fields)
         return httpx.Response(200, json=result)
 
     def _sub_list(
@@ -185,12 +214,30 @@ class FakeAap:
         sub_path: str,
         params: dict[str, str],
     ) -> httpx.Response:
-        records = [
-            r
-            for r in self.store[sub_path].values()
-            if r.get("unified_job_template") == parent_id
-            or r.get(parent_path.rstrip("s")) == parent_id
-        ]
+        # AWX's nested URLs sometimes use a ``sub_path`` that differs from
+        # the actual collection name (``GET /groups/<id>/children/`` returns
+        # Group records, which live in ``self.store["groups"]``). Resolve
+        # the storage collection accordingly.
+        store_collection = _SUB_PATH_STORE.get((parent_path, sub_path), sub_path)
+        membership_key = (parent_path, parent_id, sub_path)
+        if membership_key in self.memberships:
+            members = self.memberships[membership_key]
+            records = [
+                self.store[store_collection][i]
+                for i in members
+                if i in self.store[store_collection]
+            ]
+        else:
+            # ``parent_path[:-1]`` strips exactly one trailing letter (so
+            # ``inventories`` → ``inventorie`` is avoided in favour of
+            # ``inventory``); ``rstrip`` would chew through every trailing
+            # ``s``. Fall through to AWX's snake_case singular FK column.
+            singular = _AWX_FK_SINGULAR.get(parent_path, parent_path[:-1])
+            records = [
+                r
+                for r in self.store[store_collection].values()
+                if r.get("unified_job_template") == parent_id or r.get(singular) == parent_id
+            ]
         records = self._apply_filters(records, params)
         return httpx.Response(
             200,
@@ -201,6 +248,46 @@ class FakeAap:
                 "results": records,
             },
         )
+
+    def _sub_post(
+        self,
+        parent_path: str,
+        parent_id: int,
+        sub_path: str,
+        body: dict[str, Any],
+    ) -> httpx.Response:
+        """Associate or disassociate a member via ``POST /<parent>/<id>/<sub>/``.
+
+        AWX uses the same URL for both: a body of ``{"id": N}`` associates,
+        ``{"id": N, "disassociate": true}`` removes. Returns 204 on success.
+        """
+        member_id = int(body["id"])
+        key = (parent_path, parent_id, sub_path)
+        if body.get("disassociate"):
+            self.memberships[key].discard(member_id)
+        else:
+            self.memberships[key].add(member_id)
+        return httpx.Response(204)
+
+    def _nested_create(
+        self,
+        sub_path: str,
+        parent_id: int,
+        body: dict[str, Any],
+    ) -> httpx.Response:
+        """Create a child resource scoped to its parent via the nested URL.
+
+        Used by the ``inventory_child`` apply strategy: ``POST
+        /inventories/<id>/hosts/`` (or ``/groups/``) creates a host or
+        group and auto-injects ``inventory: <parent_id>`` so subsequent
+        listings under the parent see it. Body must not already carry an
+        ``id``.
+        """
+        new_id = self._next_id
+        self._next_id += 1
+        record = {"id": new_id, "inventory": parent_id, **body}
+        self.store[sub_path][new_id] = record
+        return httpx.Response(201, json=record)
 
     def _sub_get(
         self,
@@ -217,7 +304,10 @@ class FakeAap:
     def _apply_filters(
         self, records: list[dict[str, Any]], params: dict[str, str]
     ) -> list[dict[str, Any]]:
-        return [r for r in records if _matches_all(r, params)]
+        return [r for r in records if self._matches_all(r, params)]
+
+    def _matches_all(self, record: dict[str, Any], params: dict[str, str]) -> bool:
+        return _matches_all(record, params, store=self.store)
 
     @staticmethod
     def _json_body(request: httpx.Request) -> dict[str, Any]:
@@ -229,9 +319,36 @@ class FakeAap:
             return {}
 
 
-def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
+# AWX's snake_case FK column on a child record is the singular form of
+# the parent collection — but English plural rules don't all collapse to
+# "drop the trailing s" (``inventories → inventory``, not ``inventorie``).
+_AWX_FK_SINGULAR: dict[str, str] = {
+    "inventories": "inventory",
+}
+
+# Inverse of ``_AWX_FK_SINGULAR``: given an FK column on a child record
+# (e.g. ``inventory``), return the parent collection name (``inventories``).
+_AWX_FK_PLURAL: dict[str, str] = {
+    "inventory": "inventories",
+}
+
+# AWX nested URLs whose ``sub_path`` differs from the actual collection
+# name. ``GET /groups/<id>/children/`` returns Group records (which live
+# under ``self.store["groups"]``), not records from a fictional
+# ``self.store["children"]``.
+_SUB_PATH_STORE: dict[tuple[str, str], str] = {
+    ("groups", "children"): "groups",
+}
+
+
+def _matches_all(
+    record: dict[str, Any],
+    params: dict[str, str],
+    *,
+    store: dict[str, dict[int, dict[str, Any]]] | None = None,
+) -> bool:
     for key, value in params.items():
-        if key in {"page", "page_size"}:
+        if key in {"page", "page_size", "order_by"}:
             continue
         if key == "search":
             term = value.lower()
@@ -242,6 +359,21 @@ def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
             continue
         if key.endswith("__name"):
             base = key[: -len("__name")]
+            segments = base.split("__")
+            # Walk the FK chain through the store so the fake mirrors
+            # AWX's Django ORM join semantics. This handles both the
+            # multi-segment case (``inventory__organization__name``) and
+            # the single-segment case (``inventory__name``) without
+            # requiring records to be denormalised — newly-created
+            # records via nested endpoints don't carry the ``<x>_name``
+            # shorthand that ``_apply_filters`` previously relied on.
+            if store is not None:
+                related = _walk_join(record, segments, store=store)
+                related_name = related.get("name") if related is not None else None
+                if str(related_name or "") == value:
+                    continue
+                # Fall through to the denormalised shorthand in case the
+                # caller seeded ``<x>_name`` directly without an FK chain.
             flat = f"{base}_name"
             if str(record.get(flat, "")) != value:
                 return False
@@ -251,9 +383,71 @@ def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
             if value.lower() not in str(record.get(base, "")).lower():
                 return False
             continue
+        if key.endswith("__in"):
+            base = key[: -len("__in")]
+            wanted = {v.strip() for v in value.split(",") if v.strip()}
+            if str(record.get(base, "")) not in wanted:
+                return False
+            continue
+        if key.endswith("__gt"):
+            base = key[: -len("__gt")]
+            if not _numeric_compare(record.get(base), value, lambda a, b: a > b):
+                return False
+            continue
+        if key.endswith("__gte"):
+            base = key[: -len("__gte")]
+            if not _numeric_compare(record.get(base), value, lambda a, b: a >= b):
+                return False
+            continue
         if str(record.get(key, "")) != value:
             return False
     return True
+
+
+def _walk_join(
+    record: dict[str, Any],
+    path: list[str],
+    *,
+    store: dict[str, dict[int, dict[str, Any]]],
+) -> dict[str, Any] | None:
+    """Walk an ORM-style FK chain (e.g. ``inventory__organization``).
+
+    At each segment, look up ``record[<segment>]`` (the numeric FK) in
+    ``store[<plural>]`` (with the small ``inventory → inventories``
+    irregular plural). Returns ``None`` if any link is missing. Mirrors
+    AWX's filter layer joining through related fields so a query like
+    ``?inventory__organization__name=Default`` actually matches a host
+    whose inventory's organization is ``Default``.
+    """
+    current = record
+    for segment in path:
+        fk_id = current.get(segment)
+        if not isinstance(fk_id, int):
+            return None
+        collection = _AWX_FK_PLURAL.get(segment, f"{segment}s")
+        related = store.get(collection, {}).get(fk_id)
+        if related is None:
+            return None
+        current = related
+    return current
+
+
+def _numeric_compare(
+    field_value: Any,
+    raw_param: str,
+    op: Callable[[int, int], bool],
+) -> bool:
+    """Compare numeric ``field_value`` to a string-typed query param.
+
+    AWX returns counters / ids as integers but URL params arrive as
+    strings; coerce both to int for the comparison and treat any
+    non-coercible value as not matching (mirrors AWX's behaviour for
+    type-mismatched filters).
+    """
+    try:
+        return op(int(field_value), int(raw_param))
+    except TypeError, ValueError:
+        return False
 
 
 def _err(status: int, detail: str) -> httpx.Response:

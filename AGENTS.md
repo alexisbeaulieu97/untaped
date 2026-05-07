@@ -299,7 +299,7 @@ The AWX bounded context follows the same DDD layout but builds a small
   wiring: `cli_name`, `api_path`, `list_columns`, `commands`.
   Per-kind specs live in
   `infrastructure/specs/{job_template,workflow,project,credential,
-  schedule,_support}.py` (each constructs an `AwxResourceSpec`) and
+  schedule,host,group,_support}.py` (each constructs an `AwxResourceSpec`) and
   are aggregated into `ALL_SPECS`. Spec fields stay honest with the
   CLI: a knob only lives in the spec if the factory actually wires it.
 - **Typed boundary** (`domain/payloads.py`): `ResourceClient` reads
@@ -313,8 +313,14 @@ The AWX bounded context follows the same DDD layout but builds a small
   preserve passes.
 - **kubectl-style envelope** for saved files (`domain/envelope.py`):
   `{kind, apiVersion, metadata: {name, organization, parent?}, spec}`.
-  FK references are by name (scoped to `metadata.organization`); the
-  polymorphic Schedule parent is a typed `IdentityRef`.
+  FK references are by name; the default scope is `metadata.organization`
+  but `_scope_for` (`application/apply_resource.py`) also recognises
+  `scope_field="inventory"` and reads `metadata.parent.name` when the
+  parent is an `Inventory` — that's how Host and Group reconcile
+  membership FKs (`Group.hosts`, `Group.children`) without an extra
+  metadata field. Schedule's polymorphic parent and the monomorphic
+  Host/Group inventory-parent both ride on the same
+  `metadata.parent: IdentityRef` slot.
 - **Apply is preview-by-default** (`application/apply_resource.py`).
   Writes require `--yes`. The diff is field-level; declared
   `secret_paths` (e.g. `inputs.*`, `webhook_key`) carrying
@@ -324,9 +330,29 @@ The AWX bounded context follows the same DDD layout but builds a small
 - **`ApplyStrategy`** is a Protocol in `application/ports.py`. The
   default strategy uses plain CRUD; `ScheduleApplyStrategy` POSTs
   against `<parent_path>/<parent_id>/schedules/` for create and
-  PATCHes the global `/schedules/<id>/` for update. Each spec names
+  PATCHes the global `/schedules/<id>/` for update.
+  `InventoryChildApplyStrategy` (used by `Host` and `Group`) follows
+  the same shape: creates POST `/inventories/<id>/<api_path>/` so the
+  `inventory` FK is implied by the URL and never carried in the body;
+  updates use the global `/<api_path>/<id>/` endpoint. Each spec names
   its strategy; `infrastructure/strategy_resolver.py` injects the
   concrete instance.
+- **Sub-endpoint multi-FK reconciliation**: an `FkRef(multi=True,
+  sub_endpoint="…")` (e.g. `Group.hosts`, `Group.children`) declares a
+  many-to-many edge that AWX manages via `POST
+  /<api_path>/<id>/<sub_endpoint>/` with `{"id": <member>}` to
+  associate or `{"id": <member>, "disassociate": true}` to remove.
+  `apply_resource._plan_sub_endpoints` diffs desired (from
+  `resource.spec[<field>]`) against existing (one GET per FK ref) and
+  appends `FieldChange` rows to the apply diff;
+  `_execute_sub_endpoints` issues the writes after the strategy's
+  create/update succeeds. Membership fields are *kept out of the
+  PATCH body* so AWX never sees `hosts: [...]` on a Group write —
+  body and membership writes are independent. An *absent* membership
+  field is left unmanaged; an *empty list* explicitly clears
+  membership. Sub-endpoint refs do not contribute apply-order edges,
+  so `Group.children → Group` self-references don't trip the cycle
+  detector.
 - **`Catalog`** is also a Protocol; `infrastructure/catalog.py`
   provides the static `AwxResourceCatalog` over `ALL_SPECS`. Use
   cases never import infrastructure — CLI wires concrete adapters at
@@ -349,22 +375,90 @@ The AWX bounded context follows the same DDD layout but builds a small
   scope)`. Per-record lookups still fall through on cache miss;
   prefetch failures are best-effort (the per-call path is the
   authoritative one).
-- **Restore fidelity tiers**: `full` (JT, Project, Schedule), `partial`
-  (WorkflowJobTemplate), `read_only` (Credential, Organization, Inventory,
-  CredentialType). Saves below `full` echo the tier to stderr and embed an
-  inline YAML comment.
+- **Restore fidelity tiers**: `full` (JT, Project, Schedule, Host, Group),
+  `partial` (WorkflowJobTemplate), `read_only` (Credential, Organization,
+  Inventory, CredentialType). Saves below `full` echo the tier to stderr
+  and embed an inline YAML comment.
 - **Apply ordering** for multi-doc files / directories: derived
   topologically from each spec's `fk_refs`
   (`application/apply_file._topological_sort`), with `ALL_SPECS` in
   `infrastructure/specs/__init__.py` as the tie-breaker — currently
   yielding `Organization → CredentialType → Credential → Project →
-  Inventory → JobTemplate → WorkflowJobTemplate → Schedule`. The
+  Inventory → Host → Group → JobTemplate → WorkflowJobTemplate →
+  Schedule`. Self-referencing sub-endpoint multi-FKs (e.g.
+  `Group.children → Group`) are excluded from the dependency graph,
+  so re-ordering `web-servers` and `app-tier` Group docs in the same
+  file is safe — membership is reconciled after each create. The
   catalog-only stubs `ExecutionEnvironment`, `Label`, and
-  `InstanceGroup` sit between `Inventory` and `JobTemplate` in
+  `InstanceGroup` sit between `Group` and `JobTemplate` in
   `ALL_SPECS` for `FkResolver` lookups but are excluded from
   apply/save flows by their `commands=()` setting.
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)
   for end-to-end CLI flows.
+
+### `untaped awx jobs` — execution-record inspection
+
+Read-only sub-app over AWX's execution endpoints (`/jobs/`,
+`/jobs/<id>/stdout/`, `/jobs/<id>/job_events/`). Five commands:
+
+- `jobs list [--status … --filter K=V --limit N]` — newest-first job
+  index. Default columns: `id,name,status`.
+- `jobs get <id>` — single job record (full YAML/JSON payload).
+- `jobs events <id> [--filter K=V --follow --from-counter N]` —
+  structured per-task events. `--filter` reaches AWX server-side
+  (e.g. `event=runner_on_failed`, `host=web-01`); `--follow` polls
+  until terminal. Default columns: `counter,event,host_name,task`.
+- `jobs logs <id> [--follow|-f --tail N --grep PATTERN -i]` —
+  plain stdout. `--follow` polls `?start_line=N` until terminal;
+  `--grep` is client-side regex; `--tail N` keeps only the last N
+  historical lines before any follow phase.
+- `jobs wait <id> [--timeout N]` — status-only block (kept for
+  scripts that already use it).
+
+Polling lives in **`PollingJobMonitor`**
+(`infrastructure/job_monitor.py`), the concrete `JobMonitor` adapter:
+`fetch` (terminal status), `fetch_stdout` (one-shot text drain),
+`stream_stdout` (poll-until-terminal text), `stream_events` (paginated,
+poll-until-terminal). The 2.0s cadence matches `WatchJob`. AWX has no
+SSE/websocket in v2 — "live" is always polling.
+
+`launch --track / -t` on every launch-capable kind streams events to
+**stderr** (rendered by `cli/_event_render.render_event` as
+`PLAY [..]` / `TASK [..]` / two-space indented `ok|changed|failed:
+<host>` lines, no TUI / no ANSI), then **propagates job status into the
+exit code**:
+exit 0 only when every tracked job ends `successful`; otherwise exit
+1. `--wait` keeps its old quiet-block semantics; `--monitor` (the v0
+silent alias for `--wait`) is removed.
+
+### `untaped awx unified-templates` — polymorphic templates browser
+
+Read-only sub-app over AWX's `/unified_job_templates/` virtual
+collection, which aggregates `JobTemplate`, `WorkflowJobTemplate`,
+`Project`, and `InventorySource` rows behind a single `type`
+discriminator. Two commands:
+
+- `unified-templates list [--type TYPE --filter K=V --limit N]` —
+  alphabetical (`order_by=name`) so the four kinds interleave
+  predictably. `--type` is sugar for `--filter type=…`; passing both
+  with conflicting values is rejected. Default columns: `id, name,
+  type` — strict-minimal (identity + the polymorphic discriminator).
+  Health fields differ across kinds (JT/WJT use `last_job_status`,
+  Project / InventorySource use `status`) so any one of them is empty
+  for half the rows; users opt in via `--columns`.
+- `unified-templates get <id> [<id>…] [--stdin]` — **id-only** by
+  design (names are not unique across kinds). Fast-fails on a
+  non-decimal identifier with a message pointing at the per-kind
+  sub-apps for name lookup. Multi-id positional + `--stdin` keeps the
+  `list -f raw -c id | fzf | get --stdin` pipe shape consistent with
+  every other multi-id `get`.
+
+Implemented in `cli/unified_templates_commands.py` (sibling of
+`test_commands.py`), **not** via `make_resource_app` — the factory
+bakes in CRUD assumptions UJT can't satisfy. No `ALL_SPECS` entry,
+no catalog registration. Launch dispatch is intentionally out of
+scope: the per-kind sub-apps (`job-templates launch`,
+`projects update`, …) already cover that path.
 
 ### `untaped awx test` — declarative AWX test suites
 

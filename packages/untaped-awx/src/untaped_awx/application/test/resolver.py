@@ -196,6 +196,9 @@ class ResolveCasePayload:
     def _scope_for(self, ref: FkRef) -> dict[str, str] | None:
         if ref.scope_field == "organization" and self._default_org is not None:
             return {"organization": self._default_org}
+        # No inventory scope here: the test runner only resolves launch
+        # payload FKs (org-scoped), not inventory-scoped FKs that only
+        # appear on Host/Group resource fields.
         return None
 
 

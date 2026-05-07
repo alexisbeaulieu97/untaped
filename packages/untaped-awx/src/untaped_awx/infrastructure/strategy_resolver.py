@@ -6,6 +6,7 @@ from untaped_awx.application.ports import ApplyStrategy
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.strategies import (
     DefaultApplyStrategy,
+    InventoryChildApplyStrategy,
     ScheduleApplyStrategy,
 )
 
@@ -15,6 +16,7 @@ class StaticStrategyResolver:
         self._registry: dict[str, ApplyStrategy] = {
             "default": DefaultApplyStrategy(),
             "schedule": ScheduleApplyStrategy(),
+            "inventory_child": InventoryChildApplyStrategy(),
         }
 
     def get(self, name: str) -> ApplyStrategy:

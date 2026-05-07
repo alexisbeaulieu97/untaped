@@ -134,6 +134,22 @@ class ResourceRepository:
                 method, path, params=params, json=json
             )
 
+    def paginate_path(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        with map_awx_errors():
+            yield from paginate(
+                self._client,
+                path,
+                params=params,
+                page_size=self._page_size,
+                limit=limit,
+            )
+
     def request_text(
         self,
         method: str,
@@ -144,3 +160,36 @@ class ResourceRepository:
         """Ad-hoc URL returning a text body (e.g. job stdout)."""
         with map_awx_errors():
             return self._client.request_text(method, path, params=params)
+
+    def sub_endpoint_request(
+        self,
+        spec: AwxResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        method: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        path = f"{spec.api_path}/{record_id}/{sub_endpoint}/"
+        with map_awx_errors():
+            return self._client.request_json(  # type: ignore[no-any-return]
+                method, path, params=params, json=json
+            )
+
+    def paginate_sub_endpoint(
+        self,
+        spec: AwxResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        path = f"{spec.api_path}/{record_id}/{sub_endpoint}/"
+        with map_awx_errors():
+            yield from paginate(
+                self._client,
+                path,
+                params=params,
+                page_size=self._page_size,
+            )
