@@ -98,9 +98,12 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             records = list(
                 ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
             )
-        if with_names:
-            records = flatten_fks(records, spec)
         cols = list(columns) if columns else list(spec.list_columns)
+        if with_names:
+            # Pass ``cols`` so display-only FK columns (e.g. Host's
+            # ``inventory``, which lives in ``read_only_fields`` rather
+            # than ``fk_refs``) get flattened from ``summary_fields``.
+            records = flatten_fks(records, spec, columns=cols)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
 
 
@@ -152,9 +155,11 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
-            if with_names:
-                records = flatten_fks(records, spec)
             cols = list(columns) if columns else _default_columns(spec, fmt)
+            if with_names:
+                # ``cols`` may be ``None`` for non-table formats — that's
+                # fine; ``flatten_fks`` then only flattens declared fk_refs.
+                records = flatten_fks(records, spec, columns=cols)
             typer.echo(format_output(records, fmt=fmt, columns=cols))
         if any_failed:
             raise typer.Exit(code=1)

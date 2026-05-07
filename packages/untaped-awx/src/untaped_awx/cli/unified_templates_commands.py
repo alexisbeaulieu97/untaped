@@ -48,18 +48,13 @@ def _callback() -> None:
     """Browse Unified Job Templates."""
 
 
-_DEFAULT_LIST_COLUMNS = [
-    "id",
-    "type",
-    "name",
-    "summary_fields.organization.name",
-    # JT/WJT carry ``last_job_status``; Project / InventorySource carry
-    # ``status``. Keep both in the default projection — ``format_output``
-    # emits empty cells for missing fields so the union is harmless.
-    "last_job_status",
-    "status",
-    "last_job_run",
-]
+_DEFAULT_LIST_COLUMNS = ["id", "type", "name"]
+"""Strict-minimal projection: identity + the polymorphic discriminator.
+
+Kept tight on purpose — the four kinds carry different health fields
+(JT/WJT use ``last_job_status``, Project/InventorySource use ``status``)
+so any health column is empty for half the rows. Users who want health
+or organization context project them explicitly via ``--columns``."""
 
 
 @app.command("list")

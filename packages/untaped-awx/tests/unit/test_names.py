@@ -164,3 +164,68 @@ def test_returns_a_top_level_copy() -> None:
     out = flatten_fks([row], spec)
     assert out[0] is not row
     assert row["project"] == 10  # original untouched
+
+
+# --- columns= extension: flatten FK-shaped fields outside spec.fk_refs -----
+
+
+def test_extra_column_outside_fk_refs_flattens_via_summary_fields() -> None:
+    """Host's ``inventory`` lives in ``read_only_fields`` because the FK
+    identity comes from ``metadata.parent``. Even so, AWX populates
+    ``summary_fields.inventory.name`` on every host record, and
+    ``--with-names`` should resolve it once the caller passes the column
+    list explicitly. This is the canonical case for the new ``columns=``
+    parameter."""
+    spec = _spec()  # no fk_refs at all
+    rows = [
+        {
+            "name": "web-01",
+            "inventory": 20,
+            "summary_fields": {"inventory": {"id": 20, "name": "prod"}},
+        }
+    ]
+    out = flatten_fks(rows, spec, columns=["inventory"])
+    assert out[0]["inventory"] == "prod"
+
+
+def test_extra_column_without_summary_entry_keeps_id() -> None:
+    """Degraded server response: the column is requested but
+    ``summary_fields`` doesn't carry the entry. The id round-trips
+    untouched so the user can still see what's there."""
+    spec = _spec()
+    rows = [{"name": "web-01", "inventory": 20, "summary_fields": {}}]
+    out = flatten_fks(rows, spec, columns=["inventory"])
+    assert out[0]["inventory"] == 20
+
+
+def test_dotted_path_columns_are_left_alone() -> None:
+    """Dotted columns like ``summary_fields.inventory.name`` already
+    resolve to the rendered name via ``format_output``'s ``_resolve_path``.
+    flatten_fks should not double-process them."""
+    spec = _spec()
+    rows = [
+        {
+            "name": "web-01",
+            "inventory": 20,
+            "summary_fields": {"inventory": {"id": 20, "name": "prod"}},
+        }
+    ]
+    out = flatten_fks(rows, spec, columns=["summary_fields.inventory.name"])
+    # ``inventory`` itself is untouched — no fk_refs entry, no extra-cols
+    # match (dotted columns are skipped).
+    assert out[0]["inventory"] == 20
+
+
+def test_columns_none_keeps_legacy_behaviour() -> None:
+    """Without ``columns=``, only declared fk_refs flatten. Host's
+    ``inventory`` (no fk_refs entry) is left as the FK id."""
+    spec = _spec()
+    rows = [
+        {
+            "name": "web-01",
+            "inventory": 20,
+            "summary_fields": {"inventory": {"id": 20, "name": "prod"}},
+        }
+    ]
+    out = flatten_fks(rows, spec)
+    assert out[0]["inventory"] == 20
