@@ -158,7 +158,21 @@ def get_command(
                 typer.echo(f"error: {raw}: not found", err=True)
                 any_failed = True
     if records:
-        cols = list(columns) if columns else None
+        if columns:
+            cols: list[str] | None = list(columns)
+        elif fmt == "table":
+            # Without a projection, table mode would render every AWX
+            # field as a column (50+ keys per record) and Rich crushes
+            # them all unreadably at the fixed 120-char render width.
+            # Reuse the list view's default columns — same trick the
+            # resource-app factory's ``_default_columns`` uses for the
+            # generic per-kind ``get`` (see ``cli/resource_commands.py``).
+            # ``yaml`` / ``json`` / ``raw`` still get the full record so
+            # ``get … -f yaml`` remains the canonical "show me everything"
+            # view.
+            cols = list(_DEFAULT_LIST_COLUMNS)
+        else:
+            cols = None
         typer.echo(format_output(records, fmt=fmt, columns=cols))
     if any_failed:
         raise typer.Exit(code=1)
