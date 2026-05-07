@@ -61,8 +61,16 @@ class AwxClient:
 
     def request_text(self, method: str, path: str, **kwargs: Any) -> str:
         """Generic verb under ``<api_prefix>``; returns the raw response body
-        as text (no JSON decode). Use for endpoints like ``jobs/<id>/stdout/``."""
-        response = self._http.request(method, self._url(path), **kwargs)
+        as text (no JSON decode). Use for endpoints like ``jobs/<id>/stdout/``.
+
+        The constructor pins ``Accept: application/json`` on the shared
+        httpx client so JSON endpoints negotiate cleanly. Text endpoints
+        like ``jobs/<id>/stdout/`` return ``text/plain`` and reject the
+        JSON Accept with HTTP 406 — override per-call here so callers
+        don't have to know. Any caller-supplied ``headers`` still win.
+        """
+        headers = {"Accept": "text/plain", **(kwargs.pop("headers", None) or {})}
+        response = self._http.request(method, self._url(path), headers=headers, **kwargs)
         return response.text
 
     def get_absolute_json(self, absolute_path: str, **kwargs: Any) -> Any:

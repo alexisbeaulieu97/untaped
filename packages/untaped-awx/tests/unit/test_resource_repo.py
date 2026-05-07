@@ -121,3 +121,26 @@ def test_find_by_identity_no_scope(awx_config: AwxConfig) -> None:
             record = repo.find_by_identity(JOB_TEMPLATE_SPEC, name="deploy")
     assert record is not None
     assert record.model_dump() == {"id": 7, "name": "deploy"}
+
+
+def test_request_text_sends_text_plain_accept(awx_config: AwxConfig) -> None:
+    """``jobs/<id>/stdout/`` returns ``text/plain``; AWX answers 406 when
+    the Accept header pins ``application/json``. ``request_text`` must
+    override Accept so callers don't have to know — otherwise every
+    ``awx jobs logs`` invocation fails."""
+    captured: list[httpx.Request] = []
+
+    def _record(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        # AWX-realistic behaviour: 406 if Accept doesn't allow text/*.
+        accept = request.headers.get("accept", "")
+        if "text/plain" not in accept and "*/*" not in accept:
+            return httpx.Response(406, text="Not Acceptable")
+        return httpx.Response(200, text="job log line\n", headers={"content-type": "text/plain"})
+
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/jobs/42/stdout/").mock(side_effect=_record)
+        with AwxClient(awx_config) as awx:
+            text = awx.request_text("GET", "jobs/42/stdout/", params={"format": "txt"})
+    assert text == "job log line\n"
+    assert captured[0].headers["accept"] == "text/plain"
