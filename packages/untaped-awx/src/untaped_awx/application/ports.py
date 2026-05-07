@@ -122,6 +122,26 @@ class ResourceClient(Protocol):
         """For non-JSON endpoints (e.g. ``jobs/<id>/stdout/?format=txt``)."""
         ...
 
+    def sub_endpoint_request(
+        self,
+        spec: AwxResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        method: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Hit a many-to-many sub-endpoint of a resource.
+
+        Constructed URL: ``<api_path>/<record_id>/<sub_endpoint>/``.
+        Hides the ``api_path`` join from application code so the layering
+        rule (``application/`` mustn't read AwxResourceSpec-only fields)
+        stays intact while still letting use cases reconcile membership
+        generically across kinds.
+        """
+        ...
+
 
 class FkResolver(Protocol):
     """Resolves between AWX numeric IDs and human names.

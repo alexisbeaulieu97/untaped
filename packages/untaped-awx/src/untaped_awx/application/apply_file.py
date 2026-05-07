@@ -125,10 +125,17 @@ def _topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Res
     # Build a kind-level dependency graph restricted to kinds present in
     # the input. Cross-doc dependencies on kinds NOT present mean the
     # parent already exists in AWX — those don't constrain ordering.
+    # Sub-endpoint multi-FKs are reconciled *after* the resource is
+    # written (associate/disassociate POSTs against ``/<id>/<sub>/``), so
+    # they don't constrain create order — and a self-reference like
+    # ``Group.children → Group`` would otherwise spuriously trip the
+    # cycle detector.
     edges: dict[str, set[str]] = defaultdict(set)
     for kind, spec in specs.items():
         for ref in spec.fk_refs:
-            if ref.kind is not None and ref.kind in kinds_in_docs:
+            if ref.multi and ref.sub_endpoint is not None:
+                continue
+            if ref.kind is not None and ref.kind in kinds_in_docs and ref.kind != kind:
                 edges[kind].add(ref.kind)
 
     # Polymorphic refs: read the referenced kind from each doc's data.

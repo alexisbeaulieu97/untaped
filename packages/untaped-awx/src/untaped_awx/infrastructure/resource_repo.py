@@ -144,3 +144,19 @@ class ResourceRepository:
         """Ad-hoc URL returning a text body (e.g. job stdout)."""
         with map_awx_errors():
             return self._client.request_text(method, path, params=params)
+
+    def sub_endpoint_request(
+        self,
+        spec: AwxResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        method: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        path = f"{spec.api_path}/{record_id}/{sub_endpoint}/"
+        with map_awx_errors():
+            return self._client.request_json(  # type: ignore[no-any-return]
+                method, path, params=params, json=json
+            )

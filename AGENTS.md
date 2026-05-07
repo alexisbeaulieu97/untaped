@@ -313,8 +313,14 @@ The AWX bounded context follows the same DDD layout but builds a small
   preserve passes.
 - **kubectl-style envelope** for saved files (`domain/envelope.py`):
   `{kind, apiVersion, metadata: {name, organization, parent?}, spec}`.
-  FK references are by name (scoped to `metadata.organization`); the
-  polymorphic Schedule parent is a typed `IdentityRef`.
+  FK references are by name; the default scope is `metadata.organization`
+  but `_scope_for` (`application/apply_resource.py`) also recognises
+  `scope_field="inventory"` and reads `metadata.parent.name` when the
+  parent is an `Inventory` — that's how Host and Group reconcile
+  membership FKs (`Group.hosts`, `Group.children`) without an extra
+  metadata field. Schedule's polymorphic parent and the monomorphic
+  Host/Group inventory-parent both ride on the same
+  `metadata.parent: IdentityRef` slot.
 - **Apply is preview-by-default** (`application/apply_resource.py`).
   Writes require `--yes`. The diff is field-level; declared
   `secret_paths` (e.g. `inputs.*`, `webhook_key`) carrying
@@ -324,9 +330,29 @@ The AWX bounded context follows the same DDD layout but builds a small
 - **`ApplyStrategy`** is a Protocol in `application/ports.py`. The
   default strategy uses plain CRUD; `ScheduleApplyStrategy` POSTs
   against `<parent_path>/<parent_id>/schedules/` for create and
-  PATCHes the global `/schedules/<id>/` for update. Each spec names
+  PATCHes the global `/schedules/<id>/` for update.
+  `InventoryChildApplyStrategy` (used by `Host` and `Group`) follows
+  the same shape: creates POST `/inventories/<id>/<api_path>/` so the
+  `inventory` FK is implied by the URL and never carried in the body;
+  updates use the global `/<api_path>/<id>/` endpoint. Each spec names
   its strategy; `infrastructure/strategy_resolver.py` injects the
   concrete instance.
+- **Sub-endpoint multi-FK reconciliation**: an `FkRef(multi=True,
+  sub_endpoint="…")` (e.g. `Group.hosts`, `Group.children`) declares a
+  many-to-many edge that AWX manages via `POST
+  /<api_path>/<id>/<sub_endpoint>/` with `{"id": <member>}` to
+  associate or `{"id": <member>, "disassociate": true}` to remove.
+  `apply_resource._plan_sub_endpoints` diffs desired (from
+  `resource.spec[<field>]`) against existing (one GET per FK ref) and
+  appends `FieldChange` rows to the apply diff;
+  `_execute_sub_endpoints` issues the writes after the strategy's
+  create/update succeeds. Membership fields are *kept out of the
+  PATCH body* so AWX never sees `hosts: [...]` on a Group write —
+  body and membership writes are independent. An *absent* membership
+  field is left unmanaged; an *empty list* explicitly clears
+  membership. Sub-endpoint refs do not contribute apply-order edges,
+  so `Group.children → Group` self-references don't trip the cycle
+  detector.
 - **`Catalog`** is also a Protocol; `infrastructure/catalog.py`
   provides the static `AwxResourceCatalog` over `ALL_SPECS`. Use
   cases never import infrastructure — CLI wires concrete adapters at
@@ -349,18 +375,22 @@ The AWX bounded context follows the same DDD layout but builds a small
   scope)`. Per-record lookups still fall through on cache miss;
   prefetch failures are best-effort (the per-call path is the
   authoritative one).
-- **Restore fidelity tiers**: `full` (JT, Project, Schedule), `partial`
-  (WorkflowJobTemplate), `read_only` (Credential, Organization, Inventory,
-  CredentialType). Saves below `full` echo the tier to stderr and embed an
-  inline YAML comment.
+- **Restore fidelity tiers**: `full` (JT, Project, Schedule, Host, Group),
+  `partial` (WorkflowJobTemplate), `read_only` (Credential, Organization,
+  Inventory, CredentialType). Saves below `full` echo the tier to stderr
+  and embed an inline YAML comment.
 - **Apply ordering** for multi-doc files / directories: derived
   topologically from each spec's `fk_refs`
   (`application/apply_file._topological_sort`), with `ALL_SPECS` in
   `infrastructure/specs/__init__.py` as the tie-breaker — currently
   yielding `Organization → CredentialType → Credential → Project →
-  Inventory → JobTemplate → WorkflowJobTemplate → Schedule`. The
+  Inventory → Host → Group → JobTemplate → WorkflowJobTemplate →
+  Schedule`. Self-referencing sub-endpoint multi-FKs (e.g.
+  `Group.children → Group`) are excluded from the dependency graph,
+  so re-ordering `web-servers` and `app-tier` Group docs in the same
+  file is safe — membership is reconciled after each create. The
   catalog-only stubs `ExecutionEnvironment`, `Label`, and
-  `InstanceGroup` sit between `Inventory` and `JobTemplate` in
+  `InstanceGroup` sit between `Group` and `JobTemplate` in
   `ALL_SPECS` for `FkResolver` lookups but are excluded from
   apply/save flows by their `commands=()` setting.
 - **Tests** use the in-memory `FakeAap` fixture (`tests/conftest.py`)

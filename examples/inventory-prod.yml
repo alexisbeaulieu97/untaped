@@ -1,0 +1,99 @@
+# Authors a small static inventory: two web hosts, one api host, organised
+# into a `web-servers` group plus an `app-tier` parent that contains both.
+#
+# Apply preview:
+#   uv run untaped awx apply --file examples/inventory-prod.yml
+# Actually write:
+#   uv run untaped awx apply --file examples/inventory-prod.yml --yes
+#
+# The Inventory itself must already exist in AWX (Inventory CRUD is out of
+# v0 scope). The hosts and groups below reference it by name via the
+# `metadata.parent` IdentityRef.
+
+---
+kind: Host
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: web-01
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: Frontend web server
+  enabled: true
+  variables:
+    ansible_user: ec2-user
+---
+kind: Host
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: web-02
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: Frontend web server (replica)
+  enabled: true
+  variables:
+    ansible_user: ec2-user
+---
+kind: Host
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: api-01
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: API service host
+  enabled: true
+  variables:
+    ansible_user: ec2-user
+---
+kind: Group
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: web-servers
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: Web tier
+  variables:
+    tier: web
+  hosts:
+    - web-01
+    - web-02
+---
+kind: Group
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: api-servers
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: API tier
+  variables:
+    tier: api
+  hosts:
+    - api-01
+---
+kind: Group
+apiVersion: untaped.dev/awx/v1
+metadata:
+  name: app-tier
+  parent:
+    kind: Inventory
+    name: prod
+    organization: Default
+spec:
+  description: Roll-up of every app group
+  children:
+    - web-servers
+    - api-servers

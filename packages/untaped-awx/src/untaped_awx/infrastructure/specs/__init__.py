@@ -17,6 +17,8 @@ from untaped_awx.infrastructure.specs._support import (
     ORGANIZATION_SPEC,
 )
 from untaped_awx.infrastructure.specs.credential import CREDENTIAL_SPEC
+from untaped_awx.infrastructure.specs.group import GROUP_SPEC
+from untaped_awx.infrastructure.specs.host import HOST_SPEC
 from untaped_awx.infrastructure.specs.job_template import JOB_TEMPLATE_SPEC
 from untaped_awx.infrastructure.specs.project import PROJECT_SPEC
 from untaped_awx.infrastructure.specs.schedule import SCHEDULE_SPEC
@@ -28,6 +30,8 @@ ALL_SPECS: tuple[AwxResourceSpec, ...] = (
     CREDENTIAL_SPEC,
     PROJECT_SPEC,
     INVENTORY_SPEC,
+    HOST_SPEC,
+    GROUP_SPEC,
     EXECUTION_ENVIRONMENT_SPEC,
     LABEL_SPEC,
     INSTANCE_GROUP_SPEC,
@@ -44,6 +48,8 @@ __all__ = [
     "CREDENTIAL_SPEC",
     "CREDENTIAL_TYPE_SPEC",
     "EXECUTION_ENVIRONMENT_SPEC",
+    "GROUP_SPEC",
+    "HOST_SPEC",
     "INSTANCE_GROUP_SPEC",
     "INVENTORY_SPEC",
     "JOB_TEMPLATE_SPEC",
