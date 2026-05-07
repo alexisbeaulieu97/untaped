@@ -56,25 +56,49 @@ class SyncWorkspace:
         *,
         only: list[str] | None = None,
         prune: bool = False,
+        strict_only: bool = True,
     ) -> list[SyncOutcome]:
+        """Reconcile ``workspace`` with its manifest.
+
+        ``strict_only`` controls the failure mode when ``only`` contains
+        identifiers no repo matches:
+
+        - ``True`` (default, single-workspace mode) — raise
+          :class:`WorkspaceError` so a typo on ``sync --name x --only typo``
+          is loud.
+        - ``False`` (CLI's ``--all`` path) — silently filter; if zero
+          repos match, return a single ``"no repos matched"`` skip
+          outcome instead of raising. Lets ``sync --all --only repo-x``
+          traverse every workspace, syncing the ones that have ``repo-x``
+          and skipping the ones that don't.
+        """
         manifest = self._manifests.read(workspace.path)
-        outcomes = [
-            self._sync_repo(workspace, manifest, repo)
-            for repo in self._select_repos(manifest, only)
-        ]
+        repos = self._select_repos(manifest, only, strict=strict_only)
+        if not repos and only:
+            return [
+                SyncOutcome(
+                    workspace=workspace.name,
+                    repo="<all>",
+                    action="skip",
+                    detail=f"no repos matched --only {sorted(only)}",
+                )
+            ]
+        outcomes = [self._sync_repo(workspace, manifest, repo) for repo in repos]
         if prune:
             outcomes.extend(self._prune_orphans(workspace, manifest))
         return outcomes
 
     # internal -----------------------------------------------------------
 
-    def _select_repos(self, manifest: WorkspaceManifest, only: list[str] | None) -> list[Repo]:
+    def _select_repos(
+        self, manifest: WorkspaceManifest, only: list[str] | None, *, strict: bool
+    ) -> list[Repo]:
         if not only:
             return list(manifest.repos)
         wanted = set(only)
         known = {r.name for r in manifest.repos} | {r.url for r in manifest.repos}
         unmatched = sorted(wanted - known)
-        if unmatched:
+        if unmatched and strict:
             raise WorkspaceError(f"unknown repo identifier(s) for --only: {', '.join(unmatched)}")
         return [r for r in manifest.repos if (r.name in wanted) or (r.url in wanted)]
 

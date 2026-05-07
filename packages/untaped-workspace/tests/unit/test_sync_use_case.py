@@ -229,6 +229,61 @@ def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
     assert git.events == []
 
 
+def test_only_unmatched_under_strict_false_yields_skip_row(tmp_path: Path) -> None:
+    """Under ``strict_only=False`` (the CLI's ``--all`` path), a workspace
+    whose manifest contains none of the requested repos returns a single
+    'no repos matched' skip outcome instead of raising. This lets
+    ``sync --all --only repo-x`` traverse every workspace, syncing the
+    ones that have ``repo-x`` and skipping the ones that don't."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(
+            repos=[Repo(url="https://x/svc-a.git"), Repo(url="https://x/svc-b.git")],
+        ),
+    )
+    git = _StubGit()
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+        workspace, only=["nonexistent"], strict_only=False
+    )
+    assert len(outcomes) == 1
+    assert outcomes[0].action == "skip"
+    assert "no repos matched" in outcomes[0].detail
+    assert "nonexistent" in outcomes[0].detail
+    # No git work should have happened.
+    assert git.events == []
+
+
+def test_only_partial_match_under_strict_false_syncs_matches(tmp_path: Path) -> None:
+    """``strict_only=False`` filters quietly — known repos still sync,
+    unknown identifiers don't poison the run."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(
+            repos=[Repo(url="https://x/svc-a.git"), Repo(url="https://x/svc-b.git")],
+        ),
+    )
+    git = _StubGit()
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+        workspace, only=["svc-a", "nonexistent"], strict_only=False
+    )
+    # svc-a synced; nonexistent silently dropped (no skip row when at least
+    # one match is found — single-workspace strictness only fires on full miss).
+    assert [o.repo for o in outcomes] == ["svc-a"]
+
+
+def test_only_unknown_default_strict_still_raises(tmp_path: Path) -> None:
+    """``strict_only=True`` is the default and preserves the
+    single-workspace strictness — typos should still fail loudly when
+    the user invoked ``sync --name <ws> --only typo``."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    git = _StubGit()
+    with pytest.raises(WorkspaceError, match="unknown repo identifier"):
+        SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace, only=["typo"])
+
+
 def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
     workspace = _seed_workspace(
         tmp_path,
