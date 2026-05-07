@@ -48,7 +48,7 @@ def _callback() -> None:
     """Browse Unified Job Templates."""
 
 
-_DEFAULT_LIST_COLUMNS = ["id", "type", "name"]
+_DEFAULT_LIST_COLUMNS = ["id", "name", "type"]
 """Strict-minimal projection: identity + the polymorphic discriminator.
 
 Kept tight on purpose — the four kinds carry different health fields

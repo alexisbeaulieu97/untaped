@@ -49,7 +49,7 @@ PROJECT_SPEC = AwxResourceSpec(
         FkRef(field="credential", kind="Credential", scope_field="organization"),
     ),
     actions=(ActionSpec(name="update", path="update", returns="job"),),
-    list_columns=("name", "scm_type", "status"),
+    list_columns=("id", "name", "status"),
     commands=("list", "get", "save", "apply", "update"),
     fidelity="full",
 )
