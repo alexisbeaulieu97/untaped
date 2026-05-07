@@ -16,6 +16,7 @@ trim the historical block, not the live tail.
 from __future__ import annotations
 
 import re
+from collections import deque
 from collections.abc import Iterable, Iterator
 from re import Pattern
 
@@ -49,6 +50,7 @@ class TailJobLogs:
     ) -> Iterator[str]:
         existing = self._monitor.fetch_stdout(job, start_line=0)
         cursor = len(existing)
+        historical: Iterable[str]
         if tail is None:
             historical = existing
         elif tail <= 0:
@@ -56,8 +58,15 @@ class TailJobLogs:
             # from negative indexing where ``existing[-0:]`` would return
             # the whole list.
             historical = []
+            existing = []
         else:
-            historical = existing[-tail:]
+            # Bounded retention: ``deque(maxlen=N)`` keeps only the last
+            # N references. After construction we drop ``existing`` so
+            # the full log list can be GC'd during the filter loop —
+            # important for jobs with very large stdout where ``tail``
+            # is small (e.g. ``--tail 50`` on a 100k-line log).
+            historical = deque(existing, maxlen=tail)
+            existing = []
         for line in historical:
             if _matches(line, pattern):
                 yield line
