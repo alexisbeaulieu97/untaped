@@ -119,7 +119,7 @@ def test_stream_events_yields_until_terminal_and_advances_counter() -> None:
     }
     page_2 = {
         "results": [
-            {"counter": 3, "event": "runner_on_ok", "host": "web-01"},
+            {"counter": 3, "event": "runner_on_ok", "host": 5, "host_name": "web-01"},
         ],
         "next": None,
     }

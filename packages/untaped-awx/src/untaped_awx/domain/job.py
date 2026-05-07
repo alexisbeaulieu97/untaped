@@ -53,7 +53,12 @@ class JobEvent(BaseModel):
     """AWX event-name discriminator (e.g. ``playbook_on_task_start``)."""
 
     task: str | None = None
-    host: str | None = None
+    host: int | None = None
+    """FK id of the target host. Use ``host_name`` for the rendered name —
+    AWX denormalises it because the underlying ``Host`` record can be
+    deleted while events that reference it linger."""
+
+    host_name: str | None = None
     role: str | None = None
     play: str | None = None
     changed: bool = False

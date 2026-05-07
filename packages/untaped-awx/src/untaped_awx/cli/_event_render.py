@@ -36,6 +36,21 @@ _RUNNER_RESULTS: dict[str, str] = {
 }
 
 
+def _host_label(ev: JobEvent) -> str:
+    """Prefer the denormalised ``host_name``; fall back to the FK id.
+
+    AWX's ``host`` field on a JobEvent is a foreign key (an integer or
+    ``null``). The rendered name lives on ``host_name`` because the
+    referenced :class:`Host` record can be deleted while events that
+    pointed at it remain in the audit log.
+    """
+    if ev.host_name:
+        return ev.host_name
+    if ev.host is not None:
+        return str(ev.host)
+    return "?"
+
+
 def render_event(ev: JobEvent) -> str:
     """Return one rendered line for ``ev`` (no trailing newline)."""
     if ev.event == "playbook_on_play_start":
@@ -46,16 +61,15 @@ def render_event(ev: JobEvent) -> str:
         return f"TASK [{task}]"
     if ev.event in _RUNNER_RESULTS:
         verdict = _RUNNER_RESULTS[ev.event]
-        host = ev.host or "?"
-        return f"  {verdict}: {host}"
+        return f"  {verdict}: {_host_label(ev)}"
     if ev.event == "playbook_on_stats":
         return "PLAY RECAP"
     if ev.event == "playbook_on_no_hosts_matched":
         return "skipped: no hosts matched"
     # Fallback for events we don't have a special rendering for.
     parts = [ev.event or f"#{ev.counter}"]
-    if ev.host:
-        parts.append(f"host={ev.host}")
+    if ev.host_name or ev.host is not None:
+        parts.append(f"host={_host_label(ev)}")
     if ev.task:
         parts.append(f"task={ev.task}")
     return " ".join(parts)
