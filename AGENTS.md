@@ -274,6 +274,15 @@ appear until they exit). `--format json|yaml|raw` emits one
 `ForeachOutcome` row per repo (including `command` and `duration_s`)
 after every repo finishes.
 
+Error handling has three modes: default fail-fast (break on first
+non-zero exit), `--continue-on-error` (walk every repo, exit 1 if any
+failed), and `--ignore-errors` (walk every repo, **exit 0** — usable
+inside `set -e` scripts). On `--format table`, a `failed in: a, b, c`
+summary is appended to stderr whenever at least one repo failed,
+regardless of mode — failures aren't silent even when ignored. The
+summary is suppressed in `--format json|yaml|raw` since each row's
+`returncode` already conveys the same information.
+
 Branch cascade is **clone-time only**: per-repo `branch` > workspace
 `defaults.branch` > the remote's HEAD. Subsequent `sync`s do not
 auto-switch branches — they skip-with-warning when the on-disk branch

@@ -349,6 +349,15 @@ def foreach_command(
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Don't stop after a non-zero exit."
     ),
+    ignore_errors: bool = typer.Option(
+        False,
+        "--ignore-errors",
+        help=(
+            "Treat per-repo failures as non-fatal. Implies --continue-on-error "
+            "and exits 0 even when some repos failed. Failed repos are still "
+            "listed in the summary."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -365,13 +374,14 @@ def foreach_command(
     """
     with report_errors():
         ws = _resolve(name, path)
+        keep_going = continue_on_error or ignore_errors
         outcomes = Foreach(ManifestRepository(), runner=shell_runner)(
             ws,
             command=cmd,
             parallel=parallel,
-            continue_on_error=continue_on_error,
+            continue_on_error=keep_going,
         )
-        any_failed = any(o.returncode != 0 for o in outcomes)
+        failed = [o.repo for o in outcomes if o.returncode != 0]
         if fmt == "table":
             for o in outcomes:
                 for line in o.stdout.splitlines():
@@ -380,10 +390,12 @@ def foreach_command(
                     typer.echo(f"[{o.repo}] {line}", err=True)
                 if o.returncode != 0:
                     typer.echo(f"[{o.repo}] exit {o.returncode}", err=True)
+            if failed:
+                typer.echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
             typer.echo(format_output(rows, fmt=fmt, columns=columns))
-        if any_failed:
+        if failed and not ignore_errors:
             raise typer.Exit(code=1)
 
 

@@ -530,6 +530,77 @@ def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cac
     assert "[upstream]" not in result.stdout
 
 
+def test_foreach_default_emits_summary_on_failure(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """Even in default fail-fast mode, a failing repo surfaces in the summary line."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "false", "--name", "smoke"])
+    assert result.exit_code == 1
+    assert "failed in: upstream" in (result.stderr or result.output)
+
+
+def test_foreach_continue_on_error_still_exits_one(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """`--continue-on-error` keeps going but still exits 1 on failures
+    (pins the historical contract)."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "false", "--name", "smoke", "--continue-on-error"])
+    assert result.exit_code == 1
+    assert "failed in: upstream" in (result.stderr or result.output)
+
+
+def test_foreach_ignore_errors_exits_zero_with_summary(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """`--ignore-errors` keeps going AND exits 0; failures surface via the
+    summary line so they aren't silent."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "false", "--name", "smoke", "--ignore-errors"])
+    assert result.exit_code == 0, result.output
+    assert "failed in: upstream" in (result.stderr or result.output)
+
+
+def test_foreach_summary_suppressed_in_structured_format(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """Machine formats stay clean — failures are conveyed by `returncode`
+    on each row, not by the human summary line."""
+    import json as _json
+
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(
+        app,
+        ["foreach", "false", "--name", "smoke", "--ignore-errors", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = _json.loads(result.stdout)
+    assert isinstance(parsed, list) and parsed
+    assert any(row["returncode"] != 0 for row in parsed)
+    assert "failed in:" not in (result.stderr or "")
+
+
 def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
