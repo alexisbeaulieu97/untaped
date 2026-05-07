@@ -35,6 +35,11 @@ def flatten_fks(
     so bad/partial server responses don't disappear mid-pipeline. Only
     rows are copied at the top level — nested values are shared with
     the input, so don't reuse a row dict you intend to mutate.
+
+    Dotted column names (``summary_fields.inventory.name``) are
+    deliberately excluded from extra-column flattening: the user is
+    already addressing nested data directly via ``format_output``'s
+    dotted-path walker, so flattening would double-resolve.
     """
     declared_fk_fields = {fk.field for fk in spec.fk_refs if not fk.polymorphic}
     extra_cols = (

@@ -131,22 +131,26 @@ def get_command(
                     "names are not unique across kinds — use the per-kind sub-app "
                     "for name lookup.",
                 )
-            # AWX exposes the collection endpoint only — there's no
-            # ``/unified_job_templates/<id>/`` resource URL (UJT is a
-            # virtual aggregate). Filter via ``?id=<value>`` on the list
-            # endpoint and read the single match. ``page_size=1`` keeps
-            # the response tight; AWX returns ``{count, results: []}``
-            # so an empty ``results`` cleanly distinguishes a missing
-            # id from any other failure.
-            page = ctx.repo.request(
-                "GET",
+        if not identifiers:
+            return
+        # AWX exposes the collection endpoint only — there's no
+        # ``/unified_job_templates/<id>/`` resource URL (UJT is a
+        # virtual aggregate). Use ``?id__in=…`` so a multi-id batch is
+        # one round trip; the list endpoint paginates so we walk pages
+        # in case ``len(ids) > page_size``.
+        id_in = ",".join(identifiers)
+        records = list(
+            ctx.repo.paginate_path(
                 "unified_job_templates/",
-                params={"id": raw, "page_size": "1"},
+                params={"id__in": id_in, "order_by": "id"},
             )
-            results = page.get("results") or []
-            if results:
-                records.append(results[0])
-            else:
+        )
+        # Per-id error reporting: ids the bulk fetch didn't return are
+        # missing. Cast to int when possible since AWX returns numeric
+        # ids; fall back to string compare for safety.
+        found_ids = {str(r.get("id")) for r in records}
+        for raw in identifiers:
+            if raw not in found_ids:
                 typer.echo(f"error: {raw}: not found", err=True)
                 any_failed = True
     if records:

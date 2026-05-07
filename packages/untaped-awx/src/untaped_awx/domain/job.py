@@ -11,6 +11,22 @@ from pydantic import BaseModel, ConfigDict
 
 TERMINAL_STATUSES = frozenset({"successful", "failed", "error", "canceled"})
 
+KIND_TO_API_PATH: dict[str, str] = {
+    "job": "jobs",
+    "workflow_job": "workflow_jobs",
+    "project_update": "project_updates",
+    "inventory_update": "inventory_updates",
+    "ad_hoc_command": "ad_hoc_commands",
+}
+"""Map an execution-record :attr:`Job.kind` to its AWX collection path.
+
+Lives in domain because the kind→endpoint relationship is intrinsic to a
+Job (not a transport detail). Both the application use case
+(:class:`untaped_awx.application.WatchJob`) and the infrastructure
+adapter (:class:`untaped_awx.infrastructure.PollingJobMonitor`) read it,
+so domain is the only place where neither would be importing the other's
+internals."""
+
 
 class Job(BaseModel):
     """A single async execution record."""

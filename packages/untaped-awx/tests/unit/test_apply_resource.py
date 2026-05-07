@@ -12,6 +12,7 @@ from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
+    GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
     PROJECT_SPEC,
     SCHEDULE_SPEC,
@@ -572,3 +573,36 @@ def test_schedule_inventory_fk_uses_parent_organization() -> None:
     # The inventory FK lookup must have received the parent's organization.
     inventory_scopes = [s for s in captured_scopes if s is not None]
     assert inventory_scopes == [{"organization": "OrgB"}]
+
+
+def test_create_raises_when_response_lacks_id_with_membership() -> None:
+    """If a strategy ever returns a body without ``id``, membership writes
+    can't target it — fail loudly instead of silently dropping members."""
+
+    class _IdLessStrategy:
+        def find_existing(self, spec, identity, *, client, fk):  # type: ignore[no-untyped-def]
+            return None
+
+        def create(self, spec, payload, identity, *, client, fk):  # type: ignore[no-untyped-def]
+            # Deliberately drop ``id`` to simulate a future strategy regression.
+            return {"name": payload.get("name")}
+
+        def update(self, spec, existing, payload, *, client, fk):  # type: ignore[no-untyped-def]
+            raise NotImplementedError
+
+    apply = ApplyResource(
+        client=_StubClient(),  # type: ignore[arg-type]
+        catalog=_StubCatalog({"Group": GROUP_SPEC}),  # type: ignore[arg-type]
+        fk=_StubFk({("Host", "web-01"): 101}),  # type: ignore[arg-type]
+        strategies=_StubStrategies(_IdLessStrategy()),  # type: ignore[arg-type]
+    )
+    resource = Resource(
+        kind="Group",
+        metadata=Metadata(
+            name="web-servers",
+            parent=IdentityRef(kind="Inventory", name="prod", organization="Default"),
+        ),
+        spec={"description": "web tier", "hosts": ["web-01"]},
+    )
+    with pytest.raises(BadRequest, match="had no 'id'"):
+        apply(resource, write=True)

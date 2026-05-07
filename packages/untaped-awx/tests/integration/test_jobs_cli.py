@@ -97,7 +97,13 @@ def test_jobs_events_follow_streams_events_to_stdout(fake_aap: Any) -> None:
     """Regression: ``--follow`` used to build the full row list before
     printing, so nothing appeared until the job hit terminal. The CLI
     now emits each event as it's yielded.
+
+    Also pins the NDJSON contract: ``--follow --format json`` emits one
+    bare JSON object per line so ``jq`` can ingest directly without
+    ``jq -s '.[]'`` (matches ``kubectl get -w -o json``).
     """
+    import json as _json
+
     _seed_running_job(fake_aap)  # already terminal — drain loop returns
     _seed_events(fake_aap)
     result = CliRunner().invoke(
@@ -105,12 +111,11 @@ def test_jobs_events_follow_streams_events_to_stdout(fake_aap: Any) -> None:
         ["jobs", "events", "42", "--follow", "--format", "json", "--columns", "counter"],
     )
     assert result.exit_code == 0, result.output
-    # One JSON document per event (each its own line / array), in order.
-    out = result.stdout.strip()
-    assert "1" in out and "2" in out and "3" in out and "4" in out
-    # Each event is its own format_output call, so we get N separate
-    # printed blocks (4 events → 4 non-empty chunks separated by blanks).
-    assert out.count('"counter":') == 4
+    lines = [line for line in result.stdout.strip().splitlines() if line]
+    parsed = [_json.loads(line) for line in lines]
+    # NDJSON: each line is a bare JSON object, NOT a single-element array.
+    assert all(isinstance(p, dict) for p in parsed), parsed
+    assert [p["counter"] for p in parsed] == [1, 2, 3, 4]
 
 
 def test_jobs_events_follow_with_table_format_renders_human_lines(fake_aap: Any) -> None:
@@ -208,6 +213,38 @@ def test_jobs_logs_grep_ignore_case(fake_aap: Any) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "error: lower"
+
+
+def test_jobs_logs_invalid_grep_pattern_rejected_at_boundary(fake_aap: Any) -> None:
+    """An unterminated character class is user input, not a bug — it must
+    surface as a clean ``BadParameter`` (typer exit 2), not a Python
+    traceback through ``report_errors`` (which only translates
+    ``UntapedError``)."""
+    fake_aap.seed("jobs", id=42, status="successful", stdout="anything\n")
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--grep", "[unclosed"])
+    assert result.exit_code != 0
+    assert "is not a valid regex" in result.output
+    # Make sure the underlying Python re.error didn't escape.
+    assert "Traceback" not in result.output
+
+
+def test_jobs_get_with_kind_workflow_job_hits_workflow_jobs_endpoint(fake_aap: Any) -> None:
+    """``jobs get --kind workflow_job <id>`` routes to ``workflow_jobs/<id>/``,
+    not the default ``jobs/<id>/`` (which would 404 for workflow_job ids).
+    PollingJobMonitor and WatchJob already understand this kind via
+    ``KIND_TO_API_PATH`` — wiring it through the CLI completes the path."""
+    fake_aap.seed(
+        "workflow_jobs",
+        id=999,
+        name="nightly-pipeline",
+        status="successful",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "get", "999", "--kind", "workflow_job", "--format", "raw", "--columns", "name"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "nightly-pipeline"
 
 
 def _seed_basic_jt(fake: Any, *, job_status: str) -> None:

@@ -36,7 +36,14 @@ def _seed_groups(fake: Any) -> None:
         inventory_name="prod",
         description="web tier",
         variables="",
-        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+        summary_fields={
+            "inventory": {
+                "id": 20,
+                "name": "prod",
+                "organization_id": 1,
+                "organization_name": "Default",
+            }
+        },
     )
     fake.seed(
         "groups",
@@ -46,7 +53,14 @@ def _seed_groups(fake: Any) -> None:
         inventory_name="prod",
         description="api tier",
         variables="",
-        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+        summary_fields={
+            "inventory": {
+                "id": 20,
+                "name": "prod",
+                "organization_id": 1,
+                "organization_name": "Default",
+            }
+        },
     )
 
 
@@ -226,6 +240,189 @@ def test_groups_apply_associates_child_groups(fake_aap: Any, tmp_path: Path) -> 
     # The new group was created; api-servers was associated as a child.
     new_group = next(g for g in fake_aap.store["groups"].values() if g["name"] == "web-servers")
     assert fake_aap.memberships[("groups", new_group["id"], "children")] == {201}
+
+
+def test_groups_apply_rejects_non_list_hosts(fake_aap: Any, tmp_path: Path) -> None:
+    """A bare string under ``hosts:`` would otherwise be normalised to ``[]``
+    and silently disassociate every existing member on ``--yes`` — the worst
+    possible failure mode. Reject at the boundary instead."""
+    _seed_inventory(fake_aap)
+    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    fake_aap.seed(
+        "groups",
+        id=200,
+        name="web-servers",
+        inventory=20,
+        inventory_name="prod",
+        description="Web tier",
+    )
+    fake_aap.memberships[("groups", 200, "hosts")] = {101}
+
+    doc = tmp_path / "group.yml"
+    doc.write_text(
+        """
+        kind: Group
+        metadata:
+          name: web-servers
+          parent:
+            kind: Inventory
+            name: prod
+            organization: Default
+        spec:
+          description: Web tier
+          hosts: web-01
+        """
+    )
+    result = CliRunner().invoke(app, ["groups", "apply", "--file", str(doc), "--yes"])
+    assert result.exit_code != 0
+    assert "must be a list" in result.output
+    # Critical: existing membership must NOT have been wiped.
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
+
+
+def test_groups_save_emits_metadata_parent_and_membership(fake_aap: Any) -> None:
+    """Critical for round-trip: a saved Group must include
+    ``metadata.parent`` (Inventory) AND its ``hosts``/``children`` lists
+    so applying it back through ``InventoryChildApplyStrategy`` succeeds
+    AND restores membership (otherwise re-apply silently disassociates
+    every member because absent + empty list both look like ``[]`` in
+    ``_plan_sub_endpoints`` — wait, absent is unmanaged; but a save that
+    omits the list isn't a fix, it's just a different breakage)."""
+    import yaml as _yaml
+
+    _seed_groups(fake_aap)
+    # Seed two hosts and pre-populate Group 200's membership.
+    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    fake_aap.seed("hosts", id=102, name="web-02", inventory=20, inventory_name="prod")
+    fake_aap.memberships[("groups", 200, "hosts")] = {101, 102}
+    # And one child group.
+    fake_aap.memberships[("groups", 200, "children")] = {201}
+
+    result = CliRunner().invoke(app, ["groups", "save", "web-servers"])
+    assert result.exit_code == 0, result.output
+    parsed = _yaml.safe_load(result.stdout)
+    assert parsed["kind"] == "Group"
+    assert parsed["metadata"]["parent"]["kind"] == "Inventory"
+    assert parsed["metadata"]["parent"]["name"] == "prod"
+    assert parsed["metadata"]["parent"]["organization"] == "Default"
+    assert sorted(parsed["spec"]["hosts"]) == ["web-01", "web-02"]
+    assert parsed["spec"]["children"] == ["api-servers"]
+
+
+def test_groups_save_round_trips_through_apply(fake_aap: Any, tmp_path: Path) -> None:
+    """End-to-end: save a Group with membership, apply it back, expect
+    ``unchanged`` (the host/group ids resolve to the same set)."""
+    _seed_groups(fake_aap)
+    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    fake_aap.memberships[("groups", 200, "hosts")] = {101}
+    fake_aap.memberships[("groups", 200, "children")] = {201}
+
+    save_result = CliRunner().invoke(app, ["groups", "save", "web-servers"])
+    assert save_result.exit_code == 0, save_result.output
+    saved = tmp_path / "group.yml"
+    saved.write_text(save_result.stdout)
+    apply_result = CliRunner().invoke(app, ["groups", "apply", "--file", str(saved), "--yes"])
+    assert apply_result.exit_code == 0, apply_result.output
+    assert "unchanged" in apply_result.output
+    # Membership preserved exactly.
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
+    assert fake_aap.memberships[("groups", 200, "children")] == {201}
+
+
+def test_groups_apply_disambiguates_inventory_by_parent_organization(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """When two organizations have an inventory with the same name, the
+    Group's ``metadata.parent.organization`` must scope the FK lookup so
+    AWX returns the host belonging to the right org's inventory."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("organizations", id=2, name="Other")
+    # Two inventories named "prod" — one per organization.
+    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
+    fake_aap.seed("inventories", id=21, name="prod", organization=2, organization_name="Other")
+    # web-01 in Default's prod, web-01 also exists in Other's prod.
+    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    fake_aap.seed("hosts", id=102, name="web-01", inventory=21, inventory_name="prod")
+
+    doc = tmp_path / "group.yml"
+    doc.write_text(
+        """
+        kind: Group
+        metadata:
+          name: web-servers
+          parent:
+            kind: Inventory
+            name: prod
+            organization: Default
+        spec:
+          description: Web tier in Default
+          hosts:
+            - web-01
+        """
+    )
+    result = CliRunner().invoke(app, ["groups", "apply", "--file", str(doc), "--yes"])
+    assert result.exit_code == 0, result.output
+    new_group = next(g for g in fake_aap.store["groups"].values() if g["inventory"] == 20)
+    # Critical: the host associated must be Default's web-01 (id=101), not Other's (id=102).
+    assert fake_aap.memberships[("groups", new_group["id"], "hosts")] == {101}
+
+
+def test_apply_file_resolves_sibling_group_children(fake_aap: Any, tmp_path: Path) -> None:
+    """Regression for two-phase apply: a Group whose ``children:`` references
+    a sibling Group declared later in the same file would fail with
+    ``Group not found`` when phase 1 tried to resolve the child during
+    membership planning. Phase 2 now reconciles memberships *after* every
+    body has been written, so cycles within one inventory file work.
+    """
+    _seed_inventory(fake_aap)
+    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    fake_aap.seed("hosts", id=102, name="api-01", inventory=20, inventory_name="prod")
+
+    doc = tmp_path / "inventory.yml"
+    # ``app-tier`` references ``web-servers`` and ``api-servers`` as
+    # children. Topological sort within Group is alphabetical
+    # (api-servers, app-tier, web-servers) so app-tier applies before
+    # web-servers — exactly the case the previous single-pass apply
+    # failed on.
+    doc.write_text(
+        "kind: Group\n"
+        "metadata:\n"
+        "  name: app-tier\n"
+        "  parent: { kind: Inventory, name: prod, organization: Default }\n"
+        "spec:\n"
+        "  description: Roll-up\n"
+        "  children:\n"
+        "    - web-servers\n"
+        "    - api-servers\n"
+        "---\n"
+        "kind: Group\n"
+        "metadata:\n"
+        "  name: web-servers\n"
+        "  parent: { kind: Inventory, name: prod, organization: Default }\n"
+        "spec:\n"
+        "  description: Web tier\n"
+        "  hosts: [web-01]\n"
+        "---\n"
+        "kind: Group\n"
+        "metadata:\n"
+        "  name: api-servers\n"
+        "  parent: { kind: Inventory, name: prod, organization: Default }\n"
+        "spec:\n"
+        "  description: API tier\n"
+        "  hosts: [api-01]\n"
+    )
+    result = CliRunner().invoke(app, ["apply", "--file", str(doc), "--yes"])
+    assert result.exit_code == 0, result.output
+    # Every Group created.
+    groups_by_name = {g["name"]: g for g in fake_aap.store["groups"].values()}
+    assert set(groups_by_name) == {"app-tier", "web-servers", "api-servers"}
+    # Memberships reconciled in phase 2.
+    web_id = groups_by_name["web-servers"]["id"]
+    api_id = groups_by_name["api-servers"]["id"]
+    app_id = groups_by_name["app-tier"]["id"]
+    assert fake_aap.memberships[("groups", app_id, "children")] == {web_id, api_id}
+    assert fake_aap.memberships[("groups", web_id, "hosts")] == {101}
+    assert fake_aap.memberships[("groups", api_id, "hosts")] == {102}
 
 
 def test_groups_apply_unchanged_when_membership_matches(fake_aap: Any, tmp_path: Path) -> None:

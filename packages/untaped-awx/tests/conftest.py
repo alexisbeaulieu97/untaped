@@ -214,10 +214,19 @@ class FakeAap:
         sub_path: str,
         params: dict[str, str],
     ) -> httpx.Response:
+        # AWX's nested URLs sometimes use a ``sub_path`` that differs from
+        # the actual collection name (``GET /groups/<id>/children/`` returns
+        # Group records, which live in ``self.store["groups"]``). Resolve
+        # the storage collection accordingly.
+        store_collection = _SUB_PATH_STORE.get((parent_path, sub_path), sub_path)
         membership_key = (parent_path, parent_id, sub_path)
         if membership_key in self.memberships:
             members = self.memberships[membership_key]
-            records = [self.store[sub_path][i] for i in members if i in self.store[sub_path]]
+            records = [
+                self.store[store_collection][i]
+                for i in members
+                if i in self.store[store_collection]
+            ]
         else:
             # ``parent_path[:-1]`` strips exactly one trailing letter (so
             # ``inventories`` → ``inventorie`` is avoided in favour of
@@ -226,7 +235,7 @@ class FakeAap:
             singular = _AWX_FK_SINGULAR.get(parent_path, parent_path[:-1])
             records = [
                 r
-                for r in self.store[sub_path].values()
+                for r in self.store[store_collection].values()
                 if r.get("unified_job_template") == parent_id or r.get(singular) == parent_id
             ]
         records = self._apply_filters(records, params)
@@ -295,7 +304,10 @@ class FakeAap:
     def _apply_filters(
         self, records: list[dict[str, Any]], params: dict[str, str]
     ) -> list[dict[str, Any]]:
-        return [r for r in records if _matches_all(r, params)]
+        return [r for r in records if self._matches_all(r, params)]
+
+    def _matches_all(self, record: dict[str, Any], params: dict[str, str]) -> bool:
+        return _matches_all(record, params, store=self.store)
 
     @staticmethod
     def _json_body(request: httpx.Request) -> dict[str, Any]:
@@ -314,8 +326,27 @@ _AWX_FK_SINGULAR: dict[str, str] = {
     "inventories": "inventory",
 }
 
+# Inverse of ``_AWX_FK_SINGULAR``: given an FK column on a child record
+# (e.g. ``inventory``), return the parent collection name (``inventories``).
+_AWX_FK_PLURAL: dict[str, str] = {
+    "inventory": "inventories",
+}
 
-def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
+# AWX nested URLs whose ``sub_path`` differs from the actual collection
+# name. ``GET /groups/<id>/children/`` returns Group records (which live
+# under ``self.store["groups"]``), not records from a fictional
+# ``self.store["children"]``.
+_SUB_PATH_STORE: dict[tuple[str, str], str] = {
+    ("groups", "children"): "groups",
+}
+
+
+def _matches_all(
+    record: dict[str, Any],
+    params: dict[str, str],
+    *,
+    store: dict[str, dict[int, dict[str, Any]]] | None = None,
+) -> bool:
     for key, value in params.items():
         if key in {"page", "page_size", "order_by"}:
             continue
@@ -328,6 +359,21 @@ def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
             continue
         if key.endswith("__name"):
             base = key[: -len("__name")]
+            segments = base.split("__")
+            # Walk the FK chain through the store so the fake mirrors
+            # AWX's Django ORM join semantics. This handles both the
+            # multi-segment case (``inventory__organization__name``) and
+            # the single-segment case (``inventory__name``) without
+            # requiring records to be denormalised — newly-created
+            # records via nested endpoints don't carry the ``<x>_name``
+            # shorthand that ``_apply_filters`` previously relied on.
+            if store is not None:
+                related = _walk_join(record, segments, store=store)
+                related_name = related.get("name") if related is not None else None
+                if str(related_name or "") == value:
+                    continue
+                # Fall through to the denormalised shorthand in case the
+                # caller seeded ``<x>_name`` directly without an FK chain.
             flat = f"{base}_name"
             if str(record.get(flat, "")) != value:
                 return False
@@ -335,6 +381,12 @@ def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
         if key.endswith("__icontains"):
             base = key[: -len("__icontains")]
             if value.lower() not in str(record.get(base, "")).lower():
+                return False
+            continue
+        if key.endswith("__in"):
+            base = key[: -len("__in")]
+            wanted = {v.strip() for v in value.split(",") if v.strip()}
+            if str(record.get(base, "")) not in wanted:
                 return False
             continue
         if key.endswith("__gt"):
@@ -350,6 +402,34 @@ def _matches_all(record: dict[str, Any], params: dict[str, str]) -> bool:
         if str(record.get(key, "")) != value:
             return False
     return True
+
+
+def _walk_join(
+    record: dict[str, Any],
+    path: list[str],
+    *,
+    store: dict[str, dict[int, dict[str, Any]]],
+) -> dict[str, Any] | None:
+    """Walk an ORM-style FK chain (e.g. ``inventory__organization``).
+
+    At each segment, look up ``record[<segment>]`` (the numeric FK) in
+    ``store[<plural>]`` (with the small ``inventory → inventories``
+    irregular plural). Returns ``None`` if any link is missing. Mirrors
+    AWX's filter layer joining through related fields so a query like
+    ``?inventory__organization__name=Default`` actually matches a host
+    whose inventory's organization is ``Default``.
+    """
+    current = record
+    for segment in path:
+        fk_id = current.get(segment)
+        if not isinstance(fk_id, int):
+            return None
+        collection = _AWX_FK_PLURAL.get(segment, f"{segment}s")
+        related = store.get(collection, {}).get(fk_id)
+        if related is None:
+            return None
+        current = related
+    return current
 
 
 def _numeric_compare(

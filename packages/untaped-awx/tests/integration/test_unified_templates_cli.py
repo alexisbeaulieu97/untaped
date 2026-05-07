@@ -71,18 +71,21 @@ def test_list_returns_all_kinds(fake_aap: Any) -> None:
 
 
 def test_list_default_columns_include_type_discriminator(fake_aap: Any) -> None:
+    """Without ``--columns``, the default projection (``id, name, type``)
+    must include the polymorphic discriminator so users can tell the
+    four aggregated kinds apart at a glance."""
     _seed_all_kinds(fake_aap)
     result = CliRunner().invoke(
         app,
-        ["unified-templates", "list", "--format", "raw", "--columns", "id", "--columns", "type"],
+        ["unified-templates", "list", "--format", "raw"],
     )
     assert result.exit_code == 0, result.output
     rows = sorted(result.stdout.strip().splitlines())
     assert rows == [
-        "10\tjob_template",
-        "20\tworkflow_job_template",
-        "30\tproject",
-        "40\tinventory_source",
+        "10\tdeploy-app\tjob_template",
+        "20\tweekly-rollup\tworkflow_job_template",
+        "30\tplaybooks-repo\tproject",
+        "40\tcmdb-import\tinventory_source",
     ]
 
 

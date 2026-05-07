@@ -69,6 +69,23 @@ class SaveResource:
 
     def _build_resource(self, spec: AwxResourceSpec, record: dict[str, Any]) -> Resource:
         spec_data = self._build_spec_body(spec, record)
+        # Sub-endpoint multi-FKs (Group.hosts / Group.children) live
+        # outside ``canonical_fields`` because they're managed via
+        # associate / disassociate POSTs against ``/<id>/<sub>/`` rather
+        # than the body. For full-fidelity save we still need to read
+        # them so the saved YAML can reconstruct the membership on
+        # restore.
+        record_id = record.get("id")
+        if isinstance(record_id, int):
+            for ref in spec.fk_refs:
+                if not (ref.multi and ref.sub_endpoint):
+                    continue
+                members = list(
+                    self._client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint)
+                )
+                spec_data[ref.field] = [
+                    str(m["name"]) for m in members if isinstance(m.get("name"), str)
+                ]
         metadata = _METADATA_EXTRACTORS.get(spec.kind, _default_metadata)(spec, record, self._fk)
         # Polymorphic FK lives in metadata; strip from spec body if present
         for fk in spec.fk_refs:
@@ -124,12 +141,51 @@ def _schedule_metadata(spec: AwxResourceSpec, record: dict[str, Any], fk: FkReso
     return Metadata(name=name, parent=parent)
 
 
+def _inventory_child_metadata(
+    spec: AwxResourceSpec, record: dict[str, Any], fk: FkResolver
+) -> Metadata:
+    """Reconstruct ``metadata.parent`` (Inventory) for Host/Group.
+
+    Inventory-child kinds carry their parent FK as ``record["inventory"]``
+    plus the denormalised ``summary_fields.inventory.{name,organization_name}``
+    that AWX returns. Without this extractor a saved Host/Group has no
+    ``metadata.parent`` and ``InventoryChildApplyStrategy`` rejects the
+    restore with ``identity missing 'parent'``.
+    """
+    name = str(record["name"])
+    summary = record.get("summary_fields") or {}
+    inv_summary = summary.get("inventory") or {}
+    parent_name = inv_summary.get("name")
+    parent_org = inv_summary.get("organization_name")
+    if isinstance(parent_name, str):
+        parent = IdentityRef(
+            kind="Inventory",
+            name=parent_name,
+            organization=parent_org if isinstance(parent_org, str) else None,
+        )
+        return Metadata(name=name, parent=parent)
+    # Fallback: resolve via the FK id so a fixture without summary_fields
+    # still produces a usable saved file (parent.organization may be unset
+    # because Inventory's own record is the only place it's stored).
+    inventory_id = record.get("inventory")
+    if isinstance(inventory_id, int):
+        parent_name = fk.id_to_name("Inventory", inventory_id)
+        return Metadata(
+            name=name,
+            parent=IdentityRef(kind="Inventory", name=parent_name),
+        )
+    return Metadata(name=name)
+
+
 _METADATA_EXTRACTORS: dict[str, _MetadataExtractor] = {
     "Schedule": _schedule_metadata,
+    "Host": _inventory_child_metadata,
+    "Group": _inventory_child_metadata,
 }
 """Per-kind hooks for non-default metadata extraction.
 
 Keep this map small: most kinds use ``_default_metadata`` via
-``identity_keys = ("name", "organization")``. Schedule is the only
-v0 user; v0.5 may add others as needed.
+``identity_keys = ("name", "organization")``. Schedule, Host, and Group
+are the v0.5 users; new kinds with non-default identity should add an
+entry here rather than letting saves silently lose ``metadata.parent``.
 """

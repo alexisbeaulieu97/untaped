@@ -123,6 +123,20 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization (ignored for numeric ids)."
         ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help=(
+                "Scope to inventory (Host/Group only). Without this, name "
+                "lookup is global and ambiguous if the same name exists "
+                "across inventories."
+            ),
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
         by_name: bool = typer.Option(
             False,
             "--by-name",
@@ -147,7 +161,13 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
-            scope = _scope(ctx, organization, spec)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
             getter = GetResource(ctx.repo)
             for n in ids:
                 try:
@@ -210,10 +230,26 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization."
         ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help="Scope to inventory (Host/Group only).",
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
     ) -> None:
         """Dump the resource as a portable YAML envelope."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
             resource = SaveResource(ctx.repo, ctx.fk)(spec, name=name, scope=scope)
         comment = spec.fidelity_note if spec.fidelity != "full" else None
         if comment:
@@ -519,5 +555,18 @@ def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
 # ---- helpers ----
 
 
-def _scope(ctx: Any, organization: str | None, spec: AwxResourceSpec) -> dict[str, str] | None:
-    return scope_for_spec(spec, organization, ctx.default_organization)
+def _scope(
+    ctx: Any,
+    organization: str | None,
+    spec: AwxResourceSpec,
+    *,
+    inventory: str | None = None,
+    inventory_organization: str | None = None,
+) -> dict[str, str] | None:
+    return scope_for_spec(
+        spec,
+        organization,
+        ctx.default_organization,
+        inventory=inventory,
+        inventory_organization=inventory_organization,
+    )
