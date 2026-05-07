@@ -163,6 +163,28 @@ def test_get_rejects_non_decimal_identifier(fake_aap: Any) -> None:
     assert "id-only" in result.output
 
 
+def test_get_table_mode_falls_back_to_default_columns(fake_aap: Any) -> None:
+    """Without ``--columns`` the raw AWX record carries 50+ fields and a
+    fixed-width Rich table crushes them unreadably. ``get -f table`` should
+    reuse the list view's default column set instead so the table is
+    actually scannable. ``-f yaml`` / ``-f json`` keep the full record.
+    """
+    _seed_all_kinds(fake_aap)
+    table = CliRunner().invoke(app, ["unified-templates", "get", "10", "-f", "table"])
+    assert table.exit_code == 0, table.output
+    # Default-projection columns surface in the header.
+    assert "type" in table.stdout
+    assert "name" in table.stdout
+    # The full-record yaml view still shows every field.
+    yaml_out = CliRunner().invoke(app, ["unified-templates", "get", "10", "-f", "yaml"])
+    assert yaml_out.exit_code == 0, yaml_out.output
+    # ``last_job_run`` is in the projected default cols too, but ``id: 10``
+    # is a record-level field that yaml dumps even when table would project
+    # the column. Asserting on raw record content (not just columns)
+    # confirms yaml is still un-projected.
+    assert "id: 10" in yaml_out.stdout
+
+
 def test_get_reports_missing_id_and_exits_nonzero(fake_aap: Any) -> None:
     """AWX has no ``/unified_job_templates/<id>/`` resource URL — we filter
     against the collection endpoint, so a missing id surfaces as an empty
