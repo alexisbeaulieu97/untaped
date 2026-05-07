@@ -10,15 +10,13 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from untaped_awx.application.ports import Catalog
+from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.spec import FkRef
 from untaped_awx.domain.test_suite import Case, RefSentinel
 from untaped_awx.errors import AwxApiError
-
-if TYPE_CHECKING:
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
 # (and not a declared FK) triggers an UnknownLaunchFieldWarning so users
@@ -72,7 +70,7 @@ class ResolveCasePayload:
 
     def __call__(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         case: Case,
         *,
         defaults: Case | None = None,
@@ -88,7 +86,7 @@ class ResolveCasePayload:
         return result
 
     @staticmethod
-    def fk_index_for(spec: AwxResourceSpec) -> dict[str, FkRef]:
+    def fk_index_for(spec: ResourceSpec) -> dict[str, FkRef]:
         """Build the ``field → FkRef`` index of FKs valid at launch time.
 
         ``spec.fk_refs`` describes every foreign-key field on the saved

@@ -3,16 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from untaped_awx.application.ports import ResourceClient
-
-if TYPE_CHECKING:
-    # AwxResourceSpec is the concrete spec type the catalog yields and the
-    # ResourceClient port accepts; it lives in infrastructure but only its
-    # type identity is needed here. Kept TYPE_CHECKING-only to preserve the
-    # `application -> infrastructure` no-runtime-import rule.
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.domain import ResourceSpec
 
 
 class ListResources:
@@ -27,7 +21,7 @@ class ListResources:
 
     def __call__(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         *,
         search: str | None = None,
         filters: dict[str, str] | None = None,
