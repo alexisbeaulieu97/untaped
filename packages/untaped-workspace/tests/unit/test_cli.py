@@ -30,6 +30,7 @@ def test_help_lists_all_commands() -> None:
         "list",
         "init",
         "adopt",
+        "forget",
         "add",
         "remove",
         "sync",
@@ -45,7 +46,18 @@ def test_help_lists_all_commands() -> None:
 
 @pytest.mark.parametrize(
     "cmd",
-    ["init", "adopt", "add", "remove", "foreach", "import", "path", "shell-init", "edit"],
+    [
+        "init",
+        "adopt",
+        "forget",
+        "add",
+        "remove",
+        "foreach",
+        "import",
+        "path",
+        "shell-init",
+        "edit",
+    ],
 )
 def test_no_args_shows_help(cmd: str) -> None:
     result = CliRunner().invoke(app, [cmd])
@@ -59,7 +71,7 @@ def test_no_args_shows_help(cmd: str) -> None:
 def test_init_then_list(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws-prod"
-    init = runner.invoke(app, ["init", str(target), "--name", "prod"])
+    init = runner.invoke(app, ["init", "prod", "--path", str(target)])
     assert init.exit_code == 0, init.output
     assert (target / "untaped.yml").is_file()
 
@@ -71,7 +83,7 @@ def test_init_then_list(tmp_path: Path) -> None:
 def test_init_with_branch_default(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws-prod"
-    runner.invoke(app, ["init", str(target), "--branch", "develop"])
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
     raw = (target / "untaped.yml").read_text()
     assert "develop" in raw
 
@@ -80,10 +92,21 @@ def test_init_duplicate_name_errors(tmp_path: Path) -> None:
     runner = CliRunner()
     a = tmp_path / "a"
     b = tmp_path / "b"
-    runner.invoke(app, ["init", str(a), "--name", "prod"])
-    second = runner.invoke(app, ["init", str(b), "--name", "prod"])
+    runner.invoke(app, ["init", "prod", "--path", str(a)])
+    second = runner.invoke(app, ["init", "prod", "--path", str(b)])
     assert second.exit_code == 1
     assert "error:" in (second.output or second.stderr)
+
+
+def test_init_default_path_uses_workspaces_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_WORKSPACE__WORKSPACES_DIR", str(tmp_path / "ws-root"))
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(app, ["init", "prod"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "ws-root" / "prod" / "untaped.yml").is_file()
 
 
 # ── adopt ───────────────────────────────────────────────────────────────────
@@ -176,13 +199,74 @@ def test_adopt_missing_path_errors(tmp_path: Path) -> None:
     assert "does not exist" in (result.output or result.stderr)
 
 
+# ── forget ─────────────────────────────────────────────────────────────────
+
+
+def test_forget_removes_workspace_from_registry(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "scratch", "--path", str(target)])
+
+    forget = runner.invoke(app, ["forget", "scratch"])
+    assert forget.exit_code == 0, forget.output
+
+    listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert "scratch" not in listed.stdout.splitlines()
+    # files preserved
+    assert (target / "untaped.yml").is_file()
+
+
+def test_forget_unknown_workspace_errors() -> None:
+    result = CliRunner().invoke(app, ["forget", "ghost"])
+    assert result.exit_code == 1
+
+
+def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "scratch", "--path", str(target)])
+
+    forget = runner.invoke(app, ["forget", "scratch", "--prune", "--yes"])
+    assert forget.exit_code == 0, forget.output
+    assert not target.exists()
+
+
+def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git not on PATH")
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    target.mkdir()
+    repo = target / "svc-a"
+    subprocess.run(["git", "init", "--initial-branch=main", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "commit.gpgsign", "false"], check=True)
+    (repo / "f.txt").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--no-gpg-sign", "-m", "init"],
+        check=True,
+        capture_output=True,
+    )
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--repo-name", "svc-a", "--name", "lab"])
+    (repo / "f.txt").write_text("dirty")  # uncommitted
+
+    forget = runner.invoke(app, ["forget", "lab", "--prune", "--yes"])
+    assert forget.exit_code == 1
+    assert target.is_dir()  # files preserved
+    listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert "lab" in listed.stdout.splitlines()  # registry untouched
+
+
 # ── add / remove (manifest only) ────────────────────────────────────────────
 
 
 def test_add_then_remove(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
 
     a = runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
     assert a.exit_code == 0, a.output
@@ -201,7 +285,7 @@ def test_remove_accepts_multiple_repos(tmp_path: Path) -> None:
     in one call."""
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
     runner.invoke(app, ["add", "https://x/svc-b.git", "--name", "lab"])
 
@@ -213,7 +297,7 @@ def test_remove_reads_repos_from_stdin(tmp_path: Path) -> None:
     """`workspace list ... | remove --stdin` is the documented pipeline shape."""
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
     runner.invoke(app, ["add", "https://x/svc-b.git", "--name", "lab"])
 
@@ -227,7 +311,7 @@ def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
     rule as ``awx <kind> get --stdin`` and ``launch --stdin``."""
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "lab"])
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
 
     rm = runner.invoke(app, ["remove", "ghost", "svc-a", "--name", "lab"])
@@ -244,7 +328,7 @@ def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
 def test_path_prints_workspace_path(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws-prod"
-    runner.invoke(app, ["init", str(target), "--name", "prod"])
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
     out = runner.invoke(app, ["path", "prod"])
     assert out.exit_code == 0
     assert out.stdout.strip() == str(target.resolve())
@@ -275,7 +359,7 @@ def test_shell_init_unknown() -> None:
 def test_edit_uses_explicit_editor(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "prod"])
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
     # `true` is a real binary that exits 0 — perfect smoke test
     result = runner.invoke(app, ["edit", "prod", "--editor", "true"])
     assert result.exit_code == 0
@@ -325,7 +409,7 @@ def isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
 
     result = runner.invoke(
@@ -340,7 +424,7 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
 def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
     runner.invoke(app, ["sync", "--name", "smoke"])
 
@@ -367,7 +451,7 @@ def test_foreach_runs_command_in_each_repo(
 ) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
     runner.invoke(app, ["sync", "--name", "smoke"])
 
@@ -384,7 +468,7 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
 
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
     runner.invoke(app, ["sync", "--name", "smoke"])
 
@@ -422,7 +506,7 @@ def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cac
     """`--format raw --columns repo,returncode` produces tab-separated rows."""
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
     runner.invoke(app, ["sync", "--name", "smoke"])
 
@@ -449,7 +533,7 @@ def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cac
 def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
-    runner.invoke(app, ["init", str(target), "--name", "smoke"])
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
     runner.invoke(app, ["sync", "--name", "smoke"])
     assert (target / "upstream").is_dir()

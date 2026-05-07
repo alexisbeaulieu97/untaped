@@ -126,6 +126,13 @@ def test_awx_api_prefix_default_shown() -> None:
     assert api_prefix.value == "/api/controller/v2/"
 
 
+def test_workspaces_dir_default_shown() -> None:
+    entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
+    workspaces_dir = entries["workspace.workspaces_dir"]
+    assert workspaces_dir.source == Source(kind="default")
+    assert str(workspaces_dir.value) == "~/.untaped/workspaces"
+
+
 def test_source_label_renders_string() -> None:
     """``Source.label`` collapses the structured source into a single string
     suitable for raw/table cells."""

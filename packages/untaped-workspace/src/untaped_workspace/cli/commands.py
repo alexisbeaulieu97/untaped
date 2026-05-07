@@ -15,6 +15,7 @@ from untaped_core import (
     OutputFormat,
     UntapedError,
     format_output,
+    get_settings,
     read_identifiers,
     report_errors,
 )
@@ -24,6 +25,7 @@ from untaped_workspace.application import (
     AdoptWorkspace,
     EditWorkspace,
     Foreach,
+    ForgetWorkspace,
     ImportWorkspace,
     InitWorkspace,
     ListWorkspaces,
@@ -95,16 +97,26 @@ def list_command(
 
 @app.command("init", no_args_is_help=True)
 def init_command(
-    path: Path = typer.Argument(..., help="Workspace directory (created if missing)."),
-    name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
+    name: str = typer.Argument(..., help="Workspace name."),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Override location (default: workspace.workspaces_dir / name).",
+    ),
     branch: str | None = typer.Option(
         None, "--branch", "-b", help="Default branch for newly cloned repos."
     ),
 ) -> None:
-    """Initialise a new workspace at `path`."""
+    """Initialise a new workspace named `name`.
+
+    Default location is `<workspace.workspaces_dir>/<name>` (the
+    `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
+    """
     with report_errors():
+        target = path or (get_settings().workspace.workspaces_dir.expanduser() / name)
         ws = InitWorkspace(ManifestRepository(), WorkspaceRegistryRepository())(
-            path, name=name, branch=branch
+            target, name=name, branch=branch
         )
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
 
@@ -136,6 +148,37 @@ def adopt_command(
             f"({len(manifest.repos)} repo{'s' if len(manifest.repos) != 1 else ''})",
             err=True,
         )
+
+
+# forget ---------------------------------------------------------------------
+
+
+@app.command("forget", no_args_is_help=True)
+def forget_command(
+    name: str = typer.Argument(..., help="Workspace name.", autocompletion=complete_workspace_name),
+    prune: bool = typer.Option(
+        False, "--prune", help="Also delete the workspace directory (refuses if dirty)."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
+) -> None:
+    """Remove a workspace from the registry.
+
+    The on-disk manifest and clones are preserved by default. Pass
+    `--prune` to also remove the workspace directory (refused if any
+    repo has uncommitted changes).
+    """
+    with report_errors():
+        if prune and not _confirm(f"prune workspace directory for {name!r}?", yes=yes):
+            typer.echo("aborted", err=True)
+            raise typer.Exit(code=1)
+        ws = ForgetWorkspace(
+            WorkspaceRegistryRepository(),
+            ManifestRepository(),
+            fs=LocalFilesystem(),
+            status=GitRunner(),
+        )(name, prune=prune)
+        action = "forgot and pruned" if prune else "forgot"
+        typer.echo(f"{action} workspace {ws.name!r}", err=True)
 
 
 # add ------------------------------------------------------------------------

@@ -290,6 +290,21 @@ detached HEAD becomes `branch: null`). Adopted clones do not share
 objects with the bare cache — the cascade only links new clones via
 `git clone --reference`.
 
+`workspace init <name>` takes the **name** as its positional argument
+and defaults the location to `<workspace.workspaces_dir>/<name>`
+(`workspaces_dir` defaults to `~/.untaped/workspaces`, settable per
+profile). Pass `-p / --path` to override the location for a one-off
+workspace that lives elsewhere. `workspace adopt`, by contrast, keeps
+`<path>` positional because adopt fundamentally targets an
+already-populated directory.
+
+`workspace forget <name>` deletes the workspace's registry entry only.
+Pass `--prune` to also `rmtree` the workspace directory; pruning is
+refused (mirroring `workspace remove --prune`) when any declared repo
+has uncommitted changes. A missing manifest or missing directory are
+tolerated — the registry entry is removed regardless. Implementation:
+`application.ForgetWorkspace`.
+
 ### `untaped-awx` — declarative resource framework
 
 The AWX bounded context follows the same DDD layout but builds a small
