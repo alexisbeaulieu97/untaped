@@ -1,21 +1,28 @@
-"""Render a :class:`JobEvent` as a single human-readable stderr line.
+"""Render a :class:`JobEvent` as a single human-readable line.
+
+Two surfaces:
+
+- :func:`render_event` — plain string, used by tests, ``--format raw``,
+  and any consumer that wants stable byte-for-byte output.
+- :func:`render_event_text` — :class:`rich.text.Text` carrying status
+  styles. Pass it to a :class:`rich.console.Console`; when stdout/stderr
+  is a TTY, Rich emits ANSI colour, when piped or redirected the styling
+  is stripped automatically — same shape as ``less | grep | tee``.
 
 Picks an indent and a status word from the AWX event-name discriminator
-so a streaming feed reads like the AWX UI's "Output" tab without ANSI
-or a TUI:
+so a streaming feed reads like the AWX UI's "Output" tab without needing
+a TUI:
 
     PLAY [Deploy app]
     TASK [common : install]
       ok: web-01
       changed: web-02
       failed: api-01
-
-The format is intentionally line-oriented (one event per line, no
-multi-line bodies, no colour codes) so it survives piping into
-``less``, ``grep``, or a CI log collector.
 """
 
 from __future__ import annotations
+
+from rich.text import Text
 
 from untaped_awx.domain import JobEvent
 
@@ -35,6 +42,21 @@ _RUNNER_RESULTS: dict[str, str] = {
     "runner_item_on_skipped": "skipped",
 }
 
+# Per-result colour. Conventions match `ansible-playbook` so anyone
+# already used to Ansible's output recognises them at a glance.
+_RUNNER_STYLES: dict[str, str] = {
+    "ok": "green",
+    "changed": "yellow",
+    "failed": "bold red",
+    "unreachable": "bold red",
+    "skipped": "cyan",
+    "no-hosts": "dim",
+}
+
+_PLAY_STYLE = "bold cyan"
+_TASK_STYLE = "bold blue"
+_RECAP_STYLE = "bold"
+
 
 def _host_label(ev: JobEvent) -> str:
     """Prefer the denormalised ``host_name``; fall back to the FK id.
@@ -52,7 +74,7 @@ def _host_label(ev: JobEvent) -> str:
 
 
 def render_event(ev: JobEvent) -> str:
-    """Return one rendered line for ``ev`` (no trailing newline)."""
+    """Return one rendered line for ``ev`` (no trailing newline, no ANSI)."""
     if ev.event == "playbook_on_play_start":
         play = ev.play or "(unnamed play)"
         return f"PLAY [{play}]"
@@ -73,3 +95,30 @@ def render_event(ev: JobEvent) -> str:
     if ev.task:
         parts.append(f"task={ev.task}")
     return " ".join(parts)
+
+
+def render_event_text(ev: JobEvent) -> Text:
+    """Return :class:`rich.text.Text` with status styling.
+
+    Use with :class:`rich.console.Console` so colour is emitted on TTY
+    and stripped on pipes — no manual ``isatty`` check required.
+    """
+    if ev.event == "playbook_on_play_start":
+        play = ev.play or "(unnamed play)"
+        return Text(f"PLAY [{play}]", style=_PLAY_STYLE)
+    if ev.event == "playbook_on_task_start":
+        task = ev.task or "(unnamed task)"
+        return Text(f"TASK [{task}]", style=_TASK_STYLE)
+    if ev.event in _RUNNER_RESULTS:
+        verdict = _RUNNER_RESULTS[ev.event]
+        style = _RUNNER_STYLES.get(verdict, "")
+        line = Text("  ")
+        line.append(verdict, style=style)
+        line.append(f": {_host_label(ev)}")
+        return line
+    if ev.event == "playbook_on_stats":
+        return Text("PLAY RECAP", style=_RECAP_STYLE)
+    if ev.event == "playbook_on_no_hosts_matched":
+        return Text("skipped: no hosts matched", style=_RUNNER_STYLES["skipped"])
+    # Fallback: same shape as ``render_event`` but unstyled.
+    return Text(render_event(ev))

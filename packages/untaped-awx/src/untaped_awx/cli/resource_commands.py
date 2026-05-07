@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from rich.console import Console
 from untaped_core import (
     ColumnsOption,
     OutputFormat,
@@ -26,7 +27,7 @@ from untaped_awx.application import (
 )
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
-from untaped_awx.cli._event_render import render_event
+from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
@@ -313,6 +314,9 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
         )
         jobs: list[Any] = []
         any_failed = False
+        # Stderr console for ``--track``: ANSI when stderr is a TTY,
+        # plain text when redirected (CI logs, piped through ``tee``).
+        track_console = Console(stderr=True, highlight=False)
         with report_errors(), open_context() as ctx:
             scope = _scope(ctx, organization, spec)
             payload = _build_launch_payload(
@@ -343,8 +347,11 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     if track:
                         # Render each event to stderr as it lands, then
                         # let the monitor's terminal flip end the loop.
+                        # ``track_console`` carries the TTY-aware colour
+                        # styling so green-ok / red-failed pop in a real
+                        # terminal but stay plain text when piped.
                         for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
-                            typer.echo(render_event(ev), err=True)
+                            track_console.print(render_event_text(ev))
                         job = ctx.monitor.fetch(job)
                     elif wait:
                         job = WatchJob(ctx.repo)(job)
