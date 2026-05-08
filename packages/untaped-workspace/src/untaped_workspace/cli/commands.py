@@ -205,9 +205,12 @@ def add_command(
         repo = AddRepo(ManifestRepository())(ws, url=url, repo_name=repo_name, branch=branch)
         typer.echo(f"added {repo.name} to {ws.name!r}", err=True)
         if sync:
-            outcomes = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())(
-                ws, only=[repo.name]
-            )
+            outcomes = SyncWorkspace(
+                ManifestRepository(),
+                GitRunner(),
+                fs=LocalFilesystem(),
+                cache_dir=get_settings().workspace.cache_dir,
+            )(ws, only=[repo.name])
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
@@ -278,7 +281,12 @@ def sync_command(
     """Reconcile workspace clones with the manifest."""
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
-        use_case = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
+        use_case = SyncWorkspace(
+            ManifestRepository(),
+            GitRunner(),
+            fs=LocalFilesystem(),
+            cache_dir=get_settings().workspace.cache_dir,
+        )
         if all_workspaces and only:
             typer.echo(
                 "warning: --all --only filters per-workspace; workspaces without "
@@ -424,7 +432,12 @@ def import_command(
         )
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
-            outcomes = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())(ws)
+            outcomes = SyncWorkspace(
+                ManifestRepository(),
+                GitRunner(),
+                fs=LocalFilesystem(),
+                cache_dir=get_settings().workspace.cache_dir,
+            )(ws)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
