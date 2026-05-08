@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from untaped_workspace.application import ForgetWorkspace
 from untaped_workspace.domain import Workspace
-from untaped_workspace.errors import RegistryError, WorkspaceError
+from untaped_workspace.errors import GitError, RegistryError, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 
@@ -116,15 +116,59 @@ def test_forget_prune_succeeds_when_path_missing(tmp_path: Path) -> None:
     assert reg.entries == []
 
 
-def test_forget_prune_succeeds_when_manifest_missing(tmp_path: Path) -> None:
+def test_forget_succeeds_when_manifest_missing(tmp_path: Path) -> None:
+    """Without ``--prune``, a missing manifest is tolerated — the registry
+    entry is removed regardless. Files on disk are preserved.
+    """
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     (ws_path / "stranded.txt").write_text("no manifest here")
     reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
 
-    ForgetWorkspace(
-        reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus(dirty=set())
-    )("prod", prune=True)
+    ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())("prod")
 
-    assert not ws_path.exists()
     assert reg.entries == []
+    assert ws_path.is_dir()  # preserved
+
+
+def test_forget_prune_refuses_when_manifest_missing(tmp_path: Path) -> None:
+    """With ``--prune``, refuse to rmtree if we can't read the manifest —
+    we have no way to verify cleanliness, so the user is asked to delete
+    the directory manually.
+    """
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    (ws_path / "stranded.txt").write_text("no manifest here")
+    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+
+    with pytest.raises(WorkspaceError, match="no manifest"):
+        ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())(
+            "prod", prune=True
+        )
+
+    assert ws_path.is_dir()  # untouched
+    assert reg.entries  # registry untouched
+
+
+def test_forget_prune_refuses_when_declared_repo_is_not_a_clone(tmp_path: Path) -> None:
+    """If a manifest declares a directory that exists but isn't a git
+    clone, ``is_dirty`` raises ``GitError``. Refuse with a clear message
+    rather than letting the raw subprocess error escape.
+    """
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    (ws_path / "svc-a").mkdir()  # exists but no .git
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
+    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+
+    class _ExplodingStatus:
+        def is_dirty(self, repo_path: Path) -> bool:
+            raise GitError("git status failed: not a git repository")
+
+    with pytest.raises(WorkspaceError, match="cannot inspect 'svc-a'"):
+        ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_ExplodingStatus())(
+            "prod", prune=True
+        )
+
+    assert ws_path.is_dir()  # untouched
+    assert reg.entries  # registry untouched

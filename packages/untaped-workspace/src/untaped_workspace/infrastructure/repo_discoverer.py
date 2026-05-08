@@ -26,6 +26,12 @@ class LocalRepoDiscoverer:
         repos: list[DiscoveredRepo] = []
         skipped: list[str] = []
         for entry in sorted(path.iterdir(), key=lambda p: p.name):
+            if entry.is_symlink():
+                # Following symlinks would silently widen the workspace's
+                # blast radius (sync --prune, foreach, etc.) to wherever
+                # the link points. Skip and surface explicitly.
+                skipped.append(f"{entry.name}: symlink — skipping")
+                continue
             if not entry.is_dir() or not (entry / ".git").exists():
                 continue
             url = self._runner.read_remote_url(entry)

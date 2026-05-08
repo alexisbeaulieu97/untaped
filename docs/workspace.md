@@ -73,6 +73,19 @@ name and path.
 
 ### `init`
 
+> **Breaking change.** `init` previously took a path positional
+> (`init <path> --name <name>`). It now takes the workspace **name**
+> positionally with an optional `--path` override:
+>
+> ```bash
+> # before:  untaped workspace init ~/work/prod --name prod
+> # after:   untaped workspace init prod --path ~/work/prod
+> ```
+>
+> The default location is `<workspace.workspaces_dir>/<name>`
+> (`workspaces_dir` defaults to `~/.untaped/workspaces` and is
+> profile-overridable). Update any shell aliases or scripts.
+
 ```bash
 untaped workspace init <name> [--path <dir>] [--branch <default>]
 ```
@@ -239,6 +252,10 @@ Three error-handling modes:
 | *(default)*            | No — fail-fast    | non-zero on failure  | You want to stop and investigate.         |
 | `--continue-on-error`  | Yes               | non-zero if any failed | You want every repo's outcome but still want CI to fail. |
 | `--ignore-errors`      | Yes               | always `0`           | Inside `set -e` shell scripts where partial failure is fine. |
+
+If both `--continue-on-error` and `--ignore-errors` are passed,
+`--ignore-errors` wins on exit code (`--continue-on-error` is
+redundant in that combination).
 
 On `--format table`, a `failed in: <repos>` summary is written to
 stderr whenever any repo failed — regardless of mode, so failures are

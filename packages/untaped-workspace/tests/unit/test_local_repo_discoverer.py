@@ -88,3 +88,14 @@ def test_discover_records_none_branch_on_detached_head(tmp_path: Path) -> None:
     a = _seed_repo(tmp_path, "a")
     result = _make({a: ("https://x/a.git", None)}).discover(tmp_path)
     assert result.repos[0].branch is None
+
+
+def test_discover_skips_symlinked_directories(tmp_path: Path) -> None:
+    real = _seed_repo(tmp_path, "real")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+
+    result = _make({real: ("https://x/real.git", "main")}).discover(tmp_path)
+
+    assert [d.name for d in result.repos] == ["real"]
+    assert any("link" in s and "symlink" in s for s in result.skipped), result.skipped

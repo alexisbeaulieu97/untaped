@@ -7,7 +7,7 @@ from typing import Protocol
 
 from untaped_workspace.application.remove_repo import Filesystem, StatusInspector
 from untaped_workspace.domain import Workspace, WorkspaceManifest
-from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.errors import GitError, WorkspaceError
 
 
 class _ManifestStorage(Protocol):
@@ -54,13 +54,23 @@ class ForgetWorkspace:
 
     def _refuse_if_any_repo_dirty(self, ws: Workspace) -> None:
         if not self._manifests.exists(ws.path):
-            return
+            raise WorkspaceError(
+                f"refusing to prune {ws.name!r}: no manifest at {ws.path} "
+                "(delete the directory manually if that's what you want)"
+            )
         manifest = self._manifests.read(ws.path)
         dirty: list[str] = []
         for repo in manifest.repos:
             local = ws.path / repo.name
-            if local.is_dir() and self._status.is_dirty(local):
-                dirty.append(repo.name)
+            if not local.is_dir():
+                continue
+            try:
+                if self._status.is_dirty(local):
+                    dirty.append(repo.name)
+            except GitError as exc:
+                raise WorkspaceError(
+                    f"refusing to prune {ws.name!r}: cannot inspect {repo.name!r} ({local}): {exc}"
+                ) from exc
         if dirty:
             raise WorkspaceError(
                 f"refusing to prune {ws.name!r}: uncommitted changes in {', '.join(dirty)}"

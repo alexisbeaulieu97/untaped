@@ -143,8 +143,9 @@ def adopt_command(
         )(path, name=name)
         ws = result.workspace
         n = len(result.repos)
+        suffix = " — nothing matched (use 'workspace add' to declare repos)" if n == 0 else ""
         typer.echo(
-            f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''})",
+            f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''}){suffix}",
             err=True,
         )
 
@@ -359,8 +360,8 @@ def foreach_command(
         "--ignore-errors",
         help=(
             "Treat per-repo failures as non-fatal. Implies --continue-on-error "
-            "and exits 0 even when some repos failed. Failed repos are still "
-            "listed in the summary."
+            "and exits 0 even when some repos failed. Wins on exit code if both "
+            "flags are passed. Failed repos are still listed in the summary."
         ),
     ),
     fmt: FormatOption = "table",

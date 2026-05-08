@@ -110,6 +110,29 @@ def test_adopt_refuses_when_manifest_already_exists(tmp_path: Path) -> None:
         )
 
 
+def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
+    """The simplify pass moved ``warn`` from infrastructure (the discoverer)
+    up to application (``AdoptWorkspace``). Verify each skipped reason
+    surfaced by the discoverer is forwarded to the injected callback.
+    """
+    ws_path = tmp_path / "lab"
+    ws_path.mkdir()
+    warnings: list[str] = []
+    discoverer = _StubDiscoverer(
+        [],
+        skipped=["b: no 'origin' remote — skipping", "c: symlink — skipping"],
+    )
+
+    AdoptWorkspace(ManifestRepository(), _StubRegistry(), discoverer, warn=warnings.append)(
+        ws_path, name="lab"
+    )
+
+    assert warnings == [
+        "b: no 'origin' remote — skipping",
+        "c: symlink — skipping",
+    ]
+
+
 def test_adopt_refuses_when_path_already_registered(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()

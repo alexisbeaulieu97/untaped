@@ -199,6 +199,19 @@ def test_adopt_missing_path_errors(tmp_path: Path) -> None:
     assert "does not exist" in (result.output or result.stderr)
 
 
+def test_adopt_empty_directory_hints_nothing_matched(tmp_path: Path) -> None:
+    """An empty directory is a valid adopt target but the user usually
+    expected something to match. Surface the empty case explicitly so
+    the operation isn't silent.
+    """
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    result = CliRunner().invoke(app, ["adopt", str(empty), "--name", "lab"])
+    assert result.exit_code == 0, result.output
+    assert "(0 repos)" in result.output
+    assert "nothing matched" in result.output
+
+
 # ── forget ─────────────────────────────────────────────────────────────────
 
 
@@ -229,6 +242,19 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
     forget = runner.invoke(app, ["forget", "scratch", "--prune", "--yes"])
     assert forget.exit_code == 0, forget.output
     assert not target.exists()
+
+
+def test_forget_prune_aborts_on_no_at_prompt(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "scratch", "--path", str(target)])
+
+    forget = runner.invoke(app, ["forget", "scratch", "--prune"], input="n\n")
+    assert forget.exit_code == 1
+    assert "aborted" in forget.output
+    assert target.is_dir()  # files preserved
+    listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert "scratch" in listed.stdout.splitlines()  # registry untouched
 
 
 def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
