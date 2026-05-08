@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import queue
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -26,10 +28,12 @@ from untaped_awx.application import (
     StreamJobEvents,
     WatchJob,
 )
+from untaped_awx.application.ports import JobMonitor
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._names import flatten_fks
+from untaped_awx.domain import Job, JobEvent
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
@@ -292,6 +296,54 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
 # ---- launch ----
 
 
+def _drain_parallel(
+    monitor: JobMonitor,
+    jobs: list[tuple[str, Job]],
+    console: Console,
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Drain ``--track`` events from multiple jobs concurrently.
+
+    Workers stream :class:`JobEvent`s onto a :class:`queue.Queue`; the
+    main thread drains the queue and prints with the originating
+    template name as a prefix so concurrent output stays
+    disambiguable on a shared stderr. After every worker has signalled
+    completion (sentinel ``(name, None)``), each future's final
+    :class:`Job` (post ``monitor.fetch``) is collected in launch order.
+    Per-job :class:`UntapedError`s are returned alongside successful
+    results so the caller can preserve today's per-job error stderr
+    rows + ``any_failed`` exit-code semantics.
+    """
+    q: queue.Queue[tuple[str, JobEvent | None]] = queue.Queue()
+
+    def _worker(name: str, job: Job) -> Job:
+        try:
+            for ev in StreamJobEvents(monitor)(job, follow=True):
+                q.put((name, ev))
+        finally:
+            q.put((name, None))
+        return monitor.fetch(job)
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
+        # Single-threaded printing: queue drain runs only here so a
+        # multi-segment Rich Text never interleaves between workers.
+        done = 0
+        while done < len(jobs):
+            name, ev = q.get()
+            if ev is None:
+                done += 1
+                continue
+            console.print(render_event_text(ev, prefix=name))
+        results: list[Job] = []
+        errors: list[tuple[str, UntapedError]] = []
+        for name, future in futures:
+            try:
+                results.append(future.result())
+            except UntapedError as exc:
+                errors.append((name, exc))
+    return results, errors
+
+
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
@@ -399,25 +451,34 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
             # Monitor phase — drains each launched job to its terminal
-            # state. M2 keeps it sequential; M3/M4 dispatch to a parallel
-            # helper when ``len(launched) >= 2``.
-            for n, job in launched:
-                try:
-                    if track:
-                        # Render each event to stderr as it lands, then
-                        # let the monitor's terminal flip end the loop.
-                        # ``track_console`` carries the TTY-aware colour
-                        # styling so green-ok / red-failed pop in a real
-                        # terminal but stay plain text when piped.
-                        for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
-                            track_console.print(render_event_text(ev))
-                        job = ctx.monitor.fetch(job)
-                    elif wait:
-                        job = WatchJob(ctx.repo)(job)
-                    jobs.append(job)
-                except UntapedError as exc:
-                    typer.echo(f"error: {n}: {exc}", err=True)
+            # state. Two or more ``--track`` jobs run concurrently
+            # (wall-clock = max, not sum); single-template stays
+            # sequential for stable tracebacks and zero thread overhead.
+            if track and len(launched) >= 2:
+                results, errors = _drain_parallel(ctx.monitor, launched, track_console)
+                jobs.extend(results)
+                for failed_name, failure in errors:
+                    typer.echo(f"error: {failed_name}: {failure}", err=True)
                     any_failed = True
+            else:
+                for n, job in launched:
+                    try:
+                        if track:
+                            # Render each event to stderr as it lands,
+                            # then let the monitor's terminal flip end
+                            # the loop. ``track_console`` carries the
+                            # TTY-aware colour styling so green-ok /
+                            # red-failed pop in a real terminal but
+                            # stay plain text when piped.
+                            for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
+                                track_console.print(render_event_text(ev))
+                            job = ctx.monitor.fetch(job)
+                        elif wait:
+                            job = WatchJob(ctx.repo)(job)
+                        jobs.append(job)
+                    except UntapedError as exc:
+                        typer.echo(f"error: {n}: {exc}", err=True)
+                        any_failed = True
         if jobs:
             typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
         if track and any(j.status != "successful" for j in jobs):
