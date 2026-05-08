@@ -70,7 +70,15 @@ class RepoDiscoverer(Protocol):
 
 class CompletedCommand(Protocol):
     """Structural shape of ``subprocess.CompletedProcess[str]`` —
-    keeps :mod:`subprocess` out of the application layer."""
+    keeps :mod:`subprocess` out of the application layer.
+
+    ``stdout`` / ``stderr`` are typed as ``str`` rather than
+    ``str | None`` because the default :data:`ShellRunner` always
+    runs with ``capture_output=True``, which guarantees both fields
+    are populated. :class:`Foreach` defensively coerces ``None`` to
+    ``""`` regardless, so a custom runner returning ``None`` is
+    handled at runtime even though it's a Protocol violation.
+    """
 
     returncode: int
     stdout: str
