@@ -248,12 +248,6 @@ _INFRA_MAY_READ_SETTINGS: frozenset[str] = frozenset(
         # Meta-domain: the whole purpose of ``untaped-config`` is to read
         # and edit ``Settings``; the introspection adapter has to import it.
         "untaped_config/infrastructure/settings_repo.py",
-        # Pre-existing tech debt: ``cache_path_for`` falls back to
-        # ``get_settings().workspace.cache_dir`` when no ``cache_dir``
-        # kwarg is passed. Callers (``GitRunner.ensure_bare``) already
-        # accept ``cache_dir``; remove the fallback and drop this entry
-        # in a follow-up PR.
-        "untaped_workspace/infrastructure/bare_cache.py",
     }
 )
 

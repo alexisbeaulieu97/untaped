@@ -26,7 +26,7 @@ class SyncWorkspace:
         git: GitOperations,
         *,
         fs: Filesystem,
-        cache_dir: Path | None = None,
+        cache_dir: Path,
     ) -> None:
         self._manifests = manifests
         self._git = git
