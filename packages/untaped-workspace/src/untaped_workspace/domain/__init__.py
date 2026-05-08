@@ -5,6 +5,11 @@ from untaped_workspace.domain.manifest import (
     derive_repo_name,
 )
 from untaped_workspace.domain.models import Workspace
+from untaped_workspace.domain.payloads import (
+    DiscoveredRepo,
+    DiscoveryResult,
+    ManifestSource,
+)
 from untaped_workspace.domain.state import (
     ForeachOutcome,
     RepoStatus,
@@ -14,8 +19,11 @@ from untaped_workspace.domain.state import (
 )
 
 __all__ = [
+    "DiscoveredRepo",
+    "DiscoveryResult",
     "ForeachOutcome",
     "ManifestDefaults",
+    "ManifestSource",
     "Repo",
     "RepoStatus",
     "StatusEntry",

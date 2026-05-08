@@ -3,35 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
 
-from untaped_workspace.domain import Workspace, WorkspaceManifest
+from untaped_workspace.application.ports import ManifestRepository, WorkspaceRegistry
+from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import WorkspaceError
-
-
-class _ManifestStorage(Protocol):
-    def exists(self, workspace_dir: Path) -> bool: ...
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
-    def read_external(self, source: Path) -> _Loaded: ...
-
-
-class _Loaded(Protocol):
-    @property
-    def manifest(self) -> WorkspaceManifest: ...
-    @property
-    def source(self) -> Path: ...
-
-
-class _RegistryStorage(Protocol):
-    def register(self, *, name: str, path: Path) -> Workspace: ...
-    def find_by_path(self, path: Path) -> Workspace | None: ...
 
 
 class ImportWorkspace:
     def __init__(
         self,
-        manifest_repo: _ManifestStorage,
-        registry: _RegistryStorage,
+        manifest_repo: ManifestRepository,
+        registry: WorkspaceRegistry,
     ) -> None:
         self._manifests = manifest_repo
         self._registry = registry

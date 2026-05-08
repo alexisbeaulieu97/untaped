@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
-
-from untaped_workspace.domain import Repo, Workspace, WorkspaceManifest
+from untaped_workspace.application.ports import ManifestRepository
+from untaped_workspace.domain import Repo, Workspace
 from untaped_workspace.errors import WorkspaceError
 
 
-class _ManifestStorage(Protocol):
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
-
-
 class AddRepo:
-    def __init__(self, manifest_repo: _ManifestStorage) -> None:
+    def __init__(self, manifest_repo: ManifestRepository) -> None:
         self._manifests = manifest_repo
 
     def __call__(

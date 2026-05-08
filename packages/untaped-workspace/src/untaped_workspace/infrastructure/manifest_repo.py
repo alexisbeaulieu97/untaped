@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 from untaped_core import first_validation_error
 
-from untaped_workspace.domain import WorkspaceManifest
+from untaped_workspace.domain import ManifestSource, WorkspaceManifest
 from untaped_workspace.errors import ManifestError
 
 MANIFEST_FILENAME = "untaped.yml"
@@ -48,7 +47,7 @@ class ManifestRepository:
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
 
-    def read_external(self, source: Path) -> WrittenManifest:
+    def read_external(self, source: Path) -> ManifestSource:
         """Read a manifest at an arbitrary path (used by ``import``)."""
         if not source.is_file():
             raise ManifestError(f"manifest not found: {source}")
@@ -62,15 +61,7 @@ class ManifestRepository:
             raise ManifestError(
                 f"invalid manifest at {source}: {first_validation_error(exc)}"
             ) from exc
-        return WrittenManifest(manifest=manifest, source=source)
-
-
-@dataclass(frozen=True, slots=True)
-class WrittenManifest:
-    """A loaded manifest plus its source path (for nicer error messages)."""
-
-    manifest: WorkspaceManifest
-    source: Path
+        return ManifestSource(manifest=manifest, source=source)
 
 
 def _dump(manifest: WorkspaceManifest) -> str:
