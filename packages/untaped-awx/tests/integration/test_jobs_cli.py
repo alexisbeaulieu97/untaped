@@ -263,12 +263,10 @@ def test_jobs_get_with_kind_workflow_job_hits_workflow_jobs_endpoint(fake_aap: A
     assert result.stdout.strip() == "nightly-pipeline"
 
 
-def _seed_basic_jt(fake: Any, *, job_status: str) -> None:
-    """Seed JT prerequisites for ``job-templates launch deploy --track``.
-
-    FakeAap's ``_action`` handler materialises the launched job record at
-    a fresh id (using ``next_action_status`` for its terminal status), so
-    we don't need to pre-seed anything under the job id.
+def _seed_fk_prereqs(fake: Any) -> None:
+    """Seed the org / inventory / project records every JT-launch test
+    needs. FakeAap's ``_action`` handler materialises the launched job
+    record at a fresh id, so callers only seed JT records on top.
     """
     fake.seed("organizations", id=1, name="Default")
     fake.seed(
@@ -282,19 +280,49 @@ def _seed_basic_jt(fake: Any, *, job_status: str) -> None:
         organization_name="Default",
         scm_type="git",
     )
+
+
+def _seed_jt(fake: Any, *, name: str, id: int, playbook: str) -> None:
     fake.seed(
         "job_templates",
-        id=30,
-        name="deploy",
+        id=id,
+        name=name,
         organization=1,
         organization_name="Default",
         project=10,
         project_name="playbooks",
         inventory=20,
         inventory_name="prod",
-        playbook="deploy.yml",
+        playbook=playbook,
     )
+
+
+def _seed_basic_jt(fake: Any, *, job_status: str) -> None:
+    _seed_fk_prereqs(fake)
+    _seed_jt(fake, name="deploy", id=30, playbook="deploy.yml")
     fake.next_action_status = job_status
+
+
+def _seed_two_jts(fake: Any) -> None:
+    _seed_fk_prereqs(fake)
+    _seed_jt(fake, name="deploy-a", id=30, playbook="a.yml")
+    _seed_jt(fake, name="deploy-b", id=31, playbook="b.yml")
+
+
+class _PrefixingStubStream:
+    """Stand-in for ``StreamJobEvents`` that yields one identifiable
+    event per worker. The play name carries the materialised job id so
+    a failing assertion's stderr dump tells us which worker emitted
+    what. Used by every test that asserts on prefixed output.
+    """
+
+    def __init__(self, monitor: Any) -> None:
+        pass
+
+    def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+        from untaped_awx.domain import JobEvent
+
+        return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
 
 
 def test_launch_track_exits_zero_on_successful_job(fake_aap: Any) -> None:
@@ -307,3 +335,171 @@ def test_launch_track_exits_one_on_job_failure(fake_aap: Any) -> None:
     _seed_basic_jt(fake_aap, job_status="failed")
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy", "--track"])
     assert result.exit_code == 1
+
+
+def test_launch_track_parallel_drains_concurrently(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two ``--track`` jobs must drain concurrently. We prove it by
+    blocking each worker on a 2-party :class:`threading.Barrier`: a
+    sequential implementation can never reach the second worker, the
+    barrier times out, and the test fails.
+    """
+    import threading
+
+    from untaped_awx.cli import resource_commands
+
+    _seed_two_jts(fake_aap)
+    barrier = threading.Barrier(2, timeout=15)
+
+    class _BarrierStream:
+        def __init__(self, monitor: Any) -> None:
+            pass
+
+        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+            barrier.wait()
+            return iter(())
+
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _BarrierStream)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 0, result.output
+
+
+def test_launch_track_output_lines_carry_template_prefix(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent multi-template event output must be prefixed with the
+    originating template name so a shared stderr stays disambiguable.
+    """
+    from untaped_awx.cli import resource_commands
+
+    _seed_two_jts(fake_aap)
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _PrefixingStubStream)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 0, result.output
+    assert "[deploy-a]" in result.stderr
+    assert "[deploy-b]" in result.stderr
+
+
+def test_launch_track_one_failed_exits_one_and_logs_both(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mixed terminal statuses across templates: one ``failed`` → exit 1
+    AND both templates' events still reach stderr with their prefixes.
+
+    The ``next_action_status`` override is one-shot, so ``deploy-a``
+    (first launch) ends ``failed`` and ``deploy-b`` defaults back to
+    ``successful``. ``failed`` is a terminal status — no exception is
+    raised — so the failure flows through ``_drain_parallel`` into
+    ``jobs`` and the post-loop ``any(j.status != "successful")`` block
+    triggers ``exit 1``.
+    """
+    from untaped_awx.cli import resource_commands
+
+    _seed_two_jts(fake_aap)
+    fake_aap.next_action_status = "failed"
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _PrefixingStubStream)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 1, result.output
+    assert "[deploy-a]" in result.stderr
+    assert "[deploy-b]" in result.stderr
+
+
+def test_launch_wait_parallel_returns_results_in_launch_order(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--wait`` (no ``--track``) for two templates exercises
+    ``_wait_parallel``. The collected ``jobs`` list must be in launch
+    order so the table-output rows mirror the user-supplied ``ids``.
+
+    ``WatchJob`` is patched with a stub that returns the input ``Job``
+    after a small delay; the slow path (``deploy-a``) finishes after
+    the fast path (``deploy-b``) but the result list still puts
+    ``deploy-a`` first because ``_wait_parallel`` walks ``futures`` in
+    launch order before calling ``result()``.
+    """
+    import time
+
+    from untaped_awx.cli import resource_commands
+    from untaped_awx.domain import Job
+
+    _seed_two_jts(fake_aap)
+
+    class _StubWatch:
+        def __init__(self, client: Any) -> None:
+            pass
+
+        def __call__(self, job: Job, **_kwargs: Any) -> Job:
+            # First-launched (deploy-a) sleeps longer than second
+            # (deploy-b) so future-completion order != launch order.
+            # The id parity isolates which template each callback got.
+            if job.id % 2 == 0:
+                time.sleep(0.05)
+            return job.model_copy(update={"status": "successful"})
+
+    monkeypatch.setattr(resource_commands, "WatchJob", _StubWatch)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "deploy-a",
+            "deploy-b",
+            "--wait",
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # `name` column for the two materialised jobs: ``deploy-a-launch``
+    # first, ``deploy-b-launch`` second — preserves launch order even
+    # though the deploy-a worker completed second.
+    rows = [line for line in result.stdout.strip().splitlines() if line]
+    assert rows == ["deploy-a-launch", "deploy-b-launch"], result.output
+
+
+def test_launch_track_worker_exception_wraps_to_untaped_error(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-``UntapedError`` raised inside one ``--track`` worker must
+    not abort the whole batch as a raw traceback. The worker wraps it
+    as ``UntapedError(f"{type(exc).__name__}: {exc}")``, the caller
+    echoes ``error: <name>: <wrapped>``, ``any_failed`` flips, and the
+    other worker's events still reach stderr.
+
+    Pins the wrap-message format so the ``error: deploy-a: deploy-a:
+    ...`` double-prefix bug (round-2 review) cannot regress.
+    """
+    from untaped_awx.cli import resource_commands
+    from untaped_awx.domain import JobEvent
+
+    _seed_two_jts(fake_aap)
+
+    class _StubStreamWithDeployAFailure:
+        def __init__(self, monitor: Any) -> None:
+            pass
+
+        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+            # ``deploy-a`` materialises at the first new job id (32);
+            # ``deploy-b`` at the second (33). Discriminate by parity
+            # so the test isn't coupled to FakeAap's id sequencing.
+            if job.id % 2 == 0:
+                raise RuntimeError("boom")
+            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStreamWithDeployAFailure)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 1, result.output
+    # Single-prefix error row, with the original exception class name
+    # preserved for debuggability.
+    assert "error: deploy-a: RuntimeError: boom" in result.stderr
+    # The other worker isn't aborted by deploy-a's failure: deploy-b's
+    # event still streams with its prefix.
+    assert "[deploy-b]" in result.stderr

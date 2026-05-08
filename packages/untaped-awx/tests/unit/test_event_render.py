@@ -96,3 +96,34 @@ def test_render_event_text_recap_uses_recap_style() -> None:
     text = render_event_text(_ev("playbook_on_stats"))
     assert text.plain == "PLAY RECAP"
     assert str(text.style) == "bold"
+
+
+# --- prefix support (parallel multi-template launch) -----------------------
+
+
+def test_render_event_text_no_prefix_renders_unchanged() -> None:
+    """``prefix=""`` (default) keeps the output identical to a no-prefix
+    call — every existing caller continues to work without changes.
+    """
+    base = render_event_text(_ev("playbook_on_play_start", play="Deploy"))
+    same = render_event_text(_ev("playbook_on_play_start", play="Deploy"), prefix="")
+    assert same.plain == base.plain
+    assert _spans(same) == _spans(base)
+
+
+def test_render_event_text_with_prefix_prepends_bracketed_name() -> None:
+    """``prefix="deploy"`` prepends ``[deploy] `` (dim cyan) to whatever
+    the renderer would have emitted, so concurrent multi-template
+    output stays disambiguable on stderr.
+    """
+    text = render_event_text(_ev("playbook_on_play_start", play="X"), prefix="deploy")
+    assert text.plain == "[deploy] PLAY [X]"
+    assert ("[deploy] ", "dim cyan") in _spans(text)
+
+
+def test_render_event_with_prefix_returns_plain_string() -> None:
+    """``render_event`` mirrors the prefix wiring so plain-text consumers
+    (tests, ``--format raw``) see the same disambiguation.
+    """
+    line = render_event(_ev("runner_on_ok", host=5, host_name="web-01"), prefix="x")
+    assert line == "[x] " + "  ok: web-01"

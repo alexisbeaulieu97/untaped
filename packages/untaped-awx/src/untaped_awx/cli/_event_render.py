@@ -56,6 +56,7 @@ _RUNNER_STYLES: dict[str, str] = {
 _PLAY_STYLE = "bold cyan"
 _TASK_STYLE = "bold blue"
 _RECAP_STYLE = "bold"
+_PREFIX_STYLE = "dim cyan"
 
 
 def _host_label(ev: JobEvent) -> str:
@@ -73,12 +74,7 @@ def _host_label(ev: JobEvent) -> str:
     return "?"
 
 
-def render_event_text(ev: JobEvent) -> Text:
-    """Return :class:`rich.text.Text` with status styling.
-
-    Use with :class:`rich.console.Console` so colour is emitted on TTY
-    and stripped on pipes — no manual ``isatty`` check required.
-    """
+def _render_body(ev: JobEvent) -> Text:
     if ev.event == "playbook_on_play_start":
         play = ev.play or "(unnamed play)"
         return Text(f"PLAY [{play}]", style=_PLAY_STYLE)
@@ -104,6 +100,22 @@ def render_event_text(ev: JobEvent) -> Text:
     return Text(" ".join(parts))
 
 
-def render_event(ev: JobEvent) -> str:
+def render_event_text(ev: JobEvent, *, prefix: str = "") -> Text:
+    """Return :class:`rich.text.Text` with status styling.
+
+    Use with :class:`rich.console.Console` so colour is emitted on TTY
+    and stripped on pipes — no manual ``isatty`` check required.
+
+    When ``prefix`` is non-empty, ``[<prefix>] `` is prepended (dim
+    cyan) so concurrent multi-template event streams stay
+    disambiguable on a shared stderr.
+    """
+    body = _render_body(ev)
+    if not prefix:
+        return body
+    return Text.assemble(Text(f"[{prefix}] ", style=_PREFIX_STYLE), body)
+
+
+def render_event(ev: JobEvent, *, prefix: str = "") -> str:
     """Return one rendered line for ``ev`` (no trailing newline, no ANSI)."""
-    return render_event_text(ev).plain
+    return render_event_text(ev, prefix=prefix).plain
