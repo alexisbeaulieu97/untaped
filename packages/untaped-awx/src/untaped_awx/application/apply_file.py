@@ -22,7 +22,8 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
-from untaped_awx.application.apply_resource import ApplyResource, scope_for
+from untaped_awx.application.apply_planner import scope_for
+from untaped_awx.application.apply_resource import ApplyResource
 from untaped_awx.application.ports import Catalog, FkResolver, ResourceDocumentReader
 from untaped_awx.domain import ApplyOutcome, Resource
 from untaped_awx.errors import AwxApiError
