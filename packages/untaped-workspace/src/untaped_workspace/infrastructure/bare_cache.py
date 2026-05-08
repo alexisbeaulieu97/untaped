@@ -12,13 +12,10 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-from untaped_core import get_settings
 
-
-def cache_path_for(url: str, *, cache_dir: Path | None = None) -> Path:
+def cache_path_for(url: str, *, cache_dir: Path) -> Path:
     """Return the bare-cache path for ``url``."""
-    base = cache_dir or get_settings().workspace.cache_dir
-    base = base.expanduser().resolve()
+    base = cache_dir.expanduser().resolve()
     host, segments = _parse(url)
     if host is None or not segments:
         digest = hashlib.sha256(url.encode()).hexdigest()[:16]

@@ -26,7 +26,7 @@ class GitRunner:
 
     # cache --------------------------------------------------------------
 
-    def ensure_bare(self, url: str, *, cache_dir: Path | None = None) -> Path:
+    def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
         """Ensure a bare clone of ``url`` exists in the cache; return its path."""
         bare = cache_path_for(url, cache_dir=cache_dir)
         if bare.is_dir() and (bare / "HEAD").is_file():
