@@ -15,7 +15,7 @@ from typing import Any
 from untaped_awx.application._secret_paths import strip_encrypted
 from untaped_awx.application.apply_field_diff import FieldDiff
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
-from untaped_awx.application.apply_planner import ApplyPlanner, scope_for  # noqa: F401
+from untaped_awx.application.apply_planner import ApplyPlanner
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
