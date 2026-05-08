@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped_workspace.application.ports import (
-    ManifestRepository,
-    ManifestSourceLoader,
-    WorkspaceRegistry,
-)
+from untaped_workspace.application.ports import ManifestRepository, WorkspaceRegistry
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import WorkspaceError
 
@@ -17,11 +13,9 @@ class ImportWorkspace:
     def __init__(
         self,
         manifest_repo: ManifestRepository,
-        loader: ManifestSourceLoader,
         registry: WorkspaceRegistry,
     ) -> None:
         self._manifests = manifest_repo
-        self._loader = loader
         self._registry = registry
 
     def __call__(
@@ -31,7 +25,7 @@ class ImportWorkspace:
         path: Path,
         name: str | None = None,
     ) -> Workspace:
-        loaded = self._loader.read_external(source.expanduser().resolve())
+        loaded = self._manifests.read_external(source.expanduser().resolve())
         canonical = path.expanduser().resolve()
 
         ws_name = name or loaded.manifest.name or canonical.name

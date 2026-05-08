@@ -225,8 +225,7 @@ repos:
     dest = tmp_path / "ws-imported"
 
     reg = _StubRegistry()
-    repo = ManifestRepository()
-    result = ImportWorkspace(repo, repo, reg)(src, path=dest, name="imported")
+    result = ImportWorkspace(ManifestRepository(), reg)(src, path=dest, name="imported")
     assert result.name == "imported"
     assert (dest / "untaped.yml").is_file()
     loaded = ManifestRepository().read(dest)
@@ -239,8 +238,7 @@ def test_import_uses_path_dirname_when_no_name(tmp_path: Path) -> None:
     src = tmp_path / "m.yml"
     src.write_text("repos: []\n")
     dest = tmp_path / "auto"
-    repo = ManifestRepository()
-    ImportWorkspace(repo, repo, _StubRegistry())(src, path=dest)
+    ImportWorkspace(ManifestRepository(), _StubRegistry())(src, path=dest)
     assert ManifestRepository().read(dest).name == "auto"
 
 

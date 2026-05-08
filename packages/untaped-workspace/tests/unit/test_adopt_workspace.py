@@ -3,8 +3,8 @@
 from pathlib import Path
 
 import pytest
-from untaped_workspace.application import AdoptWorkspace, DiscoveredRepo
-from untaped_workspace.domain import Workspace
+from untaped_workspace.application import AdoptWorkspace
+from untaped_workspace.domain import DiscoveredRepo, Workspace
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import ManifestRepository
 

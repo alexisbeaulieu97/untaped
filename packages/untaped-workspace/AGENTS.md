@@ -43,23 +43,24 @@ are shared without `git worktree` branch conflicts.
 
 ## Ports module
 
-Every cross-use-case `Protocol`, shared DTO, and Callable alias lives
-in `application/ports.py`. Use cases declare the narrowest port
-they need (e.g. `ManifestReader` vs. `ManifestRepository`,
-`StatusInspector` vs. `GitInspector` vs. `GitOperations`); fatter
-ports extend slimmer ones via `Protocol` inheritance, so the
-concrete `ManifestRepository` / `WorkspaceRegistryRepository` /
-`GitRunner` / `LocalFilesystem` / `LocalRepoDiscoverer` adapters
-satisfy every variant structurally with no `: Filesystem` declaration.
+Every cross-use-case `Protocol` and Callable alias lives in
+`application/ports.py`. Use cases declare the narrowest port they
+need (`ManifestReader` vs. `ManifestRepository`, `StatusInspector`
+vs. `GitInspector` vs. `GitOperations`); fatter ports extend slimmer
+ones via `Protocol` inheritance, so the concrete
+`ManifestRepository` / `WorkspaceRegistryRepository` / `GitRunner` /
+`LocalFilesystem` / `LocalRepoDiscoverer` adapters satisfy every
+variant structurally with no explicit base class.
 
 Mirrors `untaped-awx`'s `application/ports.py`. When you add a new
 shared port, put it here — never declare a private `_FooStorage`
 inside a use-case file.
 
 DTOs that cross the application/infrastructure boundary
-(`DiscoveredRepo`, `DiscoveryResult`, `ManifestSource`) also live in
-`ports.py`. Infrastructure adapters import them from there to satisfy
-their return types.
+(`DiscoveredRepo`, `DiscoveryResult`, `ManifestSource`) live in
+`domain/payloads.py` as pydantic `BaseModel`s — keeps the
+`infrastructure → domain` arrow clean and matches the rest of the
+package's pydantic-everywhere convention.
 
 ## `system_adapters` for other side effects
 

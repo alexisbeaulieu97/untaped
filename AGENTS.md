@@ -106,19 +106,19 @@ src/untaped_<x>/
 
 ```
 cli  →  application  →  domain
-              ↑
-        infrastructure  →  domain
+                 ↓
+           infrastructure  →  domain
 ```
 
 - `domain/` imports nothing from the other three layers — pure.
-- `application/` orchestrates: declares its port `Protocol`s (and any
-  shared DTOs / Callable aliases) in `application/ports.py`; use cases
-  take them via constructor (DI).
-- `infrastructure/` knows about httpx, the filesystem, the config
-  file. It may import from `application/ports.py` to satisfy the port
-  contracts and consume shared DTOs — but **only** from `ports.py`,
-  not from any other application module. Concrete adapters speak only
-  the port shapes.
+  Owns transport DTOs that cross the application/infrastructure
+  boundary (in `domain/payloads.py`) so adapters need not import from
+  application.
+- `application/` orchestrates: declares its port `Protocol`s and any
+  Callable aliases in `application/ports.py`; use cases take them via
+  constructor (DI). Concrete adapters speak the port shapes
+  structurally — they don't import from `application/`.
+- `infrastructure/` knows about httpx, the filesystem, the config file.
 - `cli/` is the thinnest layer: parse Typer args, build a use case
   (passing in concrete adapters), call it, format the result.
 
@@ -147,7 +147,8 @@ A use case in `application/` is unit-testable with a stub satisfying its
 | Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
 | Merge `default` ⤥ active to an effective dict | `from untaped_core import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr`                                             |
-| Declare port `Protocol`s / shared DTOs for a domain | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (one module per package; concrete adapters in `infrastructure/` import from it) |
+| Declare port `Protocol`s for a domain      | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (one module per package; concrete adapters satisfy the Protocols structurally) |
+| Declare DTOs that cross app/infra boundary | `packages/untaped-<x>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |
 
 Cross-cutting subsystems with their own internals doc:
 

@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped_workspace.application.ports import (
-    DiscoveredRepo,
     ManifestRepository,
     RepoDiscoverer,
     WorkspaceRegistry,
 )
 from untaped_workspace.domain import (
+    DiscoveredRepo,
     ManifestDefaults,
     Repo,
     Workspace,
