@@ -1,8 +1,10 @@
 """Tests for the settings schema walker."""
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import SecretStr
+from untaped_core import redact_secrets, secret_field_paths
 from untaped_core.config_schema import find_descriptor, walk_settings
 from untaped_core.settings import Settings
 
@@ -71,3 +73,38 @@ def test_optional_unwrapped() -> None:
 def test_find_descriptor_returns_none_for_unknown() -> None:
     descriptors = walk_settings(Settings)
     assert find_descriptor(descriptors, "does.not.exist") is None
+
+
+def test_redact_secrets_replaces_secret_leaves() -> None:
+    data: dict[str, Any] = {
+        "awx": {"token": "xoxb-secret"},
+        "github": {"token": "ghp_secret"},
+    }
+    out = redact_secrets(data, [("awx", "token"), ("github", "token")])
+    assert out == {"awx": {"token": "***"}, "github": {"token": "***"}}
+    # Source dict is not mutated.
+    assert data["awx"]["token"] == "xoxb-secret"
+
+
+def test_redact_secrets_preserves_none() -> None:
+    data: dict[str, Any] = {"awx": {"token": None}}
+    out = redact_secrets(data, [("awx", "token")])
+    assert out == {"awx": {"token": None}}
+
+
+def test_redact_secrets_skips_missing_paths() -> None:
+    # Profile-shaped data may omit any subset of the schema; missing
+    # paths are silently skipped rather than raising.
+    data: dict[str, Any] = {"awx": {}}
+    out = redact_secrets(data, [("awx", "token"), ("github", "token")])
+    assert out == {"awx": {}}
+
+
+def test_secret_field_paths_includes_known_settings_secrets() -> None:
+    # Pin the contract: every SecretStr in Settings is returned. Adding a
+    # new SecretStr to the schema (per AGENTS.md "Recipe: add a new
+    # setting") must make this test fail until the new path lands here.
+    paths = secret_field_paths(Settings)
+    assert ("awx", "token") in paths
+    assert ("github", "token") in paths
+    assert len(paths) == 2  # Update when adding a new SecretStr to Settings.

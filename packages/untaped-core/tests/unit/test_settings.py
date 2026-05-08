@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from untaped_core import resolve_config_path
 from untaped_core.settings import Settings, get_settings
 
 
@@ -161,3 +162,13 @@ def test_awx_api_prefix_must_start_and_end_with_slash() -> None:
         AwxSettings(api_prefix="api/v2/")
     with pytest.raises(ValidationError):
         AwxSettings(api_prefix="/api/v2")
+
+
+def test_resolve_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", "/tmp/custom-config.yml")
+    assert resolve_config_path() == Path("/tmp/custom-config.yml")
+
+
+def test_resolve_config_path_defaults_to_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UNTAPED_CONFIG", raising=False)
+    assert resolve_config_path() == Path("~/.untaped/config.yml").expanduser()
