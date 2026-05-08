@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import ValidationError
@@ -137,20 +137,44 @@ class SettingsFileRepository:
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
         """Resolve the target profile for a ``set`` or ``unset``, validating
-        existence when an explicit profile was named."""
-        if profile is None:
-            return effective_active_profile_name(data) or DEFAULT_PROFILE
-        if profile == DEFAULT_PROFILE:
-            return profile
+        that the resolved profile exists.
+
+        ``default`` is exempt from the check — it's the auto-created floor
+        when nothing else is named (no ``--profile``, no ``active:``, no
+        ``UNTAPED_PROFILE``).
+        """
+        if profile is not None:
+            if profile == DEFAULT_PROFILE:
+                return profile
+            return self._require_existing(data, profile, source="explicit")
+        recorded = effective_active_profile_name(data)
+        if not recorded or recorded == DEFAULT_PROFILE:
+            return DEFAULT_PROFILE
+        return self._require_existing(data, recorded, source="active")
+
+    def _require_existing(
+        self,
+        data: dict[str, Any],
+        name: str,
+        *,
+        source: Literal["explicit", "active"],
+    ) -> str:
         existing = data.get("profiles") or {}
-        if not isinstance(existing, dict) or profile not in existing:
-            known = sorted(existing) if isinstance(existing, dict) else []
+        if isinstance(existing, dict) and name in existing:
+            return name
+        known = ", ".join(sorted(existing)) if isinstance(existing, dict) else ""
+        known_str = known or "(none)"
+        if source == "active":
             raise ConfigError(
-                f"profile {profile!r} does not exist; "
-                f"known profiles: {', '.join(known) or '(none)'}. "
-                "Create it first with `untaped profile create`."
+                f"active profile {name!r} does not exist; "
+                f"known profiles: {known_str}. "
+                "Run `untaped profile use <name>` or `untaped profile create` first."
             )
-        return profile
+        raise ConfigError(
+            f"profile {name!r} does not exist; "
+            f"known profiles: {known_str}. "
+            "Create it first with `untaped profile create`."
+        )
 
 
 def _ensure_profiles_dict(data: dict[str, Any]) -> dict[str, Any]:

@@ -82,9 +82,15 @@ def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
 
 
 def test_set_rejects_unknown_profile(_isolate_settings: Path) -> None:
+    """Explicit ``--profile`` keeps its original "Create it first" wording —
+    distinct from the implicit-path message added for issue #22, so a
+    future refactor can't accidentally collapse the two phrasings (the
+    remediations differ: the user typed a wrong flag here, vs. their
+    persisted ``active:`` is stale)."""
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    with pytest.raises(ConfigError, match=r"profile.*ghost"):
+    with pytest.raises(ConfigError, match=r"Create it first") as excinfo:
         SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="ghost")
+    assert "ghost" in str(excinfo.value)
 
 
 def test_set_default_profile_auto_creates_default_block(_isolate_settings: Path) -> None:
@@ -161,3 +167,42 @@ def test_unset_raises_when_named_profile_missing(_isolate_settings: Path) -> Non
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
     with pytest.raises(ConfigError, match=r"profile.*ghost"):
         UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
+
+
+# ── issue #22: validate recorded `active:` on the implicit path ─────────────
+
+
+def test_unset_raises_when_recorded_active_missing(_isolate_settings: Path) -> None:
+    """Issue #22: ``unset`` with ``active: ghost`` (no ``profiles.ghost``)
+    used to silently no-op. Now raises with a message naming the missing
+    profile, matching the shape ``list`` already had."""
+    _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
+    with pytest.raises(ConfigError, match=r"active profile.*ghost"):
+        UnsetSetting(SettingsFileRepository())("log_level")
+
+
+def test_set_raises_with_resolution_time_message_when_recorded_active_missing(
+    _isolate_settings: Path,
+) -> None:
+    """Issue #22: ``set`` raises at resolution time with the actionable
+    "Run `untaped profile use ...`" message — distinct from the
+    schema-validation pathway that also pre-existed (and which produces
+    `_select_active`'s tersere message). Also asserts the file is
+    untouched on failure (mutate_config's atomic-write contract holds)."""
+    _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
+    before = _isolate_settings.read_bytes()
+    with pytest.raises(ConfigError, match=r"profile use") as excinfo:
+        SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+    assert "ghost" in str(excinfo.value)
+    assert _isolate_settings.read_bytes() == before
+
+
+def test_set_raises_when_env_active_missing(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``UNTAPED_PROFILE`` pointing at a missing profile also raises on
+    the implicit path (no ``--profile`` flag)."""
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: INFO\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
+    with pytest.raises(ConfigError, match=r"active profile.*ghost"):
+        SetSetting(SettingsFileRepository())("log_level", "DEBUG")
