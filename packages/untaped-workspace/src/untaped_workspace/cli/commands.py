@@ -135,17 +135,16 @@ def adopt_command(
     `untaped.yml` with its current `origin` URL and checked-out branch.
     """
     with report_errors():
-        discoverer = LocalRepoDiscoverer(
-            GitRunner(),
+        result = AdoptWorkspace(
+            ManifestRepository(),
+            WorkspaceRegistryRepository(),
+            LocalRepoDiscoverer(GitRunner()),
             warn=lambda m: typer.echo(f"warning: {m}", err=True),
-        )
-        ws = AdoptWorkspace(ManifestRepository(), WorkspaceRegistryRepository(), discoverer)(
-            path, name=name
-        )
-        manifest = ManifestRepository().read(ws.path)
+        )(path, name=name)
+        ws = result.workspace
+        n = len(result.repos)
         typer.echo(
-            f"adopted workspace {ws.name!r} at {ws.path} "
-            f"({len(manifest.repos)} repo{'s' if len(manifest.repos) != 1 else ''})",
+            f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''})",
             err=True,
         )
 

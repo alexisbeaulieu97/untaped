@@ -5,12 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from untaped_workspace.application.remove_repo import Filesystem, StatusInspector
 from untaped_workspace.domain import Workspace, WorkspaceManifest
 from untaped_workspace.errors import WorkspaceError
-
-
-class _Filesystem(Protocol):
-    def rmtree(self, path: Path) -> None: ...
 
 
 class _ManifestStorage(Protocol):
@@ -21,10 +18,6 @@ class _ManifestStorage(Protocol):
 class _RegistryStorage(Protocol):
     def get(self, name: str) -> Workspace: ...
     def unregister(self, name: str) -> bool: ...
-
-
-class _StatusInspector(Protocol):
-    def is_dirty(self, repo_path: Path) -> bool: ...
 
 
 class ForgetWorkspace:
@@ -41,8 +34,8 @@ class ForgetWorkspace:
         registry: _RegistryStorage,
         manifest_repo: _ManifestStorage,
         *,
-        fs: _Filesystem,
-        status: _StatusInspector,
+        fs: Filesystem,
+        status: StatusInspector,
     ) -> None:
         self._registry = registry
         self._manifests = manifest_repo

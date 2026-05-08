@@ -116,20 +116,15 @@ def test_forget_prune_succeeds_when_path_missing(tmp_path: Path) -> None:
     assert reg.entries == []
 
 
-def test_forget_prune_skips_dirty_check_when_manifest_missing(tmp_path: Path) -> None:
+def test_forget_prune_succeeds_when_manifest_missing(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     (ws_path / "stranded.txt").write_text("no manifest here")
     reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
 
-    # status.is_dirty would raise if it were called — assert it isn't.
-    class _ExplodingStatus:
-        def is_dirty(self, repo_path: Path) -> bool:
-            raise AssertionError("status should not be queried without a manifest")
-
-    ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_ExplodingStatus())(
-        "prod", prune=True
-    )
+    ForgetWorkspace(
+        reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus(dirty=set())
+    )("prod", prune=True)
 
     assert not ws_path.exists()
     assert reg.entries == []

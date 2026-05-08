@@ -1,8 +1,16 @@
-"""Unit tests for LocalRepoDiscoverer (filesystem + injected inspector)."""
+"""Unit tests for LocalRepoDiscoverer (filesystem + injected inspector).
+
+The discoverer is typed against ``GitRunner`` per the package's
+"infrastructure depends on subprocess directly" rule, but Python's
+duck-typing lets us pass a stub that exposes the same two methods —
+which keeps these unit tests free of git subprocess calls.
+"""
 
 from pathlib import Path
+from typing import cast
 
 from untaped_workspace.infrastructure import LocalRepoDiscoverer
+from untaped_workspace.infrastructure.git_runner import GitRunner
 
 
 class _StubInspector:
@@ -18,6 +26,10 @@ class _StubInspector:
         return self._table.get(repo_path, (None, None))[1]
 
 
+def _make(table: dict[Path, tuple[str | None, str | None]]) -> LocalRepoDiscoverer:
+    return LocalRepoDiscoverer(cast(GitRunner, _StubInspector(table)))
+
+
 def _seed_repo(parent: Path, name: str, *, with_git: bool = True) -> Path:
     repo = parent / name
     repo.mkdir()
@@ -29,55 +41,50 @@ def _seed_repo(parent: Path, name: str, *, with_git: bool = True) -> Path:
 def test_discover_returns_all_git_subdirs_sorted(tmp_path: Path) -> None:
     b = _seed_repo(tmp_path, "b")
     a = _seed_repo(tmp_path, "a")
-    inspector = _StubInspector(
+    result = _make(
         {
             a: ("https://x/a.git", "main"),
             b: ("https://x/b.git", "develop"),
         }
-    )
-    result = LocalRepoDiscoverer(inspector).discover(tmp_path)
-    assert [(d.name, d.url, d.branch) for d in result] == [
+    ).discover(tmp_path)
+    assert [(d.name, d.url, d.branch) for d in result.repos] == [
         ("a", "https://x/a.git", "main"),
         ("b", "https://x/b.git", "develop"),
     ]
+    assert result.skipped == []
 
 
 def test_discover_skips_non_git_directories(tmp_path: Path) -> None:
     _seed_repo(tmp_path, "notes", with_git=False)
     a = _seed_repo(tmp_path, "a")
-    inspector = _StubInspector({a: ("https://x/a.git", "main")})
-    result = LocalRepoDiscoverer(inspector).discover(tmp_path)
-    assert [d.name for d in result] == ["a"]
+    result = _make({a: ("https://x/a.git", "main")}).discover(tmp_path)
+    assert [d.name for d in result.repos] == ["a"]
 
 
 def test_discover_skips_files(tmp_path: Path) -> None:
     (tmp_path / "loose.txt").write_text("x")
     a = _seed_repo(tmp_path, "a")
-    inspector = _StubInspector({a: ("https://x/a.git", "main")})
-    result = LocalRepoDiscoverer(inspector).discover(tmp_path)
-    assert [d.name for d in result] == ["a"]
+    result = _make({a: ("https://x/a.git", "main")}).discover(tmp_path)
+    assert [d.name for d in result.repos] == ["a"]
 
 
-def test_discover_warns_and_omits_when_no_origin(tmp_path: Path) -> None:
+def test_discover_reports_skipped_when_no_origin(tmp_path: Path) -> None:
     a = _seed_repo(tmp_path, "a")
     b = _seed_repo(tmp_path, "b")
-    inspector = _StubInspector(
+    result = _make(
         {
             a: ("https://x/a.git", "main"),
             b: (None, None),  # no origin
         }
-    )
-    warnings: list[str] = []
-    result = LocalRepoDiscoverer(inspector, warn=warnings.append).discover(tmp_path)
+    ).discover(tmp_path)
 
-    assert [d.name for d in result] == ["a"]
-    assert len(warnings) == 1
-    assert "b" in warnings[0]
-    assert "origin" in warnings[0]
+    assert [d.name for d in result.repos] == ["a"]
+    assert len(result.skipped) == 1
+    assert "b" in result.skipped[0]
+    assert "origin" in result.skipped[0]
 
 
 def test_discover_records_none_branch_on_detached_head(tmp_path: Path) -> None:
     a = _seed_repo(tmp_path, "a")
-    inspector = _StubInspector({a: ("https://x/a.git", None)})
-    result = LocalRepoDiscoverer(inspector).discover(tmp_path)
-    assert result[0].branch is None
+    result = _make({a: ("https://x/a.git", None)}).discover(tmp_path)
+    assert result.repos[0].branch is None

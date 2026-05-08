@@ -25,14 +25,20 @@ class _StubRegistry:
         return None
 
 
+class _StubResult:
+    def __init__(self, repos: list[DiscoveredRepo], skipped: list[str] | None = None) -> None:
+        self.repos = repos
+        self.skipped = skipped or []
+
+
 class _StubDiscoverer:
-    def __init__(self, repos: list[DiscoveredRepo]) -> None:
-        self._repos = repos
+    def __init__(self, repos: list[DiscoveredRepo], *, skipped: list[str] | None = None) -> None:
+        self._result = _StubResult(repos, skipped)
         self.calls: list[Path] = []
 
-    def discover(self, path: Path) -> list[DiscoveredRepo]:
+    def discover(self, path: Path) -> _StubResult:
         self.calls.append(path)
-        return list(self._repos)
+        return self._result
 
 
 def test_adopt_writes_manifest_with_discovered_repos(tmp_path: Path) -> None:
@@ -48,7 +54,8 @@ def test_adopt_writes_manifest_with_discovered_repos(tmp_path: Path) -> None:
 
     result = AdoptWorkspace(ManifestRepository(), reg, discoverer)(ws_path, name="prod")
 
-    assert result.name == "prod"
+    assert result.workspace.name == "prod"
+    assert [r.name for r in result.repos] == ["svc-a", "svc-b"]
     manifest = ManifestRepository().read(ws_path)
     assert manifest.name == "prod"
     assert manifest.defaults.branch is None

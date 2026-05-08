@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -24,6 +25,14 @@ class DiscoveredRepo:
     branch: str | None
 
 
+@dataclass(frozen=True)
+class DiscoveryResult:
+    """What a :class:`_RepoDiscoverer` returns: kept repos plus skipped reasons."""
+
+    repos: list[DiscoveredRepo]
+    skipped: list[str]
+
+
 class _ManifestStorage(Protocol):
     def exists(self, workspace_dir: Path) -> bool: ...
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
@@ -35,7 +44,17 @@ class _RegistryStorage(Protocol):
 
 
 class _RepoDiscoverer(Protocol):
-    def discover(self, path: Path) -> list[DiscoveredRepo]: ...
+    def discover(self, path: Path) -> DiscoveryResult: ...
+
+
+@dataclass(frozen=True)
+class AdoptResult:
+    workspace: Workspace
+    repos: list[DiscoveredRepo]
+
+
+def _noop(_: str) -> None:
+    return None
 
 
 class AdoptWorkspace:
@@ -44,17 +63,20 @@ class AdoptWorkspace:
         manifest_repo: _ManifestStorage,
         registry: _RegistryStorage,
         discoverer: _RepoDiscoverer,
+        *,
+        warn: Callable[[str], None] = _noop,
     ) -> None:
         self._manifests = manifest_repo
         self._registry = registry
         self._discoverer = discoverer
+        self._warn = warn
 
     def __call__(
         self,
         path: Path,
         *,
         name: str | None = None,
-    ) -> Workspace:
+    ) -> AdoptResult:
         canonical = path.expanduser().resolve()
         if not canonical.exists():
             raise WorkspaceError(f"path does not exist: {canonical}")
@@ -70,8 +92,10 @@ class AdoptWorkspace:
         if self._registry.find_by_path(canonical) is not None:
             raise WorkspaceError(f"path already registered: {canonical}")
 
-        discovered = self._discoverer.discover(canonical)
-        repos = [Repo(url=d.url, name=d.name, branch=d.branch) for d in discovered]
+        result = self._discoverer.discover(canonical)
+        for reason in result.skipped:
+            self._warn(reason)
+        repos = [Repo(url=d.url, name=d.name, branch=d.branch) for d in result.repos]
 
         manifest = WorkspaceManifest(
             name=ws_name,
@@ -79,4 +103,5 @@ class AdoptWorkspace:
             repos=repos,
         )
         self._manifests.write(canonical, manifest)
-        return self._registry.register(name=ws_name, path=canonical)
+        workspace = self._registry.register(name=ws_name, path=canonical)
+        return AdoptResult(workspace=workspace, repos=list(result.repos))
