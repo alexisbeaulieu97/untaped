@@ -1,18 +1,24 @@
-"""Architectural-rule test: enforce DDD import direction across every domain.
+"""Architectural-rule tests: enforce DDD import direction across every domain.
 
-The rule (per ``AGENTS.md`` 4-layer DDD section): ``application/`` modules
-must not import their package's ``infrastructure`` namespace *at runtime*.
+Two complementary rules (per ``AGENTS.md`` 4-layer DDD section):
+
+- ``application/`` modules must not import their package's
+  ``infrastructure`` namespace at runtime.
+- ``infrastructure/`` modules must not import their package's
+  ``application`` namespace at runtime — concrete adapters speak port
+  ``Protocol`` shapes structurally, never importing from ``application/``.
+
 ``TYPE_CHECKING`` imports are allowed because they don't create a runtime
 edge.
 
-This test discovers every domain package by globbing
-``packages/*/src/<import_root>/application/``, walks the AST of every
-``.py`` file in those directories, and asserts the rule for each. The
-discovery is intentional: a new domain that follows the recipe in
-``AGENTS.md`` is automatically covered with no test edits.
+These tests discover every domain package by globbing
+``packages/*/src/<import_root>/{application,infrastructure}/``, walk the
+AST of every ``.py`` file in those directories, and assert the rules for
+each. The discovery is intentional: a new domain that follows the recipe
+in ``AGENTS.md`` is automatically covered with no test edits.
 
-``untaped-core`` has no ``application/`` directory by design (it's a
-flat shared kit), so it is excluded automatically.
+``untaped-core`` has no ``application/`` or ``infrastructure/`` directory
+by design (it's a flat shared kit), so it is excluded automatically.
 """
 
 from __future__ import annotations
@@ -92,24 +98,29 @@ def _runtime_imports(tree: ast.Module) -> list[ast.Import | ast.ImportFrom]:
     ]
 
 
-def _violations_in_file(import_root: str, py_file: Path, application_dir: Path) -> list[str]:
-    infra_root = f"{import_root}.infrastructure"
-    rel = py_file.relative_to(application_dir.parent)
+def _violations_in_file(
+    import_root: str,
+    py_file: Path,
+    source_dir: Path,
+    forbidden_subpackage: str,
+) -> list[str]:
+    forbidden_root = f"{import_root}.{forbidden_subpackage}"
+    rel = py_file.relative_to(source_dir.parent)
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
     found: list[str] = []
     for imp in _runtime_imports(tree):
         if isinstance(imp, ast.Import):
-            bad = [alias.name for alias in imp.names if alias.name.startswith(infra_root)]
+            bad = [alias.name for alias in imp.names if alias.name.startswith(forbidden_root)]
             if bad:
                 found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)}")
         elif imp.level > 0:
-            # Relative import (`from ..infrastructure...`). Resolve against
-            # the application/ package: any non-zero level pointing into a
-            # sibling `infrastructure` package counts.
+            # Relative import (`from ..<forbidden>...`). Resolve against
+            # the source package: any non-zero level pointing into a
+            # sibling forbidden subpackage counts.
             module = imp.module or ""
-            if module.startswith("infrastructure") or "infrastructure" in module:
+            if module.startswith(forbidden_subpackage) or forbidden_subpackage in module:
                 found.append(f"{rel}:{imp.lineno} imports {'.' * imp.level}{module}")
-        elif imp.module and imp.module.startswith(infra_root):
+        elif imp.module and imp.module.startswith(forbidden_root):
             found.append(f"{rel}:{imp.lineno} imports {imp.module}")
     return found
 
@@ -124,7 +135,14 @@ def test_application_does_not_import_infrastructure_at_runtime(
 ) -> None:
     violations: list[str] = []
     for py_file in sorted(application_dir.rglob("*.py")):
-        violations.extend(_violations_in_file(import_root, py_file, application_dir))
+        violations.extend(
+            _violations_in_file(
+                import_root,
+                py_file,
+                application_dir,
+                forbidden_subpackage="infrastructure",
+            )
+        )
 
     assert not violations, (
         f"{import_root}/application must not import {import_root}.infrastructure "
@@ -352,6 +370,41 @@ def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_
         "from untaped_core (only cli/ may read settings; pass a package-local "
         "config struct in instead). To document an intentional exception, add "
         "the path to _INFRA_MAY_READ_SETTINGS above with a rationale.\n  " + "\n  ".join(violations)
+    )
+
+
+@pytest.mark.parametrize(
+    ("import_root", "infrastructure_dir"),
+    _discover_infrastructure_dirs(),
+    ids=lambda value: value if isinstance(value, str) else value.parent.name,
+)
+def test_infrastructure_does_not_import_application_at_runtime(
+    import_root: str, infrastructure_dir: Path
+) -> None:
+    """``infrastructure/`` modules must not import their package's
+    ``application`` namespace at runtime.
+
+    AGENTS.md (root, "Architecture: 4-Layer DDD"): concrete adapters speak
+    port shapes structurally — they don't import from ``application/``.
+    Use cases declare port ``Protocol`` s in ``application/ports.py``;
+    adapters in ``infrastructure/`` satisfy them by structural typing.
+    ``TYPE_CHECKING`` imports are allowed because they don't create a
+    runtime edge.
+    """
+    violations: list[str] = []
+    for py_file in sorted(infrastructure_dir.rglob("*.py")):
+        violations.extend(
+            _violations_in_file(
+                import_root,
+                py_file,
+                infrastructure_dir,
+                forbidden_subpackage="application",
+            )
+        )
+
+    assert not violations, (
+        f"{import_root}/infrastructure must not import {import_root}.application "
+        "at runtime (TYPE_CHECKING imports are fine):\n  " + "\n  ".join(violations)
     )
 
 
