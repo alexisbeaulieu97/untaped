@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
+from untaped_awx.application.apply_field_diff import FieldDiff
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
@@ -65,6 +66,7 @@ class ApplyResource:
         *,
         warn: WarnFn = _noop_warn,
         secret_policy: SecretPreservationPolicy | None = None,
+        field_diff: FieldDiff | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
@@ -72,6 +74,7 @@ class ApplyResource:
         self._strategies = strategies
         self._warn = warn
         self._secret_policy = secret_policy or SecretPreservationPolicy()
+        self._field_diff = field_diff or FieldDiff()
 
     def __call__(
         self,
@@ -194,7 +197,11 @@ class ApplyResource:
                 f"alongside a sibling change. PATCH would overwrite the existing secret. "
                 f"Provide the actual secret value(s) or revert the sibling change(s)."
             )
-        changes = _diff(spec, existing, write_payload, preserved_fields=preserved_fields)
+        changes = self._field_diff.compute(
+            existing=existing,
+            desired=write_payload,
+            preserved_fields=preserved_fields,
+        )
 
         # Membership reconciliation (multi-FK + sub_endpoint, e.g.
         # ``Group.hosts`` / ``Group.children``). The plan is computed
@@ -449,67 +456,6 @@ def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
                 scope["inventory__organization"] = parent.organization
             return scope
     return None
-
-
-def _diff(
-    spec: ResourceSpec,
-    existing: dict[str, Any] | None,
-    desired: dict[str, Any],
-    *,
-    preserved_fields: set[str],
-) -> list[FieldChange]:
-    """Return field-level changes between existing and the (stripped) desired payload.
-
-    ``desired`` is the post-strip payload (placeholders removed). Top-level
-    fields in ``preserved_fields`` are emitted as ``preserved existing secret``
-    rows and are excluded from the PATCH so AWX retains the value (including
-    any nested secrets).
-    """
-    out: list[FieldChange] = []
-    if existing is None:
-        for field, after in desired.items():
-            note = "preserved existing secret" if field in preserved_fields else None
-            out.append(FieldChange(field=field, before=None, after=after, note=note))
-        return out
-    for field, after in desired.items():
-        before = existing.get(field)
-        if field in preserved_fields:
-            out.append(
-                FieldChange(
-                    field=field,
-                    before=before,
-                    after=before,  # we keep the existing secret
-                    note="preserved existing secret",
-                )
-            )
-            continue
-        if not _equal(before, after):
-            out.append(FieldChange(field=field, before=before, after=after))
-    # Top-level secret fields entirely stripped from ``desired`` (e.g.
-    # ``webhook_key``) still need a row so the user sees them in the preview.
-    for field in preserved_fields:
-        if field in desired:
-            continue
-        before = existing.get(field)
-        out.append(
-            FieldChange(
-                field=field,
-                before=before,
-                after=before,
-                note="preserved existing secret",
-            )
-        )
-    return out
-
-
-def _equal(a: Any, b: Any) -> bool:
-    """Order-insensitive equality for FK lists (e.g., credentials)."""
-    if isinstance(a, list) and isinstance(b, list):
-        try:
-            return bool(sorted(a, key=repr) == sorted(b, key=repr))
-        except TypeError:
-            return bool(a == b)
-    return bool(a == b)
 
 
 def _plan_sub_endpoints(
