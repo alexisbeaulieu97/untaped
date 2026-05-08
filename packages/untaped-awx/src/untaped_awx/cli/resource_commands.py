@@ -28,7 +28,7 @@ from untaped_awx.application import (
     StreamJobEvents,
     WatchJob,
 )
-from untaped_awx.application.ports import JobMonitor
+from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
@@ -344,6 +344,32 @@ def _drain_parallel(
     return results, errors
 
 
+def _wait_parallel(
+    client: RawHttpResourceClient,
+    jobs: list[tuple[str, Job]],
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Block-wait on multiple jobs concurrently — no streaming.
+
+    Mirrors :func:`_drain_parallel` for the ``--wait`` (no
+    ``--track``) path: each worker calls ``WatchJob(client)(job)``
+    until the job hits a terminal state and returns. Per-job
+    :class:`UntapedError`s are returned alongside successful results
+    so the caller preserves today's per-job error semantics.
+    """
+    watch = WatchJob(client)
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [(name, pool.submit(watch, job)) for name, job in jobs]
+        results: list[Job] = []
+        errors: list[tuple[str, UntapedError]] = []
+        for name, future in futures:
+            try:
+                results.append(future.result())
+            except UntapedError as exc:
+                errors.append((name, exc))
+    return results, errors
+
+
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
@@ -456,6 +482,12 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             # sequential for stable tracebacks and zero thread overhead.
             if track and len(launched) >= 2:
                 results, errors = _drain_parallel(ctx.monitor, launched, track_console)
+                jobs.extend(results)
+                for failed_name, failure in errors:
+                    typer.echo(f"error: {failed_name}: {failure}", err=True)
+                    any_failed = True
+            elif wait and len(launched) >= 2:
+                results, errors = _wait_parallel(ctx.repo, launched)
                 jobs.extend(results)
                 for failed_name, failure in errors:
                     typer.echo(f"error: {failed_name}: {failure}", err=True)
