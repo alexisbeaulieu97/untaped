@@ -419,7 +419,8 @@ def import_command(
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
     with report_errors():
-        ws = ImportWorkspace(ManifestRepository(), WorkspaceRegistryRepository())(
+        manifest_repo = ManifestRepository()
+        ws = ImportWorkspace(manifest_repo, manifest_repo, WorkspaceRegistryRepository())(
             source, path=path, name=name
         )
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)

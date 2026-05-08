@@ -2,34 +2,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
-
-from untaped_workspace.domain import Repo, Workspace, WorkspaceManifest
+from untaped_workspace.application.ports import (
+    Filesystem,
+    ManifestRepository,
+    StatusInspector,
+)
+from untaped_workspace.domain import Repo, Workspace
 from untaped_workspace.errors import WorkspaceError
-
-
-class Filesystem(Protocol):
-    """Port: side-effecting filesystem operations the use case may invoke."""
-
-    def rmtree(self, path: Path) -> None: ...
-
-
-class _ManifestStorage(Protocol):
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
-
-
-class StatusInspector(Protocol):
-    """Port: read-only `is_dirty` check used to gate destructive operations."""
-
-    def is_dirty(self, repo_path: Path) -> bool: ...
 
 
 class RemoveRepo:
     def __init__(
         self,
-        manifest_repo: _ManifestStorage,
+        manifest_repo: ManifestRepository,
         *,
         fs: Filesystem,
         status: StatusInspector | None = None,

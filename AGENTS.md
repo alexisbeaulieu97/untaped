@@ -106,14 +106,19 @@ src/untaped_<x>/
 
 ```
 cli  →  application  →  domain
-                 ↓
-           infrastructure  →  domain
+              ↑
+        infrastructure  →  domain
 ```
 
 - `domain/` imports nothing from the other three layers — pure.
-- `application/` orchestrates: defines `Protocol`s for what it needs, takes
-  them via constructor (DI).
-- `infrastructure/` knows about httpx, the filesystem, the config file.
+- `application/` orchestrates: declares its port `Protocol`s (and any
+  shared DTOs / Callable aliases) in `application/ports.py`; use cases
+  take them via constructor (DI).
+- `infrastructure/` knows about httpx, the filesystem, the config
+  file. It may import from `application/ports.py` to satisfy the port
+  contracts and consume shared DTOs — but **only** from `ports.py`,
+  not from any other application module. Concrete adapters speak only
+  the port shapes.
 - `cli/` is the thinnest layer: parse Typer args, build a use case
   (passing in concrete adapters), call it, format the result.
 
@@ -142,6 +147,7 @@ A use case in `application/` is unit-testable with a stub satisfying its
 | Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
 | Merge `default` ⤥ active to an effective dict | `from untaped_core import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr`                                             |
+| Declare port `Protocol`s / shared DTOs for a domain | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (one module per package; concrete adapters in `infrastructure/` import from it) |
 
 Cross-cutting subsystems with their own internals doc:
 

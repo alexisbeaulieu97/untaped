@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped_workspace.application import DiscoveredRepo, DiscoveryResult
+from untaped_workspace.application.ports import DiscoveredRepo, DiscoveryResult
 from untaped_workspace.infrastructure.git_runner import GitRunner
 
 

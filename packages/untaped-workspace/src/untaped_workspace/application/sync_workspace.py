@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
 
-from untaped_workspace.application.remove_repo import Filesystem
+from untaped_workspace.application.ports import (
+    Filesystem,
+    GitOperations,
+    ManifestReader,
+)
 from untaped_workspace.domain import (
     Repo,
-    RepoStatus,
     SyncAction,
     SyncOutcome,
     Workspace,
@@ -17,26 +19,11 @@ from untaped_workspace.domain import (
 from untaped_workspace.errors import GitError, UnmatchedOnlyFilter
 
 
-class _ManifestReader(Protocol):
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-
-
-class _Git(Protocol):
-    def ensure_bare(self, url: str, *, cache_dir: Path | None = None) -> Path: ...
-    def bare_fetch(self, bare_path: Path) -> None: ...
-    def clone_with_reference(
-        self, *, url: str, dest: Path, bare: Path, branch: str | None = None
-    ) -> None: ...
-    def fetch(self, repo_path: Path) -> None: ...
-    def status(self, repo_path: Path) -> RepoStatus: ...
-    def ff_only_pull(self, repo_path: Path, *, branch: str) -> None: ...
-
-
 class SyncWorkspace:
     def __init__(
         self,
-        manifests: _ManifestReader,
-        git: _Git,
+        manifests: ManifestReader,
+        git: GitOperations,
         *,
         fs: Filesystem,
         cache_dir: Path | None = None,

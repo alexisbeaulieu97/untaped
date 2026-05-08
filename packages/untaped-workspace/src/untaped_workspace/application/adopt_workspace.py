@@ -5,8 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
+from untaped_workspace.application.ports import (
+    DiscoveredRepo,
+    ManifestRepository,
+    RepoDiscoverer,
+    WorkspaceRegistry,
+)
 from untaped_workspace.domain import (
     ManifestDefaults,
     Repo,
@@ -14,37 +19,6 @@ from untaped_workspace.domain import (
     WorkspaceManifest,
 )
 from untaped_workspace.errors import WorkspaceError
-
-
-@dataclass(frozen=True)
-class DiscoveredRepo:
-    """A clone discovered on disk during adopt."""
-
-    name: str
-    url: str
-    branch: str | None
-
-
-@dataclass(frozen=True)
-class DiscoveryResult:
-    """What a :class:`_RepoDiscoverer` returns: kept repos plus skipped reasons."""
-
-    repos: list[DiscoveredRepo]
-    skipped: list[str]
-
-
-class _ManifestStorage(Protocol):
-    def exists(self, workspace_dir: Path) -> bool: ...
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
-
-
-class _RegistryStorage(Protocol):
-    def register(self, *, name: str, path: Path) -> Workspace: ...
-    def find_by_path(self, path: Path) -> Workspace | None: ...
-
-
-class _RepoDiscoverer(Protocol):
-    def discover(self, path: Path) -> DiscoveryResult: ...
 
 
 @dataclass(frozen=True)
@@ -60,9 +34,9 @@ def _noop(_: str) -> None:
 class AdoptWorkspace:
     def __init__(
         self,
-        manifest_repo: _ManifestStorage,
-        registry: _RegistryStorage,
-        discoverer: _RepoDiscoverer,
+        manifest_repo: ManifestRepository,
+        registry: WorkspaceRegistry,
+        discoverer: RepoDiscoverer,
         *,
         warn: Callable[[str], None] = _noop,
     ) -> None:
