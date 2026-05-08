@@ -10,13 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from untaped_awx.application.test.ports import Prompt
 from untaped_awx.domain.test_suite import VariableSpec
 from untaped_awx.errors import AwxApiError
+
+if TYPE_CHECKING:
+    from untaped_awx.application.test.ports import Prompt
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})

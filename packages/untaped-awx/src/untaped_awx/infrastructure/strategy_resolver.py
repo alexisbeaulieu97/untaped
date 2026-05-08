@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from untaped_awx.application.ports import ApplyStrategy
+from typing import TYPE_CHECKING
+
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.strategies import (
     DefaultApplyStrategy,
     InventoryChildApplyStrategy,
     ScheduleApplyStrategy,
 )
+
+if TYPE_CHECKING:
+    from untaped_awx.application.ports import ApplyStrategy
 
 
 class StaticStrategyResolver:
