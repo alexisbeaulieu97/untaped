@@ -75,6 +75,29 @@ branches: they skip-with-warning when the on-disk branch doesn't match the
 manifest's target. This stops a stale `defaults.branch` from kidnapping a
 user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
 
+## `sync --only` strict vs. relaxed semantics
+
+`SyncWorkspace.__call__` takes `strict_only: bool = True`. The CLI passes
+`strict_only=not all_workspaces`, so:
+
+- **Single-workspace mode** (`sync --name x --only typo`): strict. The
+  use case raises `UnmatchedOnlyFilter(WorkspaceError)`, a typed
+  exception carrying `unmatched: tuple[str, ...]`. Callers can `except`
+  precisely without parsing the error message.
+- **`--all` mode** (`sync --all --only repo-x`): relaxed. Workspaces
+  whose manifests don't contain `repo-x` emit one
+  `SyncOutcome(action="unmatched", repo=<identifier>, detail="not in
+  this workspace's manifest")` row per requested identifier and
+  continue. The discriminator lives in the type-safe `action` Literal
+  (extended with `"unmatched"`) so `awk` / `cut` / `jq` consumers can
+  pattern-match cleanly without overloading the `repo` data column with
+  a sentinel like `<all>`.
+
+Partial-miss is also visible: `--only repo-x,typo` against
+`[repo-x, repo-y]` emits a sync row for `repo-x` AND an `unmatched`
+row for `typo` — the typo doesn't get silently swallowed because a
+sibling identifier matched.
+
 ## See also
 
 - [Root AGENTS.md](../../AGENTS.md) — 4-Layer DDD, Hard Rules, recipes

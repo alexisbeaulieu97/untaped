@@ -23,3 +23,16 @@ class ManifestError(WorkspaceError):
 
 class RegistryError(WorkspaceError):
     """Raised for registry mismatches (unknown name, duplicate path, …)."""
+
+
+class UnmatchedOnlyFilter(WorkspaceError):
+    """Raised when ``--only`` contains identifiers no repo matches.
+
+    Carries the unmatched identifiers so callers can react precisely
+    (e.g. format a ``BadParameter`` message, or aggregate across
+    multiple invocations under ``--all``).
+    """
+
+    def __init__(self, unmatched: tuple[str, ...]) -> None:
+        super().__init__(f"unknown repo identifier(s) for --only: {', '.join(unmatched)}")
+        self.unmatched = unmatched

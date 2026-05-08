@@ -40,8 +40,15 @@ class RepoStatus(BaseModel):
         return self.ahead > 0 and self.behind > 0
 
 
-SyncAction = Literal["clone", "pull", "skip", "remove", "up-to-date", "ignored"]
-"""What `sync` did (or refused to do) for one repo."""
+SyncAction = Literal["clone", "pull", "skip", "remove", "up-to-date", "ignored", "unmatched"]
+"""What ``sync`` did (or refused to do) for one repo.
+
+``unmatched`` is the synthetic action emitted under ``--all --only
+<identifier>`` when ``<identifier>`` is not in this workspace's
+manifest. The ``repo`` field on those outcomes carries the unmatched
+identifier itself, so downstream consumers can filter on
+``action == "unmatched"`` and read the typo from ``repo``.
+"""
 
 
 class SyncOutcome(BaseModel):
