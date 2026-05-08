@@ -11,18 +11,21 @@ from untaped_workspace.infrastructure import ManifestRepository
 
 class _StubRegistry:
     def __init__(self) -> None:
-        self.entries: list[Workspace] = []
+        self.registered: list[Workspace] = []
 
     def register(self, *, name: str, path: Path) -> Workspace:
         ws = Workspace(name=name, path=path)
-        self.entries.append(ws)
+        self.registered.append(ws)
         return ws
 
     def find_by_path(self, path: Path) -> Workspace | None:
-        for w in self.entries:
+        for w in self.registered:
             if w.path == path:
                 return w
         return None
+
+    def entries(self) -> list[Workspace]:
+        return list(self.registered)
 
 
 class _StubResult:
@@ -63,7 +66,7 @@ def test_adopt_writes_manifest_with_discovered_repos(tmp_path: Path) -> None:
         ("svc-a", "https://x/svc-a.git", "main"),
         ("svc-b", "https://x/svc-b.git", "develop"),
     ]
-    assert reg.entries[0].name == "prod"
+    assert reg.registered[0].name == "prod"
     assert discoverer.calls == [ws_path.resolve()]
 
 
@@ -80,7 +83,7 @@ def test_adopt_with_empty_discovery_succeeds(tmp_path: Path) -> None:
     reg = _StubRegistry()
     AdoptWorkspace(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
     assert ManifestRepository().read(ws_path).repos == []
-    assert reg.entries[0].path == ws_path.resolve()
+    assert reg.registered[0].path == ws_path.resolve()
 
 
 def test_adopt_refuses_when_path_missing(tmp_path: Path) -> None:
@@ -137,7 +140,7 @@ def test_adopt_refuses_when_path_already_registered(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     reg = _StubRegistry()
-    reg.entries.append(Workspace(name="prod", path=ws_path.resolve()))
+    reg.registered.append(Workspace(name="prod", path=ws_path.resolve()))
 
     with pytest.raises(WorkspaceError, match="already registered"):
         AdoptWorkspace(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path, name="prod")

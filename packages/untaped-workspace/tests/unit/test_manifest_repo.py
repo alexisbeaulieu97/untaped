@@ -67,9 +67,9 @@ def test_read_external(tmp_path: Path) -> None:
             }
         )
     )
-    written = ManifestRepository().read_external(src)
-    assert written.source == src
-    assert written.manifest.name == "team-prod"
+    loaded = ManifestRepository().read_external(src)
+    assert loaded.source == src
+    assert loaded.manifest.name == "team-prod"
 
 
 def test_read_external_missing(tmp_path: Path) -> None:

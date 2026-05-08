@@ -40,7 +40,7 @@ class ManifestSource(BaseModel):
     nicer error messages). Returned by
     :meth:`ManifestRepository.read_external`."""
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
     manifest: WorkspaceManifest
     source: Path

@@ -6,20 +6,6 @@ from untaped_workspace.application.forget_workspace import ForgetWorkspace
 from untaped_workspace.application.import_workspace import ImportWorkspace
 from untaped_workspace.application.init_workspace import InitWorkspace
 from untaped_workspace.application.list_workspaces import ListWorkspaces
-from untaped_workspace.application.ports import (
-    CompletedCommand,
-    EditorRunner,
-    Filesystem,
-    GitInspector,
-    GitOperations,
-    ManifestReader,
-    ManifestRepository,
-    RegistryReader,
-    RepoDiscoverer,
-    ShellRunner,
-    StatusInspector,
-    WorkspaceRegistry,
-)
 from untaped_workspace.application.remove_repo import RemoveRepo
 from untaped_workspace.application.shell_init import ShellInit
 from untaped_workspace.application.status_workspace import WorkspaceStatus
@@ -30,27 +16,15 @@ __all__ = [
     "AddRepo",
     "AdoptResult",
     "AdoptWorkspace",
-    "CompletedCommand",
     "EditWorkspace",
-    "EditorRunner",
-    "Filesystem",
     "Foreach",
     "ForgetWorkspace",
-    "GitInspector",
-    "GitOperations",
     "ImportWorkspace",
     "InitWorkspace",
     "ListWorkspaces",
-    "ManifestReader",
-    "ManifestRepository",
-    "RegistryReader",
     "RemoveRepo",
-    "RepoDiscoverer",
     "ShellInit",
-    "ShellRunner",
-    "StatusInspector",
     "SyncWorkspace",
     "WorkspacePath",
-    "WorkspaceRegistry",
     "WorkspaceStatus",
 ]
