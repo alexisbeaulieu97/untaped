@@ -4,30 +4,15 @@ from __future__ import annotations
 
 import os
 import shlex
-from collections.abc import Callable, Sequence
-from pathlib import Path
-from typing import Protocol
 
+from untaped_workspace.application.ports import EditorRunner, RegistryReader
 from untaped_workspace.errors import WorkspaceError
-
-
-class _RegistryReader(Protocol):
-    def get(self, name: str) -> _HasPath: ...
-
-
-class _HasPath(Protocol):
-    @property
-    def path(self) -> Path: ...
-
-
-EditorRunner = Callable[[Sequence[str]], int]
-"""Port: spawn an editor (argv) and return its exit code."""
 
 
 class EditWorkspace:
     def __init__(
         self,
-        registry: _RegistryReader,
+        registry: RegistryReader,
         *,
         runner: EditorRunner,
         env: dict[str, str] | None = None,

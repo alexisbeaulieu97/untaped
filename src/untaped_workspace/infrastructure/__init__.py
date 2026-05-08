@@ -9,10 +9,7 @@ from untaped_workspace.infrastructure.registry_repo import (
 )
 from untaped_workspace.infrastructure.repo_discoverer import LocalRepoDiscoverer
 from untaped_workspace.infrastructure.system_adapters import (
-    EditorRunner,
-    Filesystem,
     LocalFilesystem,
-    ShellRunner,
     editor_runner,
     shell_runner,
 )
@@ -22,13 +19,10 @@ from untaped_workspace.infrastructure.workspace_resolver import (
 
 __all__ = [
     "MANIFEST_FILENAME",
-    "EditorRunner",
-    "Filesystem",
     "GitRunner",
     "LocalFilesystem",
     "LocalRepoDiscoverer",
     "ManifestRepository",
-    "ShellRunner",
     "WorkspaceRegistryRepository",
     "WorkspaceResolver",
     "cache_path_for",

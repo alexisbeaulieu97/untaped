@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
-
-from untaped_workspace.application.remove_repo import Filesystem, StatusInspector
-from untaped_workspace.domain import Workspace, WorkspaceManifest
+from untaped_workspace.application.ports import (
+    Filesystem,
+    ManifestReader,
+    StatusInspector,
+    WorkspaceRegistry,
+)
+from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import GitError, WorkspaceError
-
-
-class _ManifestStorage(Protocol):
-    def exists(self, workspace_dir: Path) -> bool: ...
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-
-
-class _RegistryStorage(Protocol):
-    def get(self, name: str) -> Workspace: ...
-    def unregister(self, name: str) -> bool: ...
 
 
 class ForgetWorkspace:
@@ -31,8 +23,8 @@ class ForgetWorkspace:
 
     def __init__(
         self,
-        registry: _RegistryStorage,
-        manifest_repo: _ManifestStorage,
+        registry: WorkspaceRegistry,
+        manifest_repo: ManifestReader,
         *,
         fs: Filesystem,
         status: StatusInspector,

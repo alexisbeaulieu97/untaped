@@ -3,20 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
 
-
-class _RegistryReader(Protocol):
-    def get(self, name: str) -> _HasPath: ...
-
-
-class _HasPath(Protocol):
-    @property
-    def path(self) -> Path: ...
+from untaped_workspace.application.ports import RegistryReader
 
 
 class WorkspacePath:
-    def __init__(self, registry: _RegistryReader) -> None:
+    def __init__(self, registry: RegistryReader) -> None:
         self._registry = registry
 
     def __call__(self, name: str) -> Path:
