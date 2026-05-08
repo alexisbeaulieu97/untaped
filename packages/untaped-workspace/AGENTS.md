@@ -34,10 +34,10 @@ workspace by name or path — `add`, `remove`, `sync`, `status`,
 
 Implemented in `infrastructure.WorkspaceResolver`.
 
-Lifecycle commands (`init <name>`, `adopt <path>`, `forget <name>`,
-`import <source>`) take positional arguments instead and skip lookup
-entirely. `list`, `path`, `shell-init`, `edit` operate without a
-workspace target.
+Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
+`forget <name>`, `import <source>`, `path <name>`, `edit <name>`) take
+positional arguments and skip the precedence walk. `list` and
+`shell-init` operate without a workspace target.
 
 ## Git is a subprocess, not a library
 
