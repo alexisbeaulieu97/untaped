@@ -80,6 +80,31 @@ class GitRunner:
             return None
         return out.strip() or None
 
+    # introspection (used by `workspace adopt`) --------------------------
+
+    def read_remote_url(self, repo_path: Path, *, remote: str = "origin") -> str | None:
+        """Return the URL of ``remote`` in ``repo_path``, or ``None``."""
+        try:
+            out = self._run(
+                ["config", "--get", f"remote.{remote}.url"],
+                cwd=repo_path,
+                capture=True,
+            )
+        except GitError:
+            return None
+        return out.strip() or None
+
+    def read_current_branch(self, repo_path: Path) -> str | None:
+        """Return the current branch name, or ``None`` for detached HEAD."""
+        try:
+            out = self._run(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path, capture=True)
+        except GitError:
+            return None
+        name = out.strip()
+        if not name or name == "HEAD":
+            return None
+        return name
+
     # internal -----------------------------------------------------------
 
     def _run(

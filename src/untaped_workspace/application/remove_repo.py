@@ -20,7 +20,9 @@ class _ManifestStorage(Protocol):
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
 
 
-class _StatusInspector(Protocol):
+class StatusInspector(Protocol):
+    """Port: read-only `is_dirty` check used to gate destructive operations."""
+
     def is_dirty(self, repo_path: Path) -> bool: ...
 
 
@@ -30,7 +32,7 @@ class RemoveRepo:
         manifest_repo: _ManifestStorage,
         *,
         fs: Filesystem,
-        status: _StatusInspector | None = None,
+        status: StatusInspector | None = None,
     ) -> None:
         self._manifests = manifest_repo
         self._fs = fs
