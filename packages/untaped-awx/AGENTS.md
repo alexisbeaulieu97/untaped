@@ -67,13 +67,27 @@ Application use cases depend on one of two Protocols in
   that need to construct AWX URLs directly. Today: `ApplyResource`
   (forwards its client to strategies that build nested-endpoint URLs),
   `WatchJob`, and `PollingJobMonitor` (poll job execution endpoints).
+- **`JobRecordRepository`** is the read port for AWX execution records
+  (`jobs`, `workflow_jobs`, `project_updates`, …). `list(kind=…, params, limit)`
+  walks a kind's collection; `get(kind=…, job_id)` fetches one record.
+  The concrete adapter (`infrastructure.job_record_repo.JobRecordRepository`)
+  wraps `RawHttpResourceClient` and is the only place that knows the
+  `Job.kind → AWX collection` mapping.
+- **`UnifiedTemplateRepository`** is the read port for AWX's polymorphic
+  `/unified_job_templates/` view. `list` walks the aggregate; `get_by_ids`
+  bulk-fetches via `?id__in=…`.
 
-New use cases default to `ResourceClient`. The concrete
-`ResourceRepository` implements both. Both Protocols type their
-`spec` arguments as the domain `ResourceSpec`; infrastructure narrows
-to `AwxResourceSpec` via `infrastructure.spec.awx_api_path` whenever
-it needs `api_path`. Adding a third infra module that needs
-`api_path`? Reuse `awx_api_path` — don't copy the dance.
+`cli/` modules **never** call the raw-URL escape hatches directly —
+they route through use cases (`ListJobs`, `GetJob`,
+`BrowseUnifiedTemplates`, `GetUnifiedTemplate`, …) which depend on the
+narrow read ports above. New use cases default to `ResourceClient`. The
+concrete `ResourceRepository` implements both `ResourceClient` and
+`RawHttpResourceClient`; the new repos take `RawHttpResourceClient` so
+they can build their own paths. Both Protocols type their `spec`
+arguments as the domain `ResourceSpec`; infrastructure narrows to
+`AwxResourceSpec` via `infrastructure.spec.awx_api_path` whenever it
+needs `api_path`. Adding a third infra module that needs `api_path`?
+Reuse `awx_api_path` — don't copy the dance.
 
 ### kubectl-style envelope
 

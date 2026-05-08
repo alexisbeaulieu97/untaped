@@ -34,6 +34,7 @@ from untaped_core import (
     report_errors,
 )
 
+from untaped_awx.application import BrowseUnifiedTemplates, GetUnifiedTemplate
 from untaped_awx.cli._context import open_context
 from untaped_awx.cli.resource_commands import default_get_columns
 
@@ -90,13 +91,8 @@ def list_command(
                 "pass --type or --filter type=…, not both — they collide on the same param",
             )
         filters["type"] = type_
-    # Alphabetical ordering generalises across kinds; ``-id`` would
-    # interleave creation timelines from four different tables.
-    filters.setdefault("order_by", "name")
     with report_errors(), open_context() as ctx:
-        records = list(
-            ctx.repo.paginate_path("unified_job_templates/", params=filters, limit=limit)
-        )
+        records = list(BrowseUnifiedTemplates(ctx.ujts)(params=filters, limit=limit))
     cols = list(columns) if columns else list(_DEFAULT_LIST_COLUMNS)
     typer.echo(format_output(records, fmt=fmt, columns=cols))
 
@@ -118,7 +114,7 @@ def get_command(
 ) -> None:
     """Fetch one or more Unified Job Templates by numeric id."""
     records: list[dict[str, object]] = []
-    any_failed = False
+    missing: list[str] = []
     with report_errors(), open_context() as ctx:
         identifiers = read_identifiers(list(ids or []), stdin=stdin)
         for raw in identifiers:
@@ -133,28 +129,11 @@ def get_command(
                 )
         if not identifiers:
             return
-        # AWX exposes the collection endpoint only — there's no
-        # ``/unified_job_templates/<id>/`` resource URL (UJT is a
-        # virtual aggregate). Use ``?id__in=…`` so a multi-id batch is
-        # one round trip; the list endpoint paginates so we walk pages
-        # in case ``len(ids) > page_size``.
-        id_in = ",".join(identifiers)
-        records = list(
-            ctx.repo.paginate_path(
-                "unified_job_templates/",
-                params={"id__in": id_in, "order_by": "id"},
-            )
-        )
-        # Per-id error reporting: ids the bulk fetch didn't return are
-        # missing. Cast to int when possible since AWX returns numeric
-        # ids; fall back to string compare for safety.
-        found_ids = {str(r.get("id")) for r in records}
-        for raw in identifiers:
-            if raw not in found_ids:
-                typer.echo(f"error: {raw}: not found", err=True)
-                any_failed = True
+        records, missing = GetUnifiedTemplate(ctx.ujts)(ids=identifiers)
+    for raw in missing:
+        typer.echo(f"error: {raw}: not found", err=True)
     if records:
         cols = list(columns) if columns else default_get_columns(fmt, _DEFAULT_LIST_COLUMNS)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
-    if any_failed:
+    if missing:
         raise typer.Exit(code=1)

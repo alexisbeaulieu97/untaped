@@ -24,6 +24,8 @@ from untaped_core import (
 )
 
 from untaped_awx.application import (
+    GetJob,
+    ListJobs,
     Ping,
     SaveResource,
     StreamJobEvents,
@@ -37,7 +39,6 @@ from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped_awx.domain import Job, Metadata
-from untaped_awx.domain.job import KIND_TO_API_PATH
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
@@ -276,11 +277,6 @@ _JOB_KIND_HELP = (
 )
 
 
-def _kind_path(kind: str) -> str:
-    """Return the AWX collection name for ``kind`` (with ``s`` fallback)."""
-    return KIND_TO_API_PATH.get(kind, kind)
-
-
 @jobs_app.command("list")
 def jobs_list(
     status: str | None = typer.Option(
@@ -302,10 +298,8 @@ def jobs_list(
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
         filters["status"] = status
-    # AWX defaults to id-asc; flip so the most recent jobs lead.
-    filters.setdefault("order_by", "-id")
     with report_errors(), open_context() as ctx:
-        records = list(ctx.repo.paginate_path(f"{_kind_path(kind)}/", params=filters, limit=limit))
+        records = list(ListJobs(ctx.jobs)(kind=kind, params=filters, limit=limit))
     cols = list(columns) if columns else ["id", "name", "status"]
     typer.echo(format_output(records, fmt=fmt, columns=cols))
 
@@ -319,7 +313,7 @@ def jobs_get(
 ) -> None:
     """Fetch a single job by id."""
     with report_errors(), open_context() as ctx:
-        record = ctx.repo.request("GET", f"{_kind_path(kind)}/{job_id}/")
+        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
     typer.echo(format_output([record], fmt=fmt, columns=list(columns) if columns else []))
 
 
@@ -349,7 +343,7 @@ def jobs_events(
     filters = parse_kv_pairs(filter_, flag="--filter")
     cols = list(columns) if columns else ["counter", "event", "host_name", "task"]
     with report_errors(), open_context() as ctx:
-        record = ctx.repo.request("GET", f"{_kind_path(kind)}/{job_id}/")
+        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
         job = Job.model_validate({**record, "kind": kind})
         events = StreamJobEvents(ctx.monitor)(
             job, from_counter=from_counter, filters=filters, follow=follow
@@ -417,7 +411,7 @@ def jobs_logs(
         except re.error as exc:
             raise typer.BadParameter(f"--grep {grep!r} is not a valid regex: {exc}") from exc
     with report_errors(), open_context() as ctx:
-        record = ctx.repo.request("GET", f"{_kind_path(kind)}/{job_id}/")
+        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
         job = Job.model_validate({**record, "kind": kind})
         lines = TailJobLogs(ctx.monitor)(
             job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
@@ -450,7 +444,7 @@ def jobs_wait(
     reaching a terminal state — same contract as ``awx test``.
     """
     with report_errors(), open_context() as ctx:
-        record = ctx.repo.request("GET", f"{_kind_path(kind)}/{job_id}/")
+        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
         job = Job.model_validate({**record, "kind": kind})
         final = WatchJob(ctx.repo)(job, timeout=timeout)
     typer.echo(format_output([final.model_dump()], fmt=fmt, columns=columns))
