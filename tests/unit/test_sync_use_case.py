@@ -36,7 +36,7 @@ class _StubGit:
         self._fetch_fail = fetch_fail
         self._local_fetch_fail = local_fetch_fail
 
-    def ensure_bare(self, url: str, *, cache_dir: Path | None = None) -> Path:
+    def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
         self.events.append(("ensure_bare", url))
         return Path(f"/tmp/cache/{url.split('/')[-1]}")
 
@@ -80,7 +80,7 @@ def test_clones_missing_repo(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     git = _StubGit()
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "clone"
     assert any(e[0] == "clone" for e in git.events)
 
@@ -94,7 +94,7 @@ def test_uses_target_branch_on_clone(tmp_path: Path) -> None:
         ),
     )
     git = _StubGit()
-    SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     clone_event = next(e for e in git.events if e[0] == "clone")
     assert clone_event[2] == "develop"
 
@@ -108,7 +108,7 @@ def test_per_repo_branch_overrides_default(tmp_path: Path) -> None:
         ),
     )
     git = _StubGit()
-    SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     clone_event = next(e for e in git.events if e[0] == "clone")
     assert clone_event[2] == "feature/x"
 
@@ -123,7 +123,7 @@ def test_skips_dirty_existing_repo(tmp_path: Path) -> None:
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", modified=2)},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "dirty" in outcomes[0].detail
 
@@ -138,7 +138,7 @@ def test_skips_diverged_repo(tmp_path: Path) -> None:
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", ahead=2, behind=3)},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "diverged" in outcomes[0].detail
 
@@ -156,7 +156,7 @@ def test_skips_wrong_branch_when_target_set(tmp_path: Path) -> None:
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="feature/x")},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "expected main" in outcomes[0].detail
 
@@ -171,7 +171,7 @@ def test_pulls_when_behind_clean(tmp_path: Path) -> None:
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", behind=3)},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "pull"
     assert "3 commits" in outcomes[0].detail
     assert ("pull", "svc-a", "main") in git.events
@@ -187,7 +187,7 @@ def test_up_to_date(tmp_path: Path) -> None:
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main")},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "up-to-date"
 
 
@@ -203,7 +203,9 @@ def test_only_filters_repos(tmp_path: Path) -> None:
         ),
     )
     git = _StubGit()
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace, only=["svc-b"])
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, only=["svc-b"]
+    )
     assert [o.repo for o in outcomes] == ["svc-b"]
 
 
@@ -223,7 +225,7 @@ def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
     )
     git = _StubGit()
     with pytest.raises(UnmatchedOnlyFilter) as excinfo:
-        SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+        SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
             workspace, only=["svc-b", "typo", "also-typo"]
         )
     assert excinfo.value.unmatched == ("also-typo", "typo")
@@ -254,7 +256,7 @@ def test_only_unmatched_under_strict_false_yields_per_identifier_rows(
         ),
     )
     git = _StubGit()
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, only=["nonexistent", "also-typo"], strict_only=False
     )
     actions = [(o.repo, o.action) for o in outcomes]
@@ -281,7 +283,7 @@ def test_only_partial_match_under_strict_false_emits_unmatched_rows(
         ),
     )
     git = _StubGit()
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, only=["svc-a", "nonexistent"], strict_only=False
     )
     by_repo = {o.repo: o.action for o in outcomes}
@@ -302,7 +304,9 @@ def test_only_unknown_default_strict_raises_typed_exception(tmp_path: Path) -> N
     )
     git = _StubGit()
     with pytest.raises(UnmatchedOnlyFilter) as excinfo:
-        SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace, only=["typo"])
+        SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+            workspace, only=["typo"]
+        )
     assert excinfo.value.unmatched == ("typo",)
 
 
@@ -324,7 +328,9 @@ def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
             "svc-old": RepoStatus(branch="main"),
         },
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace, prune=True)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
     actions = {o.repo: o.action for o in outcomes}
     assert actions["svc-old"] == "remove"
     assert not orphan.exists()
@@ -343,7 +349,9 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
         on_disk=["svc-old"],
         statuses={"svc-old": RepoStatus(branch="main", modified=1)},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace, prune=True)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
     assert outcomes[0].action == "skip"
     assert orphan.exists()
 
@@ -354,7 +362,7 @@ def test_clone_failure_yields_skip(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     git = _StubGit(clone_fail={"svc-a"})
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
 
 
@@ -364,7 +372,7 @@ def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     git = _StubGit(fetch_fail=True)
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "cache fetch failed" in outcomes[0].detail
 
@@ -378,7 +386,7 @@ def test_existing_clone_is_fetched_before_status(tmp_path: Path) -> None:
     )
     (workspace.path / "svc-a").mkdir()  # existing clone
     git = _StubGit(on_disk=["svc-a"])
-    SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
 
     op_names = [event[0] for event in git.events]
     fetch_idx = op_names.index("fetch")
@@ -393,7 +401,7 @@ def test_fresh_clone_does_not_call_local_fetch(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     git = _StubGit()
-    SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     op_names = [event[0] for event in git.events]
     assert "clone" in op_names
     assert "fetch" not in op_names
@@ -407,7 +415,7 @@ def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
     )
     (workspace.path / "svc-a").mkdir()
     git = _StubGit(on_disk=["svc-a"], local_fetch_fail={"svc-a"})
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace)
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "fetch failed" in (outcomes[0].detail or "")
 
