@@ -66,6 +66,12 @@ invent your own.
    loaded from YAML (under `profiles.default`) and overridable via env
    var. Top-level keys are no longer honoured — every value lives under a
    profile.
+   - **For `SecretStr` fields:** also bump the expected count and add the
+     new path tuple in
+     `tests/unit/test_config_schema.py::test_secret_field_paths_matches_known_settings_secrets`.
+     That test pins the schema's secret inventory so every credential
+     stays reachable for redaction by `untaped profile show`; a missed
+     update would silently leak the new credential.
 4. **Update tests** in
    `packages/untaped-config/tests/unit/test_list_settings.py` to assert
    the new key shows up in `untaped config list`.
