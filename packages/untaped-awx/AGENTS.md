@@ -151,10 +151,10 @@ An `FkRef(multi=True, sub_endpoint="…")` (e.g. `Group.hosts`,
 `Group.children`) declares a many-to-many edge that AWX manages via `POST
 /<api_path>/<id>/<sub_endpoint>/` with `{"id": <member>}` to associate or
 `{"id": <member>, "disassociate": true}` to remove.
-`apply_resource._plan_sub_endpoints` diffs desired (from
+`MembershipReconciler.plan` (`apply_membership.py`) diffs desired (from
 `resource.spec[<field>]`) against existing (one GET per FK ref) and appends
-`FieldChange` rows to the apply diff; `_execute_sub_endpoints` issues the
-writes after the strategy's create/update succeeds.
+`FieldChange` rows to the apply diff; `MembershipReconciler.execute` issues
+the writes after the strategy's create/update succeeds.
 
 Membership fields are *kept out of the PATCH body* so AWX never sees
 `hosts: [...]` on a Group write — body and membership writes are

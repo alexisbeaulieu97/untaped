@@ -124,6 +124,10 @@ class MembershipReconciler:
     ) -> None:
         """POST associate / disassociate per ``plans`` against the resource's id."""
         for plan in plans:
+            # Defensive: ``plan()`` only emits MembershipPlan entries
+            # whose ``ref.sub_endpoint`` is truthy, but ``MembershipPlan``
+            # is a public dataclass — a future external caller could
+            # build one with a ``FkRef(sub_endpoint=None)``.
             if plan.ref.sub_endpoint is None:
                 continue
             for member_id in plan.to_associate:

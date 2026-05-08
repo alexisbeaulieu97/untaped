@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
-from untaped_awx.application.apply_field_diff import FieldDiff
+from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE, FieldDiff
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
 from untaped_awx.application.apply_planner import ApplyPlanner
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
@@ -72,8 +72,8 @@ class ApplyResource:
         """Apply ``resource`` (preview by default; pass ``write=True`` to write).
 
         ``defer_memberships=True`` (only meaningful when ``write=True``)
-        writes the body but skips ``_execute_sub_endpoints``. Used by
-        :class:`ApplyFile` to break cyclic membership dependencies — a
+        writes the body but skips :meth:`MembershipReconciler.execute`.
+        Used by :class:`ApplyFile` to break cyclic membership dependencies — a
         Group whose ``children:`` references a sibling Group declared
         later in the same file would otherwise fail in phase 1 because
         the sibling doesn't exist yet. After every doc's body has been
@@ -317,7 +317,7 @@ class ApplyResource:
         changed_fields = {
             c.field
             for c in changes
-            if c.note != "preserved existing secret" and c.field not in membership_field_names
+            if c.note != PRESERVED_SECRET_NOTE and c.field not in membership_field_names
         }
         membership_changed = any(p.to_associate or p.to_disassociate for p in membership_plans)
         if not changed_fields and not membership_changed:

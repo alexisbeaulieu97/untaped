@@ -6,11 +6,12 @@ FK names to ids, drops sub-endpoint multi-FKs (those go through the
 membership reconciler, not PATCH), and returns the identity dict
 strategies use to ``find_existing``.
 
-:func:`scope_for` is the FK-lookup-scope helper used by both the
-planner (for FK resolution at apply time) and ``apply_file._prefetch_plan``
-(for bulk warm-up). Pure module-level function — sharing it keeps the
-prefetch path's cache buckets aligned with what the apply path actually
-queries.
+:func:`scope_for` is the FK-lookup-scope helper used by every caller in
+the apply pipeline that resolves FK names: the planner itself,
+``MembershipReconciler.plan`` (``apply_membership.py``), and
+``apply_file._prefetch_plan`` (bulk warm-up). Pure module-level function
+— sharing it keeps the prefetch path's cache buckets aligned with what
+the apply path actually queries.
 """
 
 from __future__ import annotations

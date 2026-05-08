@@ -16,6 +16,14 @@ from typing import Any
 
 from untaped_awx.domain import FieldChange
 
+PRESERVED_SECRET_NOTE = "preserved existing secret"
+"""``FieldChange.note`` value emitted for top-level fields whose only
+in-payload changes were secret-strip removals. Consumers (CLI render,
+``ApplyResource._do_update``) read this exact string to filter out
+preserved-secret rows from PATCH payloads and to pretty-print them in
+the preview. Lifted to a constant so the producer (this module) and
+the readers stay in sync without a copy-pasted literal."""
+
 
 class FieldDiff:
     """Field-level diff for the apply pipeline preview."""
@@ -31,13 +39,13 @@ class FieldDiff:
 
         ``desired`` is the post-strip payload (placeholders removed).
         Top-level fields in ``preserved_fields`` are emitted as
-        ``preserved existing secret`` rows and are excluded from the
+        :data:`PRESERVED_SECRET_NOTE` rows and are excluded from the
         PATCH so AWX retains the value (including any nested secrets).
         """
         out: list[FieldChange] = []
         if existing is None:
             for field, after in desired.items():
-                note = "preserved existing secret" if field in preserved_fields else None
+                note = PRESERVED_SECRET_NOTE if field in preserved_fields else None
                 out.append(FieldChange(field=field, before=None, after=after, note=note))
             return out
         for field, after in desired.items():
@@ -48,7 +56,7 @@ class FieldDiff:
                         field=field,
                         before=before,
                         after=before,  # we keep the existing secret
-                        note="preserved existing secret",
+                        note=PRESERVED_SECRET_NOTE,
                     )
                 )
                 continue
@@ -66,7 +74,7 @@ class FieldDiff:
                     field=field,
                     before=before,
                     after=before,
-                    note="preserved existing secret",
+                    note=PRESERVED_SECRET_NOTE,
                 )
             )
         return out
