@@ -462,3 +462,44 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
     # though the deploy-a worker completed second.
     rows = [line for line in result.stdout.strip().splitlines() if line]
     assert rows == ["deploy-a-launch", "deploy-b-launch"], result.output
+
+
+def test_launch_track_worker_exception_wraps_to_untaped_error(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-``UntapedError`` raised inside one ``--track`` worker must
+    not abort the whole batch as a raw traceback. The worker wraps it
+    as ``UntapedError(f"{type(exc).__name__}: {exc}")``, the caller
+    echoes ``error: <name>: <wrapped>``, ``any_failed`` flips, and the
+    other worker's events still reach stderr.
+
+    Pins the wrap-message format so the ``error: deploy-a: deploy-a:
+    ...`` double-prefix bug (round-2 review) cannot regress.
+    """
+    from untaped_awx.cli import resource_commands
+    from untaped_awx.domain import JobEvent
+
+    _seed_two_jts(fake_aap)
+
+    class _StubStreamWithDeployAFailure:
+        def __init__(self, monitor: Any) -> None:
+            pass
+
+        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+            # ``deploy-a`` materialises at the first new job id (32);
+            # ``deploy-b`` at the second (33). Discriminate by parity
+            # so the test isn't coupled to FakeAap's id sequencing.
+            if job.id % 2 == 0:
+                raise RuntimeError("boom")
+            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStreamWithDeployAFailure)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 1, result.output
+    # Single-prefix error row, with the original exception class name
+    # preserved for debuggability.
+    assert "error: deploy-a: RuntimeError: boom" in result.stderr
+    # The other worker isn't aborted by deploy-a's failure: deploy-b's
+    # event still streams with its prefix.
+    assert "[deploy-b]" in result.stderr

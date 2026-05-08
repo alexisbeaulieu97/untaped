@@ -324,9 +324,11 @@ def _drain_parallel(
         # Sentinel pushed in the inner ``finally`` *before*
         # ``monitor.fetch`` so a slow or failing fetch never blocks
         # the main thread's queue drain. Non-``UntapedError``
-        # exceptions are wrapped so the caller's per-job ``error:
-        # <name>: <exc>`` row + ``any_failed`` exit-code logic
-        # handles every failure uniformly. ``KeyboardInterrupt`` is a
+        # exceptions are wrapped — message carries the original
+        # class name so the caller's ``error: <name>: <wrapped>``
+        # row reads as ``error: deploy-a: KeyError: 'foo'`` (the
+        # ``name`` is added once by ``_echo_parallel_errors``, not
+        # by the wrap). ``KeyboardInterrupt`` is a
         # ``BaseException`` and skips this wrap, propagating to the
         # main thread as expected.
         try:
@@ -339,7 +341,7 @@ def _drain_parallel(
         except UntapedError:
             raise
         except Exception as exc:
-            raise UntapedError(f"{name}: {exc}") from exc
+            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
 
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
@@ -388,7 +390,7 @@ def _wait_parallel(
         except UntapedError:
             raise
         except Exception as exc:
-            raise UntapedError(f"{name}: {exc}") from exc
+            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
 
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
