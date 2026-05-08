@@ -381,6 +381,10 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 org_scope=scope,
             )
             ids = read_identifiers(list(names or []), stdin=stdin)
+            # Launch phase — every launch is one HTTP POST returning an
+            # in-flight Job; sequential keeps the per-id try/except simple
+            # and the order of stderr error lines stable.
+            launched: list[tuple[str, Any]] = []
             for n in ids:
                 try:
                     job = RunAction(ctx.repo)(
@@ -390,6 +394,15 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                         scope=scope,
                         payload=payload,
                     )
+                    launched.append((n, job))
+                except UntapedError as exc:
+                    typer.echo(f"error: {n}: {exc}", err=True)
+                    any_failed = True
+            # Monitor phase — drains each launched job to its terminal
+            # state. M2 keeps it sequential; M3/M4 dispatch to a parallel
+            # helper when ``len(launched) >= 2``.
+            for n, job in launched:
+                try:
                     if track:
                         # Render each event to stderr as it lands, then
                         # let the monitor's terminal flip end the loop.
