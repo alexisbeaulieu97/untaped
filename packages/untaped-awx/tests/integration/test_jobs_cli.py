@@ -307,3 +307,116 @@ def test_launch_track_exits_one_on_job_failure(fake_aap: Any) -> None:
     _seed_basic_jt(fake_aap, job_status="failed")
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy", "--track"])
     assert result.exit_code == 1
+
+
+def _seed_two_jts(fake: Any) -> None:
+    """Seed shared FK prerequisites + two distinct JTs (``deploy-a``,
+    ``deploy-b``) for the multi-template parallel-launch tests.
+    """
+    fake.seed("organizations", id=1, name="Default")
+    fake.seed(
+        "inventories", id=20, name="prod", organization=1, organization_name="Default", kind=""
+    )
+    fake.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    fake.seed(
+        "job_templates",
+        id=30,
+        name="deploy-a",
+        organization=1,
+        organization_name="Default",
+        project=10,
+        project_name="playbooks",
+        inventory=20,
+        inventory_name="prod",
+        playbook="a.yml",
+    )
+    fake.seed(
+        "job_templates",
+        id=31,
+        name="deploy-b",
+        organization=1,
+        organization_name="Default",
+        project=10,
+        project_name="playbooks",
+        inventory=20,
+        inventory_name="prod",
+        playbook="b.yml",
+    )
+
+
+def test_launch_track_parallel_drains_concurrently(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two ``--track`` jobs must drain concurrently. We prove it by
+    blocking each worker on a 2-party :class:`threading.Barrier`: a
+    sequential implementation can never reach the second worker, the
+    barrier times out, and the test fails.
+    """
+    import threading
+
+    from untaped_awx.cli import resource_commands
+
+    _seed_two_jts(fake_aap)
+    barrier = threading.Barrier(2, timeout=5)
+
+    class _BarrierStream:
+        def __init__(self, monitor: Any) -> None:
+            pass
+
+        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+            barrier.wait()
+            return iter(())
+
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _BarrierStream)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 0, result.output
+
+
+def test_launch_track_output_lines_carry_template_prefix(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent multi-template event output must be prefixed with the
+    originating template name so a shared stderr stays disambiguable.
+    """
+    from untaped_awx.cli import resource_commands
+    from untaped_awx.domain import JobEvent
+
+    _seed_two_jts(fake_aap)
+
+    class _StubStream:
+        def __init__(self, monitor: Any) -> None:
+            pass
+
+        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+            # One identifiable event per worker; the play name carries
+            # the materialised job id so test failure messages tell us
+            # which worker emitted what.
+            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStream)
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 0, result.output
+    assert "[deploy-a]" in result.stderr
+    assert "[deploy-b]" in result.stderr
+
+
+def test_launch_track_one_failed_exits_one_and_logs_both(fake_aap: Any) -> None:
+    """Mixed terminal statuses across templates: one ``failed`` → exit 1.
+    The ``next_action_status`` override is one-shot, so ``deploy-a``
+    (first launch) ends ``failed`` and ``deploy-b`` defaults back to
+    ``successful``.
+    """
+    _seed_two_jts(fake_aap)
+    fake_aap.next_action_status = "failed"
+
+    result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
+    assert result.exit_code == 1, result.output
