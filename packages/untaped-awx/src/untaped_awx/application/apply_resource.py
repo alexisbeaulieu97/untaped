@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
+from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
     Catalog,
@@ -63,12 +64,14 @@ class ApplyResource:
         strategies: StrategyResolver,
         *,
         warn: WarnFn = _noop_warn,
+        secret_policy: SecretPreservationPolicy | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
         self._fk = fk
         self._strategies = strategies
         self._warn = warn
+        self._secret_policy = secret_policy or SecretPreservationPolicy()
 
     def __call__(
         self,
@@ -179,8 +182,10 @@ class ApplyResource:
         # which would silently clobber a secret if PATCHed. The latter are
         # rejected at the boundary — the user must either provide the real
         # secret value or revert their sibling change.
-        preserved_fields, conflict_fields = _partition_top_level_fields(
-            write_payload, existing, preserved
+        preserved_fields, conflict_fields = self._secret_policy.partition(
+            write_payload=write_payload,
+            existing=existing,
+            preserved=preserved,
         )
         if conflict_fields:
             raise BadRequest(
@@ -495,82 +500,6 @@ def _diff(
             )
         )
     return out
-
-
-def _partition_top_level_fields(
-    write_payload: dict[str, Any],
-    existing: dict[str, Any] | None,
-    preserved: list[str],
-) -> tuple[set[str], list[str]]:
-    """Decide which preserved-secret top-level fields are safe to omit from PATCH.
-
-    For each top-level key that contains at least one preserved secret path,
-    compare the user's stripped subtree against the existing record's subtree
-    with the same paths removed:
-
-    - Equal → ``preserved`` (omit from the PATCH; AWX keeps the value).
-    - Different → ``conflict`` (a sibling change alongside the placeholder;
-      PATCHing would clobber the secret).
-
-    ``existing is None`` (create path) returns empty sets — there's nothing
-    to preserve, and ``_do_create`` enforces the no-placeholders rule
-    separately.
-    """
-    if existing is None:
-        return set(), []
-    top_keys = {path.split(".", 1)[0] for path in preserved}
-    existing_stripped = _strip_paths(existing, preserved)
-    preserved_fields: set[str] = set()
-    conflict_fields: list[str] = []
-    for top in top_keys:
-        # ``dict.get(top)`` returns ``None`` for an absent key and the
-        # actual value (often ``{}`` after stripping) when present. The
-        # comparison treats those as different on purpose: an unset
-        # subtree is a real sibling change vs. a stripped-empty subtree,
-        # and the user should see the conflict so they don't silently
-        # overwrite the secret.
-        if write_payload.get(top) == existing_stripped.get(top):
-            preserved_fields.add(top)
-        else:
-            conflict_fields.append(top)
-    return preserved_fields, conflict_fields
-
-
-def _strip_paths(obj: Any, paths: list[str]) -> Any:
-    """Return a deep copy of ``obj`` with the given dotted paths removed.
-
-    Path syntax matches ``ResourceSpec.secret_paths``: ``*`` matches any
-    list element or dict key.
-    """
-    result = copy.deepcopy(obj)
-    for path in paths:
-        _remove_at_path(result, path.split("."))
-    return result
-
-
-def _remove_at_path(obj: Any, parts: list[str]) -> None:
-    if not parts or obj is None:
-        return
-    head = parts[0]
-    rest = parts[1:]
-    if not rest:
-        if isinstance(obj, dict):
-            if head == "*":
-                obj.clear()
-            else:
-                obj.pop(head, None)
-        elif isinstance(obj, list) and head == "*":
-            obj.clear()
-        return
-    if isinstance(obj, dict):
-        if head == "*":
-            for key in list(obj.keys()):
-                _remove_at_path(obj[key], rest)
-        elif head in obj:
-            _remove_at_path(obj[head], rest)
-    elif isinstance(obj, list) and head == "*":
-        for item in obj:
-            _remove_at_path(item, rest)
 
 
 def _equal(a: Any, b: Any) -> bool:
