@@ -10,6 +10,7 @@ import typer
 from untaped_core import ColumnsOption, FormatOption, format_output, parse_kv_pairs, report_errors
 
 from untaped_awx.cli._context import AwxContext, open_context
+from untaped_awx.domain import Job
 from untaped_awx.domain.test_suite import TestSuite
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.spec import AwxResourceSpec
@@ -181,13 +182,13 @@ def run_command(
 
 
 def _print_failure_logs(ctx: AwxContext, suite: str, case: str, job_id: int) -> None:
-    """Best-effort: fetch ``jobs/<id>/stdout/`` and print its tail to stderr."""
+    """Best-effort: fetch the job's stdout and print its tail to stderr."""
+    job = Job(id=job_id, kind="job", status="successful")
     try:
-        text = ctx.repo.request_text("GET", f"jobs/{job_id}/stdout/", params={"format": "txt"})
+        lines = ctx.monitor.fetch_stdout(job)
     except AwxApiError as exc:
         typer.echo(f"--- {suite}/{case} job {job_id}: log fetch failed ({exc})", err=True)
         return
-    lines = text.splitlines()
     tail = lines[-_LOG_TAIL_LINES:]
     header = f"--- {suite}/{case} job {job_id} (last {len(tail)} lines)"
     typer.echo(header, err=True)
