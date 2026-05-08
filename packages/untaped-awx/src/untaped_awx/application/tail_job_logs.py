@@ -3,8 +3,9 @@
 Two phases:
 
 - **Drain** the existing log via :meth:`JobMonitor.fetch_stdout`. The
-  resulting list is sliced to ``--tail N`` lines if requested, then
-  filtered by ``--grep PATTERN`` (Python regex, optional ``--ignore-case``).
+  resulting list is bounded to the last ``--tail N`` lines if requested
+  (retained memory is then ``O(tail)``, not ``O(N)``), then filtered by
+  ``--grep PATTERN`` (Python regex, optional ``--ignore-case``).
 - **Follow** (only if ``follow=True``) keeps polling
   :meth:`JobMonitor.stream_stdout` from where the drain left off, again
   filtered by the same pattern, until the job hits a terminal state.
@@ -16,6 +17,7 @@ trim the historical block, not the live tail.
 from __future__ import annotations
 
 import re
+from collections import deque
 from collections.abc import Iterable, Iterator
 from re import Pattern
 
@@ -49,6 +51,7 @@ class TailJobLogs:
     ) -> Iterator[str]:
         existing = self._monitor.fetch_stdout(job, start_line=0)
         cursor = len(existing)
+        historical: Iterable[str]
         if tail is None:
             historical = existing
         elif tail <= 0:
@@ -56,8 +59,15 @@ class TailJobLogs:
             # from negative indexing where ``existing[-0:]`` would return
             # the whole list.
             historical = []
+            existing = []
         else:
-            historical = existing[-tail:]
+            # Bounded retention: ``deque(maxlen=N)`` keeps only the last
+            # N references. After construction we drop ``existing`` so
+            # the full log list can be GC'd during the filter loop —
+            # important for jobs with very large stdout where ``tail``
+            # is small (e.g. ``--tail 50`` on a 100k-line log).
+            historical = deque(existing, maxlen=tail)
+            existing = []
         for line in historical:
             if _matches(line, pattern):
                 yield line
