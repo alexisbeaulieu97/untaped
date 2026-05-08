@@ -10,11 +10,11 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from untaped_awx.application.test.ports import Launcher, Watcher
 from untaped_awx.application.test.resolver import ResolveCasePayload
-from untaped_awx.domain import Job
+from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.domain.test_suite import (
     Case,
     CaseResult,
@@ -24,9 +24,6 @@ from untaped_awx.domain.test_suite import (
     TestSuite,
 )
 from untaped_awx.errors import AwxApiError
-
-if TYPE_CHECKING:
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 _LAUNCH_ACTION = "launch"
 
@@ -60,7 +57,7 @@ class RunTestSuite:
         resolver: ResolveCasePayload,
         launcher: Launcher,
         watcher: Watcher,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         fk_prefetcher: FkPrefetcher,
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
