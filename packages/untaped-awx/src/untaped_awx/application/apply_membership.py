@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from untaped_awx.application.apply_planner import scope_for
 from untaped_awx.application.ports import FkResolver, ResourceClient
 from untaped_awx.domain import FieldChange, FkRef, Resource, ResourceSpec
 from untaped_awx.errors import BadRequest
@@ -61,12 +62,6 @@ class MembershipReconciler:
         list it. An empty list (``hosts: []``) explicitly clears
         membership.
         """
-        # Local import — apply_resource imports MembershipReconciler at
-        # module level, so a top-level import of ``scope_for`` from
-        # apply_resource would cycle. M4 will move ``scope_for`` to
-        # apply_planner and the import path here updates with it.
-        from untaped_awx.application.apply_resource import scope_for
-
         plans: list[MembershipPlan] = []
         raw = resource.spec if isinstance(resource.spec, dict) else {}
         for ref in spec.fk_refs:

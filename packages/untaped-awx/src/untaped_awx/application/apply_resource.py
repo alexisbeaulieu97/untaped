@@ -15,6 +15,7 @@ from typing import Any
 from untaped_awx.application._secret_paths import strip_encrypted
 from untaped_awx.application.apply_field_diff import FieldDiff
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
+from untaped_awx.application.apply_planner import ApplyPlanner, scope_for  # noqa: F401
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
@@ -26,7 +27,6 @@ from untaped_awx.application.ports import (
 from untaped_awx.domain import (
     ApplyOutcome,
     FieldChange,
-    FkRef,
     Resource,
     ResourceSpec,
 )
@@ -50,6 +50,7 @@ class ApplyResource:
         secret_policy: SecretPreservationPolicy | None = None,
         field_diff: FieldDiff | None = None,
         membership: MembershipReconciler | None = None,
+        planner: ApplyPlanner | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
@@ -59,6 +60,7 @@ class ApplyResource:
         self._secret_policy = secret_policy or SecretPreservationPolicy()
         self._field_diff = field_diff or FieldDiff()
         self._membership = membership or MembershipReconciler()
+        self._planner = planner or ApplyPlanner()
 
     def __call__(
         self,
@@ -91,8 +93,8 @@ class ApplyResource:
                 f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
                 "edit this resource via the AWX UI or API directly."
             )
-        identity = _build_identity(spec, resource)
-        payload = _build_payload(spec, resource, fk=self._fk)
+        identity = self._planner.plan_identity(spec, resource)
+        payload = self._planner.plan_payload(spec, resource, fk=self._fk)
         strategy = self._strategies.get(spec.apply_strategy)
         existing = strategy.find_existing(spec, identity, client=self._client, fk=self._fk)
         return self._dispatch(
@@ -122,7 +124,7 @@ class ApplyResource:
         # find_existing call per non-Group doc.
         if not any(ref.multi and ref.sub_endpoint for ref in spec.fk_refs):
             return []
-        identity = _build_identity(spec, resource)
+        identity = self._planner.plan_identity(spec, resource)
         strategy = self._strategies.get(spec.apply_strategy)
         existing = strategy.find_existing(spec, identity, client=self._client, fk=self._fk)
         if existing is None:
@@ -351,97 +353,6 @@ class ApplyResource:
             preserved_secrets=preserved,
             dropped_undeclared_secrets=dropped_undeclared,
         )
-
-
-def _build_identity(spec: ResourceSpec, resource: Resource) -> dict[str, Any]:
-    """Identity is whichever metadata fields uniquely identify the resource.
-
-    Default: ``{name, organization}``. Schedule includes ``parent``.
-    """
-    identity: dict[str, Any] = {"name": resource.metadata.name}
-    if "organization" in spec.identity_keys:
-        identity["organization"] = resource.metadata.organization
-    if resource.metadata.parent is not None:
-        identity["parent"] = resource.metadata.parent
-    return identity
-
-
-def _build_payload(spec: ResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
-    """Project resource.spec to canonical_fields and resolve FKs."""
-    body: dict[str, Any] = {}
-    raw = resource.spec
-    for field in spec.canonical_fields:
-        if field in raw:
-            body[field] = raw[field]
-    # Inject identity keys from metadata so create payloads include `name`
-    # (and `organization` for org-scoped kinds) even when absent from spec.
-    for key in spec.identity_keys:
-        if key in body:
-            continue
-        value = getattr(resource.metadata, key, None)
-        if value is not None:
-            body[key] = value
-    # Resolve FKs (skip polymorphic — those live in metadata, not payload —
-    # and skip sub_endpoint multi-FKs, which are managed out-of-band via
-    # associate / disassociate POSTs against ``/<api_path>/<id>/<sub>/``).
-    for ref in spec.fk_refs:
-        if ref.polymorphic or ref.field not in body or body[ref.field] is None:
-            continue
-        if ref.multi and ref.sub_endpoint is not None:
-            # Membership goes through ``_execute_sub_endpoints``; never PATCH it.
-            body.pop(ref.field, None)
-            continue
-        assert ref.kind is not None
-        scope = scope_for(ref, resource)
-        value = body[ref.field]
-        if ref.multi:
-            if isinstance(value, list):
-                body[ref.field] = [fk.name_to_id(ref.kind, str(v), scope=scope) for v in value]
-        else:
-            body[ref.field] = fk.name_to_id(ref.kind, str(value), scope=scope)
-    return body
-
-
-def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
-    """Return the FK lookup scope for ``ref`` against ``resource``.
-
-    Centralised so :func:`apply_resource` (apply path) and
-    :func:`apply_file._prefetch_plan` (bulk warm-up) read the same
-    semantics — otherwise prefetch warms the wrong cache buckets for
-    inventory-child kinds (``hosts``/``children``) whose scope lives on
-    ``metadata.parent`` rather than in the body.
-    """
-    if ref.scope_field is None:
-        return None
-    if ref.scope_field == "organization":
-        # For Schedule (and any future kind whose canonical org lives on the
-        # polymorphic parent), prefer ``parent.organization`` so name-scoped
-        # FK lookups resolve in the parent's org, not the schedule's own
-        # (which is typically ``None``).
-        org = (
-            resource.metadata.parent.organization if resource.metadata.parent else None
-        ) or resource.metadata.organization
-        if org:
-            return {"organization": org}
-    if ref.scope_field == "inventory":
-        # Hosts and Groups (and their group-membership FKs) are scoped by
-        # inventory, not org. The inventory lives on ``metadata.parent``
-        # for ``inventory_child`` kinds — there's no separate metadata
-        # field for it because Schedule's polymorphic-parent envelope
-        # already carries everything we need. When the parent's org is
-        # set, also scope by ``inventory__organization`` so AWX
-        # disambiguates same-named inventories across orgs (it expands
-        # to ``?inventory__name=…&inventory__organization__name=…`` —
-        # the only way to disambiguate Host/Group ancestry on AWX's
-        # filter surface, since hosts don't carry a direct
-        # ``organization`` FK).
-        parent = resource.metadata.parent
-        if parent is not None and parent.kind == "Inventory":
-            scope: dict[str, str] = {"inventory": parent.name}
-            if parent.organization:
-                scope["inventory__organization"] = parent.organization
-            return scope
-    return None
 
 
 __all__ = ["ApplyResource"]
