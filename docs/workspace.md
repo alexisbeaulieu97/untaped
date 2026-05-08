@@ -139,10 +139,22 @@ Reconcile each repo on disk with the manifest:
 | `skip`       | Repo exists but on a different branch (with a reason).    |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
 | `ignored`    | Local directory isn't a git repo.                         |
+| `unmatched`  | `--all --only <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 
 `--only <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
 a morning routine.
+
+**`--all --only` semantics.** Under `--all`, `--only` is a per-workspace
+filter: workspaces whose manifests don't contain the requested
+identifier emit one `unmatched` row per identifier and continue (so
+`sync --all --only deploy-config` traverses every workspace, syncing
+the ones that have `deploy-config` and surfacing the rest as
+`unmatched`). A typo is therefore visible across the run — e.g.
+`sync --all --only deploy-confg` produces an `unmatched` row in every
+workspace, which is the discoverable signal. **Single-workspace
+`--only`** (no `--all`) keeps strict semantics — typos raise loudly
+and abort the command.
 
 ### `status`
 

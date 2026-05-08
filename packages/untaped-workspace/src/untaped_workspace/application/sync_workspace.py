@@ -14,7 +14,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError, WorkspaceError
+from untaped_workspace.errors import GitError, UnmatchedOnlyFilter
 
 
 class _ManifestReader(Protocol):
@@ -60,30 +60,36 @@ class SyncWorkspace:
     ) -> list[SyncOutcome]:
         """Reconcile ``workspace`` with its manifest.
 
-        ``strict_only`` controls the failure mode when ``only`` contains
-        identifiers no repo matches:
+        ``strict_only`` controls how unmatched ``--only`` identifiers
+        surface:
 
         - ``True`` (default, single-workspace mode) — raise
-          :class:`WorkspaceError` so a typo on ``sync --name x --only typo``
-          is loud.
-        - ``False`` (CLI's ``--all`` path) — silently filter; if zero
-          repos match, return a single ``"no repos matched"`` skip
-          outcome instead of raising. Lets ``sync --all --only repo-x``
-          traverse every workspace, syncing the ones that have ``repo-x``
-          and skipping the ones that don't.
+          :class:`UnmatchedOnlyFilter` so a typo on
+          ``sync --name x --only typo`` is loud.
+        - ``False`` (CLI's ``--all`` path) — synthesise a per-identifier
+          ``SyncOutcome(action="unmatched", repo=<identifier>, ...)``
+          row for each unmatched value and continue with the matched
+          repos. Lets ``sync --all --only repo-x`` traverse every
+          workspace, syncing ones that have ``repo-x`` and emitting
+          visible rows for any typo.
         """
         manifest = self._manifests.read(workspace.path)
-        repos = self._select_repos(manifest, only, strict=strict_only)
-        if not repos and only:
-            return [
-                SyncOutcome(
-                    workspace=workspace.name,
-                    repo="<all>",
-                    action="skip",
-                    detail=f"no repos matched --only {sorted(only)}",
-                )
-            ]
-        outcomes = [self._sync_repo(workspace, manifest, repo) for repo in repos]
+        repos, unmatched = self._select_repos(manifest, only)
+        if unmatched and strict_only:
+            raise UnmatchedOnlyFilter(unmatched)
+        # Order: unmatched rows first (so a missing identifier is
+        # visible at the top of per-workspace output), then sync rows,
+        # then prune.
+        outcomes: list[SyncOutcome] = [
+            SyncOutcome(
+                workspace=workspace.name,
+                repo=identifier,
+                action="unmatched",
+                detail="not in this workspace's manifest",
+            )
+            for identifier in unmatched
+        ]
+        outcomes.extend(self._sync_repo(workspace, manifest, repo) for repo in repos)
         if prune:
             outcomes.extend(self._prune_orphans(workspace, manifest))
         return outcomes
@@ -91,16 +97,23 @@ class SyncWorkspace:
     # internal -----------------------------------------------------------
 
     def _select_repos(
-        self, manifest: WorkspaceManifest, only: list[str] | None, *, strict: bool
-    ) -> list[Repo]:
+        self, manifest: WorkspaceManifest, only: list[str] | None
+    ) -> tuple[list[Repo], tuple[str, ...]]:
+        """Partition ``manifest.repos`` against ``--only``.
+
+        Returns ``(matched, unmatched)``. ``unmatched`` is non-empty
+        only when ``only`` was passed and contains identifiers that
+        don't appear in this manifest. The caller decides how to react
+        — strict mode raises :class:`UnmatchedOnlyFilter`; non-strict
+        mode synthesises per-identifier ``unmatched`` outcome rows.
+        """
         if not only:
-            return list(manifest.repos)
+            return list(manifest.repos), ()
         wanted = set(only)
         known = {r.name for r in manifest.repos} | {r.url for r in manifest.repos}
-        unmatched = sorted(wanted - known)
-        if unmatched and strict:
-            raise WorkspaceError(f"unknown repo identifier(s) for --only: {', '.join(unmatched)}")
-        return [r for r in manifest.repos if (r.name in wanted) or (r.url in wanted)]
+        matched = [r for r in manifest.repos if (r.name in wanted) or (r.url in wanted)]
+        unmatched = tuple(sorted(wanted - known))
+        return matched, unmatched
 
     def _ensure_bare_fresh(self, url: str) -> Path:
         bare = self._git.ensure_bare(url, cache_dir=self._cache_dir)
