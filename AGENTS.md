@@ -48,7 +48,7 @@ untaped/
 | `untaped-profile`   | lib  | The `profile` meta-domain (manages the profile inventory).            | —             |
 | `untaped-workspace` | lib  | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
 | `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
-| `untaped-github`    | lib  | GitHub bounded context — authenticated user only today.               | —             |
+| `untaped-github`    | lib  | GitHub bounded context — authenticated user only today.               | [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md) |
 
 ## Hard Rules
 
