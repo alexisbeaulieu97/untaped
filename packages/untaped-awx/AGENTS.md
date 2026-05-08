@@ -187,8 +187,9 @@ best-effort (the per-call path is the authoritative one).
 
 `full` (JT, Project, Schedule, Host, Group), `partial`
 (WorkflowJobTemplate), `read_only` (Credential, Organization, Inventory,
-CredentialType). Saves below `full` echo the tier to stderr and embed an
-inline YAML comment.
+CredentialType, plus catalog-only stubs ExecutionEnvironment, Label,
+InstanceGroup with `commands=()`). Saves below `full` echo the tier to
+stderr and embed an inline YAML comment.
 
 ### Apply ordering
 
@@ -214,10 +215,11 @@ the concrete `JobMonitor` adapter. Cadence is **2.0 s** to match
 `WatchJob`. AWX v2 has no SSE/websocket — "live" is always polling.
 
 `launch --track / -t` on every launch-capable kind streams events to
-**stderr** (rendered by `cli/_event_render.render_event` as `PLAY [..]` /
-`TASK [..]` / two-space indented `ok|changed|failed: <host>` lines, no TUI
-/ no ANSI), then **propagates job status into the exit code**: exit 0 only
-when every tracked job ends `successful`; otherwise exit 1. `--wait` keeps
+**stderr** (rendered by `cli/_event_render.render_event_text` as
+`PLAY [..]` / `TASK [..]` / two-space indented
+`ok|changed|failed: <host>` lines; ANSI on TTY, plain when piped or
+redirected, no TUI), then **propagates job status into the exit code**:
+exit 0 only when every tracked job ends `successful`; otherwise exit 1. `--wait` keeps
 its old quiet-block semantics; `--monitor` (the v0 silent alias for
 `--wait`) is removed.
 
