@@ -50,11 +50,30 @@ the spec if the factory actually wires it.
 `domain/payloads.py`. `ResourceClient` reads return `ServerRecord`
 (Pydantic, `extra="allow"`, dict-style access via `__getitem__`/`get`);
 writes accept `WritePayload` (create/update) or `ActionPayload` (custom
-actions). `request` and `request_text` keep raw `dict` returns as
-documented escape hatches. Strategies bridge: dicts produced by the apply
-pipeline are wrapped in `WritePayload` before calling the client;
-`ServerRecord` results are flattened via `model_dump()` for the in-place
-strip / diff / preserve passes.
+actions). Strategies bridge: dicts produced by the apply pipeline are
+wrapped in `WritePayload` before calling the client; `ServerRecord`
+results are flattened via `model_dump()` for the in-place strip / diff
+/ preserve passes.
+
+Application use cases depend on one of two Protocols in
+`application/ports.py`:
+
+- **`ResourceClient`** is the spec-driven read/write port — `list`,
+  `get`, `find`, `find_by_identity`, `create`, `update`, `delete`,
+  `action`, `sub_endpoint_request`, `paginate_sub_endpoint`. Methods
+  take a domain `ResourceSpec`; the concrete adapter narrows internally.
+- **`RawHttpResourceClient`** extends `ResourceClient` with the raw-URL
+  escape hatches `request`, `paginate_path`, `request_text` for callers
+  that need to construct AWX URLs directly. Today: `ApplyResource`
+  (forwards its client to strategies that build nested-endpoint URLs),
+  `WatchJob`, and `PollingJobMonitor` (poll job execution endpoints).
+
+New use cases default to `ResourceClient`. The concrete
+`ResourceRepository` implements both. Both Protocols type their
+`spec` arguments as the domain `ResourceSpec`; infrastructure narrows
+to `AwxResourceSpec` via `infrastructure.spec.awx_api_path` whenever
+it needs `api_path`. Adding a third infra module that needs
+`api_path`? Reuse `awx_api_path` — don't copy the dance.
 
 ### kubectl-style envelope
 

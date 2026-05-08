@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
 from untaped_awx.domain.job import KIND_TO_API_PATH
 
@@ -20,7 +20,7 @@ SleepFn = Callable[[float], None]
 class WatchJob:
     def __init__(
         self,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         *,
         sleep: SleepFn = time.sleep,
         poll_interval: float = 2.0,

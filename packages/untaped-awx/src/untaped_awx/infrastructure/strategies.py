@@ -15,10 +15,10 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import WritePayload
+from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
+from untaped_awx.domain import ResourceSpec, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
-from untaped_awx.infrastructure.spec import AwxResourceSpec
+from untaped_awx.infrastructure.spec import awx_api_path
 
 
 class DefaultApplyStrategy:
@@ -31,10 +31,10 @@ class DefaultApplyStrategy:
 
     def find_existing(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         params: dict[str, str] = {}
@@ -50,11 +50,11 @@ class DefaultApplyStrategy:
 
     def create(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         record = client.create(spec, WritePayload(**payload))
@@ -62,11 +62,11 @@ class DefaultApplyStrategy:
 
     def update(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         record = client.update(spec, existing["id"], WritePayload(**payload))
@@ -92,10 +92,10 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
 
     def find_existing(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         parent = identity.get("parent")
@@ -113,11 +113,11 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
 
     def create(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         parent = identity.get("parent")
@@ -157,16 +157,16 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
 
     def find_existing(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         inventory_id = self._resolve_inventory_id(identity, fk=fk)
         return _find_unique(
             client,
-            path=f"inventories/{inventory_id}/{spec.api_path}/",
+            path=f"inventories/{inventory_id}/{awx_api_path(spec)}/",
             name=str(identity["name"]),
             kind=spec.kind,
             ambiguity_label={"inventory": str(_parent(identity).name)},
@@ -174,15 +174,15 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
 
     def create(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         inventory_id = self._resolve_inventory_id(identity, fk=fk)
-        path = f"inventories/{inventory_id}/{spec.api_path}/"
+        path = f"inventories/{inventory_id}/{awx_api_path(spec)}/"
         body = {"name": identity["name"], **payload}
         return client.request("POST", path, json=body)
 
@@ -194,7 +194,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
 
 
 def _find_unique(
-    client: ResourceClient,
+    client: RawHttpResourceClient,
     *,
     path: str,
     name: str,

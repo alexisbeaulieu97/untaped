@@ -9,16 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from untaped_awx.domain import Job
+from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.domain.test_suite import VariableSpec
-
-if TYPE_CHECKING:
-    # AwxResourceSpec lives in infrastructure but is the concrete spec type
-    # accepted by transport-aware ports below. Type-only import keeps
-    # application → infrastructure decoupled at runtime (see test_layering).
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 @runtime_checkable
@@ -43,7 +37,7 @@ class Launcher(Protocol):
 
     def __call__(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         *,
         name: str,
         action: str,

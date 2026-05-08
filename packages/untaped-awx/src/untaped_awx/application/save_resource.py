@@ -12,16 +12,13 @@ Schedule's polymorphic parent is extracted from AWX's
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import IdentityRef, Metadata, Resource
+from untaped_awx.domain import IdentityRef, Metadata, Resource, ResourceSpec
 from untaped_awx.errors import ResourceNotFound
 
-if TYPE_CHECKING:
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
-
-    _MetadataExtractor = Callable[[AwxResourceSpec, dict[str, Any], FkResolver], Metadata]
+_MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
 
 # AWX's snake_case "unified_job_type" → our PascalCase kind names.
 _UJT_KIND_MAP: dict[str, str] = {
@@ -39,7 +36,7 @@ class SaveResource:
 
     def __call__(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         *,
         name: str,
         scope: dict[str, str] | None = None,
@@ -51,7 +48,7 @@ class SaveResource:
 
     def find_all(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         *,
         params: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
@@ -63,11 +60,11 @@ class SaveResource:
         """
         return list(self._client.list(spec, params=params or None))
 
-    def from_record(self, spec: AwxResourceSpec, record: dict[str, Any]) -> Resource:
+    def from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> Resource:
         """Public access to the record→resource builder for bulk save flows."""
         return self._build_resource(spec, record)
 
-    def _build_resource(self, spec: AwxResourceSpec, record: dict[str, Any]) -> Resource:
+    def _build_resource(self, spec: ResourceSpec, record: dict[str, Any]) -> Resource:
         spec_data = self._build_spec_body(spec, record)
         # Sub-endpoint multi-FKs (Group.hosts / Group.children) live
         # outside ``canonical_fields`` because they're managed via
@@ -93,7 +90,7 @@ class SaveResource:
                 spec_data.pop(fk.field, None)
         return Resource(kind=spec.kind, metadata=metadata, spec=spec_data)
 
-    def _build_spec_body(self, spec: AwxResourceSpec, record: dict[str, Any]) -> dict[str, Any]:
+    def _build_spec_body(self, spec: ResourceSpec, record: dict[str, Any]) -> dict[str, Any]:
         body: dict[str, Any] = {}
         for field in spec.canonical_fields:
             if field not in record:
@@ -112,7 +109,7 @@ class SaveResource:
         return body
 
 
-def _default_metadata(spec: AwxResourceSpec, record: dict[str, Any], fk: FkResolver) -> Metadata:
+def _default_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolver) -> Metadata:
     name = str(record["name"])
     if "organization" in spec.identity_keys and record.get("organization") is not None:
         org_name = fk.id_to_name("Organization", int(record["organization"]))
@@ -120,7 +117,7 @@ def _default_metadata(spec: AwxResourceSpec, record: dict[str, Any], fk: FkResol
     return Metadata(name=name)
 
 
-def _schedule_metadata(spec: AwxResourceSpec, record: dict[str, Any], fk: FkResolver) -> Metadata:
+def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolver) -> Metadata:
     """Schedule's parent is reconstructed from ``summary_fields``.
 
     AWX returns ``unified_job_template: <id>`` plus
@@ -142,7 +139,7 @@ def _schedule_metadata(spec: AwxResourceSpec, record: dict[str, Any], fk: FkReso
 
 
 def _inventory_child_metadata(
-    spec: AwxResourceSpec, record: dict[str, Any], fk: FkResolver
+    spec: ResourceSpec, record: dict[str, Any], fk: FkResolver
 ) -> Metadata:
     """Reconstruct ``metadata.parent`` (Inventory) for Host/Group.
 

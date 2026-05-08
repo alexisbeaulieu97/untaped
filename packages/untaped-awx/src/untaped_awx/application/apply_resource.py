@@ -11,13 +11,14 @@ from __future__ import annotations
 import copy
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
 from untaped_awx.application.ports import (
     ApplyStrategy,
     Catalog,
     FkResolver,
+    RawHttpResourceClient,
     ResourceClient,
     StrategyResolver,
 )
@@ -26,11 +27,9 @@ from untaped_awx.domain import (
     FieldChange,
     FkRef,
     Resource,
+    ResourceSpec,
 )
 from untaped_awx.errors import BadRequest
-
-if TYPE_CHECKING:
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 @dataclass(frozen=True)
@@ -58,7 +57,7 @@ def _noop_warn(_msg: str) -> None: ...
 class ApplyResource:
     def __init__(
         self,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         catalog: Catalog,
         fk: FkResolver,
         strategies: StrategyResolver,
@@ -155,7 +154,7 @@ class ApplyResource:
     def _dispatch(
         self,
         *,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         resource: Resource,
         identity: dict[str, Any],
         payload: dict[str, Any],
@@ -251,7 +250,7 @@ class ApplyResource:
     def _do_create(
         self,
         *,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         resource: Resource,
         identity: dict[str, Any],
         payload: dict[str, Any],
@@ -301,7 +300,7 @@ class ApplyResource:
     def _do_update(
         self,
         *,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         resource: Resource,
         existing: dict[str, Any],
         payload: dict[str, Any],
@@ -356,7 +355,7 @@ class ApplyResource:
         )
 
 
-def _build_identity(spec: AwxResourceSpec, resource: Resource) -> dict[str, Any]:
+def _build_identity(spec: ResourceSpec, resource: Resource) -> dict[str, Any]:
     """Identity is whichever metadata fields uniquely identify the resource.
 
     Default: ``{name, organization}``. Schedule includes ``parent``.
@@ -369,7 +368,7 @@ def _build_identity(spec: AwxResourceSpec, resource: Resource) -> dict[str, Any]
     return identity
 
 
-def _build_payload(spec: AwxResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
+def _build_payload(spec: ResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
     """Project resource.spec to canonical_fields and resolve FKs."""
     body: dict[str, Any] = {}
     raw = resource.spec
@@ -448,7 +447,7 @@ def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
 
 
 def _diff(
-    spec: AwxResourceSpec,
+    spec: ResourceSpec,
     existing: dict[str, Any] | None,
     desired: dict[str, Any],
     *,
@@ -585,7 +584,7 @@ def _equal(a: Any, b: Any) -> bool:
 
 
 def _plan_sub_endpoints(
-    spec: AwxResourceSpec,
+    spec: ResourceSpec,
     resource: Resource,
     record_id: int | None,
     *,
@@ -656,7 +655,7 @@ def _plan_sub_endpoints(
 
 
 def _execute_sub_endpoints(
-    spec: AwxResourceSpec,
+    spec: ResourceSpec,
     record_id: int,
     plans: list[_SubEndpointPlan],
     *,

@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.job import KIND_TO_API_PATH
 
@@ -37,7 +37,7 @@ class PollingJobMonitor:
 
     def __init__(
         self,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         *,
         sleep: SleepFn = time.sleep,
         poll_interval: float = 2.0,
@@ -107,7 +107,7 @@ def _api_path_for(job: Job) -> str:
 
 
 def _follow_pages(
-    client: ResourceClient,
+    client: RawHttpResourceClient,
     path: str,
     params: dict[str, str],
 ) -> Iterator[dict[str, Any]]:

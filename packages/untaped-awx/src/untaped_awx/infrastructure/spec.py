@@ -19,3 +19,17 @@ class AwxResourceSpec(ResourceSpec):
     api_path: str
     list_columns: tuple[str, ...] = ()
     commands: tuple[CommandName, ...] = ("list", "get", "save", "apply")
+
+
+def awx_api_path(spec: ResourceSpec) -> str:
+    """Narrow a domain :class:`ResourceSpec` to :class:`AwxResourceSpec`
+    and return its ``api_path``.
+
+    Tripwire — every spec routed through :class:`AwxResourceCatalog` is
+    constructed as :class:`AwxResourceSpec`. If a future catalog member
+    breaks that invariant, this fails loudly at the narrowing site
+    rather than at the next HTTP call.
+    """
+    if not isinstance(spec, AwxResourceSpec):
+        raise TypeError(f"AwxResourceSpec required, got {type(spec).__name__}")
+    return spec.api_path
