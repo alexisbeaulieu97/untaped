@@ -198,6 +198,17 @@ uv tool install --editable .                    # install the `untaped` binary g
 User-facing config / profile commands are documented in
 [`docs/configuration.md`](docs/configuration.md).
 
+**Coverage measurement.** `--cov` is in `addopts`, so every `pytest`
+invocation measures coverage by default (gate: 80%). Two non-obvious
+behaviours worth knowing:
+
+- `pytest --collect-only` reports ~31% coverage. The cov-plugin runs
+  against import-time only when collection is the only step — it's not
+  a regression in real coverage. Run `pytest` (without `--collect-only`)
+  for the real number.
+- For tight TDD loops, `pytest --no-cov` skips coverage measurement
+  and shaves a few hundred milliseconds per run.
+
 **TDD loop:**
 1. Write the failing test (in `packages/untaped-<x>/tests/unit/`).
 2. Run it; confirm it fails for the right reason.
