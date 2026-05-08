@@ -217,11 +217,60 @@ schedules don't get included in an org-scoped backup. Run a separate
 
 Read-only access to execution records — useful after a launch.
 
+All `jobs` subcommands take a common `--kind` discriminator (default
+`job`; also accepts `workflow_job`, `project_update`, `inventory_update`,
+`ad_hoc_command`) and the standard `--format` / `--columns` knobs.
+
 ```bash
-untaped awx jobs get <id>                       # full record
-untaped awx jobs logs <id>                      # plain stdout
-untaped awx jobs wait <id> [--timeout SECS]     # block until terminal
+# Newest-first list. Default columns: id,name,status.
+untaped awx jobs list [--status STATUS] [--filter K=V]... [--limit N]
+
+# Single job record (defaults to YAML).
+untaped awx jobs get <id>
+
+# Structured per-task events. Default columns: counter,event,host_name,task.
+# --filter reaches AWX server-side (event=runner_on_failed, host=web-01, …).
+# --follow polls until the job is terminal; --from-counter N skips early events.
+untaped awx jobs events <id> [--follow] [--from-counter N] [--filter K=V]...
+
+# Plain stdout (default --format raw). --follow polls until terminal;
+# --tail N keeps the last N historical lines before any follow phase;
+# --grep PATTERN is client-side regex (case-insensitive with -i).
+untaped awx jobs logs <id> [--follow|-f] [--tail N] [--grep PATTERN] [-i]
+
+# Block until terminal. Exits 1 on --timeout.
+untaped awx jobs wait <id> [--timeout SECS]
 ```
+
+`jobs events --follow` is format-aware: `--format table` (default)
+renders human PLAY/TASK output coloured to mirror AWX's UI, while
+`--format json` streams NDJSON (one event per line) so you can pipe
+into `jq` directly. Other formats stream one structured row per event.
+
+### `untaped awx unified-templates`
+
+Read-only browser over AWX's `/unified_job_templates/` virtual collection,
+which interleaves `JobTemplate`, `WorkflowJobTemplate`, `Project`, and
+`InventorySource` rows behind a single `type` discriminator.
+
+```bash
+# Alphabetical (so the four kinds interleave predictably).
+# Default columns: id,name,type — deliberately minimal because health
+# fields differ across kinds (JT/WJT use `last_job_status`; Project /
+# InventorySource use `status`), so any one column would be empty for
+# half the rows. Opt in via --columns.
+untaped awx unified-templates list [--type TYPE] [--filter K=V]... [--limit N]
+
+# id-only. Names are not unique across kinds, so this fast-fails on a
+# non-decimal identifier with a message pointing at the per-kind
+# sub-apps for name lookup.
+untaped awx unified-templates get <id> [<id>...] [--stdin]
+```
+
+`--type TYPE` is sugar for `--filter type=…`; passing both with
+conflicting values is rejected. Launch dispatch is intentionally out of
+scope here — use the per-kind sub-apps (`job-templates launch`,
+`projects update`, …).
 
 ## Test suites — `untaped awx test`
 
@@ -353,5 +402,7 @@ Job Templates that reference them.
   TLS for corporate CAs.
 - [`workspace.md`](./workspace.md) — keep your AAP YAML envelopes in a
   workspace alongside the playbooks they configure.
-- [AGENTS.md](../AGENTS.md) — the resource framework internals
-  (`ResourceSpec`, `ApplyStrategy`, `FkResolver`, runner phases).
+- [`packages/untaped-awx/AGENTS.md`](../packages/untaped-awx/AGENTS.md) —
+  the resource framework internals (`ResourceSpec`, `ApplyStrategy`,
+  `FkResolver`, apply ordering, runner phases).
+- [AGENTS.md](../AGENTS.md) — workspace-wide rules and recipes.

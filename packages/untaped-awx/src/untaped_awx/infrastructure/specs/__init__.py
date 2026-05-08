@@ -40,8 +40,8 @@ ALL_SPECS: tuple[AwxResourceSpec, ...] = (
     SCHEDULE_SPEC,
 )
 """Canonical ordering follows apply-time dependency order
-(see ``AGENTS.md`` Apply ordering); the topological sort in
-``apply_file._topological_sort`` uses this order as its tie-breaker."""
+(see ``packages/untaped-awx/AGENTS.md`` "Apply ordering"); the topological
+sort in ``apply_file._topological_sort`` uses this order as its tie-breaker."""
 
 __all__ = [
     "ALL_SPECS",
