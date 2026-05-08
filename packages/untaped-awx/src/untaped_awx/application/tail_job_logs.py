@@ -3,8 +3,9 @@
 Two phases:
 
 - **Drain** the existing log via :meth:`JobMonitor.fetch_stdout`. The
-  resulting list is sliced to ``--tail N`` lines if requested, then
-  filtered by ``--grep PATTERN`` (Python regex, optional ``--ignore-case``).
+  resulting list is bounded to the last ``--tail N`` lines if requested
+  (retained memory is then ``O(tail)``, not ``O(N)``), then filtered by
+  ``--grep PATTERN`` (Python regex, optional ``--ignore-case``).
 - **Follow** (only if ``follow=True``) keeps polling
   :meth:`JobMonitor.stream_stdout` from where the drain left off, again
   filtered by the same pattern, until the job hits a terminal state.
