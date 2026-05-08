@@ -7,12 +7,12 @@ must never raise — so any error returns an empty list.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
-def names_for(spec: AwxResourceSpec):  # type: ignore[no-untyped-def]
+def names_for(spec: AwxResourceSpec) -> Callable[[str], Iterator[str]]:
     """Return a Typer ``autocompletion`` callback for ``spec``'s names."""
 
     def _complete(incomplete: str) -> Iterator[str]:
