@@ -24,6 +24,7 @@ untaped/
 ├── pyproject.toml                # workspace root + the `untaped` package
 ├── uv.lock                       # single shared lockfile (commit it)
 ├── .python-version               # 3.14
+├── .pre-commit-config.yaml
 ├── AGENTS.md                     # ← you are here (root rules)
 ├── CLAUDE.md                     # imports @AGENTS.md
 ├── README.md                     # human-facing intro
@@ -67,7 +68,7 @@ Non-negotiable. Every contribution must respect them.
    `uv init` (gives flat layout).
 5. **Create a lib if reuse is likely.** Don't duplicate code across
    domains. If two domains need the same helper, it belongs in
-   `untaped-core`.
+   `untaped-core` (or a new shared lib if it's a coherent subdomain).
 6. **Search before writing.** Grep `untaped-core` and other packages
    before implementing a helper. If it exists in the wrong place, *move*
    it (and update callers); don't fork.
@@ -244,7 +245,7 @@ Then:
 - Add the package to this file's Repository Map.
 - **Create `packages/untaped-<X>/AGENTS.md`** for domain-specific
   internals (resource framework, side-effect adapters, polling cadence,
-  …) plus a 4-line `CLAUDE.md` stub: `See @AGENTS.md for <pkg>
+  …) plus a short `CLAUDE.md` stub: `See @AGENTS.md for <pkg>
   internals. For workspace-wide rules see @../../AGENTS.md.`
 - Run `uv sync && uv run pytest && uv run untaped --help`. If you have
   the global tool installed, re-run `uv tool install --editable .`.
