@@ -530,6 +530,10 @@ def _build_launch_payload(
 
 
 def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
+    # Project's update declares accepts=frozenset(); when update grows
+    # payload-bearing flags this builder will need the same accepts-driven
+    # parameter sub-setting that _add_launch is slated to gain (see
+    # _ACTION_BUILDERS comment block).
     @app.command("update", no_args_is_help=True)
     def update_command(
         name: str = typer.Argument(..., help=f"{spec.kind} name."),
