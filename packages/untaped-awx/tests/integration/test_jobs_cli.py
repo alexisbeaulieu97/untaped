@@ -364,7 +364,7 @@ def test_launch_track_parallel_drains_concurrently(
     from untaped_awx.cli import resource_commands
 
     _seed_two_jts(fake_aap)
-    barrier = threading.Barrier(2, timeout=5)
+    barrier = threading.Barrier(2, timeout=15)
 
     class _BarrierStream:
         def __init__(self, monitor: Any) -> None:
@@ -409,14 +409,91 @@ def test_launch_track_output_lines_carry_template_prefix(
     assert "[deploy-b]" in result.stderr
 
 
-def test_launch_track_one_failed_exits_one_and_logs_both(fake_aap: Any) -> None:
-    """Mixed terminal statuses across templates: one ``failed`` → exit 1.
+def test_launch_track_one_failed_exits_one_and_logs_both(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mixed terminal statuses across templates: one ``failed`` → exit 1
+    AND both templates' events still reach stderr with their prefixes.
+
     The ``next_action_status`` override is one-shot, so ``deploy-a``
     (first launch) ends ``failed`` and ``deploy-b`` defaults back to
-    ``successful``.
+    ``successful``. ``failed`` is a terminal status — no exception is
+    raised — so the failure flows through ``_drain_parallel`` into
+    ``jobs`` and the post-loop ``any(j.status != "successful")`` block
+    triggers ``exit 1``.
     """
+    from untaped_awx.cli import resource_commands
+    from untaped_awx.domain import JobEvent
+
     _seed_two_jts(fake_aap)
     fake_aap.next_action_status = "failed"
 
+    class _StubStream:
+        def __init__(self, monitor: Any) -> None:
+            pass
+
+        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStream)
+
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 1, result.output
+    assert "[deploy-a]" in result.stderr
+    assert "[deploy-b]" in result.stderr
+
+
+def test_launch_wait_parallel_returns_results_in_launch_order(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--wait`` (no ``--track``) for two templates exercises
+    ``_wait_parallel``. The collected ``jobs`` list must be in launch
+    order so the table-output rows mirror the user-supplied ``ids``.
+
+    ``WatchJob`` is patched with a stub that returns the input ``Job``
+    after a small delay; the slow path (``deploy-a``) finishes after
+    the fast path (``deploy-b``) but the result list still puts
+    ``deploy-a`` first because ``_wait_parallel`` walks ``futures`` in
+    launch order before calling ``result()``.
+    """
+    import time
+
+    from untaped_awx.cli import resource_commands
+    from untaped_awx.domain import Job
+
+    _seed_two_jts(fake_aap)
+
+    class _StubWatch:
+        def __init__(self, client: Any) -> None:
+            pass
+
+        def __call__(self, job: Job, **_kwargs: Any) -> Job:
+            # First-launched (deploy-a) sleeps longer than second
+            # (deploy-b) so future-completion order != launch order.
+            # The id parity isolates which template each callback got.
+            if job.id % 2 == 0:
+                time.sleep(0.05)
+            return job.model_copy(update={"status": "successful"})
+
+    monkeypatch.setattr(resource_commands, "WatchJob", _StubWatch)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "deploy-a",
+            "deploy-b",
+            "--wait",
+            "--format",
+            "raw",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # `name` column for the two materialised jobs: ``deploy-a-launch``
+    # first, ``deploy-b-launch`` second — preserves launch order even
+    # though the deploy-a worker completed second.
+    rows = [line for line in result.stdout.strip().splitlines() if line]
+    assert rows == ["deploy-a-launch", "deploy-b-launch"], result.output

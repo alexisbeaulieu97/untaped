@@ -312,16 +312,34 @@ def _drain_parallel(
     Per-job :class:`UntapedError`s are returned alongside successful
     results so the caller can preserve today's per-job error stderr
     rows + ``any_failed`` exit-code semantics.
+
+    Note: ``Ctrl-C`` may take up to one polling interval to abort
+    because workers don't cooperatively cancel — the executor's
+    ``shutdown(wait=True)`` blocks until each polling loop next
+    iterates and the job goes terminal.
     """
     q: queue.Queue[tuple[str, JobEvent | None]] = queue.Queue()
 
     def _worker(name: str, job: Job) -> Job:
+        # Sentinel pushed in the inner ``finally`` *before*
+        # ``monitor.fetch`` so a slow or failing fetch never blocks
+        # the main thread's queue drain. Non-``UntapedError``
+        # exceptions are wrapped so the caller's per-job ``error:
+        # <name>: <exc>`` row + ``any_failed`` exit-code logic
+        # handles every failure uniformly. ``KeyboardInterrupt`` is a
+        # ``BaseException`` and skips this wrap, propagating to the
+        # main thread as expected.
         try:
-            for ev in StreamJobEvents(monitor)(job, follow=True):
-                q.put((name, ev))
-        finally:
-            q.put((name, None))
-        return monitor.fetch(job)
+            try:
+                for ev in StreamJobEvents(monitor)(job, follow=True):
+                    q.put((name, ev))
+            finally:
+                q.put((name, None))
+            return monitor.fetch(job)
+        except UntapedError:
+            raise
+        except Exception as exc:
+            raise UntapedError(f"{name}: {exc}") from exc
 
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
@@ -336,6 +354,10 @@ def _drain_parallel(
             console.print(render_event_text(ev, prefix=name))
         results: list[Job] = []
         errors: list[tuple[str, UntapedError]] = []
+        # Iteration order is launch order: ``pool.submit`` returned
+        # immediately, ``futures`` is walked in submission order, and
+        # ``result()`` blocks per-future. Parallelism happened upstream
+        # during the queue drain — this loop only collects.
         for name, future in futures:
             try:
                 results.append(future.result())
@@ -354,14 +376,25 @@ def _wait_parallel(
     ``--track``) path: each worker calls ``WatchJob(client)(job)``
     until the job hits a terminal state and returns. Per-job
     :class:`UntapedError`s are returned alongside successful results
-    so the caller preserves today's per-job error semantics.
+    so the caller preserves today's per-job error semantics; non-
+    ``UntapedError`` exceptions are wrapped at the worker boundary
+    for the same reason as :func:`_drain_parallel`.
     """
     watch = WatchJob(client)
 
+    def _worker(name: str, job: Job) -> Job:
+        try:
+            return watch(job)
+        except UntapedError:
+            raise
+        except Exception as exc:
+            raise UntapedError(f"{name}: {exc}") from exc
+
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-        futures = [(name, pool.submit(watch, job)) for name, job in jobs]
+        futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
         results: list[Job] = []
         errors: list[tuple[str, UntapedError]] = []
+        # Iteration order is launch order — see ``_drain_parallel``.
         for name, future in futures:
             try:
                 results.append(future.result())
@@ -436,7 +469,7 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             diff_mode=diff_mode,
             job_type=job_type,
         )
-        jobs: list[Any] = []
+        jobs: list[Job] = []
         any_failed = False
         # Stderr console for ``--track``: ANSI when stderr is a TTY,
         # plain text when redirected (CI logs, piped through ``tee``).
@@ -462,7 +495,7 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             # Launch phase — every launch is one HTTP POST returning an
             # in-flight Job; sequential keeps the per-id try/except simple
             # and the order of stderr error lines stable.
-            launched: list[tuple[str, Any]] = []
+            launched: list[tuple[str, Job]] = []
             for n in ids:
                 try:
                     job = RunAction(ctx.repo)(
@@ -480,6 +513,9 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             # state. Two or more ``--track`` jobs run concurrently
             # (wall-clock = max, not sum); single-template stays
             # sequential for stable tracebacks and zero thread overhead.
+            # ``--track`` takes precedence over ``--wait`` when both
+            # are set, matching the single-template ``if track / elif
+            # wait`` chain below.
             if track and len(launched) >= 2:
                 results, errors = _drain_parallel(ctx.monitor, launched, track_console)
                 jobs.extend(results)
