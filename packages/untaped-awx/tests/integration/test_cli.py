@@ -7,6 +7,7 @@ the importlib-mode cross-file import problem.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -1429,6 +1430,14 @@ def test_project_update_calls_action(fake_aap: Any) -> None:
     )
 
 
+def _flag_in_help(flag: str, help_text: str) -> bool:
+    """True iff ``flag`` appears as a complete flag, not as a prefix
+    of a longer flag — guards against ``--credential`` matching a
+    future ``--credentials`` (plural).
+    """
+    return re.search(rf"{re.escape(flag)}\b", help_text) is not None
+
+
 def test_launch_help_narrows_flags_by_accepts() -> None:
     """Pins the help-text contract (not the parsing contract): each
     launch flag whose payload field isn't in a kind's ``accepts`` is
@@ -1442,7 +1451,7 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
     assert wjt_help.exit_code == 0, wjt_help.output
     # Hidden — payload field not in WJT.launch.accepts.
     for hidden_flag in ("--credential", "--verbosity", "--diff-mode", "--job-type"):
-        assert hidden_flag not in wjt_help.output, (
+        assert not _flag_in_help(hidden_flag, wjt_help.output), (
             f"{hidden_flag} should be hidden from WJT launch --help"
         )
     # Visible — in accepts (or always-on).
@@ -1456,7 +1465,9 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         "--wait",
         "--track",
     ):
-        assert visible_flag in wjt_help.output, f"{visible_flag} missing from WJT launch --help"
+        assert _flag_in_help(visible_flag, wjt_help.output), (
+            f"{visible_flag} missing from WJT launch --help"
+        )
 
     jt_help = runner.invoke(app, ["job-templates", "launch", "--help"])
     assert jt_help.exit_code == 0, jt_help.output
@@ -1472,4 +1483,6 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         "--diff-mode",
         "--job-type",
     ):
-        assert narrowable_flag in jt_help.output, f"{narrowable_flag} missing from JT launch --help"
+        assert _flag_in_help(narrowable_flag, jt_help.output), (
+            f"{narrowable_flag} missing from JT launch --help"
+        )
