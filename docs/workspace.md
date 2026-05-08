@@ -22,8 +22,8 @@ want; the registry is local-only.
 ## Quick tour
 
 ```bash
-untaped workspace init ~/work/prod              # new workspace
-untaped workspace add git@github.com:acme/api --path ~/work/prod  # add a repo
+untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
+untaped workspace add git@github.com:acme/api --name prod  # add a repo
 untaped workspace sync --name prod              # clone everything in the manifest
 untaped workspace status --name prod            # per-repo git status
 ```
@@ -74,12 +74,49 @@ name and path.
 ### `init`
 
 ```bash
-untaped workspace init <path> [--name <name>] [--branch <default>]
+untaped workspace init <name> [--path <dir>] [--branch <default>]
 ```
 
-Creates a new workspace at `<path>` (the directory will be made if it
-doesn't exist), writes a starter `untaped.yml`, and registers the
-workspace under `<name>` (or the directory's basename).
+Creates a new workspace named `<name>` and registers it. The default
+location is `<workspace.workspaces_dir>/<name>` (the `workspaces_dir`
+setting defaults to `~/.untaped/workspaces` and is profile-overridable).
+Pass `-p / --path` to override the location for a one-off workspace
+that lives elsewhere. Writes a starter `untaped.yml` in the directory.
+
+### `adopt`
+
+```bash
+untaped workspace adopt <path> [--name <name>]
+```
+
+Initialise a workspace from a directory that already contains git
+clones. Each immediate subdirectory containing `.git` is recorded in
+the new manifest with its current `origin` URL and checked-out branch
+(a detached HEAD becomes `branch: null`; clones missing an `origin`
+emit a stderr warning and are skipped). The on-disk clones stay where
+they are — `adopt` does **not** rewire them to share objects with the
+bare cache; the cascade only links *new* clones via `git clone
+--reference`.
+
+```bash
+git clone git@github.com:acme/api  ~/work/prod/api
+git clone git@github.com:acme/web  ~/work/prod/web
+untaped workspace adopt ~/work/prod --name prod
+```
+
+### `forget`
+
+```bash
+untaped workspace forget <name> [--prune] [--yes]
+```
+
+Remove a workspace from the central registry. The on-disk manifest and
+clones are preserved by default — `forget` is the inverse of `init` /
+`adopt`, not of `sync --prune`. Pass `--prune` to also `rmtree` the
+workspace directory; pruning is refused (mirroring
+`workspace remove --prune`) when any declared repo has uncommitted
+changes. A missing manifest or missing directory is tolerated; the
+registry entry is removed regardless.
 
 ### `import`
 
@@ -139,10 +176,22 @@ Reconcile each repo on disk with the manifest:
 | `skip`       | Repo exists but on a different branch (with a reason).    |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
 | `ignored`    | Local directory isn't a git repo.                         |
+| `unmatched`  | `--all --only <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 
 `--only <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
 a morning routine.
+
+**`--all --only` semantics.** Under `--all`, `--only` is a per-workspace
+filter: workspaces whose manifests don't contain the requested
+identifier emit one `unmatched` row per identifier and continue (so
+`sync --all --only deploy-config` traverses every workspace, syncing
+the ones that have `deploy-config` and surfacing the rest as
+`unmatched`). A typo is therefore visible across the run — e.g.
+`sync --all --only deploy-confg` produces an `unmatched` row in every
+workspace, which is the discoverable signal. **Single-workspace
+`--only`** (no `--all`) keeps strict semantics — typos raise loudly
+and abort the command.
 
 ### `status`
 
@@ -165,7 +214,8 @@ untaped workspace status --all --format raw \
 
 ```bash
 untaped workspace foreach <cmd> [--name <ws>]
-                                [--parallel N] [--continue-on-error]
+                                [--parallel N]
+                                [--continue-on-error | --ignore-errors]
                                 [--format json|yaml|table|raw]
 ```
 
@@ -182,9 +232,19 @@ untaped workspace foreach 'git status -s' --name prod
 untaped workspace foreach 'git pull --ff-only' --name prod --parallel 4
 ```
 
-The exit code is non-zero if any repo's command exited non-zero.
-`--continue-on-error` keeps going past failures instead of stopping
-queued work; in-flight commands always run to completion.
+Three error-handling modes:
+
+| Flag                   | Walks every repo? | Exit code            | Use when                                  |
+| ---------------------- | ----------------- | -------------------- | ----------------------------------------- |
+| *(default)*            | No — fail-fast    | non-zero on failure  | You want to stop and investigate.         |
+| `--continue-on-error`  | Yes               | non-zero if any failed | You want every repo's outcome but still want CI to fail. |
+| `--ignore-errors`      | Yes               | always `0`           | Inside `set -e` shell scripts where partial failure is fine. |
+
+On `--format table`, a `failed in: <repos>` summary is written to
+stderr whenever any repo failed — regardless of mode, so failures are
+never silent. The summary is suppressed in `json|yaml|raw` since each
+row's `returncode` carries the same information. In-flight commands
+always run to completion; only queued work is cancelled on fail-fast.
 
 ### `path`
 
@@ -252,6 +312,16 @@ git clone git@github.com:acme/devops-manifests ~/manifests
 untaped workspace import ~/manifests/prod.yml --path ~/work/prod --sync
 ```
 
+### Adopt a directory you've already cloned by hand
+
+```bash
+mkdir -p ~/work/prod && cd ~/work/prod
+git clone git@github.com:acme/api
+git clone git@github.com:acme/web
+untaped workspace adopt . --name prod
+untaped workspace status --name prod        # already populated
+```
+
 ## Storage
 
 By default, bare clones are cached at `~/.untaped/repositories`
@@ -265,5 +335,7 @@ and bandwidth are shared without the branch conflicts that
 - [`configuration.md`](./configuration.md) — `untaped config` /
   `untaped profile` and the YAML schema.
 - [`awx.md`](./awx.md) — `untaped awx` commands.
-- [AGENTS.md](../AGENTS.md) — internals (manifest vs registry split,
-  the `GitRunner` boundary, sync state machine).
+- [`packages/untaped-workspace/AGENTS.md`](../packages/untaped-workspace/AGENTS.md) —
+  internals (manifest vs registry split, the `GitRunner` boundary, sync
+  state machine).
+- [AGENTS.md](../AGENTS.md) — workspace-wide rules and recipes.

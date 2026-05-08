@@ -22,6 +22,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 
+from untaped_awx.application.apply_planner import scope_for
 from untaped_awx.application.apply_resource import ApplyResource
 from untaped_awx.application.ports import Catalog, FkResolver, ResourceDocumentReader
 from untaped_awx.domain import ApplyOutcome, Resource
@@ -53,10 +54,18 @@ class ApplyFile:
         plan = _prefetch_plan(ordered, catalog=self._catalog)
         if plan:
             self._fk.prefetch(plan)
+        # Two-phase apply when writing: phase 1 writes every doc's body
+        # in topo order with membership writes deferred; phase 2
+        # reconciles memberships once every body exists. This breaks
+        # cyclic dependencies where a Group's ``children:`` references
+        # a sibling Group declared later in the same file (the topo
+        # sorter can't resolve self-referencing sub-endpoint refs without
+        # tripping its cycle detector). Preview mode (write=False) is
+        # single-pass — diff output should still include membership rows.
         outcomes: list[ApplyOutcome] = []
         for doc in ordered:
             try:
-                outcomes.append(self._apply_one(doc, write=write))
+                outcomes.append(self._apply_one(doc, write=write, defer_memberships=write))
             except AwxApiError as exc:
                 outcomes.append(
                     ApplyOutcome(
@@ -67,7 +76,25 @@ class ApplyFile:
                     )
                 )
                 if fail_fast:
+                    return outcomes
+        if not write:
+            return outcomes
+        # Phase 2: reconcile sub-endpoint memberships now that every
+        # doc has been written. Splice membership FieldChange rows back
+        # into each doc's outcome so users see the full picture.
+        for doc, outcome in zip(ordered, outcomes, strict=True):
+            if outcome.action == "failed":
+                continue
+            try:
+                membership_changes = self._apply_one.reconcile_memberships(doc)
+            except AwxApiError as exc:
+                outcome.action = "failed"
+                outcome.detail = str(exc)
+                if fail_fast:
                     break
+                continue
+            if membership_changes:
+                outcome.changes = list(outcome.changes) + list(membership_changes)
         return outcomes
 
 
@@ -90,11 +117,11 @@ def _prefetch_plan(
                 continue
             if ref.kind is None or ref.field not in body or body[ref.field] is None:
                 continue
-            scope: dict[str, str] = {}
-            if ref.scope_field is not None:
-                scope_value = body.get(ref.scope_field)
-                if isinstance(scope_value, str) and scope_value:
-                    scope[ref.scope_field] = scope_value
+            # Reuse apply-time scope resolution so prefetch warms the same
+            # cache buckets the apply pass will hit. Body-only lookup misses
+            # inventory-child refs (Group.hosts/children) where scope lives
+            # on metadata.parent rather than in the body.
+            scope = scope_for(ref, doc) or {}
             seen[ref.kind].add(frozenset(scope.items()))
     return {
         kind: [dict(items) if items else None for items in scopes] for kind, scopes in seen.items()
@@ -125,10 +152,17 @@ def _topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Res
     # Build a kind-level dependency graph restricted to kinds present in
     # the input. Cross-doc dependencies on kinds NOT present mean the
     # parent already exists in AWX — those don't constrain ordering.
+    # Sub-endpoint multi-FKs are reconciled *after* the resource is
+    # written (associate/disassociate POSTs against ``/<id>/<sub>/``), so
+    # they don't constrain create order — and a self-reference like
+    # ``Group.children → Group`` would otherwise spuriously trip the
+    # cycle detector.
     edges: dict[str, set[str]] = defaultdict(set)
     for kind, spec in specs.items():
         for ref in spec.fk_refs:
-            if ref.kind is not None and ref.kind in kinds_in_docs:
+            if ref.multi and ref.sub_endpoint is not None:
+                continue
+            if ref.kind is not None and ref.kind in kinds_in_docs and ref.kind != kind:
                 edges[kind].add(ref.kind)
 
     # Polymorphic refs: read the referenced kind from each doc's data.
@@ -144,8 +178,9 @@ def _topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Res
                 edges[doc.kind].add(referenced_kind)
 
     # Tie-break ready kinds by the catalog's canonical order (Organization
-    # before CredentialType, etc. — see AGENTS.md "Apply ordering"). Falling
-    # back to the kind name keeps unknown-but-valid kinds deterministic.
+    # before CredentialType, etc. — see packages/untaped-awx/AGENTS.md
+    # "Apply ordering"). Falling back to the kind name keeps unknown-but-valid
+    # kinds deterministic.
     kind_rank = {kind: i for i, kind in enumerate(catalog.kinds())}
     kind_order = _kahn_topological_order(kinds_in_docs, edges, rank=kind_rank)
 

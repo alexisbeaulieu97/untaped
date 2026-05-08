@@ -7,6 +7,7 @@ the importlib-mode cross-file import problem.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -242,8 +243,8 @@ def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
         ["job-templates", "get", "deploy", "--organization", "Default", "--format", "table"],
     )
     assert result.exit_code == 0, result.output
-    # list_columns for JT is ("name", "organization", "project", "inventory", "last_job_status").
-    # No noisy columns like "summary_fields" or "related" should appear.
+    # list_columns for JT is ("id", "name") — minimal default. No noisy
+    # columns like "summary_fields" or "related" should appear.
     assert "summary_fields" not in result.stdout
     assert "related" not in result.stdout
     assert "deploy" in result.stdout
@@ -1427,3 +1428,61 @@ def test_project_update_calls_action(fake_aap: Any) -> None:
         api_path == "projects" and action == "update"
         for api_path, _, action, _ in fake_aap.actions_called
     )
+
+
+def _flag_in_help(flag: str, help_text: str) -> bool:
+    """True iff ``flag`` appears as a complete flag, not as a prefix
+    of a longer flag — guards against ``--credential`` matching a
+    future ``--credentials`` (plural).
+    """
+    return re.search(rf"{re.escape(flag)}\b", help_text) is not None
+
+
+def test_launch_help_narrows_flags_by_accepts() -> None:
+    """Pins the help-text contract (not the parsing contract): each
+    launch flag whose payload field isn't in a kind's ``accepts`` is
+    hidden. WJT's ``accepts`` is a strict subset (4 flags hidden); JT's
+    is the full set (regression sentinel — every narrowable flag
+    advertised).
+    """
+    runner = CliRunner()
+
+    wjt_help = runner.invoke(app, ["workflow-templates", "launch", "--help"])
+    assert wjt_help.exit_code == 0, wjt_help.output
+    # Hidden — payload field not in WJT.launch.accepts.
+    for hidden_flag in ("--credential", "--verbosity", "--diff-mode", "--job-type"):
+        assert not _flag_in_help(hidden_flag, wjt_help.output), (
+            f"{hidden_flag} should be hidden from WJT launch --help"
+        )
+    # Visible — in accepts (or always-on).
+    for visible_flag in (
+        "--inventory",
+        "--scm-branch",
+        "--job-tag",
+        "--skip-tag",
+        "--extra-vars",
+        "--limit",
+        "--wait",
+        "--track",
+    ):
+        assert _flag_in_help(visible_flag, wjt_help.output), (
+            f"{visible_flag} missing from WJT launch --help"
+        )
+
+    jt_help = runner.invoke(app, ["job-templates", "launch", "--help"])
+    assert jt_help.exit_code == 0, jt_help.output
+    # JobTemplate's accepts contains every narrowable field — full
+    # parser stays advertised.
+    for narrowable_flag in (
+        "--inventory",
+        "--credential",
+        "--scm-branch",
+        "--job-tag",
+        "--skip-tag",
+        "--verbosity",
+        "--diff-mode",
+        "--job-type",
+    ):
+        assert _flag_in_help(narrowable_flag, jt_help.output), (
+            f"{narrowable_flag} missing from JT launch --help"
+        )

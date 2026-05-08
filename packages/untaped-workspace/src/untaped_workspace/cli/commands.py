@@ -279,9 +279,15 @@ def sync_command(
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
         use_case = SyncWorkspace(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
+        if all_workspaces and only:
+            typer.echo(
+                "warning: --all --only filters per-workspace; workspaces without "
+                "matching repos will be skipped, not rejected.",
+                err=True,
+            )
         outcomes = []
         for ws in targets:
-            outcomes.extend(use_case(ws, only=only, prune=prune))
+            outcomes.extend(use_case(ws, only=only, prune=prune, strict_only=not all_workspaces))
         _print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE
 from untaped_awx.domain import ApplyOutcome, FieldChange
 
 
@@ -35,12 +36,12 @@ def diff_lines(outcome: ApplyOutcome) -> list[str]:
 
 
 def _changed_fields(changes: list[FieldChange]) -> list[str]:
-    return [c.field for c in changes if c.note != "preserved existing secret"]
+    return [c.field for c in changes if c.note != PRESERVED_SECRET_NOTE]
 
 
 def _format_change(c: FieldChange) -> str:
-    if c.note == "preserved existing secret":
-        return f"{c.field}: (preserved existing secret)"
+    if c.note == PRESERVED_SECRET_NOTE:
+        return f"{c.field}: ({PRESERVED_SECRET_NOTE})"
     return f"{c.field}: {_short(c.before)} → {_short(c.after)}"
 
 

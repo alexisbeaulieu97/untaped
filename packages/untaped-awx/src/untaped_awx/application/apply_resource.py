@@ -10,25 +10,27 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
+from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE, FieldDiff
+from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
+from untaped_awx.application.apply_planner import ApplyPlanner
+from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
     Catalog,
     FkResolver,
-    ResourceClient,
+    RawHttpResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import (
     ApplyOutcome,
     FieldChange,
     Resource,
+    ResourceSpec,
 )
 from untaped_awx.errors import BadRequest
-
-if TYPE_CHECKING:
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 WarnFn = Callable[[str], None]
 
@@ -39,25 +41,45 @@ def _noop_warn(_msg: str) -> None: ...
 class ApplyResource:
     def __init__(
         self,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         catalog: Catalog,
         fk: FkResolver,
         strategies: StrategyResolver,
         *,
         warn: WarnFn = _noop_warn,
+        secret_policy: SecretPreservationPolicy | None = None,
+        field_diff: FieldDiff | None = None,
+        membership: MembershipReconciler | None = None,
+        planner: ApplyPlanner | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
         self._fk = fk
         self._strategies = strategies
         self._warn = warn
+        self._secret_policy = secret_policy or SecretPreservationPolicy()
+        self._field_diff = field_diff or FieldDiff()
+        self._membership = membership or MembershipReconciler()
+        self._planner = planner or ApplyPlanner()
 
     def __call__(
         self,
         resource: Resource,
         *,
         write: bool = False,
+        defer_memberships: bool = False,
     ) -> ApplyOutcome:
+        """Apply ``resource`` (preview by default; pass ``write=True`` to write).
+
+        ``defer_memberships=True`` (only meaningful when ``write=True``)
+        writes the body but skips :meth:`MembershipReconciler.execute`.
+        Used by :class:`ApplyFile` to break cyclic membership dependencies — a
+        Group whose ``children:`` references a sibling Group declared
+        later in the same file would otherwise fail in phase 1 because
+        the sibling doesn't exist yet. After every doc's body has been
+        written, :class:`ApplyFile` calls :meth:`reconcile_memberships`
+        to drive the deferred writes against now-existing siblings.
+        """
         spec = self._catalog.get(resource.kind)
         # ``read_only`` kinds (Credential, Inventory, Organization,
         # CredentialType, plus the catalog-only stubs
@@ -71,8 +93,8 @@ class ApplyResource:
                 f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
                 "edit this resource via the AWX UI or API directly."
             )
-        identity = _build_identity(spec, resource)
-        payload = _build_payload(spec, resource, fk=self._fk)
+        identity = self._planner.plan_identity(spec, resource)
+        payload = self._planner.plan_payload(spec, resource, fk=self._fk)
         strategy = self._strategies.get(spec.apply_strategy)
         existing = strategy.find_existing(spec, identity, client=self._client, fk=self._fk)
         return self._dispatch(
@@ -83,18 +105,57 @@ class ApplyResource:
             existing=existing,
             strategy=strategy,
             write=write,
+            defer_memberships=defer_memberships,
         )
+
+    def reconcile_memberships(self, resource: Resource) -> list[FieldChange]:
+        """Phase 2 of two-phase apply: write deferred sub-endpoint memberships.
+
+        Looks up ``resource``'s now-existing record, plans (this is when
+        every sibling FK exists, so name → id resolves cleanly), and
+        executes associate/disassociate POSTs. Returns the field-change
+        rows the caller can splice into the original outcome. Returns
+        an empty list when the kind has no sub-endpoint multi-FKs (most
+        kinds) so the second pass is essentially free.
+        """
+        spec = self._catalog.get(resource.kind)
+        # Short-circuit kinds without sub-endpoint refs — phase 2 is only
+        # meaningful for Group (hosts/children) today. Saves an extra
+        # find_existing call per non-Group doc.
+        if not any(ref.multi and ref.sub_endpoint for ref in spec.fk_refs):
+            return []
+        identity = self._planner.plan_identity(spec, resource)
+        strategy = self._strategies.get(spec.apply_strategy)
+        existing = strategy.find_existing(spec, identity, client=self._client, fk=self._fk)
+        if existing is None:
+            raise BadRequest(
+                f"{spec.kind} {resource.metadata.name!r}: cannot reconcile "
+                f"memberships — record vanished between body write and membership pass"
+            )
+        membership_plans = self._membership.plan(
+            spec,
+            resource,
+            int(existing["id"]),
+            client=self._client,
+            fk=self._fk,
+        )
+        if any(p.to_associate or p.to_disassociate for p in membership_plans):
+            self._membership.execute(
+                spec, int(existing["id"]), membership_plans, client=self._client
+            )
+        return [p.field_change for p in membership_plans if p.field_change is not None]
 
     def _dispatch(
         self,
         *,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         resource: Resource,
         identity: dict[str, Any],
         payload: dict[str, Any],
         existing: dict[str, Any] | None,
         strategy: ApplyStrategy,
         write: bool,
+        defer_memberships: bool = False,
     ) -> ApplyOutcome:
         # Resolve secret-handling first so the diff can annotate preserved
         # fields. Deep-copy because `strip_encrypted` mutates nested
@@ -112,8 +173,10 @@ class ApplyResource:
         # which would silently clobber a secret if PATCHed. The latter are
         # rejected at the boundary — the user must either provide the real
         # secret value or revert their sibling change.
-        preserved_fields, conflict_fields = _partition_top_level_fields(
-            write_payload, existing, preserved
+        preserved_fields, conflict_fields = self._secret_policy.partition(
+            write_payload=write_payload,
+            existing=existing,
+            preserved=preserved,
         )
         if conflict_fields:
             raise BadRequest(
@@ -122,7 +185,32 @@ class ApplyResource:
                 f"alongside a sibling change. PATCH would overwrite the existing secret. "
                 f"Provide the actual secret value(s) or revert the sibling change(s)."
             )
-        changes = _diff(spec, existing, write_payload, preserved_fields=preserved_fields)
+        changes = self._field_diff.compute(
+            existing=existing,
+            desired=write_payload,
+            preserved_fields=preserved_fields,
+        )
+
+        # Membership reconciliation (multi-FK + sub_endpoint, e.g.
+        # ``Group.hosts`` / ``Group.children``). The plan is computed
+        # *now* so its diff appears in preview output. When
+        # ``defer_memberships=True``, planning is skipped entirely —
+        # phase 1 of two-phase apply only writes bodies; the deferred
+        # plan + execute happens in :meth:`reconcile_memberships`. This
+        # matters when a sibling member is declared in the same file
+        # and won't exist until later in phase 1.
+        membership_plans: list[MembershipPlan] = []
+        if not defer_memberships:
+            membership_plans = self._membership.plan(
+                spec,
+                resource,
+                int(existing["id"]) if existing else None,
+                client=self._client,
+                fk=self._fk,
+            )
+            for plan in membership_plans:
+                if plan.field_change is not None:
+                    changes.append(plan.field_change)
 
         if not write:
             action = "preview"
@@ -143,6 +231,7 @@ class ApplyResource:
                 payload=write_payload,
                 strategy=strategy,
                 changes=changes,
+                membership_plans=membership_plans,
                 preserved=preserved,
                 dropped_undeclared=dropped_undeclared,
             )
@@ -153,6 +242,7 @@ class ApplyResource:
             payload=write_payload,
             strategy=strategy,
             changes=changes,
+            membership_plans=membership_plans,
             preserved=preserved,
             dropped_undeclared=dropped_undeclared,
         )
@@ -160,12 +250,13 @@ class ApplyResource:
     def _do_create(
         self,
         *,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         resource: Resource,
         identity: dict[str, Any],
         payload: dict[str, Any],
         strategy: ApplyStrategy,
         changes: list[FieldChange],
+        membership_plans: list[MembershipPlan],
         preserved: list[str],
         dropped_undeclared: list[str],
     ) -> ApplyOutcome:
@@ -178,7 +269,25 @@ class ApplyResource:
                 f"secret(s) at {', '.join(preserved)} — provide real values "
                 f"or pre-create the resource in AWX first"
             )
-        strategy.create(spec, payload, identity, client=self._client, fk=self._fk)
+        result = strategy.create(spec, payload, identity, client=self._client, fk=self._fk)
+        if membership_plans:
+            new_id_value = result.get("id") if isinstance(result, dict) else None
+            if new_id_value is None:
+                # All current strategies populate ``id``. If a future strategy
+                # ever returns a body without it (or an opaque non-dict), the
+                # resource has been created but membership writes can't
+                # target it — fail loudly rather than silently skip.
+                raise BadRequest(
+                    f"{spec.kind} {resource.metadata.name!r}: create response had no "
+                    f"'id'; cannot reconcile membership for "
+                    f"{', '.join(p.ref.field for p in membership_plans)}"
+                )
+            self._membership.execute(
+                spec,
+                int(new_id_value),
+                membership_plans,
+                client=self._client,
+            )
         return ApplyOutcome(
             kind=spec.kind,
             name=resource.metadata.name,
@@ -191,17 +300,27 @@ class ApplyResource:
     def _do_update(
         self,
         *,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         resource: Resource,
         existing: dict[str, Any],
         payload: dict[str, Any],
         strategy: ApplyStrategy,
         changes: list[FieldChange],
+        membership_plans: list[MembershipPlan],
         preserved: list[str],
         dropped_undeclared: list[str],
     ) -> ApplyOutcome:
-        changed_fields = {c.field for c in changes if c.note != "preserved existing secret"}
-        if not changed_fields:
+        # Body fields that actually changed, *excluding* preserved secrets and
+        # membership-only field changes (the latter are handled out-of-band
+        # via associate / disassociate POSTs, never by PATCHing the body).
+        membership_field_names = {p.ref.field for p in membership_plans}
+        changed_fields = {
+            c.field
+            for c in changes
+            if c.note != PRESERVED_SECRET_NOTE and c.field not in membership_field_names
+        }
+        membership_changed = any(p.to_associate or p.to_disassociate for p in membership_plans)
+        if not changed_fields and not membership_changed:
             return ApplyOutcome(
                 kind=spec.kind,
                 name=resource.metadata.name,
@@ -210,14 +329,22 @@ class ApplyResource:
                 preserved_secrets=preserved,
                 dropped_undeclared_secrets=dropped_undeclared,
             )
-        update_payload = {k: v for k, v in payload.items() if k in changed_fields}
-        strategy.update(
-            spec,
-            existing,
-            update_payload,
-            client=self._client,
-            fk=self._fk,
-        )
+        if changed_fields:
+            update_payload = {k: v for k, v in payload.items() if k in changed_fields}
+            strategy.update(
+                spec,
+                existing,
+                update_payload,
+                client=self._client,
+                fk=self._fk,
+            )
+        if membership_changed:
+            self._membership.execute(
+                spec,
+                int(existing["id"]),
+                membership_plans,
+                client=self._client,
+            )
         return ApplyOutcome(
             kind=spec.kind,
             name=resource.metadata.name,
@@ -226,199 +353,6 @@ class ApplyResource:
             preserved_secrets=preserved,
             dropped_undeclared_secrets=dropped_undeclared,
         )
-
-
-def _build_identity(spec: AwxResourceSpec, resource: Resource) -> dict[str, Any]:
-    """Identity is whichever metadata fields uniquely identify the resource.
-
-    Default: ``{name, organization}``. Schedule includes ``parent``.
-    """
-    identity: dict[str, Any] = {"name": resource.metadata.name}
-    if "organization" in spec.identity_keys:
-        identity["organization"] = resource.metadata.organization
-    if resource.metadata.parent is not None:
-        identity["parent"] = resource.metadata.parent
-    return identity
-
-
-def _build_payload(spec: AwxResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
-    """Project resource.spec to canonical_fields and resolve FKs."""
-    body: dict[str, Any] = {}
-    raw = resource.spec
-    for field in spec.canonical_fields:
-        if field in raw:
-            body[field] = raw[field]
-    # Inject identity keys from metadata so create payloads include `name`
-    # (and `organization` for org-scoped kinds) even when absent from spec.
-    for key in spec.identity_keys:
-        if key in body:
-            continue
-        value = getattr(resource.metadata, key, None)
-        if value is not None:
-            body[key] = value
-    # Resolve FKs (skip polymorphic — those live in metadata, not payload)
-    for ref in spec.fk_refs:
-        if ref.polymorphic or ref.field not in body or body[ref.field] is None:
-            continue
-        assert ref.kind is not None
-        scope = _scope_for(ref, resource)
-        value = body[ref.field]
-        if ref.multi:
-            if isinstance(value, list):
-                body[ref.field] = [fk.name_to_id(ref.kind, str(v), scope=scope) for v in value]
-        else:
-            body[ref.field] = fk.name_to_id(ref.kind, str(value), scope=scope)
-    return body
-
-
-def _scope_for(ref: Any, resource: Resource) -> dict[str, str] | None:
-    if ref.scope_field is None:
-        return None
-    if ref.scope_field == "organization":
-        # For Schedule (and any future kind whose canonical org lives on the
-        # polymorphic parent), prefer ``parent.organization`` so name-scoped
-        # FK lookups resolve in the parent's org, not the schedule's own
-        # (which is typically ``None``).
-        org = (
-            resource.metadata.parent.organization if resource.metadata.parent else None
-        ) or resource.metadata.organization
-        if org:
-            return {"organization": org}
-    return None
-
-
-def _diff(
-    spec: AwxResourceSpec,
-    existing: dict[str, Any] | None,
-    desired: dict[str, Any],
-    *,
-    preserved_fields: set[str],
-) -> list[FieldChange]:
-    """Return field-level changes between existing and the (stripped) desired payload.
-
-    ``desired`` is the post-strip payload (placeholders removed). Top-level
-    fields in ``preserved_fields`` are emitted as ``preserved existing secret``
-    rows and are excluded from the PATCH so AWX retains the value (including
-    any nested secrets).
-    """
-    out: list[FieldChange] = []
-    if existing is None:
-        for field, after in desired.items():
-            note = "preserved existing secret" if field in preserved_fields else None
-            out.append(FieldChange(field=field, before=None, after=after, note=note))
-        return out
-    for field, after in desired.items():
-        before = existing.get(field)
-        if field in preserved_fields:
-            out.append(
-                FieldChange(
-                    field=field,
-                    before=before,
-                    after=before,  # we keep the existing secret
-                    note="preserved existing secret",
-                )
-            )
-            continue
-        if not _equal(before, after):
-            out.append(FieldChange(field=field, before=before, after=after))
-    # Top-level secret fields entirely stripped from ``desired`` (e.g.
-    # ``webhook_key``) still need a row so the user sees them in the preview.
-    for field in preserved_fields:
-        if field in desired:
-            continue
-        before = existing.get(field)
-        out.append(
-            FieldChange(
-                field=field,
-                before=before,
-                after=before,
-                note="preserved existing secret",
-            )
-        )
-    return out
-
-
-def _partition_top_level_fields(
-    write_payload: dict[str, Any],
-    existing: dict[str, Any] | None,
-    preserved: list[str],
-) -> tuple[set[str], list[str]]:
-    """Decide which preserved-secret top-level fields are safe to omit from PATCH.
-
-    For each top-level key that contains at least one preserved secret path,
-    compare the user's stripped subtree against the existing record's subtree
-    with the same paths removed:
-
-    - Equal → ``preserved`` (omit from the PATCH; AWX keeps the value).
-    - Different → ``conflict`` (a sibling change alongside the placeholder;
-      PATCHing would clobber the secret).
-
-    ``existing is None`` (create path) returns empty sets — there's nothing
-    to preserve, and ``_do_create`` enforces the no-placeholders rule
-    separately.
-    """
-    if existing is None:
-        return set(), []
-    by_top: dict[str, list[str]] = {}
-    for path in preserved:
-        top = path.split(".", 1)[0]
-        by_top.setdefault(top, []).append(path)
-    existing_stripped = _strip_paths(existing, preserved)
-    preserved_fields: set[str] = set()
-    conflict_fields: list[str] = []
-    for top in by_top:
-        if write_payload.get(top) == existing_stripped.get(top):
-            preserved_fields.add(top)
-        else:
-            conflict_fields.append(top)
-    return preserved_fields, conflict_fields
-
-
-def _strip_paths(obj: Any, paths: list[str]) -> Any:
-    """Return a deep copy of ``obj`` with the given dotted paths removed.
-
-    Path syntax matches ``ResourceSpec.secret_paths``: ``*`` matches any
-    list element or dict key.
-    """
-    result = copy.deepcopy(obj)
-    for path in paths:
-        _remove_at_path(result, path.split("."))
-    return result
-
-
-def _remove_at_path(obj: Any, parts: list[str]) -> None:
-    if not parts or obj is None:
-        return
-    head = parts[0]
-    rest = parts[1:]
-    if not rest:
-        if isinstance(obj, dict):
-            if head == "*":
-                obj.clear()
-            else:
-                obj.pop(head, None)
-        elif isinstance(obj, list) and head == "*":
-            obj.clear()
-        return
-    if isinstance(obj, dict):
-        if head == "*":
-            for key in list(obj.keys()):
-                _remove_at_path(obj[key], rest)
-        elif head in obj:
-            _remove_at_path(obj[head], rest)
-    elif isinstance(obj, list) and head == "*":
-        for item in obj:
-            _remove_at_path(item, rest)
-
-
-def _equal(a: Any, b: Any) -> bool:
-    """Order-insensitive equality for FK lists (e.g., credentials)."""
-    if isinstance(a, list) and isinstance(b, list):
-        try:
-            return bool(sorted(a, key=repr) == sorted(b, key=repr))
-        except TypeError:
-            return bool(a == b)
-    return bool(a == b)
 
 
 __all__ = ["ApplyResource"]

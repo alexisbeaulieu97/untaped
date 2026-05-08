@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import queue
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import typer
+from rich.console import Console
 from untaped_core import (
     ColumnsOption,
     OutputFormat,
@@ -21,11 +25,15 @@ from untaped_awx.application import (
     ListResources,
     RunAction,
     SaveResource,
+    StreamJobEvents,
     WatchJob,
 )
+from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._names import flatten_fks
+from untaped_awx.domain import Job, JobEvent
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
@@ -51,10 +59,9 @@ def make_resource_app(spec: AwxResourceSpec) -> typer.Typer:
     if "apply" in spec.commands:
         _add_apply(app, spec)
     for action in spec.actions:
-        if action.name == "launch":
-            _add_launch(app, spec)
-        elif action.name == "update":
-            _add_update(app, spec)
+        builder = _ACTION_BUILDERS.get(action.name)
+        if builder is not None:
+            builder(app, spec)
 
     return app
 
@@ -95,9 +102,12 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             records = list(
                 ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
             )
-        if with_names:
-            records = flatten_fks(records, spec)
         cols = list(columns) if columns else list(spec.list_columns)
+        if with_names:
+            # Pass ``cols`` so display-only FK columns (e.g. Host's
+            # ``inventory``, which lives in ``read_only_fields`` rather
+            # than ``fk_refs``) get flattened from ``summary_fields``.
+            records = flatten_fks(records, spec, columns=cols)
         typer.echo(format_output(records, fmt=fmt, columns=cols))
 
 
@@ -115,6 +125,20 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization (ignored for numeric ids)."
+        ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help=(
+                "Scope to inventory (Host/Group only). Without this, name "
+                "lookup is global and ambiguous if the same name exists "
+                "across inventories."
+            ),
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
         ),
         by_name: bool = typer.Option(
             False,
@@ -140,7 +164,13 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
-            scope = _scope(ctx, organization, spec)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
             getter = GetResource(ctx.repo)
             for n in ids:
                 try:
@@ -149,21 +179,28 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
         if records:
+            cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
             if with_names:
-                records = flatten_fks(records, spec)
-            cols = list(columns) if columns else _default_columns(spec, fmt)
+                # ``cols`` may be ``None`` for non-table formats — that's
+                # fine; ``flatten_fks`` then only flattens declared fk_refs.
+                records = flatten_fks(records, spec, columns=cols)
             typer.echo(format_output(records, fmt=fmt, columns=cols))
         if any_failed:
             raise typer.Exit(code=1)
 
 
-def _default_columns(spec: AwxResourceSpec, fmt: OutputFormat) -> list[str] | None:
-    # Table needs a projection — a full AWX record (50+ fields) renders as
-    # an unreadable wall. raw stays one-column-per-line so pipelines that
-    # do `get --format raw | …` keep their established shape; yaml/json
-    # keep the full record so users can inspect every field.
+def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
+    """Default column projection for ``get`` commands.
+
+    Table needs a projection — a full AWX record (50+ fields) renders as
+    an unreadable wall. raw stays one-column-per-line so pipelines that
+    do ``get --format raw | …`` keep their established shape; yaml/json
+    keep the full record so users can inspect every field. Reused by
+    ``unified-templates get`` so the polymorphic browser shares the
+    same logic without duplicating it.
+    """
     if fmt == "table":
-        return list(spec.list_columns)
+        return list(default_cols)
     return None
 
 
@@ -196,10 +233,26 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
         organization: str | None = typer.Option(
             None, "--organization", help="Scope to organization."
         ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help="Scope to inventory (Host/Group only).",
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
     ) -> None:
         """Dump the resource as a portable YAML envelope."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
             resource = SaveResource(ctx.repo, ctx.fk)(spec, name=name, scope=scope)
         comment = spec.fidelity_note if spec.fidelity != "full" else None
         if comment:
@@ -243,8 +296,141 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
 # ---- launch ----
 
 
+def _drain_parallel(
+    monitor: JobMonitor,
+    jobs: list[tuple[str, Job]],
+    console: Console,
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Drain ``--track`` events from multiple jobs concurrently.
+
+    Workers stream :class:`JobEvent`s onto a :class:`queue.Queue`; the
+    main thread drains the queue and prints with the originating
+    template name as a prefix so concurrent output stays
+    disambiguable on a shared stderr. After every worker has signalled
+    completion (sentinel ``(name, None)``), each future's final
+    :class:`Job` (post ``monitor.fetch``) is collected in launch order.
+    Per-job :class:`UntapedError`s are returned alongside successful
+    results so the caller can preserve today's per-job error stderr
+    rows + ``any_failed`` exit-code semantics.
+
+    Note: ``Ctrl-C`` may take up to one polling interval to abort
+    because workers don't cooperatively cancel — the executor's
+    ``shutdown(wait=True)`` blocks until each polling loop next
+    iterates and the job goes terminal.
+    """
+    q: queue.Queue[tuple[str, JobEvent | None]] = queue.Queue()
+
+    def _worker(name: str, job: Job) -> Job:
+        # Sentinel pushed in the inner ``finally`` *before*
+        # ``monitor.fetch`` so a slow or failing fetch never blocks
+        # the main thread's queue drain. Non-``UntapedError``
+        # exceptions are wrapped — message carries the original
+        # class name so the caller's ``error: <name>: <wrapped>``
+        # row reads as ``error: deploy-a: KeyError: 'foo'`` (the
+        # ``name`` is added once by ``_echo_parallel_errors``, not
+        # by the wrap). ``KeyboardInterrupt`` is a
+        # ``BaseException`` and skips this wrap, propagating to the
+        # main thread as expected.
+        try:
+            try:
+                for ev in StreamJobEvents(monitor)(job, follow=True):
+                    q.put((name, ev))
+            finally:
+                q.put((name, None))
+            return monitor.fetch(job)
+        except UntapedError:
+            raise
+        except Exception as exc:
+            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
+        # Single-threaded printing: queue drain runs only here so a
+        # multi-segment Rich Text never interleaves between workers.
+        done = 0
+        while done < len(jobs):
+            name, ev = q.get()
+            if ev is None:
+                done += 1
+                continue
+            console.print(render_event_text(ev, prefix=name))
+        results: list[Job] = []
+        errors: list[tuple[str, UntapedError]] = []
+        # Iteration order is launch order: ``pool.submit`` returned
+        # immediately, ``futures`` is walked in submission order, and
+        # ``result()`` blocks per-future. Parallelism happened upstream
+        # during the queue drain — this loop only collects.
+        for name, future in futures:
+            try:
+                results.append(future.result())
+            except UntapedError as exc:
+                errors.append((name, exc))
+    return results, errors
+
+
+def _wait_parallel(
+    client: RawHttpResourceClient,
+    jobs: list[tuple[str, Job]],
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Block-wait on multiple jobs concurrently — no streaming.
+
+    Mirrors :func:`_drain_parallel` for the ``--wait`` (no
+    ``--track``) path: each worker calls ``WatchJob(client)(job)``
+    until the job hits a terminal state and returns. Per-job
+    :class:`UntapedError`s are returned alongside successful results
+    so the caller preserves today's per-job error semantics; non-
+    ``UntapedError`` exceptions are wrapped at the worker boundary
+    for the same reason as :func:`_drain_parallel`.
+    """
+    watch = WatchJob(client)
+
+    def _worker(name: str, job: Job) -> Job:
+        try:
+            return watch(job)
+        except UntapedError:
+            raise
+        except Exception as exc:
+            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
+        results: list[Job] = []
+        errors: list[tuple[str, UntapedError]] = []
+        # Iteration order is launch order — see ``_drain_parallel``.
+        for name, future in futures:
+            try:
+                results.append(future.result())
+            except UntapedError as exc:
+                errors.append((name, exc))
+    return results, errors
+
+
+def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
+    """Echo per-job errors from a parallel-monitor helper and return
+    ``True`` when any were recorded so the caller can flip its
+    ``any_failed`` flag with ``|=``.
+    """
+    for failed_name, failure in errors:
+        typer.echo(f"error: {failed_name}: {failure}", err=True)
+    return bool(errors)
+
+
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
+
+    # Hide each narrowable flag whose payload field isn't in this
+    # kind's ``ActionSpec.accepts``. ``_LAUNCH_FLAG_TO_ACCEPT`` is the
+    # single source of truth for the flag→field mapping (also consulted
+    # by the runtime guard); a hidden flag still parses, the guard
+    # catches misuse.
+    hide_inventory = _LAUNCH_FLAG_TO_ACCEPT["--inventory"] not in accepts
+    hide_credential = _LAUNCH_FLAG_TO_ACCEPT["--credential"] not in accepts
+    hide_scm_branch = _LAUNCH_FLAG_TO_ACCEPT["--scm-branch"] not in accepts
+    hide_job_tag = _LAUNCH_FLAG_TO_ACCEPT["--job-tag"] not in accepts
+    hide_skip_tag = _LAUNCH_FLAG_TO_ACCEPT["--skip-tag"] not in accepts
+    hide_verbosity = _LAUNCH_FLAG_TO_ACCEPT["--verbosity"] not in accepts
+    hide_diff_mode = _LAUNCH_FLAG_TO_ACCEPT["--diff-mode"] not in accepts
+    hide_job_type = _LAUNCH_FLAG_TO_ACCEPT["--job-type"] not in accepts
 
     @app.command("launch", no_args_is_help=True)
     def launch_command(
@@ -258,32 +444,56 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
         limit: str | None = typer.Option(None, "--limit", help="Hosts pattern to limit to."),
         inventory: str | None = typer.Option(
-            None, "--inventory", help="Override inventory by name (resolved to id)."
+            None,
+            "--inventory",
+            help="Override inventory by name (resolved to id).",
+            hidden=hide_inventory,
         ),
         credential: list[str] | None = typer.Option(
             None,
             "--credential",
             help="Override credential by name (repeatable; resolved to ids).",
+            hidden=hide_credential,
         ),
-        scm_branch: str | None = typer.Option(None, "--scm-branch", help="SCM branch to run from."),
+        scm_branch: str | None = typer.Option(
+            None, "--scm-branch", help="SCM branch to run from.", hidden=hide_scm_branch
+        ),
         job_tag: list[str] | None = typer.Option(
-            None, "--job-tag", help="Run only tasks with these tags (repeatable)."
+            None,
+            "--job-tag",
+            help="Run only tasks with these tags (repeatable).",
+            hidden=hide_job_tag,
         ),
         skip_tag: list[str] | None = typer.Option(
-            None, "--skip-tag", help="Skip tasks with these tags (repeatable)."
+            None,
+            "--skip-tag",
+            help="Skip tasks with these tags (repeatable).",
+            hidden=hide_skip_tag,
         ),
-        verbosity: int | None = typer.Option(None, "--verbosity", help="0-4 (passed verbatim)."),
+        verbosity: int | None = typer.Option(
+            None, "--verbosity", help="0-4 (passed verbatim).", hidden=hide_verbosity
+        ),
         diff_mode: bool | None = typer.Option(
             None,
             "--diff-mode/--no-diff-mode",
             help="Override diff_mode for this run.",
+            hidden=hide_diff_mode,
         ),
         job_type: str | None = typer.Option(
-            None, "--job-type", help="Override job_type (e.g. run, check)."
+            None,
+            "--job-type",
+            help="Override job_type (e.g. run, check).",
+            hidden=hide_job_type,
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
-        monitor: bool = typer.Option(
-            False, "--monitor", help="Stream + wait (alias for --wait in v0)."
+        track: bool = typer.Option(
+            False,
+            "--track",
+            "-t",
+            help=(
+                "Stream structured events to stderr while waiting; exit 1 "
+                "if any tracked job ends in a non-successful terminal state."
+            ),
         ),
         fmt: OutputFormat = typer.Option(
             "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
@@ -303,8 +513,11 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             diff_mode=diff_mode,
             job_type=job_type,
         )
-        jobs: list[Any] = []
+        jobs: list[Job] = []
         any_failed = False
+        # Stderr console for ``--track``: ANSI when stderr is a TTY,
+        # plain text when redirected (CI logs, piped through ``tee``).
+        track_console = Console(stderr=True, highlight=False)
         with report_errors(), open_context() as ctx:
             scope = _scope(ctx, organization, spec)
             payload = _build_launch_payload(
@@ -323,6 +536,10 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 org_scope=scope,
             )
             ids = read_identifiers(list(names or []), stdin=stdin)
+            # Launch phase — every launch is one HTTP POST returning an
+            # in-flight Job; sequential keeps the per-id try/except simple
+            # and the order of stderr error lines stable.
+            launched: list[tuple[str, Job]] = []
             for n in ids:
                 try:
                     job = RunAction(ctx.repo)(
@@ -332,14 +549,52 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
                         scope=scope,
                         payload=payload,
                     )
-                    if wait or monitor:
-                        job = WatchJob(ctx.repo)(job)
-                    jobs.append(job)
+                    launched.append((n, job))
                 except UntapedError as exc:
                     typer.echo(f"error: {n}: {exc}", err=True)
                     any_failed = True
+            # Monitor phase — drains each launched job to its terminal
+            # state. Two or more ``--track`` jobs run concurrently
+            # (wall-clock = max, not sum); single-template stays
+            # sequential for stable tracebacks and zero thread overhead.
+            # ``--track`` takes precedence over ``--wait`` when both
+            # are set, matching the single-template ``if track / elif
+            # wait`` chain below.
+            if track and len(launched) >= 2:
+                results, errors = _drain_parallel(ctx.monitor, launched, track_console)
+                jobs.extend(results)
+                any_failed |= _echo_parallel_errors(errors)
+            elif wait and len(launched) >= 2:
+                results, errors = _wait_parallel(ctx.repo, launched)
+                jobs.extend(results)
+                any_failed |= _echo_parallel_errors(errors)
+            else:
+                for n, job in launched:
+                    try:
+                        if track:
+                            # Render each event to stderr as it lands,
+                            # then let the monitor's terminal flip end
+                            # the loop. ``track_console`` carries the
+                            # TTY-aware colour styling so green-ok /
+                            # red-failed pop in a real terminal but
+                            # stay plain text when piped.
+                            for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
+                                track_console.print(render_event_text(ev))
+                            job = ctx.monitor.fetch(job)
+                        elif wait:
+                            job = WatchJob(ctx.repo)(job)
+                        jobs.append(job)
+                    except UntapedError as exc:
+                        typer.echo(f"error: {n}: {exc}", err=True)
+                        any_failed = True
         if jobs:
             typer.echo(format_output([j.model_dump() for j in jobs], fmt=fmt, columns=columns))
+        if track and any(j.status != "successful" for j in jobs):
+            # --track promises CI-friendly exit codes: anything other than a
+            # clean ``successful`` (failed/error/canceled, or still-running
+            # if the monitor returned without terminal — which it shouldn't,
+            # but be defensive) propagates as exit 1.
+            raise typer.Exit(code=1)
         if any_failed:
             raise typer.Exit(code=1)
 
@@ -421,11 +676,9 @@ def _build_launch_payload(
     """Translate the launch CLI flags into the payload AAP expects.
 
     Only fields listed in this kind's ``ActionSpec.accepts`` are
-    forwarded; flags for fields not in ``accepts`` are silently ignored
-    so a kind that doesn't support ``--inventory`` simply drops the
-    value rather than erroring on input the user typed naturally.
-    FK flags (``--inventory``, ``--credential``) resolve names to ids
-    using the per-process :class:`FkResolver`.
+    forwarded; flags for fields not in ``accepts`` are silently
+    ignored. FK flags (``--inventory``, ``--credential``) resolve
+    names to ids using the per-process :class:`FkResolver`.
     """
     payload: dict[str, Any] = {}
     if extra_vars and "extra_vars" in accepts:
@@ -457,6 +710,9 @@ def _build_launch_payload(
 
 
 def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
+    # Project's ``update`` declares ``accepts=frozenset()``; no
+    # payload-bearing flags exist yet. When one is added, mirror the
+    # ``Option(hidden=...)`` narrowing pattern from ``_add_launch``.
     @app.command("update", no_args_is_help=True)
     def update_command(
         name: str = typer.Argument(..., help=f"{spec.kind} name."),
@@ -481,5 +737,30 @@ def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
 # ---- helpers ----
 
 
-def _scope(ctx: Any, organization: str | None, spec: AwxResourceSpec) -> dict[str, str] | None:
-    return scope_for_spec(spec, organization, ctx.default_organization)
+def _scope(
+    ctx: Any,
+    organization: str | None,
+    spec: AwxResourceSpec,
+    *,
+    inventory: str | None = None,
+    inventory_organization: str | None = None,
+) -> dict[str, str] | None:
+    return scope_for_spec(
+        spec,
+        organization,
+        ctx.default_organization,
+        inventory=inventory,
+        inventory_organization=inventory_organization,
+    )
+
+
+# Maps an :class:`ActionSpec.name` to the builder that wires its CLI
+# command. Adding a new custom action means: (1) declare its
+# :class:`ActionSpec` on the per-kind spec, (2) implement an
+# ``_add_<action>(app, spec)`` builder above, and (3) register it
+# here. :func:`make_resource_app` itself stays untouched as new
+# actions are added.
+_ACTION_BUILDERS: dict[str, Callable[[typer.Typer, AwxResourceSpec], None]] = {
+    "launch": _add_launch,
+    "update": _add_update,
+}

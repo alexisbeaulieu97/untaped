@@ -13,7 +13,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError, WorkspaceError
+from untaped_workspace.errors import GitError, UnmatchedOnlyFilter, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -208,6 +208,10 @@ def test_only_filters_repos(tmp_path: Path) -> None:
 
 
 def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
+    """Strict mode (default) raises :class:`UnmatchedOnlyFilter` carrying
+    the unmatched identifiers as a typed field — not a bare
+    :class:`WorkspaceError` with stringly-typed contents. Lets future
+    callers ``except`` precisely without parsing the error message."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(
@@ -218,15 +222,88 @@ def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
         ),
     )
     git = _StubGit()
-    with pytest.raises(WorkspaceError) as excinfo:
+    with pytest.raises(UnmatchedOnlyFilter) as excinfo:
         SyncWorkspace(ManifestRepository(), git, fs=_FS)(
             workspace, only=["svc-b", "typo", "also-typo"]
         )
+    assert excinfo.value.unmatched == ("also-typo", "typo")
+    # The exception text still includes the identifiers (for the
+    # default ``report_errors`` stderr surface).
     msg = str(excinfo.value)
     assert "typo" in msg
     assert "also-typo" in msg
     # And no git work should have happened.
     assert git.events == []
+    # Backward compat: still subclasses WorkspaceError so existing
+    # report_errors() catch sites continue to work.
+    assert isinstance(excinfo.value, WorkspaceError)
+
+
+def test_only_unmatched_under_strict_false_yields_per_identifier_rows(
+    tmp_path: Path,
+) -> None:
+    """Under ``strict_only=False``, every unmatched ``--only`` identifier
+    becomes its own ``unmatched`` outcome row — not a single synthetic
+    ``repo="<all>"`` sentinel. The discriminator lives in the type-safe
+    ``action`` Literal and the typo lives in ``repo`` where downstream
+    consumers (``awk``, ``cut``, ``jq``) can read it."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(
+            repos=[Repo(url="https://x/svc-a.git"), Repo(url="https://x/svc-b.git")],
+        ),
+    )
+    git = _StubGit()
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+        workspace, only=["nonexistent", "also-typo"], strict_only=False
+    )
+    actions = [(o.repo, o.action) for o in outcomes]
+    assert actions == [
+        ("also-typo", "unmatched"),
+        ("nonexistent", "unmatched"),
+    ]
+    assert all("not in this workspace's manifest" in o.detail for o in outcomes)
+    # No git work should have happened.
+    assert git.events == []
+
+
+def test_only_partial_match_under_strict_false_emits_unmatched_rows(
+    tmp_path: Path,
+) -> None:
+    """Partial-miss must surface unmatched identifiers — typos shouldn't
+    be silent just because a sibling ``--only`` value happened to
+    match. Previous behaviour silently swallowed the typo whenever any
+    other identifier matched, which masked typos under ``--all``."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(
+            repos=[Repo(url="https://x/svc-a.git"), Repo(url="https://x/svc-b.git")],
+        ),
+    )
+    git = _StubGit()
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS)(
+        workspace, only=["svc-a", "nonexistent"], strict_only=False
+    )
+    by_repo = {o.repo: o.action for o in outcomes}
+    assert by_repo == {
+        "nonexistent": "unmatched",
+        "svc-a": "clone",
+    }
+
+
+def test_only_unknown_default_strict_raises_typed_exception(tmp_path: Path) -> None:
+    """``strict_only=True`` is the default and preserves single-workspace
+    strictness; raises :class:`UnmatchedOnlyFilter` (not bare
+    :class:`WorkspaceError`) so callers can react precisely on the
+    typed field rather than parsing the error message."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    git = _StubGit()
+    with pytest.raises(UnmatchedOnlyFilter) as excinfo:
+        SyncWorkspace(ManifestRepository(), git, fs=_FS)(workspace, only=["typo"])
+    assert excinfo.value.unmatched == ("typo",)
 
 
 def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:

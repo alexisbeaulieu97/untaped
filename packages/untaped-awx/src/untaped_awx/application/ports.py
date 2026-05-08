@@ -11,35 +11,34 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from untaped_awx.domain import (
     ActionPayload,
     Job,
+    JobEvent,
     Resource,
+    ResourceSpec,
     ServerRecord,
     WritePayload,
 )
-
-if TYPE_CHECKING:
-    # AwxResourceSpec lives in infrastructure but is the concrete spec type
-    # passed to transport-aware ports below. Type-only import keeps the
-    # runtime decoupling intact (application doesn't import infrastructure).
-    from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
 class Catalog(Protocol):
     """Looks up resource specs by kind or CLI name.
 
-    Returns the transport-aware :class:`AwxResourceSpec` so callers
-    constructing requests have ``api_path`` and friends available.
-    Application code that only needs domain semantics still works
-    because ``AwxResourceSpec`` is a :class:`ResourceSpec`.
+    Returns :class:`ResourceSpec` (the domain view). Concrete catalogs
+    in infrastructure may return :class:`AwxResourceSpec` instances —
+    that's a covariant subtype, so it satisfies this Protocol while
+    keeping transport detail (``api_path``, ``cli_name``) accessible
+    to callers in infrastructure (strategies, the resource repository).
+    Application code reads only domain fields and stays decoupled from
+    AWX-specific transport.
     """
 
-    def get(self, kind: str) -> AwxResourceSpec: ...
+    def get(self, kind: str) -> ResourceSpec: ...
     def kinds(self) -> tuple[str, ...]: ...
-    def by_cli_name(self, cli_name: str) -> AwxResourceSpec: ...
+    def by_cli_name(self, cli_name: str) -> ResourceSpec: ...
 
 
 class ResourceClient(Protocol):
@@ -52,19 +51,23 @@ class ResourceClient(Protocol):
     is pure overhead. Writes accept :class:`WritePayload` (create /
     update) or :class:`ActionPayload` (custom actions). The client
     never branches on kind — it follows the spec verbatim.
+
+    Methods take :class:`ResourceSpec` (the domain view); concrete
+    adapters narrow to :class:`AwxResourceSpec` internally to read
+    transport fields like ``api_path``.
     """
 
     def list(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         *,
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]: ...
 
-    def get(self, spec: AwxResourceSpec, id_: int) -> ServerRecord: ...
+    def get(self, spec: ResourceSpec, id_: int) -> ServerRecord: ...
 
-    def find(self, spec: AwxResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
+    def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         """Return the unique record matching ``params`` or ``None``.
 
         Implementations must raise an ambiguity error when more than one
@@ -75,7 +78,7 @@ class ResourceClient(Protocol):
 
     def find_by_identity(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         *,
         name: str,
         scope: dict[str, str] | None = None,
@@ -83,15 +86,15 @@ class ResourceClient(Protocol):
         """Look up a record by ``name`` plus optional FK-name scope."""
         ...
 
-    def create(self, spec: AwxResourceSpec, payload: WritePayload) -> ServerRecord: ...
+    def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord: ...
 
-    def update(self, spec: AwxResourceSpec, id_: int, payload: WritePayload) -> ServerRecord: ...
+    def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord: ...
 
-    def delete(self, spec: AwxResourceSpec, id_: int) -> None: ...
+    def delete(self, spec: ResourceSpec, id_: int) -> None: ...
 
     def action(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         id_: int,
         action: str,
         payload: ActionPayload | None = None,
@@ -100,6 +103,63 @@ class ResourceClient(Protocol):
         (Job vs project_update vs ad-hoc dict), so the raw dict is
         returned and the caller normalises into a typed result."""
         ...
+
+    def sub_endpoint_request(
+        self,
+        spec: ResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        method: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Hit a many-to-many sub-endpoint of a resource.
+
+        Constructed URL: ``<api_path>/<record_id>/<sub_endpoint>/``.
+        Hides the ``api_path`` join from application code so the layering
+        rule (``application/`` mustn't read AwxResourceSpec-only fields)
+        stays intact while still letting use cases reconcile membership
+        generically across kinds.
+        """
+        ...
+
+    def paginate_sub_endpoint(
+        self,
+        spec: ResourceSpec,
+        record_id: int,
+        sub_endpoint: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every page of ``<api_path>/<record_id>/<sub_endpoint>/``.
+
+        Same path-join contract as :meth:`sub_endpoint_request`; use
+        this for membership reads where one page (typically 200 rows)
+        wouldn't fit (e.g. a Group with many hosts).
+        """
+        ...
+
+
+class RawHttpResourceClient(ResourceClient, Protocol):
+    """A :class:`ResourceClient` that also exposes raw URL access.
+
+    Use cases that need to construct AWX URLs directly take this wider
+    port instead of :class:`ResourceClient`. Today's callers:
+
+    - :class:`ApplyResource`: forwards its ``client`` to
+      :class:`ApplyStrategy` implementations
+      (``find_existing`` / ``create`` / ``update``), some of which
+      build nested-endpoint URLs (e.g. ``ScheduleApplyStrategy``,
+      ``InventoryChildApplyStrategy``).
+    - :class:`WatchJob` and :class:`PollingJobMonitor`: poll job
+      execution endpoints (``/jobs/<id>/``, ``/jobs/<id>/stdout/``,
+      ``/jobs/<id>/job_events/``) directly.
+
+    New use cases should default to the narrower :class:`ResourceClient`
+    and only widen to this Protocol when ad-hoc URL access is
+    unavoidable.
+    """
 
     def request(
         self,
@@ -110,6 +170,22 @@ class ResourceClient(Protocol):
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Escape hatch for strategies that need ad-hoc URLs (e.g. Schedule)."""
+        ...
+
+    def paginate_path(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every page of a list endpoint at ``path``.
+
+        ``path`` is relative to ``api_prefix``. Use this instead of a
+        single ``request("GET", path, params=…)`` whenever the result
+        could exceed one page — AWX silently truncates at ``page_size``
+        otherwise.
+        """
         ...
 
     def request_text(
@@ -169,34 +245,40 @@ class ApplyStrategy(Protocol):
     in-place) and the typed :class:`ResourceClient` boundary. Strategy
     implementations wrap on the way in (``WritePayload(**payload)``)
     and unwrap on the way out (``record.model_dump()``).
+
+    Some strategies (e.g. ``ScheduleApplyStrategy``,
+    ``InventoryChildApplyStrategy``) write to nested endpoints whose
+    URLs aren't derivable from the spec alone, so the ``client``
+    parameter is :class:`RawHttpResourceClient` (which extends
+    :class:`ResourceClient` with raw URL access).
     """
 
     def find_existing(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None: ...
 
     def create(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]: ...
 
     def update(
         self,
-        spec: AwxResourceSpec,
+        spec: ResourceSpec,
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]: ...
 
@@ -206,10 +288,103 @@ class StrategyResolver(Protocol):
 
 
 class JobMonitor(Protocol):
-    """Polls / streams a Job until it reaches a terminal state."""
+    """Polls a Job, its stdout, and its structured events until terminal.
 
-    def fetch(self, job: Job) -> Job: ...
-    def stream_stdout(self, job: Job) -> Iterable[str]: ...
+    AWX has no SSE/websocket surface in v2 — "live" means polling. This
+    Protocol abstracts the polling cadence so use cases can be unit-tested
+    against a synchronous stub (a list-of-events stand-in is enough).
+    """
+
+    def fetch(self, job: Job) -> Job:
+        """Re-fetch ``job``'s record so callers can see status transitions."""
+        ...
+
+    def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
+        """One-shot: return stdout lines starting at ``start_line``.
+
+        No polling — used both by ``jobs logs`` (drain the existing log
+        for a finished job) and as the historical phase of
+        ``--follow --tail N`` before the live polling loop kicks in.
+        """
+        ...
+
+    def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterable[str]:
+        """Yield stdout lines from ``start_line`` onward until terminal.
+
+        Polls ``/jobs/<id>/stdout/?start_line=N``; emits one string per
+        line (no trailing newline). Final block of lines after the job
+        reaches a terminal state is yielded before the iterator returns.
+        """
+        ...
+
+    def stream_events(
+        self,
+        job: Job,
+        *,
+        from_counter: int = 0,
+        params: dict[str, str] | None = None,
+        follow: bool = True,
+    ) -> Iterable[JobEvent]:
+        """Yield :class:`JobEvent` rows in counter order.
+
+        ``from_counter`` is exclusive (matches AWX's ``counter__gt`` query
+        param). Extra ``params`` are forwarded server-side so callers can
+        push native filters like ``event=runner_on_failed`` without
+        client-side post-filtering. ``follow=False`` drains the existing
+        events once and returns; ``follow=True`` polls until the job is
+        terminal.
+        """
+        ...
+
+
+class JobRecordRepository(Protocol):
+    """Spec-free read access to AWX execution records.
+
+    Today's collections: ``jobs``, ``workflow_jobs``, ``project_updates``,
+    ``inventory_updates``, ``ad_hoc_commands``. ``kind`` is the
+    discriminator used by :class:`Job`; the adapter maps it to the AWX
+    collection via :data:`untaped_awx.domain.job.KIND_TO_API_PATH`.
+    Returned dicts carry the full AWX shape so ``--format yaml`` callers
+    see every field (lossless versus a Pydantic round-trip).
+    """
+
+    def list(
+        self,
+        *,
+        kind: str,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every execution record of ``kind`` matching ``params``."""
+        ...
+
+    def get(self, *, kind: str, job_id: int) -> dict[str, Any]:
+        """Single record fetch."""
+        ...
+
+
+class UnifiedTemplateRepository(Protocol):
+    """Read access to AWX's polymorphic ``/unified_job_templates/`` view.
+
+    Aggregates ``JobTemplate``, ``WorkflowJobTemplate``, ``Project``, and
+    ``InventorySource`` rows behind a single ``type`` discriminator. No
+    spec-driven CRUD — it's a virtual collection; per-kind sub-apps
+    handle write paths.
+    """
+
+    def list(
+        self,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every UJT record matching ``params``."""
+        ...
+
+    def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+        """Bulk-fetch via ``?id__in=…``; one round trip, paginated when
+        the number of ids exceeds the page size."""
+        ...
 
 
 class ResourceDocumentReader(Protocol):
@@ -228,7 +403,10 @@ __all__ = [
     "Catalog",
     "FkResolver",
     "JobMonitor",
+    "JobRecordRepository",
+    "RawHttpResourceClient",
     "ResourceClient",
     "ResourceDocumentReader",
     "StrategyResolver",
+    "UnifiedTemplateRepository",
 ]

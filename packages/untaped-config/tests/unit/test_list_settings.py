@@ -97,7 +97,11 @@ def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_collection_fields_skipped() -> None:
     entries = {e.key for e in ListSettings(SettingsFileRepository())()}
-    assert not any(k.startswith("workspace.workspaces") for k in entries)
+    # ``workspace.workspaces`` is a list of WorkspaceEntry — collections are
+    # skipped. The sibling scalar ``workspace.workspaces_dir`` must still
+    # appear, so the prefix check would be too broad.
+    assert "workspace.workspaces" not in entries
+    assert "workspace.workspaces_dir" in entries
 
 
 def test_env_var_naming_for_top_level() -> None:

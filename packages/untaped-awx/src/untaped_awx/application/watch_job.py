@@ -10,16 +10,9 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from untaped_awx.application.ports import ResourceClient
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
-
-_KIND_TO_API_PATH: dict[str, str] = {
-    "job": "jobs",
-    "workflow_job": "workflow_jobs",
-    "project_update": "project_updates",
-    "inventory_update": "inventory_updates",
-    "ad_hoc_command": "ad_hoc_commands",
-}
+from untaped_awx.domain.job import KIND_TO_API_PATH
 
 SleepFn = Callable[[float], None]
 
@@ -27,7 +20,7 @@ SleepFn = Callable[[float], None]
 class WatchJob:
     def __init__(
         self,
-        client: ResourceClient,
+        client: RawHttpResourceClient,
         *,
         sleep: SleepFn = time.sleep,
         poll_interval: float = 2.0,
@@ -37,7 +30,7 @@ class WatchJob:
         self._interval = poll_interval
 
     def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
-        api_path = _KIND_TO_API_PATH.get(job.kind, job.kind)
+        api_path = KIND_TO_API_PATH.get(job.kind, job.kind)
         deadline = time.monotonic() + timeout if timeout is not None else None
         current = job
         while not current.is_terminal:

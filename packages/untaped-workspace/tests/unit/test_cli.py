@@ -421,6 +421,58 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
     assert (target / "upstream").is_dir()
 
 
+def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """``sync --all --only`` filters per-workspace: workspaces with the
+    requested repo sync it; workspaces without emit ``unmatched`` rows.
+    A stderr warning notifies the user that relaxed semantics are
+    active. Single-workspace ``--only`` still raises (covered by the
+    use-case unit tests); this test covers the CLI wiring.
+    """
+    runner = CliRunner()
+
+    # Workspace alpha: has the upstream repo.
+    ws_alpha = tmp_path / "ws-alpha"
+    runner.invoke(app, ["init", "alpha", "--path", str(ws_alpha)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "alpha"])
+
+    # Workspace beta: empty manifest — does NOT have upstream.
+    ws_beta = tmp_path / "ws-beta"
+    runner.invoke(app, ["init", "beta", "--path", str(ws_beta)])
+
+    result = runner.invoke(
+        app,
+        [
+            "sync",
+            "--all",
+            "--only",
+            "upstream",
+            "--format",
+            "raw",
+            "--columns",
+            "workspace",
+            "--columns",
+            "repo",
+            "--columns",
+            "action",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    # Stderr warning should mention relaxed semantics. ``CliRunner``
+    # mixes stderr into ``output`` by default, so inspect the combined
+    # surface.
+    assert "warning" in result.output.lower()
+    assert "--all --only" in result.output
+
+    # Stdout rows: alpha synced upstream (clone), beta produced
+    # an unmatched row for upstream.
+    rows = [r for r in result.output.strip().splitlines() if "\t" in r]
+    assert "alpha\tupstream\tclone" in rows, rows
+    assert "beta\tupstream\tunmatched" in rows, rows
+
+
 def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
