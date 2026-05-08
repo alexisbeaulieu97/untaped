@@ -418,19 +418,19 @@ def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
-    # Hide narrowable flags from ``--help`` for kinds whose
-    # ``ActionSpec.accepts`` doesn't include the corresponding payload
-    # field. The runtime guard ``_reject_unsupported_launch_flags`` still
-    # catches a user who passes a hidden flag anyway, so the surface
-    # advertised in help and the surface actually accepted now agree.
-    hide_inventory = "inventory" not in accepts
-    hide_credential = "credentials" not in accepts
-    hide_scm_branch = "scm_branch" not in accepts
-    hide_job_tag = "job_tags" not in accepts
-    hide_skip_tag = "skip_tags" not in accepts
-    hide_verbosity = "verbosity" not in accepts
-    hide_diff_mode = "diff_mode" not in accepts
-    hide_job_type = "job_type" not in accepts
+    # Hide each narrowable flag whose payload field isn't in this
+    # kind's ``ActionSpec.accepts``. ``_LAUNCH_FLAG_TO_ACCEPT`` is the
+    # single source of truth for the flag→field mapping (also consulted
+    # by the runtime guard); a hidden flag still parses, the guard
+    # catches misuse.
+    hide_inventory = _LAUNCH_FLAG_TO_ACCEPT["--inventory"] not in accepts
+    hide_credential = _LAUNCH_FLAG_TO_ACCEPT["--credential"] not in accepts
+    hide_scm_branch = _LAUNCH_FLAG_TO_ACCEPT["--scm-branch"] not in accepts
+    hide_job_tag = _LAUNCH_FLAG_TO_ACCEPT["--job-tag"] not in accepts
+    hide_skip_tag = _LAUNCH_FLAG_TO_ACCEPT["--skip-tag"] not in accepts
+    hide_verbosity = _LAUNCH_FLAG_TO_ACCEPT["--verbosity"] not in accepts
+    hide_diff_mode = _LAUNCH_FLAG_TO_ACCEPT["--diff-mode"] not in accepts
+    hide_job_type = _LAUNCH_FLAG_TO_ACCEPT["--job-type"] not in accepts
 
     @app.command("launch", no_args_is_help=True)
     def launch_command(
@@ -676,16 +676,9 @@ def _build_launch_payload(
     """Translate the launch CLI flags into the payload AAP expects.
 
     Only fields listed in this kind's ``ActionSpec.accepts`` are
-    forwarded; flags for fields not in ``accepts`` are silently ignored
-    so a kind that doesn't support ``--inventory`` simply drops the
-    value rather than erroring on input the user typed naturally. When
-    ``accepts == frozenset()`` (the default) every ``in accepts`` test
-    fails — the kind contributes no fields. This matches
-    :func:`_add_launch`'s ``Option(hidden=...)`` narrowing: empty
-    ``accepts`` hides every payload-bearing flag from ``--help`` and
-    drops every payload field at build time.
-    FK flags (``--inventory``, ``--credential``) resolve names to ids
-    using the per-process :class:`FkResolver`.
+    forwarded; flags for fields not in ``accepts`` are silently
+    ignored. FK flags (``--inventory``, ``--credential``) resolve
+    names to ids using the per-process :class:`FkResolver`.
     """
     payload: dict[str, Any] = {}
     if extra_vars and "extra_vars" in accepts:
@@ -717,10 +710,9 @@ def _build_launch_payload(
 
 
 def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
-    # Project's update declares accepts=frozenset(); when update grows
-    # payload-bearing flags this builder will need the same accepts-driven
-    # parameter sub-setting that _add_launch is slated to gain (see
-    # _ACTION_BUILDERS comment block).
+    # Project's ``update`` declares ``accepts=frozenset()``; no
+    # payload-bearing flags exist yet. When one is added, mirror the
+    # ``Option(hidden=...)`` narrowing pattern from ``_add_launch``.
     @app.command("update", no_args_is_help=True)
     def update_command(
         name: str = typer.Argument(..., help=f"{spec.kind} name."),
@@ -768,14 +760,6 @@ def _scope(
 # ``_add_<action>(app, spec)`` builder above, and (3) register it
 # here. :func:`make_resource_app` itself stays untouched as new
 # actions are added.
-#
-# Per-kind launch parameter sub-setting is implemented via
-# ``Option(hidden=...)`` in :func:`_add_launch` — see the ``hide_*``
-# block. Flags whose corresponding payload field isn't in this kind's
-# ``ActionSpec.accepts`` are hidden from ``--help`` while remaining
-# parseable (the runtime guard ``_reject_unsupported_launch_flags``
-# still rejects misuse loudly). ``_add_update`` will adopt the same
-# pattern when ``update`` grows payload-bearing flags.
 _ACTION_BUILDERS: dict[str, Callable[[typer.Typer, AwxResourceSpec], None]] = {
     "launch": _add_launch,
     "update": _add_update,

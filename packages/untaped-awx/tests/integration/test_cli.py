@@ -1430,19 +1430,11 @@ def test_project_update_calls_action(fake_aap: Any) -> None:
 
 
 def test_launch_help_narrows_flags_by_accepts() -> None:
-    """``ActionSpec.accepts`` drives which launch flags appear in
-    ``--help``: each flag whose payload field is *not* in ``accepts``
-    is hidden from the rendered help text. The runtime guard
-    ``_reject_unsupported_launch_flags`` still catches a user who
-    types a hidden flag — this test pins the help-text contract,
-    not the parsing contract.
-
-    WorkflowJobTemplate is the test vehicle: its
-    ``launch.accepts = {extra_vars, limit, inventory, scm_branch,
-    job_tags, skip_tags}`` is a strict subset of JobTemplate's full
-    set, so its help omits ``--credential``, ``--verbosity``,
-    ``--diff-mode``, ``--job-type``. JobTemplate is the regression
-    sentinel — its full set must keep showing every narrowable flag.
+    """Pins the help-text contract (not the parsing contract): each
+    launch flag whose payload field isn't in a kind's ``accepts`` is
+    hidden. WJT's ``accepts`` is a strict subset (4 flags hidden); JT's
+    is the full set (regression sentinel — every narrowable flag
+    advertised).
     """
     runner = CliRunner()
 

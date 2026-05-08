@@ -48,9 +48,7 @@ the spec if the factory actually wires it. The launch parser
 flag whose payload field isn't in the kind's `ActionSpec.accepts` is
 passed `Option(hidden=True)` so it's omitted from `--help` while still
 being parseable (the runtime guard `_reject_unsupported_launch_flags`
-catches a user who passes a hidden flag anyway). `_add_update` will
-adopt the same pattern when `update` grows payload-bearing flags;
-today every kind's `update.accepts` is empty.
+catches a user who passes a hidden flag anyway).
 
 ### Typed boundary
 
