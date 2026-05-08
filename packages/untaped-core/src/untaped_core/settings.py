@@ -97,6 +97,8 @@ class WorkspaceSettings(BaseModel):
     workspaces: list[WorkspaceEntry] = Field(default_factory=list)
     cache_dir: Path = Field(default=Path("~/.untaped/repositories"))
     """Where bare clones are cached for `git clone --reference`."""
+    workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
+    """Default parent directory for new workspaces created via `workspace init`."""
 
 
 class Settings(BaseSettings):

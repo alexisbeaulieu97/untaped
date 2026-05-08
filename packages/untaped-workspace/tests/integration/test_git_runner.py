@@ -142,3 +142,49 @@ def test_runner_raises_git_error_on_bad_command(tmp_path: Path) -> None:
     not_a_repo.mkdir()
     with pytest.raises(GitError):
         runner.status(not_a_repo)
+
+
+# ── read_remote_url / read_current_branch (used by `workspace adopt`) ──────
+
+
+def test_read_remote_url_returns_origin_url(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    assert runner.read_remote_url(ws) == f"file://{upstream}"
+
+
+def test_read_remote_url_returns_none_for_missing_remote(tmp_path: Path) -> None:
+    runner = GitRunner()
+    repo = tmp_path / "lonely"
+    repo.mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main", str(repo)], check=True)
+    assert runner.read_remote_url(repo) is None
+
+
+def test_read_current_branch_returns_branch_name(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    assert runner.read_current_branch(ws) == "main"
+
+
+def test_read_current_branch_returns_none_when_detached(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    sha = subprocess.run(
+        ["git", "-C", str(ws), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-C", str(ws), "checkout", "--detach", sha],
+        check=True,
+        capture_output=True,
+    )
+    assert runner.read_current_branch(ws) is None
