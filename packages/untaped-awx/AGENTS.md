@@ -43,7 +43,14 @@ depend only on this view.
 specs live in `infrastructure/specs/{job_template, workflow, project,
 credential, schedule, host, group, _support}.py` and are aggregated into
 `ALL_SPECS`. **Spec fields stay honest with the CLI:** a knob only lives in
-the spec if the factory actually wires it.
+the spec if the factory actually wires it. The launch parser
+(`cli/resource_commands._add_launch`) enforces this structurally — each
+flag whose payload field isn't in the kind's `ActionSpec.accepts` is
+passed `Option(hidden=True)` so it's omitted from `--help` while still
+being parseable (the runtime guard `_reject_unsupported_launch_flags`
+catches a user who passes a hidden flag anyway). `_add_update` will
+adopt the same pattern when `update` grows payload-bearing flags;
+today every kind's `update.accepts` is empty.
 
 ### Typed boundary
 

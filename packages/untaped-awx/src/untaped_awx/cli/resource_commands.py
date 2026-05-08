@@ -418,6 +418,20 @@ def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
+    # Hide narrowable flags from ``--help`` for kinds whose
+    # ``ActionSpec.accepts`` doesn't include the corresponding payload
+    # field. The runtime guard ``_reject_unsupported_launch_flags`` still
+    # catches a user who passes a hidden flag anyway, so the surface
+    # advertised in help and the surface actually accepted now agree.
+    hide_inventory = "inventory" not in accepts
+    hide_credential = "credentials" not in accepts
+    hide_scm_branch = "scm_branch" not in accepts
+    hide_job_tag = "job_tags" not in accepts
+    hide_skip_tag = "skip_tags" not in accepts
+    hide_verbosity = "verbosity" not in accepts
+    hide_diff_mode = "diff_mode" not in accepts
+    hide_job_type = "job_type" not in accepts
+
     @app.command("launch", no_args_is_help=True)
     def launch_command(
         names: list[str] | None = typer.Argument(None, help=f"{spec.kind} name(s)."),
@@ -430,28 +444,46 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
         ),
         limit: str | None = typer.Option(None, "--limit", help="Hosts pattern to limit to."),
         inventory: str | None = typer.Option(
-            None, "--inventory", help="Override inventory by name (resolved to id)."
+            None,
+            "--inventory",
+            help="Override inventory by name (resolved to id).",
+            hidden=hide_inventory,
         ),
         credential: list[str] | None = typer.Option(
             None,
             "--credential",
             help="Override credential by name (repeatable; resolved to ids).",
+            hidden=hide_credential,
         ),
-        scm_branch: str | None = typer.Option(None, "--scm-branch", help="SCM branch to run from."),
+        scm_branch: str | None = typer.Option(
+            None, "--scm-branch", help="SCM branch to run from.", hidden=hide_scm_branch
+        ),
         job_tag: list[str] | None = typer.Option(
-            None, "--job-tag", help="Run only tasks with these tags (repeatable)."
+            None,
+            "--job-tag",
+            help="Run only tasks with these tags (repeatable).",
+            hidden=hide_job_tag,
         ),
         skip_tag: list[str] | None = typer.Option(
-            None, "--skip-tag", help="Skip tasks with these tags (repeatable)."
+            None,
+            "--skip-tag",
+            help="Skip tasks with these tags (repeatable).",
+            hidden=hide_skip_tag,
         ),
-        verbosity: int | None = typer.Option(None, "--verbosity", help="0-4 (passed verbatim)."),
+        verbosity: int | None = typer.Option(
+            None, "--verbosity", help="0-4 (passed verbatim).", hidden=hide_verbosity
+        ),
         diff_mode: bool | None = typer.Option(
             None,
             "--diff-mode/--no-diff-mode",
             help="Override diff_mode for this run.",
+            hidden=hide_diff_mode,
         ),
         job_type: str | None = typer.Option(
-            None, "--job-type", help="Override job_type (e.g. run, check)."
+            None,
+            "--job-type",
+            help="Override job_type (e.g. run, check).",
+            hidden=hide_job_type,
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
         track: bool = typer.Option(
@@ -646,7 +678,12 @@ def _build_launch_payload(
     Only fields listed in this kind's ``ActionSpec.accepts`` are
     forwarded; flags for fields not in ``accepts`` are silently ignored
     so a kind that doesn't support ``--inventory`` simply drops the
-    value rather than erroring on input the user typed naturally.
+    value rather than erroring on input the user typed naturally. When
+    ``accepts == frozenset()`` (the default) every ``in accepts`` test
+    fails — the kind contributes no fields. This matches
+    :func:`_add_launch`'s ``Option(hidden=...)`` narrowing: empty
+    ``accepts`` hides every payload-bearing flag from ``--help`` and
+    drops every payload field at build time.
     FK flags (``--inventory``, ``--credential``) resolve names to ids
     using the per-process :class:`FkResolver`.
     """
@@ -732,14 +769,13 @@ def _scope(
 # here. :func:`make_resource_app` itself stays untouched as new
 # actions are added.
 #
-# Note on per-kind parameter sub-setting: every launch-capable kind
-# currently exposes the *full* launch parser regardless of its
-# ``ActionSpec.accepts``. Mismatched usage is caught loudly by
-# :func:`_reject_unsupported_launch_flags`, so the user sees a clear
-# "this kind doesn't accept --scm-branch" rather than a silent drop.
-# Dynamically constructing per-kind Typer signatures (so unsupported
-# flags don't appear in ``--help``) would require fragile
-# ``inspect.Signature`` manipulation; deferred as a future improvement.
+# Per-kind launch parameter sub-setting is implemented via
+# ``Option(hidden=...)`` in :func:`_add_launch` — see the ``hide_*``
+# block. Flags whose corresponding payload field isn't in this kind's
+# ``ActionSpec.accepts`` are hidden from ``--help`` while remaining
+# parseable (the runtime guard ``_reject_unsupported_launch_flags``
+# still rejects misuse loudly). ``_add_update`` will adopt the same
+# pattern when ``update`` grows payload-bearing flags.
 _ACTION_BUILDERS: dict[str, Callable[[typer.Typer, AwxResourceSpec], None]] = {
     "launch": _add_launch,
     "update": _add_update,

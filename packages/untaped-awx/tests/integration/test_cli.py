@@ -1427,3 +1427,57 @@ def test_project_update_calls_action(fake_aap: Any) -> None:
         api_path == "projects" and action == "update"
         for api_path, _, action, _ in fake_aap.actions_called
     )
+
+
+def test_launch_help_narrows_flags_by_accepts() -> None:
+    """``ActionSpec.accepts`` drives which launch flags appear in
+    ``--help``: each flag whose payload field is *not* in ``accepts``
+    is hidden from the rendered help text. The runtime guard
+    ``_reject_unsupported_launch_flags`` still catches a user who
+    types a hidden flag — this test pins the help-text contract,
+    not the parsing contract.
+
+    WorkflowJobTemplate is the test vehicle: its
+    ``launch.accepts = {extra_vars, limit, inventory, scm_branch,
+    job_tags, skip_tags}`` is a strict subset of JobTemplate's full
+    set, so its help omits ``--credential``, ``--verbosity``,
+    ``--diff-mode``, ``--job-type``. JobTemplate is the regression
+    sentinel — its full set must keep showing every narrowable flag.
+    """
+    runner = CliRunner()
+
+    wjt_help = runner.invoke(app, ["workflow-templates", "launch", "--help"])
+    assert wjt_help.exit_code == 0, wjt_help.output
+    # Hidden — payload field not in WJT.launch.accepts.
+    for hidden_flag in ("--credential", "--verbosity", "--diff-mode", "--job-type"):
+        assert hidden_flag not in wjt_help.output, (
+            f"{hidden_flag} should be hidden from WJT launch --help"
+        )
+    # Visible — in accepts (or always-on).
+    for visible_flag in (
+        "--inventory",
+        "--scm-branch",
+        "--job-tag",
+        "--skip-tag",
+        "--extra-vars",
+        "--limit",
+        "--wait",
+        "--track",
+    ):
+        assert visible_flag in wjt_help.output, f"{visible_flag} missing from WJT launch --help"
+
+    jt_help = runner.invoke(app, ["job-templates", "launch", "--help"])
+    assert jt_help.exit_code == 0, jt_help.output
+    # JobTemplate's accepts contains every narrowable field — full
+    # parser stays advertised.
+    for narrowable_flag in (
+        "--inventory",
+        "--credential",
+        "--scm-branch",
+        "--job-tag",
+        "--skip-tag",
+        "--verbosity",
+        "--diff-mode",
+        "--job-type",
+    ):
+        assert narrowable_flag in jt_help.output, f"{narrowable_flag} missing from JT launch --help"
