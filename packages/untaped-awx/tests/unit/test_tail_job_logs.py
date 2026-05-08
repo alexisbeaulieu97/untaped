@@ -98,3 +98,53 @@ def test_follow_with_tail_only_trims_historical() -> None:
     monitor = _FakeMonitor(existing=["a", "b", "c"], live=["live"])
     out = list(TailJobLogs(monitor)(_running(), follow=True, tail=1))
     assert out == ["c", "live"]
+
+
+def test_tail_drops_full_buffer_reference_during_iteration() -> None:
+    """``--tail N`` keeps only ``N`` historical lines reachable.
+
+    Non-functional but observable contract: once iteration starts, the
+    full ``fetch_stdout`` list must no longer be strongly reachable
+    from the use case. A regression to ``existing[-tail:]`` (which
+    keeps the original list alive through the filter loop) would fail
+    this test. We probe via :mod:`weakref` rather than asserting on
+    ``deque`` membership directly — the *observable* property is "the
+    full list is GC-eligible," which is what the user actually cares
+    about, and which holds independently of the bounding primitive.
+    """
+    import gc
+    import weakref
+
+    class _Trackable(list[str]):
+        """``list`` subclass — built-in ``list`` has no ``__weakref__`` slot."""
+
+    big_log = [f"line {i}" for i in range(100)]
+    captured: list[weakref.ref[_Trackable]] = []
+
+    class _SpyMonitor:
+        def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
+            buf = _Trackable(big_log)  # fresh list per call so the weakref is meaningful
+            captured.append(weakref.ref(buf))
+            return buf
+
+        def fetch(self, job: Job) -> Job:
+            return job
+
+        def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterator[str]:
+            return iter([])
+
+        def stream_events(self, *args: Any, **kwargs: Any) -> Iterable[JobEvent]:
+            raise NotImplementedError
+
+    iterator = iter(TailJobLogs(_SpyMonitor())(_terminal(), tail=5))
+    first = next(iterator)  # runs through ``existing = []`` and into the loop
+
+    gc.collect()
+    assert captured[0]() is None, (
+        "fetch_stdout's full list is still strongly reachable after the "
+        "deque was constructed; check that the bounded branch still drops "
+        "``existing`` before the first ``yield``."
+    )
+
+    rest = list(iterator)
+    assert [first, *rest] == big_log[-5:]
