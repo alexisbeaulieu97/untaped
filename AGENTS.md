@@ -24,7 +24,9 @@ builtin in nested annotations within the class.
 
 ## Workspace lookup precedence
 
-Every command except `list` / `path` / `shell-init` / `edit`:
+Lookup-precedence applies only to commands that act on an existing
+workspace by name or path — `add`, `remove`, `sync`, `status`,
+`foreach`. For those commands:
 
 1. Explicit `--name` → registry lookup
 2. Explicit `--path` → manifest lookup
@@ -32,10 +34,17 @@ Every command except `list` / `path` / `shell-init` / `edit`:
 
 Implemented in `infrastructure.WorkspaceResolver`.
 
+Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
+`forget <name>`, `import <source>`, `path <name>`, `edit <name>`) take
+positional arguments and skip the precedence walk. `list` and
+`shell-init` operate without a workspace target.
+
 ## Git is a subprocess, not a library
 
-`infrastructure.GitRunner` is the **only** place `subprocess` is imported
-inside this package. Domain and application layers depend on its
+`subprocess` is imported in only two places in this package, both
+inside `infrastructure/`: `GitRunner` (this section) and
+`system_adapters` (covered next, for shell-out / editor-launch /
+`rmtree`). Domain and application layers depend on `GitRunner`'s
 `Protocol`, so tests can stub it. Bare clones are cached in
 `workspace.cache_dir` (default `~/.untaped/repositories`); workspace
 clones use `git clone --reference` against the bare so disk + bandwidth
