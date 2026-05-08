@@ -2,29 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Protocol
-
+from untaped_workspace.application.ports import GitInspector, ManifestReader
 from untaped_workspace.domain import (
     Repo,
-    RepoStatus,
     StatusEntry,
     Workspace,
-    WorkspaceManifest,
 )
 from untaped_workspace.errors import GitError
 
 
-class _ManifestReader(Protocol):
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
-
-
-class _Git(Protocol):
-    def status(self, repo_path: Path) -> RepoStatus: ...
-
-
 class WorkspaceStatus:
-    def __init__(self, manifests: _ManifestReader, git: _Git) -> None:
+    def __init__(self, manifests: ManifestReader, git: GitInspector) -> None:
         self._manifests = manifests
         self._git = git
 

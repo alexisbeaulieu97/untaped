@@ -10,23 +10,26 @@ from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 
 class _StubRegistry:
-    def __init__(self, entries: list[Workspace]) -> None:
-        self.entries = list(entries)
+    def __init__(self, registered: list[Workspace]) -> None:
+        self.registered = list(registered)
         self.unregistered: list[str] = []
 
     def get(self, name: str) -> Workspace:
-        for w in self.entries:
+        for w in self.registered:
             if w.name == name:
                 return w
         raise RegistryError(f"unknown workspace: {name!r}")
 
     def unregister(self, name: str) -> bool:
-        before = len(self.entries)
-        self.entries = [w for w in self.entries if w.name != name]
-        if len(self.entries) < before:
+        before = len(self.registered)
+        self.registered = [w for w in self.registered if w.name != name]
+        if len(self.registered) < before:
             self.unregistered.append(name)
             return True
         return False
+
+    def entries(self) -> list[Workspace]:
+        return list(self.registered)
 
 
 class _StubStatus:
@@ -59,7 +62,7 @@ def test_forget_removes_registry_entry(tmp_path: Path) -> None:
     )
 
     assert result.name == "prod"
-    assert reg.entries == []
+    assert reg.registered == []
     assert reg.unregistered == ["prod"]
     assert ws_path.is_dir()  # files preserved
 
@@ -84,7 +87,7 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
     )
 
     assert not ws_path.exists()
-    assert reg.entries == []
+    assert reg.registered == []
 
 
 def test_forget_prune_refuses_dirty_repo(tmp_path: Path) -> None:
@@ -102,7 +105,7 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path) -> None:
         )
 
     assert ws_path.is_dir()  # untouched
-    assert reg.entries  # registry untouched
+    assert reg.registered  # registry untouched
 
 
 def test_forget_prune_succeeds_when_path_missing(tmp_path: Path) -> None:
@@ -113,7 +116,7 @@ def test_forget_prune_succeeds_when_path_missing(tmp_path: Path) -> None:
         "ghost", prune=True
     )
 
-    assert reg.entries == []
+    assert reg.registered == []
 
 
 def test_forget_succeeds_when_manifest_missing(tmp_path: Path) -> None:
@@ -127,7 +130,7 @@ def test_forget_succeeds_when_manifest_missing(tmp_path: Path) -> None:
 
     ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())("prod")
 
-    assert reg.entries == []
+    assert reg.registered == []
     assert ws_path.is_dir()  # preserved
 
 
@@ -147,7 +150,7 @@ def test_forget_prune_refuses_when_manifest_missing(tmp_path: Path) -> None:
         )
 
     assert ws_path.is_dir()  # untouched
-    assert reg.entries  # registry untouched
+    assert reg.registered  # registry untouched
 
 
 def test_forget_prune_refuses_when_declared_repo_is_not_a_clone(tmp_path: Path) -> None:
@@ -171,4 +174,4 @@ def test_forget_prune_refuses_when_declared_repo_is_not_a_clone(tmp_path: Path) 
         )
 
     assert ws_path.is_dir()  # untouched
-    assert reg.entries  # registry untouched
+    assert reg.registered  # registry untouched

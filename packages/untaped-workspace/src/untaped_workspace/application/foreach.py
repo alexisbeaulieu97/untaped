@@ -3,32 +3,16 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Protocol
 
-from untaped_workspace.domain import ForeachOutcome, Repo, Workspace, WorkspaceManifest
-
-
-class _CompletedCommand(Protocol):
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-ShellRunner = Callable[[str, Path], _CompletedCommand]
-"""Port: run a shell command in ``cwd`` and return its completed-process result."""
-
-
-class _ManifestReader(Protocol):
-    def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
+from untaped_workspace.application.ports import ManifestReader, ShellRunner
+from untaped_workspace.domain import ForeachOutcome, Repo, Workspace
 
 
 class Foreach:
     def __init__(
         self,
-        manifests: _ManifestReader,
+        manifests: ManifestReader,
         *,
         runner: ShellRunner,
     ) -> None:

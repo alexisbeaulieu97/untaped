@@ -18,18 +18,21 @@ _FS = LocalFilesystem()
 
 class _StubRegistry:
     def __init__(self) -> None:
-        self.entries: list[Workspace] = []
+        self.registered: list[Workspace] = []
 
     def register(self, *, name: str, path: Path) -> Workspace:
         ws = Workspace(name=name, path=path)
-        self.entries.append(ws)
+        self.registered.append(ws)
         return ws
 
     def find_by_path(self, path: Path) -> Workspace | None:
-        for w in self.entries:
+        for w in self.registered:
             if w.path == path:
                 return w
         return None
+
+    def entries(self) -> list[Workspace]:
+        return list(self.registered)
 
 
 def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
@@ -42,7 +45,7 @@ def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
     manifest = repo.read(ws_path)
     assert manifest.name == "prod"
     assert manifest.defaults.branch == "main"
-    assert reg.entries[0].name == "prod"
+    assert reg.registered[0].name == "prod"
 
 
 def test_init_derives_name_from_path(tmp_path: Path) -> None:
@@ -231,7 +234,7 @@ repos:
     loaded = ManifestRepository().read(dest)
     assert loaded.name == "imported"
     assert loaded.repos[0].name == "svc-a"
-    assert reg.entries[0].name == "imported"
+    assert reg.registered[0].name == "imported"
 
 
 def test_import_uses_path_dirname_when_no_name(tmp_path: Path) -> None:
