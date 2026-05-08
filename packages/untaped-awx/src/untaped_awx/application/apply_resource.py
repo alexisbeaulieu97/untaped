@@ -10,18 +10,17 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
 from untaped_awx.application.apply_field_diff import FieldDiff
+from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
     Catalog,
     FkResolver,
     RawHttpResourceClient,
-    ResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import (
@@ -32,23 +31,6 @@ from untaped_awx.domain import (
     ResourceSpec,
 )
 from untaped_awx.errors import BadRequest
-
-
-@dataclass(frozen=True)
-class _SubEndpointPlan:
-    """One reconciled multi-FK relationship.
-
-    ``ref`` describes the spec field (e.g. ``Group.hosts``);
-    ``field_change`` is non-None only when ``to_associate`` or
-    ``to_disassociate`` is non-empty (so the apply diff stays quiet
-    for unmodified memberships).
-    """
-
-    ref: FkRef
-    to_associate: tuple[int, ...]
-    to_disassociate: tuple[int, ...]
-    field_change: FieldChange | None
-
 
 WarnFn = Callable[[str], None]
 
@@ -67,6 +49,7 @@ class ApplyResource:
         warn: WarnFn = _noop_warn,
         secret_policy: SecretPreservationPolicy | None = None,
         field_diff: FieldDiff | None = None,
+        membership: MembershipReconciler | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
@@ -75,6 +58,7 @@ class ApplyResource:
         self._warn = warn
         self._secret_policy = secret_policy or SecretPreservationPolicy()
         self._field_diff = field_diff or FieldDiff()
+        self._membership = membership or MembershipReconciler()
 
     def __call__(
         self,
@@ -146,7 +130,7 @@ class ApplyResource:
                 f"{spec.kind} {resource.metadata.name!r}: cannot reconcile "
                 f"memberships — record vanished between body write and membership pass"
             )
-        membership_plans = _plan_sub_endpoints(
+        membership_plans = self._membership.plan(
             spec,
             resource,
             int(existing["id"]),
@@ -154,7 +138,9 @@ class ApplyResource:
             fk=self._fk,
         )
         if any(p.to_associate or p.to_disassociate for p in membership_plans):
-            _execute_sub_endpoints(spec, int(existing["id"]), membership_plans, client=self._client)
+            self._membership.execute(
+                spec, int(existing["id"]), membership_plans, client=self._client
+            )
         return [p.field_change for p in membership_plans if p.field_change is not None]
 
     def _dispatch(
@@ -211,9 +197,9 @@ class ApplyResource:
         # plan + execute happens in :meth:`reconcile_memberships`. This
         # matters when a sibling member is declared in the same file
         # and won't exist until later in phase 1.
-        membership_plans: list[_SubEndpointPlan] = []
+        membership_plans: list[MembershipPlan] = []
         if not defer_memberships:
-            membership_plans = _plan_sub_endpoints(
+            membership_plans = self._membership.plan(
                 spec,
                 resource,
                 int(existing["id"]) if existing else None,
@@ -268,7 +254,7 @@ class ApplyResource:
         payload: dict[str, Any],
         strategy: ApplyStrategy,
         changes: list[FieldChange],
-        membership_plans: list[_SubEndpointPlan],
+        membership_plans: list[MembershipPlan],
         preserved: list[str],
         dropped_undeclared: list[str],
     ) -> ApplyOutcome:
@@ -294,7 +280,7 @@ class ApplyResource:
                     f"'id'; cannot reconcile membership for "
                     f"{', '.join(p.ref.field for p in membership_plans)}"
                 )
-            _execute_sub_endpoints(
+            self._membership.execute(
                 spec,
                 int(new_id_value),
                 membership_plans,
@@ -318,7 +304,7 @@ class ApplyResource:
         payload: dict[str, Any],
         strategy: ApplyStrategy,
         changes: list[FieldChange],
-        membership_plans: list[_SubEndpointPlan],
+        membership_plans: list[MembershipPlan],
         preserved: list[str],
         dropped_undeclared: list[str],
     ) -> ApplyOutcome:
@@ -351,7 +337,7 @@ class ApplyResource:
                 fk=self._fk,
             )
         if membership_changed:
-            _execute_sub_endpoints(
+            self._membership.execute(
                 spec,
                 int(existing["id"]),
                 membership_plans,
@@ -456,102 +442,6 @@ def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
                 scope["inventory__organization"] = parent.organization
             return scope
     return None
-
-
-def _plan_sub_endpoints(
-    spec: ResourceSpec,
-    resource: Resource,
-    record_id: int | None,
-    *,
-    client: ResourceClient,
-    fk: FkResolver,
-) -> list[_SubEndpointPlan]:
-    """For each ``multi=True, sub_endpoint != None`` FK, compute the plan.
-
-    Reads desired members (a list of names) from ``resource.spec[ref.field]``
-    and existing members from ``GET /<api_path>/<id>/<sub_endpoint>/`` (skipped
-    when ``record_id is None`` — the resource doesn't exist yet, so existing
-    is empty and every desired member becomes an associate).
-
-    A field that's *absent* from the resource spec is left unmanaged: we
-    won't wipe membership just because the user didn't list it. An empty
-    list (``hosts: []``) explicitly clears membership.
-    """
-    plans: list[_SubEndpointPlan] = []
-    raw = resource.spec if isinstance(resource.spec, dict) else {}
-    for ref in spec.fk_refs:
-        if not (ref.multi and ref.sub_endpoint and ref.kind):
-            continue
-        if ref.field not in raw:
-            continue
-        raw_value = raw[ref.field]
-        if not isinstance(raw_value, list):
-            # An absent field is unmanaged; an empty list clears membership.
-            # A bare string ("hosts: web-01") would otherwise be normalised
-            # to [] and silently disassociate every existing member on --yes,
-            # which is the most destructive failure mode possible here.
-            raise BadRequest(
-                f"{spec.kind} {resource.metadata.name!r}: {ref.field!r} must be a "
-                f"list of names (got {type(raw_value).__name__}); wrap a single "
-                f"value in [ ... ] to clarify intent."
-            )
-        desired_names = list(raw_value)
-        scope = scope_for(ref, resource)
-        desired_ids = {fk.name_to_id(ref.kind, str(n), scope=scope) for n in desired_names}
-
-        existing_ids: set[int] = set()
-        existing_name_by_id: dict[int, str] = {}
-        if record_id is not None:
-            for record in client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint):
-                rid = int(record["id"])
-                existing_ids.add(rid)
-                rname = record.get("name")
-                if isinstance(rname, str):
-                    existing_name_by_id[rid] = rname
-
-        to_associate = sorted(desired_ids - existing_ids)
-        to_disassociate = sorted(existing_ids - desired_ids)
-
-        field_change: FieldChange | None = None
-        if to_associate or to_disassociate:
-            before = sorted(existing_name_by_id.get(i, str(i)) for i in existing_ids)
-            after = sorted(desired_names)
-            field_change = FieldChange(field=ref.field, before=before, after=after)
-
-        plans.append(
-            _SubEndpointPlan(
-                ref=ref,
-                to_associate=tuple(to_associate),
-                to_disassociate=tuple(to_disassociate),
-                field_change=field_change,
-            )
-        )
-    return plans
-
-
-def _execute_sub_endpoints(
-    spec: ResourceSpec,
-    record_id: int,
-    plans: list[_SubEndpointPlan],
-    *,
-    client: ResourceClient,
-) -> None:
-    """POST associate / disassociate per ``plans`` against the resource's id."""
-    for plan in plans:
-        if plan.ref.sub_endpoint is None:
-            continue
-        for member_id in plan.to_associate:
-            client.sub_endpoint_request(
-                spec, record_id, plan.ref.sub_endpoint, "POST", json={"id": member_id}
-            )
-        for member_id in plan.to_disassociate:
-            client.sub_endpoint_request(
-                spec,
-                record_id,
-                plan.ref.sub_endpoint,
-                "POST",
-                json={"id": member_id, "disassociate": True},
-            )
 
 
 __all__ = ["ApplyResource"]
