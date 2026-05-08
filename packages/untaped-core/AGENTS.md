@@ -7,6 +7,20 @@ helpers index, see the [root `AGENTS.md`](../../AGENTS.md). For
 user-facing config reference, see
 [`docs/configuration.md`](../../docs/configuration.md).
 
+## Settings schema (intentional inversion)
+
+`untaped_core.settings` declares one `Settings` model with named
+sub-models per domain (`AwxSettings`, `GithubSettings`,
+`WorkspaceSettings`). This couples the "shared kit" to every domain by
+name — deliberately. One schema in one place is what makes
+`config_schema.walk_settings`, `untaped config list`, `redact_secrets`,
+and env-var resolution work without a per-domain registration step.
+Splitting the schema (one slice per domain plus a federation hook)
+would solve a coupling that's tracked but not currently painful, at the
+cost of breaking the introspection contract. When a 7th or 8th domain
+lands and the coupling starts to feel real, reconsider; until then, new
+settings go in an existing sub-model or a new sub-model here.
+
 ## Profile resolution (internals)
 
 `~/.untaped/config.yml` is **profile-based**: every configurable value
