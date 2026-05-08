@@ -29,7 +29,15 @@ class UnifiedTemplateRepository:
         return self._client.paginate_path(_PATH, params=params, limit=limit)
 
     def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+        # An empty ``id__in=`` filter matches every record at AWX, so a
+        # caller that bypasses ``GetUnifiedTemplate`` and hands an empty
+        # list straight to the adapter would get the full collection
+        # back. Materialise once (``ids`` may be a generator) and
+        # short-circuit before constructing the request.
+        materialised = list(ids)
+        if not materialised:
+            return iter(())
         return self._client.paginate_path(
             _PATH,
-            params={"id__in": ",".join(ids), "order_by": "id"},
+            params={"id__in": ",".join(materialised), "order_by": "id"},
         )

@@ -41,6 +41,14 @@ class GetUnifiedTemplate:
         if not wanted:
             return [], []
         records = list(self._repo.get_by_ids(ids=wanted))
-        found = {str(r.get("id")) for r in records}
-        missing_ids = [i for i in wanted if i not in found]
+        # Normalise both sides of the comparison: AWX coerces leading
+        # zeros in ``?id__in=007`` to ``7``, so the bulk fetch returns
+        # ``{"id": 7}``. Without canonicalisation the user's ``"007"``
+        # never matches ``"7"`` and gets falsely flagged as missing.
+        found = {_canonical_id(str(r.get("id"))) for r in records}
+        missing_ids = [i for i in wanted if _canonical_id(i) not in found]
         return records, missing_ids
+
+
+def _canonical_id(s: str) -> str:
+    return str(int(s)) if s.isdigit() else s

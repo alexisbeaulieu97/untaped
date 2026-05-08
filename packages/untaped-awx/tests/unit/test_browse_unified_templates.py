@@ -122,3 +122,14 @@ def test_get_compares_ids_as_strings() -> None:
     records, missing = GetUnifiedTemplate(repo)(ids=["7"])  # type: ignore[arg-type]
     assert missing == []
     assert [r["id"] for r in records] == [7]
+
+
+def test_get_handles_zero_padded_ids() -> None:
+    """User input ``"007"`` must match AWX record ``id=7``. AWX coerces
+    leading zeros in ``?id__in=007``, so the bulk fetch returns the
+    record with the integer id; without canonicalisation the user's
+    request would be falsely flagged as missing."""
+    repo = _FakeUjtRepo(records_by_id={"007": {"id": 7, "name": "deploy"}})
+    records, missing = GetUnifiedTemplate(repo)(ids=["007"])  # type: ignore[arg-type]
+    assert [r["id"] for r in records] == [7]
+    assert missing == []

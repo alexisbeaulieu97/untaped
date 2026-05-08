@@ -112,11 +112,14 @@ def test_get_by_ids_uses_id_in_filter() -> None:
     assert limit is None
 
 
-def test_get_by_ids_empty_list_still_calls_repo_with_empty_filter() -> None:
-    """Empty id-set is the use case's job to short-circuit, not the
-    adapter's. Adapter just forwards what it's given."""
+def test_get_by_ids_empty_list_short_circuits() -> None:
+    """Empty id-set must not reach AWX — ``?id__in=`` (no value) matches
+    every UJT, so a caller bypassing :class:`GetUnifiedTemplate` and
+    handing the adapter an empty list would otherwise receive the full
+    collection. Defense in depth: the use case also short-circuits, but
+    the adapter holds the line for any future caller."""
     client = _FakeClient(list_pages=[])
     repo = UnifiedTemplateRepository(client)  # type: ignore[arg-type]
     out = list(repo.get_by_ids(ids=[]))
     assert out == []
-    assert client.paginate_calls[0][1]["id__in"] == ""
+    assert client.paginate_calls == []
