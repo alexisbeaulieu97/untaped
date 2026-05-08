@@ -14,9 +14,9 @@ before handing the dict to httpx.
 
 The application :class:`ResourceClient` Protocol takes domain
 :class:`ResourceSpec` arguments. This adapter narrows to
-:class:`AwxResourceSpec` via :func:`_api_path` so the contravariant
-parameter type holds while the runtime read of ``api_path`` stays
-type-safe.
+:class:`AwxResourceSpec` via :func:`awx_api_path` so the
+contravariant parameter type holds while the runtime read of
+``api_path`` stays type-safe.
 """
 
 from __future__ import annotations
@@ -29,19 +29,7 @@ from untaped_awx.errors import AmbiguousIdentityError
 from untaped_awx.infrastructure.awx_client import AwxClient
 from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.infrastructure.pagination import paginate
-from untaped_awx.infrastructure.spec import AwxResourceSpec
-
-
-def _api_path(spec: ResourceSpec) -> str:
-    """Narrow domain :class:`ResourceSpec` to :class:`AwxResourceSpec`.
-
-    Every spec registered in :class:`AwxResourceCatalog` is an
-    ``AwxResourceSpec``; this helper makes the runtime invariant
-    explicit so mypy is happy with the wider Protocol parameter type.
-    """
-    if not isinstance(spec, AwxResourceSpec):
-        raise TypeError(f"ResourceRepository requires AwxResourceSpec; got {type(spec).__name__}")
-    return spec.api_path
+from untaped_awx.infrastructure.spec import awx_api_path
 
 
 class ResourceRepository:
@@ -59,7 +47,7 @@ class ResourceRepository:
         with map_awx_errors():
             yield from paginate(
                 self._client,
-                f"{_api_path(spec)}/",
+                f"{awx_api_path(spec)}/",
                 params=params,
                 page_size=self._page_size,
                 limit=limit,
@@ -67,7 +55,7 @@ class ResourceRepository:
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         with map_awx_errors():
-            raw = self._client.get_json(f"{_api_path(spec)}/{id_}/")
+            raw = self._client.get_json(f"{awx_api_path(spec)}/{id_}/")
         return ServerRecord(**raw)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
@@ -80,7 +68,9 @@ class ResourceRepository:
         :class:`AmbiguousIdentityError` in that case.
         """
         with map_awx_errors():
-            page = self._client.get_json(f"{_api_path(spec)}/", params={**params, "page_size": "2"})
+            page = self._client.get_json(
+                f"{awx_api_path(spec)}/", params={**params, "page_size": "2"}
+            )
         results = page.get("results") or []
         if len(results) >= 2:
             raise AmbiguousIdentityError(spec.kind, dict(params), match_count=page.get("count"))
@@ -107,7 +97,7 @@ class ResourceRepository:
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
         with map_awx_errors():
             raw = self._client.post_json(
-                f"{_api_path(spec)}/", json=payload.model_dump(exclude_none=False)
+                f"{awx_api_path(spec)}/", json=payload.model_dump(exclude_none=False)
             )
         return ServerRecord(**raw)
 
@@ -115,14 +105,14 @@ class ResourceRepository:
         with map_awx_errors():
             raw = self._client.request_json(
                 "PATCH",
-                f"{_api_path(spec)}/{id_}/",
+                f"{awx_api_path(spec)}/{id_}/",
                 json=payload.model_dump(exclude_none=False),
             )
         return ServerRecord(**raw)
 
     def delete(self, spec: ResourceSpec, id_: int) -> None:
         with map_awx_errors():
-            self._client.request_json("DELETE", f"{_api_path(spec)}/{id_}/")
+            self._client.request_json("DELETE", f"{awx_api_path(spec)}/{id_}/")
 
     def action(
         self,
@@ -134,7 +124,7 @@ class ResourceRepository:
         body = payload.model_dump(exclude_none=False) if payload is not None else {}
         with map_awx_errors():
             return self._client.post_json(  # type: ignore[no-any-return]
-                f"{_api_path(spec)}/{id_}/{action}/",
+                f"{awx_api_path(spec)}/{id_}/{action}/",
                 json=body,
             )
 
@@ -189,7 +179,7 @@ class ResourceRepository:
         params: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        path = f"{_api_path(spec)}/{record_id}/{sub_endpoint}/"
+        path = f"{awx_api_path(spec)}/{record_id}/{sub_endpoint}/"
         with map_awx_errors():
             return self._client.request_json(  # type: ignore[no-any-return]
                 method, path, params=params, json=json
@@ -203,7 +193,7 @@ class ResourceRepository:
         *,
         params: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        path = f"{_api_path(spec)}/{record_id}/{sub_endpoint}/"
+        path = f"{awx_api_path(spec)}/{record_id}/{sub_endpoint}/"
         with map_awx_errors():
             yield from paginate(
                 self._client,

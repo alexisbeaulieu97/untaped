@@ -18,14 +18,7 @@ from typing import Any, ClassVar
 from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
 from untaped_awx.domain import ResourceSpec, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
-from untaped_awx.infrastructure.spec import AwxResourceSpec
-
-
-def _api_path(spec: ResourceSpec) -> str:
-    """Narrow domain :class:`ResourceSpec` to access ``api_path``."""
-    if not isinstance(spec, AwxResourceSpec):
-        raise TypeError(f"AwxResourceSpec required, got {type(spec).__name__}")
-    return spec.api_path
+from untaped_awx.infrastructure.spec import awx_api_path
 
 
 class DefaultApplyStrategy:
@@ -173,7 +166,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         inventory_id = self._resolve_inventory_id(identity, fk=fk)
         return _find_unique(
             client,
-            path=f"inventories/{inventory_id}/{_api_path(spec)}/",
+            path=f"inventories/{inventory_id}/{awx_api_path(spec)}/",
             name=str(identity["name"]),
             kind=spec.kind,
             ambiguity_label={"inventory": str(_parent(identity).name)},
@@ -189,7 +182,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         fk: FkResolver,
     ) -> dict[str, Any]:
         inventory_id = self._resolve_inventory_id(identity, fk=fk)
-        path = f"inventories/{inventory_id}/{_api_path(spec)}/"
+        path = f"inventories/{inventory_id}/{awx_api_path(spec)}/"
         body = {"name": identity["name"], **payload}
         return client.request("POST", path, json=body)
 

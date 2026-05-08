@@ -144,11 +144,21 @@ class ResourceClient(Protocol):
 class RawHttpResourceClient(ResourceClient, Protocol):
     """A :class:`ResourceClient` that also exposes raw URL access.
 
-    Used by infrastructure (strategies for nested-endpoint writes,
-    follow-page polling) and by use cases that orchestrate strategies
-    (:class:`ApplyResource`). Application code that doesn't dispatch
-    strategies should depend on the narrower :class:`ResourceClient`
-    instead — those callers don't need to know about URL fragments.
+    Use cases that need to construct AWX URLs directly take this wider
+    port instead of :class:`ResourceClient`. Today's callers:
+
+    - :class:`ApplyResource`: forwards its ``client`` to
+      :class:`ApplyStrategy` implementations
+      (``find_existing`` / ``create`` / ``update``), some of which
+      build nested-endpoint URLs (e.g. ``ScheduleApplyStrategy``,
+      ``InventoryChildApplyStrategy``).
+    - :class:`WatchJob` and :class:`PollingJobMonitor`: poll job
+      execution endpoints (``/jobs/<id>/``, ``/jobs/<id>/stdout/``,
+      ``/jobs/<id>/job_events/``) directly.
+
+    New use cases should default to the narrower :class:`ResourceClient`
+    and only widen to this Protocol when ad-hoc URL access is
+    unavoidable.
     """
 
     def request(
