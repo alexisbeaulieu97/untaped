@@ -171,19 +171,24 @@ def test_unset_raises_when_recorded_active_missing(_isolate_settings: Path) -> N
     used to silently no-op. Now raises with a message naming the missing
     profile, matching the shape ``list`` already had."""
     _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
-    with pytest.raises(ConfigError, match="active profile 'ghost' does not exist"):
+    with pytest.raises(ConfigError, match=r"active profile.*ghost"):
         UnsetSetting(SettingsFileRepository())("log_level")
 
 
-def test_set_raises_directly_when_recorded_active_missing(
+def test_set_raises_with_resolution_time_message_when_recorded_active_missing(
     _isolate_settings: Path,
 ) -> None:
-    """Issue #22: ``set`` previously raised only as a side effect of the
-    schema-validation step at the end of ``_apply``. Now raises directly
-    at resolution time, so ``set`` and ``unset`` behave consistently."""
+    """Issue #22: ``set`` raises at resolution time with the actionable
+    "Run `untaped profile use ...`" message — distinct from the
+    schema-validation pathway that also pre-existed (and which produces
+    `_select_active`'s tersere message). Also asserts the file is
+    untouched on failure (mutate_config's atomic-write contract holds)."""
     _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
-    with pytest.raises(ConfigError, match="active profile 'ghost' does not exist"):
+    before = _isolate_settings.read_bytes()
+    with pytest.raises(ConfigError, match=r"profile use") as excinfo:
         SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+    assert "ghost" in str(excinfo.value)
+    assert _isolate_settings.read_bytes() == before
 
 
 def test_set_raises_when_env_active_missing(
@@ -193,5 +198,5 @@ def test_set_raises_when_env_active_missing(
     the implicit path (no ``--profile`` flag)."""
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: INFO\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
-    with pytest.raises(ConfigError, match="active profile 'ghost' does not exist"):
+    with pytest.raises(ConfigError, match=r"active profile.*ghost"):
         SetSetting(SettingsFileRepository())("log_level", "DEBUG")

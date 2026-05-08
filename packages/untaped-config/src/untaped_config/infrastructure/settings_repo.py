@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import ValidationError
@@ -137,8 +137,12 @@ class SettingsFileRepository:
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
         """Resolve the target profile for a ``set`` or ``unset``, validating
-        existence except for the implicit ``default`` fallback (no
-        ``active:``, no ``--profile``)."""
+        that the resolved profile exists.
+
+        ``default`` is exempt from the check — it's the auto-created floor
+        when nothing else is named (no ``--profile``, no ``active:``, no
+        ``UNTAPED_PROFILE``).
+        """
         if profile is not None:
             if profile == DEFAULT_PROFILE:
                 return profile
@@ -148,7 +152,13 @@ class SettingsFileRepository:
             return DEFAULT_PROFILE
         return self._require_existing(data, recorded, source="active")
 
-    def _require_existing(self, data: dict[str, Any], name: str, *, source: str) -> str:
+    def _require_existing(
+        self,
+        data: dict[str, Any],
+        name: str,
+        *,
+        source: Literal["explicit", "active"],
+    ) -> str:
         existing = data.get("profiles") or {}
         if isinstance(existing, dict) and name in existing:
             return name
