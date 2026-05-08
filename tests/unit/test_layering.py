@@ -110,17 +110,25 @@ def _violations_in_file(
     found: list[str] = []
     for imp in _runtime_imports(tree):
         if isinstance(imp, ast.Import):
-            bad = [alias.name for alias in imp.names if alias.name.startswith(forbidden_root)]
+            bad = [
+                alias.name
+                for alias in imp.names
+                if alias.name == forbidden_root or alias.name.startswith(f"{forbidden_root}.")
+            ]
             if bad:
                 found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)}")
         elif imp.level > 0:
             # Relative import (`from ..<forbidden>...`). Resolve against
-            # the source package: any non-zero level pointing into a
-            # sibling forbidden subpackage counts.
+            # the source package: any non-zero level pointing into the
+            # forbidden subpackage (or a submodule of it) counts. Match
+            # exact-or-dotted-prefix to avoid false-positives on sibling
+            # names like ``application_helper`` that share a substring.
             module = imp.module or ""
-            if module.startswith(forbidden_subpackage) or forbidden_subpackage in module:
+            if module == forbidden_subpackage or module.startswith(f"{forbidden_subpackage}."):
                 found.append(f"{rel}:{imp.lineno} imports {'.' * imp.level}{module}")
-        elif imp.module and imp.module.startswith(forbidden_root):
+        elif imp.module and (
+            imp.module == forbidden_root or imp.module.startswith(f"{forbidden_root}.")
+        ):
             found.append(f"{rel}:{imp.lineno} imports {imp.module}")
     return found
 
