@@ -165,8 +165,8 @@ def test_awx_api_prefix_must_start_and_end_with_slash() -> None:
 
 
 def test_resolve_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_CONFIG", "/tmp/custom-config.yml")
-    assert resolve_config_path() == Path("/tmp/custom-config.yml")
+    monkeypatch.setenv("UNTAPED_CONFIG", "~/custom-config.yml")
+    assert resolve_config_path() == Path("~/custom-config.yml").expanduser()
 
 
 def test_resolve_config_path_defaults_to_home(monkeypatch: pytest.MonkeyPatch) -> None:

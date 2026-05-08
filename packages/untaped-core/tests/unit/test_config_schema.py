@@ -100,7 +100,7 @@ def test_redact_secrets_skips_missing_paths() -> None:
     assert out == {"awx": {}}
 
 
-def test_secret_field_paths_includes_known_settings_secrets() -> None:
+def test_secret_field_paths_matches_known_settings_secrets() -> None:
     # Pin the contract: every SecretStr in Settings is returned. Adding a
     # new SecretStr to the schema (per AGENTS.md "Recipe: add a new
     # setting") must make this test fail until the new path lands here.
