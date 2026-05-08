@@ -158,13 +158,14 @@ def _make_apply(
 def test_intermediate_list_wildcard_preserves_survey_default_under_sibling_change() -> None:
     """``survey_spec.spec.*.default`` declared on JT: ``$encrypted$`` inside
     each list element produces a preserved path with a literal ``*``.
-    ``_strip_paths`` walks that wildcard against the existing record so
-    the equality check finds a match and the field is preserved (not
-    flagged as conflict). The user can edit a sibling top-level field
-    and the PATCH excludes ``survey_spec`` entirely.
+    ``SecretPreservationPolicy.strip_paths`` walks that wildcard against
+    the existing record so the equality check finds a match and the
+    field is preserved (not flagged as conflict). The user can edit a
+    sibling top-level field and the PATCH excludes ``survey_spec``
+    entirely.
 
-    Exercises ``_remove_at_path`` lines 409-411 (intermediate ``*``
-    walking list items).
+    Exercises the intermediate ``*`` branch of
+    ``apply_secret_policy._remove_at_path`` (walking list items).
     """
     existing = {
         "id": 7,

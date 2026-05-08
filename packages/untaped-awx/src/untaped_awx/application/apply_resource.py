@@ -10,43 +10,27 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 
 from untaped_awx.application._secret_paths import strip_encrypted
+from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE, FieldDiff
+from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
+from untaped_awx.application.apply_planner import ApplyPlanner
+from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.ports import (
     ApplyStrategy,
     Catalog,
     FkResolver,
     RawHttpResourceClient,
-    ResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import (
     ApplyOutcome,
     FieldChange,
-    FkRef,
     Resource,
     ResourceSpec,
 )
 from untaped_awx.errors import BadRequest
-
-
-@dataclass(frozen=True)
-class _SubEndpointPlan:
-    """One reconciled multi-FK relationship.
-
-    ``ref`` describes the spec field (e.g. ``Group.hosts``);
-    ``field_change`` is non-None only when ``to_associate`` or
-    ``to_disassociate`` is non-empty (so the apply diff stays quiet
-    for unmodified memberships).
-    """
-
-    ref: FkRef
-    to_associate: tuple[int, ...]
-    to_disassociate: tuple[int, ...]
-    field_change: FieldChange | None
-
 
 WarnFn = Callable[[str], None]
 
@@ -63,12 +47,20 @@ class ApplyResource:
         strategies: StrategyResolver,
         *,
         warn: WarnFn = _noop_warn,
+        secret_policy: SecretPreservationPolicy | None = None,
+        field_diff: FieldDiff | None = None,
+        membership: MembershipReconciler | None = None,
+        planner: ApplyPlanner | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
         self._fk = fk
         self._strategies = strategies
         self._warn = warn
+        self._secret_policy = secret_policy or SecretPreservationPolicy()
+        self._field_diff = field_diff or FieldDiff()
+        self._membership = membership or MembershipReconciler()
+        self._planner = planner or ApplyPlanner()
 
     def __call__(
         self,
@@ -80,8 +72,8 @@ class ApplyResource:
         """Apply ``resource`` (preview by default; pass ``write=True`` to write).
 
         ``defer_memberships=True`` (only meaningful when ``write=True``)
-        writes the body but skips ``_execute_sub_endpoints``. Used by
-        :class:`ApplyFile` to break cyclic membership dependencies — a
+        writes the body but skips :meth:`MembershipReconciler.execute`.
+        Used by :class:`ApplyFile` to break cyclic membership dependencies — a
         Group whose ``children:`` references a sibling Group declared
         later in the same file would otherwise fail in phase 1 because
         the sibling doesn't exist yet. After every doc's body has been
@@ -101,8 +93,8 @@ class ApplyResource:
                 f"{spec.kind} does not support apply (fidelity={spec.fidelity!r}); "
                 "edit this resource via the AWX UI or API directly."
             )
-        identity = _build_identity(spec, resource)
-        payload = _build_payload(spec, resource, fk=self._fk)
+        identity = self._planner.plan_identity(spec, resource)
+        payload = self._planner.plan_payload(spec, resource, fk=self._fk)
         strategy = self._strategies.get(spec.apply_strategy)
         existing = strategy.find_existing(spec, identity, client=self._client, fk=self._fk)
         return self._dispatch(
@@ -132,7 +124,7 @@ class ApplyResource:
         # find_existing call per non-Group doc.
         if not any(ref.multi and ref.sub_endpoint for ref in spec.fk_refs):
             return []
-        identity = _build_identity(spec, resource)
+        identity = self._planner.plan_identity(spec, resource)
         strategy = self._strategies.get(spec.apply_strategy)
         existing = strategy.find_existing(spec, identity, client=self._client, fk=self._fk)
         if existing is None:
@@ -140,7 +132,7 @@ class ApplyResource:
                 f"{spec.kind} {resource.metadata.name!r}: cannot reconcile "
                 f"memberships — record vanished between body write and membership pass"
             )
-        membership_plans = _plan_sub_endpoints(
+        membership_plans = self._membership.plan(
             spec,
             resource,
             int(existing["id"]),
@@ -148,7 +140,9 @@ class ApplyResource:
             fk=self._fk,
         )
         if any(p.to_associate or p.to_disassociate for p in membership_plans):
-            _execute_sub_endpoints(spec, int(existing["id"]), membership_plans, client=self._client)
+            self._membership.execute(
+                spec, int(existing["id"]), membership_plans, client=self._client
+            )
         return [p.field_change for p in membership_plans if p.field_change is not None]
 
     def _dispatch(
@@ -179,8 +173,10 @@ class ApplyResource:
         # which would silently clobber a secret if PATCHed. The latter are
         # rejected at the boundary — the user must either provide the real
         # secret value or revert their sibling change.
-        preserved_fields, conflict_fields = _partition_top_level_fields(
-            write_payload, existing, preserved
+        preserved_fields, conflict_fields = self._secret_policy.partition(
+            write_payload=write_payload,
+            existing=existing,
+            preserved=preserved,
         )
         if conflict_fields:
             raise BadRequest(
@@ -189,7 +185,11 @@ class ApplyResource:
                 f"alongside a sibling change. PATCH would overwrite the existing secret. "
                 f"Provide the actual secret value(s) or revert the sibling change(s)."
             )
-        changes = _diff(spec, existing, write_payload, preserved_fields=preserved_fields)
+        changes = self._field_diff.compute(
+            existing=existing,
+            desired=write_payload,
+            preserved_fields=preserved_fields,
+        )
 
         # Membership reconciliation (multi-FK + sub_endpoint, e.g.
         # ``Group.hosts`` / ``Group.children``). The plan is computed
@@ -199,9 +199,9 @@ class ApplyResource:
         # plan + execute happens in :meth:`reconcile_memberships`. This
         # matters when a sibling member is declared in the same file
         # and won't exist until later in phase 1.
-        membership_plans: list[_SubEndpointPlan] = []
+        membership_plans: list[MembershipPlan] = []
         if not defer_memberships:
-            membership_plans = _plan_sub_endpoints(
+            membership_plans = self._membership.plan(
                 spec,
                 resource,
                 int(existing["id"]) if existing else None,
@@ -256,7 +256,7 @@ class ApplyResource:
         payload: dict[str, Any],
         strategy: ApplyStrategy,
         changes: list[FieldChange],
-        membership_plans: list[_SubEndpointPlan],
+        membership_plans: list[MembershipPlan],
         preserved: list[str],
         dropped_undeclared: list[str],
     ) -> ApplyOutcome:
@@ -282,7 +282,7 @@ class ApplyResource:
                     f"'id'; cannot reconcile membership for "
                     f"{', '.join(p.ref.field for p in membership_plans)}"
                 )
-            _execute_sub_endpoints(
+            self._membership.execute(
                 spec,
                 int(new_id_value),
                 membership_plans,
@@ -306,7 +306,7 @@ class ApplyResource:
         payload: dict[str, Any],
         strategy: ApplyStrategy,
         changes: list[FieldChange],
-        membership_plans: list[_SubEndpointPlan],
+        membership_plans: list[MembershipPlan],
         preserved: list[str],
         dropped_undeclared: list[str],
     ) -> ApplyOutcome:
@@ -317,7 +317,7 @@ class ApplyResource:
         changed_fields = {
             c.field
             for c in changes
-            if c.note != "preserved existing secret" and c.field not in membership_field_names
+            if c.note != PRESERVED_SECRET_NOTE and c.field not in membership_field_names
         }
         membership_changed = any(p.to_associate or p.to_disassociate for p in membership_plans)
         if not changed_fields and not membership_changed:
@@ -339,7 +339,7 @@ class ApplyResource:
                 fk=self._fk,
             )
         if membership_changed:
-            _execute_sub_endpoints(
+            self._membership.execute(
                 spec,
                 int(existing["id"]),
                 membership_plans,
@@ -353,330 +353,6 @@ class ApplyResource:
             preserved_secrets=preserved,
             dropped_undeclared_secrets=dropped_undeclared,
         )
-
-
-def _build_identity(spec: ResourceSpec, resource: Resource) -> dict[str, Any]:
-    """Identity is whichever metadata fields uniquely identify the resource.
-
-    Default: ``{name, organization}``. Schedule includes ``parent``.
-    """
-    identity: dict[str, Any] = {"name": resource.metadata.name}
-    if "organization" in spec.identity_keys:
-        identity["organization"] = resource.metadata.organization
-    if resource.metadata.parent is not None:
-        identity["parent"] = resource.metadata.parent
-    return identity
-
-
-def _build_payload(spec: ResourceSpec, resource: Resource, *, fk: FkResolver) -> dict[str, Any]:
-    """Project resource.spec to canonical_fields and resolve FKs."""
-    body: dict[str, Any] = {}
-    raw = resource.spec
-    for field in spec.canonical_fields:
-        if field in raw:
-            body[field] = raw[field]
-    # Inject identity keys from metadata so create payloads include `name`
-    # (and `organization` for org-scoped kinds) even when absent from spec.
-    for key in spec.identity_keys:
-        if key in body:
-            continue
-        value = getattr(resource.metadata, key, None)
-        if value is not None:
-            body[key] = value
-    # Resolve FKs (skip polymorphic — those live in metadata, not payload —
-    # and skip sub_endpoint multi-FKs, which are managed out-of-band via
-    # associate / disassociate POSTs against ``/<api_path>/<id>/<sub>/``).
-    for ref in spec.fk_refs:
-        if ref.polymorphic or ref.field not in body or body[ref.field] is None:
-            continue
-        if ref.multi and ref.sub_endpoint is not None:
-            # Membership goes through ``_execute_sub_endpoints``; never PATCH it.
-            body.pop(ref.field, None)
-            continue
-        assert ref.kind is not None
-        scope = scope_for(ref, resource)
-        value = body[ref.field]
-        if ref.multi:
-            if isinstance(value, list):
-                body[ref.field] = [fk.name_to_id(ref.kind, str(v), scope=scope) for v in value]
-        else:
-            body[ref.field] = fk.name_to_id(ref.kind, str(value), scope=scope)
-    return body
-
-
-def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
-    """Return the FK lookup scope for ``ref`` against ``resource``.
-
-    Centralised so :func:`apply_resource` (apply path) and
-    :func:`apply_file._prefetch_plan` (bulk warm-up) read the same
-    semantics — otherwise prefetch warms the wrong cache buckets for
-    inventory-child kinds (``hosts``/``children``) whose scope lives on
-    ``metadata.parent`` rather than in the body.
-    """
-    if ref.scope_field is None:
-        return None
-    if ref.scope_field == "organization":
-        # For Schedule (and any future kind whose canonical org lives on the
-        # polymorphic parent), prefer ``parent.organization`` so name-scoped
-        # FK lookups resolve in the parent's org, not the schedule's own
-        # (which is typically ``None``).
-        org = (
-            resource.metadata.parent.organization if resource.metadata.parent else None
-        ) or resource.metadata.organization
-        if org:
-            return {"organization": org}
-    if ref.scope_field == "inventory":
-        # Hosts and Groups (and their group-membership FKs) are scoped by
-        # inventory, not org. The inventory lives on ``metadata.parent``
-        # for ``inventory_child`` kinds — there's no separate metadata
-        # field for it because Schedule's polymorphic-parent envelope
-        # already carries everything we need. When the parent's org is
-        # set, also scope by ``inventory__organization`` so AWX
-        # disambiguates same-named inventories across orgs (it expands
-        # to ``?inventory__name=…&inventory__organization__name=…`` —
-        # the only way to disambiguate Host/Group ancestry on AWX's
-        # filter surface, since hosts don't carry a direct
-        # ``organization`` FK).
-        parent = resource.metadata.parent
-        if parent is not None and parent.kind == "Inventory":
-            scope: dict[str, str] = {"inventory": parent.name}
-            if parent.organization:
-                scope["inventory__organization"] = parent.organization
-            return scope
-    return None
-
-
-def _diff(
-    spec: ResourceSpec,
-    existing: dict[str, Any] | None,
-    desired: dict[str, Any],
-    *,
-    preserved_fields: set[str],
-) -> list[FieldChange]:
-    """Return field-level changes between existing and the (stripped) desired payload.
-
-    ``desired`` is the post-strip payload (placeholders removed). Top-level
-    fields in ``preserved_fields`` are emitted as ``preserved existing secret``
-    rows and are excluded from the PATCH so AWX retains the value (including
-    any nested secrets).
-    """
-    out: list[FieldChange] = []
-    if existing is None:
-        for field, after in desired.items():
-            note = "preserved existing secret" if field in preserved_fields else None
-            out.append(FieldChange(field=field, before=None, after=after, note=note))
-        return out
-    for field, after in desired.items():
-        before = existing.get(field)
-        if field in preserved_fields:
-            out.append(
-                FieldChange(
-                    field=field,
-                    before=before,
-                    after=before,  # we keep the existing secret
-                    note="preserved existing secret",
-                )
-            )
-            continue
-        if not _equal(before, after):
-            out.append(FieldChange(field=field, before=before, after=after))
-    # Top-level secret fields entirely stripped from ``desired`` (e.g.
-    # ``webhook_key``) still need a row so the user sees them in the preview.
-    for field in preserved_fields:
-        if field in desired:
-            continue
-        before = existing.get(field)
-        out.append(
-            FieldChange(
-                field=field,
-                before=before,
-                after=before,
-                note="preserved existing secret",
-            )
-        )
-    return out
-
-
-def _partition_top_level_fields(
-    write_payload: dict[str, Any],
-    existing: dict[str, Any] | None,
-    preserved: list[str],
-) -> tuple[set[str], list[str]]:
-    """Decide which preserved-secret top-level fields are safe to omit from PATCH.
-
-    For each top-level key that contains at least one preserved secret path,
-    compare the user's stripped subtree against the existing record's subtree
-    with the same paths removed:
-
-    - Equal → ``preserved`` (omit from the PATCH; AWX keeps the value).
-    - Different → ``conflict`` (a sibling change alongside the placeholder;
-      PATCHing would clobber the secret).
-
-    ``existing is None`` (create path) returns empty sets — there's nothing
-    to preserve, and ``_do_create`` enforces the no-placeholders rule
-    separately.
-    """
-    if existing is None:
-        return set(), []
-    top_keys = {path.split(".", 1)[0] for path in preserved}
-    existing_stripped = _strip_paths(existing, preserved)
-    preserved_fields: set[str] = set()
-    conflict_fields: list[str] = []
-    for top in top_keys:
-        # ``dict.get(top)`` returns ``None`` for an absent key and the
-        # actual value (often ``{}`` after stripping) when present. The
-        # comparison treats those as different on purpose: an unset
-        # subtree is a real sibling change vs. a stripped-empty subtree,
-        # and the user should see the conflict so they don't silently
-        # overwrite the secret.
-        if write_payload.get(top) == existing_stripped.get(top):
-            preserved_fields.add(top)
-        else:
-            conflict_fields.append(top)
-    return preserved_fields, conflict_fields
-
-
-def _strip_paths(obj: Any, paths: list[str]) -> Any:
-    """Return a deep copy of ``obj`` with the given dotted paths removed.
-
-    Path syntax matches ``ResourceSpec.secret_paths``: ``*`` matches any
-    list element or dict key.
-    """
-    result = copy.deepcopy(obj)
-    for path in paths:
-        _remove_at_path(result, path.split("."))
-    return result
-
-
-def _remove_at_path(obj: Any, parts: list[str]) -> None:
-    if not parts or obj is None:
-        return
-    head = parts[0]
-    rest = parts[1:]
-    if not rest:
-        if isinstance(obj, dict):
-            if head == "*":
-                obj.clear()
-            else:
-                obj.pop(head, None)
-        elif isinstance(obj, list) and head == "*":
-            obj.clear()
-        return
-    if isinstance(obj, dict):
-        if head == "*":
-            for key in list(obj.keys()):
-                _remove_at_path(obj[key], rest)
-        elif head in obj:
-            _remove_at_path(obj[head], rest)
-    elif isinstance(obj, list) and head == "*":
-        for item in obj:
-            _remove_at_path(item, rest)
-
-
-def _equal(a: Any, b: Any) -> bool:
-    """Order-insensitive equality for FK lists (e.g., credentials)."""
-    if isinstance(a, list) and isinstance(b, list):
-        try:
-            return bool(sorted(a, key=repr) == sorted(b, key=repr))
-        except TypeError:
-            return bool(a == b)
-    return bool(a == b)
-
-
-def _plan_sub_endpoints(
-    spec: ResourceSpec,
-    resource: Resource,
-    record_id: int | None,
-    *,
-    client: ResourceClient,
-    fk: FkResolver,
-) -> list[_SubEndpointPlan]:
-    """For each ``multi=True, sub_endpoint != None`` FK, compute the plan.
-
-    Reads desired members (a list of names) from ``resource.spec[ref.field]``
-    and existing members from ``GET /<api_path>/<id>/<sub_endpoint>/`` (skipped
-    when ``record_id is None`` — the resource doesn't exist yet, so existing
-    is empty and every desired member becomes an associate).
-
-    A field that's *absent* from the resource spec is left unmanaged: we
-    won't wipe membership just because the user didn't list it. An empty
-    list (``hosts: []``) explicitly clears membership.
-    """
-    plans: list[_SubEndpointPlan] = []
-    raw = resource.spec if isinstance(resource.spec, dict) else {}
-    for ref in spec.fk_refs:
-        if not (ref.multi and ref.sub_endpoint and ref.kind):
-            continue
-        if ref.field not in raw:
-            continue
-        raw_value = raw[ref.field]
-        if not isinstance(raw_value, list):
-            # An absent field is unmanaged; an empty list clears membership.
-            # A bare string ("hosts: web-01") would otherwise be normalised
-            # to [] and silently disassociate every existing member on --yes,
-            # which is the most destructive failure mode possible here.
-            raise BadRequest(
-                f"{spec.kind} {resource.metadata.name!r}: {ref.field!r} must be a "
-                f"list of names (got {type(raw_value).__name__}); wrap a single "
-                f"value in [ ... ] to clarify intent."
-            )
-        desired_names = list(raw_value)
-        scope = scope_for(ref, resource)
-        desired_ids = {fk.name_to_id(ref.kind, str(n), scope=scope) for n in desired_names}
-
-        existing_ids: set[int] = set()
-        existing_name_by_id: dict[int, str] = {}
-        if record_id is not None:
-            for record in client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint):
-                rid = int(record["id"])
-                existing_ids.add(rid)
-                rname = record.get("name")
-                if isinstance(rname, str):
-                    existing_name_by_id[rid] = rname
-
-        to_associate = sorted(desired_ids - existing_ids)
-        to_disassociate = sorted(existing_ids - desired_ids)
-
-        field_change: FieldChange | None = None
-        if to_associate or to_disassociate:
-            before = sorted(existing_name_by_id.get(i, str(i)) for i in existing_ids)
-            after = sorted(desired_names)
-            field_change = FieldChange(field=ref.field, before=before, after=after)
-
-        plans.append(
-            _SubEndpointPlan(
-                ref=ref,
-                to_associate=tuple(to_associate),
-                to_disassociate=tuple(to_disassociate),
-                field_change=field_change,
-            )
-        )
-    return plans
-
-
-def _execute_sub_endpoints(
-    spec: ResourceSpec,
-    record_id: int,
-    plans: list[_SubEndpointPlan],
-    *,
-    client: ResourceClient,
-) -> None:
-    """POST associate / disassociate per ``plans`` against the resource's id."""
-    for plan in plans:
-        if plan.ref.sub_endpoint is None:
-            continue
-        for member_id in plan.to_associate:
-            client.sub_endpoint_request(
-                spec, record_id, plan.ref.sub_endpoint, "POST", json={"id": member_id}
-            )
-        for member_id in plan.to_disassociate:
-            client.sub_endpoint_request(
-                spec,
-                record_id,
-                plan.ref.sub_endpoint,
-                "POST",
-                json={"id": member_id, "disassociate": True},
-            )
 
 
 __all__ = ["ApplyResource"]

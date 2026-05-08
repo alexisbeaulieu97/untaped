@@ -93,7 +93,7 @@ Reuse `awx_api_path` — don't copy the dance.
 
 `domain/envelope.py`: `{kind, apiVersion, metadata: {name, organization,
 parent?}, spec}`. FK references are by name; the default scope is
-`metadata.organization`, but `_scope_for` (`application/apply_resource.py`)
+`metadata.organization`, but `scope_for` (`application/apply_planner.py`)
 also recognises `scope_field="inventory"` and reads `metadata.parent.name`
 when the parent is an `Inventory` — that's how Host and Group reconcile
 membership FKs (`Group.hosts`, `Group.children`) without an extra metadata
@@ -102,11 +102,37 @@ inventory-parent both ride on the same `metadata.parent: IdentityRef` slot.
 
 ### Apply is preview-by-default
 
-`application/apply_resource.py`. Writes require `--yes`. The diff is
-field-level; declared `secret_paths` (e.g. `inputs.*`, `webhook_key`)
-carrying `$encrypted$` are stripped from PATCH and shown as `(preserved
-existing secret)` rows. `$encrypted$` at *undeclared* paths fires a stderr
-warning and is dropped (paranoid net).
+`application/apply_resource.py` is the orchestrator; the work is split
+across four collaborators it composes:
+
+- **`ApplyPlanner`** (`apply_planner.py`) — `plan_identity` and
+  `plan_payload`. Projects `resource.spec` to `canonical_fields` and
+  resolves FK names to ids; sub-endpoint multi-FKs are stripped from
+  the body (the membership reconciler handles them). Also exposes the
+  pure `scope_for(ref, resource)` helper shared with `apply_file`'s
+  prefetch path.
+- **`SecretPreservationPolicy`** (`apply_secret_policy.py`) — second-pass
+  secret handling. After `_secret_paths.strip_encrypted` removes
+  `$encrypted$` placeholders, the policy decides which top-level fields
+  can be safely omitted from the PATCH (AWX retains them) vs which
+  carry a sibling change that would clobber the preserved secret
+  (rejected at the boundary).
+- **`FieldDiff`** (`apply_field_diff.py`) — order-insensitive field-level
+  diff. Returns `list[FieldChange]` for the preview; emits
+  "preserved existing secret" rows for fields still in
+  `preserved_fields` (whether present in `desired` or stripped out
+  entirely).
+- **`MembershipReconciler`** (`apply_membership.py`) — plans + executes
+  multi-FK sub-endpoint membership writes (`Group.hosts`,
+  `Group.children`). Membership writes are kept out of the PATCH body;
+  associate/disassociate POSTs go through the
+  `<api_path>/<id>/<sub_endpoint>/` endpoint.
+
+Writes require `--yes`. The diff is field-level; declared `secret_paths`
+(e.g. `inputs.*`, `webhook_key`) carrying `$encrypted$` are stripped
+from PATCH and shown as `(preserved existing secret)` rows.
+`$encrypted$` at *undeclared* paths fires a stderr warning and is
+dropped (paranoid net).
 
 ### `ApplyStrategy`
 
@@ -125,10 +151,10 @@ An `FkRef(multi=True, sub_endpoint="…")` (e.g. `Group.hosts`,
 `Group.children`) declares a many-to-many edge that AWX manages via `POST
 /<api_path>/<id>/<sub_endpoint>/` with `{"id": <member>}` to associate or
 `{"id": <member>, "disassociate": true}` to remove.
-`apply_resource._plan_sub_endpoints` diffs desired (from
+`MembershipReconciler.plan` (`apply_membership.py`) diffs desired (from
 `resource.spec[<field>]`) against existing (one GET per FK ref) and appends
-`FieldChange` rows to the apply diff; `_execute_sub_endpoints` issues the
-writes after the strategy's create/update succeeds.
+`FieldChange` rows to the apply diff; `MembershipReconciler.execute` issues
+the writes after the strategy's create/update succeeds.
 
 Membership fields are *kept out of the PATCH body* so AWX never sees
 `hosts: [...]` on a Group write — body and membership writes are

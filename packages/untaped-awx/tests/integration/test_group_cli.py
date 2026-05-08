@@ -286,8 +286,8 @@ def test_groups_save_emits_metadata_parent_and_membership(fake_aap: Any) -> None
     so applying it back through ``InventoryChildApplyStrategy`` succeeds
     AND restores membership (otherwise re-apply silently disassociates
     every member because absent + empty list both look like ``[]`` in
-    ``_plan_sub_endpoints`` — wait, absent is unmanaged; but a save that
-    omits the list isn't a fix, it's just a different breakage)."""
+    ``MembershipReconciler.plan`` — wait, absent is unmanaged; but a save
+    that omits the list isn't a fix, it's just a different breakage)."""
     import yaml as _yaml
 
     _seed_groups(fake_aap)
