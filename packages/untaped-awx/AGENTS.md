@@ -216,6 +216,21 @@ when every tracked job ends `successful`; otherwise exit 1. `--wait` keeps
 its old quiet-block semantics; `--monitor` (the v0 silent alias for
 `--wait`) is removed.
 
+**Multi-template launch** (`launch a b c --track` or `--wait`) splits
+the body into a sequential launch phase and a parallel monitor phase.
+For two or more templates, `cli/resource_commands._drain_parallel`
+(`--track`) and `_wait_parallel` (`--wait`) drive a
+`ThreadPoolExecutor`; wall-clock collapses from `O(sum(durations))` to
+`O(max)`. `_drain_parallel` multiplexes per-job event streams onto a
+`queue.Queue`; the main thread is the only one that prints, with each
+line carrying a `[<template>] ` prefix (via
+`render_event_text(ev, prefix=…)`) so concurrent stderr stays
+disambiguable. Single-template launches keep the zero-overhead
+sequential path. Same thread-safety guarantees as the test runner
+(`application/test/runner.py:85-93`): `httpx.Client` is documented
+thread-safe and `PollingJobMonitor`'s polling methods are stateless
+per call.
+
 ## `unified-templates`: deliberately outside the framework
 
 Implemented in `cli/unified_templates_commands.py` (sibling of
