@@ -263,12 +263,10 @@ def test_jobs_get_with_kind_workflow_job_hits_workflow_jobs_endpoint(fake_aap: A
     assert result.stdout.strip() == "nightly-pipeline"
 
 
-def _seed_basic_jt(fake: Any, *, job_status: str) -> None:
-    """Seed JT prerequisites for ``job-templates launch deploy --track``.
-
-    FakeAap's ``_action`` handler materialises the launched job record at
-    a fresh id (using ``next_action_status`` for its terminal status), so
-    we don't need to pre-seed anything under the job id.
+def _seed_fk_prereqs(fake: Any) -> None:
+    """Seed the org / inventory / project records every JT-launch test
+    needs. FakeAap's ``_action`` handler materialises the launched job
+    record at a fresh id, so callers only seed JT records on top.
     """
     fake.seed("organizations", id=1, name="Default")
     fake.seed(
@@ -282,19 +280,49 @@ def _seed_basic_jt(fake: Any, *, job_status: str) -> None:
         organization_name="Default",
         scm_type="git",
     )
+
+
+def _seed_jt(fake: Any, *, name: str, id: int, playbook: str) -> None:
     fake.seed(
         "job_templates",
-        id=30,
-        name="deploy",
+        id=id,
+        name=name,
         organization=1,
         organization_name="Default",
         project=10,
         project_name="playbooks",
         inventory=20,
         inventory_name="prod",
-        playbook="deploy.yml",
+        playbook=playbook,
     )
+
+
+def _seed_basic_jt(fake: Any, *, job_status: str) -> None:
+    _seed_fk_prereqs(fake)
+    _seed_jt(fake, name="deploy", id=30, playbook="deploy.yml")
     fake.next_action_status = job_status
+
+
+def _seed_two_jts(fake: Any) -> None:
+    _seed_fk_prereqs(fake)
+    _seed_jt(fake, name="deploy-a", id=30, playbook="a.yml")
+    _seed_jt(fake, name="deploy-b", id=31, playbook="b.yml")
+
+
+class _PrefixingStubStream:
+    """Stand-in for ``StreamJobEvents`` that yields one identifiable
+    event per worker. The play name carries the materialised job id so
+    a failing assertion's stderr dump tells us which worker emitted
+    what. Used by every test that asserts on prefixed output.
+    """
+
+    def __init__(self, monitor: Any) -> None:
+        pass
+
+    def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
+        from untaped_awx.domain import JobEvent
+
+        return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
 
 
 def test_launch_track_exits_zero_on_successful_job(fake_aap: Any) -> None:
@@ -307,48 +335,6 @@ def test_launch_track_exits_one_on_job_failure(fake_aap: Any) -> None:
     _seed_basic_jt(fake_aap, job_status="failed")
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy", "--track"])
     assert result.exit_code == 1
-
-
-def _seed_two_jts(fake: Any) -> None:
-    """Seed shared FK prerequisites + two distinct JTs (``deploy-a``,
-    ``deploy-b``) for the multi-template parallel-launch tests.
-    """
-    fake.seed("organizations", id=1, name="Default")
-    fake.seed(
-        "inventories", id=20, name="prod", organization=1, organization_name="Default", kind=""
-    )
-    fake.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    fake.seed(
-        "job_templates",
-        id=30,
-        name="deploy-a",
-        organization=1,
-        organization_name="Default",
-        project=10,
-        project_name="playbooks",
-        inventory=20,
-        inventory_name="prod",
-        playbook="a.yml",
-    )
-    fake.seed(
-        "job_templates",
-        id=31,
-        name="deploy-b",
-        organization=1,
-        organization_name="Default",
-        project=10,
-        project_name="playbooks",
-        inventory=20,
-        inventory_name="prod",
-        playbook="b.yml",
-    )
 
 
 def test_launch_track_parallel_drains_concurrently(
@@ -387,21 +373,9 @@ def test_launch_track_output_lines_carry_template_prefix(
     originating template name so a shared stderr stays disambiguable.
     """
     from untaped_awx.cli import resource_commands
-    from untaped_awx.domain import JobEvent
 
     _seed_two_jts(fake_aap)
-
-    class _StubStream:
-        def __init__(self, monitor: Any) -> None:
-            pass
-
-        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
-            # One identifiable event per worker; the play name carries
-            # the materialised job id so test failure messages tell us
-            # which worker emitted what.
-            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
-
-    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStream)
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 0, result.output
@@ -423,19 +397,10 @@ def test_launch_track_one_failed_exits_one_and_logs_both(
     triggers ``exit 1``.
     """
     from untaped_awx.cli import resource_commands
-    from untaped_awx.domain import JobEvent
 
     _seed_two_jts(fake_aap)
     fake_aap.next_action_status = "failed"
-
-    class _StubStream:
-        def __init__(self, monitor: Any) -> None:
-            pass
-
-        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
-            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
-
-    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStream)
+    monkeypatch.setattr(resource_commands, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 1, result.output

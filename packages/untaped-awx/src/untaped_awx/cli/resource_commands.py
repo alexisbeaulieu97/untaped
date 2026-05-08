@@ -403,6 +403,16 @@ def _wait_parallel(
     return results, errors
 
 
+def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
+    """Echo per-job errors from a parallel-monitor helper and return
+    ``True`` when any were recorded so the caller can flip its
+    ``any_failed`` flag with ``|=``.
+    """
+    for failed_name, failure in errors:
+        typer.echo(f"error: {failed_name}: {failure}", err=True)
+    return bool(errors)
+
+
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
@@ -519,15 +529,11 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
             if track and len(launched) >= 2:
                 results, errors = _drain_parallel(ctx.monitor, launched, track_console)
                 jobs.extend(results)
-                for failed_name, failure in errors:
-                    typer.echo(f"error: {failed_name}: {failure}", err=True)
-                    any_failed = True
+                any_failed |= _echo_parallel_errors(errors)
             elif wait and len(launched) >= 2:
                 results, errors = _wait_parallel(ctx.repo, launched)
                 jobs.extend(results)
-                for failed_name, failure in errors:
-                    typer.echo(f"error: {failed_name}: {failure}", err=True)
-                    any_failed = True
+                any_failed |= _echo_parallel_errors(errors)
             else:
                 for n, job in launched:
                     try:
