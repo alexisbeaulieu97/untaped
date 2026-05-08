@@ -59,7 +59,7 @@ def make_resource_app(spec: AwxResourceSpec) -> typer.Typer:
     if "apply" in spec.commands:
         _add_apply(app, spec)
     for action in spec.actions:
-        builder = _ACTION_BUILDERS.get(action.name)
+        builder = ACTION_BUILDERS.get(action.name)
         if builder is not None:
             builder(app, spec)
 
@@ -760,7 +760,7 @@ def _scope(
 # ``_add_<action>(app, spec)`` builder above, and (3) register it
 # here. :func:`make_resource_app` itself stays untouched as new
 # actions are added.
-_ACTION_BUILDERS: dict[str, Callable[[typer.Typer, AwxResourceSpec], None]] = {
+ACTION_BUILDERS: dict[str, Callable[[typer.Typer, AwxResourceSpec], None]] = {
     "launch": _add_launch,
     "update": _add_update,
 }
