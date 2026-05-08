@@ -182,8 +182,15 @@ def run_command(
 
 
 def _print_failure_logs(ctx: AwxContext, suite: str, case: str, job_id: int) -> None:
-    """Best-effort: fetch the job's stdout and print its tail to stderr."""
-    job = Job(id=job_id, kind="job", status="successful")
+    """Best-effort: fetch the job's stdout and print its tail to stderr.
+
+    The :class:`Job` instance is constructed solely so :meth:`fetch_stdout`
+    can read ``id`` and ``kind``; ``status`` is never consumed. We pick
+    ``"failed"`` because every caller of this helper has already classified
+    the case as a failure — leaving ``"successful"`` would mislead a future
+    reader.
+    """
+    job = Job(id=job_id, kind="job", status="failed")
     try:
         lines = ctx.monitor.fetch_stdout(job)
     except AwxApiError as exc:

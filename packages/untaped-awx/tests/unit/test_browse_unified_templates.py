@@ -35,9 +35,10 @@ class _FakeUjtRepo:
         self.list_calls.append({"params": dict(params or {}), "limit": limit})
         return iter(self._records)
 
-    def get_by_ids(self, *, ids: list[str]) -> Iterator[dict[str, Any]]:
-        self.get_by_ids_calls.append(list(ids))
-        return iter(self._by_id[i] for i in ids if i in self._by_id)
+    def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+        materialised = list(ids)
+        self.get_by_ids_calls.append(materialised)
+        return iter(self._by_id[i] for i in materialised if i in self._by_id)
 
 
 # ---- BrowseUnifiedTemplates ----
