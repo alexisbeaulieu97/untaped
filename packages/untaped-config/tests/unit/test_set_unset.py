@@ -161,3 +161,37 @@ def test_unset_raises_when_named_profile_missing(_isolate_settings: Path) -> Non
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
     with pytest.raises(ConfigError, match=r"profile.*ghost"):
         UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
+
+
+# ── issue #22: validate recorded `active:` on the implicit path ─────────────
+
+
+def test_unset_raises_when_recorded_active_missing(_isolate_settings: Path) -> None:
+    """Issue #22: ``unset`` with ``active: ghost`` (no ``profiles.ghost``)
+    used to silently no-op. Now raises with a message naming the missing
+    profile, matching the shape ``list`` already had."""
+    _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
+    with pytest.raises(ConfigError, match="active profile 'ghost' does not exist"):
+        UnsetSetting(SettingsFileRepository())("log_level")
+
+
+def test_set_raises_directly_when_recorded_active_missing(
+    _isolate_settings: Path,
+) -> None:
+    """Issue #22: ``set`` previously raised only as a side effect of the
+    schema-validation step at the end of ``_apply``. Now raises directly
+    at resolution time, so ``set`` and ``unset`` behave consistently."""
+    _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
+    with pytest.raises(ConfigError, match="active profile 'ghost' does not exist"):
+        SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+
+
+def test_set_raises_when_env_active_missing(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``UNTAPED_PROFILE`` pointing at a missing profile also raises on
+    the implicit path (no ``--profile`` flag)."""
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: INFO\n")
+    monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
+    with pytest.raises(ConfigError, match="active profile 'ghost' does not exist"):
+        SetSetting(SettingsFileRepository())("log_level", "DEBUG")
