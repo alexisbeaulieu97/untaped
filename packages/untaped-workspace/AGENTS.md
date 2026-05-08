@@ -67,6 +67,15 @@ Honours the standard piping contract:
 - `--format json|yaml|raw`: emits one `ForeachOutcome` row per repo
   (including `command` and `duration_s`) after every repo finishes.
 
+Error handling has three modes: default fail-fast (break on first
+non-zero exit), `--continue-on-error` (walk every repo, exit 1 if any
+failed), and `--ignore-errors` (walk every repo, **exit 0** — usable
+inside `set -e` scripts). On `--format table`, a `failed in: a, b, c`
+summary is appended to stderr whenever at least one repo failed,
+regardless of mode — failures aren't silent even when ignored. The
+summary is suppressed in `--format json|yaml|raw` since each row's
+`returncode` already conveys the same information.
+
 ## Branch cascade is clone-time only
 
 Per-repo `branch` > workspace `defaults.branch` > the remote's HEAD —
@@ -74,6 +83,37 @@ honoured **only at clone time**. Subsequent `sync`s do *not* auto-switch
 branches: they skip-with-warning when the on-disk branch doesn't match the
 manifest's target. This stops a stale `defaults.branch` from kidnapping a
 user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
+
+## `init` vs. `adopt` vs. `forget`
+
+Three workspace lifecycle commands with deliberately distinct shapes:
+
+- **`workspace init <name>`** — empty workspace by name; defaults the
+  on-disk location to `<workspace.workspaces_dir>/<name>` (the
+  `workspaces_dir` setting is profile-overridable, default
+  `~/.untaped/workspaces`). Pass `-p / --path` to override the location
+  for a one-off workspace that lives elsewhere. Implementation:
+  `application.InitWorkspace`.
+- **`workspace adopt <path>`** — initialises a workspace from
+  already-cloned repos. Each immediate subdirectory containing `.git` is
+  recorded in the new manifest with its current `origin` URL and
+  checked-out branch (`infrastructure.LocalRepoDiscoverer` walks the
+  directory and reads both via `GitRunner.read_remote_url` /
+  `read_current_branch`; a detached HEAD becomes `branch: null`;
+  missing-`origin` clones surface via a stderr `warn` hook). Adopted
+  clones do not share objects with the bare cache — the cascade only
+  links new clones via `git clone --reference`. `<path>` stays
+  positional because adopt fundamentally targets an already-populated
+  directory. Implementation: `application.AdoptWorkspace`.
+- **`workspace forget <name>`** — removes the workspace's registry
+  entry only; the on-disk manifest and clones are preserved. Pass
+  `--prune` to also `rmtree` the workspace directory; pruning is
+  refused (mirroring `workspace remove --prune`) when any declared repo
+  has uncommitted changes. A missing manifest or missing directory are
+  tolerated — the registry entry is removed regardless. Implementation:
+  `application.ForgetWorkspace` with explicit `Filesystem` +
+  dirty-checker ports, wired to `LocalFilesystem` + `GitRunner` at the
+  CLI composition root.
 
 ## `sync --only` strict vs. relaxed semantics
 

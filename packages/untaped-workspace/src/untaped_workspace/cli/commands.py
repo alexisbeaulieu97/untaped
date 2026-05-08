@@ -15,14 +15,17 @@ from untaped_core import (
     OutputFormat,
     UntapedError,
     format_output,
+    get_settings,
     read_identifiers,
     report_errors,
 )
 
 from untaped_workspace.application import (
     AddRepo,
+    AdoptWorkspace,
     EditWorkspace,
     Foreach,
+    ForgetWorkspace,
     ImportWorkspace,
     InitWorkspace,
     ListWorkspaces,
@@ -37,6 +40,7 @@ from untaped_workspace.domain import SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
+    LocalRepoDiscoverer,
     ManifestRepository,
     WorkspaceRegistryRepository,
     WorkspaceResolver,
@@ -93,18 +97,88 @@ def list_command(
 
 @app.command("init", no_args_is_help=True)
 def init_command(
-    path: Path = typer.Argument(..., help="Workspace directory (created if missing)."),
-    name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
+    name: str = typer.Argument(..., help="Workspace name."),
+    path: Path | None = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Override location (default: workspace.workspaces_dir / name).",
+    ),
     branch: str | None = typer.Option(
         None, "--branch", "-b", help="Default branch for newly cloned repos."
     ),
 ) -> None:
-    """Initialise a new workspace at `path`."""
+    """Initialise a new workspace named `name`.
+
+    Default location is `<workspace.workspaces_dir>/<name>` (the
+    `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
+    """
     with report_errors():
+        target = path or (get_settings().workspace.workspaces_dir.expanduser() / name)
         ws = InitWorkspace(ManifestRepository(), WorkspaceRegistryRepository())(
-            path, name=name, branch=branch
+            target, name=name, branch=branch
         )
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
+
+
+# adopt ----------------------------------------------------------------------
+
+
+@app.command("adopt", no_args_is_help=True)
+def adopt_command(
+    path: Path = typer.Argument(..., help="Existing directory containing already-cloned repos."),
+    name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
+) -> None:
+    """Initialise a workspace from already-cloned repos under `path`.
+
+    Each immediate subdirectory containing `.git` is recorded in the new
+    `untaped.yml` with its current `origin` URL and checked-out branch.
+    """
+    with report_errors():
+        result = AdoptWorkspace(
+            ManifestRepository(),
+            WorkspaceRegistryRepository(),
+            LocalRepoDiscoverer(GitRunner()),
+            warn=lambda m: typer.echo(f"warning: {m}", err=True),
+        )(path, name=name)
+        ws = result.workspace
+        n = len(result.repos)
+        suffix = " — nothing matched (use 'workspace add' to declare repos)" if n == 0 else ""
+        typer.echo(
+            f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''}){suffix}",
+            err=True,
+        )
+
+
+# forget ---------------------------------------------------------------------
+
+
+@app.command("forget", no_args_is_help=True)
+def forget_command(
+    name: str = typer.Argument(..., help="Workspace name.", autocompletion=complete_workspace_name),
+    prune: bool = typer.Option(
+        False, "--prune", help="Also delete the workspace directory (refuses if dirty)."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
+) -> None:
+    """Remove a workspace from the registry.
+
+    The on-disk manifest and clones are preserved by default. Pass
+    `--prune` to also remove the workspace directory (refused if any
+    repo has uncommitted changes).
+    """
+    with report_errors():
+        if prune and not _confirm(f"prune workspace directory for {name!r}?", yes=yes):
+            typer.echo("aborted", err=True)
+            raise typer.Exit(code=1)
+        ws = ForgetWorkspace(
+            WorkspaceRegistryRepository(),
+            ManifestRepository(),
+            fs=LocalFilesystem(),
+            status=GitRunner(),
+        )(name, prune=prune)
+        action = "forgot and pruned" if prune else "forgot"
+        typer.echo(f"{action} workspace {ws.name!r}", err=True)
 
 
 # add ------------------------------------------------------------------------
@@ -281,6 +355,15 @@ def foreach_command(
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Don't stop after a non-zero exit."
     ),
+    ignore_errors: bool = typer.Option(
+        False,
+        "--ignore-errors",
+        help=(
+            "Treat per-repo failures as non-fatal. Implies --continue-on-error "
+            "and exits 0 even when some repos failed. Wins on exit code if both "
+            "flags are passed. Failed repos are still listed in the summary."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -297,13 +380,14 @@ def foreach_command(
     """
     with report_errors():
         ws = _resolve(name, path)
+        keep_going = continue_on_error or ignore_errors
         outcomes = Foreach(ManifestRepository(), runner=shell_runner)(
             ws,
             command=cmd,
             parallel=parallel,
-            continue_on_error=continue_on_error,
+            continue_on_error=keep_going,
         )
-        any_failed = any(o.returncode != 0 for o in outcomes)
+        failed = [o.repo for o in outcomes if o.returncode != 0]
         if fmt == "table":
             for o in outcomes:
                 for line in o.stdout.splitlines():
@@ -312,10 +396,12 @@ def foreach_command(
                     typer.echo(f"[{o.repo}] {line}", err=True)
                 if o.returncode != 0:
                     typer.echo(f"[{o.repo}] exit {o.returncode}", err=True)
+            if failed:
+                typer.echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
             typer.echo(format_output(rows, fmt=fmt, columns=columns))
-        if any_failed:
+        if failed and not ignore_errors:
             raise typer.Exit(code=1)
 
 

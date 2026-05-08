@@ -97,7 +97,11 @@ def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_collection_fields_skipped() -> None:
     entries = {e.key for e in ListSettings(SettingsFileRepository())()}
-    assert not any(k.startswith("workspace.workspaces") for k in entries)
+    # ``workspace.workspaces`` is a list of WorkspaceEntry — collections are
+    # skipped. The sibling scalar ``workspace.workspaces_dir`` must still
+    # appear, so the prefix check would be too broad.
+    assert "workspace.workspaces" not in entries
+    assert "workspace.workspaces_dir" in entries
 
 
 def test_env_var_naming_for_top_level() -> None:
@@ -124,6 +128,13 @@ def test_awx_api_prefix_default_shown() -> None:
     api_prefix = entries["awx.api_prefix"]
     assert api_prefix.source == Source(kind="default")
     assert api_prefix.value == "/api/controller/v2/"
+
+
+def test_workspaces_dir_default_shown() -> None:
+    entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
+    workspaces_dir = entries["workspace.workspaces_dir"]
+    assert workspaces_dir.source == Source(kind="default")
+    assert str(workspaces_dir.value) == "~/.untaped/workspaces"
 
 
 def test_source_label_renders_string() -> None:

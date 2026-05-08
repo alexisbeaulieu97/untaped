@@ -26,8 +26,11 @@ def test_walks_nested_models() -> None:
 def test_skips_collection_fields() -> None:
     descriptors = walk_settings(Settings)
     keys = {d.key for d in descriptors}
-    # ``workspace.workspaces`` is a list — should not appear
-    assert not any(k.startswith("workspace.workspaces") for k in keys)
+    # ``workspace.workspaces`` is a list — should not appear. The sibling
+    # scalar ``workspace.workspaces_dir`` must still appear, so a prefix
+    # check would be too broad.
+    assert "workspace.workspaces" not in keys
+    assert "workspace.workspaces_dir" in keys
 
 
 def test_secrets_are_marked() -> None:

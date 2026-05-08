@@ -41,6 +41,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
               token: ghp_xxx
             workspace:
               cache_dir: /custom/cache
+              workspaces_dir: /custom/workspaces
         workspace:
           workspaces:
             - name: prod
@@ -57,6 +58,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert s.github.token is not None
     assert s.github.token.get_secret_value() == "ghp_xxx"
     assert s.workspace.cache_dir == Path("/custom/cache")
+    assert s.workspace.workspaces_dir == Path("/custom/workspaces")
     assert len(s.workspace.workspaces) == 1
     assert s.workspace.workspaces[0].name == "prod"
     assert s.workspace.workspaces[0].path == "/tmp/prod"
@@ -66,6 +68,19 @@ def test_workspace_cache_dir_default(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
     assert s.workspace.cache_dir == Path("~/.untaped/repositories")
+
+
+def test_workspaces_dir_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    s = get_settings()
+    assert s.workspace.workspaces_dir == Path("~/.untaped/workspaces")
+
+
+def test_workspaces_dir_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_WORKSPACE__WORKSPACES_DIR", "/from-env/ws")
+    s = get_settings()
+    assert s.workspace.workspaces_dir == Path("/from-env/ws")
 
 
 def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
