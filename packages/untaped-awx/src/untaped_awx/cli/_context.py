@@ -22,8 +22,10 @@ from untaped_awx.domain import ResourceSpec
 from untaped_awx.infrastructure import AwxClient, AwxConfig, AwxResourceCatalog
 from untaped_awx.infrastructure.fk_resolver import FkResolver
 from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
+from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
 from untaped_awx.infrastructure.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.strategy_resolver import StaticStrategyResolver
+from untaped_awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -53,6 +55,8 @@ class AwxContext:
         self.fk = FkResolver(self.repo, self.catalog)
         self.strategies = StaticStrategyResolver()
         self.monitor = PollingJobMonitor(self.repo)
+        self.jobs = JobRecordRepository(self.repo)
+        self.ujts = UnifiedTemplateRepository(self.repo)
         self.default_organization = config.default_organization
 
     def close(self) -> None:
