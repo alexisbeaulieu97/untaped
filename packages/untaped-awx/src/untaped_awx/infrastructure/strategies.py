@@ -13,12 +13,14 @@ in-place strip / diff / preserve passes.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
 from untaped_awx.domain import ResourceSpec, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.spec import awx_api_path
+
+if TYPE_CHECKING:
+    from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
 
 
 class DefaultApplyStrategy:

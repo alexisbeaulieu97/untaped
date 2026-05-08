@@ -23,11 +23,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.job import KIND_TO_API_PATH
+
+if TYPE_CHECKING:
+    from untaped_awx.application.ports import RawHttpResourceClient
 
 SleepFn = Callable[[float], None]
 

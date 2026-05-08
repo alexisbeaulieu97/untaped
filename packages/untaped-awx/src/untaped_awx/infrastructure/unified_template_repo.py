@@ -9,9 +9,10 @@ returned page is stable across re-runs.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from untaped_awx.application.ports import RawHttpResourceClient
+if TYPE_CHECKING:
+    from untaped_awx.application.ports import RawHttpResourceClient
 
 _PATH = "unified_job_templates/"
 

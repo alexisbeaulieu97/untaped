@@ -9,10 +9,12 @@ hit the same path the prior CLI helper used (defensive, rarely fires).
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain.job import KIND_TO_API_PATH
+
+if TYPE_CHECKING:
+    from untaped_awx.application.ports import RawHttpResourceClient
 
 
 class JobRecordRepository:
