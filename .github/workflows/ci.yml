@@ -26,7 +26,9 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-          python-version-file: .python-version
+          # No `python-version` here on purpose: `uv sync` reads
+          # `.python-version` directly and installs that interpreter,
+          # so duplicating the pin in the action is just drift surface.
 
       - name: Cache pre-commit hook envs
         uses: actions/cache@v4
