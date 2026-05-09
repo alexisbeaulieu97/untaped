@@ -1,3 +1,8 @@
+# Install pre-commit and pre-push hooks together so the mypy pre-push
+# gate fires without contributors needing to remember
+# ``pre-commit install --hook-type pre-push``.
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -29,3 +34,17 @@ repos:
         # `[tool.importlinter]` config lives) — a config edit alone must
         # still re-run the contracts.
         files: '\.py$|^pyproject\.toml$'
+
+      # Strict-mypy gate at push time. Mypy is slow enough that running
+      # it per-commit discourages frequent commits; ``pre-push`` catches
+      # regressions before CI without paying the cost on every commit.
+      # ``uv run mypy`` reuses the workspace venv so the local invocation
+      # matches CI exactly. Trigger mirrors ``lint-imports`` above so a
+      # ``[tool.mypy]`` config edit alone re-runs the gate.
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        files: '\.py$|^pyproject\.toml$'
+        stages: [pre-push]
