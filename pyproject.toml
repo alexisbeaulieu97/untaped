@@ -37,6 +37,7 @@ untaped-profile = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.4",
     "mypy>=1.20.2",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
@@ -44,6 +45,83 @@ dev = [
     "respx>=0.23.1",
     "ruff>=0.15.12",
     "types-pyyaml>=6.0.12.20260408",
+]
+
+[tool.importlinter]
+root_packages = [
+    "untaped",
+    "untaped_core",
+    "untaped_config",
+    "untaped_profile",
+    "untaped_workspace",
+    "untaped_awx",
+    "untaped_github",
+]
+# TYPE_CHECKING imports don't create runtime edges; the layered DDD rule
+# allows them. tests/unit/test_layering.py documents and enforces the same
+# exception via AST walk — keep both checkers in sync if the rule changes.
+exclude_type_checking_imports = true
+
+# `untaped` (root aggregator: importing every domain is its job) and
+# `untaped_core` (flat shared library, no DDD layers) are intentionally
+# absent from the per-domain layers + independence contracts. The
+# `core → siblings` direction is forbidden separately below. When adding
+# a new domain *to this config block*, append its import root to
+# `root_packages` above, the `independence` contract's `modules`, the
+# layers contract's `containers`, and the `untaped_core does not depend
+# on any domain` contract's `forbidden_modules`. (Wider workspace
+# touchpoints — `[tool.mypy] packages`, root `[project] dependencies`,
+# `src/untaped/main.py` — are covered by the "Add a new domain package"
+# recipe in the root AGENTS.md.)
+
+[[tool.importlinter.contracts]]
+name = "Sibling domains are mutually independent"
+# `independence` says "these modules cannot import each other" — it does
+# not restrict imports of any other module (e.g. `untaped_core` and
+# third-party libs remain fair game).
+type = "independence"
+modules = [
+    "untaped_awx",
+    "untaped_workspace",
+    "untaped_github",
+    "untaped_config",
+    "untaped_profile",
+]
+
+[[tool.importlinter.contracts]]
+name = "Per-domain layers (cli > application | infrastructure > domain)"
+type = "layers"
+containers = [
+    "untaped_awx",
+    "untaped_workspace",
+    "untaped_config",
+    "untaped_profile",
+    "untaped_github",
+]
+# `application | infrastructure` makes the two siblings of the same
+# layer: `cli` may import both, both may import `domain`, but neither
+# may import the other. This is the partial-order shape the 4-layer
+# DDD diagram in AGENTS.md describes.
+layers = [
+    "cli",
+    "application | infrastructure",
+    "domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "untaped_core does not depend on any domain"
+# `untaped_core` is the shared kit — by definition downstream-only.
+# An accidental `core → sibling` import would invert the dependency
+# direction and likely cause cycles at startup.
+type = "forbidden"
+source_modules = ["untaped_core"]
+forbidden_modules = [
+    "untaped",
+    "untaped_awx",
+    "untaped_workspace",
+    "untaped_github",
+    "untaped_config",
+    "untaped_profile",
 ]
 
 [tool.ruff]

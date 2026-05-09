@@ -260,6 +260,11 @@ Then:
 - `uv add untaped-<X>` to add the package as a runtime dep of the root.
 - Add the module to `[tool.mypy] packages = [...]` in the root
   `pyproject.toml`.
+- Add the import root to the four `[tool.importlinter]` lists in the
+  root `pyproject.toml`: `root_packages`, the `independence` contract's
+  `modules`, the layers contract's `containers`, and the
+  `untaped_core does not depend on any domain` contract's
+  `forbidden_modules`.
 - Add the package to this file's Repository Map.
 - **Create `packages/untaped-<X>/AGENTS.md`** for domain-specific
   internals (resource framework, side-effect adapters, polling cadence,
