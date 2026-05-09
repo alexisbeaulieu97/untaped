@@ -689,10 +689,6 @@ def test_workflow_launch_rejects_unsupported_flags(fake_aap: Any) -> None:
     )
     assert result.exit_code != 0
     output = result.output + (result.stderr or "")
-    import sys
-
-    print("=== DEBUG full output ===\n", repr(output), file=sys.stderr, flush=True)
-    print("=== DEBUG exit_code ===", result.exit_code, file=sys.stderr, flush=True)
     assert "--verbosity" in output
     assert "WorkflowJobTemplate.launch does not accept" in output
 

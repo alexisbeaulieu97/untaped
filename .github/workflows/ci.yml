@@ -49,13 +49,18 @@ jobs:
         run: uv run mypy
 
       - name: Pytest
-        # CI runners have no TTY, so `shutil.get_terminal_size()` falls
-        # back to 80 cols and Rich-rendered Typer help panels truncate
-        # long flag names. A handful of integration tests assert flag
-        # names appear in `--help` output and break under that. Setting
-        # COLUMNS here matches a typical local terminal and unblocks CI;
-        # the underlying width-fragility (CliRunner invocations should
-        # pin `terminal_width`) is tracked as a follow-up.
+        # In CI, Rich force-enables colors (it detects the CI=true env)
+        # and splits flag names like `--verbosity` into two styled spans
+        # — `\e[36m-\e[0m\e[36m-verbosity\e[0m` — so the literal
+        # substring `--verbosity` no longer appears in `result.output`.
+        # A handful of integration tests assert flag names appear in
+        # CliRunner output and break under that. NO_COLOR disables
+        # Rich's color rendering so substring assertions work; COLUMNS
+        # widens the rendered panel so flag listings aren't word-wrapped
+        # mid-name. The underlying fragility (CliRunner invocations
+        # should pin `terminal_width` and strip ANSI before substring
+        # checks) is worth a follow-up issue.
         env:
+          NO_COLOR: "1"
           COLUMNS: "200"
         run: uv run pytest
