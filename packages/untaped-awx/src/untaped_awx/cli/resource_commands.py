@@ -436,10 +436,11 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
     hide_diff_mode = _LAUNCH_FLAG_TO_ACCEPT["--diff-mode"] not in accepts
     hide_job_type = _LAUNCH_FLAG_TO_ACCEPT["--job-type"] not in accepts
 
-    # C901: composes optional ``--stdin`` / ``--track`` / ``--wait`` paths
-    # into the spec-driven launch body builder, then drives parallel /
-    # sequential dispatch — one branch per launch path the parent
-    # ``_add_launch`` exposes.
+    # C901: launch dispatch is a 2x2 matrix — ``--track`` vs ``--wait``,
+    # parallel (>=2 templates) vs sequential — plus per-id error capture
+    # and the ``--track`` job-status exit-code propagation. Splitting
+    # either axis would lose the stable-stderr ordering guarantee
+    # ``_drain_parallel`` provides or duplicate the body.
     @app.command("launch", no_args_is_help=True)
     def launch_command(  # noqa: C901
         names: list[str] | None = typer.Argument(None, help=f"{spec.kind} name(s)."),
