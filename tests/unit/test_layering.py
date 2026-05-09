@@ -273,7 +273,11 @@ def _discover_infrastructure_dirs() -> list[tuple[str, Path]]:
     return pairs
 
 
-def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:
+# C901: layering contract walks the AST for the three forbidden Settings
+# read forms — direct import, attribute access on ``untaped_core.settings``,
+# alias rebinding. One branch per recognised form; refactoring would
+# obscure the 1:1 mapping between contract clause and detector.
+def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # noqa: C901
     """Return ``"file:line ..."`` strings for forbidden Settings reads.
 
     Direct imports (flagged at the import site):
