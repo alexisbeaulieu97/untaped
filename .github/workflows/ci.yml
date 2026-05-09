@@ -37,7 +37,10 @@ jobs:
             pre-commit-${{ runner.os }}-
 
       - name: Sync workspace
-        run: uv sync --all-packages
+        # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
+        # pins, so a stale lock surfaces as a sync failure instead of a silent
+        # in-CI resolve that diverges from local installs.
+        run: uv sync --frozen --all-packages
 
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
