@@ -66,7 +66,11 @@ class FakeAap:
         url_re = re.compile(rf"^{re.escape(self.base_url)}{re.escape(self.api_prefix)}.+")
         mock.route(url__regex=url_re.pattern).mock(side_effect=self._dispatch)
 
-    def _dispatch(self, request: httpx.Request) -> httpx.Response:
+    # C901: in-memory AAP HTTP fixture — dispatches on (method, path-shape)
+    # for the GET / POST / PUT / PATCH / DELETE families. CC is intrinsic
+    # to mocking the API surface; splitting per-method would scatter the
+    # routing table across helpers without simplifying any one of them.
+    def _dispatch(self, request: httpx.Request) -> httpx.Response:  # noqa: C901
         path = request.url.path[len(self.api_prefix) :]
         parts = [p for p in path.split("/") if p]
         params = dict(request.url.params)
@@ -341,7 +345,11 @@ _SUB_PATH_STORE: dict[tuple[str, str], str] = {
 }
 
 
-def _matches_all(
+# C901: filter-param matcher for ``?key=val&...`` queries on the in-memory
+# store. CC scales with the supported predicate shapes (exact, ``__in``,
+# nested-FK lookup, sub-endpoint membership). Each branch is one
+# AAP-supported filter form — the matcher is the spec.
+def _matches_all(  # noqa: C901
     record: dict[str, Any],
     params: dict[str, str],
     *,

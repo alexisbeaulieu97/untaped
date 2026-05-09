@@ -415,7 +415,11 @@ def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
     return bool(errors)
 
 
-def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
+# C901: per-kind launch-flag wiring dispatches over ``ActionSpec.accepts`` —
+# one branch per accepted narrowable flag. Splitting would shred the
+# structural guarantee the launch parser provides; see
+# packages/untaped-awx/AGENTS.md (Resource framework → _add_launch).
+def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
     # Hide each narrowable flag whose payload field isn't in this
@@ -432,8 +436,12 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:
     hide_diff_mode = _LAUNCH_FLAG_TO_ACCEPT["--diff-mode"] not in accepts
     hide_job_type = _LAUNCH_FLAG_TO_ACCEPT["--job-type"] not in accepts
 
+    # C901: composes optional ``--stdin`` / ``--track`` / ``--wait`` paths
+    # into the spec-driven launch body builder, then drives parallel /
+    # sequential dispatch — one branch per launch path the parent
+    # ``_add_launch`` exposes.
     @app.command("launch", no_args_is_help=True)
-    def launch_command(
+    def launch_command(  # noqa: C901
         names: list[str] | None = typer.Argument(None, help=f"{spec.kind} name(s)."),
         stdin: bool = typer.Option(False, "--stdin", help="Read names from stdin (one per line)."),
         organization: str | None = typer.Option(
