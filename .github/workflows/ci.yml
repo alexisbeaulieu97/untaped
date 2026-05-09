@@ -49,4 +49,13 @@ jobs:
         run: uv run mypy
 
       - name: Pytest
+        # CI runners have no TTY, so `shutil.get_terminal_size()` falls
+        # back to 80 cols and Rich-rendered Typer help panels truncate
+        # long flag names. A handful of integration tests assert flag
+        # names appear in `--help` output and break under that. Setting
+        # COLUMNS here matches a typical local terminal and unblocks CI;
+        # the underlying width-fragility (CliRunner invocations should
+        # pin `terminal_width`) is tracked as a follow-up.
+        env:
+          COLUMNS: "200"
         run: uv run pytest
