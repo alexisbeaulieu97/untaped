@@ -66,12 +66,13 @@ exclude_type_checking_imports = true
 # `untaped_core` (flat shared library, no DDD layers) are intentionally
 # absent from the per-domain layers + independence contracts. The
 # `core → siblings` direction is forbidden separately below. When adding
-# a 7th domain *to this config block*, append its import root to
+# a new domain *to this config block*, append its import root to
 # `root_packages` above, the `independence` contract's `modules`, the
-# layers contract's `containers`, and this comment's `forbidden_modules`.
-# (Wider workspace touchpoints — `[tool.mypy] packages`, root
-# `[project] dependencies`, `src/untaped/main.py` — are covered by the
-# "Add a new domain package" recipe in the root AGENTS.md.)
+# layers contract's `containers`, and the `untaped_core does not depend
+# on any domain` contract's `forbidden_modules`. (Wider workspace
+# touchpoints — `[tool.mypy] packages`, root `[project] dependencies`,
+# `src/untaped/main.py` — are covered by the "Add a new domain package"
+# recipe in the root AGENTS.md.)
 
 [[tool.importlinter.contracts]]
 name = "Sibling domains are mutually independent"
