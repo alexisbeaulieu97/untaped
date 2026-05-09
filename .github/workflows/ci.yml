@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Don't cancel in-flight runs on main — a fast follow-up merge would
+  # otherwise discard the merge-commit's gate run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version-file: .python-version
+
+      - name: Cache pre-commit hook envs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Sync workspace
+        run: uv sync --all-packages
+
+      - name: Pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      - name: mypy
+        run: uv run mypy
+
+      - name: Pytest
+        run: uv run pytest
