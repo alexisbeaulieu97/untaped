@@ -32,7 +32,7 @@ Adding a new setting is automatic from this side — see
 The new key shows up in `untaped config list` without any wiring change
 in this package.
 
-## Write path: validate-then-mutate-under-lock
+## Write path: atomic mutate, with validation on `set`
 
 Both `set_value` and `unset_value` in
 `infrastructure/settings_repo.py` go through
@@ -41,15 +41,19 @@ read-modify-write helper. Don't call `read_config_dict` /
 `write_config_dict` directly from this package; concurrent CLIs would
 clobber each other otherwise.
 
-Inside the `_apply` callback `mutate_config` runs under the lock,
-`set_value` mutates the in-memory dict via `set_at_path` and then runs
-`_merge_for_validation` (`resolve_profiles` with
-`active_override=target`, then `splice_workspace_registry` to hoist the
-top-level `workspace.workspaces` registry back into the merged dict, then
-`Settings.model_validate`). If validation fails, `_apply` raises
-`ConfigError` and `mutate_config` never flushes the new YAML to disk.
-Any new setting that depends on the workspace registry being present at
-validation time inherits this for free.
+Validation is asymmetric. `set_value`'s `_apply` callback mutates the
+in-memory dict via `set_at_path`, then calls `_merge_for_validation`
+(which runs `resolve_profiles` with `active_override=target` and then
+`splice_workspace_registry` to hoist the top-level `workspace.workspaces`
+registry back into the merged dict, returning the effective dict),
+then runs `Settings.model_validate(merged)` directly in the callback.
+If validation fails, `_apply` raises `ConfigError` and `mutate_config`
+never flushes the new YAML to disk. Any new setting that depends on the
+workspace registry being present at validation time inherits this for
+free. `unset_value`'s `_apply` callback only calls `unset_at_path`
+inside the lock — there is no schema-validation pass on remove. A
+removal that leaves the merged dict in a state pydantic would reject is
+detected at next-load (`get_settings`), not at unset time.
 
 The `active_override=target` argument is load-bearing when writing to a
 non-active profile. Validating against the live profile's view would
