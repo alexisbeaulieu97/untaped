@@ -16,13 +16,16 @@ schema-driven — they walk `untaped_core.config_schema` rather than
 hard-coding key names:
 
 - `list_settings.py` exposes two use cases: `ListSettings` renders the
-  *effective* view (env / active profile / `default` / schema fallback)
-  and is the default for `untaped config list`; `ListAllProfilesSettings`
-  is the `--all-profiles` view, emitting one row per `(profile, key)`
-  pair where the profile sets the leaf (schema defaults excluded).
+  *effective* view and is the default for `untaped config list`. Each
+  row's `Source` resolves to one of `env` / `profile:<name>` / `default`
+  / `unset` (the last when no value is set and the descriptor has no
+  default). `ListAllProfilesSettings` is the `--all-profiles` view,
+  emitting one row per `(profile, key)` pair where the profile sets the
+  leaf (schema defaults excluded).
 - `set_setting.py` / `unset_setting.py` resolve the user-supplied dotted
-  key with `find_descriptor`, raising `ConfigError` with the full set
-  of valid keys if the lookup fails.
+  key via `SettingsFileRepository.descriptor()`, which calls
+  `find_descriptor` and raises `ConfigError` with the full set of valid
+  keys if it returns `None`.
 
 Adding a new setting is automatic from this side — see
 [`untaped-core/AGENTS.md` "Recipe: add a new setting"](../untaped-core/AGENTS.md#recipe-add-a-new-setting).
@@ -41,9 +44,12 @@ clobber each other otherwise.
 Inside the `_apply` callback `mutate_config` runs under the lock,
 `set_value` mutates the in-memory dict via `set_at_path` and then runs
 `_merge_for_validation` (`resolve_profiles` with
-`active_override=target` → `Settings.model_validate`). If validation
-fails, `_apply` raises `ConfigError` and `mutate_config` never flushes
-the new YAML to disk.
+`active_override=target`, then `splice_workspace_registry` to hoist the
+top-level `workspace.workspaces` registry back into the merged dict, then
+`Settings.model_validate`). If validation fails, `_apply` raises
+`ConfigError` and `mutate_config` never flushes the new YAML to disk.
+Any new setting that depends on the workspace registry being present at
+validation time inherits this for free.
 
 The `active_override=target` argument is load-bearing when writing to a
 non-active profile. Validating against the live profile's view would
