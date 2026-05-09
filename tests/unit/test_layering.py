@@ -19,6 +19,14 @@ in ``AGENTS.md`` is automatically covered with no test edits.
 
 ``untaped-core`` has no ``application/`` or ``infrastructure/`` directory
 by design (it's a flat shared kit), so it is excluded automatically.
+
+These tests overlap intentionally with the ``[tool.importlinter]``
+contracts in ``pyproject.toml`` (defense-in-depth) but cover what the
+contracts can't: the ``Settings``/``get_settings`` reach-around (with
+alias-bypass detection — see :func:`_settings_violations_in_file`) and
+the AWX-specific ``infrastructure``-only-spec-field guard. The
+import-linter contracts cover layers + sibling-independence at the
+graph level. Keep both in sync if the rules change.
 """
 
 from __future__ import annotations

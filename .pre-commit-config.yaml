@@ -17,3 +17,15 @@ repos:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: lint-imports
+        name: lint-imports (import-linter)
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        # Trigger on Python edits and on `pyproject.toml` (where the
+        # `[tool.importlinter]` config lives) — a config edit alone must
+        # still re-run the contracts.
+        files: '\.py$|^pyproject\.toml$'
