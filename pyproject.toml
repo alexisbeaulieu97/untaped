@@ -62,12 +62,16 @@ root_packages = [
 # exception via AST walk — keep both checkers in sync if the rule changes.
 exclude_type_checking_imports = true
 
-# Each entry below covers a domain package. `untaped` (root aggregator:
-# importing every domain is its job) and `untaped_core` (flat shared
-# library, no DDD layers) are intentionally absent. When adding a 7th
-# domain, append its import root to `root_packages` above, the
-# `independence` contract's `modules`, and the layers contract's
-# `containers`.
+# `untaped` (root aggregator: importing every domain is its job) and
+# `untaped_core` (flat shared library, no DDD layers) are intentionally
+# absent from the per-domain layers + independence contracts. The
+# `core → siblings` direction is forbidden separately below. When adding
+# a 7th domain *to this config block*, append its import root to
+# `root_packages` above, the `independence` contract's `modules`, the
+# layers contract's `containers`, and this comment's `forbidden_modules`.
+# (Wider workspace touchpoints — `[tool.mypy] packages`, root
+# `[project] dependencies`, `src/untaped/main.py` — are covered by the
+# "Add a new domain package" recipe in the root AGENTS.md.)
 
 [[tool.importlinter.contracts]]
 name = "Sibling domains are mutually independent"
@@ -93,10 +97,30 @@ containers = [
     "untaped_profile",
     "untaped_github",
 ]
+# `application | infrastructure` makes the two siblings of the same
+# layer: `cli` may import both, both may import `domain`, but neither
+# may import the other. This is the partial-order shape the 4-layer
+# DDD diagram in AGENTS.md describes.
 layers = [
     "cli",
     "application | infrastructure",
     "domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "untaped_core does not depend on any domain"
+# `untaped_core` is the shared kit — by definition downstream-only.
+# An accidental `core → sibling` import would invert the dependency
+# direction and likely cause cycles at startup.
+type = "forbidden"
+source_modules = ["untaped_core"]
+forbidden_modules = [
+    "untaped",
+    "untaped_awx",
+    "untaped_workspace",
+    "untaped_github",
+    "untaped_config",
+    "untaped_profile",
 ]
 
 [tool.ruff]
