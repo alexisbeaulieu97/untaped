@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Don't cancel in-flight runs on main — a fast follow-up merge would
+  # otherwise discard the merge-commit's gate run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          # No `python-version` here on purpose: `uv sync` reads
+          # `.python-version` directly and installs that interpreter,
+          # so duplicating the pin in the action is just drift surface.
+
+      - name: Cache pre-commit hook envs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Sync workspace
+        # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
+        # pins, so a stale lock surfaces as a sync failure instead of a silent
+        # in-CI resolve that diverges from local installs.
+        run: uv sync --frozen --all-packages
+
+      - name: Pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      - name: mypy
+        run: uv run mypy
+
+      - name: Pytest
+        # In CI, Rich force-enables styling (it detects the GA `CI=true`
+        # env). Even when emphasizing a flag like `--verbosity`, Rich
+        # splits it into two SGR-styled spans —
+        #   \e[1;2m-\e[0m\e[1;2m-verbosity\e[0m
+        # — so the literal substring `--verbosity` no longer appears in
+        # `result.output`. A handful of integration tests assert flag
+        # names with simple `in` / regex checks and break under that.
+        # `NO_COLOR` only suppresses color SGRs (dim/bold still fire);
+        # `TERM=dumb` makes Rich drop all styling. `COLUMNS` widens the
+        # rendered panels so flag listings aren't word-wrapped mid-name.
+        # The underlying fragility (CliRunner should pin
+        # `terminal_width` / tests should strip ANSI before substring
+        # checks) is worth a follow-up.
+        env:
+          TERM: dumb
+          NO_COLOR: "1"
+          COLUMNS: "200"
+        run: uv run pytest
