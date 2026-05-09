@@ -186,6 +186,7 @@ Pipeline examples and the morning-routine workflow live in
 
 ```bash
 uv sync --all-packages                          # install / sync everything
+uv run pre-commit install                       # local lint at commit + mypy at push
 uv add --package untaped-awx httpx-retries      # runtime dep on a package
 uv add --group dev some-test-helper             # dev dep on the root
 uv run pytest                                   # tests with coverage (gate: 80%)
