@@ -70,24 +70,31 @@ profile) reports the conceptual `default` placeholder regardless of
 whether `profiles.default` exists on disk — schema defaults are in
 effect either way, and there's no user typo to protect against.
 
+The root `--profile <name>` flag flows through `UNTAPED_PROFILE`
+(see `untaped-core/AGENTS.md` profile resolution), so a per-call
+override is reported as `source=env` — `current` doesn't need a
+separate flag-detection path.
+
 ## Mutation invariants
 
 Rules spread across the mutating use cases. A new mutating use case
 should honour the same set:
 
-- `RenameProfile` rejects renaming `default` and rejects `default`
-  as the rename target (it's the implicit floor; renaming it would
-  break the fallback layer). When the renamed profile is the
-  *persisted* active one, `active:` is updated in the same
-  `mutate_config` op via `untaped_core.config_file.rename_profile`
-  — so the pointer never points at a missing profile mid-rename.
+- `RenameProfile` rejects empty new names, rejects renaming
+  `default`, and rejects `default` as the rename target (it's the
+  implicit floor; renaming it would break the fallback layer). When
+  the renamed profile is the *persisted* active one, `active:` is
+  updated in the same `mutate_config` op via
+  `untaped_core.config_file.rename_profile` — so the pointer never
+  points at a missing profile mid-rename.
 - `DeleteProfile` refuses to delete the persisted active profile
   (would orphan `active:`). `default` is **not** special-cased — when
-  it's not active, deleting it just clears any shared overrides and
-  values fall through to schema defaults.
-- `CreateProfile` deep-copies on `--copy-from` so later edits to the
-  source profile don't bleed into the new one. Empty names and
-  already-existing names are rejected with the known-profiles list.
+  it's not active, deleting `default` just clears any shared
+  overrides and values fall through to schema defaults.
+- `CreateProfile` rejects empty names and already-existing names
+  (returning the known-profiles list in the error). Deep-copies on
+  `--copy-from` so later edits to the source profile don't bleed
+  into the new one.
 
 ## Redaction
 
@@ -98,11 +105,11 @@ should honour the same set:
 `--format json` redact; `--show-secrets` reveals. Note that
 `profile.data` here is the **resolved view by default** (default ⤥
 named) and only the verbatim block under `--raw` — `ShowProfile`
-overloads `Profile.data` per `show_profile.py`'s flag handling, so
-the `Profile` model's docstring ("verbatim block, no fallback merge")
-is true for `ListProfiles` but not for the `--raw=False` path of
-`show`. For the row-rendering cousin used by `untaped config list`,
-see
+overloads `Profile.data` based on the `--raw` flag in
+`show_profile.py`, so the `Profile` model's docstring ("verbatim
+block, no fallback merge") is true for `ListProfiles` but not for
+the default (`--raw=False`) path of `show`. For the row-rendering
+cousin used by `untaped config list`, see
 [`untaped-config/AGENTS.md` "Redaction"](../untaped-config/AGENTS.md#redaction).
 
 ## Layering
@@ -111,11 +118,9 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD".
 Three package-specific notes:
 
 - **`application/ports.py` already exists.** A single
-  `ProfileRepository` Protocol satisfies every use case. This domain
-  joins `untaped-awx` and `untaped-workspace` as a reference shape
-  for the rule that every domain consolidate ports into one
-  `application/ports.py` module; domains that don't yet consolidate
-  (currently `untaped-config`, `untaped-github`) should follow this
+  `ProfileRepository` Protocol satisfies every use case — the same
+  shape used by other domains that have consolidated their ports
+  module. Domains that haven't yet consolidated should follow this
   shape when they do.
 - **One concrete adapter.** `ProfileFileRepository` is a thin pass
   through to `untaped_core.config_file` (`read_profile`,
