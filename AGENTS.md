@@ -44,8 +44,8 @@ untaped/
 | ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
 | `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps. Hosts `--profile`.  | this file     |
 | `untaped-core`      | lib  | Settings, http+TLS, config schema/file, profiles, output, stdin.      | [`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md) |
-| `untaped-config`    | lib  | The `config` meta-domain (operates on profile contents).              | —             |
-| `untaped-profile`   | lib  | The `profile` meta-domain (manages the profile inventory).            | —             |
+| `untaped-config`    | lib  | The `config` meta-domain (operates on profile contents).              | [`packages/untaped-config/AGENTS.md`](packages/untaped-config/AGENTS.md) |
+| `untaped-profile`   | lib  | The `profile` meta-domain (manages the profile inventory).            | [`packages/untaped-profile/AGENTS.md`](packages/untaped-profile/AGENTS.md) |
 | `untaped-workspace` | lib  | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
 | `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
 | `untaped-github`    | lib  | GitHub bounded context — authenticated user only today.               | [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md) |
@@ -79,19 +79,30 @@ Non-negotiable. Every contribution must respect them.
    access private members.
 9. **Every Typer app and every command with required args sets
    `no_args_is_help=True`.** No-args invocation must show help, not error.
-10. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
+10. **Every domain declares port `Protocol`s in `application/ports.py`.**
+    Use cases import their ports from there; concrete adapters in
+    `infrastructure/` satisfy the Protocols structurally (no
+    inheritance). Subsystems within a domain may add their own
+    (`untaped-awx` has `application/test/ports.py` for the test runner).
+    `untaped-config` and `untaped-github` still declare inline Protocols
+    pending a follow-up migration — new domains comply from day 1.
+11. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
     keys. `untaped config list` redacts them; `repr(settings)` won't leak
     them in tracebacks. Call `.get_secret_value()` only at point of use.
-11. **Use `resolve_verify(settings.http)` for every httpx client.** Never
+12. **Use `resolve_verify(settings.http)` for every httpx client.** Never
     hard-code `verify=True/False` or a path.
-12. **Use absolute imports across the workspace.** `from untaped_<x>.… import …`
+13. **Use absolute imports across the workspace.** `from untaped_<x>.… import …`
     or `from untaped_core import …`, never `from .foo import bar`.
     Enforced by ruff's `ban-relative-imports = "all"`; applies inside
     every package, including tests.
 
 ## Architecture: 4-Layer DDD per domain
 
-Every domain package (`untaped-<X>`) has the same internal layout:
+`untaped-core` is the exception: it's a shared library, not a domain,
+so its layout is intentionally flat (`config_file.py`, `http.py`,
+`output.py`, …) — no `cli/`/`application/`/`domain/`/`infrastructure/`.
+
+Every *domain* package (`untaped-<X>`) has the same internal layout:
 
 ```
 src/untaped_<x>/
@@ -147,7 +158,7 @@ A use case in `application/` is unit-testable with a stub satisfying its
 | Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
 | Merge `default` ⤥ active to an effective dict | `from untaped_core import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr`                                             |
-| Declare port `Protocol`s for a domain      | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (one module per package; concrete adapters satisfy the Protocols structurally) |
+| Declare port `Protocol`s for a domain      | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
 | Declare DTOs that cross app/infra boundary | `packages/untaped-<x>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |
 
 Cross-cutting subsystems with their own internals doc:
@@ -161,6 +172,38 @@ Cross-cutting subsystems with their own internals doc:
 - **AWX resource framework, apply pipeline, jobs/track, test runner** —
   see [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md).
   User-facing reference: [`docs/awx.md`](docs/awx.md).
+- **GitHub authenticated user** — see
+  [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md).
+  User-facing reference: [`docs/github.md`](docs/github.md).
+
+## Conventions
+
+- **Module docstrings.** Every source module (`*.py`) opens with a
+  module docstring describing what it owns. Re-export stubs (layer
+  `__init__.py` files like `cli/__init__.py`,
+  `infrastructure/__init__.py`, …) are exempt — they're plumbing,
+  with nothing to describe.
+- **Re-export the public surface.**
+  - **Domain packages**: `<pkg>/__init__.py` re-exports `app:
+    typer.Typer` (root CLI dispatch) — that's all callers need from
+    the package face. Public adapters live in
+    `infrastructure/__init__.py` with explicit `__all__` so
+    composition roots can `from untaped_<x>.infrastructure import …`
+    without reaching into adapter modules.
+  - **`untaped-core`**: re-exports its full public API from
+    `__init__.py` with explicit `__all__`.
+- **Per-command flags vs shared option types.** Per-command flags in
+  `cli/commands.py` use call-site defaults
+  (`field: Type = typer.Option(..., "--flag", help="…")`). Shared
+  option types reused across commands live in `untaped_core` as
+  `Annotated[…, typer.Option(…)]` aliases (e.g. `FormatOption`,
+  `ColumnsOption`).
+- **`errors.py` placement.** Domain packages with their own exception
+  subclasses keep them in a top-level `errors.py`; `untaped-awx`
+  additionally has `infrastructure/errors.py` for HTTP-status →
+  exception mapping. Domains that only raise `untaped_core`'s
+  exceptions (`untaped-config`, `untaped-github`, `untaped-profile`)
+  don't need an `errors.py`.
 
 ## Output & Piping Conventions
 
@@ -217,7 +260,11 @@ behaviours worth knowing:
 4. Refactor with the test still green.
 
 **Test layout:**
-- Tests live in `packages/<pkg>/tests/unit/`.
+- Tests live in `packages/<pkg>/tests/unit/` by default. Use
+  `tests/integration/` when the test exercises a real subprocess or
+  fake-server fixture (`untaped-awx`'s `FakeAap`, `untaped-workspace`'s
+  shell-driven git tests). Pure use-case tests with stubs stay in
+  `unit/`.
 - No `__init__.py` files inside `tests/` — pytest uses
   `--import-mode=importlib`.
 - Mock httpx with `respx` (already a dev dep).
@@ -333,7 +380,10 @@ The schema lives in `untaped-core`; the recipe lives there too. See
 
 - **Per-package internals**:
   [`untaped-core`](packages/untaped-core/AGENTS.md),
+  [`untaped-config`](packages/untaped-config/AGENTS.md),
+  [`untaped-profile`](packages/untaped-profile/AGENTS.md),
   [`untaped-workspace`](packages/untaped-workspace/AGENTS.md),
-  [`untaped-awx`](packages/untaped-awx/AGENTS.md)
+  [`untaped-awx`](packages/untaped-awx/AGENTS.md),
+  [`untaped-github`](packages/untaped-github/AGENTS.md)
 - **User-facing docs**: [`docs/`](docs/README.md) — configuration,
   workspaces, AWX, GitHub
