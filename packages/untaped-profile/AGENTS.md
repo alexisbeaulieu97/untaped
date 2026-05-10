@@ -6,12 +6,6 @@ to create / use / show / delete / rename them. Sister meta-domain
 [`untaped-config`](../untaped-config/AGENTS.md) operates on the keys
 *inside* whichever profile is targeted; this package operates on the
 top-level `profiles.<…>` blocks and the `active:` pointer themselves.
-For workspace-wide rules and the cross-cutting helpers index, see the
-[root `AGENTS.md`](../../AGENTS.md). For env/active/fallback
-resolution mechanics, see
-[`untaped-core/AGENTS.md` "Profile resolution (internals)"](../untaped-core/AGENTS.md#profile-resolution-internals).
-For user-facing reference, see
-[`docs/configuration.md`](../../docs/configuration.md).
 
 ## Inventory surface
 
@@ -71,11 +65,10 @@ profile) reports the conceptual `default` placeholder regardless of
 whether `profiles.default` exists on disk — schema defaults are in
 effect either way, and there's no user typo to protect against.
 
-## Reserved-name and active-pointer invariants
+## Mutation invariants
 
-A handful of small invariants are spread across the use cases; this
-section pulls them together so adding a new mutating use case can
-honour the same set:
+Rules spread across the mutating use cases. A new mutating use case
+should honour the same set:
 
 - `RenameProfile` rejects renaming `default` and rejects `default`
   as the rename target (it's the implicit floor; renaming it would
@@ -91,19 +84,15 @@ honour the same set:
   source profile don't bleed into the new one. Empty names and
   already-existing names are rejected with the known-profiles list.
 
-## Redaction (cousin to `untaped-config`)
+## Redaction
 
 `untaped profile show` redacts secrets at the **CLI layer**
 (`cli/commands.py`) using
 `redact_secrets(profile.data, secret_field_paths(Settings))` from
 `untaped_core` — the dict-walking variant. Both `--format yaml` and
-`--format json` redact; `--show-secrets` reveals.
-
-[`untaped-config`'s `display_value`](../untaped-config/AGENTS.md#redaction)
-is the row-rendering cousin: same intent, different shape (rows vs
-nested dict). The two redactors are kept separate because their
-inputs are structurally different — there's no useful shared helper,
-and merging them would obscure both call sites.
+`--format json` redact; `--show-secrets` reveals. For the
+row-rendering cousin used by `untaped config list`, see
+[`untaped-config/AGENTS.md` "Redaction"](../untaped-config/AGENTS.md#redaction).
 
 ## Layering
 
@@ -111,10 +100,11 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD".
 Three package-specific notes:
 
 - **`application/ports.py` already exists.** A single
-  `ProfileRepository` Protocol (10 methods) satisfies every use case.
-  This is currently the only domain in the workspace compliant with
-  the rule that Issue #15 of the audit-driven plan hardens — when
-  consolidating other packages, this is the reference shape.
+  `ProfileRepository` Protocol satisfies every use case. This domain
+  joins `untaped-awx` and `untaped-workspace` as a reference shape
+  for the rule that every domain consolidate ports into one
+  `application/ports.py` module; `untaped-config` and `untaped-github`
+  are the remaining holdouts.
 - **One concrete adapter.** `ProfileFileRepository` is a thin pass
   through to `untaped_core.config_file` (`read_profile`,
   `write_profile`, `delete_profile`, `rename_profile`,
@@ -131,25 +121,21 @@ Three package-specific notes:
 
 ## Recipe: add a new profile sub-command
 
+Generic Typer wiring (no_args_is_help, `--format`/`--columns`,
+stderr-only side-effect logging, stub-driven use case tests) follows
+the root AGENTS.md "Recipe: Add a new command to an existing domain".
+Package-specific notes:
+
 1. If the command needs an external operation the repo doesn't already
    expose, add a method to `ProfileRepository` in `application/ports.py`
-   *and* implement it on `ProfileFileRepository`. Prefer adding a
-   helper to `untaped_core.config_file` and delegating, rather than
-   reading/writing YAML in this package.
-2. Add a use case in `application/`. Take `ProfileRepository` via
-   constructor injection. For mutating use cases that touch `active:`,
-   compare against `persisted_active_name()`, never `active_name()`
-   — see "Active vs persisted-active" above.
-3. Wire the Typer command in `cli/commands.py`. Mark
-   `no_args_is_help=True` if it has required args. Pipe-friendly data
-   output via `format_output` + `--format` / `--columns`. Side-effect
-   commands log the result to **stderr** with `typer.echo(msg, err=True)`.
-   If the command emits a single nested object, narrow `FormatOption`
-   to a `Literal[...]` of the formats that actually make sense.
-4. Test the use case with a stub satisfying `ProfileRepository` —
-   no filesystem, no `Settings`. See `tests/unit/test_create_profile.py`
-   for the pattern.
-5. If the command writes, also test through `ProfileFileRepository`
+   *and* implement it on `ProfileFileRepository`.
+2. For mutating use cases that touch `active:`, compare against
+   `persisted_active_name()`, never `active_name()` — see "Active vs
+   persisted-active" above.
+3. If the command emits a single nested object, narrow `FormatOption`
+   to a `Literal[...]` of the formats that actually make sense (see
+   `show` for the pattern).
+4. If the command writes, also test through `ProfileFileRepository`
    against a real temp `config.yml` so the `mutate_config` path in
    core's helpers is exercised end-to-end.
 
