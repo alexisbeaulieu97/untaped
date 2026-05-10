@@ -168,3 +168,25 @@ def test_strip_paths_handles_missing_path_gracefully() -> None:
     obj = {"name": "n"}
     out = SecretPreservationPolicy.strip_paths(obj, ["inputs.missing"])
     assert out == {"name": "n"}
+
+
+def test_strip_paths_glob_at_leaf_on_list_root() -> None:
+    """``*`` at the leaf of a list root clears the list."""
+    out = SecretPreservationPolicy.strip_paths([1, 2, 3], ["*"])
+    assert out == []
+
+
+def test_strip_paths_non_leaf_glob_strips_key_from_every_child() -> None:
+    """``*.key`` at a non-leaf depth strips ``key`` from every dict child."""
+    obj = {
+        "cred_a": {"user": "u1", "password": "p1"},
+        "cred_b": {"user": "u2", "password": "p2"},
+    }
+    out = SecretPreservationPolicy.strip_paths(obj, ["*.password"])
+    assert out == {"cred_a": {"user": "u1"}, "cred_b": {"user": "u2"}}
+
+
+def test_strip_paths_recursion_into_none_value_is_noop() -> None:
+    """Descending past a ``None`` value at any depth is a no-op (not a raise)."""
+    out = SecretPreservationPolicy.strip_paths({"a": None}, ["a.k"])
+    assert out == {"a": None}
