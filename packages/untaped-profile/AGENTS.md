@@ -9,9 +9,9 @@ top-level `profiles.<…>` blocks and the `active:` pointer themselves.
 
 ## Inventory surface
 
-Seven commands ship: `list`, `show`, `use`, `current`, `create`,
-`delete`, `rename`. Each maps to one use case in `application/`,
-which talks to a single concrete adapter (`ProfileFileRepository` in
+Commands map one-to-one onto use cases in `application/`: `list`,
+`show`, `use`, `current`, `create`, `delete`, `rename`. Each use case
+talks to a single concrete adapter (`ProfileFileRepository` in
 `infrastructure/profile_repo.py`) via the `ProfileRepository`
 Protocol declared in `application/ports.py`. The adapter delegates
 every read and write to the profile-aware helpers in
@@ -33,13 +33,18 @@ purpose:
   ignoring per-call overrides.
 
 The invariant: **a transient `--profile` flag must never rewrite the
-user's persisted active pointer behind their back.** Mutating use
-cases (today: `DeleteProfile`) compare against
-`persisted_active_name()`, not `active_name()` — otherwise running
+user's persisted active pointer behind their back.** Today,
+`DeleteProfile` is the only use case that *consults*
+`persisted_active_name()` directly (to refuse deletion of the
+persisted active) — otherwise running
 `untaped --profile staging profile delete staging` while `production`
 was the persisted active would refuse the delete based on a transient
-override, which is hostile. Future mutating use cases that touch the
-`active:` pointer should follow the same rule.
+override, which is hostile. `RenameProfile` doesn't consult either
+accessor; it delegates `active:` consistency to
+`untaped_core.config_file.rename_profile` (which updates the pointer
+in the same `mutate_config` op when the renamed profile was active).
+Future mutating use cases that *consult* the active pointer should
+use `persisted_active_name()`.
 
 For the env/active/default/schema layering itself, see
 [`untaped-core/AGENTS.md` "Profile resolution (internals)"](../untaped-core/AGENTS.md#profile-resolution-internals).
@@ -90,8 +95,14 @@ should honour the same set:
 (`cli/commands.py`) using
 `redact_secrets(profile.data, secret_field_paths(Settings))` from
 `untaped_core` — the dict-walking variant. Both `--format yaml` and
-`--format json` redact; `--show-secrets` reveals. For the
-row-rendering cousin used by `untaped config list`, see
+`--format json` redact; `--show-secrets` reveals. Note that
+`profile.data` here is the **resolved view by default** (default ⤥
+named) and only the verbatim block under `--raw` — `ShowProfile`
+overloads `Profile.data` per `show_profile.py`'s flag handling, so
+the `Profile` model's docstring ("verbatim block, no fallback merge")
+is true for `ListProfiles` but not for the `--raw=False` path of
+`show`. For the row-rendering cousin used by `untaped config list`,
+see
 [`untaped-config/AGENTS.md` "Redaction"](../untaped-config/AGENTS.md#redaction).
 
 ## Layering
@@ -103,8 +114,9 @@ Three package-specific notes:
   `ProfileRepository` Protocol satisfies every use case. This domain
   joins `untaped-awx` and `untaped-workspace` as a reference shape
   for the rule that every domain consolidate ports into one
-  `application/ports.py` module; `untaped-config` and `untaped-github`
-  are the remaining holdouts.
+  `application/ports.py` module; domains that don't yet consolidate
+  (currently `untaped-config`, `untaped-github`) should follow this
+  shape when they do.
 - **One concrete adapter.** `ProfileFileRepository` is a thin pass
   through to `untaped_core.config_file` (`read_profile`,
   `write_profile`, `delete_profile`, `rename_profile`,
