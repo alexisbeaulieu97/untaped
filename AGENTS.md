@@ -84,6 +84,8 @@ Non-negotiable. Every contribution must respect them.
     `infrastructure/` satisfy the Protocols structurally (no
     inheritance). Subsystems within a domain may add their own
     (`untaped-awx` has `application/test/ports.py` for the test runner).
+    `untaped-config` and `untaped-github` still declare inline Protocols
+    pending a follow-up migration — new domains comply from day 1.
 11. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
     keys. `untaped config list` redacts them; `repr(settings)` won't leak
     them in tracebacks. Call `.get_secret_value()` only at point of use.
@@ -189,8 +191,7 @@ Cross-cutting subsystems with their own internals doc:
     composition roots can `from untaped_<x>.infrastructure import …`
     without reaching into adapter modules.
   - **`untaped-core`**: re-exports its full public API from
-    `__init__.py` with explicit `__all__` (it has no
-    `infrastructure/`).
+    `__init__.py` with explicit `__all__`.
 - **Per-command flags vs shared option types.** Per-command flags in
   `cli/commands.py` use call-site defaults
   (`field: Type = typer.Option(..., "--flag", help="…")`). Shared
@@ -379,7 +380,10 @@ The schema lives in `untaped-core`; the recipe lives there too. See
 
 - **Per-package internals**:
   [`untaped-core`](packages/untaped-core/AGENTS.md),
+  [`untaped-config`](packages/untaped-config/AGENTS.md),
+  [`untaped-profile`](packages/untaped-profile/AGENTS.md),
   [`untaped-workspace`](packages/untaped-workspace/AGENTS.md),
-  [`untaped-awx`](packages/untaped-awx/AGENTS.md)
+  [`untaped-awx`](packages/untaped-awx/AGENTS.md),
+  [`untaped-github`](packages/untaped-github/AGENTS.md)
 - **User-facing docs**: [`docs/`](docs/README.md) — configuration,
   workspaces, AWX, GitHub
