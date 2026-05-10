@@ -172,18 +172,25 @@ Cross-cutting subsystems with their own internals doc:
   User-facing reference: [`docs/awx.md`](docs/awx.md).
 - **GitHub authenticated user** — see
   [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md).
+  User-facing reference: [`docs/github.md`](docs/github.md).
 
 ## Conventions
 
 - **Module docstrings.** Every source module (`*.py`) opens with a
-  module docstring describing what it owns. Re-export stubs
-  (e.g. `cli/__init__.py: from untaped_<x>.cli.commands import app`)
-  are exempt — there's nothing to describe.
-- **Re-export the public surface.** Each package's `__init__.py`
-  re-exports the symbols other packages should import (with explicit
-  `__all__`); same for `infrastructure/__init__.py` so composition
-  roots can `from untaped_<x>.infrastructure import …` without
-  reaching into adapter modules.
+  module docstring describing what it owns. Re-export stubs (layer
+  `__init__.py` files like `cli/__init__.py`,
+  `infrastructure/__init__.py`, …) are exempt — they're plumbing,
+  with nothing to describe.
+- **Re-export the public surface.**
+  - **Domain packages**: `<pkg>/__init__.py` re-exports `app:
+    typer.Typer` (root CLI dispatch) — that's all callers need from
+    the package face. Public adapters live in
+    `infrastructure/__init__.py` with explicit `__all__` so
+    composition roots can `from untaped_<x>.infrastructure import …`
+    without reaching into adapter modules.
+  - **`untaped-core`**: re-exports its full public API from
+    `__init__.py` with explicit `__all__` (it has no
+    `infrastructure/`).
 - **Per-command flags vs shared option types.** Per-command flags in
   `cli/commands.py` use call-site defaults
   (`field: Type = typer.Option(..., "--flag", help="…")`). Shared
