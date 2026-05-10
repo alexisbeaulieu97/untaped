@@ -12,6 +12,7 @@ cover the partition contract directly.
 
 from __future__ import annotations
 
+import pytest
 from untaped_awx.application.apply_secret_policy import SecretPreservationPolicy
 
 
@@ -187,6 +188,21 @@ def test_strip_paths_non_leaf_glob_strips_key_from_every_child() -> None:
 
 
 def test_strip_paths_recursion_into_none_value_is_noop() -> None:
-    """Descending past a ``None`` value at any depth is a no-op (not a raise)."""
+    """Recursing into a ``None`` value is a no-op (the ``obj is None``
+    guard prevents AttributeError)."""
     out = SecretPreservationPolicy.strip_paths({"a": None}, ["a.k"])
     assert out == {"a": None}
+
+
+@pytest.mark.parametrize(
+    ("obj", "path"),
+    [
+        ({"a": "scalar"}, "a.k"),  # leaf-level: scalar where dict/list expected
+        ({"a": 42}, "a.k.v"),  # non-leaf: scalar at mid-path
+    ],
+)
+def test_strip_paths_descending_into_scalar_is_noop(obj: dict, path: str) -> None:
+    """Paths that descend into a scalar (wrong shape) silently no-op
+    rather than raise — defensive contract for malformed payloads."""
+    out = SecretPreservationPolicy.strip_paths(obj, [path])
+    assert out == obj
