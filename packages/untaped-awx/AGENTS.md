@@ -233,10 +233,10 @@ For two or more templates, `cli/resource_commands._drain_parallel`
 line carrying a `[<template>] ` prefix (via
 `render_event_text(ev, prefix=…)`) so concurrent stderr stays
 disambiguable. Single-template launches keep the zero-overhead
-sequential path. Same thread-safety guarantees as the test runner
-(`application/test/runner.py:85-93`): `httpx.Client` is documented
-thread-safe and `PollingJobMonitor`'s polling methods are stateless
-per call.
+sequential path. Same thread-safety guarantees as the parallel `ThreadPoolExecutor`
+branch in `RunTestSuite.__call__` (`application/test/runner.py`):
+`httpx.Client` is documented thread-safe and `PollingJobMonitor`'s
+polling methods are stateless per call.
 
 ## `unified-templates`: deliberately outside the framework
 
