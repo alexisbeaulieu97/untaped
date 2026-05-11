@@ -14,12 +14,20 @@ Public API:
 """
 
 from untaped_core.cli import ColumnsOption, FormatOption, parse_kv_pairs, report_errors
-from untaped_core.config_schema import redact_secrets, secret_field_paths
+from untaped_core.config_schema import (
+    FieldDescriptor,
+    find_descriptor,
+    redact_secrets,
+    secret_field_paths,
+    walk_settings,
+)
 from untaped_core.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped_core.http import HttpClient, resolve_verify
 from untaped_core.output import OutputFormat, format_output
 from untaped_core.profile_resolver import (
     DEFAULT_PROFILE,
+    ProfileSource,
+    classify_active_profile,
     effective_active_profile_name,
     resolve_profiles,
     splice_workspace_registry,
@@ -31,14 +39,18 @@ __all__ = [
     "DEFAULT_PROFILE",
     "ColumnsOption",
     "ConfigError",
+    "FieldDescriptor",
     "FormatOption",
     "HttpClient",
     "HttpError",
     "HttpSettings",
     "OutputFormat",
+    "ProfileSource",
     "Settings",
     "UntapedError",
+    "classify_active_profile",
     "effective_active_profile_name",
+    "find_descriptor",
     "first_validation_error",
     "format_output",
     "get_settings",
@@ -52,4 +64,5 @@ __all__ = [
     "resolve_verify",
     "secret_field_paths",
     "splice_workspace_registry",
+    "walk_settings",
 ]

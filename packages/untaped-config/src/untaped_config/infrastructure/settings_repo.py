@@ -7,20 +7,25 @@ from typing import Any, Literal
 
 import yaml
 from pydantic import ValidationError
-from untaped_core import ConfigError, Settings, first_validation_error, get_settings
+from untaped_core import (
+    DEFAULT_PROFILE,
+    ConfigError,
+    FieldDescriptor,
+    Settings,
+    effective_active_profile_name,
+    find_descriptor,
+    first_validation_error,
+    get_settings,
+    resolve_profiles,
+    splice_workspace_registry,
+    walk_settings,
+)
 from untaped_core.config_file import (
     list_profile_names,
     mutate_config,
     read_config_dict,
     set_at_path,
     unset_at_path,
-)
-from untaped_core.config_schema import FieldDescriptor, find_descriptor, walk_settings
-from untaped_core.profile_resolver import (
-    DEFAULT_PROFILE,
-    effective_active_profile_name,
-    resolve_profiles,
-    splice_workspace_registry,
 )
 
 

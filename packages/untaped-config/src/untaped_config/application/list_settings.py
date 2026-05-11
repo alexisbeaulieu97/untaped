@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from untaped_core import Settings
-from untaped_core.config_schema import FieldDescriptor
+from untaped_core import FieldDescriptor, Settings
 
 from untaped_config.domain import SettingEntry, Source, display_default, display_value
 
