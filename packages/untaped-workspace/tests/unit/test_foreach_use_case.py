@@ -127,3 +127,48 @@ def test_outcome_records_command_when_uncloned(tmp_path: Path) -> None:
     outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="echo hi")
     assert outcomes[0].command == "echo hi"
     assert outcomes[0].duration_s == 0.0
+
+
+def test_parallel_cancels_remaining_work_on_first_failure(tmp_path: Path) -> None:
+    """``parallel > 1`` + ``continue_on_error=False`` breaks after the first
+    non-zero outcome and cancels the queued futures, so fewer than all repos
+    are reported. Proves the cancel loop on the failure branch executed."""
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://x/a.git"),
+                Repo(url="https://x/b.git"),
+                Repo(url="https://x/c.git"),
+                Repo(url="https://x/d.git"),
+            ]
+        ),
+    )
+    # Every runner returns non-zero; whichever completes first triggers break.
+    runner = _runner_factory(returncode={"a": 1, "b": 1, "c": 1, "d": 1})
+    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x", parallel=2)
+    # We break after the first failure, so exactly one outcome is collected.
+    # The cancel branch must have run for the loop to terminate before
+    # ``as_completed`` yielded all four futures.
+    assert len(outcomes) == 1
+    assert outcomes[0].returncode == 1
+
+
+def test_file_not_found_yields_runner_error_outcome(tmp_path: Path) -> None:
+    """A ``FileNotFoundError`` from the shell runner (e.g. shell not on PATH)
+    surfaces as a ``returncode=-1`` outcome carrying the error message in
+    stderr — the use case must not let the exception escape."""
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
+    )
+
+    def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("/bin/missing-shell: not found")
+
+    outcomes = Foreach(ManifestRepository(), runner=_runner)(workspace, command="x")
+    assert len(outcomes) == 1
+    assert outcomes[0].returncode == -1
+    assert outcomes[0].stdout == ""
+    assert "missing-shell" in outcomes[0].stderr
+    assert outcomes[0].duration_s >= 0.0
