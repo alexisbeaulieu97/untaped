@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 from untaped_awx.application import ListResources
+from untaped_awx.application.ports import ResourceClient
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
@@ -26,7 +27,7 @@ class _StubClient:
 
 def test_list_resources_passes_search_and_filters() -> None:
     client = _StubClient(list_results=[{"id": 1, "name": "deploy"}])
-    use = ListResources(client)  # type: ignore[arg-type]
+    use = ListResources(cast(ResourceClient, client))
     list(
         use(
             JOB_TEMPLATE_SPEC,

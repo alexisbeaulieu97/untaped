@@ -8,8 +8,9 @@ the underlying client and assert path/params forwarding.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
 
 
@@ -73,7 +74,7 @@ class _FakeClient:
 
 def test_list_walks_unified_job_templates_endpoint() -> None:
     client = _FakeClient(list_pages=[{"id": 1, "name": "deploy"}])
-    repo = UnifiedTemplateRepository(client)  # type: ignore[arg-type]
+    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     out = list(repo.list(params={"order_by": "name"}, limit=10))
     assert [r["id"] for r in out] == [1]
     path, params, limit = client.paginate_calls[0]
@@ -84,7 +85,7 @@ def test_list_walks_unified_job_templates_endpoint() -> None:
 
 def test_list_passes_none_params_through() -> None:
     client = _FakeClient()
-    repo = UnifiedTemplateRepository(client)  # type: ignore[arg-type]
+    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     list(repo.list())
     _, params, limit = client.paginate_calls[0]
     assert params == {}
@@ -103,7 +104,7 @@ def test_get_by_ids_uses_id_in_filter() -> None:
             {"id": 2, "name": "build"},
         ]
     )
-    repo = UnifiedTemplateRepository(client)  # type: ignore[arg-type]
+    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     out = list(repo.get_by_ids(ids=["1", "2"]))
     assert [r["id"] for r in out] == [1, 2]
     path, params, limit = client.paginate_calls[0]
@@ -119,7 +120,7 @@ def test_get_by_ids_empty_list_short_circuits() -> None:
     collection. Defense in depth: the use case also short-circuits, but
     the adapter holds the line for any future caller."""
     client = _FakeClient(list_pages=[])
-    repo = UnifiedTemplateRepository(client)  # type: ignore[arg-type]
+    repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     out = list(repo.get_by_ids(ids=[]))
     assert out == []
     assert client.paginate_calls == []

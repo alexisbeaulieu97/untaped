@@ -7,10 +7,11 @@ raw AWX dict so ``--format yaml`` keeps every field.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from untaped_awx.application import GetJob
+from untaped_awx.application.ports import JobRecordRepository
 
 
 class _FakeJobRepo:
@@ -36,13 +37,13 @@ class _FakeJobRepo:
 
 def test_get_job_defaults_to_kind_job() -> None:
     repo = _FakeJobRepo(record={"id": 7, "status": "successful"})
-    GetJob(repo)(job_id=7)  # type: ignore[arg-type]
+    GetJob(cast(JobRecordRepository, repo))(job_id=7)
     assert repo.get_calls[0] == {"kind": "job", "job_id": 7}
 
 
 def test_get_job_passes_kind_through() -> None:
     repo = _FakeJobRepo(record={"id": 7, "status": "successful"})
-    GetJob(repo)(kind="workflow_job", job_id=42)  # type: ignore[arg-type]
+    GetJob(cast(JobRecordRepository, repo))(kind="workflow_job", job_id=42)
     assert repo.get_calls[0] == {"kind": "workflow_job", "job_id": 42}
 
 
@@ -57,11 +58,11 @@ def test_get_job_returns_dict_verbatim() -> None:
         "extra_vars": "{}",
     }
     repo = _FakeJobRepo(record=raw)
-    out = GetJob(repo)(kind="job", job_id=7)  # type: ignore[arg-type]
+    out = GetJob(cast(JobRecordRepository, repo))(kind="job", job_id=7)
     assert out == raw
 
 
 def test_get_job_propagates_repo_errors() -> None:
     repo = _FakeJobRepo(record=None)
     with pytest.raises(KeyError):
-        GetJob(repo)(kind="job", job_id=999)  # type: ignore[arg-type]
+        GetJob(cast(JobRecordRepository, repo))(kind="job", job_id=999)

@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from untaped_awx.application import ApplyResource
+from untaped_awx.application.ports import (
+    Catalog,
+    FkResolver,
+    RawHttpResourceClient,
+    StrategyResolver,
+)
 from untaped_awx.domain import Metadata, Resource, ResourceSpec
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequest
@@ -137,10 +143,10 @@ def _make_apply(
 ) -> ApplyResource:
     warn_list = warn if warn is not None else []
     return ApplyResource(
-        client=_StubClient(),  # type: ignore[arg-type]
-        catalog=_StubCatalog(catalog_specs),  # type: ignore[arg-type]
-        fk=_StubFk(fk_names),  # type: ignore[arg-type]
-        strategies=_StubStrategies(strategy),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, _StubClient()),
+        catalog=cast(Catalog, _StubCatalog(catalog_specs)),
+        fk=cast(FkResolver, _StubFk(fk_names)),
+        strategies=cast(StrategyResolver, _StubStrategies(strategy)),
         warn=warn_list.append,
     )
 
@@ -555,10 +561,10 @@ def test_schedule_inventory_fk_uses_parent_organization() -> None:
 
     strategy = _StubStrategy(existing=None)
     apply = ApplyResource(
-        client=_StubClient(),  # type: ignore[arg-type]
-        catalog=_StubCatalog({"Schedule": SCHEDULE_SPEC}),  # type: ignore[arg-type]
-        fk=_RecordingFk(),  # type: ignore[arg-type]
-        strategies=_StubStrategies(strategy),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, _StubClient()),
+        catalog=cast(Catalog, _StubCatalog({"Schedule": SCHEDULE_SPEC})),
+        fk=cast(FkResolver, _RecordingFk()),
+        strategies=cast(StrategyResolver, _StubStrategies(strategy)),
     )
     resource = Resource(
         kind="Schedule",
@@ -591,10 +597,10 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
             raise NotImplementedError
 
     apply = ApplyResource(
-        client=_StubClient(),  # type: ignore[arg-type]
-        catalog=_StubCatalog({"Group": GROUP_SPEC}),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 101}),  # type: ignore[arg-type]
-        strategies=_StubStrategies(_IdLessStrategy()),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, _StubClient()),
+        catalog=cast(Catalog, _StubCatalog({"Group": GROUP_SPEC})),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 101})),
+        strategies=cast(StrategyResolver, _StubStrategies(_IdLessStrategy())),
     )
     resource = Resource(
         kind="Group",

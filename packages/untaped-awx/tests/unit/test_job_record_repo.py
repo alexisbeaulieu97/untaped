@@ -9,8 +9,9 @@ itself is exercised by ``test_resource_repo.py``.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
 
 
@@ -90,7 +91,7 @@ class _FakeClient:
 
 def test_list_jobs_uses_jobs_collection() -> None:
     client = _FakeClient(list_pages=[{"id": 1}])
-    repo = JobRecordRepository(client)  # type: ignore[arg-type]
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     out = list(repo.list(kind="job", params={"order_by": "-id"}, limit=20))
     assert [r["id"] for r in out] == [1]
     path, params, limit = client.paginate_calls[0]
@@ -101,7 +102,7 @@ def test_list_jobs_uses_jobs_collection() -> None:
 
 def test_list_workflow_jobs_uses_workflow_jobs_collection() -> None:
     client = _FakeClient()
-    repo = JobRecordRepository(client)  # type: ignore[arg-type]
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     list(repo.list(kind="workflow_job"))
     assert client.paginate_calls[0][0] == "workflow_jobs/"
 
@@ -119,7 +120,7 @@ def test_list_each_kind_in_map_routes_correctly() -> None:
     }
     for kind, path in expected.items():
         client = _FakeClient()
-        repo = JobRecordRepository(client)  # type: ignore[arg-type]
+        repo = JobRecordRepository(cast(RawHttpResourceClient, client))
         list(repo.list(kind=kind))
         assert client.paginate_calls[0][0] == path, kind
 
@@ -128,14 +129,14 @@ def test_list_unknown_kind_falls_through_unchanged() -> None:
     """Kinds outside the map use the raw value as the collection — same
     as the prior ``_kind_path(kind)`` helper. Defensive but rarely hit."""
     client = _FakeClient()
-    repo = JobRecordRepository(client)  # type: ignore[arg-type]
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     list(repo.list(kind="custom_kind"))
     assert client.paginate_calls[0][0] == "custom_kind/"
 
 
 def test_list_passes_none_params_through() -> None:
     client = _FakeClient()
-    repo = JobRecordRepository(client)  # type: ignore[arg-type]
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     list(repo.list(kind="job"))
     _, params, limit = client.paginate_calls[0]
     assert params == {}
@@ -147,7 +148,7 @@ def test_list_passes_none_params_through() -> None:
 
 def test_get_job_hits_jobs_id_endpoint() -> None:
     client = _FakeClient(get_response={"id": 42, "status": "successful"})
-    repo = JobRecordRepository(client)  # type: ignore[arg-type]
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     record = repo.get(kind="job", job_id=42)
     assert record == {"id": 42, "status": "successful"}
     method, path, params = client.request_calls[0]
@@ -158,6 +159,6 @@ def test_get_job_hits_jobs_id_endpoint() -> None:
 
 def test_get_workflow_job_hits_workflow_jobs_id_endpoint() -> None:
     client = _FakeClient(get_response={"id": 9, "status": "running"})
-    repo = JobRecordRepository(client)  # type: ignore[arg-type]
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
     repo.get(kind="workflow_job", job_id=9)
     assert client.request_calls[0][1] == "workflow_jobs/9/"

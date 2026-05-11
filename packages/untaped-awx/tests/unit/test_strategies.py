@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
 from untaped_awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.specs import (
@@ -75,8 +76,8 @@ def test_default_strategy_uses_scope_field_name_lookup() -> None:
     s.find_existing(
         JOB_TEMPLATE_SPEC,
         {"name": "deploy", "organization": "Default"},
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk()),
     )
     assert client.find_calls[0][1] == {
         "name": "deploy",
@@ -91,8 +92,8 @@ def test_default_strategy_create_calls_client_create() -> None:
         JOB_TEMPLATE_SPEC,
         {"name": "deploy", "playbook": "x.yml"},
         {"name": "deploy"},
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk()),
     )
     assert result["id"] == 100
     assert client.create_calls[0][0] == "JobTemplate"
@@ -105,8 +106,8 @@ def test_default_strategy_update_uses_existing_id() -> None:
         JOB_TEMPLATE_SPEC,
         {"id": 99, "name": "deploy"},
         {"description": "updated"},
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk()),
     )
     assert client.update_calls[0] == ("JobTemplate", 99, {"description": "updated"})
 
@@ -120,8 +121,8 @@ def test_schedule_strategy_create_uses_parent_endpoint() -> None:
         SCHEDULE_SPEC,
         {"rrule": "FREQ=DAILY"},
         {"name": "nightly", "parent": parent},
-        client=client,  # type: ignore[arg-type]
-        fk=fk,  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, fk),
     )
     method, path, json = client.request_calls[-1]
     assert method == "POST"
@@ -137,8 +138,8 @@ def test_schedule_strategy_update_uses_global_endpoint() -> None:
         SCHEDULE_SPEC,
         {"id": 7, "name": "nightly"},
         {"rrule": "FREQ=WEEKLY"},
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk()),
     )
     assert client.update_calls[0] == ("Schedule", 7, {"rrule": "FREQ=WEEKLY"})
 
@@ -150,8 +151,8 @@ def test_schedule_strategy_find_uses_parent_endpoint() -> None:
     found = s.find_existing(
         SCHEDULE_SPEC,
         {"name": "nightly", "parent": parent},
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(parent_id=42),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk(parent_id=42)),
     )
     assert found == {"id": 5, "name": "nightly"}
     method, path, _ = client.request_calls[0]
@@ -168,8 +169,8 @@ def test_schedule_strategy_rejects_unknown_parent_kind() -> None:
             SCHEDULE_SPEC,
             {},
             {"name": "x", "parent": parent},
-            client=client,  # type: ignore[arg-type]
-            fk=_StubFk(),  # type: ignore[arg-type]
+            client=cast(RawHttpResourceClient, client),
+            fk=cast(FkResolver, _StubFk()),
         )
 
 
@@ -218,8 +219,8 @@ def test_schedule_strategy_raises_on_ambiguous_lookup() -> None:
         s.find_existing(
             SCHEDULE_SPEC,
             {"name": "nightly", "parent": parent},
-            client=client,  # type: ignore[arg-type]
-            fk=_StubFk(parent_id=42),  # type: ignore[arg-type]
+            client=cast(RawHttpResourceClient, client),
+            fk=cast(FkResolver, _StubFk(parent_id=42)),
         )
     assert excinfo.value.kind == "Schedule"
     assert excinfo.value.match_count == 2
@@ -240,6 +241,6 @@ def test_schedule_strategy_rejects_missing_parent() -> None:
             SCHEDULE_SPEC,
             {},
             {"name": "x", "parent": None},
-            client=client,  # type: ignore[arg-type]
-            fk=_StubFk(),  # type: ignore[arg-type]
+            client=cast(RawHttpResourceClient, client),
+            fk=cast(FkResolver, _StubFk()),
         )

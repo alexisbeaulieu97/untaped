@@ -9,9 +9,10 @@ the same ambiguity guard as :class:`DefaultApplyStrategy`.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from untaped_awx.application.ports import FkResolver, RawHttpResourceClient
 from untaped_awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequest
 from untaped_awx.infrastructure.specs import GROUP_SPEC, HOST_SPEC
@@ -86,8 +87,8 @@ def test_create_posts_to_nested_inventory_endpoint() -> None:
         HOST_SPEC,
         {"name": "web-01", "description": "frontend"},
         _identity(),
-        client=client,  # type: ignore[arg-type]
-        fk=fk,  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, fk),
     )
     method, path, body, _ = client.request_calls[-1]
     assert method == "POST"
@@ -107,8 +108,8 @@ def test_create_uses_group_api_path_for_group_kind() -> None:
         GROUP_SPEC,
         {"name": "web", "description": "Web servers"},
         _identity(name="web"),
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(inventory_id=42),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
     _, path, _, _ = client.request_calls[-1]
     assert path == "inventories/42/groups/"
@@ -120,8 +121,8 @@ def test_find_existing_uses_nested_endpoint_with_name_filter() -> None:
     found = s.find_existing(
         HOST_SPEC,
         _identity(),
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(inventory_id=42),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
     assert found == {"id": 7, "name": "web-01"}
     method, path, _, params = client.request_calls[0]
@@ -137,8 +138,8 @@ def test_find_existing_returns_none_when_no_match() -> None:
     found = s.find_existing(
         HOST_SPEC,
         _identity(),
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(inventory_id=42),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
     assert found is None
 
@@ -153,8 +154,8 @@ def test_find_existing_raises_when_two_results() -> None:
         s.find_existing(
             HOST_SPEC,
             _identity(),
-            client=client,  # type: ignore[arg-type]
-            fk=_StubFk(inventory_id=42),  # type: ignore[arg-type]
+            client=cast(RawHttpResourceClient, client),
+            fk=cast(FkResolver, _StubFk(inventory_id=42)),
         )
     assert excinfo.value.kind == "Host"
     assert excinfo.value.match_count == 2
@@ -167,8 +168,8 @@ def test_update_uses_global_endpoint() -> None:
         HOST_SPEC,
         {"id": 9, "name": "web-01"},
         {"description": "new"},
-        client=client,  # type: ignore[arg-type]
-        fk=_StubFk(),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, client),
+        fk=cast(FkResolver, _StubFk()),
     )
     assert client.update_calls == [("Host", 9, {"description": "new"})]
 
@@ -181,8 +182,8 @@ def test_create_rejects_missing_parent() -> None:
             HOST_SPEC,
             {"name": "x"},
             {"name": "x", "parent": None},
-            client=client,  # type: ignore[arg-type]
-            fk=_StubFk(),  # type: ignore[arg-type]
+            client=cast(RawHttpResourceClient, client),
+            fk=cast(FkResolver, _StubFk()),
         )
 
 
@@ -195,6 +196,6 @@ def test_create_rejects_non_inventory_parent_kind() -> None:
             HOST_SPEC,
             {"name": "x"},
             {"name": "x", "parent": bad_parent},
-            client=client,  # type: ignore[arg-type]
-            fk=_StubFk(),  # type: ignore[arg-type]
+            client=cast(RawHttpResourceClient, client),
+            fk=cast(FkResolver, _StubFk()),
         )
