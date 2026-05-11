@@ -246,8 +246,8 @@ def test_import_uses_path_dirname_when_no_name(tmp_path: Path) -> None:
 
 
 def test_import_raises_when_name_cannot_be_derived(tmp_path: Path) -> None:
-    """No explicit name + manifest with no ``name:`` + empty ``path.name``
-    (root ``/``) → refuse rather than register a nameless workspace."""
+    """No explicit name + manifest with no ``name:`` + path with no
+    derivable name → refuse rather than register a nameless workspace."""
     src = tmp_path / "m.yml"
     src.write_text("repos: []\n")
     with pytest.raises(WorkspaceError, match="unable to derive workspace name"):
