@@ -245,6 +245,40 @@ def test_import_uses_path_dirname_when_no_name(tmp_path: Path) -> None:
     assert ManifestRepository().read(dest).name == "auto"
 
 
+def test_import_raises_when_name_cannot_be_derived(tmp_path: Path) -> None:
+    """No explicit name + manifest with no ``name:`` + empty ``path.name``
+    (root ``/``) → refuse rather than register a nameless workspace."""
+    src = tmp_path / "m.yml"
+    src.write_text("repos: []\n")
+    with pytest.raises(WorkspaceError, match="unable to derive workspace name"):
+        ImportWorkspace(ManifestRepository(), _StubRegistry())(src, path=Path("/"))
+
+
+def test_import_refuses_already_initialised_path(tmp_path: Path) -> None:
+    """Target path already has an ``untaped.yml`` — refuse rather than
+    silently overwriting."""
+    src = tmp_path / "src.yml"
+    src.write_text("repos: []\n")
+    dest = tmp_path / "existing"
+    dest.mkdir()
+    (dest / "untaped.yml").write_text("name: original\nrepos: []\n")
+    with pytest.raises(WorkspaceError, match="already initialised"):
+        ImportWorkspace(ManifestRepository(), _StubRegistry())(src, path=dest, name="x")
+
+
+def test_import_refuses_path_already_registered(tmp_path: Path) -> None:
+    """Registry already has this path — refuse rather than registering a
+    second entry for the same directory."""
+    src = tmp_path / "src.yml"
+    src.write_text("repos: []\n")
+    dest = tmp_path / "dest"
+    dest.mkdir()  # ensure dest.resolve() == path.expanduser().resolve() inside the use case
+    reg = _StubRegistry()
+    reg.registered.append(Workspace(name="other", path=dest.resolve()))
+    with pytest.raises(WorkspaceError, match="path already registered"):
+        ImportWorkspace(ManifestRepository(), reg)(src, path=dest, name="x")
+
+
 def _empty_manifest() -> object:
     from untaped_workspace.domain import WorkspaceManifest
 
