@@ -3,29 +3,19 @@
 from pathlib import Path
 
 import pytest
+from conftest import StubRegistry
 from untaped_workspace.application import EditWorkspace, ShellInit, WorkspacePath
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError, WorkspaceError
 
 
-class _StubRegistry:
-    def __init__(self, entries: list[Workspace]) -> None:
-        self.entries = entries
-
-    def get(self, name: str) -> Workspace:
-        for w in self.entries:
-            if w.name == name:
-                return w
-        raise RegistryError(f"unknown workspace: {name!r}")
-
-
 def test_workspace_path_returns_registered_path(tmp_path: Path) -> None:
-    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
     assert WorkspacePath(registry)("prod") == tmp_path / "prod"
 
 
 def test_workspace_path_unknown_raises(tmp_path: Path) -> None:
-    registry = _StubRegistry([])
+    registry = StubRegistry([])
     with pytest.raises(RegistryError):
         WorkspacePath(registry)("missing")
 
@@ -58,7 +48,7 @@ def test_edit_uses_visual_then_editor_then_vi(tmp_path: Path) -> None:
         captured.append(list(cmd))
         return 0
 
-    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
 
     # explicit override wins
     EditWorkspace(registry, runner=_runner, env={})("prod", editor="code")
@@ -81,7 +71,7 @@ def test_edit_missing_editor_raises(tmp_path: Path) -> None:
     def _runner(_cmd):  # type: ignore[no-untyped-def]
         raise FileNotFoundError("no such file")
 
-    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
     with pytest.raises(WorkspaceError, match="editor not found"):
         EditWorkspace(registry, runner=_runner, env={})("prod", editor="bogus-editor")
 
@@ -93,7 +83,7 @@ def test_edit_splits_editor_arguments(tmp_path: Path) -> None:
         captured.append(list(cmd))
         return 0
 
-    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
 
     # explicit editor with flags
     EditWorkspace(registry, runner=_runner, env={})("prod", editor="code --reuse-window")
@@ -112,7 +102,7 @@ def test_edit_splits_editor_arguments(tmp_path: Path) -> None:
 
 
 def test_edit_rejects_empty_editor(tmp_path: Path) -> None:
-    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
     with pytest.raises(WorkspaceError, match="editor command is empty"):
         EditWorkspace(registry, runner=lambda _c: 0, env={})("prod", editor="   ")
 
@@ -124,7 +114,7 @@ def test_edit_preserves_windows_paths(tmp_path: Path, monkeypatch: pytest.Monkey
         captured.append(list(cmd))
         return 0
 
-    registry = _StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
 
     monkeypatch.setattr("untaped_workspace.application.edit_workspace.os.name", "nt")
     EditWorkspace(registry, runner=_runner, env={})("prod", editor=r"C:\Tools\vim.exe")
