@@ -28,6 +28,8 @@ class _StubGit:
         clone_fail: set[str] = frozenset(),
         fetch_fail: bool = False,
         local_fetch_fail: set[str] = frozenset(),
+        status_fail: set[str] = frozenset(),
+        pull_fail: set[str] = frozenset(),
     ) -> None:
         self.events: list[tuple[str, Any]] = []
         self._on_disk = set(on_disk)
@@ -35,6 +37,8 @@ class _StubGit:
         self._clone_fail = clone_fail
         self._fetch_fail = fetch_fail
         self._local_fetch_fail = local_fetch_fail
+        self._status_fail = status_fail
+        self._pull_fail = pull_fail
 
     def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
         self.events.append(("ensure_bare", url))
@@ -61,10 +65,14 @@ class _StubGit:
 
     def status(self, repo_path: Path) -> RepoStatus:
         self.events.append(("status", repo_path.name))
+        if repo_path.name in self._status_fail:
+            raise GitError("status failed")
         return self._statuses.get(repo_path.name, RepoStatus(branch="main"))
 
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
         self.events.append(("pull", repo_path.name, branch))
+        if repo_path.name in self._pull_fail:
+            raise GitError("non-fast-forward pull")
 
 
 def _seed_workspace(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
@@ -418,6 +426,124 @@ def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "fetch failed" in (outcomes[0].detail or "")
+
+
+def test_status_failure_yields_skip(tmp_path: Path) -> None:
+    """``status()`` raising during sync surfaces as a skip carrying the error message."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a").mkdir()
+    git = _StubGit(on_disk=["svc-a"], status_fail={"svc-a"})
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
+    assert outcomes[0].action == "skip"
+    assert "status failed" in outcomes[0].detail
+    assert ("status", "svc-a") in git.events  # the right skip path was taken
+
+
+def test_detached_head_with_no_target_branch_yields_skip(tmp_path: Path) -> None:
+    """Existing clone behind origin with detached HEAD and no manifest target branch → skip."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a").mkdir()
+    git = _StubGit(
+        on_disk=["svc-a"],
+        statuses={"svc-a": RepoStatus(branch=None, behind=3)},
+    )
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
+    assert outcomes[0].action == "skip"
+    assert "detached head" in outcomes[0].detail
+
+
+def test_pull_failure_yields_skip(tmp_path: Path) -> None:
+    """``ff_only_pull`` raising (e.g. non-fast-forward) surfaces as a skip."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a").mkdir()
+    git = _StubGit(
+        on_disk=["svc-a"],
+        statuses={"svc-a": RepoStatus(branch="main", behind=3)},
+        pull_fail={"svc-a"},
+    )
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
+    assert outcomes[0].action == "skip"
+    assert "non-fast-forward" in outcomes[0].detail
+
+
+def test_prune_skipped_when_workspace_dir_missing(tmp_path: Path) -> None:
+    """``workspace.path`` not a dir at prune time → return empty (don't crash on iterdir())."""
+
+    class _ReaderStub:
+        def read(self, _path: Path) -> WorkspaceManifest:
+            return WorkspaceManifest(repos=[])
+
+    missing = tmp_path / "missing"  # never created
+    workspace = Workspace(name="prod", path=missing)
+    git = _StubGit()
+    outcomes = SyncWorkspace(_ReaderStub(), git, fs=_FS, cache_dir=tmp_path)(workspace, prune=True)
+    assert outcomes == []
+
+
+def test_prune_skips_non_git_subdir(tmp_path: Path) -> None:
+    """Orphan-prune skips subdirs without a ``.git`` — they aren't clones."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[]),
+    )
+    not_a_clone = workspace.path / "not-a-clone"
+    not_a_clone.mkdir()  # no .git inside
+    git = _StubGit()
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
+    assert outcomes == []
+    assert not_a_clone.exists()  # untouched
+
+
+def test_prune_status_failure_yields_not_usable_skip(tmp_path: Path) -> None:
+    """``status()`` raising during prune → skip with ``not a usable git repo`` (no rmtree)."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[]),
+    )
+    orphan = workspace.path / "svc-old"
+    orphan.mkdir()
+    (orphan / ".git").mkdir()
+    git = _StubGit(on_disk=["svc-old"], status_fail={"svc-old"})
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
+    assert outcomes[0].action == "skip"
+    assert "not a usable git repo" in outcomes[0].detail
+    assert orphan.exists()  # not removed
+
+
+def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
+    """Two workspaces sharing a repo URL on the same use-case instance → bare_fetch runs once."""
+    manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
+    ws_a_path = tmp_path / "a"
+    ws_b_path = tmp_path / "b"
+    ws_a_path.mkdir()
+    ws_b_path.mkdir()
+    ManifestRepository().write(ws_a_path, manifest)
+    ManifestRepository().write(ws_b_path, manifest)
+    ws_a = Workspace(name="a", path=ws_a_path)
+    ws_b = Workspace(name="b", path=ws_b_path)
+
+    git = _StubGit()
+    use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+    use_case(ws_a)
+    use_case(ws_b)
+
+    ensure_bare_count = sum(1 for e in git.events if e[0] == "ensure_bare")
+    bare_fetch_count = sum(1 for e in git.events if e[0] == "bare_fetch")
+    assert ensure_bare_count == 2  # lookup happened both times
+    assert bare_fetch_count == 1  # fetch deduped via _fetched cache
 
 
 @pytest.fixture
