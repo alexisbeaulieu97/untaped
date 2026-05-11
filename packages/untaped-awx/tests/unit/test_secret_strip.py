@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 from untaped_awx.application import ApplyResource
-from untaped_awx.domain import Metadata, Resource, ResourceSpec
+from untaped_awx.domain import ApplyOutcome, Metadata, Resource, ResourceSpec
 from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
@@ -155,17 +155,19 @@ def _make_apply(
 # ----- Tests -----
 
 
-def test_intermediate_list_wildcard_preserves_survey_default_under_sibling_change() -> None:
-    """``survey_spec.spec.*.default`` declared on JT: ``$encrypted$`` inside
-    each list element produces a preserved path with a literal ``*``.
-    ``SecretPreservationPolicy.strip_paths`` walks that wildcard against
-    the existing record so the equality check finds a match and the
-    field is preserved (not flagged as conflict). The user can edit a
-    sibling top-level field and the PATCH excludes ``survey_spec``
-    entirely.
+@pytest.fixture
+def wildcard_survey_sibling_change() -> tuple[ApplyOutcome, _StubStrategy]:
+    """Apply a JT change where the user edits a sibling top-level field
+    (``description``) while the survey carries ``$encrypted$``
+    placeholders. Exercises the intermediate ``*`` branch of
+    ``apply_secret_policy._remove_at_path`` (walking list items):
+    ``survey_spec.spec.*.default`` is a wildcard secret_path on
+    ``JobTemplate``, so ``SecretPreservationPolicy.strip_paths`` walks
+    the wildcard against the existing record, the equality check finds a
+    match, and the field is preserved (not flagged as conflict).
 
-    Exercises the intermediate ``*`` branch of
-    ``apply_secret_policy._remove_at_path`` (walking list items).
+    Returns ``(outcome, strategy)`` so individual tests can assert on
+    the apply outcome and the strategy's recorded PATCH payload.
     """
     existing = {
         "id": 7,
@@ -194,9 +196,6 @@ def test_intermediate_list_wildcard_preserves_survey_default_under_sibling_chang
         fk_names={("Organization", "Default"): 1},
         strategy=strategy,
     )
-    # User changes `description` (sibling top-level field). The survey is
-    # identical to existing — still carrying placeholders, as a
-    # save-then-apply round-trip would.
     resource = Resource(
         kind="JobTemplate",
         metadata=Metadata(name="deploy", organization="Default"),
@@ -220,16 +219,38 @@ def test_intermediate_list_wildcard_preserves_survey_default_under_sibling_chang
         },
     )
     outcome = apply(resource, write=True)
+    return outcome, strategy
 
+
+def test_wildcard_survey_apply_reports_update(
+    wildcard_survey_sibling_change: tuple[ApplyOutcome, _StubStrategy],
+) -> None:
+    """The apply pipeline classifies the call as an UPDATE."""
+    outcome, _ = wildcard_survey_sibling_change
     assert outcome.action == "updated"
-    # Both placeholders are reported as preserved (one per list item).
-    # `_walk` emits the same dotted path for every list element, so the
-    # list contains the path twice when both items carry the placeholder.
+
+
+def test_wildcard_survey_preserves_both_list_element_paths(
+    wildcard_survey_sibling_change: tuple[ApplyOutcome, _StubStrategy],
+) -> None:
+    """Both ``$encrypted$`` placeholders are reported as preserved (one
+    per list item). ``_walk`` emits the same dotted path for every list
+    element, so the list contains the path twice when both items carry
+    the placeholder."""
+    outcome, _ = wildcard_survey_sibling_change
     survey_preserved = [p for p in outcome.preserved_secrets if p.startswith("survey_spec.spec.")]
     assert len(survey_preserved) == 2, f"expected 2 preserved survey paths, got {survey_preserved}"
+
+
+def test_wildcard_survey_patch_excludes_survey_and_keeps_sibling(
+    wildcard_survey_sibling_change: tuple[ApplyOutcome, _StubStrategy],
+) -> None:
+    """``survey_spec`` is preserved (omitted from PATCH; no
+    ``$encrypted$`` leaks); the sibling ``description`` change is
+    applied."""
+    _, strategy = wildcard_survey_sibling_change
     assert strategy.updated is not None
     _, patch_payload = strategy.updated
-    # `survey_spec` is preserved (omitted from PATCH; no `$encrypted$` leaks).
     assert "survey_spec" not in patch_payload
     assert patch_payload.get("description") == "new"
     assert _contains_encrypted_placeholder(patch_payload) is False
