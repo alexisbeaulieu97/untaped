@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from untaped_core import ConfigError
-from untaped_core.profile_resolver import DEFAULT_PROFILE
+from untaped_core import DEFAULT_PROFILE, ConfigError
 
 from untaped_profile.application.ports import ProfileRepository
 from untaped_profile.domain import Profile

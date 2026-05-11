@@ -9,6 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from untaped_core import (
+    ProfileSource,
+    classify_active_profile,
+    effective_active_profile_name,
+    resolve_profiles,
+)
 from untaped_core.config_file import (
     delete_profile,
     get_active_profile_name,
@@ -18,12 +24,6 @@ from untaped_core.config_file import (
     rename_profile,
     set_active_profile,
     write_profile,
-)
-from untaped_core.profile_resolver import (
-    ProfileSource,
-    classify_active_profile,
-    effective_active_profile_name,
-    resolve_profiles,
 )
 
 
@@ -55,8 +55,8 @@ class ProfileFileRepository:
     def classify_active(self) -> tuple[str | None, ProfileSource]:
         """Return the effective active profile name + the layer that supplied it.
 
-        Delegates to :func:`untaped_core.profile_resolver.classify_active_profile`,
-        which is the single source of truth for the env/active/fallback
+        Delegates to :func:`untaped_core.classify_active_profile`, which
+        is the single source of truth for the env/active/fallback
         precedence.
         """
         return classify_active_profile(read_config_dict())
