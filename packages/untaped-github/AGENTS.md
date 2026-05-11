@@ -63,9 +63,10 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD":
 
 - `domain/`: `GithubUser` and future entities. Pure pydantic models;
   no HTTP, no Settings.
-- `application/`: use cases (`WhoAmI`) + the Protocols they declare
-  (`GithubMeService`, etc.). Use cases take a Protocol via constructor
-  injection and call only the methods on it.
+- `application/`: use cases (`WhoAmI`) + the Protocols they consume,
+  declared in `application/ports.py` (`GithubMeService`, etc.). Use
+  cases take a Protocol via constructor injection and call only the
+  methods on it.
 - `infrastructure/`: `GithubClient`, `GithubConfig`. Adapters satisfy
   application Protocols structurally — no import from `application/`.
 - `cli/`: composition root. Reads `Settings.github`, builds
@@ -77,10 +78,11 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD":
 1. Add an HTTP method to `GithubClient` (e.g. `def list_repos(...)`).
 2. Add a domain model in `domain/` if the response shape isn't already
    covered.
-3. Add a use case in `application/` (e.g. `ListRepos`). Declare its
-   port `Protocol` inline for now; if a third use case lands and shares
-   ports, consolidate into `application/ports.py` (matching the
-   convention in `untaped-awx` and `untaped-workspace`).
+3. Add a use case in `application/` (e.g. `ListRepos`). Add its port
+   `Protocol` to `application/ports.py` — alongside `GithubMeService`
+   if it shares the contract, or as a sibling Protocol if the new
+   command needs a different shape. The use case takes the Protocol via
+   constructor injection and calls only its declared methods.
 4. Wire the command in `cli/commands.py`. Mark `no_args_is_help=True`
    if it has required args. Pipe-friendly data output via
    `format_output` + `--format` / `--columns`.

@@ -8,7 +8,8 @@ from untaped_awx.application.get_job import GetJob
 from untaped_awx.application.get_resource import GetResource
 from untaped_awx.application.list_jobs import ListJobs
 from untaped_awx.application.list_resources import ListResources
-from untaped_awx.application.ping import AwxPingService, Ping
+from untaped_awx.application.ping import Ping
+from untaped_awx.application.ports import AwxPingService
 from untaped_awx.application.run_action import RunAction
 from untaped_awx.application.save_resource import SaveResource
 from untaped_awx.application.stream_job_events import StreamJobEvents
