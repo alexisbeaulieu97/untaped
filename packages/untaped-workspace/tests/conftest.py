@@ -22,7 +22,9 @@ sync and status tests; per-test failure injection rides on the kwargs
 ``WorkspaceRegistryRepository`` methods (``register`` / ``find_by_path``
 / ``entries`` / ``get`` / ``unregister``) with optional positional
 seeding so empty-init and seeded-init test sites both keep working
-unchanged.
+unchanged. ``empty_manifest()`` is a default-constructed
+``WorkspaceManifest`` for tests that only need an empty file on disk
+(init/add/remove/import + workspace-resolver tests).
 """
 
 from __future__ import annotations
@@ -31,8 +33,13 @@ from collections.abc import Iterable, Set
 from pathlib import Path
 from typing import Any
 
-from untaped_workspace.domain import RepoStatus, Workspace
+from untaped_workspace.domain import RepoStatus, Workspace, WorkspaceManifest
 from untaped_workspace.errors import GitError, RegistryError
+
+
+def empty_manifest() -> WorkspaceManifest:
+    """Default-constructed manifest for tests that only need an empty file on disk."""
+    return WorkspaceManifest()
 
 
 class StubGit:
