@@ -25,13 +25,26 @@ def test_http_error_status_code_optional() -> None:
     assert err.url is None
 
 
-def test_first_validation_error_extracts_message() -> None:
+@pytest.fixture
+def int_validation_error() -> ValidationError:
+    """A real ``ValidationError`` from coercing a string into an int field.
+
+    Pydantic v2 has no public constructor for ``ValidationError``; triggering
+    a genuine validation failure is the only public way to obtain one for
+    tests that monkeypatch its ``errors()`` shape."""
+
     class M(BaseModel):
         x: int
 
     with pytest.raises(ValidationError) as ei:
         M.model_validate({"x": "not-an-int"})
-    assert first_validation_error(ei.value).startswith("x: ")
+    return ei.value
+
+
+def test_first_validation_error_extracts_message(
+    int_validation_error: ValidationError,
+) -> None:
+    assert first_validation_error(int_validation_error).startswith("x: ")
 
 
 def test_first_validation_error_handles_nested_locator() -> None:
@@ -45,3 +58,23 @@ def test_first_validation_error_handles_nested_locator() -> None:
         Outer.model_validate({"inner": {"port": "not-an-int"}})
     msg = first_validation_error(ei.value)
     assert msg.startswith("inner.port: ")
+
+
+def test_first_validation_error_falls_back_to_str_when_errors_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    int_validation_error: ValidationError,
+) -> None:
+    monkeypatch.setattr(int_validation_error, "errors", lambda: [])
+    assert first_validation_error(int_validation_error) == str(int_validation_error)
+
+
+def test_first_validation_error_omits_loc_prefix_when_loc_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    int_validation_error: ValidationError,
+) -> None:
+    monkeypatch.setattr(
+        int_validation_error,
+        "errors",
+        lambda: [{"loc": (), "msg": "value is invalid"}],
+    )
+    assert first_validation_error(int_validation_error) == "value is invalid"
