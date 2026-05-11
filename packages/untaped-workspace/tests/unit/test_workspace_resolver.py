@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from conftest import empty_manifest
 from untaped_core import ConfigError
 from untaped_core.settings import get_settings
 from untaped_workspace.infrastructure import (
@@ -22,14 +23,8 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 def _make_workspace(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
-    ManifestRepository().write(path, _empty_manifest())
+    ManifestRepository().write(path, empty_manifest())
     return path
-
-
-def _empty_manifest() -> object:
-    from untaped_workspace.domain import WorkspaceManifest
-
-    return WorkspaceManifest()
 
 
 def test_resolve_by_name(_isolate: Path, tmp_path: Path) -> None:

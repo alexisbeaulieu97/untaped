@@ -169,10 +169,12 @@ sibling identifier matched.
 
 ## Shared test stubs
 
-`StubGit` (satisfies the `GitRunner` port) and `StubRegistry`
-(satisfies `WorkspaceRegistryRepository`) live in
-`tests/conftest.py`. Sibling unit tests import them via
-`from conftest import StubGit, StubRegistry` — the root
+`StubGit` (satisfies the `GitRunner` port), `StubRegistry`
+(satisfies `WorkspaceRegistryRepository`), and the
+`empty_manifest()` helper (default-constructed
+`WorkspaceManifest` for tests that only need an empty file on disk)
+live in `tests/conftest.py`. Sibling unit tests import them via
+`from conftest import StubGit, StubRegistry, empty_manifest` — the root
 `pyproject.toml` adds this package's `tests/` dir to
 `[tool.pytest.ini_options] pythonpath` so the conftest module is
 runtime-importable (pytest's `--import-mode=importlib` otherwise
