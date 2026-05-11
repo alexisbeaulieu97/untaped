@@ -16,10 +16,16 @@ def _seed(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
     return Workspace(name="prod", path=ws)
 
 
-def _runner_factory(returncode: dict[str, int] | None = None):
+def _runner_factory(
+    returncode: dict[str, int] | None = None,
+    raises: dict[str, Exception] | None = None,
+):
     returncode = returncode or {}
+    raises = raises or {}
 
     def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        if cwd.name in raises:
+            raise raises[cwd.name]
         rc = returncode.get(cwd.name, 0)
         return subprocess.CompletedProcess(
             args=cmd,
@@ -130,9 +136,10 @@ def test_outcome_records_command_when_uncloned(tmp_path: Path) -> None:
 
 
 def test_parallel_cancels_remaining_work_on_first_failure(tmp_path: Path) -> None:
-    """``parallel > 1`` + ``continue_on_error=False`` breaks after the first
-    non-zero outcome and cancels the queued futures, so fewer than all repos
-    are reported. Proves the cancel loop on the failure branch executed."""
+    """``parallel > 1`` + ``continue_on_error=False`` is fail-fast: the first
+    non-zero outcome stops further work and the run returns immediately."""
+    # repos > parallel guarantees there are *queued* futures when the first
+    # failure trips the break — the cancel branch only matters then.
     workspace = _seed(
         tmp_path,
         WorkspaceManifest(
@@ -144,12 +151,8 @@ def test_parallel_cancels_remaining_work_on_first_failure(tmp_path: Path) -> Non
             ]
         ),
     )
-    # Every runner returns non-zero; whichever completes first triggers break.
     runner = _runner_factory(returncode={"a": 1, "b": 1, "c": 1, "d": 1})
     outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x", parallel=2)
-    # We break after the first failure, so exactly one outcome is collected.
-    # The cancel branch must have run for the loop to terminate before
-    # ``as_completed`` yielded all four futures.
     assert len(outcomes) == 1
     assert outcomes[0].returncode == 1
 
@@ -162,13 +165,9 @@ def test_file_not_found_yields_runner_error_outcome(tmp_path: Path) -> None:
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
     )
-
-    def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-        raise FileNotFoundError("/bin/missing-shell: not found")
-
-    outcomes = Foreach(ManifestRepository(), runner=_runner)(workspace, command="x")
+    runner = _runner_factory(raises={"a": FileNotFoundError("/bin/missing-shell: not found")})
+    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x")
     assert len(outcomes) == 1
     assert outcomes[0].returncode == -1
     assert outcomes[0].stdout == ""
-    assert "missing-shell" in outcomes[0].stderr
-    assert outcomes[0].duration_s >= 0.0
+    assert outcomes[0].stderr == "/bin/missing-shell: not found"
