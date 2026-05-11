@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-
-
-class _SetCapableRepo(Protocol):
-    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str: ...
+from untaped_config.application.ports import SettingsRepository
 
 
 class SetSetting:
@@ -17,7 +13,7 @@ class SetSetting:
     resolved target profile name so callers can echo where the write landed.
     """
 
-    def __init__(self, repo: _SetCapableRepo) -> None:
+    def __init__(self, repo: SettingsRepository) -> None:
         self._repo = repo
 
     def __call__(self, key: str, raw_value: str, *, profile: str | None = None) -> str:

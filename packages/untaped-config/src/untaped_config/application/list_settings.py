@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
-from untaped_core import FieldDescriptor, Settings
+from untaped_core import FieldDescriptor
 
+from untaped_config.application.ports import SettingsRepository
 from untaped_config.domain import SettingEntry, Source, display_default, display_value
-
-
-class SettingsRepository(Protocol):
-    def descriptors(self) -> list[FieldDescriptor]: ...
-    def current_settings(self) -> Settings: ...
-    def yaml_dict(self) -> dict[str, Any]: ...
-    def env_value_for(self, descriptor: FieldDescriptor) -> str | None: ...
-    def provenance(self) -> dict[tuple[str, ...], str]: ...
-    def profile_data(self, name: str) -> dict[str, Any] | None: ...
-    def profile_names(self) -> list[str]: ...
 
 
 class ListSettings:

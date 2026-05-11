@@ -88,27 +88,28 @@ shape.
 Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD".
 Two package-specific notes:
 
-- **Protocols are currently inline.** `SettingsRepository` (in
-  `list_settings.py`) is the wide port shared by both list use cases;
-  `_SetCapableRepo` and `_UnsetCapableRepo` are narrow per-command
-  ports in their respective use-case files. Issue #7 of the
-  audit-driven plan hardens the root rule (one `application/ports.py`
-  per domain); Issue #15 consolidates this package's inline Protocols
-  to match.
-- **One concrete adapter.** `SettingsFileRepository` satisfies all
-  three application Protocols structurally. It owns coercion
-  (`_coerce_scalar` via `yaml.safe_load`), validation, profile target
-  resolution, and the `mutate_config` calls.
+- **One consolidated port.** `application/ports.py` declares a single
+  `SettingsRepository` Protocol with every method the use cases need —
+  the seven read-side methods that power `ListSettings` /
+  `ListAllProfilesSettings`, plus `set_value` and `unset_value` for
+  `SetSetting` / `UnsetSetting`. Each use case takes the wide port via
+  constructor injection and only calls the methods it needs; structural
+  typing doesn't penalise the unused surface.
+- **One concrete adapter.** `SettingsFileRepository` satisfies the port
+  structurally (no inheritance). It owns coercion (`_coerce_scalar` via
+  `yaml.safe_load`), validation, profile target resolution, and the
+  `mutate_config` calls.
 
 ## Recipe: add a new config sub-command
 
 1. Add a method to `SettingsFileRepository` if the new command needs an
    external operation the repo doesn't already expose (hypothetically,
    an `export_value` that emits dotted-form output).
-2. Add a use case in `application/`, declaring its `Protocol` inline
-   for now (consolidate when Issue #15 lands). The use case takes the
-   Protocol via constructor injection and calls only its declared
-   methods.
+2. Add a use case in `application/`. If it needs a method
+   `SettingsRepository` doesn't expose yet, add the method to the
+   Protocol in `application/ports.py` and to the adapter; the use case
+   then takes `SettingsRepository` via constructor injection and calls
+   only what it needs.
 3. Wire the Typer command in `cli/commands.py`. Mark
    `no_args_is_help=True` if it has required args. Pipe-friendly data
    output via `format_output` + `--format` / `--columns`. Side-effect

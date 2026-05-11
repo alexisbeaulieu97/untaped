@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
-
+from untaped_github.application.ports import GithubMeService
 from untaped_github.domain import GithubUser
-
-
-class GithubMeService(Protocol):
-    def me(self) -> dict[str, Any]: ...
 
 
 class WhoAmI:

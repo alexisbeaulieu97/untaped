@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-
-
-class _UnsetCapableRepo(Protocol):
-    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]: ...
+from untaped_config.application.ports import SettingsRepository
 
 
 class UnsetSetting:
@@ -17,7 +13,7 @@ class UnsetSetting:
     non-existent profile raises ``ConfigError`` — same contract as ``set``.
     """
 
-    def __init__(self, repo: _UnsetCapableRepo) -> None:
+    def __init__(self, repo: SettingsRepository) -> None:
         self._repo = repo
 
     def __call__(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
