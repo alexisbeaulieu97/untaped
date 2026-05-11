@@ -68,8 +68,8 @@ def _load_suites(
     vars_files: tuple[Path, ...],
     non_interactive: bool,
 ) -> list[TestSuite]:
-    from untaped_awx.application.test.loader import LoadTestSuite
-    from untaped_awx.infrastructure.test import (
+    from untaped_awx.application.test.loader import LoadTestSuite  # noqa: PLC0415
+    from untaped_awx.infrastructure.test import (  # noqa: PLC0415
         DefaultParser,
         LocalFilesystem,
         TyperPrompt,
@@ -129,9 +129,9 @@ def run_command(
     columns: ColumnsOption = None,
 ) -> None:
     """Render, resolve, launch and report on one or more test files."""
-    from untaped_awx.application import RunAction, WatchJob
-    from untaped_awx.application.test.resolver import ResolveCasePayload
-    from untaped_awx.application.test.runner import RunTestSuite
+    from untaped_awx.application import RunAction, WatchJob  # noqa: PLC0415
+    from untaped_awx.application.test.resolver import ResolveCasePayload  # noqa: PLC0415
+    from untaped_awx.application.test.runner import RunTestSuite  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
@@ -262,7 +262,7 @@ def validate_command(
     non_interactive: bool = _NON_INTERACTIVE_OPT,
 ) -> None:
     """Render + parse + resolve each case; report errors without launching."""
-    from untaped_awx.application.test.resolver import ResolveCasePayload
+    from untaped_awx.application.test.resolver import ResolveCasePayload  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)

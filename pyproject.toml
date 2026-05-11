@@ -140,11 +140,16 @@ select = [
     "C90",  # mccabe complexity (gate set in [tool.ruff.lint.mccabe])
     "RUF",  # ruff-specific
 ]
-# Narrow opt-in to a single bandit rule. The jinja-autoescape check is
-# load-bearing for the noqa in untaped_awx.infrastructure.test.parser's
-# build_jinja_env, which documents why HTML escaping is intentionally off
-# for YAML output.
-extend-select = ["S701"]
+# Narrow opt-in:
+# - S701 (jinja-autoescape): load-bearing for the noqa in
+#   untaped_awx.infrastructure.test.parser's build_jinja_env, which
+#   documents why HTML escaping is intentionally off for YAML output.
+# - PLC0415 (import-outside-top-level): load-bearing for the lazy-import
+#   noqas in untaped_awx.cli.test_commands and untaped_awx.cli.completions,
+#   which keep `awx --help` and `awx ping` fast by deferring jinja2/yaml/
+#   the loader/runner. Tests use in-function imports freely and are
+#   exempted via per-file-ignores below.
+extend-select = ["S701", "PLC0415"]
 ignore = []
 
 [tool.ruff.lint.flake8-tidy-imports]
@@ -154,8 +159,9 @@ ban-relative-imports = "all"
 max-complexity = 12
 
 [tool.ruff.lint.per-file-ignores]
-# Tests can use assert statements and longer modules
-"**/tests/**" = ["S101"]
+# Tests can use assert statements; in-function imports are routine and
+# idiomatic in tests (no startup-latency cost).
+"**/tests/**" = ["S101", "PLC0415"]
 # Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...)).
 # Glob covers both ``commands.py`` and ``*_commands.py`` across every package so a new
 # Typer command module doesn't require a per-file-ignores edit.
