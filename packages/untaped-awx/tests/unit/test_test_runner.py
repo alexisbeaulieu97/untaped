@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from untaped_awx.application.test.ports import FkPrefetcher, Launcher, Watcher
 from untaped_awx.application.test.resolver import ResolveCasePayload
 from untaped_awx.application.test.runner import RunTestSuite
 from untaped_awx.domain import Job
@@ -98,10 +99,10 @@ def _make_runner(
     jt_scope = {"organization": default_org} if default_org is not None else None
     return RunTestSuite(
         resolver=resolver,
-        launcher=launcher,  # type: ignore[arg-type]
-        watcher=watcher,  # type: ignore[arg-type]
+        launcher=cast(Launcher, launcher),
+        watcher=cast(Watcher, watcher),
         spec=JOB_TEMPLATE_SPEC,
-        fk_prefetcher=fk,  # type: ignore[arg-type]
+        fk_prefetcher=cast(FkPrefetcher, fk),
         jt_scope=jt_scope,
     )
 
@@ -342,7 +343,7 @@ def test_parallel_results_preserve_input_order() -> None:
     }
     launcher = SlowLauncher(behaviors, slow_cases={"slow"})
     watcher = StubWatcher(default=_job(status="successful"))
-    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)  # type: ignore[arg-type]
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
     suite = _suite(
         "s",
         {

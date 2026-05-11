@@ -9,10 +9,11 @@ Plans + executes the multi-FK sub-endpoint reconciliation that backs
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
+from untaped_awx.application.ports import FkResolver, ResourceClient
 from untaped_awx.domain import FieldChange, Metadata, Resource, ResourceSpec
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequest
@@ -97,8 +98,8 @@ def test_plan_returns_empty_for_kinds_without_sub_endpoint_refs() -> None:
         JOB_TEMPLATE_SPEC,
         Resource(kind="JobTemplate", metadata=Metadata(name="t"), spec={}),
         record_id=1,
-        client=_StubClient(),  # type: ignore[arg-type]
-        fk=_StubFk({}),  # type: ignore[arg-type]
+        client=cast(ResourceClient, _StubClient()),
+        fk=cast(FkResolver, _StubFk({})),
     )
     assert plans == []
 
@@ -110,8 +111,11 @@ def test_plan_skips_field_absent_from_resource_spec() -> None:
         GROUP_SPEC,
         _group("g1"),  # no hosts:, no children:
         record_id=42,
-        client=_StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),  # type: ignore[arg-type]
-        fk=_StubFk({}),  # type: ignore[arg-type]
+        client=cast(
+            ResourceClient,
+            _StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),
+        ),
+        fk=cast(FkResolver, _StubFk({})),
     )
     assert plans == []
 
@@ -124,8 +128,8 @@ def test_plan_record_id_none_treats_existing_as_empty() -> None:
         GROUP_SPEC,
         _group("g1", hosts=["web-01", "web-02"]),
         record_id=None,
-        client=_StubClient(),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8}),  # type: ignore[arg-type]
+        client=cast(ResourceClient, _StubClient()),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert sorted(hosts_plan.to_associate) == [7, 8]
@@ -138,8 +142,11 @@ def test_plan_associate_only() -> None:
         GROUP_SPEC,
         _group("g1", hosts=["web-01", "web-02"]),
         record_id=42,
-        client=_StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8}),  # type: ignore[arg-type]
+        client=cast(
+            ResourceClient,
+            _StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),
+        ),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert hosts_plan.to_associate == (8,)
@@ -148,19 +155,15 @@ def test_plan_associate_only() -> None:
 
 def test_plan_disassociate_only() -> None:
     rec = MembershipReconciler()
+    client = _StubClient(
+        existing_members={"hosts": [{"id": 7, "name": "web-01"}, {"id": 8, "name": "web-02"}]}
+    )
     plans = rec.plan(
         GROUP_SPEC,
         _group("g1", hosts=["web-01"]),
         record_id=42,
-        client=_StubClient(
-            existing_members={
-                "hosts": [
-                    {"id": 7, "name": "web-01"},
-                    {"id": 8, "name": "web-02"},
-                ]
-            }
-        ),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 7}),  # type: ignore[arg-type]
+        client=cast(ResourceClient, client),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert hosts_plan.to_associate == ()
@@ -169,19 +172,15 @@ def test_plan_disassociate_only() -> None:
 
 def test_plan_mixed_associate_disassociate() -> None:
     rec = MembershipReconciler()
+    client = _StubClient(
+        existing_members={"hosts": [{"id": 7, "name": "web-01"}, {"id": 8, "name": "web-02"}]}
+    )
     plans = rec.plan(
         GROUP_SPEC,
         _group("g1", hosts=["web-01", "web-03"]),
         record_id=42,
-        client=_StubClient(
-            existing_members={
-                "hosts": [
-                    {"id": 7, "name": "web-01"},
-                    {"id": 8, "name": "web-02"},
-                ]
-            }
-        ),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 7, ("Host", "web-03"): 9}),  # type: ignore[arg-type]
+        client=cast(ResourceClient, client),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-03"): 9})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert hosts_plan.to_associate == (9,)
@@ -191,19 +190,15 @@ def test_plan_mixed_associate_disassociate() -> None:
 def test_plan_empty_list_clears_membership() -> None:
     """``hosts: []`` is the explicit "remove every host" gesture."""
     rec = MembershipReconciler()
+    client = _StubClient(
+        existing_members={"hosts": [{"id": 7, "name": "web-01"}, {"id": 8, "name": "web-02"}]}
+    )
     plans = rec.plan(
         GROUP_SPEC,
         _group("g1", hosts=[]),
         record_id=42,
-        client=_StubClient(
-            existing_members={
-                "hosts": [
-                    {"id": 7, "name": "web-01"},
-                    {"id": 8, "name": "web-02"},
-                ]
-            }
-        ),  # type: ignore[arg-type]
-        fk=_StubFk({}),  # type: ignore[arg-type]
+        client=cast(ResourceClient, client),
+        fk=cast(FkResolver, _StubFk({})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert hosts_plan.to_associate == ()
@@ -226,8 +221,8 @@ def test_plan_rejects_non_list_field() -> None:
                 spec={"hosts": "web-01"},  # bare string, not list
             ),
             record_id=42,
-            client=_StubClient(),  # type: ignore[arg-type]
-            fk=_StubFk({}),  # type: ignore[arg-type]
+            client=cast(ResourceClient, _StubClient()),
+            fk=cast(FkResolver, _StubFk({})),
         )
 
 
@@ -239,8 +234,11 @@ def test_plan_field_change_is_none_when_no_changes() -> None:
         GROUP_SPEC,
         _group("g1", hosts=["web-01"]),
         record_id=42,
-        client=_StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 7}),  # type: ignore[arg-type]
+        client=cast(
+            ResourceClient,
+            _StubClient(existing_members={"hosts": [{"id": 7, "name": "web-01"}]}),
+        ),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert hosts_plan.field_change is None
@@ -252,8 +250,11 @@ def test_plan_field_change_carries_sorted_before_after() -> None:
         GROUP_SPEC,
         _group("g1", hosts=["web-02", "web-01"]),
         record_id=42,
-        client=_StubClient(existing_members={"hosts": [{"id": 9, "name": "web-03"}]}),  # type: ignore[arg-type]
-        fk=_StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8}),  # type: ignore[arg-type]
+        client=cast(
+            ResourceClient,
+            _StubClient(existing_members={"hosts": [{"id": 9, "name": "web-03"}]}),
+        ),
+        fk=cast(FkResolver, _StubFk({("Host", "web-01"): 7, ("Host", "web-02"): 8})),
     )
     hosts_plan = next(p for p in plans if p.ref.field == "hosts")
     assert hosts_plan.field_change is not None
@@ -276,7 +277,7 @@ def test_execute_issues_associate_then_disassociate_posts() -> None:
             field_change=FieldChange(field="hosts", before=[], after=[]),
         )
     ]
-    rec.execute(GROUP_SPEC, 42, plans, client=client)  # type: ignore[arg-type]
+    rec.execute(GROUP_SPEC, 42, plans, client=cast(ResourceClient, client))
     assert client.subendpoint_calls == [
         (42, "hosts", "POST", {"id": 7}),
         (42, "hosts", "POST", {"id": 8}),
@@ -295,5 +296,5 @@ def test_execute_skips_plans_with_no_work() -> None:
             field_change=None,
         )
     ]
-    rec.execute(GROUP_SPEC, 42, plans, client=client)  # type: ignore[arg-type]
+    rec.execute(GROUP_SPEC, 42, plans, client=cast(ResourceClient, client))
     assert client.subendpoint_calls == []

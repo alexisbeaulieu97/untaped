@@ -8,9 +8,10 @@ prefetch (so warm-up reads the same buckets as the apply path).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from untaped_awx.application.apply_planner import ApplyPlanner, scope_for
+from untaped_awx.application.ports import FkResolver
 from untaped_awx.domain import FkRef, Metadata, Resource
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.infrastructure.specs import (
@@ -101,7 +102,7 @@ def test_plan_payload_projects_canonical_fields() -> None:
     payload = planner.plan_payload(
         PROJECT_SPEC,
         resource,
-        fk=_StubFk({("Organization", "Default"): 1}),  # type: ignore[arg-type]
+        fk=cast(FkResolver, _StubFk({("Organization", "Default"): 1})),
     )
     assert payload["scm_type"] == "git"
     assert payload["scm_url"] == "https://example.com"
@@ -121,7 +122,7 @@ def test_plan_payload_injects_identity_keys_from_metadata() -> None:
     payload = planner.plan_payload(
         PROJECT_SPEC,
         resource,
-        fk=_StubFk({("Organization", "Default"): 1}),  # type: ignore[arg-type]
+        fk=cast(FkResolver, _StubFk({("Organization", "Default"): 1})),
     )
     assert payload["name"] == "playbooks"
     assert payload["organization"] == 1  # FK-resolved to id
@@ -141,12 +142,15 @@ def test_plan_payload_resolves_single_fks_to_ids() -> None:
     payload = planner.plan_payload(
         JOB_TEMPLATE_SPEC,
         resource,
-        fk=_StubFk(  # type: ignore[arg-type]
-            {
-                ("Organization", "Default"): 1,
-                ("Project", "playbooks"): 5,
-                ("Inventory", "prod"): 7,
-            }
+        fk=cast(
+            FkResolver,
+            _StubFk(
+                {
+                    ("Organization", "Default"): 1,
+                    ("Project", "playbooks"): 5,
+                    ("Inventory", "prod"): 7,
+                }
+            ),
         ),
     )
     assert payload["project"] == 5
@@ -166,12 +170,15 @@ def test_plan_payload_resolves_multi_fks_to_id_lists() -> None:
     payload = planner.plan_payload(
         JOB_TEMPLATE_SPEC,
         resource,
-        fk=_StubFk(  # type: ignore[arg-type]
-            {
-                ("Organization", "Default"): 1,
-                ("Credential", "ssh-key"): 10,
-                ("Credential", "vault-pw"): 11,
-            }
+        fk=cast(
+            FkResolver,
+            _StubFk(
+                {
+                    ("Organization", "Default"): 1,
+                    ("Credential", "ssh-key"): 10,
+                    ("Credential", "vault-pw"): 11,
+                }
+            ),
         ),
     )
     assert payload["credentials"] == [10, 11]
@@ -192,7 +199,7 @@ def test_plan_payload_drops_sub_endpoint_multi_fk_from_body() -> None:
     payload = planner.plan_payload(
         GROUP_SPEC,
         resource,
-        fk=_StubFk({}),  # type: ignore[arg-type]
+        fk=cast(FkResolver, _StubFk({})),
     )
     assert "hosts" not in payload
     assert "children" not in payload
@@ -215,7 +222,7 @@ def test_plan_payload_skips_polymorphic_fks() -> None:
     payload = planner.plan_payload(
         SCHEDULE_SPEC,
         resource,
-        fk=_StubFk({}),  # type: ignore[arg-type]
+        fk=cast(FkResolver, _StubFk({})),
     )
     assert payload["rrule"] == "FREQ=DAILY"
     assert payload["enabled"] is True

@@ -10,10 +10,11 @@ detection, unknown-kind rejection, and per-doc error handling
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
-from untaped_awx.application import ApplyFile
+from untaped_awx.application import ApplyFile, ApplyResource
+from untaped_awx.application.ports import Catalog, FkResolver
 from untaped_awx.domain import Resource, ResourceSpec
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
@@ -75,7 +76,12 @@ def test_apply_file_orders_by_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StubFk())  # type: ignore[arg-type]
+    use = ApplyFile(
+        cast(ApplyResource, recorder),
+        read_resources,
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+    )
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
     # Topo order from fk_refs: JobTemplate → Project, Schedule.parent → JT.
@@ -102,7 +108,12 @@ def test_apply_file_uses_polymorphic_parent_edge(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StubFk())  # type: ignore[arg-type]
+    use = ApplyFile(
+        cast(ApplyResource, recorder),
+        read_resources,
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+    )
     use(f, write=False)
     kinds = [k for k, _, _ in recorder.calls]
     assert kinds.index("WorkflowJobTemplate") < kinds.index("Schedule"), kinds
@@ -148,7 +159,7 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
         Resource(kind="B", metadata=Metadata(name="y"), spec={}),
     ]
     with pytest.raises(AwxApiError, match="cycle"):
-        _topological_sort(docs, catalog=_Stub())  # type: ignore[arg-type]
+        _topological_sort(docs, catalog=cast(Catalog, _Stub()))
 
 
 def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
@@ -158,7 +169,12 @@ def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     recorder = _RecordingApply()
-    use = ApplyFile(recorder, read_resources, AwxResourceCatalog(), _StubFk())  # type: ignore[arg-type]
+    use = ApplyFile(
+        cast(ApplyResource, recorder),
+        read_resources,
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+    )
     # Match the kind name (input) rather than the catalog's error wording, so
     # this test stays valid if the catalog's prose changes.
     with pytest.raises(AwxApiError, match="NotARealKind"):
@@ -201,7 +217,12 @@ def test_apply_file_continues_on_error_by_default(
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources, AwxResourceCatalog(), _StubFk())  # type: ignore[arg-type]
+    use = ApplyFile(
+        cast(ApplyResource, failing),
+        read_resources,
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+    )
     outcomes = use(f, write=False)
     # Both docs were applied even though one failed (default = continue-on-error).
     assert sorted(o.action for o in outcomes) == ["failed", "preview"]
@@ -238,6 +259,11 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
-    use = ApplyFile(failing, read_resources, AwxResourceCatalog(), _StubFk())  # type: ignore[arg-type]
+    use = ApplyFile(
+        cast(ApplyResource, failing),
+        read_resources,
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+    )
     use(f, write=False, fail_fast=True)
     assert failing.calls == ["boom"]

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from untaped_awx.application import RunAction
+from untaped_awx.application.ports import ResourceClient
 from untaped_awx.domain import ActionPayload, ResourceSpec, ServerRecord
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -55,7 +56,7 @@ def test_run_action_finds_then_posts() -> None:
         find_result={"id": 42, "name": "deploy"},
         action_result={"id": 7, "status": "pending", "type": "job"},
     )
-    use = RunAction(client)  # type: ignore[arg-type]
+    use = RunAction(cast(ResourceClient, client))
     job = use(
         JOB_TEMPLATE_SPEC,
         name="deploy",
@@ -72,6 +73,6 @@ def test_run_action_unknown_action_errors() -> None:
     # action_result is unreachable in this path — RunAction rejects the
     # unknown action before reaching the client's action() call.
     client = _StubClient(find_result={"id": 1, "name": "x"}, action_result={})
-    use = RunAction(client)  # type: ignore[arg-type]
+    use = RunAction(cast(ResourceClient, client))
     with pytest.raises(AwxApiError):
         use(JOB_TEMPLATE_SPEC, name="x", action="not-real")

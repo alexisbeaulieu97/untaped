@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from untaped_awx.application import SaveResource
+from untaped_awx.application.ports import FkResolver, ResourceClient
 from untaped_awx.domain import ResourceSpec, ServerRecord
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC, PROJECT_SPEC, SCHEDULE_SPEC
 
@@ -65,7 +66,7 @@ def test_save_resource_translates_fk_ids_to_names() -> None:
             ("Credential", 11): "vault-pw",
         }
     )
-    use = SaveResource(client, fk)  # type: ignore[arg-type]
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
     saved = use(JOB_TEMPLATE_SPEC, name="deploy", scope={"organization": "Default"})
 
     assert saved.kind == "JobTemplate"
@@ -89,7 +90,7 @@ def test_save_resource_strips_read_only_fields() -> None:
         }
     )
     fk = _StubFk({("Organization", 1): "Default"})
-    use = SaveResource(client, fk)  # type: ignore[arg-type]
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
     saved = use(PROJECT_SPEC, name="playbooks", scope={"organization": "Default"})
     assert "last_job_run" not in saved.spec
     assert "summary_fields" not in saved.spec
@@ -113,7 +114,7 @@ def test_save_schedule_extracts_polymorphic_parent() -> None:
         }
     )
     fk = _StubFk({})
-    use = SaveResource(client, fk)  # type: ignore[arg-type]
+    use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
     saved = use(SCHEDULE_SPEC, name="nightly")
     assert saved.metadata.parent is not None
     assert saved.metadata.parent.kind == "JobTemplate"

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 from untaped_awx.application.test.loader import LoadTestSuite
-from untaped_awx.application.test.ports import Filesystem
+from untaped_awx.application.test.ports import Filesystem, Prompt
 from untaped_awx.domain.test_suite import RefSentinel, VariableSpec
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.test import DefaultParser, resolve_variables
@@ -37,7 +38,7 @@ def _load(text: str, **kwargs: object) -> object:
         fs,
         parser=DefaultParser(),
         vars_resolver=resolve_variables,
-        prompt=StubPrompt(),  # type: ignore[arg-type]
+        prompt=cast(Prompt, StubPrompt()),
     )
     return loader(path, **kwargs)  # type: ignore[arg-type]
 
@@ -213,7 +214,7 @@ def test_filename_stem_used_as_default_name() -> None:
         fs,
         parser=DefaultParser(),
         vars_resolver=resolve_variables,
-        prompt=StubPrompt(),  # type: ignore[arg-type]
+        prompt=cast(Prompt, StubPrompt()),
     )
     suite = loader(path)
     assert suite.name == "deploy-tests"

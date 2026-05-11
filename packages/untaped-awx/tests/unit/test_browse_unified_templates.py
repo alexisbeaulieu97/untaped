@@ -9,9 +9,10 @@ returns ``(records, missing_ids)`` so the CLI can report per-id misses.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from typing import Any
+from typing import Any, cast
 
 from untaped_awx.application import BrowseUnifiedTemplates, GetUnifiedTemplate
+from untaped_awx.application.ports import UnifiedTemplateRepository
 
 
 class _FakeUjtRepo:
@@ -48,20 +49,24 @@ def test_browse_applies_alphabetical_default() -> None:
     """Default ordering is ``order_by=name``; aggregating four kinds by
     ``-id`` would interleave creation timelines from four different tables."""
     repo = _FakeUjtRepo()
-    list(BrowseUnifiedTemplates(repo)())  # type: ignore[arg-type]
+    list(BrowseUnifiedTemplates(cast(UnifiedTemplateRepository, repo))())
     assert repo.list_calls[0]["params"] == {"order_by": "name"}
 
 
 def test_browse_preserves_caller_order_by() -> None:
     repo = _FakeUjtRepo()
-    list(BrowseUnifiedTemplates(repo)(params={"order_by": "id", "type": "job_template"}))  # type: ignore[arg-type]
+    list(
+        BrowseUnifiedTemplates(cast(UnifiedTemplateRepository, repo))(
+            params={"order_by": "id", "type": "job_template"}
+        )
+    )
     assert repo.list_calls[0]["params"] == {"order_by": "id", "type": "job_template"}
 
 
 def test_browse_forwards_filters_and_limit() -> None:
     repo = _FakeUjtRepo(records=[{"id": 1}, {"id": 2}])
     out = list(
-        BrowseUnifiedTemplates(repo)(  # type: ignore[arg-type]
+        BrowseUnifiedTemplates(cast(UnifiedTemplateRepository, repo))(
             params={"name__icontains": "deploy"},
             limit=25,
         )
@@ -82,7 +87,7 @@ def test_get_returns_records_and_no_missing_when_all_found() -> None:
             "2": {"id": 2, "name": "build"},
         }
     )
-    records, missing = GetUnifiedTemplate(repo)(ids=["1", "2"])  # type: ignore[arg-type]
+    records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=["1", "2"])
     assert [r["id"] for r in records] == [1, 2]
     assert missing == []
     assert repo.get_by_ids_calls[0] == ["1", "2"]
@@ -90,7 +95,9 @@ def test_get_returns_records_and_no_missing_when_all_found() -> None:
 
 def test_get_reports_missing_ids() -> None:
     repo = _FakeUjtRepo(records_by_id={"1": {"id": 1, "name": "deploy"}})
-    records, missing = GetUnifiedTemplate(repo)(ids=["1", "999", "1000"])  # type: ignore[arg-type]
+    records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(
+        ids=["1", "999", "1000"]
+    )
     assert [r["id"] for r in records] == [1]
     assert missing == ["999", "1000"]
 
@@ -98,7 +105,7 @@ def test_get_reports_missing_ids() -> None:
 def test_get_empty_ids_returns_empty_pair() -> None:
     """Empty ids must short-circuit cleanly without hitting the repo."""
     repo = _FakeUjtRepo()
-    records, missing = GetUnifiedTemplate(repo)(ids=[])  # type: ignore[arg-type]
+    records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=[])
     assert records == []
     assert missing == []
     assert repo.get_by_ids_calls == []
@@ -110,7 +117,7 @@ def test_get_accepts_iterable() -> None:
     def _gen() -> Iterable[str]:
         yield "1"
 
-    records, missing = GetUnifiedTemplate(repo)(ids=_gen())  # type: ignore[arg-type]
+    records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=_gen())
     assert [r["id"] for r in records] == [1]
     assert missing == []
 
@@ -119,7 +126,7 @@ def test_get_compares_ids_as_strings() -> None:
     """AWX returns numeric ``id``; user passes strings from CLI argv. The
     use case must coerce to strings for set comparison so they match."""
     repo = _FakeUjtRepo(records_by_id={"7": {"id": 7, "name": "t"}})
-    records, missing = GetUnifiedTemplate(repo)(ids=["7"])  # type: ignore[arg-type]
+    records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=["7"])
     assert missing == []
     assert [r["id"] for r in records] == [7]
 
@@ -130,6 +137,6 @@ def test_get_handles_zero_padded_ids() -> None:
     record with the integer id; without canonicalisation the user's
     request would be falsely flagged as missing."""
     repo = _FakeUjtRepo(records_by_id={"007": {"id": 7, "name": "deploy"}})
-    records, missing = GetUnifiedTemplate(repo)(ids=["007"])  # type: ignore[arg-type]
+    records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=["007"])
     assert [r["id"] for r in records] == [7]
     assert missing == []

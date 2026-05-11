@@ -28,10 +28,16 @@ imports per the project's test layout (see AGENTS.md "Test layout").
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from untaped_awx.application import ApplyResource
+from untaped_awx.application.ports import (
+    Catalog,
+    FkResolver,
+    RawHttpResourceClient,
+    StrategyResolver,
+)
 from untaped_awx.domain import ApplyOutcome, Metadata, Resource, ResourceSpec
 from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -144,10 +150,10 @@ def _make_apply(
     strategy: _StubStrategy,
 ) -> ApplyResource:
     return ApplyResource(
-        client=_StubClient(),  # type: ignore[arg-type]
-        catalog=_StubCatalog(catalog_specs),  # type: ignore[arg-type]
-        fk=_StubFk(fk_names),  # type: ignore[arg-type]
-        strategies=_StubStrategies(strategy),  # type: ignore[arg-type]
+        client=cast(RawHttpResourceClient, _StubClient()),
+        catalog=cast(Catalog, _StubCatalog(catalog_specs)),
+        fk=cast(FkResolver, _StubFk(fk_names)),
+        strategies=cast(StrategyResolver, _StubStrategies(strategy)),
         warn=lambda _msg: None,
     )
 

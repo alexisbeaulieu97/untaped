@@ -9,8 +9,9 @@ walks the script until done.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
 from untaped_awx.infrastructure.job_monitor import PollingJobMonitor
 
@@ -65,7 +66,7 @@ def _terminal_record(id_: int = 7, status: str = "successful") -> dict[str, Any]
 
 def test_fetch_returns_job_with_kind_preserved() -> None:
     client = _FakeClient(json_responses=[_terminal_record(status="successful")])
-    monitor = PollingJobMonitor(client, sleep=lambda _: None)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     job = monitor.fetch(_running())
     assert job.id == 7
     assert job.status == "successful"
@@ -75,14 +76,14 @@ def test_fetch_returns_job_with_kind_preserved() -> None:
 
 def test_fetch_uses_kind_specific_api_path_for_workflow_jobs() -> None:
     client = _FakeClient(json_responses=[{"id": 9, "status": "running"}])
-    monitor = PollingJobMonitor(client, sleep=lambda _: None)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     monitor.fetch(Job(id=9, kind="workflow_job", status="running"))
     assert client.json_calls[0][1] == "workflow_jobs/9/"
 
 
 def test_fetch_stdout_passes_start_line_param() -> None:
     client = _FakeClient(text_responses=["line-3\nline-4\n"])
-    monitor = PollingJobMonitor(client, sleep=lambda _: None)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     lines = monitor.fetch_stdout(_running(), start_line=2)
     assert lines == ["line-3", "line-4"]
     method, path, params = client.text_calls[0]
@@ -98,7 +99,7 @@ def test_stream_stdout_polls_until_terminal_then_drains() -> None:
         json_responses=[_terminal_record(status="successful")],
     )
     sleeps: list[float] = []
-    monitor = PollingJobMonitor(client, sleep=sleeps.append)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=sleeps.append)
     lines = list(monitor.stream_stdout(_running()))
     assert lines == ["a", "b", "c", "d"]
     # First text call had cursor 0; second had cursor 2 (after the 2 lines we got).
@@ -130,7 +131,7 @@ def test_stream_events_yields_until_terminal_and_advances_counter() -> None:
             page_2,
         ]
     )
-    monitor = PollingJobMonitor(client, sleep=lambda _: None)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     events = list(monitor.stream_events(_running()))
     counters = [ev.counter for ev in events]
     assert counters == [1, 2, 3]
@@ -150,7 +151,7 @@ def test_stream_events_follows_pagination_within_one_cycle() -> None:
             _terminal_record(status="successful"),
         ]
     )
-    monitor = PollingJobMonitor(client, sleep=lambda _: None)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     job = Job(id=7, kind="job", status="successful")  # already terminal
     events = list(monitor.stream_events(job))
     assert [ev.counter for ev in events] == [1, 2]
@@ -160,7 +161,7 @@ def test_stream_events_forwards_filter_params() -> None:
     client = _FakeClient(
         json_responses=[{"results": [], "next": None}],
     )
-    monitor = PollingJobMonitor(client, sleep=lambda _: None)  # type: ignore[arg-type]
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=lambda _: None)
     job = Job(id=7, kind="job", status="successful")
     list(monitor.stream_events(job, params={"event": "runner_on_failed", "host": "web-01"}))
     params = client.json_calls[0][2]
