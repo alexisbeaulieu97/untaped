@@ -10,8 +10,7 @@ that case only the active profile (if any) is layered.
 from __future__ import annotations
 
 import pytest
-from untaped_core.errors import ConfigError
-from untaped_core.profile_resolver import resolve_profiles
+from untaped_core import ConfigError, resolve_profiles
 
 
 def test_empty_config_returns_empty() -> None:

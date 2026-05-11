@@ -4,9 +4,13 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import SecretStr
-from untaped_core import redact_secrets, secret_field_paths
-from untaped_core.config_schema import find_descriptor, walk_settings
-from untaped_core.settings import Settings
+from untaped_core import (
+    Settings,
+    find_descriptor,
+    redact_secrets,
+    secret_field_paths,
+    walk_settings,
+)
 
 
 def test_walks_nested_models() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from untaped_core.profile_resolver import ProfileSource
+from untaped_core import ProfileSource
 
 
 class ProfileRepository(Protocol):

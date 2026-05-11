@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import SecretStr
-from untaped_core.config_schema import FieldDescriptor
+from untaped_core import FieldDescriptor
 
 
 def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> str:

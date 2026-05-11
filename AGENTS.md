@@ -152,7 +152,7 @@ A use case in `application/` is unit-testable with a stub satisfying its
 | Print a one-line message to stderr         | `typer.echo(msg, err=True)` — keep it boring; no helper          |
 | Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` |
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
-| Walk the Settings schema (for tooling)     | `from untaped_core.config_schema import walk_settings`           |
+| Walk the Settings schema (for tooling)     | `from untaped_core import walk_settings`                         |
 | Read/write `~/.untaped/config.yml`         | `from untaped_core.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
 | Atomic read-modify-write the config file   | `from untaped_core.config_file import mutate_config` (file-locked) |
 | Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
