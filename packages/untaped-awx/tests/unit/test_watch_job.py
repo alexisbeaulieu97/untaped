@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from untaped_awx.application import WatchJob
+from untaped_awx.application.ports import RawHttpResourceClient
 from untaped_awx.domain import Job
 
 
@@ -40,7 +41,7 @@ def test_watch_job_polls_until_terminal() -> None:
         ]
     )
     sleeps: list[float] = []
-    use = WatchJob(client, sleep=sleeps.append, poll_interval=0.0)  # type: ignore[arg-type]
+    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append, poll_interval=0.0)
     job = Job(id=1, kind="job", status="running")
     final = use(job)
     assert final.status == "successful"
@@ -50,7 +51,7 @@ def test_watch_job_polls_until_terminal() -> None:
 def test_watch_job_returns_immediately_if_terminal() -> None:
     client = _StubClient(request_results=[])
     sleeps: list[float] = []
-    use = WatchJob(client, sleep=sleeps.append, poll_interval=0.0)  # type: ignore[arg-type]
+    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append, poll_interval=0.0)
     job = Job(id=1, kind="job", status="successful")
     assert use(job) is job
     assert sleeps == []
@@ -59,7 +60,7 @@ def test_watch_job_returns_immediately_if_terminal() -> None:
 def test_watch_job_respects_timeout() -> None:
     client = _StubClient(request_results=[{"id": 1, "status": "running"}] * 100)
     sleeps: list[float] = []
-    use = WatchJob(client, sleep=sleeps.append, poll_interval=0.0)  # type: ignore[arg-type]
+    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append, poll_interval=0.0)
     job = Job(id=1, kind="job", status="running")
     # zero timeout returns the input immediately
     final = use(job, timeout=0.0)
