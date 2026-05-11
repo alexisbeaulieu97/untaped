@@ -188,6 +188,19 @@ packages = [
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests", "packages"]
+# ``--import-mode=importlib`` doesn't expose ``tests`` as a package, so per-package
+# ``tests/conftest.py`` modules aren't importable by sibling test files via
+# ``from tests.conftest import …`` at runtime. Adding the workspace tests dir to
+# ``pythonpath`` lets workspace test files share stubs via
+# ``from conftest import StubGit, StubRegistry`` (avoiding 40+ fixture parameter
+# additions). Awx keeps its TYPE_CHECKING + fixture pattern unchanged.
+#
+# Caveat: this claims the unqualified module name ``conftest`` globally for the
+# pytest session. Do not add a second per-package tests dir to ``pythonpath`` —
+# pick a unique module name (e.g. ``_<pkg>_stubs.py``) and import that. Other
+# packages can still ship ``tests/conftest.py`` for pytest's auto-discovery;
+# only the runtime ``from conftest import …`` pattern is exclusive to workspace.
+pythonpath = ["packages/untaped-workspace/tests"]
 addopts = [
     "-ra",
     "--strict-markers",
