@@ -156,7 +156,7 @@ def build_jinja_env() -> Environment:
     """
     env = Environment(
         undefined=StrictUndefined,
-        autoescape=False,
+        autoescape=False,  # noqa: S701 - YAML output: HTML escaping would corrupt rendered values
         keep_trailing_newline=True,
     )
     env.filters["to_yaml"] = _to_yaml
