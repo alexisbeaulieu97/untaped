@@ -502,6 +502,46 @@ def fake_aap(aap_config: Path) -> Iterator[FakeAap]:
 
 
 @pytest.fixture
+def seeded_job_template_with_credentials(
+    fake_aap: FakeAap,
+) -> tuple[FakeAap, dict[str, int]]:
+    """``fake_aap`` pre-seeded with the org/inventory/credentials/JT shape
+    used by launch-action payload tests. Returns ``(fake, ids)`` so the
+    test can reference seeded ids without redeclaring them."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "inventories",
+        id=20,
+        name="prod",
+        organization=1,
+        organization_name="Default",
+        kind="",
+    )
+    fake_aap.seed(
+        "credentials",
+        id=30,
+        name="ssh",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed(
+        "credentials",
+        id=31,
+        name="vault",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+    )
+    return fake_aap, {"inventory": 20, "ssh": 30, "vault": 31}
+
+
+@pytest.fixture
 def awx_config() -> AwxConfig:
     """Standard test config matching the YAML in :func:`aap_config`."""
     return AwxConfig(

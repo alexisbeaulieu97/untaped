@@ -693,35 +693,14 @@ def test_workflow_launch_rejects_unsupported_flags(fake_aap: Any) -> None:
     assert "WorkflowJobTemplate.launch does not accept" in output
 
 
-def test_launch_forwards_full_action_payload(fake_aap: Any) -> None:
+def test_launch_forwards_full_action_payload(
+    seeded_job_template_with_credentials: Any,
+) -> None:
     """Every flag listed in JobTemplate.launch.accepts must reach the
     POST body, with FK names (--inventory, --credential) resolved via
     the FkResolver and list flags (--job-tag/--skip-tag/--credential)
     accumulated correctly."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed(
-        "inventories",
-        id=20,
-        name="prod",
-        organization=1,
-        organization_name="Default",
-        kind="",
-    )
-    fake_aap.seed(
-        "credentials",
-        id=30,
-        name="ssh",
-        organization=1,
-        organization_name="Default",
-    )
-    fake_aap.seed(
-        "credentials",
-        id=31,
-        name="vault",
-        organization=1,
-        organization_name="Default",
-    )
-    fake_aap.seed("job_templates", id=10, name="alpha", organization=1, organization_name="Default")
+    fake_aap, ids = seeded_job_template_with_credentials
 
     result = CliRunner().invoke(
         app,
@@ -763,8 +742,8 @@ def test_launch_forwards_full_action_payload(fake_aap: Any) -> None:
     body = launches[0][3]
     assert body["extra_vars"] == "foo=1"
     assert body["limit"] == "web*"
-    assert body["inventory"] == 20
-    assert body["credentials"] == [30, 31]
+    assert body["inventory"] == ids["inventory"]
+    assert body["credentials"] == [ids["ssh"], ids["vault"]]
     assert body["scm_branch"] == "release"
     assert body["job_tags"] == "deploy,smoke"
     assert body["skip_tags"] == "slow"
