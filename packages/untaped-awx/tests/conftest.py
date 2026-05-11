@@ -538,7 +538,7 @@ def seeded_job_template_with_credentials(
         organization=1,
         organization_name="Default",
     )
-    return fake_aap, {"org": 1, "inventory": 20, "ssh": 30, "vault": 31, "jt": 10}
+    return fake_aap, {"inventory": 20, "ssh": 30, "vault": 31}
 
 
 @pytest.fixture
