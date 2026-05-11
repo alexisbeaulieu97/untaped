@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from conftest import StubRegistry
 from untaped_workspace.application import (
     AddRepo,
     ImportWorkspace,
@@ -16,28 +17,9 @@ from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 _FS = LocalFilesystem()
 
 
-class _StubRegistry:
-    def __init__(self) -> None:
-        self.registered: list[Workspace] = []
-
-    def register(self, *, name: str, path: Path) -> Workspace:
-        ws = Workspace(name=name, path=path)
-        self.registered.append(ws)
-        return ws
-
-    def find_by_path(self, path: Path) -> Workspace | None:
-        for w in self.registered:
-            if w.path == path:
-                return w
-        return None
-
-    def entries(self) -> list[Workspace]:
-        return list(self.registered)
-
-
 def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
     repo = ManifestRepository()
-    reg = _StubRegistry()
+    reg = StubRegistry()
     ws_path = tmp_path / "prod"
     result = InitWorkspace(repo, reg)(ws_path, name="prod", branch="main")
     assert result.name == "prod"
@@ -49,7 +31,7 @@ def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
 
 
 def test_init_derives_name_from_path(tmp_path: Path) -> None:
-    InitWorkspace(ManifestRepository(), _StubRegistry())(tmp_path / "lab")
+    InitWorkspace(ManifestRepository(), StubRegistry())(tmp_path / "lab")
     assert (tmp_path / "lab" / "untaped.yml").is_file()
 
 
@@ -57,7 +39,7 @@ def test_init_refuses_existing_manifest(tmp_path: Path) -> None:
     ws = tmp_path / "prod"
     ManifestRepository().write(ws, _empty_manifest())
     with pytest.raises(WorkspaceError, match="already initialised"):
-        InitWorkspace(ManifestRepository(), _StubRegistry())(ws, name="prod")
+        InitWorkspace(ManifestRepository(), StubRegistry())(ws, name="prod")
 
 
 def test_add_repo_appends_and_dedups(tmp_path: Path) -> None:
@@ -227,7 +209,7 @@ repos:
     )
     dest = tmp_path / "ws-imported"
 
-    reg = _StubRegistry()
+    reg = StubRegistry()
     result = ImportWorkspace(ManifestRepository(), reg)(src, path=dest, name="imported")
     assert result.name == "imported"
     assert (dest / "untaped.yml").is_file()
@@ -241,7 +223,7 @@ def test_import_uses_path_dirname_when_no_name(tmp_path: Path) -> None:
     src = tmp_path / "m.yml"
     src.write_text("repos: []\n")
     dest = tmp_path / "auto"
-    ImportWorkspace(ManifestRepository(), _StubRegistry())(src, path=dest)
+    ImportWorkspace(ManifestRepository(), StubRegistry())(src, path=dest)
     assert ManifestRepository().read(dest).name == "auto"
 
 
@@ -250,7 +232,7 @@ def test_import_raises_when_name_cannot_be_derived(tmp_path: Path) -> None:
     derivable name → refuse rather than register a nameless workspace."""
     src = tmp_path / "m.yml"
     src.write_text("repos: []\n")
-    reg = _StubRegistry()
+    reg = StubRegistry()
     with pytest.raises(WorkspaceError, match="unable to derive workspace name"):
         ImportWorkspace(ManifestRepository(), reg)(src, path=Path("/"))
     assert reg.registered == []  # guard runs before register()
@@ -266,7 +248,7 @@ def test_import_refuses_already_initialised_path(tmp_path: Path) -> None:
     original = "name: original\nrepos: []\n"
     (dest / "untaped.yml").write_text(original)
     with pytest.raises(WorkspaceError, match="already initialised"):
-        ImportWorkspace(ManifestRepository(), _StubRegistry())(src, path=dest, name="x")
+        ImportWorkspace(ManifestRepository(), StubRegistry())(src, path=dest, name="x")
     assert (dest / "untaped.yml").read_text() == original  # existing manifest untouched
 
 
@@ -277,7 +259,7 @@ def test_import_refuses_path_already_registered(tmp_path: Path) -> None:
     src.write_text("repos: []\n")
     dest = tmp_path / "dest"
     dest.mkdir()  # ensure dest.resolve() == path.expanduser().resolve() inside the use case
-    reg = _StubRegistry()
+    reg = StubRegistry()
     reg.registered.append(Workspace(name="other", path=dest.resolve()))
     with pytest.raises(WorkspaceError, match="path already registered"):
         ImportWorkspace(ManifestRepository(), reg)(src, path=dest, name="x")

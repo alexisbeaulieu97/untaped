@@ -3,33 +3,11 @@
 from pathlib import Path
 
 import pytest
+from conftest import StubRegistry
 from untaped_workspace.application import ForgetWorkspace
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import GitError, RegistryError, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
-
-
-class _StubRegistry:
-    def __init__(self, registered: list[Workspace]) -> None:
-        self.registered = list(registered)
-        self.unregistered: list[str] = []
-
-    def get(self, name: str) -> Workspace:
-        for w in self.registered:
-            if w.name == name:
-                return w
-        raise RegistryError(f"unknown workspace: {name!r}")
-
-    def unregister(self, name: str) -> bool:
-        before = len(self.registered)
-        self.registered = [w for w in self.registered if w.name != name]
-        if len(self.registered) < before:
-            self.unregistered.append(name)
-            return True
-        return False
-
-    def entries(self) -> list[Workspace]:
-        return list(self.registered)
 
 
 class _StubStatus:
@@ -55,7 +33,7 @@ def test_forget_removes_registry_entry(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     ws = Workspace(name="prod", path=ws_path)
-    reg = _StubRegistry([ws])
+    reg = StubRegistry([ws])
 
     result = ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())(
         "prod"
@@ -68,7 +46,7 @@ def test_forget_removes_registry_entry(tmp_path: Path) -> None:
 
 
 def test_forget_unknown_workspace_raises(tmp_path: Path) -> None:
-    reg = _StubRegistry([])
+    reg = StubRegistry([])
     with pytest.raises(RegistryError, match="unknown workspace"):
         ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())(
             "ghost"
@@ -80,7 +58,7 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
     ws_path.mkdir()
     (ws_path / "marker.txt").write_text("hi")
     _seed_manifest(ws_path)
-    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
 
     ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())(
         "prod", prune=True
@@ -96,7 +74,7 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path) -> None:
     repo_dir = ws_path / "svc-a"
     repo_dir.mkdir()
     _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
-    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
     status = _StubStatus(dirty={repo_dir})
 
     with pytest.raises(WorkspaceError, match="uncommitted changes"):
@@ -110,7 +88,7 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path) -> None:
 
 def test_forget_prune_succeeds_when_path_missing(tmp_path: Path) -> None:
     ws_path = tmp_path / "ghost"  # never created
-    reg = _StubRegistry([Workspace(name="ghost", path=ws_path)])
+    reg = StubRegistry([Workspace(name="ghost", path=ws_path)])
 
     ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())(
         "ghost", prune=True
@@ -126,7 +104,7 @@ def test_forget_succeeds_when_manifest_missing(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     (ws_path / "stranded.txt").write_text("no manifest here")
-    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
 
     ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())("prod")
 
@@ -142,7 +120,7 @@ def test_forget_prune_refuses_when_manifest_missing(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     (ws_path / "stranded.txt").write_text("no manifest here")
-    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
 
     with pytest.raises(WorkspaceError, match="no manifest"):
         ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), status=_StubStatus())(
@@ -162,7 +140,7 @@ def test_forget_prune_refuses_when_declared_repo_is_not_a_clone(tmp_path: Path) 
     ws_path.mkdir()
     (ws_path / "svc-a").mkdir()  # exists but no .git
     _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
-    reg = _StubRegistry([Workspace(name="prod", path=ws_path)])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
 
     class _ExplodingStatus:
         def is_dirty(self, repo_path: Path) -> bool:
