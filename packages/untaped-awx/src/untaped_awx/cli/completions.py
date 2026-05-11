@@ -17,8 +17,11 @@ def names_for(spec: AwxResourceSpec) -> Callable[[str], Iterator[str]]:
 
     def _complete(incomplete: str) -> Iterator[str]:
         try:
-            from untaped_awx.application import ListResources
-            from untaped_awx.cli._context import open_context  # local import
+            # Lazy imports: hoisting would force every `from untaped_awx.cli.commands
+            # import app` (i.e. every `untaped --help`) to pay for application +
+            # _context + httpx, just so a tab-press could be served quickly.
+            from untaped_awx.application import ListResources  # noqa: PLC0415
+            from untaped_awx.cli._context import open_context  # noqa: PLC0415
 
             with open_context() as ctx:
                 use = ListResources(ctx.repo)
