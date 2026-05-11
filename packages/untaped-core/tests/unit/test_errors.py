@@ -45,3 +45,38 @@ def test_first_validation_error_handles_nested_locator() -> None:
         Outer.model_validate({"inner": {"port": "not-an-int"}})
     msg = first_validation_error(ei.value)
     assert msg.startswith("inner.port: ")
+
+
+def test_first_validation_error_falls_back_to_str_when_errors_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A degenerate ``ValidationError`` with no error entries must not
+    crash the formatter — fall back to ``str(exc)`` instead of indexing
+    an empty list."""
+
+    class M(BaseModel):
+        x: int
+
+    with pytest.raises(ValidationError) as ei:
+        M.model_validate({"x": "not-an-int"})
+    monkeypatch.setattr(ei.value, "errors", lambda: [])
+    assert first_validation_error(ei.value) == str(ei.value)
+
+
+def test_first_validation_error_omits_loc_prefix_when_loc_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An error with an empty ``loc`` tuple must render as the bare
+    message — no dangling ``": "`` prefix."""
+
+    class M(BaseModel):
+        x: int
+
+    with pytest.raises(ValidationError) as ei:
+        M.model_validate({"x": "not-an-int"})
+    monkeypatch.setattr(
+        ei.value,
+        "errors",
+        lambda: [{"loc": (), "msg": "value is invalid", "type": "value_error"}],
+    )
+    assert first_validation_error(ei.value) == "value is invalid"
