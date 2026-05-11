@@ -319,7 +319,9 @@ class FakeAap:
             return {}
         try:
             return json.loads(request.content)  # type: ignore[no-any-return]
-        except ValueError, TypeError:
+        except ValueError:
+            return {}
+        except TypeError:
             return {}
 
 
@@ -454,7 +456,9 @@ def _numeric_compare(
     """
     try:
         return op(int(field_value), int(raw_param))
-    except TypeError, ValueError:
+    except TypeError:
+        return False
+    except ValueError:
         return False
 
 
