@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
-
+from untaped_awx.application.ports import AwxPingService
 from untaped_awx.domain import PingStatus
-
-
-class AwxPingService(Protocol):
-    def ping(self) -> dict[str, Any]: ...
 
 
 class Ping:

@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Mapping
-from typing import Any, Protocol
+from typing import Any
 
 from untaped_awx.application.ports import Catalog
+from untaped_awx.application.test.ports import FkLookup
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.spec import FkRef
 from untaped_awx.domain.test_suite import Case, RefSentinel
@@ -45,12 +46,6 @@ KNOWN_LAUNCH_FIELDS: frozenset[str] = frozenset(
 
 class UnknownLaunchFieldWarning(UserWarning):
     """Emitted when a case body has a field outside AWX's documented set."""
-
-
-class FkLookup(Protocol):
-    """Subset of :class:`FkResolver` the use case needs."""
-
-    def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int: ...
 
 
 _LIST_MERGE_FIELDS = frozenset({"labels", "credentials", "instance_groups"})

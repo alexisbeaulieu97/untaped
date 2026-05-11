@@ -10,9 +10,9 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Protocol
+from typing import Any
 
-from untaped_awx.application.test.ports import Launcher, Watcher
+from untaped_awx.application.test.ports import FkPrefetcher, Launcher, Watcher
 from untaped_awx.application.test.resolver import ResolveCasePayload
 from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.domain.test_suite import (
@@ -26,12 +26,6 @@ from untaped_awx.domain.test_suite import (
 from untaped_awx.errors import AwxApiError
 
 _LAUNCH_ACTION = "launch"
-
-
-class FkPrefetcher(Protocol):
-    """Subset of :class:`FkResolver` the runner uses to warm caches upfront."""
-
-    def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None: ...
 
 
 class _ResolvedCase:

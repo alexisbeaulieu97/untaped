@@ -24,6 +24,13 @@ from untaped_awx.domain import (
 )
 
 
+class AwxPingService(Protocol):
+    """Returns the raw AAP ``/ping/`` payload; :class:`Ping` validates
+    the shape into a :class:`PingStatus` entity."""
+
+    def ping(self) -> dict[str, Any]: ...
+
+
 class Catalog(Protocol):
     """Looks up resource specs by kind or CLI name.
 
@@ -400,6 +407,7 @@ class ResourceDocumentReader(Protocol):
 
 __all__ = [
     "ApplyStrategy",
+    "AwxPingService",
     "Catalog",
     "FkResolver",
     "JobMonitor",

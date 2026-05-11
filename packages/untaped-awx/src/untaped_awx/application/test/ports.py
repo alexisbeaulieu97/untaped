@@ -1,8 +1,10 @@
 """Adapter interfaces for the ``awx test`` use cases.
 
-Concrete implementations live in :mod:`untaped_awx.infrastructure.test`
-and (for ``Launcher`` / ``Watcher``) reuse the existing
-:class:`RunAction` / :class:`WatchJob` use cases.
+Concrete implementations live in :mod:`untaped_awx.infrastructure.test`,
+except ``Launcher`` / ``Watcher`` (which reuse the existing
+:class:`RunAction` / :class:`WatchJob` use cases) and ``FkPrefetcher`` /
+``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
+:mod:`untaped_awx.infrastructure.fk_resolver`).
 """
 
 from __future__ import annotations
@@ -83,3 +85,15 @@ class VarsResolver(Protocol):
         prompt: Prompt,
         extra_known_names: Iterable[str] = (),
     ) -> dict[str, Any]: ...
+
+
+class FkPrefetcher(Protocol):
+    """Subset of :class:`FkResolver` the runner uses to warm caches upfront."""
+
+    def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None: ...
+
+
+class FkLookup(Protocol):
+    """Subset of :class:`FkResolver` the case-payload resolver needs."""
+
+    def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int: ...
