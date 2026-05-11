@@ -64,9 +64,6 @@ def test_first_validation_error_falls_back_to_str_when_errors_empty(
     monkeypatch: pytest.MonkeyPatch,
     int_validation_error: ValidationError,
 ) -> None:
-    """A degenerate ``ValidationError`` with no error entries must not
-    crash the formatter — fall back to ``str(exc)`` instead of indexing
-    an empty list."""
     monkeypatch.setattr(int_validation_error, "errors", lambda: [])
     assert first_validation_error(int_validation_error) == str(int_validation_error)
 
@@ -75,8 +72,6 @@ def test_first_validation_error_omits_loc_prefix_when_loc_empty(
     monkeypatch: pytest.MonkeyPatch,
     int_validation_error: ValidationError,
 ) -> None:
-    """An error with an empty ``loc`` tuple must render as the bare
-    message — no dangling ``": "`` prefix."""
     monkeypatch.setattr(
         int_validation_error,
         "errors",
