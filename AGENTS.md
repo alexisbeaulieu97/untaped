@@ -202,6 +202,17 @@ Cross-cutting subsystems with their own internals doc:
   exception mapping. Domains that only raise `untaped_core`'s
   exceptions (`untaped-config`, `untaped-github`, `untaped-profile`)
   don't need an `errors.py`.
+- **Lazy imports on CLI startup paths.** Heavy transitive imports
+  (jinja2, yaml, application use cases, infrastructure clients) that
+  would pay on every `untaped --help` are deferred into subcommand
+  bodies and annotated `# noqa: PLC0415`. Scope: any module reached
+  on the import graph from `src/untaped/main.py` at startup (today:
+  `untaped-awx/cli/test_commands.py` and `untaped-awx/cli/completions.py`).
+  Enforced by ruff (`extend-select = ["PLC0415"]`); tests are exempted
+  (in-function imports are idiomatic there with no startup cost). A
+  bare `# noqa: PLC0415` is fine when the file's module-top comment
+  carries the rationale; otherwise add a one-line inline reason
+  naming the deferred cost.
 
 ## Output & Piping Conventions
 
