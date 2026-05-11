@@ -476,11 +476,14 @@ def test_pull_failure_yields_skip(tmp_path: Path) -> None:
 
 
 def test_prune_skipped_when_workspace_dir_missing(tmp_path: Path) -> None:
-    """``workspace.path`` not a dir at prune time → return empty (don't crash on iterdir())."""
+    """Prune is a no-op when the workspace directory no longer exists on disk."""
 
     class _ReaderStub:
         def read(self, _path: Path) -> WorkspaceManifest:
             return WorkspaceManifest(repos=[])
+
+        def exists(self, _path: Path) -> bool:
+            return True
 
     missing = tmp_path / "missing"  # never created
     workspace = Workspace(name="prod", path=missing)
