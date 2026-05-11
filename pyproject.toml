@@ -140,6 +140,11 @@ select = [
     "C90",  # mccabe complexity (gate set in [tool.ruff.lint.mccabe])
     "RUF",  # ruff-specific
 ]
+# Narrow opt-in to a single bandit rule. The jinja-autoescape check is
+# load-bearing for the noqa in untaped_awx.infrastructure.test.parser's
+# build_jinja_env, which documents why HTML escaping is intentionally off
+# for YAML output.
+extend-select = ["S701"]
 ignore = []
 
 [tool.ruff.lint.flake8-tidy-imports]
@@ -151,11 +156,10 @@ max-complexity = 12
 [tool.ruff.lint.per-file-ignores]
 # Tests can use assert statements and longer modules
 "**/tests/**" = ["S101"]
-# Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...))
-"**/cli/commands.py" = ["B008"]
-"**/cli/resource_commands.py" = ["B008"]
-"**/cli/test_commands.py" = ["B008"]
-"**/cli/unified_templates_commands.py" = ["B008"]
+# Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...)).
+# Glob covers both ``commands.py`` and ``*_commands.py`` across every package so a new
+# Typer command module doesn't require a per-file-ignores edit.
+"**/cli/*commands*.py" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"
