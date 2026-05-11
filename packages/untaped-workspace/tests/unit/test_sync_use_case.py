@@ -1,10 +1,9 @@
 """Unit tests for SyncWorkspace, using a stub GitRunner."""
 
-from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
 
 import pytest
+from conftest import StubGit
 from untaped_workspace.application import SyncWorkspace
 from untaped_workspace.domain import (
     ManifestDefaults,
@@ -13,66 +12,10 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError, UnmatchedOnlyFilter, WorkspaceError
+from untaped_workspace.errors import UnmatchedOnlyFilter, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
-
-
-class _StubGit:
-    def __init__(
-        self,
-        *,
-        on_disk: Iterable[str] = (),
-        statuses: dict[str, RepoStatus] | None = None,
-        clone_fail: set[str] = frozenset(),
-        fetch_fail: bool = False,
-        local_fetch_fail: set[str] = frozenset(),
-        status_fail: set[str] = frozenset(),
-        pull_fail: set[str] = frozenset(),
-    ) -> None:
-        self.events: list[tuple[str, Any]] = []
-        self._on_disk = set(on_disk)
-        self._statuses = statuses or {}
-        self._clone_fail = clone_fail
-        self._fetch_fail = fetch_fail
-        self._local_fetch_fail = local_fetch_fail
-        self._status_fail = status_fail
-        self._pull_fail = pull_fail
-
-    def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
-        self.events.append(("ensure_bare", url))
-        return Path(f"/tmp/cache/{url.split('/')[-1]}")
-
-    def bare_fetch(self, bare_path: Path) -> None:
-        self.events.append(("bare_fetch", bare_path))
-        if self._fetch_fail:
-            raise GitError("network down")
-
-    def clone_with_reference(
-        self, *, url: str, dest: Path, bare: Path, branch: str | None = None
-    ) -> None:
-        self.events.append(("clone", str(dest), branch))
-        if dest.name in self._clone_fail:
-            raise GitError("clone failed")
-        self._on_disk.add(dest.name)
-        dest.mkdir(parents=True, exist_ok=True)
-
-    def fetch(self, repo_path: Path) -> None:
-        self.events.append(("fetch", repo_path.name))
-        if repo_path.name in self._local_fetch_fail:
-            raise GitError("network down")
-
-    def status(self, repo_path: Path) -> RepoStatus:
-        self.events.append(("status", repo_path.name))
-        if repo_path.name in self._status_fail:
-            raise GitError("status failed")
-        return self._statuses.get(repo_path.name, RepoStatus(branch="main"))
-
-    def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
-        self.events.append(("pull", repo_path.name, branch))
-        if repo_path.name in self._pull_fail:
-            raise GitError("non-fast-forward pull")
 
 
 def _seed_workspace(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
@@ -87,7 +30,7 @@ def test_clones_missing_repo(tmp_path: Path) -> None:
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
-    git = _StubGit()
+    git = StubGit()
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "clone"
     assert any(e[0] == "clone" for e in git.events)
@@ -101,7 +44,7 @@ def test_uses_target_branch_on_clone(tmp_path: Path) -> None:
             repos=[Repo(url="https://x/svc-a.git")],
         ),
     )
-    git = _StubGit()
+    git = StubGit()
     SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     clone_event = next(e for e in git.events if e[0] == "clone")
     assert clone_event[2] == "develop"
@@ -115,7 +58,7 @@ def test_per_repo_branch_overrides_default(tmp_path: Path) -> None:
             repos=[Repo(url="https://x/svc-a.git", branch="feature/x")],
         ),
     )
-    git = _StubGit()
+    git = StubGit()
     SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     clone_event = next(e for e in git.events if e[0] == "clone")
     assert clone_event[2] == "feature/x"
@@ -127,7 +70,7 @@ def test_skips_dirty_existing_repo(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", modified=2)},
     )
@@ -142,7 +85,7 @@ def test_skips_diverged_repo(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", ahead=2, behind=3)},
     )
@@ -160,7 +103,7 @@ def test_skips_wrong_branch_when_target_set(tmp_path: Path) -> None:
         ),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="feature/x")},
     )
@@ -175,7 +118,7 @@ def test_pulls_when_behind_clean(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", behind=3)},
     )
@@ -191,7 +134,7 @@ def test_up_to_date(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main")},
     )
@@ -210,7 +153,7 @@ def test_only_filters_repos(tmp_path: Path) -> None:
             ],
         ),
     )
-    git = _StubGit()
+    git = StubGit()
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, only=["svc-b"]
     )
@@ -231,7 +174,7 @@ def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
             ],
         ),
     )
-    git = _StubGit()
+    git = StubGit()
     with pytest.raises(UnmatchedOnlyFilter) as excinfo:
         SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
             workspace, only=["svc-b", "typo", "also-typo"]
@@ -263,7 +206,7 @@ def test_only_unmatched_under_strict_false_yields_per_identifier_rows(
             repos=[Repo(url="https://x/svc-a.git"), Repo(url="https://x/svc-b.git")],
         ),
     )
-    git = _StubGit()
+    git = StubGit()
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, only=["nonexistent", "also-typo"], strict_only=False
     )
@@ -290,7 +233,7 @@ def test_only_partial_match_under_strict_false_emits_unmatched_rows(
             repos=[Repo(url="https://x/svc-a.git"), Repo(url="https://x/svc-b.git")],
         ),
     )
-    git = _StubGit()
+    git = StubGit()
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, only=["svc-a", "nonexistent"], strict_only=False
     )
@@ -310,7 +253,7 @@ def test_only_unknown_default_strict_raises_typed_exception(tmp_path: Path) -> N
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
-    git = _StubGit()
+    git = StubGit()
     with pytest.raises(UnmatchedOnlyFilter) as excinfo:
         SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
             workspace, only=["typo"]
@@ -329,7 +272,7 @@ def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
     orphan.mkdir()
     (orphan / ".git").mkdir()
 
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a", "svc-old"],
         statuses={
             "svc-a": RepoStatus(branch="main"),
@@ -353,7 +296,7 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
     orphan.mkdir()
     (orphan / ".git").mkdir()
 
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-old"],
         statuses={"svc-old": RepoStatus(branch="main", modified=1)},
     )
@@ -369,7 +312,7 @@ def test_clone_failure_yields_skip(tmp_path: Path) -> None:
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
-    git = _StubGit(clone_fail={"svc-a"})
+    git = StubGit(clone_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
 
@@ -379,7 +322,7 @@ def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
-    git = _StubGit(fetch_fail=True)
+    git = StubGit(fetch_fail=True)
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "cache fetch failed" in outcomes[0].detail
@@ -393,7 +336,7 @@ def test_existing_clone_is_fetched_before_status(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()  # existing clone
-    git = _StubGit(on_disk=["svc-a"])
+    git = StubGit(on_disk=["svc-a"])
     SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
 
     op_names = [event[0] for event in git.events]
@@ -408,7 +351,7 @@ def test_fresh_clone_does_not_call_local_fetch(tmp_path: Path) -> None:
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
-    git = _StubGit()
+    git = StubGit()
     SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     op_names = [event[0] for event in git.events]
     assert "clone" in op_names
@@ -422,7 +365,7 @@ def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(on_disk=["svc-a"], local_fetch_fail={"svc-a"})
+    git = StubGit(on_disk=["svc-a"], local_fetch_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "fetch failed" in (outcomes[0].detail or "")
@@ -435,7 +378,7 @@ def test_status_failure_yields_skip(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(on_disk=["svc-a"], status_fail={"svc-a"})
+    git = StubGit(on_disk=["svc-a"], status_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
     assert "status failed" in outcomes[0].detail
@@ -449,7 +392,7 @@ def test_detached_head_with_no_target_branch_yields_skip(tmp_path: Path) -> None
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch=None, behind=3)},
     )
@@ -465,7 +408,7 @@ def test_pull_failure_yields_skip(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     (workspace.path / "svc-a").mkdir()
-    git = _StubGit(
+    git = StubGit(
         on_disk=["svc-a"],
         statuses={"svc-a": RepoStatus(branch="main", behind=3)},
         pull_fail={"svc-a"},
@@ -487,7 +430,7 @@ def test_prune_skipped_when_workspace_dir_missing(tmp_path: Path) -> None:
 
     missing = tmp_path / "missing"  # never created
     workspace = Workspace(name="prod", path=missing)
-    git = _StubGit()
+    git = StubGit()
     outcomes = SyncWorkspace(_ReaderStub(), git, fs=_FS, cache_dir=tmp_path)(workspace, prune=True)
     assert outcomes == []
 
@@ -500,7 +443,7 @@ def test_prune_skips_non_git_subdir(tmp_path: Path) -> None:
     )
     not_a_clone = workspace.path / "not-a-clone"
     not_a_clone.mkdir()  # no .git inside
-    git = _StubGit()
+    git = StubGit()
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, prune=True
     )
@@ -517,7 +460,7 @@ def test_prune_status_failure_yields_not_usable_skip(tmp_path: Path) -> None:
     orphan = workspace.path / "svc-old"
     orphan.mkdir()
     (orphan / ".git").mkdir()
-    git = _StubGit(on_disk=["svc-old"], status_fail={"svc-old"})
+    git = StubGit(on_disk=["svc-old"], status_fail={"svc-old"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, prune=True
     )
@@ -538,7 +481,7 @@ def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
     ws_a = Workspace(name="a", path=ws_a_path)
     ws_b = Workspace(name="b", path=ws_b_path)
 
-    git = _StubGit()
+    git = StubGit()
     use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
     use_case(ws_a)
     use_case(ws_b)

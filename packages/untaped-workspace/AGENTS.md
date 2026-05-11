@@ -167,6 +167,21 @@ Partial-miss is also visible: `--only repo-x,typo` against
 row for `typo` — the typo doesn't get silently swallowed because a
 sibling identifier matched.
 
+## Shared test stubs
+
+`StubGit` (satisfies the `GitRunner` port) and `StubRegistry`
+(satisfies `WorkspaceRegistryRepository`) live in
+`tests/conftest.py`. Sibling unit tests import them via
+`from conftest import StubGit, StubRegistry` — the root
+`pyproject.toml` adds this package's `tests/` dir to
+`[tool.pytest.ini_options] pythonpath` so the conftest module is
+runtime-importable (pytest's `--import-mode=importlib` otherwise
+hides it). See the conftest docstring for the global-namespace
+caveat. New shared scaffolding for this package belongs in the
+same module; new shared scaffolding for *other* packages must pick
+a unique module name (e.g. `_<pkg>_stubs.py`) — `conftest` is
+claimed.
+
 ## See also
 
 - [Root AGENTS.md](../../AGENTS.md) — 4-Layer DDD, Hard Rules, recipes

@@ -3,29 +3,11 @@
 from pathlib import Path
 
 import pytest
+from conftest import StubRegistry
 from untaped_workspace.application import AdoptWorkspace
 from untaped_workspace.domain import DiscoveredRepo, Workspace
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import ManifestRepository
-
-
-class _StubRegistry:
-    def __init__(self) -> None:
-        self.registered: list[Workspace] = []
-
-    def register(self, *, name: str, path: Path) -> Workspace:
-        ws = Workspace(name=name, path=path)
-        self.registered.append(ws)
-        return ws
-
-    def find_by_path(self, path: Path) -> Workspace | None:
-        for w in self.registered:
-            if w.path == path:
-                return w
-        return None
-
-    def entries(self) -> list[Workspace]:
-        return list(self.registered)
 
 
 class _StubResult:
@@ -53,7 +35,7 @@ def test_adopt_writes_manifest_with_discovered_repos(tmp_path: Path) -> None:
             DiscoveredRepo(name="svc-b", url="https://x/svc-b.git", branch="develop"),
         ]
     )
-    reg = _StubRegistry()
+    reg = StubRegistry()
 
     result = AdoptWorkspace(ManifestRepository(), reg, discoverer)(ws_path, name="prod")
 
@@ -73,14 +55,14 @@ def test_adopt_writes_manifest_with_discovered_repos(tmp_path: Path) -> None:
 def test_adopt_derives_name_from_path(tmp_path: Path) -> None:
     ws_path = tmp_path / "lab"
     ws_path.mkdir()
-    AdoptWorkspace(ManifestRepository(), _StubRegistry(), _StubDiscoverer([]))(ws_path)
+    AdoptWorkspace(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(ws_path)
     assert ManifestRepository().read(ws_path).name == "lab"
 
 
 def test_adopt_with_empty_discovery_succeeds(tmp_path: Path) -> None:
     ws_path = tmp_path / "empty"
     ws_path.mkdir()
-    reg = _StubRegistry()
+    reg = StubRegistry()
     AdoptWorkspace(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
     assert ManifestRepository().read(ws_path).repos == []
     assert reg.registered[0].path == ws_path.resolve()
@@ -88,7 +70,7 @@ def test_adopt_with_empty_discovery_succeeds(tmp_path: Path) -> None:
 
 def test_adopt_refuses_when_path_missing(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError, match="does not exist"):
-        AdoptWorkspace(ManifestRepository(), _StubRegistry(), _StubDiscoverer([]))(
+        AdoptWorkspace(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(
             tmp_path / "ghost"
         )
 
@@ -97,7 +79,7 @@ def test_adopt_refuses_when_path_is_a_file(tmp_path: Path) -> None:
     f = tmp_path / "file"
     f.write_text("nope")
     with pytest.raises(WorkspaceError, match="not a directory"):
-        AdoptWorkspace(ManifestRepository(), _StubRegistry(), _StubDiscoverer([]))(f)
+        AdoptWorkspace(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(f)
 
 
 def test_adopt_refuses_when_manifest_already_exists(tmp_path: Path) -> None:
@@ -108,7 +90,7 @@ def test_adopt_refuses_when_manifest_already_exists(tmp_path: Path) -> None:
     ManifestRepository().write(ws_path, WorkspaceManifest())
 
     with pytest.raises(WorkspaceError, match="already initialised"):
-        AdoptWorkspace(ManifestRepository(), _StubRegistry(), _StubDiscoverer([]))(
+        AdoptWorkspace(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(
             ws_path, name="prod"
         )
 
@@ -126,7 +108,7 @@ def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
         skipped=["b: no 'origin' remote — skipping", "c: symlink — skipping"],
     )
 
-    AdoptWorkspace(ManifestRepository(), _StubRegistry(), discoverer, warn=warnings.append)(
+    AdoptWorkspace(ManifestRepository(), StubRegistry(), discoverer, warn=warnings.append)(
         ws_path, name="lab"
     )
 
@@ -139,7 +121,7 @@ def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
 def test_adopt_refuses_when_path_already_registered(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    reg = _StubRegistry()
+    reg = StubRegistry()
     reg.registered.append(Workspace(name="prod", path=ws_path.resolve()))
 
     with pytest.raises(WorkspaceError, match="already registered"):
