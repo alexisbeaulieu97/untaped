@@ -1,9 +1,10 @@
 # AGENTS.md — `untaped-github`
 
-GitHub bounded context. Today only `whoami` ships; this doc captures
-the package's contract so future commands (issues, PRs, releases,
-repo metadata) follow the same shape. For workspace-wide rules and
-the cross-cutting helpers index, see the
+GitHub bounded context. Today the package ships `whoami` plus a
+`search` sub-app (`repos`, `code`, `issues`, `users`). This doc
+captures the package's contract so future commands (releases, repo
+metadata, gists, …) follow the same shape. For workspace-wide rules
+and the cross-cutting helpers index, see the
 [root `AGENTS.md`](../../AGENTS.md). For user-facing config reference,
 see [`docs/configuration.md`](../../docs/configuration.md).
 
@@ -51,27 +52,86 @@ AGENTS.md Hard Rule 11). Don't invent your own verify resolution.
 
 ## Rate limiting
 
-Authenticated GitHub gives 5000 req/hour. Today `whoami` is one call;
-future high-volume features (listing repos, paginating over issues)
-should accept that 5000 is the budget, honour the `X-RateLimit-Remaining`
-/ `X-RateLimit-Reset` response headers, and back off on `429 Too Many
+Authenticated GitHub gives 5000 req/hour overall and a separate 30
+req/min budget for the `/search/*` endpoints. `whoami` is one call;
+`search` paginates 100 rows per page and stops at the user-supplied
+`--limit` (or GitHub's own 1000-result cap, whichever comes first).
+Future high-volume features should honour the `X-RateLimit-Remaining`
+/ `X-RateLimit-Reset` response headers and back off on `429 Too Many
 Requests`.
+
+## Search
+
+`search` is a Typer sub-app mounted on the root `github` app, with one
+subcommand per GitHub search endpoint:
+
+| Subcommand            | Endpoint                  | Key filters                                              |
+| --------------------- | ------------------------- | -------------------------------------------------------- |
+| `search repos`        | `/search/repositories`    | `--name`, `--language`, `--archived/--no-archived`, `--fork/--no-fork`, `--visibility`, `--sort` |
+| `search code`         | `/search/code`            | `--language`, `--filename`, `--path`, `--extension`      |
+| `search issues`       | `/search/issues`          | `--state`, `--kind issue|pr`, `--author`, `--assignee`, `--label`, `--mentions` |
+| `search users`        | `/search/users`           | `--kind user|org`, `--location`, `--language`            |
+
+All four accept the common scope flags `--user`, `--org` (repeatable),
+`--repo` (repeatable), `--team` (requires `--org`), the shared
+`--limit` cap, and the standard `--format/-f` + `--columns/-c` from
+`untaped_core`.
+
+### Default-scope rule
+
+`SearchRepos`, `SearchCode`, and `SearchIssues` inject `user:@me` into
+the query whenever the user passes none of `--user`, `--org`, `--repo`,
+or `--team`. This makes the bare command ("what's mine?") the safe
+default. `SearchUsers` does not inject anything — GitHub's user-search
+endpoint ignores `user:` / `repo:` / `org:` qualifiers, so global
+results are the only sensible default.
+
+### Team-to-repo resolution
+
+There is no `team:` qualifier in GitHub search. When `--team` is passed,
+the use case calls `GET /orgs/{org}/teams/{slug}/repos` and expands the
+result into `repo:owner/name` qualifiers. `--team` without `--org`
+raises `ConfigError` (teams are scoped to an org). If the team has more
+than `MAX_TEAM_REPO_QUALIFIERS` (200) repos, we truncate and emit a
+stderr warning via the injected `warn` callback — well short of
+GitHub's 6000-char URL limit, but still wide enough for every team
+we've seen in practice. Raise the cap before increasing it past 256
+without measuring; the search API also rejects queries with too many
+boolean operators.
+
+### Pagination
+
+`paginate_search` and `paginate_list` (in
+`infrastructure/pagination.py`) follow GitHub's RFC 5988 `Link` header
+(`<url>; rel="next"`) until exhausted or `--limit` is hit. Search
+payloads nest results under `items`; list payloads (e.g. team repos)
+return a raw JSON array. Each helper handles one shape.
 
 ## Layering
 
 Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD":
 
-- `domain/`: `GithubUser` and future entities. Pure pydantic models;
-  no HTTP, no Settings.
-- `application/`: use cases (`WhoAmI`) + the Protocols they consume,
-  declared in `application/ports.py` (`GithubMeService`, etc.). Use
-  cases take a Protocol via constructor injection and call only the
-  methods on it.
-- `infrastructure/`: `GithubClient`, `GithubConfig`. Adapters satisfy
-  application Protocols structurally — no import from `application/`.
+- `domain/`: `GithubUser`, `RepoResult`, `CodeResult`, `IssueResult`,
+  `UserResult` plus frozen filter value objects (`RepoSearchFilters`,
+  `CodeSearchFilters`, `IssueSearchFilters`, `UserSearchFilters`) in
+  `queries.py`. Each filter knows how to render itself into the `q=`
+  string GitHub expects — pure functions, no I/O.
+- `application/`: use cases (`WhoAmI`, `SearchRepos`, `SearchCode`,
+  `SearchIssues`, `SearchUsers`) + the Protocols they consume,
+  declared in `application/ports.py` (`GithubMeService`,
+  `GithubSearchService`, `GithubTeamService`). Use cases take Protocols
+  via constructor injection and call only the methods on them. Scope
+  defaulting (`user:@me`) and team-to-repo resolution live in the
+  search use cases.
+- `infrastructure/`: `GithubClient`, `GithubConfig`,
+  `pagination.py`. Adapters satisfy application Protocols structurally
+  — no import from `application/`. `GithubClient` exposes one method
+  per endpoint and delegates list/search calls to the pagination
+  helpers.
 - `cli/`: composition root. Reads `Settings.github`, builds
   `GithubConfig`, instantiates `GithubClient`, runs the use case,
-  formats output.
+  formats output. The `search` sub-app lives in `cli/search_commands.py`
+  and is mounted on the root app via `app.add_typer(...)`.
 
 ## Recipe: add a new command
 

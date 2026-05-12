@@ -1,0 +1,213 @@
+"""Typer sub-app: ``untaped github search``.
+
+Four subcommands, one per GitHub search endpoint. Each builds a frozen
+filter object from CLI flags, hands it to its use case, and pipes the
+result through ``format_output``. Composition lives here; the use cases
+own the orchestration.
+"""
+
+from __future__ import annotations
+
+import typer
+from untaped_core import (
+    ColumnsOption,
+    FormatOption,
+    format_output,
+    get_settings,
+    report_errors,
+)
+
+from untaped_github.application import SearchCode, SearchIssues, SearchRepos, SearchUsers
+from untaped_github.domain import (
+    CodeSearchFilters,
+    IssueSearchFilters,
+    RepoSearchFilters,
+    UserSearchFilters,
+)
+from untaped_github.infrastructure import GithubClient, GithubConfig
+
+app = typer.Typer(
+    name="search",
+    help="Search GitHub for repos, code, issues, and users.",
+    no_args_is_help=True,
+)
+
+
+@app.callback()
+def _callback() -> None:
+    """Search GitHub for repos, code, issues, and users."""
+
+
+def _stderr_warn(message: str) -> None:
+    typer.echo(f"warning: {message}", err=True)
+
+
+def _open_client() -> GithubClient:
+    settings = get_settings()
+    config = GithubConfig(
+        base_url=settings.github.base_url,
+        token=settings.github.token,
+    )
+    return GithubClient(config, http=settings.http)
+
+
+def _first_org(orgs: list[str] | None) -> str | None:
+    return orgs[0] if orgs else None
+
+
+def _emit(
+    rows: list[dict[str, object]],
+    fmt: object,
+    columns: list[str] | None,
+) -> None:
+    typer.echo(format_output(rows, fmt=fmt, columns=columns))  # type: ignore[arg-type]
+
+
+@app.command("repos", no_args_is_help=False)
+def repos_command(
+    query: str | None = typer.Argument(None, help="Free-text query (passed verbatim)."),
+    user: str | None = typer.Option(
+        None, "--user", help="user:<login>. Defaults to @me when no other scope is set."
+    ),
+    org: list[str] | None = typer.Option(None, "--org", help="org:<name>. Repeatable."),
+    team: str | None = typer.Option(
+        None, "--team", help="Team slug; requires a single --org. Resolves to repo: qualifiers."
+    ),
+    repo: list[str] | None = typer.Option(None, "--repo", help="repo:owner/name. Repeatable."),
+    name: str | None = typer.Option(None, "--name", help="Match against repo name (in:name)."),
+    language: str | None = typer.Option(None, "--language"),
+    archived: bool | None = typer.Option(None, "--archived/--no-archived"),
+    fork: bool | None = typer.Option(None, "--fork/--no-fork"),
+    visibility: str | None = typer.Option(None, "--visibility", help="public | private"),
+    sort: str | None = typer.Option(
+        None, "--sort", help="stars | forks | help-wanted-issues | updated"
+    ),
+    limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Search repositories (``GET /search/repositories``)."""
+    with report_errors():
+        filters = RepoSearchFilters(
+            raw_query=query,
+            user=user,
+            orgs=tuple(org or ()),
+            repos=tuple(repo or ()),
+            name=name,
+            language=language,
+            archived=archived,
+            fork=fork,
+            visibility=visibility,
+            sort=sort,
+            limit=limit,
+        )
+        with _open_client() as client:
+            use_case = SearchRepos(client, client, warn=_stderr_warn)
+            rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
+        _emit(rows, fmt, columns)
+
+
+@app.command("code", no_args_is_help=False)
+def code_command(
+    query: str | None = typer.Argument(None, help="Free-text query (passed verbatim)."),
+    user: str | None = typer.Option(None, "--user"),
+    org: list[str] | None = typer.Option(None, "--org", help="Repeatable."),
+    team: str | None = typer.Option(None, "--team", help="Requires --org."),
+    repo: list[str] | None = typer.Option(None, "--repo", help="Repeatable."),
+    language: str | None = typer.Option(None, "--language"),
+    filename: str | None = typer.Option(None, "--filename"),
+    path: str | None = typer.Option(None, "--path"),
+    extension: str | None = typer.Option(None, "--extension"),
+    sort: str | None = typer.Option(None, "--sort"),
+    limit: int | None = typer.Option(None, "--limit"),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Search code (``GET /search/code``).
+
+    Requires at least one scope qualifier on the GitHub side; this
+    command injects ``user:@me`` if you pass none.
+    """
+    with report_errors():
+        filters = CodeSearchFilters(
+            raw_query=query,
+            user=user,
+            orgs=tuple(org or ()),
+            repos=tuple(repo or ()),
+            language=language,
+            filename=filename,
+            path=path,
+            extension=extension,
+            sort=sort,
+            limit=limit,
+        )
+        with _open_client() as client:
+            use_case = SearchCode(client, client, warn=_stderr_warn)
+            rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
+        _emit(rows, fmt, columns)
+
+
+@app.command("issues", no_args_is_help=False)
+def issues_command(
+    query: str | None = typer.Argument(None, help="Free-text query (passed verbatim)."),
+    user: str | None = typer.Option(None, "--user"),
+    org: list[str] | None = typer.Option(None, "--org", help="Repeatable."),
+    team: str | None = typer.Option(None, "--team", help="Requires --org."),
+    repo: list[str] | None = typer.Option(None, "--repo", help="Repeatable."),
+    state: str | None = typer.Option(None, "--state", help="open | closed"),
+    kind: str | None = typer.Option(None, "--kind", help="issue | pr"),
+    author: str | None = typer.Option(None, "--author"),
+    assignee: str | None = typer.Option(None, "--assignee"),
+    label: list[str] | None = typer.Option(None, "--label", help="Repeatable."),
+    mentions: str | None = typer.Option(None, "--mentions"),
+    sort: str | None = typer.Option(None, "--sort"),
+    limit: int | None = typer.Option(None, "--limit"),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Search issues and pull requests (``GET /search/issues``)."""
+    with report_errors():
+        filters = IssueSearchFilters(
+            raw_query=query,
+            user=user,
+            orgs=tuple(org or ()),
+            repos=tuple(repo or ()),
+            state=state,
+            kind=kind,
+            author=author,
+            assignee=assignee,
+            labels=tuple(label or ()),
+            mentions=mentions,
+            sort=sort,
+            limit=limit,
+        )
+        with _open_client() as client:
+            use_case = SearchIssues(client, client, warn=_stderr_warn)
+            rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
+        _emit(rows, fmt, columns)
+
+
+@app.command("users", no_args_is_help=False)
+def users_command(
+    query: str | None = typer.Argument(None, help="Free-text query (passed verbatim)."),
+    kind: str | None = typer.Option(None, "--kind", help="user | org"),
+    location: str | None = typer.Option(None, "--location"),
+    language: str | None = typer.Option(None, "--language"),
+    sort: str | None = typer.Option(None, "--sort", help="followers | repositories | joined"),
+    limit: int | None = typer.Option(None, "--limit"),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Search users and organizations (``GET /search/users``)."""
+    with report_errors():
+        filters = UserSearchFilters(
+            raw_query=query,
+            kind=kind,
+            location=location,
+            language=language,
+            sort=sort,
+            limit=limit,
+        )
+        with _open_client() as client:
+            rows = [r.model_dump() for r in SearchUsers(client)(filters)]
+        _emit(rows, fmt, columns)
