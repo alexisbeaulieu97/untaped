@@ -268,6 +268,17 @@ composition root and passed into the use case, preserving the
 `application → infrastructure` import ban. User-facing reference:
 [`docs/awx.md`](../../docs/awx.md).
 
+AWX returns the *job* (execution) discriminator on a node's
+`summary_fields.unified_job_template.unified_job_type` — `"job"`,
+`"workflow_job"`, `"project_update"`, `"inventory_update"` — not the
+*template* type. `_normalise_type` in `list_workflow_nodes.py` maps
+these to the template-type discriminator the rest of the CLI exposes
+(`"job_template"`, `"workflow_job_template"`, `"project"`,
+`"inventory_source"`), so the `type` column matches `unified-templates`
+output and `--recursive` actually fires on sub-workflows (an earlier
+revision tested the raw `"workflow_job"` against `"workflow_job_template"`
+and never descended).
+
 ## Test framework (`untaped awx test`) runner internals
 
 User-facing reference (file shape, variables, name resolution, pass-through

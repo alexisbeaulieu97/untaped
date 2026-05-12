@@ -101,6 +101,28 @@ def _build_node(raw: dict[str, Any], *, workflow_id: int, depth: int) -> Workflo
         workflow_job_template=workflow_id,
         unified_job_template=int(ujt_id) if isinstance(ujt_id, int) else None,
         name=ujt_summary.get("name"),
-        type=ujt_summary.get("unified_job_type") or ujt_summary.get("type"),
+        type=_normalise_type(ujt_summary.get("unified_job_type") or ujt_summary.get("type")),
         depth=depth,
     )
+
+
+# AWX's ``summary_fields.unified_job_template.unified_job_type`` is the
+# *job* (execution) discriminator, not the *template* type — a workflow
+# node referencing a WorkflowJobTemplate reports ``"workflow_job"``, not
+# ``"workflow_job_template"``. Normalise to the template-type
+# discriminator the rest of the codebase (and the user) expects, so
+# ``--columns type`` matches ``unified-templates``' output and the
+# recursion guard in :class:`ListWorkflowNodes` can test against
+# ``"workflow_job_template"`` directly.
+_JOB_TYPE_TO_TEMPLATE_TYPE: dict[str, str] = {
+    "job": "job_template",
+    "workflow_job": "workflow_job_template",
+    "project_update": "project",
+    "inventory_update": "inventory_source",
+}
+
+
+def _normalise_type(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    return _JOB_TYPE_TO_TEMPLATE_TYPE.get(raw, raw)

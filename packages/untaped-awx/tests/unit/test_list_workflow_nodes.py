@@ -73,8 +73,8 @@ def test_lists_top_level_nodes_with_depth_zero() -> None:
     nodes = _StubNodes(
         {
             100: [
-                _node(1, identifier="a", ujt_id=10, ujt_name="alpha", ujt_type="job_template"),
-                _node(2, identifier="b", ujt_id=11, ujt_name="beta", ujt_type="job_template"),
+                _node(1, identifier="a", ujt_id=10, ujt_name="alpha", ujt_type="job"),
+                _node(2, identifier="b", ujt_id=11, ujt_name="beta", ujt_type="job"),
             ],
         }
     )
@@ -128,18 +128,18 @@ def test_recursive_expands_sub_workflows_unlimited() -> None:
     nodes = _StubNodes(
         {
             100: [
-                _node(1, identifier="run", ujt_id=10, ujt_name="alpha", ujt_type="job_template"),
+                _node(1, identifier="run", ujt_id=10, ujt_name="alpha", ujt_type="job"),
                 _node(
                     2,
                     identifier="rollup",
                     ujt_id=200,
                     ujt_name="nested",
-                    ujt_type="workflow_job_template",
+                    ujt_type="workflow_job",
                 ),
             ],
             200: [
-                _node(3, identifier="x", ujt_id=11, ujt_name="beta", ujt_type="job_template"),
-                _node(4, identifier="y", ujt_id=12, ujt_name="gamma", ujt_type="job_template"),
+                _node(3, identifier="x", ujt_id=11, ujt_name="beta", ujt_type="job"),
+                _node(4, identifier="y", ujt_id=12, ujt_name="gamma", ujt_type="job"),
             ],
         }
     )
@@ -162,7 +162,7 @@ def test_max_depth_caps_recursion() -> None:
                     identifier="r1",
                     ujt_id=200,
                     ujt_name="lvl1",
-                    ujt_type="workflow_job_template",
+                    ujt_type="workflow_job",
                 ),
             ],
             200: [
@@ -171,11 +171,11 @@ def test_max_depth_caps_recursion() -> None:
                     identifier="r2",
                     ujt_id=300,
                     ujt_name="lvl2",
-                    ujt_type="workflow_job_template",
+                    ujt_type="workflow_job",
                 ),
             ],
             300: [
-                _node(3, identifier="leaf", ujt_id=99, ujt_name="leaf", ujt_type="job_template"),
+                _node(3, identifier="leaf", ujt_id=99, ujt_name="leaf", ujt_type="job"),
             ],
         }
     )
@@ -202,11 +202,11 @@ def test_max_depth_zero_returns_only_root() -> None:
                     identifier="r1",
                     ujt_id=200,
                     ujt_name="lvl1",
-                    ujt_type="workflow_job_template",
+                    ujt_type="workflow_job",
                 ),
             ],
             200: [
-                _node(2, identifier="leaf", ujt_id=99, ujt_name="leaf", ujt_type="job_template"),
+                _node(2, identifier="leaf", ujt_id=99, ujt_name="leaf", ujt_type="job"),
             ],
         }
     )
@@ -234,7 +234,7 @@ def test_cycle_guard_emits_warning_and_skips() -> None:
                     identifier="to-b",
                     ujt_id=200,
                     ujt_name="B",
-                    ujt_type="workflow_job_template",
+                    ujt_type="workflow_job",
                 ),
             ],
             200: [
@@ -243,7 +243,7 @@ def test_cycle_guard_emits_warning_and_skips() -> None:
                     identifier="back-to-a",
                     ujt_id=100,
                     ujt_name="A",
-                    ujt_type="workflow_job_template",
+                    ujt_type="workflow_job",
                 ),
             ],
         }
@@ -276,6 +276,45 @@ def test_missing_summary_fields_degrades_to_none() -> None:
     assert result[0].name is None
     assert result[0].type is None
     assert result[0].identifier is None
+
+
+def test_normalises_unified_job_type_to_template_type() -> None:
+    """AWX returns the *job* type discriminator
+    (``unified_job_type``: ``"job"`` / ``"workflow_job"`` /
+    ``"project_update"`` / ``"inventory_update"``) — not the template
+    type. The use case maps it to the template-type discriminator the
+    rest of the CLI uses (``"job_template"``, ``"workflow_job_template"``,
+    …) so the ``type`` column matches ``unified-templates`` output AND
+    the recursion guard fires on real-world responses (regression: an
+    earlier version checked ``type == "workflow_job_template"`` against
+    the raw ``"workflow_job"`` string and never recursed)."""
+    nodes = _StubNodes(
+        {
+            100: [
+                _node(1, identifier="j", ujt_id=10, ujt_name="jt", ujt_type="job"),
+                _node(2, identifier="w", ujt_id=20, ujt_name="wf", ujt_type="workflow_job"),
+                _node(3, identifier="p", ujt_id=30, ujt_name="proj", ujt_type="project_update"),
+                _node(4, identifier="i", ujt_id=40, ujt_name="inv", ujt_type="inventory_update"),
+            ],
+            20: [
+                _node(5, identifier="leaf", ujt_id=11, ujt_name="leaf", ujt_type="job"),
+            ],
+        }
+    )
+    use = ListWorkflowNodes(
+        cast(WorkflowNodeRepository, nodes),
+        cast(ResourceClient, _StubResources()),
+    )
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", recursive=True)
+    assert [(n.id, n.type, n.depth) for n in result] == [
+        (1, "job_template", 0),
+        (2, "workflow_job_template", 0),
+        (3, "project", 0),
+        (4, "inventory_source", 0),
+        (5, "job_template", 1),
+    ]
+    # Recursion fired on the workflow_job node (the bug was: it didn't).
+    assert 20 in nodes.calls
 
 
 def test_deleted_template_carries_null_unified_job_template() -> None:

@@ -52,7 +52,7 @@ def _seed_org_and_root_workflow(fake: Any) -> None:
             "unified_job_template": {
                 "id": 10,
                 "name": "smoke-test",
-                "unified_job_type": "job_template",
+                "unified_job_type": "job",
             }
         },
     )
@@ -66,7 +66,7 @@ def _seed_org_and_root_workflow(fake: Any) -> None:
             "unified_job_template": {
                 "id": 200,
                 "name": "nightly-backups",
-                "unified_job_type": "workflow_job_template",
+                "unified_job_type": "workflow_job",
             }
         },
     )
@@ -98,7 +98,7 @@ def _seed_nested(fake: Any) -> None:
             "unified_job_template": {
                 "id": 11,
                 "name": "db-backup",
-                "unified_job_type": "job_template",
+                "unified_job_type": "job",
             }
         },
     )
@@ -112,7 +112,7 @@ def _seed_nested(fake: Any) -> None:
             "unified_job_template": {
                 "id": 12,
                 "name": "fs-backup",
-                "unified_job_type": "job_template",
+                "unified_job_type": "job",
             }
         },
     )
