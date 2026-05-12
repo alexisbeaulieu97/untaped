@@ -394,6 +394,21 @@ class UnifiedTemplateRepository(Protocol):
         ...
 
 
+class WorkflowNodeRepository(Protocol):
+    """Read access to the nodes of a single ``WorkflowJobTemplate``.
+
+    Wraps ``/api/v2/workflow_job_templates/<id>/workflow_nodes/`` — the
+    DAG of unified-job-template references that AWX executes when the
+    workflow runs. Returned dicts carry the full AWX shape (including
+    ``summary_fields``) so the use case can flatten the referenced
+    template's name and type without a second round trip.
+    """
+
+    def list_nodes(self, *, workflow_id: int) -> Iterator[dict[str, Any]]:
+        """Walk every node of ``workflow_id``."""
+        ...
+
+
 class ResourceDocumentReader(Protocol):
     """Reads :class:`Resource` envelopes from a path.
 
@@ -417,4 +432,5 @@ __all__ = [
     "ResourceDocumentReader",
     "StrategyResolver",
     "UnifiedTemplateRepository",
+    "WorkflowNodeRepository",
 ]

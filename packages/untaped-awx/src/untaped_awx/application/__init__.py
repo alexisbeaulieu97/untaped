@@ -8,6 +8,7 @@ from untaped_awx.application.get_job import GetJob
 from untaped_awx.application.get_resource import GetResource
 from untaped_awx.application.list_jobs import ListJobs
 from untaped_awx.application.list_resources import ListResources
+from untaped_awx.application.list_workflow_nodes import ListWorkflowNodes
 from untaped_awx.application.ping import Ping
 from untaped_awx.application.ports import AwxPingService
 from untaped_awx.application.run_action import RunAction
@@ -26,6 +27,7 @@ __all__ = [
     "GetUnifiedTemplate",
     "ListJobs",
     "ListResources",
+    "ListWorkflowNodes",
     "Ping",
     "RunAction",
     "SaveResource",

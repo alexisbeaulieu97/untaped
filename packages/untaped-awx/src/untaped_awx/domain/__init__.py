@@ -10,6 +10,7 @@ from untaped_awx.domain.spec import (
     FkRef,
     ResourceSpec,
 )
+from untaped_awx.domain.workflow_node import WorkflowNode
 
 __all__ = [
     "API_VERSION",
@@ -30,5 +31,6 @@ __all__ = [
     "Resource",
     "ResourceSpec",
     "ServerRecord",
+    "WorkflowNode",
     "WritePayload",
 ]

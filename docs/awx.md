@@ -272,6 +272,36 @@ conflicting values is rejected. Launch dispatch is intentionally out of
 scope here — use the per-kind sub-apps (`job-templates launch`,
 `projects update`, …).
 
+### `untaped awx workflow-templates nodes`
+
+Read-only inspector for a workflow's contents — answers "which jobs
+run inside this workflow?". Lives on the `workflow-templates` sub-app
+alongside `list`/`get`/`save`/`apply`/`launch`. The node graph itself
+(success/failure/always edges) is still out of scope; this surface
+shows *what* runs, not the DAG structure.
+
+```bash
+# Top-level nodes only. Default columns: id,identifier,name,type,depth.
+untaped awx workflow-templates nodes <name|id> [--organization ORG]
+
+# Flatten sub-workflows. ``depth`` tags each row's distance from the
+# root (0 = root's own nodes, 1 = one sub-workflow deep, …).
+untaped awx workflow-templates nodes <name|id> --recursive
+untaped awx workflow-templates nodes <name|id> --recursive --depth 2
+
+# ``--depth N`` for N>0 implies ``--recursive``; ``--depth 0`` means
+# "only the root" (the default when neither flag is passed).
+untaped awx workflow-templates nodes <name|id> --depth 1
+```
+
+Numeric identifiers (`nodes 100`) skip the name lookup; names follow
+the same org-scope rules as `workflow-templates get`. Recursion is
+cycle-guarded by workflow id — a workflow that re-enters itself emits
+a `warning: cycle: workflow <id> already visited; skipping` line to
+stderr and is skipped on the second visit. Nodes whose referenced
+template has been deleted (`unified_job_template: null`) still appear
+with `name` and `type` empty.
+
 ## Test suites — `untaped awx test`
 
 Declarative, parameterised launch matrices against a job template.

@@ -38,6 +38,7 @@ from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
+from untaped_awx.cli.workflow_node_commands import register_nodes_command
 from untaped_awx.domain import Job, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
@@ -468,4 +469,10 @@ for spec in ALL_SPECS:
         # FKs. They have no user-facing CLI surface.
         continue
     sub_app = make_resource_app(spec)
+    if spec.kind == "WorkflowJobTemplate":
+        # Attach the read-only ``nodes`` inspector — sits outside the
+        # CRUD factory because it walks a nested sub-collection
+        # (``workflow_job_templates/<id>/workflow_nodes/``), not the
+        # kind's own collection.
+        register_nodes_command(sub_app)
     app.add_typer(sub_app, name=spec.cli_name)

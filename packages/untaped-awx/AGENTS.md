@@ -248,6 +248,26 @@ scope: the per-kind sub-apps (`job-templates launch`, `projects update`,
 …) already cover that path. User-facing reference: see
 [`docs/awx.md`](../../docs/awx.md).
 
+## `workflow-templates nodes`: read-only inspector attached post-factory
+
+`cli/workflow_node_commands.register_nodes_command(parent)` attaches a
+`nodes` command to the factory-built `workflow-templates` sub-app at
+the bottom of `cli/commands.py`'s `ALL_SPECS` loop. The command walks
+`/api/v2/workflow_job_templates/<id>/workflow_nodes/` via the
+`RawHttpResourceClient.paginate_path` escape hatch (same mechanism
+`unified_template_repo.py` uses), so no new spec-driven CRUD wiring is
+introduced — the workflow node graph is still v0.5 territory for
+apply/save (`spec.fidelity = "partial"`). Layering: domain DTO
+`WorkflowNode` in `domain/workflow_node.py`; port
+`WorkflowNodeRepository` in `application/ports.py`; use case
+`ListWorkflowNodes` in `application/list_workflow_nodes.py` (cycle-
+guarded BFS with optional `max_depth`); concrete adapter in
+`infrastructure/workflow_node_repo.py`. The spec object
+(`WORKFLOW_JOB_TEMPLATE_SPEC`) is imported only at the CLI
+composition root and passed into the use case, preserving the
+`application → infrastructure` import ban. User-facing reference:
+[`docs/awx.md`](../../docs/awx.md).
+
 ## Test framework (`untaped awx test`) runner internals
 
 User-facing reference (file shape, variables, name resolution, pass-through
