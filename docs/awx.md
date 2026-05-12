@@ -281,7 +281,8 @@ alongside `list`/`get`/`save`/`apply`/`launch`. The node graph itself
 shows *what* runs, not the DAG structure.
 
 ```bash
-# Top-level nodes only. Default columns: id,identifier,name,type,depth.
+# Top-level nodes only. Default columns: id,name,type,depth. Add
+# ``--columns id,identifier,name,type,depth`` if you want the DAG label.
 untaped awx workflow-templates nodes <name|id> [--organization ORG]
 
 # Flatten sub-workflows. ``depth`` tags each row's distance from the

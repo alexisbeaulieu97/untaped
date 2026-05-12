@@ -27,7 +27,7 @@ from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
-_DEFAULT_COLUMNS = ["id", "identifier", "name", "type", "depth"]
+_DEFAULT_COLUMNS = ["id", "name", "type", "depth"]
 
 
 def register_nodes_command(parent: typer.Typer) -> None:
