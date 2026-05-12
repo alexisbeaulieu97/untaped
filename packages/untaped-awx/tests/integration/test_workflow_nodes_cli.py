@@ -235,6 +235,62 @@ def test_nodes_depth_one_caps_nested(fake_aap: Any) -> None:
     assert ids == ["1", "2", "3", "4"]
 
 
+def test_nodes_type_filter_keeps_only_matching_kind(fake_aap: Any) -> None:
+    """``--type job_template`` with ``--recursive`` should still descend
+    into workflow nodes so nested job templates surface — the filter is
+    applied to the *output*, not the traversal."""
+    _seed_org_and_root_workflow(fake_aap)
+    _seed_nested(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--recursive",
+            "--type",
+            "job_template",
+            "--format",
+            "raw",
+            "--columns",
+            "id,type",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = sorted(result.stdout.strip().splitlines(), key=lambda r: int(r.split("\t")[0]))
+    # Node 2 (the nested workflow_job_template) is filtered out; nodes
+    # 1, 3, 4 (all job_templates, including the two from inside node 2)
+    # remain.
+    assert rows == [
+        "1\tjob_template",
+        "3\tjob_template",
+        "4\tjob_template",
+    ]
+
+
+def test_nodes_type_filter_keeps_only_workflows(fake_aap: Any) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    _seed_nested(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--recursive",
+            "--type",
+            "workflow_job_template",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines(), key=int)
+    assert ids == ["2"]
+
+
 def test_nodes_rejects_negative_depth(fake_aap: Any) -> None:
     result = CliRunner().invoke(
         app,

@@ -72,6 +72,17 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 "``--recursive`` is passed alone."
             ),
         ),
+        type_: str | None = typer.Option(
+            None,
+            "--type",
+            help=(
+                "Filter output by template type discriminator: "
+                "``job_template``, ``workflow_job_template``, ``project``, "
+                "or ``inventory_source``. Traversal still descends into "
+                "every workflow node so a ``--type job_template`` view "
+                "with ``--recursive`` surfaces nested job templates."
+            ),
+        ),
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
@@ -99,6 +110,8 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 recursive=do_recurse,
                 max_depth=max_depth,
             )
+        if type_ is not None:
+            nodes = [n for n in nodes if n.type == type_]
         rows = [n.model_dump() for n in nodes]
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         typer.echo(format_output(rows, fmt=fmt, columns=cols))

@@ -293,6 +293,13 @@ untaped awx workflow-templates nodes <name|id> --recursive --depth 2
 # ``--depth N`` for N>0 implies ``--recursive``; ``--depth 0`` means
 # "only the root" (the default when neither flag is passed).
 untaped awx workflow-templates nodes <name|id> --depth 1
+
+# Narrow the output to one template-type discriminator. Traversal
+# still descends into every workflow node, so ``--type job_template``
+# combined with ``--recursive`` shows every job template anywhere in
+# the workflow tree.
+untaped awx workflow-templates nodes <name|id> --recursive --type job_template
+untaped awx workflow-templates nodes <name|id> --type workflow_job_template
 ```
 
 Numeric identifiers (`nodes 100`) skip the name lookup; names follow
