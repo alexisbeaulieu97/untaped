@@ -1,7 +1,7 @@
 # untaped
 
-A personal DevOps CLI suite. One binary (`untaped`), one sub-command per
-domain, designed to pipe into the next.
+A personal DevOps CLI suite. One binary (`untaped`), one sub-command
+per domain, designed to pipe into the next.
 
 ```text
 untaped profile ...      # manage configuration profiles
@@ -11,33 +11,38 @@ untaped awx ...          # Ansible Automation Platform / AWX
 untaped github ...       # inspect the authenticated GitHub user
 ```
 
-## Install
-
-The workspace root **is** the `untaped` package — it owns the binary
-and aggregates every domain. Two ways to use it:
-
-### Dev mode (fast, recommended while developing)
+Data-emitting commands accept `--format json|yaml|table|raw` and
+`--columns`, so their output composes:
 
 ```bash
-git clone https://github.com/<you>/untaped
+untaped workspace status --all --format raw \
+    --columns workspace --columns repo --columns behind \
+  | awk '$3 > 0 { print }'
+```
+
+## Requirements
+
+Python 3.14 and [uv](https://docs.astral.sh/uv/).
+
+## Install
+
+Clone and run from source:
+
+```bash
+git clone https://github.com/alexisbeaulieu97/untaped
 cd untaped
 uv sync --all-packages
 uv run untaped --help
 ```
 
-`uv run untaped` always runs against the current source tree.
-
-### Global editable install
-
-To get an `untaped` binary on your `PATH` that picks up local edits
-across every workspace member:
+Or install an editable `untaped` binary on your `PATH`:
 
 ```bash
 uv tool install --editable .
 ```
 
-`uv` resolves each `workspace = true` source to the local member and
-installs all of them editably in the tool environment.
+`uv` resolves every workspace member in place, so local edits across
+packages are picked up without reinstalling.
 
 ## Documentation
 
