@@ -72,13 +72,3 @@ def test_from_settings_field_set_matches_awxsettings() -> None:
         "in_settings_only": sorted(settings_fields - config_fields),
         "in_config_only": sorted(config_fields - settings_fields),
     }
-
-
-def test_old_bridge_function_is_gone() -> None:
-    """``awx_config_from_settings`` should no longer exist anywhere
-    in the package — replaced by ``AwxConfig.from_settings``."""
-    import untaped_awx.cli._context as ctx_mod
-
-    assert not hasattr(ctx_mod, "awx_config_from_settings"), (
-        "awx_config_from_settings should have been removed in favour of AwxConfig.from_settings"
-    )

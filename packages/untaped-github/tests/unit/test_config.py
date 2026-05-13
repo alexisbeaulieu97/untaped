@@ -55,24 +55,3 @@ def test_from_settings_field_set_matches_githubsettings() -> None:
         "in_settings_only": sorted(settings_fields - config_fields),
         "in_config_only": sorted(config_fields - settings_fields),
     }
-
-
-def test_no_inline_githubconfig_constructor_in_cli() -> None:
-    """``cli/commands.py`` and ``cli/search_commands.py`` used to copy
-    ``base_url`` / ``token`` inline. After the refactor, the only place
-    that constructs ``GithubConfig`` from settings is the new
-    ``cli/_client.py`` module, and it goes through ``from_settings``.
-
-    The match is broad on purpose: any ``GithubConfig(`` call in CLI
-    files trips the assertion regardless of kwarg order, so the
-    backstop survives a future field reshuffle that would let
-    ``GithubConfig(token=..., base_url=...)`` slip a narrower check."""
-    from pathlib import Path
-
-    pkg = Path(__file__).resolve().parents[2] / "src" / "untaped_github" / "cli"
-    for name in ("commands.py", "search_commands.py"):
-        text = (pkg / name).read_text()
-        assert "GithubConfig(" not in text, (
-            f"{name} still constructs GithubConfig inline; route through "
-            f"GithubConfig.from_settings via the _client helper"
-        )

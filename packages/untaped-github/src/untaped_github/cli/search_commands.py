@@ -19,7 +19,7 @@ from untaped_core import (
     report_errors,
 )
 
-from untaped_github.cli._client import open_client as _open_client
+from untaped_github.cli._client import open_client
 
 app = typer.Typer(
     name="search",
@@ -92,7 +92,7 @@ def repos_command(
             sort=sort,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             use_case = SearchRepos(client, client, warn=_stderr_warn)
             rows = [
                 r.model_dump()
@@ -137,7 +137,7 @@ def code_command(
             extension=extension,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             use_case = SearchCode(client, client, warn=_stderr_warn)
             rows = [
                 r.model_dump()
@@ -184,7 +184,7 @@ def issues_command(
             sort=sort,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             use_case = SearchIssues(client, client, warn=_stderr_warn)
             rows = [
                 r.model_dump()
@@ -217,6 +217,6 @@ def users_command(
             sort=sort,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             rows = [r.model_dump() for r in SearchUsers(client)(filters)]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
