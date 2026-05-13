@@ -45,6 +45,12 @@ class GitRunner:
         bare = cache_path_for(url, cache_dir=cache_dir)
         if bare.is_dir() and (bare / "HEAD").is_file():
             return bare
+        # ``mkdir(parents=True, exist_ok=True)`` is the thread-safety
+        # boundary for `sync --all -j N`: different URLs race on the
+        # same ``cache_dir`` here, and ``exist_ok=True`` (plus the
+        # per-level ``FileExistsError`` handling in ``os.makedirs``)
+        # makes it idempotent. Don't replace with a non-idempotent
+        # variant.
         bare.parent.mkdir(parents=True, exist_ok=True)
         self._run(["clone", "--bare", url, str(bare)], timeout=self._slow_timeout)
         return bare

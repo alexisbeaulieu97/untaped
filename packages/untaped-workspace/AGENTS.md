@@ -183,6 +183,31 @@ branches: they skip-with-warning when the on-disk branch doesn't match the
 manifest's target. This stops a stale `defaults.branch` from kidnapping a
 user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
 
+## `sync --all -j N` parallelism
+
+`workspace sync --all -j N` dispatches workspaces across a
+`ThreadPoolExecutor` in `cli/commands.py::_sync_parallel`. Outcomes
+come back in `as_completed` order then get re-sorted by
+`(workspace_input_order, repo)` so JSON/table consumers see stable
+rows regardless of completion timing. The CLI clamps `-j` at
+`_PARALLEL_CAP=32` and rejects `parallel > 1` outside `--all` with a
+`typer.BadParameter` (single-workspace parallelism would have to push
+inside `SyncWorkspace` and racing the bare-cache per-repo isn't worth
+the complexity — see #11 / #30). When `--all -j N>1` is in play, the
+CLI emits a stderr "syncing N workspaces with up to M workers" header
+so users can tell the parallel path was taken.
+
+`SyncWorkspace._ensure_bare_fresh` carries a per-URL `threading.Lock`
+plus a shared `_fetched: set[Path]` so concurrent `__call__`s sharing
+a repo URL serialise on the bare cache (one thread does
+`ensure_bare → bare_fetch`; siblings see the URL in `_fetched` and
+skip). Threads on **different** URLs proceed in parallel, which is
+the whole point. On `GitError`, the URL is left unclaimed so the next
+caller retries — same semantics as the pre-parallel serial path. Issue
+#11 will replace the in-instance cache + locks with an external cache
+argument owned by the composition root; until then the lock plumbing
+lives next to the `_fetched` set with a `TODO(#11)` marker.
+
 ## `init` vs. `adopt` vs. `forget`
 
 Three workspace lifecycle commands with deliberately distinct shapes:

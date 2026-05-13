@@ -6,6 +6,8 @@ formats output via :mod:`untaped_core.output`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import typer
@@ -262,6 +264,12 @@ def remove_command(
 
 # sync -----------------------------------------------------------------------
 
+# Upper bound on `sync --all --parallel`. Picked to match a generous
+# laptop's network concurrency without overwhelming git's per-process
+# locks; issue #30 will unify this with `foreach`'s clamp into a single
+# policy.
+_PARALLEL_CAP = 32
+
 
 @app.command("sync")
 def sync_command(
@@ -289,12 +297,34 @@ def sync_command(
         ),
     ),
     all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),
+    parallel: int = typer.Option(
+        1,
+        "--parallel",
+        "-j",
+        help=(
+            "Concurrent workspaces (only with --all). Per-workspace "
+            "outcomes are rows, not exceptions, so the pool drains "
+            f"to completion. Capped at {_PARALLEL_CAP} (issue #30 will "
+            "unify the cap policy)."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
         raise typer.BadParameter("--timeout must be positive")
+    if parallel < 1:
+        raise typer.BadParameter("--parallel must be >= 1")
+    if parallel > 1 and not all_workspaces:
+        raise typer.BadParameter("--parallel >1 requires --all")
+    workers = min(parallel, _PARALLEL_CAP)
+    if parallel > workers:
+        typer.echo(
+            f"warning: --parallel {parallel} clamped to {workers} (issue #30 "
+            "will unify the cap policy across sync and foreach)",
+            err=True,
+        )
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
         runner = (
@@ -312,10 +342,46 @@ def sync_command(
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
-        outcomes = []
-        for ws in targets:
-            outcomes.extend(use_case(ws, only=only, prune=prune, strict_only=not all_workspaces))
+        if all_workspaces and workers > 1:
+            typer.echo(
+                f"syncing {len(targets)} workspaces with up to {workers} workers",
+                err=True,
+            )
+            outcomes = _sync_parallel(use_case, targets, only=only, prune=prune, workers=workers)
+        else:
+            outcomes = []
+            for ws in targets:
+                outcomes.extend(
+                    use_case(ws, only=only, prune=prune, strict_only=not all_workspaces)
+                )
         _print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
+
+
+def _sync_parallel(
+    use_case: SyncWorkspace,
+    targets: Sequence[Workspace],
+    *,
+    only: list[str] | None,
+    prune: bool,
+    workers: int,
+) -> list[SyncOutcome]:
+    """Dispatch ``use_case`` across ``targets`` on a ThreadPoolExecutor.
+
+    Outcomes come back in ``as_completed`` order — sort them by input
+    workspace order then repo so table/JSON output stays predictable,
+    mirroring ``Foreach._run_parallel``'s tail sort.
+    """
+    outcomes: list[SyncOutcome] = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(use_case, ws, only=only, prune=prune, strict_only=False): ws
+            for ws in targets
+        }
+        for fut in as_completed(futures):
+            outcomes.extend(fut.result())
+    order = {ws.name: i for i, ws in enumerate(targets)}
+    outcomes.sort(key=lambda o: (order.get(o.workspace, len(order)), o.repo))
+    return outcomes
 
 
 def _print_sync_outcomes(

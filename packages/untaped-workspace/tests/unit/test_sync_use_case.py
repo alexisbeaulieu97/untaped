@@ -492,6 +492,46 @@ def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
     assert bare_fetch_count == 1  # fetch deduped via _fetched cache
 
 
+def test_bare_fetch_dedup_is_threadsafe(tmp_path: Path) -> None:
+    """Concurrent ``__call__`` invocations sharing a repo URL must still
+    bare_fetch exactly once. Without a lock, the check-and-add window in
+    ``_ensure_bare_fresh`` is wide enough for every thread to slip past
+    the membership check before any of them adds — we sleep inside the
+    stub's ``bare_fetch`` to make the race deterministic on a normal
+    CPython runtime."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    class SlowFetchStub(StubGit):
+        def bare_fetch(self, bare_path: Path) -> None:
+            time.sleep(0.05)  # widen the race window so the test is robust
+            super().bare_fetch(bare_path)
+
+    manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
+    workspaces: list[Workspace] = []
+    for name in ("a", "b", "c", "d"):
+        ws_path = tmp_path / name
+        ws_path.mkdir()
+        ManifestRepository().write(ws_path, manifest)
+        workspaces.append(Workspace(name=name, path=ws_path))
+
+    git = SlowFetchStub()
+    use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+
+    barrier = threading.Barrier(len(workspaces))
+
+    def run(ws: Workspace) -> list:  # type: ignore[type-arg]
+        barrier.wait()
+        return use_case(ws)
+
+    with ThreadPoolExecutor(max_workers=len(workspaces)) as pool:
+        list(pool.map(run, workspaces))
+
+    bare_fetch_count = sum(1 for e in git.events if e[0] == "bare_fetch")
+    assert bare_fetch_count == 1, git.events
+
+
 @pytest.fixture
 def _ensure_iterable() -> None:  # placeholder to keep import order tidy
     pass
