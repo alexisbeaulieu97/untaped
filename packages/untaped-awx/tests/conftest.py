@@ -505,6 +505,9 @@ def fake_aap(aap_config: Path) -> Iterator[FakeAap]:
 def seeded_default_org(fake_aap: FakeAap) -> FakeAap:
     """``FakeAap`` pre-seeded with organization ``id=1, name="Default"``.
 
+    Returns the same ``FakeAap`` instance as the ``fake_aap`` fixture
+    (function-scoped, cached by pytest), post-seed.
+
     Use when the test's canonical world has one organization called
     ``Default``; tests can then seed FKs with
     ``organization=1, organization_name="Default"``. Opt out (use bare
@@ -519,12 +522,12 @@ def seeded_default_org(fake_aap: FakeAap) -> FakeAap:
 
 @pytest.fixture
 def seeded_job_template_with_credentials(
-    fake_aap: FakeAap,
+    seeded_default_org: FakeAap,
 ) -> tuple[FakeAap, dict[str, int]]:
     """``fake_aap`` pre-seeded with the org/inventory/credentials/JT shape
     used by launch-action payload tests. Returns ``(fake, ids)`` so the
     test can reference seeded ids without redeclaring them."""
-    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap = seeded_default_org
     fake_aap.seed(
         "inventories",
         id=20,
