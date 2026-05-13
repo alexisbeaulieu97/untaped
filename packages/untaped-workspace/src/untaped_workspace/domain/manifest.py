@@ -24,6 +24,14 @@ class DuplicateRepoError(ValueError):
         super().__init__(message)
         self.existing = existing
 
+    def __reduce__(self) -> tuple[Any, tuple[Repo]]:
+        # ``Exception.__reduce__`` pickles via ``self.args``, which is
+        # just the message string — unpickling would call the subclass
+        # ``__init__`` with a ``str`` where ``Repo`` is expected and
+        # crash. Round-trip via the incumbent instead so these can
+        # safely cross process boundaries (foreach / sync workers).
+        return type(self), (self.existing,)
+
 
 class DuplicateRepoName(DuplicateRepoError):
     """A repo with the same `name` is already in the manifest."""
@@ -86,20 +94,34 @@ class WorkspaceManifest(BaseModel):
     defaults: ManifestDefaults = Field(default_factory=ManifestDefaults)
     repos: list[Repo] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def _reject_duplicate_repos(self) -> WorkspaceManifest:
+    @staticmethod
+    def _first_duplicate(repos: list[Repo]) -> DuplicateRepoError | None:
         # Sync and remove both key off the (name, url) pair: two repos
         # sharing either field would collide on disk or make `remove`
-        # ambiguous. Refuse here so imports/hand-edits fail loud, not later.
+        # ambiguous. Single source of truth shared by the post-construct
+        # validator and ``add_repo`` so both paths raise the same typed
+        # exception in the same precedence.
+        #
+        # Precedence is **url before name** so re-adding an existing URL
+        # surfaces as ``DuplicateRepoUrl`` ("already in workspace")
+        # rather than ``DuplicateRepoName`` — the derived name *also*
+        # collides in that case, but the user's correct mental model is
+        # "this repo is already here," not "your name conflicts."
         seen_names: dict[str, Repo] = {}
         seen_urls: dict[str, Repo] = {}
-        for repo in self.repos:
-            if (incumbent := seen_names.get(repo.name)) is not None:
-                raise DuplicateRepoName(incumbent)
+        for repo in repos:
             if (incumbent := seen_urls.get(repo.url)) is not None:
-                raise DuplicateRepoUrl(incumbent)
-            seen_names[repo.name] = repo
+                return DuplicateRepoUrl(incumbent)
+            if (incumbent := seen_names.get(repo.name)) is not None:
+                return DuplicateRepoName(incumbent)
             seen_urls[repo.url] = repo
+            seen_names[repo.name] = repo
+        return None
+
+    @model_validator(mode="after")
+    def _reject_duplicate_repos(self) -> WorkspaceManifest:
+        if (err := self._first_duplicate(self.repos)) is not None:
+            raise err
         return self
 
     def repo_by_name(self, name: str) -> Repo | None:
@@ -122,20 +144,17 @@ class WorkspaceManifest(BaseModel):
     def add_repo(self, repo: Repo) -> WorkspaceManifest:
         """Return a new manifest with ``repo`` appended.
 
-        Raises ``DuplicateRepoUrl`` if ``repo.url`` is already present
-        or ``DuplicateRepoName`` if ``repo.name`` is. Both carry the
-        incumbent so callers can build CLI-facing messages without
-        re-scanning the manifest.
+        Raises ``DuplicateRepoName`` or ``DuplicateRepoUrl`` (in that
+        precedence) if ``repo`` collides with an existing entry. Each
+        carries the incumbent so callers can build CLI-facing messages
+        without re-scanning the manifest.
         """
         # Pre-check before construction so the exception carries the
-        # incumbent. The model validator (`_reject_duplicate_repos`)
-        # runs again on the new manifest as a second line of defence —
-        # cheap, and keeps YAML-load paths covered through the same
-        # typed-exception contract.
-        if (incumbent := self.repo_by_url(repo.url)) is not None:
-            raise DuplicateRepoUrl(incumbent)
-        if (incumbent := self.repo_by_name(repo.name)) is not None:
-            raise DuplicateRepoName(incumbent)
+        # incumbent. Reuses ``_first_duplicate`` — the same helper the
+        # validator runs on YAML loads — so both paths raise the same
+        # typed exception in the same precedence.
+        if (err := self._first_duplicate([*self.repos, repo])) is not None:
+            raise err
         return WorkspaceManifest(
             name=self.name,
             defaults=self.defaults,

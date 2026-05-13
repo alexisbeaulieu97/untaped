@@ -89,6 +89,47 @@ def test_duplicate_repo_exceptions_subclass_value_error() -> None:
     assert issubclass(DuplicateRepoUrl, ValueError)
 
 
+def test_duplicate_collision_precedence_url_before_name() -> None:
+    """When both invariants would fire on the same input, ``add_repo`` and the
+    YAML-load validator must raise the *same* typed exception. Url
+    precedence keeps "re-add the same URL" surfacing as
+    ``DuplicateRepoUrl`` ("already in workspace") rather than
+    ``DuplicateRepoName`` — derived names also collide in that case but
+    the user's correct mental model is the URL one."""
+    incumbent = Repo(url="https://x/a.git", name="alpha")
+    manifest = _manifest(incumbent)
+    # Same name AND same url — both invariants violated simultaneously.
+    colliding = Repo(url="https://x/a.git", name="alpha")
+
+    with pytest.raises(DuplicateRepoUrl):
+        manifest.add_repo(colliding)
+
+    # YAML-load path: the validator wraps into ValidationError but the
+    # wrapped cause must be the same type as the add_repo path raised.
+    with pytest.raises(ValidationError) as exc_info:
+        WorkspaceManifest(repos=[incumbent, colliding])
+    causes = [err["ctx"]["error"] for err in exc_info.value.errors() if "ctx" in err]
+    assert any(isinstance(cause, DuplicateRepoUrl) for cause in causes)
+
+
+def test_duplicate_repo_exceptions_round_trip_through_pickle() -> None:
+    """The typed exceptions cross process boundaries (foreach / sync workers).
+
+    ``Exception.__reduce__`` defaults to pickling ``self.args``, which is
+    a single message string for our subclasses — unpickling would call
+    ``DuplicateRepoName(str)`` and crash on ``.name`` access. Our custom
+    ``__reduce__`` round-trips via the incumbent.
+    """
+    import pickle
+
+    incumbent = Repo(url="https://x/a.git", name="alpha")
+    original = DuplicateRepoName(incumbent)
+    restored = pickle.loads(pickle.dumps(original))
+    assert isinstance(restored, DuplicateRepoName)
+    assert restored.existing == incumbent
+    assert str(restored) == str(original)
+
+
 # ---- remove_repo -------------------------------------------------------
 
 
