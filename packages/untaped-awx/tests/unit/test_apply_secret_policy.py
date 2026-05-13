@@ -1,7 +1,7 @@
 """Unit tests for SecretPreservationPolicy.
 
 The policy is the apply pipeline's *second* pass over secrets — after
-``strip_encrypted`` has dropped ``$encrypted$`` placeholders from the
+``strip_encrypted_in_place`` has dropped ``$encrypted$`` placeholders from the
 payload, the policy decides which top-level fields can safely be
 omitted from the PATCH (AWX retains them) versus which carry a sibling
 change that would clobber the existing secret if PATCHed.
@@ -83,7 +83,7 @@ def test_partition_preserves_inputs_when_only_secrets_changed() -> None:
 
 def test_partition_handles_per_path_secrets() -> None:
     """``preserved`` carries the *actual* paths matched by
-    ``strip_encrypted`` (one entry per ``$encrypted$`` placeholder
+    ``strip_encrypted_in_place`` (one entry per ``$encrypted$`` placeholder
     found), not the spec glob. With every secret path stripped from
     both sides, an unchanged-modulo-secrets payload is preserved."""
     policy = SecretPreservationPolicy()
@@ -104,7 +104,7 @@ def test_partition_handles_per_path_secrets() -> None:
 
 
 def test_partition_handles_list_glob_in_preserved_path() -> None:
-    """``strip_encrypted`` records list traversal as ``*`` in the path
+    """``strip_encrypted_in_place`` records list traversal as ``*`` in the path
     (e.g. ``survey_spec.spec.*.default``). The policy's ``strip_paths``
     must apply the same glob shape so the comparison normalises both
     sides identically."""
