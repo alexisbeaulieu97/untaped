@@ -91,16 +91,49 @@ package's pydantic-everywhere convention.
 ## `system_adapters` for other side effects
 
 Other side-effecting calls (shell-out for `foreach`, editor launch for
-`edit`, `rmtree` for `remove --prune` / `sync --prune`) have their
-default implementations in `infrastructure.system_adapters`:
+`edit`, plus every disk read/write — `exists`, `is_dir`, `mkdir`,
+`iterdir`, `rmtree`) have their default implementations in
+`infrastructure.system_adapters`:
 
 - `shell_runner` — concrete factory satisfying `application.ports.ShellRunner`
 - `editor_runner` — concrete factory satisfying `application.ports.EditorRunner`
-- `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`
+- `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`,
+  which declares `exists` / `is_dir` / `mkdir(*, parents, exist_ok)`
+  (no defaults — call sites pass both kwargs explicitly so the
+  divergence from `pathlib.Path.mkdir`'s `False/False` can't slip
+  through silently) / `iterdir` / `rmtree`. Methods delegate to the
+  equivalent `pathlib.Path` operation (or `shutil.rmtree` for the
+  recursive delete).
 
-Application use cases require the port shapes as constructor arguments —
-**none of them imports `subprocess` or `shutil` directly.** The CLI
-composition root wires the defaults; tests inject stubs.
+Application use cases require the port shapes as constructor arguments
+— **none of them imports `subprocess` or `shutil`, or reaches into
+`pathlib` for filesystem reads/writes directly.** Every disk touch
+flows through the `Filesystem` port; the contract is pinned by
+`tests/unit/test_filesystem_port.py::test_no_pathlib_io_in_application_layer`,
+which greps `application/` for `.is_dir()` / `.exists()` / `.iterdir()`
+/ `.mkdir()` and fails CI on any leak. The CLI composition root wires
+the defaults; tests inject the conftest `StubFilesystem` to assert
+disk side effects without `tmp_path`.
+
+**`self._<name>` convention.** Use cases must hold their port on a
+private attribute (`self._fs`, `self._manifests`, `self._registry`, …)
+and call it via that attribute. The lint test's port-call exception
+matches only the `self\._\w+\.method(` shape — a locally-bound
+`fs = self._fs` followed by `fs.is_dir(p)` would trip a false-positive
+leak report. The convention also keeps the seam visually obvious at
+the call site.
+
+**Two small caveats** the rule does **not** ban:
+
+- `Path.resolve()` / `Path.expanduser()` for input-normalisation
+  (`init_workspace.py`, `import_workspace.py`, `adopt_workspace.py`).
+  `resolve()` *does* hit syscalls to walk symlinks, but it's
+  path-normalisation rather than data-touching I/O and there's no
+  test-stub value in routing it through the port today.
+- `ManifestReader.exists(workspace_dir)` (`ports.py`) — also reads the
+  disk, but it's a port (asks "is there a manifest under this dir?")
+  with different semantics from `Filesystem.exists`; the lint
+  whitelists port-mediated calls regardless of the receiver name.
 
 ## `foreach` output semantics
 

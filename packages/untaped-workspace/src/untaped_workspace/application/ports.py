@@ -6,7 +6,7 @@ Mirrors :mod:`untaped_awx.application.ports`. Transport DTOs live in
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -41,6 +41,13 @@ class WorkspaceRegistry(RegistryReader, Protocol):
 
 
 class Filesystem(Protocol):
+    def exists(self, path: Path) -> bool: ...
+    def is_dir(self, path: Path) -> bool: ...
+    # `parents` / `exist_ok` are keyword-only with no defaults so call
+    # sites read explicitly — `pathlib.Path.mkdir` defaults them to
+    # ``False`` and a silent flip would be a debugging trap.
+    def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None: ...
+    def iterdir(self, path: Path) -> Iterable[Path]: ...
     def rmtree(self, path: Path) -> None: ...
 
 
