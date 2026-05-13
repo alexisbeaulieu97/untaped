@@ -176,7 +176,11 @@ class ApplyFile:
             # Pull their outcomes out of the futures so the user sees
             # what actually happened. In the happy path every result is
             # already pulled in the as_completed loop, so this drain
-            # only runs after a fail-fast abort.
+            # only runs after a fail-fast abort. ``_apply_one_safely``
+            # has already wrapped any ``AwxApiError`` into a ``failed``
+            # outcome; any *other* exception (a programmer error) would
+            # propagate out of ``fut.result()`` here and abort the apply
+            # — matching the serial path's behaviour.
             for fut, idx in futures.items():
                 if results[idx] is None and not fut.cancelled():
                     results[idx] = fut.result()

@@ -509,6 +509,53 @@ def test_apply_file_rejects_parallel_below_one() -> None:
         )
 
 
+def test_apply_file_clamps_parallel_at_cap() -> None:
+    """A programmatic caller passing ``parallel=100`` gets clamped to
+    ``APPLY_PARALLEL_CAP`` rather than spinning up a 100-worker pool —
+    the CLI surface warns about this; the use case silently caps as
+    the second line of defence. Pins the asymmetric "raise on <1,
+    clamp on >cap" contract: <1 is always a typo, >cap is a
+    pragmatic ceiling."""
+    from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
+
+    use = ApplyFile(
+        _RecordingApply(),
+        lambda _p: [],
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+        parallel=100,
+    )
+    assert use._parallel == APPLY_PARALLEL_CAP
+
+
+def test_apply_file_parallel_phase2_aligns_outcomes_with_ordered(tmp_path: Path) -> None:
+    """``write=True`` runs phase 2 (membership reconciliation) over
+    ``zip(ordered, outcomes, strict=True)``. The two iterables MUST have
+    the same length and the same per-position ordering for that zip
+    to succeed. The parallel phase 1 path rebuilds ``outcomes`` from an
+    index-keyed ``results`` list — verify it produces an ``outcomes``
+    list of the right length and order even under ``parallel=4``."""
+    f = _multi_project_file(tmp_path, count=6)
+    from untaped_awx.infrastructure.yaml_io import read_resources
+
+    recorder = _RecordingApply()
+    use = ApplyFile(
+        recorder,
+        read_resources,
+        AwxResourceCatalog(),
+        cast(FkResolver, _StubFk()),
+        parallel=4,
+    )
+    outcomes = use(f, write=True)
+    # All 6 docs reach phase 2 (Project has no sub-endpoint multi-FKs,
+    # so reconcile_memberships short-circuits to an empty list — but
+    # crucially the ``zip(..., strict=True)`` would have raised on
+    # length mismatch before this line ever returned).
+    assert len(outcomes) == 6
+    assert [o.name for o in outcomes] == sorted(o.name for o in outcomes)
+    assert {o.action for o in outcomes} == {"preview"}
+
+
 def test_apply_file_serial_when_parallel_defaults_to_one(tmp_path: Path) -> None:
     """Default ``parallel=1`` keeps the existing serial path. Pins the
     existing contract so the parallel rewrite doesn't accidentally

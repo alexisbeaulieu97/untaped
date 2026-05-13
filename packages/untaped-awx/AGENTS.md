@@ -211,15 +211,20 @@ setting.
 ### Apply parallelism
 
 Phase 1 is parallelisable **within a kind** but serial **across kinds**.
-`ApplyFile.__call__` walks the topologically sorted docs and groups them
-by kind via `itertools.groupby` (the sort key already kinds-then-name).
-Each kind group is dispatched through `_apply_kind`, which uses a
-`ThreadPoolExecutor` when `parallel > 1` and `len(docs) > 1`. Outcomes
-are keyed by input index so the returned list matches input doc order
-regardless of `as_completed` ordering. On `fail_fast=True`, queued
-futures are cancelled but in-flight workers run to completion (matching
-`_drain_parallel`'s semantics); a post-loop drain pulls their outcomes
-out of the futures so a `write=True` apply never silently loses an AWX
+`ApplyFile.__call__` walks the topologically sorted docs and buckets
+them by kind via `defaultdict(list)` (Python dict insertion order
+preserves the topo order from `_topological_sort`). `defaultdict`
+instead of `itertools.groupby` is deliberate: `groupby` requires
+consecutive same-kind docs, an invariant that lives in a different
+module — a future re-sort that interleaves kinds would silently split
+a kind into multiple groups, hurting parallelism without breaking
+tests. Each kind group is dispatched through `_apply_kind`, which
+uses a `ThreadPoolExecutor` when `parallel > 1` and `len(docs) > 1`.
+Outcomes are keyed by input index so the returned list matches input
+doc order regardless of `as_completed` ordering. On `fail_fast=True`,
+queued futures are cancelled but in-flight workers run to completion
+(matching `_drain_parallel`'s semantics); a post-loop drain pulls their
+outcomes out of the futures so a `write=True` apply never silently loses an AWX
 mutation. The pool is capped at `APPLY_PARALLEL_CAP=10` to match
 `httpx.Client`'s default `max_connections=10` — anything higher just
 blocks on connection acquisition. Issue #30 / REVIEW finding 6.2 will

@@ -206,6 +206,7 @@ def test_per_kind_apply_help_advertises_parallel() -> None:
     result = CliRunner().invoke(app, ["projects", "apply", "--help"])
     assert result.exit_code == 0
     assert "--parallel" in result.output
+    assert "-j" in result.output
 
 
 def test_apply_emits_clamp_warning_above_cap(
