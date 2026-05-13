@@ -9,11 +9,17 @@ Hard Rules, recipes), see the [root `AGENTS.md`](../../AGENTS.md).
 
 `AwxConfig` (`infrastructure/config.py`) is the package-local config struct
 (`base_url`, `token`, `api_prefix`, `default_organization`, `page_size`).
-Only `cli/` modules read `untaped_core.Settings` — today
-`cli/_context.awx_config_from_settings` (the composition root) and
-`cli/commands.py:ping_command`. New commands follow the same pattern.
-`application/`, `infrastructure/`, and `domain/` depend on `AwxConfig` so
-`untaped-awx` is extractable as a standalone library.
+The canonical bridge is `AwxConfig.from_settings(settings)` — a single
+classmethod that mirrors `untaped_core.settings.AwxSettings` field-for-field.
+Only `cli/` modules read `untaped_core.Settings` (and `infrastructure/config.py`
+imports it under `TYPE_CHECKING` purely for the classmethod signature) —
+today `cli/_context.AwxContext.__init__` and `cli/commands.py:ping_command`,
+plus any future CLI command. `application/`, `infrastructure/`, and `domain/`
+depend on `AwxConfig` so `untaped-awx` is extractable as a standalone library.
+
+Adding a new field is a four-place edit (`AwxSettings`, `AwxConfig`, the
+`from_settings` body, and `test_config.test_from_settings_field_set_matches_awxsettings`);
+the field-inventory test fails CI loudly if you forget one of the first two.
 
 ## AAP/AWX compatibility
 

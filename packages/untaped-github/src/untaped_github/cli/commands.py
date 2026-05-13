@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import typer
-from untaped_core import ColumnsOption, FormatOption, format_output, get_settings, report_errors
+from untaped_core import ColumnsOption, FormatOption, format_output, report_errors
 
+from untaped_github.cli._client import open_client
 from untaped_github.cli.search_commands import app as search_app
 
 app = typer.Typer(
@@ -26,16 +27,9 @@ def whoami_command(
 ) -> None:
     """Show the authenticated GitHub user (``GET /user``)."""
     from untaped_github.application import WhoAmI  # noqa: PLC0415
-    from untaped_github.infrastructure import GithubClient, GithubConfig  # noqa: PLC0415
 
-    with report_errors():
-        settings = get_settings()
-        config = GithubConfig(
-            base_url=settings.github.base_url,
-            token=settings.github.token,
-        )
-        with GithubClient(config, http=settings.http) as client:
-            user = WhoAmI(client)()
+    with report_errors(), open_client() as client:
+        user = WhoAmI(client)()
         typer.echo(format_output([user.model_dump()], fmt=fmt, columns=columns))
 
 

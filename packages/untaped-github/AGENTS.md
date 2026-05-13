@@ -33,10 +33,20 @@ No auto-detection — the user configures it explicitly.
 
 Lives in `infrastructure/config.py`. Mirrors the shape of
 `untaped_core.settings.GithubSettings` so the CLI can build one from
-settings in a single line, but is declared in this package so adapters
-can depend on it without importing `untaped_core`. Adding a new field
-means updating both: the `Settings.github` sub-model in core (for YAML
-/ env-var loading) and `GithubConfig` here (for adapter consumption).
+settings in a single line via `GithubConfig.from_settings(settings)` —
+the canonical bridge. Declared in this package so adapters can depend
+on it without importing `untaped_core` (the classmethod imports
+`Settings` under `TYPE_CHECKING` only).
+
+Adding a new field is a four-place edit (`GithubSettings`,
+`GithubConfig`, the `from_settings` body, and
+`test_config.test_from_settings_field_set_matches_githubsettings`);
+the field-inventory test fails CI loudly if you forget one of the first
+two.
+
+The CLI composition root lives in `cli/_client.py::open_client`, which
+all top-level commands (`whoami`, `search`) use. Adding a new top-level
+command is a one-line `with open_client() as client:` away.
 
 ## HTTP wiring
 
@@ -144,10 +154,12 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD":
   — no import from `application/`. `GithubClient` exposes one method
   per endpoint and delegates list/search calls to the pagination
   helpers.
-- `cli/`: composition root. Reads `Settings.github`, builds
-  `GithubConfig`, instantiates `GithubClient`, runs the use case,
-  formats output. The `search` sub-app lives in `cli/search_commands.py`
-  and is mounted on the root app via `app.add_typer(...)`.
+- `cli/`: composition root. The shared `cli/_client.open_client`
+  helper reads `Settings.github`, builds `GithubConfig` via
+  `from_settings`, and returns a context-managed `GithubClient`; every
+  top-level command (`whoami`, `search`) uses it. The `search` sub-app
+  lives in `cli/search_commands.py` and is mounted on the root app via
+  `app.add_typer(...)`.
 
 ## Recipe: add a new command
 
