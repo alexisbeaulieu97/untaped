@@ -51,18 +51,21 @@ clones use `git clone --reference` against the bare so disk + bandwidth
 are shared without `git worktree` branch conflicts.
 
 Every `subprocess.run` inside `GitRunner` carries a `timeout=` budget
-so a hung remote never strands a `sync --all` sweep. Two buckets:
-read-only methods (`status`, `is_dirty`, `default_branch`,
-`read_remote_url`, `read_current_branch`, `ff_only_pull`) get
-`DEFAULT_TIMEOUT`; network methods (`ensure_bare` clone, `bare_fetch`,
-`clone_with_reference`, `fetch`) get `DEFAULT_SLOW_TIMEOUT`. Override
-per-instance via `GitRunner(timeout=…, slow_timeout=…)`. The CLI
-surfaces `workspace sync --timeout N`, which sets both buckets to `N`
-for that invocation (so a CI script can fail fast on hung clones with
-a single knob). Timeouts surface as
-`GitError("git <args> timed out after Ns")`, which
-`SyncWorkspace._sync_repo`'s existing `GitError` handlers translate to
-`skip` rows without further plumbing.
+so a hung remote never strands a `sync --all` sweep. The split is
+**local-only vs network**, not "read-only vs write" (the local-only
+bucket includes `ff_only_pull`, which does write HEAD via
+`git merge --ff-only` — but executes locally with no network round
+trip, so the fast budget still applies). Local-only methods
+(`status`, `is_dirty`, `default_branch`, `read_remote_url`,
+`read_current_branch`, `ff_only_pull`) get `DEFAULT_TIMEOUT`; network
+methods (`ensure_bare` clone, `bare_fetch`, `clone_with_reference`,
+`fetch`) get `DEFAULT_SLOW_TIMEOUT`. Override per-instance via
+`GitRunner(timeout=…, slow_timeout=…)`. The CLI surfaces
+`workspace sync --timeout N`, which sets both buckets to `N` for that
+invocation (so a CI script can fail fast on hung clones with a single
+knob). Timeouts surface as `GitError("git <args> timed out after Ns")`,
+which `SyncWorkspace._sync_repo`'s existing `GitError` handlers
+translate to `skip` rows without further plumbing.
 
 ## Ports module
 

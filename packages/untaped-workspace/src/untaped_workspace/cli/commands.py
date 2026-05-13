@@ -38,6 +38,8 @@ from untaped_workspace.application import (
 from untaped_workspace.cli.completions import complete_workspace_name
 from untaped_workspace.domain import SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
+    DEFAULT_SLOW_TIMEOUT,
+    DEFAULT_TIMEOUT,
     GitRunner,
     LocalFilesystem,
     LocalRepoDiscoverer,
@@ -46,10 +48,6 @@ from untaped_workspace.infrastructure import (
     WorkspaceResolver,
     editor_runner,
     shell_runner,
-)
-from untaped_workspace.infrastructure.git_runner import (
-    DEFAULT_SLOW_TIMEOUT,
-    DEFAULT_TIMEOUT,
 )
 
 app = typer.Typer(

@@ -142,7 +142,7 @@ class GitRunner:
                 timeout=effective_timeout,
             )
         except subprocess.TimeoutExpired as exc:
-            raise GitError(f"git {' '.join(args)} timed out after {effective_timeout}s") from exc
+            raise GitError(f"git {' '.join(args)} timed out after {effective_timeout:g}s") from exc
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             raise GitError(

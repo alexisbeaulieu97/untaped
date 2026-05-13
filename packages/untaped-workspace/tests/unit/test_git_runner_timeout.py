@@ -16,14 +16,18 @@ real git). These tests pin the contract:
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from untaped_workspace.errors import GitError
-from untaped_workspace.infrastructure import GitRunner
+from untaped_workspace.infrastructure import (
+    DEFAULT_SLOW_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    GitRunner,
+)
 
 
 @pytest.fixture
@@ -54,42 +58,93 @@ def test_run_translates_timeoutexpired_to_giterror() -> None:
         runner.status(Path("/tmp/anywhere"))
     msg = str(excinfo.value)
     assert "timed out" in msg
-    assert "60.0s" in msg
+    # `:g` formatting trims the trailing zero — 60.0 renders as "60s".
+    assert "60s" in msg
     assert "status" in msg
-
-
-def test_run_uses_default_timeout_for_fast_ops(recorded_timeouts: list[float | None]) -> None:
-    GitRunner(timeout=42.0).read_current_branch(Path("/tmp/anywhere"))
-    assert recorded_timeouts == [42.0]
-
-
-def test_run_uses_slow_timeout_for_network_ops(
-    tmp_path: Path,
-    recorded_timeouts: list[float | None],
-) -> None:
-    GitRunner(timeout=42.0, slow_timeout=300.0).bare_fetch(tmp_path)
-    assert recorded_timeouts == [300.0]
-
-
-def test_clone_with_reference_uses_slow_timeout(
-    tmp_path: Path,
-    recorded_timeouts: list[float | None],
-) -> None:
-    GitRunner(slow_timeout=900.0).clone_with_reference(
-        url="file:///nowhere",
-        dest=tmp_path / "dest",
-        bare=tmp_path / "bare",
-    )
-    assert recorded_timeouts == [900.0]
 
 
 def test_ensure_bare_uses_slow_timeout_on_clone(
     tmp_path: Path,
     recorded_timeouts: list[float | None],
 ) -> None:
+    # `tmp_path` is empty so `ensure_bare`'s `(bare / "HEAD").is_file()`
+    # early-return check fails and we follow the clone branch — which is
+    # the path that should pay the slow-timeout budget.
     GitRunner(slow_timeout=900.0).ensure_bare("https://example.com/repo.git", cache_dir=tmp_path)
-    # Only one call (the clone), at the slow timeout.
     assert recorded_timeouts == [900.0]
+
+
+# ── Per-method bucket-selection contract ───────────────────────────────────
+
+# Every public ``GitRunner`` method falls into one of two buckets: local-only
+# (`DEFAULT_TIMEOUT`) or network (`DEFAULT_SLOW_TIMEOUT`). The parametrised
+# test below pins each method to its expected bucket so a refactor that
+# accidentally flips one (e.g. dropping the `timeout=self._slow_timeout`
+# kwarg on `fetch`) fails loudly here rather than at user-report time.
+#
+# `tmp_path` doubles as both a fake repo path and a cache dir — the
+# `recorded_timeouts` fixture's stub `subprocess.run` returns a successful
+# CompletedProcess, so the methods never actually inspect the dir contents.
+
+_FAST_OPS: list[tuple[str, Callable[[GitRunner, Path], object]]] = [
+    ("status", lambda r, p: r.status(p)),
+    ("is_dirty", lambda r, p: r.is_dirty(p)),
+    ("default_branch", lambda r, p: r.default_branch(p)),
+    ("read_remote_url", lambda r, p: r.read_remote_url(p)),
+    ("read_current_branch", lambda r, p: r.read_current_branch(p)),
+    ("ff_only_pull", lambda r, p: r.ff_only_pull(p, branch="main")),
+]
+
+_SLOW_OPS: list[tuple[str, Callable[[GitRunner, Path], object]]] = [
+    ("bare_fetch", lambda r, p: r.bare_fetch(p)),
+    (
+        "clone_with_reference",
+        lambda r, p: r.clone_with_reference(url="file:///x", dest=p / "d", bare=p / "b"),
+    ),
+    ("fetch", lambda r, p: r.fetch(p)),
+]
+
+
+@pytest.mark.parametrize(
+    ("op_name", "op"),
+    _FAST_OPS,
+    ids=[name for name, _ in _FAST_OPS],
+)
+def test_local_ops_use_default_timeout(
+    op_name: str,
+    op: Callable[[GitRunner, Path], object],
+    tmp_path: Path,
+    recorded_timeouts: list[float | None],
+) -> None:
+    op(GitRunner(timeout=11.0, slow_timeout=99.0), tmp_path)
+    assert recorded_timeouts == [11.0], (
+        f"{op_name} should use the fast/local timeout, got {recorded_timeouts}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("op_name", "op"),
+    _SLOW_OPS,
+    ids=[name for name, _ in _SLOW_OPS],
+)
+def test_network_ops_use_slow_timeout(
+    op_name: str,
+    op: Callable[[GitRunner, Path], object],
+    tmp_path: Path,
+    recorded_timeouts: list[float | None],
+) -> None:
+    op(GitRunner(timeout=11.0, slow_timeout=99.0), tmp_path)
+    assert recorded_timeouts == [99.0], (
+        f"{op_name} should use the slow/network timeout, got {recorded_timeouts}"
+    )
+
+
+def test_module_constants_match_documented_defaults() -> None:
+    # Constants are part of the public infrastructure surface; both the
+    # CLI help-text interpolation and the `AGENTS.md` paragraph reference
+    # them by name. Pin the numeric values so a docs/code drift fails CI.
+    assert DEFAULT_TIMEOUT == 60.0
+    assert DEFAULT_SLOW_TIMEOUT == 600.0
 
 
 def test_timeout_message_carries_no_returncode() -> None:
