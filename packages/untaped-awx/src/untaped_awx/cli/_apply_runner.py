@@ -16,6 +16,7 @@ import typer
 from untaped_core import OutputFormat, format_output
 
 from untaped_awx.application import ApplyFile, ApplyResource
+from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.application.ports import ResourceDocumentReader
 from untaped_awx.cli._context import AwxContext
 from untaped_awx.cli.format import diff_lines, outcome_rows
@@ -33,11 +34,20 @@ def run_apply(
     columns: list[str] | None = None,
     kind_filter: str | None = None,
     cli_name: str | None = None,
+    parallel: int = 1,
 ) -> None:
     """End-to-end apply for one CLI invocation. Writes to stdout/stderr."""
+    if parallel < 1:
+        raise typer.BadParameter("--parallel must be >= 1")
+    if parallel > APPLY_PARALLEL_CAP:
+        typer.echo(
+            f"warning: --parallel {parallel} clamped to {APPLY_PARALLEL_CAP} "
+            "(matches the HTTP connection pool default)",
+            err=True,
+        )
     reader = _make_reader(kind_filter=kind_filter, cli_name=cli_name)
     apply_one = _build_apply_resource(ctx)
-    outcomes = ApplyFile(apply_one, reader, ctx.catalog, ctx.fk)(
+    outcomes = ApplyFile(apply_one, reader, ctx.catalog, ctx.fk, parallel=parallel)(
         file, write=write, fail_fast=fail_fast
     )
     typer.echo(format_output(outcome_rows(outcomes), fmt=fmt, columns=columns))
