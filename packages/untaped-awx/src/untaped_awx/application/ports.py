@@ -15,6 +15,8 @@ from typing import Any, Protocol
 
 from untaped_awx.domain import (
     ActionPayload,
+    ApplyOutcome,
+    FieldChange,
     Job,
     JobEvent,
     Resource,
@@ -294,6 +296,36 @@ class StrategyResolver(Protocol):
     def get(self, name: str) -> ApplyStrategy: ...
 
 
+class ResourceApplier(Protocol):
+    """Upserts a single resource doc and reconciles its sub-endpoint memberships.
+
+    ``ApplyFile`` (the multi-doc orchestrator) depends on this two-method
+    shape: body write at ``__call__``, deferred sub-endpoint membership
+    writes at ``reconcile_memberships``. The concrete adapter is
+    :class:`untaped_awx.application.apply_resource.ApplyResource`; tests
+    inject thin stubs that satisfy the Protocol structurally.
+
+    ``reconcile_memberships`` is the phase-2 hook of two-phase apply
+    and is only called when ``write=True`` (the preview path skips
+    phase 2). ``ApplyFile`` first writes every doc's body in topo order
+    with membership writes deferred, then loops a second time to
+    associate / disassociate sub-endpoint members now that every parent
+    and sibling exists. Most kinds have no sub-endpoint multi-FKs, so
+    the second pass returns an empty list — implementations should make
+    it cheap.
+    """
+
+    def __call__(
+        self,
+        resource: Resource,
+        *,
+        write: bool = False,
+        defer_memberships: bool = False,
+    ) -> ApplyOutcome: ...
+
+    def reconcile_memberships(self, resource: Resource) -> list[FieldChange]: ...
+
+
 class JobMonitor(Protocol):
     """Polls a Job, its stdout, and its structured events until terminal.
 
@@ -413,6 +445,7 @@ __all__ = [
     "JobMonitor",
     "JobRecordRepository",
     "RawHttpResourceClient",
+    "ResourceApplier",
     "ResourceClient",
     "ResourceDocumentReader",
     "StrategyResolver",

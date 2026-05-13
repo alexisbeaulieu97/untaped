@@ -10,18 +10,18 @@ detection, unknown-kind rejection, and per-doc error handling
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
-from untaped_awx.application import ApplyFile, ApplyResource
+from untaped_awx.application import ApplyFile
 from untaped_awx.application.ports import Catalog, FkResolver
-from untaped_awx.domain import Resource, ResourceSpec
+from untaped_awx.domain import ApplyOutcome, FieldChange, Resource, ResourceSpec
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 
 
 class _RecordingApply:
-    """Stub satisfying ``ApplyResource``'s call interface for ApplyFile."""
+    """Stub satisfying the ``ResourceApplier`` port for ApplyFile tests."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, bool]] = []
@@ -32,13 +32,11 @@ class _RecordingApply:
         *,
         write: bool = False,
         defer_memberships: bool = False,
-    ) -> Any:
+    ) -> ApplyOutcome:
         self.calls.append((resource.kind, resource.metadata.name, write))
-        from untaped_awx.domain import ApplyOutcome
-
         return ApplyOutcome(kind=resource.kind, name=resource.metadata.name, action="preview")
 
-    def reconcile_memberships(self, resource: Resource) -> list[Any]:
+    def reconcile_memberships(self, resource: Resource) -> list[FieldChange]:
         return []
 
 
@@ -77,7 +75,7 @@ def test_apply_file_orders_by_kind(tmp_path: Path) -> None:
 
     recorder = _RecordingApply()
     use = ApplyFile(
-        cast(ApplyResource, recorder),
+        recorder,
         read_resources,
         AwxResourceCatalog(),
         cast(FkResolver, _StubFk()),
@@ -109,7 +107,7 @@ def test_apply_file_uses_polymorphic_parent_edge(tmp_path: Path) -> None:
 
     recorder = _RecordingApply()
     use = ApplyFile(
-        cast(ApplyResource, recorder),
+        recorder,
         read_resources,
         AwxResourceCatalog(),
         cast(FkResolver, _StubFk()),
@@ -170,7 +168,7 @@ def test_apply_file_rejects_unknown_kind(tmp_path: Path) -> None:
 
     recorder = _RecordingApply()
     use = ApplyFile(
-        cast(ApplyResource, recorder),
+        recorder,
         read_resources,
         AwxResourceCatalog(),
         cast(FkResolver, _StubFk()),
@@ -206,19 +204,20 @@ def test_apply_file_continues_on_error_by_default(
             *,
             write: bool = False,
             defer_memberships: bool = False,
-        ) -> Any:
+        ) -> ApplyOutcome:
             self.calls.append(resource.metadata.name)
             if resource.metadata.name == "boom":
                 raise AwxApiError("boom", status=500)
-            from untaped_awx.domain import ApplyOutcome
-
             return ApplyOutcome(kind=resource.kind, name=resource.metadata.name, action="preview")
+
+        def reconcile_memberships(self, resource: Resource) -> list[FieldChange]:
+            return []
 
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     use = ApplyFile(
-        cast(ApplyResource, failing),
+        failing,
         read_resources,
         AwxResourceCatalog(),
         cast(FkResolver, _StubFk()),
@@ -252,15 +251,18 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
             *,
             write: bool = False,
             defer_memberships: bool = False,
-        ) -> Any:
+        ) -> ApplyOutcome:
             self.calls.append(resource.metadata.name)
             raise AwxApiError("boom", status=500)
+
+        def reconcile_memberships(self, resource: Resource) -> list[FieldChange]:
+            return []
 
     failing = _Failing()
     from untaped_awx.infrastructure.yaml_io import read_resources
 
     use = ApplyFile(
-        cast(ApplyResource, failing),
+        failing,
         read_resources,
         AwxResourceCatalog(),
         cast(FkResolver, _StubFk()),
