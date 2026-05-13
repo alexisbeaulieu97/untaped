@@ -98,10 +98,12 @@ Other side-effecting calls (shell-out for `foreach`, editor launch for
 - `shell_runner` — concrete factory satisfying `application.ports.ShellRunner`
 - `editor_runner` — concrete factory satisfying `application.ports.EditorRunner`
 - `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`,
-  which declares `exists` / `is_dir` / `mkdir(*, parents=True, exist_ok=True)`
-  / `iterdir` / `rmtree`. Methods delegate to the equivalent
-  `pathlib.Path` operation (or `shutil.rmtree` for the recursive
-  delete).
+  which declares `exists` / `is_dir` / `mkdir(*, parents, exist_ok)`
+  (no defaults — call sites pass both kwargs explicitly so the
+  divergence from `pathlib.Path.mkdir`'s `False/False` can't slip
+  through silently) / `iterdir` / `rmtree`. Methods delegate to the
+  equivalent `pathlib.Path` operation (or `shutil.rmtree` for the
+  recursive delete).
 
 Application use cases require the port shapes as constructor arguments
 — **none of them imports `subprocess` or `shutil`, or reaches into

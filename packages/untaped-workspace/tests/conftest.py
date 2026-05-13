@@ -171,6 +171,13 @@ class StubFilesystem:
         return path in self._dirs
 
     def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None:
+        # Honour `exist_ok` so tests catch any caller that flips it to
+        # `False` against a path already in the set — keeps the stub
+        # faithful to `pathlib.Path.mkdir` semantics for the cases that
+        # matter. `parents` would require modelling the full path tree;
+        # not worth it until a real caller cares.
+        if not exist_ok and path in self._dirs:
+            raise FileExistsError(path)
         self.events.append(("mkdir", path))
         self._dirs.add(path)
 
