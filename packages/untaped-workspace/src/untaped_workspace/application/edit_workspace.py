@@ -25,6 +25,13 @@ class EditWorkspace:
         ``"vi"``), ``shlex`` splitting, and platform branching all live
         in :func:`untaped_workspace.infrastructure.system_adapters.resolve_editor_argv`
         — wired by the CLI composition root so this use case stays pure.
+
+        Precondition: ``argv`` is non-empty. The CLI's only producer
+        (``resolve_editor_argv``) raises :class:`WorkspaceError` on
+        empty / whitespace inputs, so callers that go through it never
+        reach the ``argv[0]`` in the ``FileNotFoundError`` handler with
+        an empty tuple. A programmatic caller bypassing the helper must
+        supply at least the executable name.
         """
         path = self._registry.get(name).path
         try:
