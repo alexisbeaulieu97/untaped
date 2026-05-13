@@ -187,3 +187,38 @@ def test_list_filter_rejects_malformed_entry(
     assert result.exit_code != 0
     output = result.output + (result.stderr or "")
     assert "KEY=VALUE" in output
+
+
+def test_apply_help_advertises_parallel() -> None:
+    """The top-level ``awx apply`` exposes ``--parallel / -j`` so users
+    can speed up directory applies. Surface check only; behaviour is
+    covered by the ``ApplyFile`` unit tests."""
+    result = CliRunner().invoke(app, ["apply", "--help"])
+    assert result.exit_code == 0
+    assert "--parallel" in result.output
+    assert "-j" in result.output
+
+
+def test_per_kind_apply_help_advertises_parallel() -> None:
+    """Per-resource sub-apps' ``apply`` (e.g. ``awx projects apply``)
+    must also expose ``--parallel / -j`` — the per-kind path routes
+    through the same ``run_apply`` composition root."""
+    result = CliRunner().invoke(app, ["projects", "apply", "--help"])
+    assert result.exit_code == 0
+    assert "--parallel" in result.output
+
+
+def test_apply_emits_clamp_warning_above_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``awx apply --parallel`` above the cap stays accepted (clamped)
+    but a stderr warning surfaces the truncation so users notice when
+    they ask for more concurrency than they get. Without this test the
+    warning could silently regress to a no-op."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")  # zero docs → no AWX calls, runner just prints rows
+    result = CliRunner().invoke(app, ["apply", "--file", str(yml), "--parallel", "100"])
+    assert result.exit_code == 0, result.output
+    assert "clamped to 10" in result.output

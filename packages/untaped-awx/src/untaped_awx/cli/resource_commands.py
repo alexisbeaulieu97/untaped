@@ -28,6 +28,7 @@ from untaped_awx.application import (
     StreamJobEvents,
     WatchJob,
 )
+from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
@@ -272,6 +273,16 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
         file: Path = typer.Option(..., "--file", help="YAML file to apply."),
         yes: bool = typer.Option(False, "--yes", help="Actually write (default is preview only)."),
         fail_fast: bool = typer.Option(False, "--fail-fast", help="Abort on first error."),
+        parallel: int = typer.Option(
+            1,
+            "--parallel",
+            "-j",
+            help=(
+                "Concurrent doc writes within this kind. Phase 2 (membership) "
+                f"stays serial. Capped at {APPLY_PARALLEL_CAP} "
+                "(issue #30 will unify the cap policy)."
+            ),
+        ),
         fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
         columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
@@ -290,6 +301,7 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 columns=columns,
                 kind_filter=spec.kind,
                 cli_name=spec.cli_name,
+                parallel=parallel,
             )
 
 

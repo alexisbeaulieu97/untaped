@@ -208,6 +208,42 @@ sit between `Group` and `JobTemplate` in `ALL_SPECS` for `FkResolver`
 lookups but are excluded from apply/save flows by their `commands=()`
 setting.
 
+### Apply parallelism
+
+Phase 1 is parallelisable **within a kind** but serial **across kinds**.
+`ApplyFile.__call__` walks the topologically sorted docs and groups them
+by kind via `itertools.groupby` (the sort key already kinds-then-name).
+Each kind group is dispatched through `_apply_kind`, which uses a
+`ThreadPoolExecutor` when `parallel > 1` and `len(docs) > 1`. Outcomes
+are keyed by input index so the returned list matches input doc order
+regardless of `as_completed` ordering. On `fail_fast=True`, queued
+futures are cancelled but in-flight workers run to completion (matching
+`_drain_parallel`'s semantics); a post-loop drain pulls their outcomes
+out of the futures so a `write=True` apply never silently loses an AWX
+mutation. The pool is capped at `APPLY_PARALLEL_CAP=10` to match
+`httpx.Client`'s default `max_connections=10` — anything higher just
+blocks on connection acquisition. Issue #30 / REVIEW finding 6.2 will
+revisit when pool tuning lands.
+
+Phase 2 (membership reconciliation) stays serial. Reasons:
+
+- Membership writes can reach across kinds (`Group.hosts` needs both
+  `Group` and `Host` live), so parallelising within a kind doesn't help
+  the dependency-driven serialisation that phase 2 needs.
+- Sub-endpoint POSTs are per-record; contention there isn't a win at
+  typical apply sizes.
+- Serial phase 2 keeps `reconcile_memberships`'s ordering, which
+  simplifies error attribution back to the offending doc.
+
+Thread-safety relies on the same guarantees the "Job execution and
+`--track`" section above already documents for `_drain_parallel`:
+`httpx.Client` is thread-safe, `ApplyResource` is stateless across calls
+(the `strip_encrypted` pass mutates a per-call deepcopy — see issue #10),
+and `FkResolver`'s caches are read-mostly once `prefetch()` has finished
+on the main thread before any worker is dispatched. If a future
+implementation swaps `FkResolver`'s dict cache for a non-dict structure,
+revisit this section.
+
 ## Job execution and `--track`
 
 Polling lives in `PollingJobMonitor` (`infrastructure/job_monitor.py`),

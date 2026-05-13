@@ -32,6 +32,7 @@ from untaped_awx.application import (
     TailJobLogs,
     WatchJob,
 )
+from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import awx_config_from_settings, open_context
 from untaped_awx.cli._event_render import render_event_text
@@ -84,6 +85,16 @@ def apply_command(
     file: Path = typer.Option(..., "--file", help="YAML file or directory."),
     yes: bool = typer.Option(False, "--yes", help="Actually write (default is preview only)."),
     fail_fast: bool = typer.Option(False, "--fail-fast", help="Abort on first error."),
+    parallel: int = typer.Option(
+        1,
+        "--parallel",
+        "-j",
+        help=(
+            "Concurrent doc writes within a kind. Cross-kind ordering is "
+            "preserved; phase 2 (membership reconciliation) stays serial. "
+            f"Capped at {APPLY_PARALLEL_CAP} (issue #30 will unify the cap policy)."
+        ),
+    ),
     fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Result-table format."),
     columns: list[str] | None = typer.Option(None, "--columns", "-c"),
 ) -> None:
@@ -96,6 +107,7 @@ def apply_command(
             fail_fast=fail_fast,
             fmt=fmt,
             columns=columns,
+            parallel=parallel,
         )
 
 
