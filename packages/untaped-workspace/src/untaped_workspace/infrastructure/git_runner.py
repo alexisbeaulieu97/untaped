@@ -15,10 +15,10 @@ from untaped_workspace.domain import RepoStatus
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure.bare_cache import cache_path_for
 
-_DEFAULT_TIMEOUT = 60.0
+DEFAULT_TIMEOUT = 60.0
 """Per-call timeout (seconds) for fast/local git ops (status, config, …)."""
 
-_DEFAULT_SLOW_TIMEOUT = 600.0
+DEFAULT_SLOW_TIMEOUT = 600.0
 """Per-call timeout (seconds) for network ops (clone, fetch)."""
 
 
@@ -27,8 +27,8 @@ class GitRunner:
         self,
         *,
         git: str = "git",
-        timeout: float = _DEFAULT_TIMEOUT,
-        slow_timeout: float = _DEFAULT_SLOW_TIMEOUT,
+        timeout: float = DEFAULT_TIMEOUT,
+        slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
     ) -> None:
         self._git = git
         # Resolve the binary once. We don't fail here on missing git so the

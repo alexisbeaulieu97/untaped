@@ -47,6 +47,10 @@ from untaped_workspace.infrastructure import (
     editor_runner,
     shell_runner,
 )
+from untaped_workspace.infrastructure.git_runner import (
+    DEFAULT_SLOW_TIMEOUT,
+    DEFAULT_TIMEOUT,
+)
 
 app = typer.Typer(
     name="workspace",
@@ -278,8 +282,9 @@ def sync_command(
         None,
         "--timeout",
         help=(
-            "Per-call timeout (seconds) for read-only git ops (default 60s). "
-            "Network clone/fetch always use a longer timeout (600s)."
+            f"Per-call timeout (seconds) for read-only git ops "
+            f"(default {DEFAULT_TIMEOUT:g}s). Network clone/fetch always "
+            f"use a longer timeout ({DEFAULT_SLOW_TIMEOUT:g}s)."
         ),
     ),
     all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),

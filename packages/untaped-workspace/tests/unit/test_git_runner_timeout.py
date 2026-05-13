@@ -16,6 +16,7 @@ real git). These tests pin the contract:
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -25,15 +26,29 @@ from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure import GitRunner
 
 
-def _make_timeout(args: list[str], timeout: float) -> subprocess.TimeoutExpired:
-    """Build a ``TimeoutExpired`` the way ``subprocess.run`` actually raises one."""
-    return subprocess.TimeoutExpired(cmd=args, timeout=timeout)
+@pytest.fixture
+def recorded_timeouts() -> Iterator[list[float | None]]:
+    """Patch ``subprocess.run`` to record each call's ``timeout=`` and succeed.
+
+    The yielded list is the per-call timeout values in invocation order;
+    tests assert against ``recorded_timeouts[-1]`` (last call) or the
+    full list when ordering matters.
+    """
+    captured: list[float | None] = []
+
+    def fake_run(*_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured.append(kwargs.get("timeout"))
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        yield captured
 
 
 def test_run_translates_timeoutexpired_to_giterror() -> None:
     runner = GitRunner()
+    timeout_exc = subprocess.TimeoutExpired(cmd=["git", "status"], timeout=60.0)
     with (
-        patch("subprocess.run", side_effect=_make_timeout(["git", "status"], 60.0)),
+        patch("subprocess.run", side_effect=timeout_exc),
         pytest.raises(GitError) as excinfo,
     ):
         runner.status(Path("/tmp/anywhere"))
@@ -43,67 +58,45 @@ def test_run_translates_timeoutexpired_to_giterror() -> None:
     assert "status" in msg
 
 
-def test_run_uses_default_timeout_for_fast_ops() -> None:
-    runner = GitRunner(timeout=42.0)
-    captured_timeout: dict[str, float | None] = {}
-
-    def fake_run(*_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        captured_timeout["value"] = kwargs.get("timeout")
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-    with patch("subprocess.run", side_effect=fake_run):
-        runner.read_current_branch(Path("/tmp/anywhere"))
-    assert captured_timeout["value"] == 42.0
+def test_run_uses_default_timeout_for_fast_ops(recorded_timeouts: list[float | None]) -> None:
+    GitRunner(timeout=42.0).read_current_branch(Path("/tmp/anywhere"))
+    assert recorded_timeouts == [42.0]
 
 
-def test_run_uses_slow_timeout_for_network_ops(tmp_path: Path) -> None:
-    runner = GitRunner(timeout=42.0, slow_timeout=300.0)
-    captured_timeout: dict[str, float | None] = {}
-
-    def fake_run(*_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        captured_timeout["value"] = kwargs.get("timeout")
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-    with patch("subprocess.run", side_effect=fake_run):
-        runner.bare_fetch(tmp_path)
-    assert captured_timeout["value"] == 300.0
+def test_run_uses_slow_timeout_for_network_ops(
+    tmp_path: Path,
+    recorded_timeouts: list[float | None],
+) -> None:
+    GitRunner(timeout=42.0, slow_timeout=300.0).bare_fetch(tmp_path)
+    assert recorded_timeouts == [300.0]
 
 
-def test_clone_with_reference_uses_slow_timeout(tmp_path: Path) -> None:
-    runner = GitRunner(slow_timeout=900.0)
-    captured_timeout: dict[str, float | None] = {}
-
-    def fake_run(*_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        captured_timeout["value"] = kwargs.get("timeout")
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-    with patch("subprocess.run", side_effect=fake_run):
-        runner.clone_with_reference(
-            url="file:///nowhere",
-            dest=tmp_path / "dest",
-            bare=tmp_path / "bare",
-        )
-    assert captured_timeout["value"] == 900.0
+def test_clone_with_reference_uses_slow_timeout(
+    tmp_path: Path,
+    recorded_timeouts: list[float | None],
+) -> None:
+    GitRunner(slow_timeout=900.0).clone_with_reference(
+        url="file:///nowhere",
+        dest=tmp_path / "dest",
+        bare=tmp_path / "bare",
+    )
+    assert recorded_timeouts == [900.0]
 
 
-def test_ensure_bare_uses_slow_timeout_on_clone(tmp_path: Path) -> None:
-    runner = GitRunner(slow_timeout=900.0)
-    captured: list[float | None] = []
-
-    def fake_run(*_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        captured.append(kwargs.get("timeout"))
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-    with patch("subprocess.run", side_effect=fake_run):
-        runner.ensure_bare("https://example.com/repo.git", cache_dir=tmp_path)
-    # Only one call (the clone), and it's at the slow timeout.
-    assert captured == [900.0]
+def test_ensure_bare_uses_slow_timeout_on_clone(
+    tmp_path: Path,
+    recorded_timeouts: list[float | None],
+) -> None:
+    GitRunner(slow_timeout=900.0).ensure_bare("https://example.com/repo.git", cache_dir=tmp_path)
+    # Only one call (the clone), at the slow timeout.
+    assert recorded_timeouts == [900.0]
 
 
 def test_timeout_message_carries_no_returncode() -> None:
     runner = GitRunner()
+    timeout_exc = subprocess.TimeoutExpired(cmd=["git", "fetch"], timeout=600.0)
     with (
-        patch("subprocess.run", side_effect=_make_timeout(["git", "fetch"], 600.0)),
+        patch("subprocess.run", side_effect=timeout_exc),
         pytest.raises(GitError) as excinfo,
     ):
         runner.fetch(Path("/tmp/anywhere"))
