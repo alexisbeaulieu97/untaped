@@ -266,3 +266,17 @@ def test_search_team_without_org_errors(tmp_path: Path, monkeypatch: pytest.Monk
     result = CliRunner().invoke(app, ["search", "repos", "--team", "backend"])
     assert result.exit_code != 0
     assert "team" in result.output.lower() or "team" in str(result.exception).lower()
+
+
+def test_search_team_with_multiple_orgs_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Multiple --org with --team used to silently pick the first; must
+    # now fail loudly so the user knows which org scoped the lookup.
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    result = CliRunner().invoke(
+        app,
+        ["search", "repos", "--org", "a", "--org", "b", "--team", "backend"],
+    )
+    assert result.exit_code != 0
+    assert "single --org" in result.output

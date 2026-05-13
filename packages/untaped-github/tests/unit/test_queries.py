@@ -117,12 +117,11 @@ def test_user_query_string(filters: UserSearchFilters, expected: str) -> None:
     assert filters.to_query_string() == expected
 
 
-def test_user_filters_ignore_scope_fields() -> None:
-    # user/orgs/repos exist on the base for API symmetry but the user
-    # search endpoint can't consume them; assert they don't leak.
-    q = UserSearchFilters(
-        raw_query="alice", user="@me", orgs=("acme",), repos=("a/b",)
-    ).to_query_string()
-    assert "user:" not in q
-    assert "org:" not in q
-    assert "repo:" not in q
+def test_user_filters_reject_scope_fields() -> None:
+    # The scope mixin is intentionally not on UserSearchFilters; passing
+    # `user=` / `orgs=` / `repos=` must fail loudly (extra="forbid") so
+    # a misuse can't silently produce zero results upstream.
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        UserSearchFilters(raw_query="alice", user="@me")  # type: ignore[call-arg]

@@ -17,10 +17,10 @@ from untaped_github.domain import (
     IssueSearchFilters,
     RepoResult,
     RepoSearchFilters,
+    ScopedQueryBase,
     UserResult,
     UserSearchFilters,
 )
-from untaped_github.domain.queries import _ScopedQueryBase
 
 WarnFn = Callable[[str], None]
 
@@ -31,7 +31,7 @@ MAX_TEAM_REPO_QUALIFIERS = 200
 
 
 def _noop(_: str) -> None:
-    return None
+    pass
 
 
 def _resolve_team_repos(
@@ -65,7 +65,7 @@ def _resolve_team_repos(
     return tuple(repos)
 
 
-def _apply_scope_defaults[F: _ScopedQueryBase](filters: F, team_repos: tuple[str, ...]) -> F:
+def _apply_scope_defaults[F: ScopedQueryBase](filters: F, team_repos: tuple[str, ...]) -> F:
     """Merge team-resolved repos and inject ``user:@me`` when no scope set."""
     repos = (*filters.repos, *team_repos)
     has_scope = bool(filters.user or filters.orgs or repos)
@@ -78,7 +78,7 @@ def _apply_scope_defaults[F: _ScopedQueryBase](filters: F, team_repos: tuple[str
 _SearchMethod = Callable[..., Iterator[dict[str, Any]]]
 
 
-def _run_scoped_search[F: _ScopedQueryBase, R: BaseModel](
+def _run_scoped_search[F: ScopedQueryBase, R: BaseModel](
     search_method: _SearchMethod,
     result_cls: type[R],
     teams: GithubTeamService,

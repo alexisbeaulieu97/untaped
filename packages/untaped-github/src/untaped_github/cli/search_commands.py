@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal
 import typer
 from untaped_core import (
     ColumnsOption,
+    ConfigError,
     FormatOption,
     format_output,
     get_settings,
@@ -49,7 +50,17 @@ def _open_client() -> GithubClient:
     return GithubClient(config, http=settings.http)
 
 
-def _first_org(orgs: list[str] | None) -> str | None:
+def _single_org_for_team(orgs: list[str] | None, team: str | None) -> str | None:
+    """Pick the single ``--org`` to scope a ``--team`` lookup against.
+
+    Returns ``None`` when no ``--team`` was passed (team resolution is
+    a no-op). When ``--team`` IS passed but multiple ``--org`` values
+    were supplied, fail loudly rather than silently using the first.
+    """
+    if team is None:
+        return orgs[0] if orgs else None
+    if orgs and len(orgs) > 1:
+        raise ConfigError("--team requires a single --org (got multiple)")
     return orgs[0] if orgs else None
 
 
@@ -96,7 +107,10 @@ def repos_command(
         )
         with _open_client() as client:
             use_case = SearchRepos(client, client, warn=_stderr_warn)
-            rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
+            rows = [
+                r.model_dump()
+                for r in use_case(filters, org=_single_org_for_team(org, team), team=team)
+            ]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
@@ -111,7 +125,6 @@ def code_command(
     filename: str | None = typer.Option(None, "--filename"),
     path: str | None = typer.Option(None, "--path"),
     extension: str | None = typer.Option(None, "--extension"),
-    sort: str | None = typer.Option(None, "--sort"),
     limit: int | None = typer.Option(None, "--limit"),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -119,7 +132,8 @@ def code_command(
     """Search code (``GET /search/code``).
 
     Requires at least one scope qualifier on the GitHub side; this
-    command injects ``user:@me`` if you pass none.
+    command injects ``user:@me`` if you pass none. GitHub no longer
+    supports ``sort`` for code search — best-match is the only order.
     """
     from untaped_github.application import SearchCode  # noqa: PLC0415
     from untaped_github.domain import CodeSearchFilters  # noqa: PLC0415
@@ -134,12 +148,14 @@ def code_command(
             filename=filename,
             path=path,
             extension=extension,
-            sort=sort,
             limit=limit,
         )
         with _open_client() as client:
             use_case = SearchCode(client, client, warn=_stderr_warn)
-            rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
+            rows = [
+                r.model_dump()
+                for r in use_case(filters, org=_single_org_for_team(org, team), team=team)
+            ]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
@@ -183,7 +199,10 @@ def issues_command(
         )
         with _open_client() as client:
             use_case = SearchIssues(client, client, warn=_stderr_warn)
-            rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
+            rows = [
+                r.model_dump()
+                for r in use_case(filters, org=_single_org_for_team(org, team), team=team)
+            ]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 

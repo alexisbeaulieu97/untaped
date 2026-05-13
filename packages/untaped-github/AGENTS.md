@@ -72,10 +72,17 @@ subcommand per GitHub search endpoint:
 | `search issues`       | `/search/issues`          | `--state`, `--kind issue|pr`, `--author`, `--assignee`, `--label`, `--mentions` |
 | `search users`        | `/search/users`           | `--kind user|org`, `--location`, `--language`            |
 
-All four accept the common scope flags `--user`, `--org` (repeatable),
-`--repo` (repeatable), `--team` (requires `--org`), the shared
-`--limit` cap, and the standard `--format/-f` + `--columns/-c` from
+The three scoped subcommands (`repos`, `code`, `issues`) accept the
+common scope flags `--user`, `--org` (repeatable), `--repo`
+(repeatable), and `--team` (requires a single `--org`). `search users`
+does not — GitHub's user-search endpoint ignores those qualifiers, so
+exposing them on the CLI would mislead. All four subcommands share
+`--limit` and the standard `--format/-f` + `--columns/-c` from
 `untaped_core`.
+
+Note: `search code` does not accept `--sort` — GitHub no longer
+supports a sort parameter on code search (best-match is the only
+order).
 
 ### Default-scope rule
 

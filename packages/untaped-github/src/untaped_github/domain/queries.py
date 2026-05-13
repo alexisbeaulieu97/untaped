@@ -45,7 +45,7 @@ class _QueryBase(BaseModel):
         raise NotImplementedError
 
 
-class _ScopedQueryBase(_QueryBase):
+class ScopedQueryBase(_QueryBase):
     """Adds the scope qualifiers used by repos/code/issues search."""
 
     user: str | None = None
@@ -66,7 +66,7 @@ class _ScopedQueryBase(_QueryBase):
         return " ".join(p for p in parts if p)
 
 
-class RepoSearchFilters(_ScopedQueryBase):
+class RepoSearchFilters(ScopedQueryBase):
     """Filters for ``GET /search/repositories``."""
 
     name: str | None = None
@@ -91,7 +91,7 @@ class RepoSearchFilters(_ScopedQueryBase):
         return self._assemble(*extras)
 
 
-class CodeSearchFilters(_ScopedQueryBase):
+class CodeSearchFilters(ScopedQueryBase):
     """Filters for ``GET /search/code``."""
 
     language: str | None = None
@@ -112,7 +112,7 @@ class CodeSearchFilters(_ScopedQueryBase):
         return self._assemble(*extras)
 
 
-class IssueSearchFilters(_ScopedQueryBase):
+class IssueSearchFilters(ScopedQueryBase):
     """Filters for ``GET /search/issues``."""
 
     state: Literal["open", "closed"] | None = None
@@ -144,8 +144,12 @@ class UserSearchFilters(_QueryBase):
 
     The user-search endpoint ignores ``user:`` / ``repo:`` / ``org:``
     qualifiers, so this filter intentionally does not inherit the
-    scope mixin.
+    scope mixin. ``extra="forbid"`` makes a typo like
+    ``UserSearchFilters(user="@me")`` fail loudly instead of silently
+    dropping the value.
     """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["user", "org"] | None = None
     location: str | None = None

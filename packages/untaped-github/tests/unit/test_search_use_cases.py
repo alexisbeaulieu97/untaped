@@ -224,3 +224,12 @@ def test_search_users_does_not_inject_at_me() -> None:
     q = search.calls[0][1]
     assert "user:@me" not in q
     assert q == "type:user location:montreal"
+
+
+def test_user_filters_reject_scope_fields() -> None:
+    # The scope mixin is intentionally not on UserSearchFilters; passing
+    # `user=` (or `orgs=`, `repos=`) must fail loudly, not silently drop.
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        UserSearchFilters(user="@me")  # type: ignore[call-arg]
