@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from untaped_workspace.application.ports import (
@@ -34,8 +35,15 @@ class SyncWorkspace:
         self._cache_dir = cache_dir
         # Bare paths whose `bare_fetch` has already run during this use-case
         # invocation chain. Lets `--all` sync N workspaces sharing repo URLs
-        # without re-fetching the same bare N times.
+        # without re-fetching the same bare N times. Per-URL locks make
+        # the "ensure_bare → check → fetch → add" sequence atomic for one
+        # URL while letting different URLs proceed in parallel — the
+        # whole point of `sync --all -j N`.
+        # TODO(#11): swap the in-instance cache + lock plumbing for an
+        # external cache argument owned by the composition root.
         self._fetched: set[Path] = set()
+        self._url_locks: dict[str, threading.Lock] = {}
+        self._url_locks_guard = threading.Lock()
 
     def __call__(
         self,
@@ -103,10 +111,15 @@ class SyncWorkspace:
         return matched, unmatched
 
     def _ensure_bare_fresh(self, url: str) -> Path:
-        bare = self._git.ensure_bare(url, cache_dir=self._cache_dir)
-        if bare not in self._fetched:
-            self._git.bare_fetch(bare)
-            self._fetched.add(bare)
+        # Per-URL lock so concurrent same-URL syncs do exactly one
+        # ensure_bare + bare_fetch; different URLs proceed in parallel.
+        with self._url_locks_guard:
+            url_lock = self._url_locks.setdefault(url, threading.Lock())
+        with url_lock:
+            bare = self._git.ensure_bare(url, cache_dir=self._cache_dir)
+            if bare not in self._fetched:
+                self._git.bare_fetch(bare)
+                self._fetched.add(bare)
         return bare
 
     def _sync_repo(
