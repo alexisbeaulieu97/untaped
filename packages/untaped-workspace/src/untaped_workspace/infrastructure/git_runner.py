@@ -15,14 +15,28 @@ from untaped_workspace.domain import RepoStatus
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure.bare_cache import cache_path_for
 
+_DEFAULT_TIMEOUT = 60.0
+"""Per-call timeout (seconds) for fast/local git ops (status, config, …)."""
+
+_DEFAULT_SLOW_TIMEOUT = 600.0
+"""Per-call timeout (seconds) for network ops (clone, fetch)."""
+
 
 class GitRunner:
-    def __init__(self, *, git: str = "git") -> None:
+    def __init__(
+        self,
+        *,
+        git: str = "git",
+        timeout: float = _DEFAULT_TIMEOUT,
+        slow_timeout: float = _DEFAULT_SLOW_TIMEOUT,
+    ) -> None:
         self._git = git
         # Resolve the binary once. We don't fail here on missing git so the
         # error surfaces at first call (and so tests can construct a runner
         # without git on PATH).
         self._git_path = shutil.which(git)
+        self._timeout = timeout
+        self._slow_timeout = slow_timeout
 
     # cache --------------------------------------------------------------
 
@@ -32,11 +46,11 @@ class GitRunner:
         if bare.is_dir() and (bare / "HEAD").is_file():
             return bare
         bare.parent.mkdir(parents=True, exist_ok=True)
-        self._run(["clone", "--bare", url, str(bare)])
+        self._run(["clone", "--bare", url, str(bare)], timeout=self._slow_timeout)
         return bare
 
     def bare_fetch(self, bare_path: Path) -> None:
-        self._run(["fetch", "--all", "--prune"], cwd=bare_path)
+        self._run(["fetch", "--all", "--prune"], cwd=bare_path, timeout=self._slow_timeout)
 
     # workspace clone ----------------------------------------------------
 
@@ -53,7 +67,7 @@ class GitRunner:
         if branch is not None:
             cmd += ["--branch", branch]
         cmd += [url, str(dest)]
-        self._run(cmd)
+        self._run(cmd, timeout=self._slow_timeout)
 
     # status -------------------------------------------------------------
 
@@ -67,7 +81,7 @@ class GitRunner:
     # update -------------------------------------------------------------
 
     def fetch(self, repo_path: Path) -> None:
-        self._run(["fetch", "--all", "--prune"], cwd=repo_path)
+        self._run(["fetch", "--all", "--prune"], cwd=repo_path, timeout=self._slow_timeout)
 
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
         self._run(["merge", "--ff-only", f"origin/{branch}"], cwd=repo_path)
@@ -113,16 +127,22 @@ class GitRunner:
         *,
         cwd: Path | None = None,
         capture: bool = False,
+        timeout: float | None = None,
     ) -> str:
         if self._git_path is None:
             raise GitError(f"`{self._git}` not found on PATH")
-        result = subprocess.run(
-            [self._git_path, *args],
-            cwd=cwd,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        effective_timeout = self._timeout if timeout is None else timeout
+        try:
+            result = subprocess.run(
+                [self._git_path, *args],
+                cwd=cwd,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=effective_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise GitError(f"git {' '.join(args)} timed out after {effective_timeout}s") from exc
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             raise GitError(
