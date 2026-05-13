@@ -4,15 +4,23 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
+from untaped_awx.application.ports import ResourceClient
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.fk_resolver import FkResolver
-from untaped_awx.infrastructure.resource_repo import ResourceRepository
 
 
 class _StubRepo:
-    """In-memory ResourceClient stub for FkResolver tests."""
+    """Partial in-memory stub covering the subset of ``ResourceClient`` that
+    ``FkResolver`` actually calls (``find_by_identity``, ``get``, ``list``).
+
+    Each test cast()s into ``ResourceClient`` at the call site — the cast
+    is load-bearing because the stub omits 6 of the port's 10 methods
+    (``create``/``update``/``delete``/``action``/``sub_endpoint_request``/
+    ``paginate_sub_endpoint``). Tightening into a real annotation would
+    require implementing all of them or defining a narrower port.
+    """
 
     def __init__(self, store: dict[str, list[dict[str, Any]]]) -> None:
         self.store = store
@@ -82,7 +90,7 @@ def test_name_to_id_caches() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     first = fk.name_to_id("Organization", "Default")
     second = fk.name_to_id("Organization", "Default")
     assert first == 7 == second
@@ -98,7 +106,7 @@ def test_name_to_id_with_scope_uses_nested_lookup() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     pid = fk.name_to_id("Project", "playbooks", scope={"organization": "Default"})
     assert pid == 42
     assert repo.find_calls[0][1] == {"name": "playbooks", "organization__name": "Default"}
@@ -106,14 +114,14 @@ def test_name_to_id_with_scope_uses_nested_lookup() -> None:
 
 def test_name_to_id_raises_when_missing() -> None:
     repo = _StubRepo({"Organization": []})
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     with pytest.raises(ResourceNotFound):
         fk.name_to_id("Organization", "Nope")
 
 
 def test_id_to_name_caches() -> None:
     repo = _StubRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     assert fk.id_to_name("Organization", 7) == "Default"
     assert fk.id_to_name("Organization", 7) == "Default"
     assert len(repo.get_calls) == 1
@@ -125,7 +133,7 @@ def test_resolve_polymorphic_dispatches_on_kind() -> None:
             "JobTemplate": [{"id": 99, "name": "deploy", "organization_name": "Default"}],
         }
     )
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     kind, id_ = fk.resolve_polymorphic(
         {"kind": "JobTemplate", "name": "deploy", "organization": "Default"}
     )
@@ -135,7 +143,7 @@ def test_resolve_polymorphic_dispatches_on_kind() -> None:
 
 def test_name_to_id_populates_id_to_name_cache() -> None:
     repo = _StubRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.name_to_id("Organization", "Default")
     # Reverse lookup should be a cache hit
     assert fk.id_to_name("Organization", 7) == "Default"
@@ -151,7 +159,7 @@ def test_prefetch_warms_both_caches_with_one_list_call() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
     fk.prefetch({"Organization": [None]})
 
@@ -173,7 +181,7 @@ def test_prefetch_one_list_per_kind_scope_pair() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
     fk.prefetch(
         {
@@ -204,7 +212,7 @@ def test_prefetch_swallows_awx_errors() -> None:
             yield  # pragma: no cover - unreachable
 
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.prefetch({"Organization": [None]})  # must not raise
     # Per-call lookup still works.
     assert fk.name_to_id("Organization", "Default") == 7
@@ -220,6 +228,6 @@ def test_prefetch_propagates_programming_errors() -> None:
             yield  # pragma: no cover - unreachable
 
     repo = _BuggyRepo({})
-    fk = FkResolver(cast(ResourceRepository, repo), AwxResourceCatalog())
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     with pytest.raises(KeyError):
         fk.prefetch({"Organization": [None]})
