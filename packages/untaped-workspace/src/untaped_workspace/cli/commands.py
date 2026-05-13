@@ -282,9 +282,11 @@ def sync_command(
         None,
         "--timeout",
         help=(
-            f"Per-call timeout (seconds) for read-only git ops "
-            f"(default {DEFAULT_TIMEOUT:g}s). Network clone/fetch always "
-            f"use a longer timeout ({DEFAULT_SLOW_TIMEOUT:g}s)."
+            f"Per-call timeout ceiling (seconds) for every git invocation "
+            f"this sync makes (read-only ops AND network clone/fetch). "
+            f"Defaults: {DEFAULT_TIMEOUT:g}s for read-only ops, "
+            f"{DEFAULT_SLOW_TIMEOUT:g}s for clone/fetch. Pass a single value "
+            f"to cap both."
         ),
     ),
     all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),
@@ -296,7 +298,9 @@ def sync_command(
         raise typer.BadParameter("--timeout must be positive")
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
-        runner = GitRunner(timeout=timeout) if timeout is not None else GitRunner()
+        runner = (
+            GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
+        )
         use_case = SyncWorkspace(
             ManifestRepository(),
             runner,

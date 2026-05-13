@@ -52,13 +52,15 @@ are shared without `git worktree` branch conflicts.
 
 Every `subprocess.run` inside `GitRunner` carries a `timeout=` budget
 so a hung remote never strands a `sync --all` sweep. Two buckets:
-read-only ops (`status`, `config`, `rev-parse`, `symbolic-ref`,
-`ff_only_pull`) get `DEFAULT_TIMEOUT`; network ops
-(`ensure_bare` clone, `bare_fetch`, `clone_with_reference`, `fetch`)
-get `DEFAULT_SLOW_TIMEOUT`. Override per-instance via
-`GitRunner(timeout=…, slow_timeout=…)`; the CLI surfaces
-`workspace sync --timeout N` which overrides the fast bucket only.
-Timeouts surface as `GitError("git <args> timed out after Ns")`, which
+read-only methods (`status`, `is_dirty`, `default_branch`,
+`read_remote_url`, `read_current_branch`, `ff_only_pull`) get
+`DEFAULT_TIMEOUT`; network methods (`ensure_bare` clone, `bare_fetch`,
+`clone_with_reference`, `fetch`) get `DEFAULT_SLOW_TIMEOUT`. Override
+per-instance via `GitRunner(timeout=…, slow_timeout=…)`. The CLI
+surfaces `workspace sync --timeout N`, which sets both buckets to `N`
+for that invocation (so a CI script can fail fast on hung clones with
+a single knob). Timeouts surface as
+`GitError("git <args> timed out after Ns")`, which
 `SyncWorkspace._sync_repo`'s existing `GitError` handlers translate to
 `skip` rows without further plumbing.
 

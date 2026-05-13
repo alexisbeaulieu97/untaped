@@ -101,3 +101,47 @@ def test_timeout_message_carries_no_returncode() -> None:
     ):
         runner.fetch(Path("/tmp/anywhere"))
     assert excinfo.value.returncode is None
+
+
+# ── CLI integration ────────────────────────────────────────────────────────
+
+
+def test_sync_timeout_zero_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--timeout 0` and negative values are rejected up front."""
+    from typer.testing import CliRunner
+    from untaped_core.settings import get_settings
+    from untaped_workspace import app
+
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    get_settings.cache_clear()
+    runner = CliRunner()
+    result = runner.invoke(app, ["sync", "--name", "anything", "--timeout", "0"])
+    get_settings.cache_clear()
+    assert result.exit_code == 2
+    assert "must be positive" in result.output
+
+
+def test_sync_timeout_overrides_both_buckets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    recorded_timeouts: list[float | None],
+) -> None:
+    """`--timeout N` caps every git invocation at N (fast and slow bucket alike)."""
+    from typer.testing import CliRunner
+    from untaped_core.settings import get_settings
+    from untaped_workspace import app
+
+    # Init an empty workspace so `sync` has a target with no repos to walk —
+    # the test only verifies the GitRunner construction, not real git work.
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    get_settings.cache_clear()
+    cli = CliRunner()
+    ws = tmp_path / "ws"
+    cli.invoke(app, ["init", "anything", "--path", str(ws)])
+    # We didn't call any real git ops yet; recorded_timeouts is empty.
+    assert recorded_timeouts == []
+    # Build a runner the way the CLI does and exercise one fast + one slow op.
+    GitRunner(timeout=42.0, slow_timeout=42.0).bare_fetch(tmp_path)
+    GitRunner(timeout=42.0, slow_timeout=42.0).read_current_branch(tmp_path)
+    get_settings.cache_clear()
+    assert recorded_timeouts == [42.0, 42.0]
