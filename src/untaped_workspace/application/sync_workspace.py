@@ -120,7 +120,7 @@ class SyncWorkspace:
         except GitError as exc:
             return _outcome(workspace, repo, "skip", f"cache fetch failed: {exc}")
 
-        if not local.exists():
+        if not self._fs.exists(local):
             try:
                 self._git.clone_with_reference(
                     url=repo.url, dest=local, bare=bare, branch=target_branch
@@ -174,14 +174,14 @@ class SyncWorkspace:
     def _prune_orphans(
         self, workspace: Workspace, manifest: WorkspaceManifest
     ) -> list[SyncOutcome]:
-        if not workspace.path.is_dir():
+        if not self._fs.is_dir(workspace.path):
             return []
         declared = {r.name for r in manifest.repos}
         outcomes: list[SyncOutcome] = []
-        for entry in workspace.path.iterdir():
-            if not entry.is_dir() or entry.name in declared:
+        for entry in self._fs.iterdir(workspace.path):
+            if not self._fs.is_dir(entry) or entry.name in declared:
                 continue
-            if not (entry / ".git").exists():
+            if not self._fs.exists(entry / ".git"):
                 continue
             outcomes.append(self._prune_orphan(workspace, entry))
         return outcomes

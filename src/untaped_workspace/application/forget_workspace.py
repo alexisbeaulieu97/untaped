@@ -37,7 +37,7 @@ class ForgetWorkspace:
     def __call__(self, name: str, *, prune: bool = False) -> Workspace:
         ws = self._registry.get(name)
 
-        if prune and ws.path.is_dir():
+        if prune and self._fs.is_dir(ws.path):
             self._refuse_if_any_repo_dirty(ws)
             self._fs.rmtree(ws.path)
 
@@ -54,7 +54,7 @@ class ForgetWorkspace:
         dirty: list[str] = []
         for repo in manifest.repos:
             local = ws.path / repo.name
-            if not local.is_dir():
+            if not self._fs.is_dir(local):
                 continue
             try:
                 if self._status.is_dirty(local):

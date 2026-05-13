@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from untaped_workspace.application.ports import ManifestReader, ShellRunner
+from untaped_workspace.application.ports import Filesystem, ManifestReader, ShellRunner
 from untaped_workspace.domain import ForeachOutcome, Repo, Workspace
 
 
@@ -15,9 +15,11 @@ class Foreach:
         manifests: ManifestReader,
         *,
         runner: ShellRunner,
+        fs: Filesystem,
     ) -> None:
         self._manifests = manifests
         self._runner = runner
+        self._fs = fs
 
     def __call__(
         self,
@@ -73,7 +75,7 @@ class Foreach:
 
     def _run_one(self, workspace: Workspace, repo: Repo, command: str) -> ForeachOutcome:
         local = workspace.path / repo.name
-        if not local.is_dir():
+        if not self._fs.is_dir(local):
             return ForeachOutcome(
                 workspace=workspace.name,
                 repo=repo.name,
