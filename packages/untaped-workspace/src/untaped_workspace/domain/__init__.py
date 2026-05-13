@@ -1,4 +1,7 @@
 from untaped_workspace.domain.manifest import (
+    DuplicateRepoError,
+    DuplicateRepoName,
+    DuplicateRepoUrl,
     ManifestDefaults,
     Repo,
     WorkspaceManifest,
@@ -21,6 +24,9 @@ from untaped_workspace.domain.state import (
 __all__ = [
     "DiscoveredRepo",
     "DiscoveryResult",
+    "DuplicateRepoError",
+    "DuplicateRepoName",
+    "DuplicateRepoUrl",
     "ForeachOutcome",
     "ManifestDefaults",
     "ManifestSource",

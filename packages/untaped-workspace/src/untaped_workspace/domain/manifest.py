@@ -9,10 +9,48 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class DuplicateRepoError(ValueError):
+    """Base class for duplicate-repo invariant failures.
+
+    Subclasses carry the *incumbent* (the repo already in the manifest)
+    so callers can format error messages without re-scanning. Subclassing
+    ``ValueError`` keeps the existing
+    ``@model_validator(mode="after")`` contract — pydantic wraps these
+    into ``ValidationError`` at construction time just as it would a
+    plain ``ValueError``.
+    """
+
+    def __init__(self, message: str, existing: Repo) -> None:
+        super().__init__(message)
+        self.existing = existing
+
+    def __reduce__(self) -> tuple[Any, tuple[Repo]]:
+        # ``Exception.__reduce__`` pickles via ``self.args``, which is
+        # just the message string — unpickling would call the subclass
+        # ``__init__`` with a ``str`` where ``Repo`` is expected and
+        # crash. Round-trip via the incumbent instead so these can
+        # safely cross process boundaries (foreach / sync workers).
+        return type(self), (self.existing,)
+
+
+class DuplicateRepoName(DuplicateRepoError):
+    """A repo with the same `name` is already in the manifest."""
+
+    def __init__(self, existing: Repo) -> None:
+        super().__init__(f"duplicate repo name: {existing.name!r}", existing)
+
+
+class DuplicateRepoUrl(DuplicateRepoError):
+    """A repo with the same `url` is already in the manifest."""
+
+    def __init__(self, existing: Repo) -> None:
+        super().__init__(f"duplicate repo url: {existing.url!r}", existing)
+
+
 class Repo(BaseModel):
     """One repo declared in a workspace manifest."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     url: str
     name: str
@@ -42,7 +80,7 @@ class Repo(BaseModel):
 class ManifestDefaults(BaseModel):
     """Workspace-wide defaults applied to repos that don't override them."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     branch: str | None = None
 
@@ -50,26 +88,40 @@ class ManifestDefaults(BaseModel):
 class WorkspaceManifest(BaseModel):
     """The contents of ``<workspace-dir>/untaped.yml``."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str | None = None
     defaults: ManifestDefaults = Field(default_factory=ManifestDefaults)
     repos: list[Repo] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def _reject_duplicate_repos(self) -> WorkspaceManifest:
+    @staticmethod
+    def _first_duplicate(repos: list[Repo]) -> DuplicateRepoError | None:
         # Sync and remove both key off the (name, url) pair: two repos
         # sharing either field would collide on disk or make `remove`
-        # ambiguous. Refuse here so imports/hand-edits fail loud, not later.
-        seen_names: set[str] = set()
-        seen_urls: set[str] = set()
-        for repo in self.repos:
-            if repo.name in seen_names:
-                raise ValueError(f"duplicate repo name: {repo.name!r}")
-            if repo.url in seen_urls:
-                raise ValueError(f"duplicate repo url: {repo.url!r}")
-            seen_names.add(repo.name)
-            seen_urls.add(repo.url)
+        # ambiguous. Single source of truth shared by the post-construct
+        # validator and ``add_repo`` so both paths raise the same typed
+        # exception in the same precedence.
+        #
+        # Precedence is **url before name** so re-adding an existing URL
+        # surfaces as ``DuplicateRepoUrl`` ("already in workspace")
+        # rather than ``DuplicateRepoName`` — the derived name *also*
+        # collides in that case, but the user's correct mental model is
+        # "this repo is already here," not "your name conflicts."
+        seen_names: dict[str, Repo] = {}
+        seen_urls: dict[str, Repo] = {}
+        for repo in repos:
+            if (incumbent := seen_urls.get(repo.url)) is not None:
+                return DuplicateRepoUrl(incumbent)
+            if (incumbent := seen_names.get(repo.name)) is not None:
+                return DuplicateRepoName(incumbent)
+            seen_urls[repo.url] = repo
+            seen_names[repo.name] = repo
+        return None
+
+    @model_validator(mode="after")
+    def _reject_duplicate_repos(self) -> WorkspaceManifest:
+        if (err := self._first_duplicate(self.repos)) is not None:
+            raise err
         return self
 
     def repo_by_name(self, name: str) -> Repo | None:
@@ -88,6 +140,46 @@ class WorkspaceManifest(BaseModel):
         per-repo > workspace defaults > None (let git use remote HEAD).
         """
         return repo.branch or self.defaults.branch
+
+    def add_repo(self, repo: Repo) -> WorkspaceManifest:
+        """Return a new manifest with ``repo`` appended.
+
+        Raises ``DuplicateRepoUrl`` or ``DuplicateRepoName`` (in that
+        precedence) if ``repo`` collides with an existing entry. Each
+        carries the incumbent so callers can build CLI-facing messages
+        without re-scanning the manifest.
+        """
+        # Pre-check before construction so the exception carries the
+        # incumbent. Reuses ``_first_duplicate`` — the same helper the
+        # validator runs on YAML loads — so both paths raise the same
+        # typed exception in the same precedence.
+        if (err := self._first_duplicate([*self.repos, repo])) is not None:
+            raise err
+        return WorkspaceManifest(
+            name=self.name,
+            defaults=self.defaults,
+            repos=[*self.repos, repo],
+        )
+
+    def remove_repo(self, ident: str) -> tuple[WorkspaceManifest, Repo]:
+        """Return ``(new_manifest, removed_repo)``.
+
+        ``ident`` is matched against URL first then alias name (see
+        ``find_repo``). Raises ``ValueError`` if nothing matches.
+        """
+        found = self.find_repo(ident)
+        if found is None:
+            raise ValueError(f"no repo matches {ident!r}")
+        return (
+            WorkspaceManifest(
+                name=self.name,
+                defaults=self.defaults,
+                # `found` is a reference into `self.repos`, so identity
+                # match is unambiguous (and cheaper than value equality).
+                repos=[r for r in self.repos if r is not found],
+            ),
+            found,
+        )
 
 
 _NAME_RE = re.compile(r"([^/]+?)(?:\.git)?/*$")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from untaped_workspace.application.ports import ManifestRepository
-from untaped_workspace.domain import Repo, Workspace
+from untaped_workspace.domain import DuplicateRepoName, DuplicateRepoUrl, Repo, Workspace
 from untaped_workspace.errors import WorkspaceError
 
 
@@ -20,26 +20,22 @@ class AddRepo:
         branch: str | None = None,
     ) -> Repo:
         manifest = self._manifests.read(workspace.path)
-        if manifest.repo_by_url(url) is not None:
-            raise WorkspaceError(f"repo already in workspace {workspace.name!r}: {url}")
         repo = Repo.model_validate({"url": url, "name": repo_name, "branch": branch})
-        existing = manifest.repo_by_name(repo.name)
-        if existing is not None:
-            # The check has to happen before the in-place ``repos.append`` —
-            # the Pydantic ``WorkspaceManifest`` model validator only fires
-            # on construction, not on list mutation, so without this guard
-            # an explicit ``--repo-name`` collision lands a duplicate on
-            # disk that the next read rejects.
+        try:
+            new_manifest = manifest.add_repo(repo)
+        except DuplicateRepoUrl as exc:
+            raise WorkspaceError(f"repo already in workspace {workspace.name!r}: {url}") from exc
+        except DuplicateRepoName as exc:
             base = (
-                f"repo name {repo.name!r} already in use in workspace "
-                f"{workspace.name!r} by {existing.url}"
+                f"repo name {exc.existing.name!r} already in use in workspace "
+                f"{workspace.name!r} by {exc.existing.url}"
             )
-            # ``not repo_name`` mirrors ``Repo._fill_default_name``'s check
-            # so an explicit empty string is treated the same as omitting
-            # the flag (both produce a derived name).
+            # `not repo_name` mirrors `Repo._fill_default_name` — an
+            # explicit empty string is treated the same as omission
+            # (both produce a derived name), so the disambiguation hint
+            # only fires when the user did not pass `--repo-name`.
             if not repo_name:
-                raise WorkspaceError(f"{base}; pass --repo-name to disambiguate")
-            raise WorkspaceError(base)
-        manifest.repos.append(repo)
-        self._manifests.write(workspace.path, manifest)
+                raise WorkspaceError(f"{base}; pass --repo-name to disambiguate") from exc
+            raise WorkspaceError(base) from exc
+        self._manifests.write(workspace.path, new_manifest)
         return repo
