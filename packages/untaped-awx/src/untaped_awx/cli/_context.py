@@ -26,6 +26,7 @@ from untaped_awx.infrastructure.job_record_repo import JobRecordRepository
 from untaped_awx.infrastructure.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.strategy_resolver import StaticStrategyResolver
 from untaped_awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
+from untaped_awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -57,6 +58,7 @@ class AwxContext:
         self.monitor = PollingJobMonitor(self.repo)
         self.jobs = JobRecordRepository(self.repo)
         self.ujts = UnifiedTemplateRepository(self.repo)
+        self.workflow_nodes = WorkflowNodeRepository(self.repo)
         self.default_organization = config.default_organization
 
     def close(self) -> None:
