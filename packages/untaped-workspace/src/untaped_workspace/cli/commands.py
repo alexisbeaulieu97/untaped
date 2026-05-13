@@ -274,16 +274,27 @@ def sync_command(
         None, "--only", help="Limit sync to these repos (repeatable)."
     ),
     prune: bool = typer.Option(False, "--prune", help="Remove local clones not in the manifest."),
+    timeout: float | None = typer.Option(
+        None,
+        "--timeout",
+        help=(
+            "Per-call timeout (seconds) for read-only git ops (default 60s). "
+            "Network clone/fetch always use a longer timeout (600s)."
+        ),
+    ),
     all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
+    if timeout is not None and timeout <= 0:
+        raise typer.BadParameter("--timeout must be positive")
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
+        runner = GitRunner(timeout=timeout) if timeout is not None else GitRunner()
         use_case = SyncWorkspace(
             ManifestRepository(),
-            GitRunner(),
+            runner,
             fs=LocalFilesystem(),
             cache_dir=get_settings().workspace.cache_dir,
         )
