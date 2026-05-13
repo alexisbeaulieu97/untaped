@@ -12,7 +12,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import UnmatchedOnlyFilter, WorkspaceError
+from untaped_workspace.errors import GitError, UnmatchedOnlyFilter, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -530,6 +530,60 @@ def test_bare_fetch_dedup_is_threadsafe(tmp_path: Path) -> None:
 
     bare_fetch_count = sum(1 for e in git.events if e[0] == "bare_fetch")
     assert bare_fetch_count == 1, git.events
+
+
+def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> None:
+    """If ``bare_fetch`` raises ``GitError``, the URL must stay out of
+    ``_fetched`` so a subsequent ``__call__`` retries instead of
+    silently re-using a bare that was never fetched. Pins the
+    pre-parallel "retry on failure" semantics that the parallel rewrite
+    is documented to preserve (see ``packages/untaped-workspace/AGENTS.md``,
+    "sync --all -j N parallelism")."""
+    calls = {"n": 0}
+
+    class FlakyFetchStub(StubGit):
+        def bare_fetch(self, bare_path: Path) -> None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                self.events.append(("bare_fetch_failed", bare_path))
+                raise GitError("transient network failure")
+            super().bare_fetch(bare_path)
+
+    manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
+    ws_a_path = tmp_path / "a"
+    ws_b_path = tmp_path / "b"
+    ws_a_path.mkdir()
+    ws_b_path.mkdir()
+    ManifestRepository().write(ws_a_path, manifest)
+    ManifestRepository().write(ws_b_path, manifest)
+
+    git = FlakyFetchStub()
+    use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+
+    first = use_case(Workspace(name="a", path=ws_a_path))
+    assert first[0].action == "skip"
+    assert "cache fetch failed" in first[0].detail
+
+    # Second call must retry — the URL is unclaimed after the failure.
+    second = use_case(Workspace(name="b", path=ws_b_path))
+    assert second[0].action == "clone", second
+    bare_fetch_successes = sum(1 for e in git.events if e[0] == "bare_fetch")
+    assert bare_fetch_successes == 1, git.events
+
+
+def test_sync_workspace_propagates_non_git_errors(tmp_path: Path) -> None:
+    """Non-``GitError`` exceptions (e.g. a manifest read failure) must
+    propagate out of ``__call__`` rather than being absorbed into a
+    ``skip`` row. The CLI's parallel sweep relies on this so a real bug
+    surfaces via ``report_errors`` instead of hiding inside one of the
+    outcome rows."""
+    ws_path = tmp_path / "broken"
+    ws_path.mkdir()
+    # Don't write a manifest — `ManifestRepository.read` will raise.
+    git = StubGit()
+    use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+    with pytest.raises(WorkspaceError):
+        use_case(Workspace(name="broken", path=ws_path))
 
 
 @pytest.fixture

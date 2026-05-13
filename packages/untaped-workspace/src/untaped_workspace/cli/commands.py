@@ -342,12 +342,19 @@ def sync_command(
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
-        if all_workspaces and workers > 1:
+        if all_workspaces and workers > 1 and len(targets) > 1:
             typer.echo(
                 f"syncing {len(targets)} workspaces with up to {workers} workers",
                 err=True,
             )
-            outcomes = _sync_parallel(use_case, targets, only=only, prune=prune, workers=workers)
+            outcomes = _sync_parallel(
+                use_case,
+                targets,
+                only=only,
+                prune=prune,
+                strict_only=not all_workspaces,
+                workers=workers,
+            )
         else:
             outcomes = []
             for ws in targets:
@@ -363,20 +370,25 @@ def _sync_parallel(
     *,
     only: list[str] | None,
     prune: bool,
+    strict_only: bool,
     workers: int,
 ) -> list[SyncOutcome]:
     """Dispatch ``use_case`` across ``targets`` on a ThreadPoolExecutor.
 
     Outcomes come back in ``as_completed`` order — sort them by input
     workspace order then repo so table/JSON output stays predictable,
-    mirroring ``Foreach._run_parallel``'s tail sort.
+    mirroring ``Foreach._run_parallel``'s tail sort. ``strict_only``
+    matches ``SyncWorkspace.__call__``'s parameter so a future caller
+    that opens this helper to single-workspace use can't silently lose
+    strict ``--only`` semantics; the sweep drains to completion (no
+    fail-fast) so a plain list of futures is enough.
     """
     outcomes: list[SyncOutcome] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(use_case, ws, only=only, prune=prune, strict_only=False): ws
+        futures = [
+            pool.submit(use_case, ws, only=only, prune=prune, strict_only=strict_only)
             for ws in targets
-        }
+        ]
         for fut in as_completed(futures):
             outcomes.extend(fut.result())
     order = {ws.name: i for i, ws in enumerate(targets)}
