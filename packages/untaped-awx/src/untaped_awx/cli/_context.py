@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING
 
-from untaped_core import Settings, get_settings
+from untaped_core import get_settings
 
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.infrastructure import AwxClient, AwxConfig, AwxResourceCatalog
@@ -32,24 +32,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-def awx_config_from_settings(settings: Settings) -> AwxConfig:
-    """Bridge :class:`untaped_core.Settings` → :class:`AwxConfig`."""
-    s = settings.awx
-    return AwxConfig(
-        base_url=s.base_url,
-        token=s.token,
-        api_prefix=s.api_prefix,
-        default_organization=s.default_organization,
-        page_size=s.page_size,
-    )
-
-
 class AwxContext:
     """Holds wired-up dependencies for a single CLI invocation."""
 
     def __init__(self) -> None:
         settings = get_settings()
-        config = awx_config_from_settings(settings)
+        config = AwxConfig.from_settings(settings)
         self.client = AwxClient(config, http=settings.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()

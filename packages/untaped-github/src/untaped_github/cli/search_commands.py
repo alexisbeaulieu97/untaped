@@ -8,7 +8,7 @@ own the orchestration.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import typer
 from untaped_core import (
@@ -16,12 +16,10 @@ from untaped_core import (
     ConfigError,
     FormatOption,
     format_output,
-    get_settings,
     report_errors,
 )
 
-if TYPE_CHECKING:
-    from untaped_github.infrastructure import GithubClient
+from untaped_github.cli._client import open_client
 
 app = typer.Typer(
     name="search",
@@ -37,17 +35,6 @@ def _callback() -> None:
 
 def _stderr_warn(message: str) -> None:
     typer.echo(f"warning: {message}", err=True)
-
-
-def _open_client() -> GithubClient:
-    from untaped_github.infrastructure import GithubClient, GithubConfig  # noqa: PLC0415
-
-    settings = get_settings()
-    config = GithubConfig(
-        base_url=settings.github.base_url,
-        token=settings.github.token,
-    )
-    return GithubClient(config, http=settings.http)
 
 
 def _single_org_for_team(orgs: list[str] | None, team: str | None) -> str | None:
@@ -105,7 +92,7 @@ def repos_command(
             sort=sort,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             use_case = SearchRepos(client, client, warn=_stderr_warn)
             rows = [
                 r.model_dump()
@@ -150,7 +137,7 @@ def code_command(
             extension=extension,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             use_case = SearchCode(client, client, warn=_stderr_warn)
             rows = [
                 r.model_dump()
@@ -197,7 +184,7 @@ def issues_command(
             sort=sort,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             use_case = SearchIssues(client, client, warn=_stderr_warn)
             rows = [
                 r.model_dump()
@@ -230,6 +217,6 @@ def users_command(
             sort=sort,
             limit=limit,
         )
-        with _open_client() as client:
+        with open_client() as client:
             rows = [r.model_dump() for r in SearchUsers(client)(filters)]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
