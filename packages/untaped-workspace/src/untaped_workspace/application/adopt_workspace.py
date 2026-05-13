@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped_workspace.application.ports import (
+    Filesystem,
     ManifestRepository,
     RepoDiscoverer,
     WorkspaceRegistry,
@@ -38,11 +39,13 @@ class AdoptWorkspace:
         registry: WorkspaceRegistry,
         discoverer: RepoDiscoverer,
         *,
+        fs: Filesystem,
         warn: Callable[[str], None] = _noop,
     ) -> None:
         self._manifests = manifest_repo
         self._registry = registry
         self._discoverer = discoverer
+        self._fs = fs
         self._warn = warn
 
     def __call__(
@@ -52,9 +55,9 @@ class AdoptWorkspace:
         name: str | None = None,
     ) -> AdoptResult:
         canonical = path.expanduser().resolve()
-        if not canonical.exists():
+        if not self._fs.exists(canonical):
             raise WorkspaceError(f"path does not exist: {canonical}")
-        if not canonical.is_dir():
+        if not self._fs.is_dir(canonical):
             raise WorkspaceError(f"not a directory: {canonical}")
 
         ws_name = name or canonical.name

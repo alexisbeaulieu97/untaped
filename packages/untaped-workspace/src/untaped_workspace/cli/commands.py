@@ -117,9 +117,9 @@ def init_command(
     """
     with report_errors():
         target = path or (get_settings().workspace.workspaces_dir.expanduser() / name)
-        ws = InitWorkspace(ManifestRepository(), WorkspaceRegistryRepository())(
-            target, name=name, branch=branch
-        )
+        ws = InitWorkspace(
+            ManifestRepository(), WorkspaceRegistryRepository(), fs=LocalFilesystem()
+        )(target, name=name, branch=branch)
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
 
 
@@ -141,6 +141,7 @@ def adopt_command(
             ManifestRepository(),
             WorkspaceRegistryRepository(),
             LocalRepoDiscoverer(GitRunner()),
+            fs=LocalFilesystem(),
             warn=lambda m: typer.echo(f"warning: {m}", err=True),
         )(path, name=name)
         ws = result.workspace
@@ -347,7 +348,7 @@ def status_command(
     """Per-repo `git status` snapshot."""
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
-        use_case = WorkspaceStatus(ManifestRepository(), GitRunner())
+        use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
         for ws in targets:
             for entry in use_case(ws):
@@ -407,7 +408,7 @@ def foreach_command(
     with report_errors():
         ws = _resolve(name, path)
         keep_going = continue_on_error or ignore_errors
-        outcomes = Foreach(ManifestRepository(), runner=shell_runner)(
+        outcomes = Foreach(ManifestRepository(), runner=shell_runner, fs=LocalFilesystem())(
             ws,
             command=cmd,
             parallel=parallel,
@@ -445,9 +446,9 @@ def import_command(
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
     with report_errors():
-        ws = ImportWorkspace(ManifestRepository(), WorkspaceRegistryRepository())(
-            source, path=path, name=name
-        )
+        ws = ImportWorkspace(
+            ManifestRepository(), WorkspaceRegistryRepository(), fs=LocalFilesystem()
+        )(source, path=path, name=name)
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
             outcomes = SyncWorkspace(

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from untaped_workspace.application.ports import GitInspector, ManifestReader
+from untaped_workspace.application.ports import (
+    Filesystem,
+    GitInspector,
+    ManifestReader,
+)
 from untaped_workspace.domain import (
     Repo,
     StatusEntry,
@@ -12,9 +16,16 @@ from untaped_workspace.errors import GitError
 
 
 class WorkspaceStatus:
-    def __init__(self, manifests: ManifestReader, git: GitInspector) -> None:
+    def __init__(
+        self,
+        manifests: ManifestReader,
+        git: GitInspector,
+        *,
+        fs: Filesystem,
+    ) -> None:
         self._manifests = manifests
         self._git = git
+        self._fs = fs
 
     def __call__(self, workspace: Workspace) -> list[StatusEntry]:
         manifest = self._manifests.read(workspace.path)
@@ -22,7 +33,7 @@ class WorkspaceStatus:
 
     def _row_for(self, workspace: Workspace, repo: Repo) -> StatusEntry:
         local = workspace.path / repo.name
-        if not local.is_dir():
+        if not self._fs.is_dir(local):
             return StatusEntry(workspace=workspace.name, repo=repo.name, cloned=False)
         try:
             status = self._git.status(local)
