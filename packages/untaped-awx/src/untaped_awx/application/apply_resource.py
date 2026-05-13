@@ -12,7 +12,7 @@ import copy
 from collections.abc import Callable
 from typing import Any
 
-from untaped_awx.application._secret_paths import strip_encrypted
+from untaped_awx.application._secret_paths import strip_encrypted_in_place
 from untaped_awx.application.apply_field_diff import PRESERVED_SECRET_NOTE, FieldDiff
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
 from untaped_awx.application.apply_planner import ApplyPlanner
@@ -158,11 +158,11 @@ class ApplyResource:
         defer_memberships: bool = False,
     ) -> ApplyOutcome:
         # Resolve secret-handling first so the diff can annotate preserved
-        # fields. Deep-copy because `strip_encrypted` mutates nested
-        # dicts/lists in place — a shallow `dict(payload)` would let nested
+        # fields. Deep-copy because `strip_encrypted_in_place` mutates
+        # nested dicts/lists — a shallow `dict(payload)` would let nested
         # mutations leak back into the user-supplied payload.
         write_payload = copy.deepcopy(payload)
-        preserved, dropped_undeclared = strip_encrypted(write_payload, spec)
+        preserved, dropped_undeclared = strip_encrypted_in_place(write_payload, spec)
         for path in dropped_undeclared:
             self._warn(
                 f"undeclared $encrypted$ at {spec.kind}.{path} dropped — "

@@ -12,6 +12,10 @@ The walker drops matched ``$encrypted$`` values from the payload and
 returns the dotted paths that were preserved, plus any
 ``$encrypted$`` literals it found at *undeclared* paths (a paranoid
 safety net — the caller emits a warning).
+
+The walker mutates its input — see :func:`strip_encrypted_in_place`
+below. Callers that need the original payload must ``copy.deepcopy``
+before invoking.
 """
 
 from __future__ import annotations
@@ -24,8 +28,14 @@ from untaped_awx.domain import ResourceSpec
 PLACEHOLDER = "$encrypted$"
 
 
-def strip_encrypted(payload: dict[str, Any], spec: ResourceSpec) -> tuple[list[str], list[str]]:
-    """Mutate ``payload`` to drop ``$encrypted$`` placeholders.
+def strip_encrypted_in_place(
+    payload: dict[str, Any], spec: ResourceSpec
+) -> tuple[list[str], list[str]]:
+    """In-place: mutate ``payload`` to drop ``$encrypted$`` placeholders.
+
+    Callers must pass a copy if they need the original payload preserved
+    (see :func:`copy.deepcopy`) — the ``_in_place`` suffix is a load-bearing
+    signal, not decoration.
 
     Returns ``(preserved, dropped_undeclared)`` — both lists of dotted
     paths. ``preserved`` is the declared-and-stripped set; the rest are

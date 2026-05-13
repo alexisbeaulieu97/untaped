@@ -1,7 +1,7 @@
 """Decide which top-level fields are safe to omit from a PATCH.
 
 Second pass over secrets in the apply pipeline. After
-:func:`untaped_awx.application._secret_paths.strip_encrypted` has
+:func:`untaped_awx.application._secret_paths.strip_encrypted_in_place` has
 removed ``$encrypted$`` placeholders from the user's write payload,
 :class:`SecretPreservationPolicy` compares the stripped subtree against
 the existing record's subtree (with the same paths removed) to decide
