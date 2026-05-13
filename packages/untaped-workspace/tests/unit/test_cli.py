@@ -499,6 +499,90 @@ def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
     assert "beta\tupstream\tunmatched" in rows, rows
 
 
+def test_sync_parallel_without_all_is_rejected() -> None:
+    """``--parallel >1`` only makes sense with ``--all``. Anything else is a
+    `typer.BadParameter` exit. Checked before any registry lookup so a
+    nonexistent workspace name doesn't change the error."""
+    runner = CliRunner()
+    result = runner.invoke(app, ["sync", "--name", "nope", "-j", "4"])
+    assert result.exit_code != 0
+    combined = (result.stderr or "") + result.output
+    assert "--all" in combined
+
+
+def test_sync_parallel_warns_when_clamped() -> None:
+    """Passing ``-j`` above the cap is honoured (clamped) but a stderr
+    warning surfaces the truncation so users notice when they ask for
+    more concurrency than they get."""
+    runner = CliRunner()
+    # No targets registered → the pool runs over an empty list, which is
+    # fine for asserting the warning fires before the sweep starts.
+    result = runner.invoke(app, ["sync", "--all", "-j", "100"])
+    assert result.exit_code == 0, result.output
+    assert "clamped to 32" in result.output
+
+
+def test_sync_all_parallel_covers_every_workspace(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """``sync --all -j 4`` syncs every registered workspace and emits a
+    stderr header that names the worker count."""
+    runner = CliRunner()
+    names = ("alpha", "beta", "gamma", "delta")
+    for name in names:
+        ws_path = tmp_path / f"ws-{name}"
+        runner.invoke(app, ["init", name, "--path", str(ws_path)])
+        runner.invoke(app, ["add", f"file://{upstream}", "--name", name])
+
+    result = runner.invoke(
+        app,
+        [
+            "sync",
+            "--all",
+            "-j",
+            "4",
+            "--format",
+            "raw",
+            "--columns",
+            "workspace",
+            "--columns",
+            "action",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # stderr header — CliRunner combines stderr into output by default.
+    assert "syncing 4 workspaces with up to 4 workers" in result.output
+    rows = [r for r in result.stdout.strip().splitlines() if "\t" in r]
+    assert sorted(rows) == sorted(f"{n}\tclone" for n in names), rows
+
+
+def test_sync_all_parallel_ordering_is_stable(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """Outcome rows from ``sync --all -j 4`` come back in registry-input
+    order, not in non-deterministic ``as_completed`` order. Running the
+    same command twice yields identical row sequences."""
+    runner = CliRunner()
+    names = ("alpha", "beta", "gamma", "delta")
+    for name in names:
+        ws_path = tmp_path / f"ws-{name}"
+        runner.invoke(app, ["init", name, "--path", str(ws_path)])
+        runner.invoke(app, ["add", f"file://{upstream}", "--name", name])
+
+    def workspace_rows() -> list[str]:
+        result = runner.invoke(
+            app,
+            ["sync", "--all", "-j", "4", "--format", "raw", "--columns", "workspace"],
+        )
+        assert result.exit_code == 0, result.output
+        return [r for r in result.stdout.strip().splitlines() if r]
+
+    first = workspace_rows()
+    second = workspace_rows()
+    assert first == second
+    assert first == list(names)
+
+
 def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
