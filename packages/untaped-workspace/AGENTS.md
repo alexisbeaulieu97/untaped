@@ -117,6 +117,15 @@ Other side-effecting calls (shell-out for `foreach`, editor launch for
 
 - `shell_runner` — concrete factory satisfying `application.ports.ShellRunner`
 - `editor_runner` — concrete factory satisfying `application.ports.EditorRunner`
+- `resolve_editor_argv(editor, *, env=None, posix=None) -> tuple[str, ...]`
+  — resolves the editor selection (`--editor` / `$VISUAL` / `$EDITOR` /
+  `"vi"`) and `shlex`-splits it. Lives here, not in `application/`,
+  because `os.environ` / `os.name` are the same kind of process-state
+  side effect as `subprocess`. `EditWorkspace` receives a fully-resolved
+  `argv` from the CLI composition root and never imports `os` or
+  `shlex`. The `env` / `posix` knobs are for unit tests so both
+  splitting branches are exercised without a Windows CI runner. Raises
+  `WorkspaceError` on an empty argv and on `shlex.split` failures.
 - `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`,
   which declares `exists` / `is_dir` / `mkdir(*, parents, exist_ok)`
   (no defaults — call sites pass both kwargs explicitly so the

@@ -41,7 +41,13 @@ def test_shell_init_unknown_shell() -> None:
         ShellInit()("powershell")
 
 
-def test_edit_uses_visual_then_editor_then_vi(tmp_path: Path) -> None:
+def test_edit_appends_workspace_path_to_argv(tmp_path: Path) -> None:
+    """``EditWorkspace`` is now a thin "look up path, append, dispatch"
+    use case — no env reading, no shlex parsing, no platform branching.
+    Editor resolution lives in
+    :func:`untaped_workspace.infrastructure.system_adapters.resolve_editor_argv`
+    and is tested there. This test pins the use case's narrow contract:
+    given an argv tuple, append the workspace path and call the runner."""
     captured: list[list[str]] = []
 
     def _runner(cmd):  # type: ignore[no-untyped-def]
@@ -49,75 +55,20 @@ def test_edit_uses_visual_then_editor_then_vi(tmp_path: Path) -> None:
         return 0
 
     registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
-
-    # explicit override wins
-    EditWorkspace(registry, runner=_runner, env={})("prod", editor="code")
-    assert captured[-1] == ["code", str(tmp_path / "prod")]
-
-    # VISUAL beats EDITOR
-    EditWorkspace(registry, runner=_runner, env={"VISUAL": "subl", "EDITOR": "vi"})("prod")
-    assert captured[-1] == ["subl", str(tmp_path / "prod")]
-
-    # EDITOR fallback
-    EditWorkspace(registry, runner=_runner, env={"EDITOR": "nvim"})("prod")
-    assert captured[-1] == ["nvim", str(tmp_path / "prod")]
-
-    # default
-    EditWorkspace(registry, runner=_runner, env={})("prod")
-    assert captured[-1] == ["vi", str(tmp_path / "prod")]
+    rc = EditWorkspace(registry, runner=_runner)("prod", argv=("code", "--reuse-window"))
+    assert rc == 0
+    assert captured[-1] == ["code", "--reuse-window", str(tmp_path / "prod")]
 
 
 def test_edit_missing_editor_raises(tmp_path: Path) -> None:
+    """``FileNotFoundError`` from the runner — same shape ``subprocess``
+    raises when the executable doesn't exist — surfaces as
+    ``WorkspaceError`` naming the executable (argv[0]), not the full
+    string with flags."""
+
     def _runner(_cmd):  # type: ignore[no-untyped-def]
         raise FileNotFoundError("no such file")
 
     registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
-    with pytest.raises(WorkspaceError, match="editor not found"):
-        EditWorkspace(registry, runner=_runner, env={})("prod", editor="bogus-editor")
-
-
-def test_edit_splits_editor_arguments(tmp_path: Path) -> None:
-    captured: list[list[str]] = []
-
-    def _runner(cmd):  # type: ignore[no-untyped-def]
-        captured.append(list(cmd))
-        return 0
-
-    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
-
-    # explicit editor with flags
-    EditWorkspace(registry, runner=_runner, env={})("prod", editor="code --reuse-window")
-    assert captured[-1] == ["code", "--reuse-window", str(tmp_path / "prod")]
-
-    # quoted segments survive
-    EditWorkspace(registry, runner=_runner, env={"VISUAL": 'sh -c "exec vim $0"'})("prod")
-    assert captured[-1] == ["sh", "-c", "exec vim $0", str(tmp_path / "prod")]
-
-    # error names just the executable, not the full string
-    def _missing(_cmd):  # type: ignore[no-untyped-def]
-        raise FileNotFoundError("no such file")
-
     with pytest.raises(WorkspaceError, match=r"editor not found: code$"):
-        EditWorkspace(registry, runner=_missing, env={})("prod", editor="code --reuse-window")
-
-
-def test_edit_rejects_empty_editor(tmp_path: Path) -> None:
-    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
-    with pytest.raises(WorkspaceError, match="editor command is empty"):
-        EditWorkspace(registry, runner=lambda _c: 0, env={})("prod", editor="   ")
-
-
-def test_edit_preserves_windows_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: list[list[str]] = []
-
-    def _runner(cmd):  # type: ignore[no-untyped-def]
-        captured.append(list(cmd))
-        return 0
-
-    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
-
-    monkeypatch.setattr("untaped_workspace.application.edit_workspace.os.name", "nt")
-    EditWorkspace(registry, runner=_runner, env={})("prod", editor=r"C:\Tools\vim.exe")
-    # backslashes must survive — POSIX-mode splitting would mangle this to
-    # 'C:Toolsvim.exe' before subprocess ever sees it.
-    assert captured[-1] == [r"C:\Tools\vim.exe", str(tmp_path / "prod")]
+        EditWorkspace(registry, runner=_runner)("prod", argv=("code", "--reuse-window"))

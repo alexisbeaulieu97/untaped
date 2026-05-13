@@ -4,15 +4,20 @@ The Protocols and Callable aliases live next to the application use
 cases that consume them
 (:mod:`untaped_workspace.application.ports`); this module hosts only
 the default implementations so ``application/`` never imports
-``subprocess`` or ``shutil`` directly.
+``subprocess``, ``shutil``, or process-state modules like ``os`` /
+``shlex`` directly.
 """
 
 from __future__ import annotations
 
+import os
+import shlex
 import shutil
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
+
+from untaped_workspace.errors import WorkspaceError
 
 
 def shell_runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -33,6 +38,39 @@ def editor_runner(cmd: Sequence[str]) -> int:
     """Default :data:`EditorRunner`: spawn ``cmd`` and return its exit code."""
     completed = subprocess.run(list(cmd), check=False)
     return completed.returncode
+
+
+def resolve_editor_argv(
+    editor: str | None,
+    *,
+    env: Mapping[str, str] | None = None,
+    posix: bool | None = None,
+) -> tuple[str, ...]:
+    """Resolve ``--editor`` / ``$VISUAL`` / ``$EDITOR`` / ``"vi"`` to argv.
+
+    Precedence: explicit ``editor`` argument > ``$VISUAL`` > ``$EDITOR``
+    > the literal ``"vi"`` fallback. The selected command is split with
+    :func:`shlex.split`; ``posix=os.name != "nt"`` by default, so
+    Windows paths with backslashes survive (POSIX mode would mangle
+    ``C:\\Tools\\vim.exe``). Both ``env`` and ``posix`` are injectable
+    so unit tests cover both branches without depending on the runner's
+    OS.
+
+    Raises :class:`WorkspaceError` on an empty selection (e.g. whitespace
+    only) and on :class:`shlex.split` ``ValueError`` (unterminated
+    quoting), so callers see one error shape regardless of the failure
+    mode.
+    """
+    environment: Mapping[str, str] = env if env is not None else os.environ
+    use_posix = posix if posix is not None else os.name != "nt"
+    chosen = editor or environment.get("VISUAL") or environment.get("EDITOR") or "vi"
+    try:
+        argv = shlex.split(chosen, posix=use_posix)
+    except ValueError as exc:
+        raise WorkspaceError(f"could not parse editor command {chosen!r}: {exc}") from exc
+    if not argv:
+        raise WorkspaceError("editor command is empty")
+    return tuple(argv)
 
 
 class LocalFilesystem:
@@ -64,5 +102,6 @@ class LocalFilesystem:
 __all__ = [
     "LocalFilesystem",
     "editor_runner",
+    "resolve_editor_argv",
     "shell_runner",
 ]
