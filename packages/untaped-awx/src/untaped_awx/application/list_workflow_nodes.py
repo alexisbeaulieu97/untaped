@@ -20,12 +20,12 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from untaped_awx.application._identity import resolve_id
 from untaped_awx.application.ports import (
     ResourceClient,
     WorkflowNodeRepository,
 )
 from untaped_awx.domain import ResourceSpec, WorkflowNode, normalise_unified_job_type
+from untaped_awx.errors import ResourceNotFound
 
 
 class ListWorkflowNodes:
@@ -48,7 +48,7 @@ class ListWorkflowNodes:
         scope: dict[str, str] | None = None,
         max_depth: int | None = 0,
     ) -> list[WorkflowNode]:
-        root_id = resolve_id(self._resources, spec, identifier, scope=scope)
+        root_id = self._resolve(spec, identifier, scope=scope)
         out: list[WorkflowNode] = []
         listed: set[int] = {root_id}
         queue: deque[tuple[int, int, frozenset[int]]] = deque([(root_id, 0, frozenset())])
@@ -76,6 +76,20 @@ class ListWorkflowNodes:
                 queue.append((child_id, depth + 1, new_ancestors))
         return out
 
+    def _resolve(
+        self,
+        spec: ResourceSpec,
+        identifier: str,
+        *,
+        scope: dict[str, str] | None,
+    ) -> int:
+        if identifier.isdecimal():
+            return int(identifier)
+        record = self._resources.find_by_identity(spec, name=identifier, scope=scope)
+        if record is None:
+            raise ResourceNotFound(spec.kind, {"name": identifier, **(scope or {})})
+        return record.id
+
 
 def _build_node(raw: dict[str, Any], *, workflow_id: int, depth: int) -> WorkflowNode:
     summary = raw.get("summary_fields") or {}
@@ -87,8 +101,6 @@ def _build_node(raw: dict[str, Any], *, workflow_id: int, depth: int) -> Workflo
         workflow_job_template=workflow_id,
         unified_job_template=int(ujt_id) if isinstance(ujt_id, int) else None,
         name=ujt_summary.get("name"),
-        type=normalise_unified_job_type(
-            ujt_summary.get("unified_job_type") or ujt_summary.get("type"),
-        ),
+        type=normalise_unified_job_type(ujt_summary.get("unified_job_type")),
         depth=depth,
     )

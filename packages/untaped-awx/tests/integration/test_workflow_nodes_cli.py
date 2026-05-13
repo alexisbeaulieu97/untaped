@@ -292,6 +292,71 @@ def test_nodes_type_filter_keeps_only_workflows(fake_aap: Any) -> None:
     assert ids == ["2"]
 
 
+def test_nodes_cycle_emits_stderr_warning(fake_aap: Any) -> None:
+    # A → B → A. The use case skips re-entry and warns; the CLI must
+    # forward that warning to stderr (not stdout) so pipelines stay clean.
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "workflow_job_templates",
+        id=100,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed(
+        "workflow_job_templates",
+        id=200,
+        name="beta",
+        organization=1,
+        organization_name="Default",
+    )
+    fake_aap.seed(
+        "workflow_nodes",
+        id=1,
+        identifier="a-to-b",
+        workflow_job_template=100,
+        unified_job_template=200,
+        summary_fields={
+            "unified_job_template": {
+                "id": 200,
+                "name": "beta",
+                "unified_job_type": "workflow_job",
+            },
+        },
+    )
+    fake_aap.seed(
+        "workflow_nodes",
+        id=2,
+        identifier="b-to-a",
+        workflow_job_template=200,
+        unified_job_template=100,
+        summary_fields={
+            "unified_job_template": {
+                "id": 100,
+                "name": "alpha",
+                "unified_job_type": "workflow_job",
+            },
+        },
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--recursive",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "cycle" in result.stderr
+    assert "100" in result.stderr
+    assert "cycle" not in result.stdout
+
+
 def test_nodes_rejects_negative_depth(fake_aap: Any) -> None:
     result = CliRunner().invoke(
         app,
