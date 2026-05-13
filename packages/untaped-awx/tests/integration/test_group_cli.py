@@ -330,19 +330,22 @@ def test_groups_save_round_trips_through_apply(fake_aap: Any, tmp_path: Path) ->
 
 
 def test_groups_apply_disambiguates_inventory_by_parent_organization(
-    fake_aap: Any, tmp_path: Path
+    seeded_default_org: Any, tmp_path: Path
 ) -> None:
     """When two organizations have an inventory with the same name, the
     Group's ``metadata.parent.organization`` must scope the FK lookup so
     AWX returns the host belonging to the right org's inventory."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed("organizations", id=2, name="Other")
+    seeded_default_org.seed("organizations", id=2, name="Other")
     # Two inventories named "prod" — one per organization.
-    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
-    fake_aap.seed("inventories", id=21, name="prod", organization=2, organization_name="Other")
+    seeded_default_org.seed(
+        "inventories", id=20, name="prod", organization=1, organization_name="Default"
+    )
+    seeded_default_org.seed(
+        "inventories", id=21, name="prod", organization=2, organization_name="Other"
+    )
     # web-01 in Default's prod, web-01 also exists in Other's prod.
-    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
-    fake_aap.seed("hosts", id=102, name="web-01", inventory=21, inventory_name="prod")
+    seeded_default_org.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    seeded_default_org.seed("hosts", id=102, name="web-01", inventory=21, inventory_name="prod")
 
     doc = tmp_path / "group.yml"
     doc.write_text(
@@ -362,9 +365,9 @@ def test_groups_apply_disambiguates_inventory_by_parent_organization(
     )
     result = CliRunner().invoke(app, ["groups", "apply", "--file", str(doc), "--yes"])
     assert result.exit_code == 0, result.output
-    new_group = next(g for g in fake_aap.store["groups"].values() if g["inventory"] == 20)
+    new_group = next(g for g in seeded_default_org.store["groups"].values() if g["inventory"] == 20)
     # Critical: the host associated must be Default's web-01 (id=101), not Other's (id=102).
-    assert fake_aap.memberships[("groups", new_group["id"], "hosts")] == {101}
+    assert seeded_default_org.memberships[("groups", new_group["id"], "hosts")] == {101}
 
 
 def test_apply_file_resolves_sibling_group_children(fake_aap: Any, tmp_path: Path) -> None:
