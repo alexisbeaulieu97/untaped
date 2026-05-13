@@ -61,6 +61,25 @@ def test_set_validates_via_pydantic(_isolate_settings: Path) -> None:
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
 
+def test_set_validation_isolated_from_env_overlay(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Validation must judge the merged YAML dict alone — not what the
+    final loaded ``Settings`` *would* look like with current env vars
+    overlaid. Otherwise an env-var sets a valid runtime value and
+    masks an invalid value landing on disk; the day the env var goes
+    away, ``get_settings()`` falls over with no clue who wrote it.
+
+    Pins the issue #136 fix: ``_validate_merged`` builds a one-shot
+    Settings subclass that uses only ``init_settings`` so the source
+    chain doesn't paper over a structurally bad write."""
+    # Env says verify_ssl=true (valid). If validation consulted env,
+    # the bad YAML write below would be accepted because env wins.
+    monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
+    with pytest.raises(ConfigError, match="invalid value"):
+        SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
+
+
 def test_set_validates_target_profile_not_ambient_active(_isolate_settings: Path) -> None:
     """Validation must merge from the target profile's perspective.
 
@@ -179,6 +198,94 @@ def test_unset_raises_when_recorded_active_missing(_isolate_settings: Path) -> N
     _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
     with pytest.raises(ConfigError, match=r"active profile.*ghost"):
         UnsetSetting(SettingsFileRepository())("log_level")
+
+
+# ── issue #136: post-unset schema validation ─────────────────────────────────
+
+
+def test_unset_succeeds_when_schema_default_fills_the_gap(_isolate_settings: Path) -> None:
+    """Removing a field that has a schema default must still succeed —
+    the default takes over, the merged dict stays valid. This is the
+    realistic happy path today (every field has a default), so a
+    regression here would break every user's ``unset`` call."""
+    _isolate_settings.write_text("profiles:\n  default:\n    awx:\n      page_size: 50\n")
+    removed, target = UnsetSetting(SettingsFileRepository())("awx.page_size")
+    assert removed is True
+    assert target == "default"
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert "awx" not in data["profiles"]["default"]
+
+
+def test_unset_raises_when_post_state_is_invalid(_isolate_settings: Path) -> None:
+    """If a setting were required-without-default and a user unset it,
+    the next ``get_settings`` would fail with an opaque pydantic error
+    far from the call site. Validate on unset and raise ``ConfigError``
+    naming the key so the failure surfaces here, not later.
+
+    Synthesised via a ``Settings`` subclass that drops the default on
+    ``log_level`` — no real setting today is required-without-default,
+    but this is preventive plumbing so future ones can't regress."""
+    from typing import cast
+
+    from pydantic import Field
+    from pydantic_settings import SettingsConfigDict
+    from untaped_core.settings import Settings
+
+    class StrictSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_prefix="UNTAPED_",
+            env_nested_delimiter="__",
+            extra="ignore",
+        )
+        # Ellipsis ``...`` makes the field required and overrides the
+        # base class's ``log_level: str = "INFO"`` default.
+        log_level: str = Field(...)  # type: ignore[assignment]
+
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+    before = _isolate_settings.read_bytes()
+    repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
+    with pytest.raises(ConfigError, match=r"log_level"):
+        UnsetSetting(repo)("log_level")
+    # File must be unchanged — ``mutate_config``'s atomic write only
+    # flushes if the callback returns successfully, and our validation
+    # error raised inside the callback.
+    assert _isolate_settings.read_bytes() == before
+
+
+def test_unset_error_message_names_the_key_and_profile(_isolate_settings: Path) -> None:
+    """The error message must mention both the key the user tried to
+    unset and the profile so they can find the offending edit without
+    re-reading the YAML. Mirrors ``set_value``'s "invalid value for
+    {key!r}" shape — the two messages live on the same code path so
+    users see uniform diagnostics."""
+    from typing import cast
+
+    from pydantic import Field
+    from pydantic_settings import SettingsConfigDict
+    from untaped_core.settings import Settings
+
+    class StrictSettings(Settings):
+        model_config = SettingsConfigDict(
+            env_prefix="UNTAPED_",
+            env_nested_delimiter="__",
+            extra="ignore",
+        )
+        # Ellipsis makes the field required and overrides the base's default.
+        log_level: str = Field(...)  # type: ignore[assignment]
+
+    # Stage has the only ``log_level``; no default-profile fallback. After
+    # unset, the merged view for ``active: stage`` is missing the
+    # required field, so validation fails and the error names the target
+    # profile ("stage"), not "default".
+    _isolate_settings.write_text(
+        "profiles:\n  default: {}\n  stage:\n    log_level: WARN\nactive: stage\n"
+    )
+    repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
+    with pytest.raises(ConfigError) as exc_info:
+        UnsetSetting(repo)("log_level")
+    message = str(exc_info.value)
+    assert "log_level" in message
+    assert "stage" in message
 
 
 def test_set_raises_with_resolution_time_message_when_recorded_active_missing(
