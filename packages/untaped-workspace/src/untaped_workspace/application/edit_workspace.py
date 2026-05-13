@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import os
-import shlex
+from collections.abc import Sequence
 
 from untaped_workspace.application.ports import EditorRunner, RegistryReader
 from untaped_workspace.errors import WorkspaceError
@@ -15,26 +14,26 @@ class EditWorkspace:
         registry: RegistryReader,
         *,
         runner: EditorRunner,
-        env: dict[str, str] | None = None,
     ) -> None:
         self._registry = registry
         self._runner = runner
-        self._env = env if env is not None else os.environ
 
-    def __call__(
-        self,
-        name: str,
-        *,
-        editor: str | None = None,
-    ) -> int:
+    def __call__(self, name: str, *, argv: Sequence[str]) -> int:
+        """Append the workspace path to ``argv`` and dispatch to the runner.
+
+        Editor selection (``--editor`` / ``$VISUAL`` / ``$EDITOR`` /
+        ``"vi"``), ``shlex`` splitting, and platform branching all live
+        in :func:`untaped_workspace.infrastructure.system_adapters.resolve_editor_argv`
+        — wired by the CLI composition root so this use case stays pure.
+
+        Precondition: ``argv`` is non-empty. The CLI's only producer
+        (``resolve_editor_argv``) raises :class:`WorkspaceError` on
+        empty / whitespace inputs, so callers that go through it never
+        reach the ``argv[0]`` in the ``FileNotFoundError`` handler with
+        an empty tuple. A programmatic caller bypassing the helper must
+        supply at least the executable name.
+        """
         path = self._registry.get(name).path
-        chosen = editor or self._env.get("VISUAL") or self._env.get("EDITOR") or "vi"
-        try:
-            argv = shlex.split(chosen, posix=os.name != "nt")
-        except ValueError as exc:
-            raise WorkspaceError(f"could not parse editor command {chosen!r}: {exc}") from exc
-        if not argv:
-            raise WorkspaceError("editor command is empty")
         try:
             return self._runner([*argv, str(path)])
         except FileNotFoundError as exc:

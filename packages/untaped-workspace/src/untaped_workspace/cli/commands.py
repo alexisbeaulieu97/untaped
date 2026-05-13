@@ -49,6 +49,7 @@ from untaped_workspace.infrastructure import (
     WorkspaceRegistryRepository,
     WorkspaceResolver,
     editor_runner,
+    resolve_editor_argv,
     shell_runner,
 )
 
@@ -574,6 +575,7 @@ def edit_command(
 ) -> None:
     """Open the workspace directory in your editor."""
     with report_errors():
-        rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, editor=editor)
+        argv = resolve_editor_argv(editor)
+        rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, argv=argv)
         if rc != 0:
             raise typer.Exit(code=rc)

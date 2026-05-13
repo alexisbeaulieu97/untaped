@@ -15,6 +15,7 @@ from untaped_workspace.infrastructure.repo_discoverer import LocalRepoDiscoverer
 from untaped_workspace.infrastructure.system_adapters import (
     LocalFilesystem,
     editor_runner,
+    resolve_editor_argv,
     shell_runner,
 )
 from untaped_workspace.infrastructure.workspace_resolver import (
@@ -33,5 +34,6 @@ __all__ = [
     "WorkspaceResolver",
     "cache_path_for",
     "editor_runner",
+    "resolve_editor_argv",
     "shell_runner",
 ]
