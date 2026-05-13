@@ -176,7 +176,7 @@ untaped workspace status --name prod --format raw --columns repo \
 ```bash
 untaped workspace sync [--name <ws> | --path <dir>]
                        [--only <repo>]... [--prune]
-                       [--all]
+                       [--timeout <seconds>] [--all]
 ```
 
 Reconcile each repo on disk with the manifest:
@@ -194,6 +194,11 @@ Reconcile each repo on disk with the manifest:
 `--only <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
 a morning routine.
+
+`--timeout <seconds>` caps every git invocation in this sync run, so a
+hung remote can't strand a `--all` sweep. Defaults are 60s for
+read-only ops and 600s for clone/fetch; passing `--timeout 30` caps
+both at 30s (CI-friendly fail-fast).
 
 **`--all --only` semantics.** Under `--all`, `--only` is a per-workspace
 filter: workspaces whose manifests don't contain the requested
