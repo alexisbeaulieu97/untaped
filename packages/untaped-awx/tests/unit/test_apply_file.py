@@ -10,12 +10,12 @@ detection, unknown-kind rejection, and per-doc error handling
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from untaped_awx.application import ApplyFile
 from untaped_awx.application.ports import Catalog, FkResolver
-from untaped_awx.domain import FieldChange, Resource, ResourceSpec
+from untaped_awx.domain import ApplyOutcome, FieldChange, Resource, ResourceSpec
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 
@@ -32,10 +32,8 @@ class _RecordingApply:
         *,
         write: bool = False,
         defer_memberships: bool = False,
-    ) -> Any:
+    ) -> ApplyOutcome:
         self.calls.append((resource.kind, resource.metadata.name, write))
-        from untaped_awx.domain import ApplyOutcome
-
         return ApplyOutcome(kind=resource.kind, name=resource.metadata.name, action="preview")
 
     def reconcile_memberships(self, resource: Resource) -> list[FieldChange]:
@@ -206,12 +204,10 @@ def test_apply_file_continues_on_error_by_default(
             *,
             write: bool = False,
             defer_memberships: bool = False,
-        ) -> Any:
+        ) -> ApplyOutcome:
             self.calls.append(resource.metadata.name)
             if resource.metadata.name == "boom":
                 raise AwxApiError("boom", status=500)
-            from untaped_awx.domain import ApplyOutcome
-
             return ApplyOutcome(kind=resource.kind, name=resource.metadata.name, action="preview")
 
         def reconcile_memberships(self, resource: Resource) -> list[FieldChange]:
@@ -255,7 +251,7 @@ def test_apply_file_fail_fast_aborts(tmp_path: Path) -> None:
             *,
             write: bool = False,
             defer_memberships: bool = False,
-        ) -> Any:
+        ) -> ApplyOutcome:
             self.calls.append(resource.metadata.name)
             raise AwxApiError("boom", status=500)
 
