@@ -136,10 +136,11 @@ def test_hosts_list_dotted_columns_walks_summary_fields(fake_aap: Any) -> None:
     assert rows == ["api-01\tprod", "web-01\tprod"]
 
 
-def test_hosts_apply_creates_host_via_nested_endpoint(fake_aap: Any, tmp_path: Path) -> None:
+def test_hosts_apply_creates_host_via_nested_endpoint(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
     """Apply a Host doc — strategy POSTs to ``/inventories/<id>/hosts/``."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed(
+    seeded_default_org.seed(
         "inventories",
         id=20,
         name="prod",
@@ -166,16 +167,15 @@ def test_hosts_apply_creates_host_via_nested_endpoint(fake_aap: Any, tmp_path: P
     result = CliRunner().invoke(app, ["hosts", "apply", "--file", str(doc), "--yes"])
     assert result.exit_code == 0, result.output
     # The fake's nested POST handler stores the host with inventory=20.
-    hosts = list(fake_aap.store["hosts"].values())
+    hosts = list(seeded_default_org.store["hosts"].values())
     assert len(hosts) == 1
     assert hosts[0]["name"] == "web-01"
     assert hosts[0]["inventory"] == 20
     assert hosts[0]["description"] == "Frontend web server"
 
 
-def test_hosts_apply_preview_does_not_write(fake_aap: Any, tmp_path: Path) -> None:
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed(
+def test_hosts_apply_preview_does_not_write(seeded_default_org: Any, tmp_path: Path) -> None:
+    seeded_default_org.seed(
         "inventories",
         id=20,
         name="prod",
@@ -199,7 +199,7 @@ def test_hosts_apply_preview_does_not_write(fake_aap: Any, tmp_path: Path) -> No
     )
     result = CliRunner().invoke(app, ["hosts", "apply", "--file", str(doc)])
     assert result.exit_code == 0, result.output
-    assert fake_aap.store["hosts"] == {}
+    assert seeded_default_org.store["hosts"] == {}
 
 
 def test_hosts_save_round_trips_to_yaml(fake_aap: Any) -> None:
@@ -275,15 +275,18 @@ def test_hosts_list_default_columns_no_dotted_summary_path(fake_aap: Any) -> Non
 
 
 def test_hosts_get_with_inventory_scope_disambiguates_across_inventories(
-    fake_aap: Any,
+    seeded_default_org: Any,
 ) -> None:
     """Two inventories with the same host name → ``--inventory`` picks the
     right one. Without the flag, name lookup is global (first match wins),
     which is ambiguous."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
-    fake_aap.seed("inventories", id=21, name="staging", organization=1, organization_name="Default")
-    fake_aap.seed(
+    seeded_default_org.seed(
+        "inventories", id=20, name="prod", organization=1, organization_name="Default"
+    )
+    seeded_default_org.seed(
+        "inventories", id=21, name="staging", organization=1, organization_name="Default"
+    )
+    seeded_default_org.seed(
         "hosts",
         id=101,
         name="web-01",
@@ -291,7 +294,7 @@ def test_hosts_get_with_inventory_scope_disambiguates_across_inventories(
         inventory_name="prod",
         description="prod web",
     )
-    fake_aap.seed(
+    seeded_default_org.seed(
         "hosts",
         id=102,
         name="web-01",
@@ -318,15 +321,18 @@ def test_hosts_get_with_inventory_scope_disambiguates_across_inventories(
 
 
 def test_hosts_get_with_inventory_organization_disambiguates_across_orgs(
-    fake_aap: Any,
+    seeded_default_org: Any,
 ) -> None:
     """Same inventory name in two orgs → ``--inventory-organization`` picks."""
-    fake_aap.seed("organizations", id=1, name="Default")
-    fake_aap.seed("organizations", id=2, name="Other")
-    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
-    fake_aap.seed("inventories", id=21, name="prod", organization=2, organization_name="Other")
-    fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
-    fake_aap.seed("hosts", id=102, name="web-01", inventory=21, inventory_name="prod")
+    seeded_default_org.seed("organizations", id=2, name="Other")
+    seeded_default_org.seed(
+        "inventories", id=20, name="prod", organization=1, organization_name="Default"
+    )
+    seeded_default_org.seed(
+        "inventories", id=21, name="prod", organization=2, organization_name="Other"
+    )
+    seeded_default_org.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
+    seeded_default_org.seed("hosts", id=102, name="web-01", inventory=21, inventory_name="prod")
     result = CliRunner().invoke(
         app,
         [

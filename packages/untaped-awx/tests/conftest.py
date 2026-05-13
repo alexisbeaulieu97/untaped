@@ -502,6 +502,22 @@ def fake_aap(aap_config: Path) -> Iterator[FakeAap]:
 
 
 @pytest.fixture
+def seeded_default_org(fake_aap: FakeAap) -> FakeAap:
+    """``FakeAap`` pre-seeded with organization ``id=1, name="Default"``.
+
+    Use when the test's canonical world has one organization called
+    ``Default``; tests can then seed FKs with
+    ``organization=1, organization_name="Default"``. Opt out (use bare
+    ``fake_aap``) for multi-org tests that need ``id=1`` bound to a
+    different name, for no-org error-path tests, and for tests using
+    module-level seed helpers (``_seed_basic``, ``_seed_fk_prereqs``,
+    ``_seed_inventory_with_hosts``) that already seed the Default org.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    return fake_aap
+
+
+@pytest.fixture
 def seeded_job_template_with_credentials(
     fake_aap: FakeAap,
 ) -> tuple[FakeAap, dict[str, int]]:
