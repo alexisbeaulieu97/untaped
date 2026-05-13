@@ -21,6 +21,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 from conftest import StubFilesystem, StubRegistry
 from untaped_workspace.application import (
     Foreach,
@@ -48,11 +49,24 @@ def test_local_filesystem_exists_and_is_dir(tmp_path: Path) -> None:
 
 
 def test_local_filesystem_mkdir_parents_and_exist_ok(tmp_path: Path) -> None:
+    """``parents`` / ``exist_ok`` flow through to ``pathlib.Path.mkdir``.
+
+    The Protocol intentionally has no defaults so call sites can't
+    silently flip from `pathlib`'s defaults — pin both branches here.
+    """
     fs = LocalFilesystem()
     nested = tmp_path / "a" / "b" / "c"
-    fs.mkdir(nested)  # parents=True, exist_ok=True (defaults)
+    fs.mkdir(nested, parents=True, exist_ok=True)
     assert nested.is_dir()
-    fs.mkdir(nested)  # idempotent under exist_ok=True
+    fs.mkdir(nested, parents=True, exist_ok=True)  # idempotent under exist_ok=True
+    sibling = tmp_path / "a" / "b" / "d"
+    with pytest.raises(FileNotFoundError):
+        # parents=False: still raises if the parent is real (it exists) but the
+        # check is interesting when it doesn't — use a deeper gap to prove it.
+        fs.mkdir(tmp_path / "x" / "y", parents=False, exist_ok=True)
+    sibling.mkdir()
+    with pytest.raises(FileExistsError):
+        fs.mkdir(sibling, parents=False, exist_ok=False)
 
 
 def test_local_filesystem_iterdir_returns_children(tmp_path: Path) -> None:
@@ -83,9 +97,16 @@ def test_no_pathlib_io_in_application_layer() -> None:
     so use cases stay testable with stubs; if a future PR accidentally
     adds a bare ``Path.is_dir()`` / ``.exists()`` / ``.iterdir()`` /
     ``.mkdir()`` to a use case, this test fails fast with a precise
-    pointer. Port-mediated calls (``self._fs.is_dir(...)``,
-    ``self._manifests.exists(...)``) are the intended shape and are
-    explicitly allowed.
+    pointer.
+
+    **Convention enforced by this test.** Port-mediated calls must use
+    the ``self._<name>.method(...)`` shape — ``self._fs.is_dir(...)``,
+    ``self._manifests.exists(...)``, etc. The lint allows that exact
+    receiver shape and *only* that shape. A locally-bound ``fs = self._fs``
+    followed by ``fs.is_dir(p)`` would trip a false positive — but that
+    pattern would also defeat the readability the port is meant to
+    deliver, so the convention doubles as a style rule. See
+    ``packages/untaped-workspace/AGENTS.md``.
 
     ``ports.py`` itself is skipped: the matches there are Protocol
     method *declarations*, not calls.

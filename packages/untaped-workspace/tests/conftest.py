@@ -145,6 +145,19 @@ class StubFilesystem:
     ``mkdir`` and ``rmtree`` mutate the set so call sequences are
     observable; the ``events`` list records every operation for tests
     that need to pin the order.
+
+    **Semantic divergences from real ``pathlib`` / ``shutil``** worth
+    knowing when reading test failures:
+
+    - ``iterdir(p)`` yields seeded entries whose ``parent == p``. Real
+      ``iterdir`` only yields entries that *literally exist* under
+      ``p`` on disk — if a test seeds ``Path("/ws/a")`` without seeding
+      ``Path("/ws")``, ``iterdir(Path("/ws"))`` still yields ``a``.
+      Fine for the current callers (`SyncWorkspace._prune_orphans` only
+      iterdirs a path it has already established exists), worth a
+      thought before adding new callers.
+    - ``rmtree(p)`` removes ``p`` and every seeded descendant; matches
+      ``shutil.rmtree`` for the dirs-only model used here.
     """
 
     def __init__(self, dirs: Iterable[Path] = ()) -> None:
@@ -157,7 +170,7 @@ class StubFilesystem:
     def is_dir(self, path: Path) -> bool:
         return path in self._dirs
 
-    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
+    def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None:
         self.events.append(("mkdir", path))
         self._dirs.add(path)
 

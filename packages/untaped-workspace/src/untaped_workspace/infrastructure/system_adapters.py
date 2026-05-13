@@ -51,7 +51,7 @@ class LocalFilesystem:
     def is_dir(self, path: Path) -> bool:
         return path.is_dir()
 
-    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
+    def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None:
         path.mkdir(parents=parents, exist_ok=exist_ok)
 
     def iterdir(self, path: Path) -> Iterator[Path]:

@@ -50,6 +50,6 @@ class InitWorkspace:
             name=ws_name,
             defaults=ManifestDefaults(branch=branch) if branch else ManifestDefaults(),
         )
-        self._fs.mkdir(canonical)
+        self._fs.mkdir(canonical, parents=True, exist_ok=True)
         self._manifests.write(canonical, manifest)
         return self._registry.register(name=ws_name, path=canonical)

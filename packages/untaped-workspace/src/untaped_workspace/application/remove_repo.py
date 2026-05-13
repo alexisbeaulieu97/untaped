@@ -8,7 +8,7 @@ from untaped_workspace.application.ports import (
     StatusInspector,
 )
 from untaped_workspace.domain import Repo, Workspace
-from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.errors import GitError, WorkspaceError
 
 
 class RemoveRepo:
@@ -37,8 +37,17 @@ class RemoveRepo:
 
         local = workspace.path / repo.name
         should_prune = prune and self._fs.is_dir(local)
-        if should_prune and self._status is not None and self._status.is_dirty(local):
-            raise WorkspaceError(f"refusing to prune {local}: working tree has uncommitted changes")
+        if should_prune and self._status is not None:
+            try:
+                dirty = self._status.is_dirty(local)
+            except GitError as exc:
+                raise WorkspaceError(
+                    f"refusing to prune {local}: cannot inspect working tree ({exc})"
+                ) from exc
+            if dirty:
+                raise WorkspaceError(
+                    f"refusing to prune {local}: working tree has uncommitted changes"
+                )
 
         manifest.repos = [r for r in manifest.repos if r is not repo]
         self._manifests.write(workspace.path, manifest)

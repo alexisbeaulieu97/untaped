@@ -6,7 +6,7 @@ import pytest
 from conftest import empty_manifest
 from untaped_workspace.application import AddRepo, RemoveRepo
 from untaped_workspace.domain import Workspace
-from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -72,3 +72,28 @@ def test_remove_repo_prune_refuses_dirty(tmp_path: Path) -> None:
     # manifest must not have been modified — both clone and entry stay
     manifest = ManifestRepository().read(ws_path)
     assert [r.name for r in manifest.repos] == ["svc-a"]
+
+
+def test_remove_repo_prune_translates_giterror(tmp_path: Path) -> None:
+    """If the status check fails (e.g. local dir exists but isn't a git
+    clone), translate the ``GitError`` to a ``WorkspaceError`` rather
+    than letting the raw subprocess error escape — mirrors
+    ``ForgetWorkspace._refuse_if_any_repo_dirty``.
+    """
+    ws_path = tmp_path / "prod"
+    ManifestRepository().write(ws_path, empty_manifest())
+    workspace = Workspace(name="prod", path=ws_path)
+    AddRepo(ManifestRepository())(workspace, url="https://x/svc-a.git")
+
+    clone_dir = ws_path / "svc-a"
+    clone_dir.mkdir()
+
+    class _ExplodingChecker:
+        def is_dirty(self, _: Path) -> bool:
+            raise GitError("not a git repository")
+
+    use_case = RemoveRepo(ManifestRepository(), fs=_FS, status=_ExplodingChecker())
+    with pytest.raises(WorkspaceError, match="cannot inspect"):
+        use_case(workspace, ident="svc-a", prune=True)
+    assert clone_dir.exists()
+    assert [r.name for r in ManifestRepository().read(ws_path).repos] == ["svc-a"]
