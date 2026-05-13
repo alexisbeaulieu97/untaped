@@ -8,7 +8,9 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.infrastructure import ManifestRepository
+from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
+
+_FS = LocalFilesystem()
 
 
 def _seed(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
@@ -21,7 +23,7 @@ def _seed(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
 def test_reports_not_cloned_when_dir_missing(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     git = StubGit()
-    entries = WorkspaceStatus(ManifestRepository(), git)(workspace)
+    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False
 
 
@@ -38,7 +40,7 @@ def test_reports_status_for_cloned_repos(tmp_path: Path) -> None:
             "b": RepoStatus(branch="develop", modified=1, untracked=2),
         }
     )
-    entries = WorkspaceStatus(ManifestRepository(), git)(workspace)
+    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
     by_repo = {e.repo: e for e in entries}
     assert by_repo["a"].cloned and by_repo["a"].behind == 2
     assert by_repo["b"].modified == 1
@@ -49,5 +51,5 @@ def test_git_error_marks_not_cloned(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     (workspace.path / "a").mkdir()
     git = StubGit(status_fail={"a"})
-    entries = WorkspaceStatus(ManifestRepository(), git)(workspace)
+    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False

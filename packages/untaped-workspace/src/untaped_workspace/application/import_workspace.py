@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped_workspace.application.ports import ManifestRepository, WorkspaceRegistry
+from untaped_workspace.application.ports import (
+    Filesystem,
+    ManifestRepository,
+    WorkspaceRegistry,
+)
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import WorkspaceError
 
@@ -14,9 +18,12 @@ class ImportWorkspace:
         self,
         manifest_repo: ManifestRepository,
         registry: WorkspaceRegistry,
+        *,
+        fs: Filesystem,
     ) -> None:
         self._manifests = manifest_repo
         self._registry = registry
+        self._fs = fs
 
     def __call__(
         self,
@@ -39,6 +46,6 @@ class ImportWorkspace:
 
         manifest = loaded.manifest.model_copy(update={"name": ws_name})
 
-        canonical.mkdir(parents=True, exist_ok=True)
+        self._fs.mkdir(canonical)
         self._manifests.write(canonical, manifest)
         return self._registry.register(name=ws_name, path=canonical)

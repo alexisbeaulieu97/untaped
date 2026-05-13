@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 
@@ -36,7 +36,26 @@ def editor_runner(cmd: Sequence[str]) -> int:
 
 
 class LocalFilesystem:
-    """Default :class:`Filesystem` that delegates to :mod:`shutil`."""
+    """Default :class:`Filesystem` that delegates to :mod:`pathlib` / :mod:`shutil`.
+
+    Each method is a thin pass-through to the equivalent
+    :class:`pathlib.Path` operation (or :func:`shutil.rmtree` for the
+    recursive delete). The port exists so application use cases never
+    import :mod:`pathlib` or :mod:`shutil` for I/O — all disk reads and
+    writes flow through this single seam, which tests stub.
+    """
+
+    def exists(self, path: Path) -> bool:
+        return path.exists()
+
+    def is_dir(self, path: Path) -> bool:
+        return path.is_dir()
+
+    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
+        path.mkdir(parents=parents, exist_ok=exist_ok)
+
+    def iterdir(self, path: Path) -> Iterator[Path]:
+        return path.iterdir()
 
     def rmtree(self, path: Path) -> None:
         shutil.rmtree(path)

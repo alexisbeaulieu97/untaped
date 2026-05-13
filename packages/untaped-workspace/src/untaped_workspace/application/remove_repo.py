@@ -36,7 +36,7 @@ class RemoveRepo:
             raise WorkspaceError(f"repo {ident!r} not declared in workspace {workspace.name!r}")
 
         local = workspace.path / repo.name
-        should_prune = prune and local.is_dir()
+        should_prune = prune and self._fs.is_dir(local)
         if should_prune and self._status is not None and self._status.is_dirty(local):
             raise WorkspaceError(f"refusing to prune {local}: working tree has uncommitted changes")
 

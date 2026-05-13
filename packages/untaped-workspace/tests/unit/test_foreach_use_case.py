@@ -3,7 +3,9 @@ from pathlib import Path
 
 from untaped_workspace.application import Foreach
 from untaped_workspace.domain import Repo, Workspace, WorkspaceManifest
-from untaped_workspace.infrastructure import ManifestRepository
+from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
+
+_FS = LocalFilesystem()
 
 
 def _seed(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
@@ -43,7 +45,7 @@ def test_runs_in_each_repo_serial(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]),
     )
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="echo hi")
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="echo hi")
     assert [o.repo for o in outcomes] == ["a", "b"]
     assert all(o.returncode == 0 for o in outcomes)
 
@@ -60,7 +62,7 @@ def test_serial_stops_on_error(tmp_path: Path) -> None:
         ),
     )
     runner = _runner_factory(returncode={"b": 2})
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x")
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
     assert [o.repo for o in outcomes] == ["a", "b"]
 
 
@@ -76,7 +78,7 @@ def test_continue_on_error(tmp_path: Path) -> None:
         ),
     )
     runner = _runner_factory(returncode={"b": 2})
-    outcomes = Foreach(ManifestRepository(), runner=runner)(
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
         workspace, command="x", continue_on_error=True
     )
     assert [o.repo for o in outcomes] == ["a", "b", "c"]
@@ -95,7 +97,7 @@ def test_parallel_preserves_repo_order(tmp_path: Path) -> None:
         ),
     )
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner)(
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
         workspace, command="x", parallel=4, continue_on_error=True
     )
     assert [o.repo for o in outcomes] == ["a", "b", "c", "d"]
@@ -107,7 +109,7 @@ def test_skips_uncloned_repo(tmp_path: Path) -> None:
     ManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     workspace = Workspace(name="prod", path=ws_path)
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x")
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
     assert outcomes[0].returncode == -1
     assert "not cloned" in outcomes[0].stderr
 
@@ -118,7 +120,7 @@ def test_outcome_records_command_and_duration(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
     )
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="echo hi")
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="echo hi")
     outcome = outcomes[0]
     assert outcome.command == "echo hi"
     assert outcome.duration_s >= 0.0
@@ -130,7 +132,7 @@ def test_outcome_records_command_when_uncloned(tmp_path: Path) -> None:
     ManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     workspace = Workspace(name="prod", path=ws_path)
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="echo hi")
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="echo hi")
     assert outcomes[0].command == "echo hi"
     assert outcomes[0].duration_s == 0.0
 
@@ -152,7 +154,9 @@ def test_parallel_cancels_remaining_work_on_first_failure(tmp_path: Path) -> Non
         ),
     )
     runner = _runner_factory(returncode={"a": 1, "b": 1, "c": 1, "d": 1})
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x", parallel=2)
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
+        workspace, command="x", parallel=2
+    )
     assert len(outcomes) == 1
     assert outcomes[0].returncode == 1
 
@@ -166,7 +170,7 @@ def test_file_not_found_yields_runner_error_outcome(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
     )
     runner = _runner_factory(raises={"a": FileNotFoundError("/bin/missing-shell: not found")})
-    outcomes = Foreach(ManifestRepository(), runner=runner)(workspace, command="x")
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
     assert len(outcomes) == 1
     assert outcomes[0].returncode == -1
     assert outcomes[0].stdout == ""

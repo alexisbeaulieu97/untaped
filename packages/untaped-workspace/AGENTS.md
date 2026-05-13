@@ -91,16 +91,27 @@ package's pydantic-everywhere convention.
 ## `system_adapters` for other side effects
 
 Other side-effecting calls (shell-out for `foreach`, editor launch for
-`edit`, `rmtree` for `remove --prune` / `sync --prune`) have their
-default implementations in `infrastructure.system_adapters`:
+`edit`, plus every disk read/write — `exists`, `is_dir`, `mkdir`,
+`iterdir`, `rmtree`) have their default implementations in
+`infrastructure.system_adapters`:
 
 - `shell_runner` — concrete factory satisfying `application.ports.ShellRunner`
 - `editor_runner` — concrete factory satisfying `application.ports.EditorRunner`
-- `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`
+- `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`,
+  which declares `exists` / `is_dir` / `mkdir(*, parents=True, exist_ok=True)`
+  / `iterdir` / `rmtree`. Methods delegate to the equivalent
+  `pathlib.Path` operation (or `shutil.rmtree` for the recursive
+  delete).
 
-Application use cases require the port shapes as constructor arguments —
-**none of them imports `subprocess` or `shutil` directly.** The CLI
-composition root wires the defaults; tests inject stubs.
+Application use cases require the port shapes as constructor arguments
+— **none of them imports `subprocess` or `shutil`, or reaches into
+`pathlib` for I/O directly.** Every disk touch flows through the
+`Filesystem` port; the contract is pinned by
+`tests/unit/test_filesystem_port.py::test_no_pathlib_io_in_application_layer`,
+which greps `application/` for `.is_dir()` / `.exists()` / `.iterdir()`
+/ `.mkdir()` and fails CI on any leak. The CLI composition root wires
+the defaults; tests inject the conftest `StubFilesystem` to assert
+disk side effects without `tmp_path`.
 
 ## `foreach` output semantics
 

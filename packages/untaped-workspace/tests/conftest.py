@@ -22,14 +22,16 @@ sync and status tests; per-test failure injection rides on the kwargs
 ``WorkspaceRegistryRepository`` methods (``register`` / ``find_by_path``
 / ``entries`` / ``get`` / ``unregister``) with optional positional
 seeding so empty-init and seeded-init test sites both keep working
-unchanged. ``empty_manifest()`` is a default-constructed
-``WorkspaceManifest`` for tests that only need an empty file on disk
-(init/add/remove/import + workspace-resolver tests).
+unchanged. ``StubFilesystem`` satisfies the widened ``Filesystem`` port
+with an in-memory set of paths — lets use-case tests assert disk
+predicates without touching ``tmp_path``. ``empty_manifest()`` is a
+default-constructed ``WorkspaceManifest`` for tests that only need an
+empty file on disk (init/add/remove/import + workspace-resolver tests).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Set
+from collections.abc import Iterable, Iterator, Set
 from pathlib import Path
 from typing import Any
 
@@ -134,3 +136,34 @@ class StubRegistry:
             self.unregistered.append(name)
             return True
         return False
+
+
+class StubFilesystem:
+    """In-memory ``Filesystem`` for use-case tests that don't need real I/O.
+
+    Seed the constructor with the directories that should "exist".
+    ``mkdir`` and ``rmtree`` mutate the set so call sequences are
+    observable; the ``events`` list records every operation for tests
+    that need to pin the order.
+    """
+
+    def __init__(self, dirs: Iterable[Path] = ()) -> None:
+        self._dirs: set[Path] = {Path(p) for p in dirs}
+        self.events: list[tuple[str, Path]] = []
+
+    def exists(self, path: Path) -> bool:
+        return path in self._dirs
+
+    def is_dir(self, path: Path) -> bool:
+        return path in self._dirs
+
+    def mkdir(self, path: Path, *, parents: bool = True, exist_ok: bool = True) -> None:
+        self.events.append(("mkdir", path))
+        self._dirs.add(path)
+
+    def iterdir(self, path: Path) -> Iterator[Path]:
+        return iter([p for p in self._dirs if p.parent == path])
+
+    def rmtree(self, path: Path) -> None:
+        self.events.append(("rmtree", path))
+        self._dirs = {p for p in self._dirs if p != path and path not in p.parents}
