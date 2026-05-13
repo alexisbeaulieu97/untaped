@@ -15,15 +15,17 @@ For bulk apply / save flows, callers can warm the cache via
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from untaped_awx.errors import AwxApiError, ResourceNotFound
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
-from untaped_awx.infrastructure.resource_repo import ResourceRepository
+
+if TYPE_CHECKING:
+    from untaped_awx.application.ports import ResourceClient
 
 
 class FkResolver:
-    def __init__(self, repo: ResourceRepository, catalog: AwxResourceCatalog) -> None:
+    def __init__(self, repo: ResourceClient, catalog: AwxResourceCatalog) -> None:
         self._repo = repo
         self._catalog = catalog
         self._name_cache: dict[tuple[str, str, frozenset[tuple[str, str]]], int] = {}
