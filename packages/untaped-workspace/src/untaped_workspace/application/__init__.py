@@ -9,13 +9,14 @@ from untaped_workspace.application.list_workspaces import ListWorkspaces
 from untaped_workspace.application.remove_repo import RemoveRepo
 from untaped_workspace.application.shell_init import ShellInit
 from untaped_workspace.application.status_workspace import WorkspaceStatus
-from untaped_workspace.application.sync_workspace import SyncWorkspace
+from untaped_workspace.application.sync_workspace import BareFetchTracker, SyncWorkspace
 from untaped_workspace.application.workspace_path import WorkspacePath
 
 __all__ = [
     "AddRepo",
     "AdoptResult",
     "AdoptWorkspace",
+    "BareFetchTracker",
     "EditWorkspace",
     "Foreach",
     "ForgetWorkspace",

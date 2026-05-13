@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from untaped_workspace.application.ports import (
@@ -20,6 +21,31 @@ from untaped_workspace.domain import (
 from untaped_workspace.errors import GitError, UnmatchedOnlyFilter
 
 
+@dataclass
+class BareFetchTracker:
+    """Session-scoped dedup state for ``SyncWorkspace`` bare fetches.
+
+    Owned by the composition root (the CLI's ``sync`` command), passed
+    into every ``SyncWorkspace.__call__`` in a ``--all`` sweep so the
+    same bare repo isn't fetched once per workspace. ``lock_for(url)``
+    serialises ``ensure_bare → check → fetch → add`` for one URL while
+    letting different URLs proceed in parallel — the contract that
+    ``sync --all -j N`` relies on.
+    """
+
+    fetched: set[Path] = field(default_factory=set)
+    # init=False so callers can't pass arbitrary locks into the dataclass
+    # constructor (the underscore prefix alone is just a convention; the
+    # generated __init__ would otherwise still accept them as kwargs).
+    # repr=False keeps tracebacks readable when a tracker is referenced.
+    _url_locks: dict[str, threading.Lock] = field(init=False, repr=False, default_factory=dict)
+    _url_locks_guard: threading.Lock = field(init=False, repr=False, default_factory=threading.Lock)
+
+    def lock_for(self, url: str) -> threading.Lock:
+        with self._url_locks_guard:
+            return self._url_locks.setdefault(url, threading.Lock())
+
+
 class SyncWorkspace:
     def __init__(
         self,
@@ -33,17 +59,6 @@ class SyncWorkspace:
         self._git = git
         self._fs = fs
         self._cache_dir = cache_dir
-        # Bare paths whose `bare_fetch` has already run during this use-case
-        # invocation chain. Lets `--all` sync N workspaces sharing repo URLs
-        # without re-fetching the same bare N times. Per-URL locks make
-        # the "ensure_bare → check → fetch → add" sequence atomic for one
-        # URL while letting different URLs proceed in parallel — the
-        # whole point of `sync --all -j N`.
-        # TODO(#11): swap the in-instance cache + lock plumbing for an
-        # external cache argument owned by the composition root.
-        self._fetched: set[Path] = set()
-        self._url_locks: dict[str, threading.Lock] = {}
-        self._url_locks_guard = threading.Lock()
 
     def __call__(
         self,
@@ -52,6 +67,7 @@ class SyncWorkspace:
         only: list[str] | None = None,
         prune: bool = False,
         strict_only: bool = True,
+        bare_tracker: BareFetchTracker | None = None,
     ) -> list[SyncOutcome]:
         """Reconcile ``workspace`` with its manifest.
 
@@ -67,7 +83,17 @@ class SyncWorkspace:
           repos. Lets ``sync --all --only repo-x`` traverse every
           workspace, syncing ones that have ``repo-x`` and emitting
           visible rows for any typo.
+
+        ``bare_tracker`` is a session-scoped dedup primitive owned by the
+        caller. The CLI's ``--all`` sweep allocates one and passes it
+        on every iteration so workspaces sharing repo URLs share the
+        bare-fetch. ``None`` (the default) allocates a fresh tracker
+        scoped to this call only — isolated, with no cross-call dedup.
+        Single-workspace callers (`add --sync`, `import --sync`) get
+        the convenience; anything iterating ``__call__`` must pass an
+        explicit tracker to keep the dedup.
         """
+        tracker = bare_tracker if bare_tracker is not None else BareFetchTracker()
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = self._select_repos(manifest, only)
         if unmatched and strict_only:
@@ -84,7 +110,7 @@ class SyncWorkspace:
             )
             for identifier in unmatched
         ]
-        outcomes.extend(self._sync_repo(workspace, manifest, repo) for repo in repos)
+        outcomes.extend(self._sync_repo(workspace, manifest, repo, tracker) for repo in repos)
         if prune:
             outcomes.extend(self._prune_orphans(workspace, manifest))
         return outcomes
@@ -110,26 +136,28 @@ class SyncWorkspace:
         unmatched = tuple(sorted(wanted - known))
         return matched, unmatched
 
-    def _ensure_bare_fresh(self, url: str) -> Path:
+    def _ensure_bare_fresh(self, url: str, tracker: BareFetchTracker) -> Path:
         # Per-URL lock so concurrent same-URL syncs do exactly one
         # ensure_bare + bare_fetch; different URLs proceed in parallel.
-        with self._url_locks_guard:
-            url_lock = self._url_locks.setdefault(url, threading.Lock())
-        with url_lock:
+        with tracker.lock_for(url):
             bare = self._git.ensure_bare(url, cache_dir=self._cache_dir)
-            if bare not in self._fetched:
+            if bare not in tracker.fetched:
                 self._git.bare_fetch(bare)
-                self._fetched.add(bare)
+                tracker.fetched.add(bare)
         return bare
 
     def _sync_repo(
-        self, workspace: Workspace, manifest: WorkspaceManifest, repo: Repo
+        self,
+        workspace: Workspace,
+        manifest: WorkspaceManifest,
+        repo: Repo,
+        tracker: BareFetchTracker,
     ) -> SyncOutcome:
         local = workspace.path / repo.name
         target_branch = manifest.target_branch_for(repo)
 
         try:
-            bare = self._ensure_bare_fresh(repo.url)
+            bare = self._ensure_bare_fresh(repo.url, tracker)
         except GitError as exc:
             return _outcome(workspace, repo, "skip", f"cache fetch failed: {exc}")
 
