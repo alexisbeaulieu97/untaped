@@ -237,10 +237,16 @@ class FakeAap:
             # ``inventory``); ``rstrip`` would chew through every trailing
             # ``s``. Fall through to AWX's snake_case singular FK column.
             singular = _AWX_FK_SINGULAR.get(parent_path, parent_path[:-1])
+            # The ``unified_job_template`` arm supports nested collections
+            # under unified-template kinds; skip it for sub-paths whose
+            # back-reference is a *different* FK column (see
+            # ``_SUB_PATH_SKIPS_UJT_FALLBACK``).
+            skip_ujt = (parent_path, sub_path) in _SUB_PATH_SKIPS_UJT_FALLBACK
             records = [
                 r
                 for r in self.store[store_collection].values()
-                if r.get("unified_job_template") == parent_id or r.get(singular) == parent_id
+                if (not skip_ujt and r.get("unified_job_template") == parent_id)
+                or r.get(singular) == parent_id
             ]
         records = self._apply_filters(records, params)
         return httpx.Response(
@@ -344,6 +350,15 @@ _AWX_FK_PLURAL: dict[str, str] = {
 # ``self.store["children"]``.
 _SUB_PATH_STORE: dict[tuple[str, str], str] = {
     ("groups", "children"): "groups",
+}
+
+# Nested sub-paths whose back-reference is *not* the polymorphic
+# ``unified_job_template`` column. See ``_sub_list`` for the reason —
+# without skipping the OR clause, a recursion test where workflow A
+# contains a node pointing at workflow B would also see that node when
+# listing B's own contents.
+_SUB_PATH_SKIPS_UJT_FALLBACK: set[tuple[str, str]] = {
+    ("workflow_job_templates", "workflow_nodes"),
 }
 
 
