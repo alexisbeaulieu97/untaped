@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from types import TracebackType
 from typing import Any
 
@@ -9,6 +10,7 @@ from untaped_core import ConfigError, HttpClient, HttpSettings
 from untaped_core.http import resolve_verify
 
 from untaped_github.infrastructure.config import GithubConfig
+from untaped_github.infrastructure.pagination import paginate_list, paginate_search
 
 
 class GithubClient:
@@ -35,6 +37,29 @@ class GithubClient:
     def me(self) -> dict[str, Any]:
         return self._http.get_json("/user")  # type: ignore[no-any-return]
 
+    def search_repositories(
+        self, q: str, *, sort: str | None = None, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        return paginate_search(self._http, "/search/repositories", params=_q(q, sort), limit=limit)
+
+    def search_code(
+        self, q: str, *, sort: str | None = None, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        return paginate_search(self._http, "/search/code", params=_q(q, sort), limit=limit)
+
+    def search_issues(
+        self, q: str, *, sort: str | None = None, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        return paginate_search(self._http, "/search/issues", params=_q(q, sort), limit=limit)
+
+    def search_users(
+        self, q: str, *, sort: str | None = None, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        return paginate_search(self._http, "/search/users", params=_q(q, sort), limit=limit)
+
+    def list_team_repos(self, org: str, team_slug: str) -> Iterator[dict[str, Any]]:
+        return paginate_list(self._http, f"/orgs/{org}/teams/{team_slug}/repos")
+
     def close(self) -> None:
         self._http.close()
 
@@ -48,3 +73,10 @@ class GithubClient:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+def _q(query: str, sort: str | None) -> dict[str, str]:
+    params = {"q": query}
+    if sort:
+        params["sort"] = sort
+    return params
