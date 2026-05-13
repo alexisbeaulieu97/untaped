@@ -10,7 +10,14 @@ class WorkspaceError(UntapedError):
 
 
 class GitError(WorkspaceError):
-    """Raised when an underlying ``git`` command exits non-zero."""
+    """Raised when an underlying ``git`` command fails.
+
+    Covers three failure modes: non-zero exit (``returncode`` set), timeout
+    (``returncode=None``, message includes ``"timed out after Ns"``), and
+    "git binary not on PATH" (``returncode=None``, message names the
+    missing binary). Callers that want to differentiate today must
+    inspect the message — there is no ``timed_out`` flag yet.
+    """
 
     def __init__(self, message: str, *, returncode: int | None = None) -> None:
         super().__init__(message)
