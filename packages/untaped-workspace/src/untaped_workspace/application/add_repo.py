@@ -23,23 +23,23 @@ class AddRepo:
         if manifest.repo_by_url(url) is not None:
             raise WorkspaceError(f"repo already in workspace {workspace.name!r}: {url}")
         repo = Repo.model_validate({"url": url, "name": repo_name, "branch": branch})
-        existing = manifest.repo_by_name(repo.name)
-        if existing is not None:
-            # The check has to happen before the in-place ``repos.append`` —
-            # the Pydantic ``WorkspaceManifest`` model validator only fires
-            # on construction, not on list mutation, so without this guard
-            # an explicit ``--repo-name`` collision lands a duplicate on
-            # disk that the next read rejects.
+        try:
+            new_manifest = manifest.add_repo(repo)
+        except ValueError as exc:
+            # The aggregate's validator caught a duplicate name (the
+            # url-collision case is already handled above). Look up the
+            # incumbent to build the CLI-facing message, and add the
+            # `--repo-name` disambiguation hint when the caller did not
+            # pass one explicitly — `not repo_name` mirrors
+            # ``Repo._fill_default_name``'s check so an explicit empty
+            # string is treated as omission.
+            existing = manifest.repo_by_name(repo.name)
             base = (
                 f"repo name {repo.name!r} already in use in workspace "
-                f"{workspace.name!r} by {existing.url}"
+                f"{workspace.name!r} by {existing.url if existing else '<unknown>'}"
             )
-            # ``not repo_name`` mirrors ``Repo._fill_default_name``'s check
-            # so an explicit empty string is treated the same as omitting
-            # the flag (both produce a derived name).
             if not repo_name:
-                raise WorkspaceError(f"{base}; pass --repo-name to disambiguate")
-            raise WorkspaceError(base)
-        manifest.repos.append(repo)
-        self._manifests.write(workspace.path, manifest)
+                raise WorkspaceError(f"{base}; pass --repo-name to disambiguate") from exc
+            raise WorkspaceError(base) from exc
+        self._manifests.write(workspace.path, new_manifest)
         return repo

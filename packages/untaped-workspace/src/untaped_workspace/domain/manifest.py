@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class Repo(BaseModel):
     """One repo declared in a workspace manifest."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     url: str
     name: str
@@ -42,7 +42,7 @@ class Repo(BaseModel):
 class ManifestDefaults(BaseModel):
     """Workspace-wide defaults applied to repos that don't override them."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     branch: str | None = None
 
@@ -50,7 +50,7 @@ class ManifestDefaults(BaseModel):
 class WorkspaceManifest(BaseModel):
     """The contents of ``<workspace-dir>/untaped.yml``."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str | None = None
     defaults: ManifestDefaults = Field(default_factory=ManifestDefaults)
@@ -88,6 +88,38 @@ class WorkspaceManifest(BaseModel):
         per-repo > workspace defaults > None (let git use remote HEAD).
         """
         return repo.branch or self.defaults.branch
+
+    def add_repo(self, repo: Repo) -> WorkspaceManifest:
+        """Return a new manifest with ``repo`` appended.
+
+        Raises ``ValueError`` on duplicate name or url — the existing
+        ``_reject_duplicate_repos`` validator runs on the new manifest
+        because we construct via ``WorkspaceManifest(...)`` rather than
+        ``model_copy`` (the latter skips validators in pydantic v2).
+        """
+        return WorkspaceManifest(
+            name=self.name,
+            defaults=self.defaults,
+            repos=[*self.repos, repo],
+        )
+
+    def remove_repo(self, ident: str) -> tuple[WorkspaceManifest, Repo]:
+        """Return ``(new_manifest, removed_repo)``.
+
+        ``ident`` is matched as URL first then alias name (see
+        ``find_repo``). Raises ``ValueError`` if nothing matches.
+        """
+        found = self.find_repo(ident)
+        if found is None:
+            raise ValueError(f"no repo matches {ident!r}")
+        return (
+            WorkspaceManifest(
+                name=self.name,
+                defaults=self.defaults,
+                repos=[r for r in self.repos if r is not found],
+            ),
+            found,
+        )
 
 
 _NAME_RE = re.compile(r"([^/]+?)(?:\.git)?/*$")

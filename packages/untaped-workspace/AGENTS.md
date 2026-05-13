@@ -22,6 +22,21 @@ Method names on the registry are `entries`, `get`, `find_by_path`,
 `register`, `unregister` — *not* `list`, which would shadow the `list`
 builtin in nested annotations within the class.
 
+**Manifest mutation contract.** All three manifest models (`Repo`,
+`ManifestDefaults`, `WorkspaceManifest`) are `frozen=True`. Mutation
+goes through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`
+and `WorkspaceManifest.remove_repo(ident) -> tuple[WorkspaceManifest,
+Repo]`, which return new manifests rather than mutating in place. Both
+methods construct the new manifest via `WorkspaceManifest(...)` —
+*not* `model_copy(update=...)` — because pydantic v2's `model_copy`
+deliberately skips validators, and we need the
+`@model_validator(mode="after")` duplicate-rejection check to run on
+every mutation. The methods raise `ValueError` on invariant violations
+(duplicate name/url; unknown ident); application use cases catch and
+translate to `WorkspaceError` with the CLI-facing message and any
+disambiguation hints. No application-layer code mutates
+`manifest.repos` directly.
+
 ## Workspace lookup precedence
 
 Lookup-precedence applies only to commands that act on an existing
