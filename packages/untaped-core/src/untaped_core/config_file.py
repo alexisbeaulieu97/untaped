@@ -30,12 +30,17 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     """Load the user's config file as a plain dict.
 
     Returns an empty dict if the file does not exist or is empty.
+    Translates ``yaml.YAMLError`` into :class:`ConfigError` so broken
+    YAML surfaces via ``report_errors`` instead of a PyYAML traceback.
     """
     target = path or resolve_config_path()
     if not target.is_file():
         return {}
-    with target.open() as f:
-        loaded = yaml.safe_load(f)
+    try:
+        with target.open() as f:
+            loaded = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"could not parse {target}: {exc}") from exc
     return loaded if isinstance(loaded, dict) else {}
 
 

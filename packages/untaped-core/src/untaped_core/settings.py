@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -33,6 +33,7 @@ from pydantic_settings import (
 )
 from pydantic_settings.sources import InitSettingsSource
 
+from untaped_core.errors import ConfigError, first_validation_error
 from untaped_core.profile_resolver import (
     effective_active_profile_name,
     resolve_profiles,
@@ -154,8 +155,11 @@ class ProfilesSettingsSource(InitSettingsSource):
     def _load_raw_yaml(yaml_file: Path) -> dict[str, Any]:
         if not yaml_file.is_file():
             return {}
-        with yaml_file.open() as f:
-            raw = yaml.safe_load(f) or {}
+        try:
+            with yaml_file.open() as f:
+                raw = yaml.safe_load(f) or {}
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
         return raw if isinstance(raw, dict) else {}
 
 
@@ -170,5 +174,16 @@ def resolve_config_path() -> Path:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return the (cached) loaded :class:`Settings` instance."""
-    return Settings()
+    """Return the (cached) loaded :class:`Settings` instance.
+
+    Translates :class:`pydantic.ValidationError` into :class:`ConfigError`
+    so a schema mismatch surfaces via ``report_errors`` instead of a
+    pydantic traceback. ``YAMLError`` is translated upstream by
+    :meth:`ProfilesSettingsSource._load_raw_yaml`.
+    """
+    try:
+        return Settings()
+    except ValidationError as exc:
+        raise ConfigError(
+            f"invalid config in {resolve_config_path()}: {first_validation_error(exc)}"
+        ) from exc

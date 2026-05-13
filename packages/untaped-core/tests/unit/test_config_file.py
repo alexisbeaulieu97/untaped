@@ -515,3 +515,18 @@ def test_rename_profile_is_a_single_write(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr("untaped_core.config_file.mutate_config", _spy)
     rename_profile("prod", "production")
     assert calls == 1
+
+
+# ---------------------------- YAML parse errors ---------------------------- #
+
+
+def test_read_config_dict_translates_yaml_error_to_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Broken YAML must surface as ``ConfigError`` (user-facing ``error: …``),
+    not bubble out as a PyYAML traceback to the Typer handler."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("active: [unterminated\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match=str(cfg)):
+        read_config_dict()

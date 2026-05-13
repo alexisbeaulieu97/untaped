@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from untaped_core import resolve_config_path
+from untaped_core import ConfigError, resolve_config_path
 from untaped_core.settings import Settings, get_settings
 
 
@@ -172,3 +172,42 @@ def test_resolve_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch) ->
 def test_resolve_config_path_defaults_to_home(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_CONFIG", raising=False)
     assert resolve_config_path() == Path("~/.untaped/config.yml").expanduser()
+
+
+# -------------------- config-load error translation -------------------- #
+
+
+def test_get_settings_translates_yaml_error_to_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broken ``~/.untaped/config.yml`` must surface from ``get_settings``
+    as ``ConfigError`` (clean ``error: …``) — not as a ``yaml.YAMLError``
+    bubbling out of ``ProfilesSettingsSource._load_raw_yaml``."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("active: [unterminated\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match=str(cfg)):
+        get_settings()
+
+
+def test_get_settings_translates_validation_error_to_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A schema mismatch (e.g. ``page_size: not-an-int``) must surface from
+    ``get_settings`` as ``ConfigError`` carrying the offending field — not
+    as a multi-line ``pydantic.ValidationError`` traceback."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        profiles:
+          default:
+            awx:
+              page_size: not-an-int
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match="page_size") as exc_info:
+        get_settings()
+    # The path of the broken config is in the message so users know where
+    # to edit; the helper output formats the first issue as ``loc: msg``.
+    assert str(cfg) in str(exc_info.value)
