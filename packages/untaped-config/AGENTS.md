@@ -32,7 +32,7 @@ Adding a new setting is automatic from this side — see
 The new key shows up in `untaped config list` without any wiring change
 in this package.
 
-## Write path: atomic mutate, with validation on `set`
+## Write path: atomic mutate, with symmetric validation
 
 Both `set_value` and `unset_value` in
 `infrastructure/settings_repo.py` go through
@@ -41,19 +41,31 @@ read-modify-write helper. Don't call `read_config_dict` /
 `write_config_dict` directly from this package; concurrent CLIs would
 clobber each other otherwise.
 
-Validation is asymmetric. `set_value`'s `_apply` callback mutates the
-in-memory dict via `set_at_path`, then calls `_merge_for_validation`
-(which runs `resolve_profiles` with `active_override=target` and then
-`splice_workspace_registry` to hoist the top-level `workspace.workspaces`
-registry back into the merged dict, returning the effective dict),
-then runs `Settings.model_validate(merged)` directly in the callback.
-If validation fails, `_apply` raises `ConfigError` and `mutate_config`
-never flushes the new YAML to disk. Any new setting that depends on the
-workspace registry being present at validation time inherits this for
-free. `unset_value`'s `_apply` callback only calls `unset_at_path`
-inside the lock — there is no schema-validation pass on remove. A
-removal that leaves the merged dict in a state pydantic would reject is
-detected at next-load (`get_settings`), not at unset time.
+Both `_apply` callbacks run the same merge-and-validate pass: mutate
+the in-memory dict (`set_at_path` / `unset_at_path`), then
+`_merge_for_validation` (which runs `resolve_profiles` with
+`active_override=target` and then `splice_workspace_registry` to hoist
+the top-level `workspace.workspaces` registry back in), then
+`_validate_merged(settings_cls, merged)`. If validation fails,
+`_apply` raises `ConfigError` and `mutate_config` never flushes the
+new YAML to disk. A removal that would leave the merged dict in a
+state pydantic would reject surfaces here (with the offending key
+named in the message) — same shape `set_value` produces for an
+invalid value. The asymmetric "fail at next-load instead of at unset"
+behaviour the package used to ship is gone.
+
+`_validate_merged` is **not** a thin wrapper around
+`Settings.model_validate(merged)`. `BaseSettings.model_validate`
+re-runs the configured source chain (YAML file, env vars, file
+secrets) and treats `merged` as the highest-priority init source. For
+`set` that works (the new value lands in init, which wins). For
+`unset` it would silently mask the bug: the file source still has
+the value we just removed (because `mutate_config` hasn't flushed
+yet), so the source chain fills the gap and validation passes against
+stale state. `_validate_merged` builds a one-shot subclass whose
+`settings_customise_sources` returns only `init_settings`, so the
+merged dict is the single input pydantic sees. Same schema, same
+validators, same `ConfigError` shape — but isolated from disk.
 
 The `active_override=target` argument is load-bearing when writing to a
 non-active profile. Validating against the live profile's view would
