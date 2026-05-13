@@ -9,7 +9,7 @@ from untaped_workspace.application.ports import (
     ManifestRepository,
     WorkspaceRegistry,
 )
-from untaped_workspace.domain import Workspace
+from untaped_workspace.domain import Workspace, WorkspaceManifest
 from untaped_workspace.errors import WorkspaceError
 
 
@@ -44,7 +44,15 @@ class ImportWorkspace:
         if self._registry.find_by_path(canonical) is not None:
             raise WorkspaceError(f"path already registered: {canonical}")
 
-        manifest = loaded.manifest.model_copy(update={"name": ws_name})
+        # Direct construction (not `model_copy`) keeps this consistent
+        # with the manifest mutation contract — see
+        # `packages/untaped-workspace/AGENTS.md` "Manifest mutation
+        # contract".
+        manifest = WorkspaceManifest(
+            name=ws_name,
+            defaults=loaded.manifest.defaults,
+            repos=loaded.manifest.repos,
+        )
 
         self._fs.mkdir(canonical, parents=True, exist_ok=True)
         self._manifests.write(canonical, manifest)
