@@ -1,5 +1,9 @@
 from untaped_workspace.infrastructure.bare_cache import cache_path_for
-from untaped_workspace.infrastructure.git_runner import GitRunner
+from untaped_workspace.infrastructure.git_runner import (
+    DEFAULT_SLOW_TIMEOUT,
+    DEFAULT_TIMEOUT,
+    GitRunner,
+)
 from untaped_workspace.infrastructure.manifest_repo import (
     MANIFEST_FILENAME,
     ManifestRepository,
@@ -18,6 +22,8 @@ from untaped_workspace.infrastructure.workspace_resolver import (
 )
 
 __all__ = [
+    "DEFAULT_SLOW_TIMEOUT",
+    "DEFAULT_TIMEOUT",
     "MANIFEST_FILENAME",
     "GitRunner",
     "LocalFilesystem",

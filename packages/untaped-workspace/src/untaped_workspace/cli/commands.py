@@ -38,6 +38,8 @@ from untaped_workspace.application import (
 from untaped_workspace.cli.completions import complete_workspace_name
 from untaped_workspace.domain import SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
+    DEFAULT_SLOW_TIMEOUT,
+    DEFAULT_TIMEOUT,
     GitRunner,
     LocalFilesystem,
     LocalRepoDiscoverer,
@@ -274,16 +276,32 @@ def sync_command(
         None, "--only", help="Limit sync to these repos (repeatable)."
     ),
     prune: bool = typer.Option(False, "--prune", help="Remove local clones not in the manifest."),
+    timeout: float | None = typer.Option(
+        None,
+        "--timeout",
+        help=(
+            f"Per-call timeout ceiling (seconds) for every git invocation "
+            f"this sync makes (read-only ops AND network clone/fetch). "
+            f"Defaults: {DEFAULT_TIMEOUT:g}s for read-only ops, "
+            f"{DEFAULT_SLOW_TIMEOUT:g}s for clone/fetch. Pass a single value "
+            f"to cap both."
+        ),
+    ),
     all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
+    if timeout is not None and timeout <= 0:
+        raise typer.BadParameter("--timeout must be positive")
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
+        runner = (
+            GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
+        )
         use_case = SyncWorkspace(
             ManifestRepository(),
-            GitRunner(),
+            runner,
             fs=LocalFilesystem(),
             cache_dir=get_settings().workspace.cache_dir,
         )
