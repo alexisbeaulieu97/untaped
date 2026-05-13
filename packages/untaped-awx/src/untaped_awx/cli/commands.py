@@ -92,7 +92,7 @@ def apply_command(
         help=(
             "Concurrent doc writes within a kind. Cross-kind ordering is "
             "preserved; phase 2 (membership reconciliation) stays serial. "
-            f"Capped at {APPLY_PARALLEL_CAP} (issue #30 will unify the cap policy)."
+            f"Capped at {APPLY_PARALLEL_CAP} (matches the HTTP connection pool default)."
         ),
     ),
     fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Result-table format."),

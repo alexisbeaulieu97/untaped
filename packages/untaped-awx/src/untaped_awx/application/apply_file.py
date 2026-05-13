@@ -21,7 +21,6 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from itertools import groupby
 from pathlib import Path
 
 from untaped_awx.application.apply_planner import scope_for
@@ -83,15 +82,19 @@ class ApplyFile:
         # single-pass — diff output should still include membership rows.
         #
         # Phase 1 within a kind is parallelisable: docs of the same kind
-        # have no dependency edges between them, so we group by kind
-        # (input order is already kind-sorted by ``_topological_sort``'s
-        # final ``sorted(…, key=(rank[kind], name))`` — `groupby` relies
-        # on that consecutivity, so don't break the invariant) and
-        # dispatch each group via ``_apply_kind``. Cross-kind ordering
-        # is preserved because kinds are walked sequentially.
+        # have no dependency edges between them. Bucket by kind into a
+        # dict (Python preserves insertion order, so kinds are walked
+        # in first-occurrence order = topo order from ``ordered``).
+        # Defensive against any future change to ``_topological_sort``'s
+        # output ordering: an ``itertools.groupby`` here would silently
+        # split a kind into multiple groups if docs of one kind ever
+        # stopped being consecutive, hurting parallelism without
+        # breaking tests.
+        by_kind: dict[str, list[Resource]] = defaultdict(list)
+        for doc in ordered:
+            by_kind[doc.kind].append(doc)
         outcomes: list[ApplyOutcome] = []
-        for _, group in groupby(ordered, key=lambda d: d.kind):
-            kind_docs = list(group)
+        for kind_docs in by_kind.values():
             kind_outcomes = self._apply_kind(kind_docs, write=write, fail_fast=fail_fast)
             outcomes.extend(kind_outcomes)
             if fail_fast and any(o.action == "failed" for o in kind_outcomes):
@@ -101,6 +104,10 @@ class ApplyFile:
         # Phase 2: reconcile sub-endpoint memberships now that every
         # doc has been written. Splice membership FieldChange rows back
         # into each doc's outcome so users see the full picture.
+        # ``ApplyOutcome`` is mutable and we mutate ``action`` / ``detail``
+        # / ``changes`` in place here. Safe today because phase 2 is
+        # serial — if a future refactor parallelises phase 2, freeze
+        # ``ApplyOutcome`` or switch to a builder pattern first.
         for doc, outcome in zip(ordered, outcomes, strict=True):
             if outcome.action == "failed":
                 continue
@@ -147,6 +154,7 @@ class ApplyFile:
             return outcomes
 
         results: list[ApplyOutcome | None] = [None] * len(docs)
+        aborted = False
         with ThreadPoolExecutor(max_workers=self._parallel) as pool:
             futures = {
                 pool.submit(self._apply_one_safely, doc, write=write): idx
@@ -159,15 +167,19 @@ class ApplyFile:
                 if fail_fast and outcome.action == "failed":
                     for other in futures:
                         other.cancel()
+                    aborted = True
                     break
-        # ``Future.cancel()`` only stops PENDING futures. Workers already
-        # in flight when fail-fast trips finish their work — under
-        # ``write=True`` that work is a real AWX mutation. Pull their
-        # outcomes out of the futures before returning so we don't drop
-        # any rows the user needs to see.
-        for fut, idx in futures.items():
-            if results[idx] is None and not fut.cancelled():
-                results[idx] = fut.result()
+        if aborted:
+            # ``Future.cancel()`` only stops PENDING futures. Workers
+            # already in flight when fail-fast trips finish their work —
+            # under ``write=True`` that work is a real AWX mutation.
+            # Pull their outcomes out of the futures so the user sees
+            # what actually happened. In the happy path every result is
+            # already pulled in the as_completed loop, so this drain
+            # only runs after a fail-fast abort.
+            for fut, idx in futures.items():
+                if results[idx] is None and not fut.cancelled():
+                    results[idx] = fut.result()
         return [o for o in results if o is not None]
 
     def _apply_one_safely(self, doc: Resource, *, write: bool) -> ApplyOutcome:

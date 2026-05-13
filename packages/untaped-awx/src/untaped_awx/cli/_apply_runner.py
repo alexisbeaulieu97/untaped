@@ -42,7 +42,7 @@ def run_apply(
     if parallel > APPLY_PARALLEL_CAP:
         typer.echo(
             f"warning: --parallel {parallel} clamped to {APPLY_PARALLEL_CAP} "
-            "(issue #30 will unify the cap policy across apply/sync/foreach)",
+            "(matches the HTTP connection pool default)",
             err=True,
         )
     reader = _make_reader(kind_filter=kind_filter, cli_name=cli_name)

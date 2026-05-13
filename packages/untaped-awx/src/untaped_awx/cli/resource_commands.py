@@ -280,7 +280,7 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
             help=(
                 "Concurrent doc writes within this kind. Phase 2 (membership) "
                 f"stays serial. Capped at {APPLY_PARALLEL_CAP} "
-                "(issue #30 will unify the cap policy)."
+                "(matches the HTTP connection pool default)."
             ),
         ),
         fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
