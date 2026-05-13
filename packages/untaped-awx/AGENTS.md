@@ -117,8 +117,8 @@ across four collaborators it composes:
   pure `scope_for(ref, resource)` helper shared with `apply_file`'s
   prefetch path.
 - **`SecretPreservationPolicy`** (`apply_secret_policy.py`) — second-pass
-  secret handling. After `_secret_paths.strip_encrypted` removes
-  `$encrypted$` placeholders, the policy decides which top-level fields
+  secret handling. After `_secret_paths.strip_encrypted_in_place`
+  removes `$encrypted$` placeholders, the policy decides which top-level fields
   can be safely omitted from the PATCH (AWX retains them) vs which
   carry a sibling change that would clobber the preserved secret
   (rejected at the boundary).
