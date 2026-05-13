@@ -144,7 +144,7 @@ class WorkspaceManifest(BaseModel):
     def add_repo(self, repo: Repo) -> WorkspaceManifest:
         """Return a new manifest with ``repo`` appended.
 
-        Raises ``DuplicateRepoName`` or ``DuplicateRepoUrl`` (in that
+        Raises ``DuplicateRepoUrl`` or ``DuplicateRepoName`` (in that
         precedence) if ``repo`` collides with an existing entry. Each
         carries the incumbent so callers can build CLI-facing messages
         without re-scanning the manifest.
