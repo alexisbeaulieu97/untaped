@@ -157,7 +157,7 @@ class ProfilesSettingsSource(InitSettingsSource):
             return {}
         try:
             with yaml_file.open() as f:
-                raw = yaml.safe_load(f) or {}
+                raw = yaml.safe_load(f)
         except yaml.YAMLError as exc:
             raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
         return raw if isinstance(raw, dict) else {}
@@ -181,9 +181,10 @@ def get_settings() -> Settings:
     pydantic traceback. ``YAMLError`` is translated upstream by
     :meth:`ProfilesSettingsSource._load_raw_yaml`.
     """
+    # Resolve the path once so the success and error paths can't disagree if
+    # UNTAPED_CONFIG were ever flipped between the two reads.
+    path = resolve_config_path()
     try:
         return Settings()
     except ValidationError as exc:
-        raise ConfigError(
-            f"invalid config in {resolve_config_path()}: {first_validation_error(exc)}"
-        ) from exc
+        raise ConfigError(f"invalid config in {path}: {first_validation_error(exc)}") from exc

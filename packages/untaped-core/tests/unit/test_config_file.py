@@ -530,3 +530,16 @@ def test_read_config_dict_translates_yaml_error_to_config_error(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     with pytest.raises(ConfigError, match=str(cfg)):
         read_config_dict()
+
+
+def test_mutate_config_translates_yaml_error_to_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``untaped config set`` over a corrupted config file must surface as
+    ``ConfigError`` — ``mutate_config`` reads via ``read_config_dict`` inside
+    the lock, so the boundary translation must carry through."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("active: [unterminated\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match=str(cfg)):
+        mutate_config(lambda data: data.update({"x": 1}))

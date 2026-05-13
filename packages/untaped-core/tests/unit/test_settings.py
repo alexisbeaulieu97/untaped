@@ -206,8 +206,10 @@ def test_get_settings_translates_validation_error_to_config_error(
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    with pytest.raises(ConfigError, match="page_size") as exc_info:
+    # Match the dotted ``loc`` so a regression that stops joining the path
+    # tuple in ``first_validation_error`` would fail the assertion.
+    with pytest.raises(ConfigError, match=r"awx\.page_size") as exc_info:
         get_settings()
     # The path of the broken config is in the message so users know where
-    # to edit; the helper output formats the first issue as ``loc: msg``.
+    # to edit.
     assert str(cfg) in str(exc_info.value)
