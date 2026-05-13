@@ -13,23 +13,44 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+RepoSortOption = Literal["stars", "forks", "help-wanted-issues", "updated"]
+IssueSortOption = Literal[
+    "comments",
+    "reactions",
+    "interactions",
+    "created",
+    "updated",
+]
+UserSortOption = Literal["followers", "repositories", "joined"]
+
 
 def _quote(value: str) -> str:
     """Wrap a qualifier value in quotes if it contains whitespace."""
     return f'"{value}"' if any(c.isspace() for c in value) else value
 
 
-class _BaseSearchFilters(BaseModel):
+class _QueryBase(BaseModel):
     """Fields shared by every search type."""
 
     model_config = ConfigDict(frozen=True)
 
     raw_query: str | None = None
+    sort: str | None = None
+    limit: int | None = None
+
+    def _prefix(self) -> list[str]:
+        return [self.raw_query.strip()] if self.raw_query else []
+
+    def to_query_string(self) -> str:
+        raise NotImplementedError
+
+
+class _ScopedQueryBase(_QueryBase):
+    """Adds the scope qualifiers used by repos/code/issues search."""
+
     user: str | None = None
     orgs: tuple[str, ...] = ()
     repos: tuple[str, ...] = ()
-    sort: str | None = None
-    limit: int | None = None
 
     def _scope_qualifiers(self) -> list[str]:
         parts: list[str] = []
@@ -40,15 +61,12 @@ class _BaseSearchFilters(BaseModel):
         return parts
 
     def _assemble(self, *extra_qualifiers: str) -> str:
-        parts: list[str] = []
-        if self.raw_query:
-            parts.append(self.raw_query.strip())
-        parts.extend(self._scope_qualifiers())
+        parts = [*self._prefix(), *self._scope_qualifiers()]
         parts.extend(q for q in extra_qualifiers if q)
         return " ".join(p for p in parts if p)
 
 
-class RepoSearchFilters(_BaseSearchFilters):
+class RepoSearchFilters(_ScopedQueryBase):
     """Filters for ``GET /search/repositories``."""
 
     name: str | None = None
@@ -56,6 +74,7 @@ class RepoSearchFilters(_BaseSearchFilters):
     archived: bool | None = None
     fork: bool | None = None
     visibility: Literal["public", "private"] | None = None
+    sort: RepoSortOption | None = None
 
     def to_query_string(self) -> str:
         extras: list[str] = []
@@ -72,7 +91,7 @@ class RepoSearchFilters(_BaseSearchFilters):
         return self._assemble(*extras)
 
 
-class CodeSearchFilters(_BaseSearchFilters):
+class CodeSearchFilters(_ScopedQueryBase):
     """Filters for ``GET /search/code``."""
 
     language: str | None = None
@@ -93,7 +112,7 @@ class CodeSearchFilters(_BaseSearchFilters):
         return self._assemble(*extras)
 
 
-class IssueSearchFilters(_BaseSearchFilters):
+class IssueSearchFilters(_ScopedQueryBase):
     """Filters for ``GET /search/issues``."""
 
     state: Literal["open", "closed"] | None = None
@@ -102,6 +121,7 @@ class IssueSearchFilters(_BaseSearchFilters):
     assignee: str | None = None
     labels: tuple[str, ...] = ()
     mentions: str | None = None
+    sort: IssueSortOption | None = None
 
     def to_query_string(self) -> str:
         extras: list[str] = []
@@ -119,24 +139,21 @@ class IssueSearchFilters(_BaseSearchFilters):
         return self._assemble(*extras)
 
 
-class UserSearchFilters(_BaseSearchFilters):
+class UserSearchFilters(_QueryBase):
     """Filters for ``GET /search/users``.
 
-    Note: the user/org search endpoint does not accept ``user:`` or
-    ``repo:`` qualifiers — only ``type:``, ``in:``, ``location:``,
-    ``language:``, and a few others. The ``user/orgs/repos`` fields on
-    the base are kept for API symmetry but ignored here (they would
-    return zero results upstream).
+    The user-search endpoint ignores ``user:`` / ``repo:`` / ``org:``
+    qualifiers, so this filter intentionally does not inherit the
+    scope mixin.
     """
 
     kind: Literal["user", "org"] | None = None
     location: str | None = None
     language: str | None = None
+    sort: UserSortOption | None = None
 
     def to_query_string(self) -> str:
-        parts: list[str] = []
-        if self.raw_query:
-            parts.append(self.raw_query.strip())
+        parts = self._prefix()
         if self.kind is not None:
             parts.append(f"type:{self.kind}")
         if self.location:

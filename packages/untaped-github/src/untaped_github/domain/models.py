@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class GithubUser(BaseModel):
@@ -40,10 +40,9 @@ class RepoResult(BaseModel):
 class CodeResult(BaseModel):
     """One row of ``GET /search/code``.
 
-    The GitHub payload nests the repository under ``repository`` and the
-    file metadata at the top level. We flatten ``repository.full_name``
-    into ``repo`` so column selection stays one level deep for the common
-    case while leaving the full nested dict accessible via ``repository``.
+    Flattens ``repository.full_name`` into ``repo`` so column selection
+    stays one level deep for the common case; the full nested dict
+    remains accessible via ``repository``.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -53,7 +52,7 @@ class CodeResult(BaseModel):
     sha: str
     html_url: str
     repo: str = ""
-    repository: dict[str, Any] = {}
+    repository: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from itertools import islice
+from typing import Any
 
+from pydantic import BaseModel
 from untaped_core import ConfigError
 
 from untaped_github.application.ports import GithubSearchService, GithubTeamService
@@ -17,14 +20,13 @@ from untaped_github.domain import (
     UserResult,
     UserSearchFilters,
 )
+from untaped_github.domain.queries import _ScopedQueryBase
 
 WarnFn = Callable[[str], None]
 
-# GitHub's search API caps the ``q`` parameter at 256 chars and rejects
-# queries with more than five ``OR`` / ``AND`` / ``NOT`` operators. Each
-# ``repo:owner/name`` qualifier costs ~40 chars on average, so 200
-# qualifiers comfortably stays inside the URL length limit while still
-# covering all but the largest teams. Above that we truncate + warn.
+# 200 ``repo:owner/name`` qualifiers leave ample headroom under GitHub's
+# 256-char ``q`` limit and 5-boolean-operator cap. Bumping past ~250
+# without measuring will start tripping the URL or operator cap.
 MAX_TEAM_REPO_QUALIFIERS = 200
 
 
@@ -41,30 +43,29 @@ def _resolve_team_repos(
 ) -> tuple[str, ...]:
     """Pre-resolve ``--team`` into a tuple of ``owner/name`` strings.
 
-    Raises :class:`ConfigError` if ``team`` is given without ``org``.
-    Returns an empty tuple when no team was requested.
+    Bounded at ``MAX_TEAM_REPO_QUALIFIERS + 1`` so a 5k-repo team doesn't
+    drag every page over the wire just to be truncated.
     """
     if team is None:
         return ()
     if not org:
         raise ConfigError("--team requires --org (GitHub teams are scoped to an org)")
+    cap = MAX_TEAM_REPO_QUALIFIERS + 1
     repos: list[str] = []
-    for entry in teams.list_team_repos(org, team):
+    for entry in islice(teams.list_team_repos(org, team), cap):
         full_name = entry.get("full_name")
         if isinstance(full_name, str) and full_name:
             repos.append(full_name)
     if len(repos) > MAX_TEAM_REPO_QUALIFIERS:
         warn(
-            f"team {org}/{team} has {len(repos)} repos; truncating to "
-            f"{MAX_TEAM_REPO_QUALIFIERS} to stay under GitHub's query length limit"
+            f"team {org}/{team} has more than {MAX_TEAM_REPO_QUALIFIERS} repos; "
+            "truncating to stay under GitHub's query length limit"
         )
         repos = repos[:MAX_TEAM_REPO_QUALIFIERS]
     return tuple(repos)
 
 
-def _apply_scope_defaults[F: (RepoSearchFilters, CodeSearchFilters, IssueSearchFilters)](
-    filters: F, team_repos: tuple[str, ...]
-) -> F:
+def _apply_scope_defaults[F: _ScopedQueryBase](filters: F, team_repos: tuple[str, ...]) -> F:
     """Merge team-resolved repos and inject ``user:@me`` when no scope set."""
     repos = (*filters.repos, *team_repos)
     has_scope = bool(filters.user or filters.orgs or repos)
@@ -72,6 +73,26 @@ def _apply_scope_defaults[F: (RepoSearchFilters, CodeSearchFilters, IssueSearchF
     if not has_scope:
         overrides["user"] = "@me"
     return filters.model_copy(update=overrides)
+
+
+_SearchMethod = Callable[..., Iterator[dict[str, Any]]]
+
+
+def _run_scoped_search[F: _ScopedQueryBase, R: BaseModel](
+    search_method: _SearchMethod,
+    result_cls: type[R],
+    teams: GithubTeamService,
+    filters: F,
+    *,
+    org: str | None,
+    team: str | None,
+    warn: WarnFn,
+) -> Iterator[R]:
+    team_repos = _resolve_team_repos(teams, org=org, team=team, warn=warn)
+    effective = _apply_scope_defaults(filters, team_repos)
+    q = effective.to_query_string()
+    for row in search_method(q, sort=effective.sort, limit=effective.limit):
+        yield result_cls.model_validate(row)
 
 
 class SearchRepos:
@@ -95,11 +116,15 @@ class SearchRepos:
         org: str | None = None,
         team: str | None = None,
     ) -> Iterator[RepoResult]:
-        team_repos = _resolve_team_repos(self._teams, org=org, team=team, warn=self._warn)
-        effective = _apply_scope_defaults(filters, team_repos)
-        q = effective.to_query_string()
-        for row in self._search.search_repositories(q, sort=effective.sort, limit=effective.limit):
-            yield RepoResult.model_validate(row)
+        return _run_scoped_search(
+            self._search.search_repositories,
+            RepoResult,
+            self._teams,
+            filters,
+            org=org,
+            team=team,
+            warn=self._warn,
+        )
 
 
 class SearchCode:
@@ -123,11 +148,15 @@ class SearchCode:
         org: str | None = None,
         team: str | None = None,
     ) -> Iterator[CodeResult]:
-        team_repos = _resolve_team_repos(self._teams, org=org, team=team, warn=self._warn)
-        effective = _apply_scope_defaults(filters, team_repos)
-        q = effective.to_query_string()
-        for row in self._search.search_code(q, sort=effective.sort, limit=effective.limit):
-            yield CodeResult.model_validate(row)
+        return _run_scoped_search(
+            self._search.search_code,
+            CodeResult,
+            self._teams,
+            filters,
+            org=org,
+            team=team,
+            warn=self._warn,
+        )
 
 
 class SearchIssues:
@@ -151,20 +180,24 @@ class SearchIssues:
         org: str | None = None,
         team: str | None = None,
     ) -> Iterator[IssueResult]:
-        team_repos = _resolve_team_repos(self._teams, org=org, team=team, warn=self._warn)
-        effective = _apply_scope_defaults(filters, team_repos)
-        q = effective.to_query_string()
-        for row in self._search.search_issues(q, sort=effective.sort, limit=effective.limit):
-            yield IssueResult.model_validate(row)
+        return _run_scoped_search(
+            self._search.search_issues,
+            IssueResult,
+            self._teams,
+            filters,
+            org=org,
+            team=team,
+            warn=self._warn,
+        )
 
 
 class SearchUsers:
     """Run ``GET /search/users``.
 
-    Note: GitHub's user-search endpoint ignores ``user:`` / ``repo:`` /
+    GitHub's user-search endpoint ignores ``user:`` / ``repo:`` /
     ``org:`` qualifiers, so this use case does not resolve teams or
-    inject ``user:@me``. It is the only search that genuinely returns
-    global results by default.
+    inject ``user:@me`` — the only search that returns global results
+    by default.
     """
 
     def __init__(self, search: GithubSearchService) -> None:

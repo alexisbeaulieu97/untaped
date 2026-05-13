@@ -8,6 +8,8 @@ own the orchestration.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Literal
+
 import typer
 from untaped_core import (
     ColumnsOption,
@@ -17,14 +19,8 @@ from untaped_core import (
     report_errors,
 )
 
-from untaped_github.application import SearchCode, SearchIssues, SearchRepos, SearchUsers
-from untaped_github.domain import (
-    CodeSearchFilters,
-    IssueSearchFilters,
-    RepoSearchFilters,
-    UserSearchFilters,
-)
-from untaped_github.infrastructure import GithubClient, GithubConfig
+if TYPE_CHECKING:
+    from untaped_github.infrastructure import GithubClient
 
 app = typer.Typer(
     name="search",
@@ -43,6 +39,8 @@ def _stderr_warn(message: str) -> None:
 
 
 def _open_client() -> GithubClient:
+    from untaped_github.infrastructure import GithubClient, GithubConfig  # noqa: PLC0415
+
     settings = get_settings()
     config = GithubConfig(
         base_url=settings.github.base_url,
@@ -53,14 +51,6 @@ def _open_client() -> GithubClient:
 
 def _first_org(orgs: list[str] | None) -> str | None:
     return orgs[0] if orgs else None
-
-
-def _emit(
-    rows: list[dict[str, object]],
-    fmt: object,
-    columns: list[str] | None,
-) -> None:
-    typer.echo(format_output(rows, fmt=fmt, columns=columns))  # type: ignore[arg-type]
 
 
 @app.command("repos", no_args_is_help=False)
@@ -78,15 +68,18 @@ def repos_command(
     language: str | None = typer.Option(None, "--language"),
     archived: bool | None = typer.Option(None, "--archived/--no-archived"),
     fork: bool | None = typer.Option(None, "--fork/--no-fork"),
-    visibility: str | None = typer.Option(None, "--visibility", help="public | private"),
-    sort: str | None = typer.Option(
-        None, "--sort", help="stars | forks | help-wanted-issues | updated"
+    visibility: Literal["public", "private"] | None = typer.Option(None, "--visibility"),
+    sort: Literal["stars", "forks", "help-wanted-issues", "updated"] | None = typer.Option(
+        None, "--sort"
     ),
     limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Search repositories (``GET /search/repositories``)."""
+    from untaped_github.application import SearchRepos  # noqa: PLC0415
+    from untaped_github.domain import RepoSearchFilters  # noqa: PLC0415
+
     with report_errors():
         filters = RepoSearchFilters(
             raw_query=query,
@@ -104,7 +97,7 @@ def repos_command(
         with _open_client() as client:
             use_case = SearchRepos(client, client, warn=_stderr_warn)
             rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
-        _emit(rows, fmt, columns)
+        typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
 @app.command("code", no_args_is_help=False)
@@ -128,6 +121,9 @@ def code_command(
     Requires at least one scope qualifier on the GitHub side; this
     command injects ``user:@me`` if you pass none.
     """
+    from untaped_github.application import SearchCode  # noqa: PLC0415
+    from untaped_github.domain import CodeSearchFilters  # noqa: PLC0415
+
     with report_errors():
         filters = CodeSearchFilters(
             raw_query=query,
@@ -144,7 +140,7 @@ def code_command(
         with _open_client() as client:
             use_case = SearchCode(client, client, warn=_stderr_warn)
             rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
-        _emit(rows, fmt, columns)
+        typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
 @app.command("issues", no_args_is_help=False)
@@ -154,18 +150,22 @@ def issues_command(
     org: list[str] | None = typer.Option(None, "--org", help="Repeatable."),
     team: str | None = typer.Option(None, "--team", help="Requires --org."),
     repo: list[str] | None = typer.Option(None, "--repo", help="Repeatable."),
-    state: str | None = typer.Option(None, "--state", help="open | closed"),
-    kind: str | None = typer.Option(None, "--kind", help="issue | pr"),
+    state: Literal["open", "closed"] | None = typer.Option(None, "--state"),
+    kind: Literal["issue", "pr"] | None = typer.Option(None, "--kind"),
     author: str | None = typer.Option(None, "--author"),
     assignee: str | None = typer.Option(None, "--assignee"),
     label: list[str] | None = typer.Option(None, "--label", help="Repeatable."),
     mentions: str | None = typer.Option(None, "--mentions"),
-    sort: str | None = typer.Option(None, "--sort"),
+    sort: Literal["comments", "reactions", "interactions", "created", "updated"]
+    | None = typer.Option(None, "--sort"),
     limit: int | None = typer.Option(None, "--limit"),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Search issues and pull requests (``GET /search/issues``)."""
+    from untaped_github.application import SearchIssues  # noqa: PLC0415
+    from untaped_github.domain import IssueSearchFilters  # noqa: PLC0415
+
     with report_errors():
         filters = IssueSearchFilters(
             raw_query=query,
@@ -184,21 +184,24 @@ def issues_command(
         with _open_client() as client:
             use_case = SearchIssues(client, client, warn=_stderr_warn)
             rows = [r.model_dump() for r in use_case(filters, org=_first_org(org), team=team)]
-        _emit(rows, fmt, columns)
+        typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
 @app.command("users", no_args_is_help=False)
 def users_command(
     query: str | None = typer.Argument(None, help="Free-text query (passed verbatim)."),
-    kind: str | None = typer.Option(None, "--kind", help="user | org"),
+    kind: Literal["user", "org"] | None = typer.Option(None, "--kind"),
     location: str | None = typer.Option(None, "--location"),
     language: str | None = typer.Option(None, "--language"),
-    sort: str | None = typer.Option(None, "--sort", help="followers | repositories | joined"),
+    sort: Literal["followers", "repositories", "joined"] | None = typer.Option(None, "--sort"),
     limit: int | None = typer.Option(None, "--limit"),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Search users and organizations (``GET /search/users``)."""
+    from untaped_github.application import SearchUsers  # noqa: PLC0415
+    from untaped_github.domain import UserSearchFilters  # noqa: PLC0415
+
     with report_errors():
         filters = UserSearchFilters(
             raw_query=query,
@@ -210,4 +213,4 @@ def users_command(
         )
         with _open_client() as client:
             rows = [r.model_dump() for r in SearchUsers(client)(filters)]
-        _emit(rows, fmt, columns)
+        typer.echo(format_output(rows, fmt=fmt, columns=columns))

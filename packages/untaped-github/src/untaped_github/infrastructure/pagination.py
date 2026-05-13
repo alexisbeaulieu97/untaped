@@ -16,9 +16,15 @@ import re
 from collections.abc import Iterator
 from typing import Any
 
-from untaped_core import HttpClient
+from untaped_core import HttpClient, UntapedError
 
 _NEXT_LINK = re.compile(r'<(?P<url>[^>]+)>;\s*rel="next"')
+
+# GitHub's search ceiling is 1000 rows ÷ 100 per_page = 10 pages. List
+# endpoints are unbounded server-side but in practice paginate finitely.
+# A misbehaving server / proxy returning a self-referential ``next`` is
+# the only realistic way to spin here; cap defensively.
+_MAX_PAGES = 100
 
 
 def _parse_next(link_header: str | None) -> str | None:
@@ -37,10 +43,12 @@ def _paginate(
     limit: int | None,
     extract: str | None,
 ) -> Iterator[dict[str, Any]]:
-    request_params: dict[str, str] | None = {**params, "per_page": str(per_page)}
+    first_page = min(per_page, limit) if limit is not None else per_page
+    request_params: dict[str, str] | None = {**params, "per_page": str(first_page)}
     url: str = path
     yielded = 0
-    while True:
+    visited: set[str] = set()
+    for _ in range(_MAX_PAGES):
         response = http.get(url, params=request_params)
         payload = response.json()
         items = payload[extract] if extract is not None else payload
@@ -52,10 +60,15 @@ def _paginate(
             yield item
             yielded += 1
         next_url = _parse_next(response.headers.get("link"))
-        if not next_url:
+        if not next_url or next_url == url or next_url in visited:
             return
+        visited.add(url)
         url = next_url
-        request_params = None  # next URL already carries every cursor param
+        request_params = None
+    raise UntapedError(
+        f"github pagination did not converge after {_MAX_PAGES} pages — "
+        f"suspect a malformed Link header from {path}",
+    )
 
 
 def paginate_search(

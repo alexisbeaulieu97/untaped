@@ -91,13 +91,13 @@ results are the only sensible default.
 There is no `team:` qualifier in GitHub search. When `--team` is passed,
 the use case calls `GET /orgs/{org}/teams/{slug}/repos` and expands the
 result into `repo:owner/name` qualifiers. `--team` without `--org`
-raises `ConfigError` (teams are scoped to an org). If the team has more
-than `MAX_TEAM_REPO_QUALIFIERS` (200) repos, we truncate and emit a
-stderr warning via the injected `warn` callback — well short of
-GitHub's 6000-char URL limit, but still wide enough for every team
-we've seen in practice. Raise the cap before increasing it past 256
-without measuring; the search API also rejects queries with too many
-boolean operators.
+raises `ConfigError` (teams are scoped to an org). The use case bounds
+iteration at `MAX_TEAM_REPO_QUALIFIERS + 1` via `itertools.islice` so a
+5k-repo team doesn't drag every page over the wire just to be
+truncated. If the cap is exceeded, we keep the first N and emit a
+stderr warning via the injected `warn` callback. Raise the cap before
+increasing it past 256 without measuring; the search API also rejects
+queries with too many boolean operators.
 
 ### Pagination
 
@@ -105,7 +105,16 @@ boolean operators.
 `infrastructure/pagination.py`) follow GitHub's RFC 5988 `Link` header
 (`<url>; rel="next"`) until exhausted or `--limit` is hit. Search
 payloads nest results under `items`; list payloads (e.g. team repos)
-return a raw JSON array. Each helper handles one shape.
+return a raw JSON array. Two efficiency knobs:
+
+- **First-page `per_page` shrinking**: when `--limit < per_page`, the
+  first request asks for only `limit` rows so a `--limit 5` call
+  doesn't fetch a 100-row page. Subsequent pages accept the
+  server-echoed `per_page` on the `next` URL.
+- **Cycle / max-page guard**: the paginator visits at most
+  `_MAX_PAGES` (100) URLs and refuses to follow a `next` link that
+  matches the current or any previously-visited URL — defensive
+  against a malformed Link header.
 
 ## Layering
 
