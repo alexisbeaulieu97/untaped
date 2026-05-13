@@ -9,6 +9,36 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class DuplicateRepoError(ValueError):
+    """Base class for duplicate-repo invariant failures.
+
+    Subclasses carry the *incumbent* (the repo already in the manifest)
+    so callers can format error messages without re-scanning. Subclassing
+    ``ValueError`` keeps the existing
+    ``@model_validator(mode="after")`` contract — pydantic wraps these
+    into ``ValidationError`` at construction time just as it would a
+    plain ``ValueError``.
+    """
+
+    def __init__(self, message: str, existing: Repo) -> None:
+        super().__init__(message)
+        self.existing = existing
+
+
+class DuplicateRepoName(DuplicateRepoError):
+    """A repo with the same `name` is already in the manifest."""
+
+    def __init__(self, existing: Repo) -> None:
+        super().__init__(f"duplicate repo name: {existing.name!r}", existing)
+
+
+class DuplicateRepoUrl(DuplicateRepoError):
+    """A repo with the same `url` is already in the manifest."""
+
+    def __init__(self, existing: Repo) -> None:
+        super().__init__(f"duplicate repo url: {existing.url!r}", existing)
+
+
 class Repo(BaseModel):
     """One repo declared in a workspace manifest."""
 
@@ -61,15 +91,15 @@ class WorkspaceManifest(BaseModel):
         # Sync and remove both key off the (name, url) pair: two repos
         # sharing either field would collide on disk or make `remove`
         # ambiguous. Refuse here so imports/hand-edits fail loud, not later.
-        seen_names: set[str] = set()
-        seen_urls: set[str] = set()
+        seen_names: dict[str, Repo] = {}
+        seen_urls: dict[str, Repo] = {}
         for repo in self.repos:
-            if repo.name in seen_names:
-                raise ValueError(f"duplicate repo name: {repo.name!r}")
-            if repo.url in seen_urls:
-                raise ValueError(f"duplicate repo url: {repo.url!r}")
-            seen_names.add(repo.name)
-            seen_urls.add(repo.url)
+            if (incumbent := seen_names.get(repo.name)) is not None:
+                raise DuplicateRepoName(incumbent)
+            if (incumbent := seen_urls.get(repo.url)) is not None:
+                raise DuplicateRepoUrl(incumbent)
+            seen_names[repo.name] = repo
+            seen_urls[repo.url] = repo
         return self
 
     def repo_by_name(self, name: str) -> Repo | None:
@@ -92,11 +122,20 @@ class WorkspaceManifest(BaseModel):
     def add_repo(self, repo: Repo) -> WorkspaceManifest:
         """Return a new manifest with ``repo`` appended.
 
-        Raises ``ValueError`` on duplicate name or url — the existing
-        ``_reject_duplicate_repos`` validator runs on the new manifest
-        because we construct via ``WorkspaceManifest(...)`` rather than
-        ``model_copy`` (the latter skips validators in pydantic v2).
+        Raises ``DuplicateRepoUrl`` if ``repo.url`` is already present
+        or ``DuplicateRepoName`` if ``repo.name`` is. Both carry the
+        incumbent so callers can build CLI-facing messages without
+        re-scanning the manifest.
         """
+        # Pre-check before construction so the exception carries the
+        # incumbent. The model validator (`_reject_duplicate_repos`)
+        # runs again on the new manifest as a second line of defence —
+        # cheap, and keeps YAML-load paths covered through the same
+        # typed-exception contract.
+        if (incumbent := self.repo_by_url(repo.url)) is not None:
+            raise DuplicateRepoUrl(incumbent)
+        if (incumbent := self.repo_by_name(repo.name)) is not None:
+            raise DuplicateRepoName(incumbent)
         return WorkspaceManifest(
             name=self.name,
             defaults=self.defaults,
@@ -106,7 +145,7 @@ class WorkspaceManifest(BaseModel):
     def remove_repo(self, ident: str) -> tuple[WorkspaceManifest, Repo]:
         """Return ``(new_manifest, removed_repo)``.
 
-        ``ident`` is matched as URL first then alias name (see
+        ``ident`` is matched against URL first then alias name (see
         ``find_repo``). Raises ``ValueError`` if nothing matches.
         """
         found = self.find_repo(ident)
@@ -116,6 +155,8 @@ class WorkspaceManifest(BaseModel):
             WorkspaceManifest(
                 name=self.name,
                 defaults=self.defaults,
+                # `found` is a reference into `self.repos`, so identity
+                # match is unambiguous (and cheaper than value equality).
                 repos=[r for r in self.repos if r is not found],
             ),
             found,

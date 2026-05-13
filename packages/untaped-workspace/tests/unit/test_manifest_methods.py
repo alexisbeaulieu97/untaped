@@ -12,6 +12,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from untaped_workspace.domain import (
+    DuplicateRepoName,
+    DuplicateRepoUrl,
     ManifestDefaults,
     Repo,
     WorkspaceManifest,
@@ -52,25 +54,39 @@ def test_add_repo_preserves_name_and_defaults() -> None:
     assert new_manifest.defaults.branch == "main"
 
 
-def test_add_repo_raises_on_name_collision() -> None:
-    """The model validator runs on the new manifest — duplicate name → ValueError."""
-    manifest = _manifest(Repo(url="https://x/a.git", name="alpha"))
-    with pytest.raises(ValueError, match="duplicate"):
+def test_add_repo_raises_duplicate_repo_name_carrying_incumbent() -> None:
+    """Collision on `name` raises `DuplicateRepoName` with the incumbent attached.
+
+    The incumbent lets callers (`AddRepo`) build CLI messages without
+    re-scanning the manifest.
+    """
+    incumbent = Repo(url="https://x/a.git", name="alpha")
+    manifest = _manifest(incumbent)
+    with pytest.raises(DuplicateRepoName) as exc_info:
         manifest.add_repo(Repo(url="https://x/b.git", name="alpha"))
+    assert exc_info.value.existing is incumbent
 
 
-def test_add_repo_raises_on_url_collision() -> None:
-    """Same URL twice is rejected even with different names."""
-    manifest = _manifest(Repo(url="https://x/a.git", name="alpha"))
-    with pytest.raises(ValueError, match="duplicate"):
+def test_add_repo_raises_duplicate_repo_url_carrying_incumbent() -> None:
+    """Same URL twice → ``DuplicateRepoUrl`` with the incumbent attached."""
+    incumbent = Repo(url="https://x/a.git", name="alpha")
+    manifest = _manifest(incumbent)
+    with pytest.raises(DuplicateRepoUrl) as exc_info:
         manifest.add_repo(Repo(url="https://x/a.git", name="beta"))
+    assert exc_info.value.existing is incumbent
 
 
 def test_add_repo_raises_on_derived_name_collision() -> None:
     """Two URLs that derive to the same name collide just as explicit names do."""
     manifest = _manifest(Repo(url="https://github.com/org/svc.git"))
-    with pytest.raises(ValueError, match="duplicate"):
+    with pytest.raises(DuplicateRepoName):
         manifest.add_repo(Repo(url="https://gitlab.com/team/svc.git"))
+
+
+def test_duplicate_repo_exceptions_subclass_value_error() -> None:
+    """``except ValueError`` keeps working for callers that don't care which kind."""
+    assert issubclass(DuplicateRepoName, ValueError)
+    assert issubclass(DuplicateRepoUrl, ValueError)
 
 
 # ---- remove_repo -------------------------------------------------------
