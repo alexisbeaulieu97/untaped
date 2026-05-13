@@ -53,6 +53,35 @@ take effect even when the cache was already populated.
 User-facing semantics (writing, copying, deleting, renaming profiles)
 live in [`docs/configuration.md`](../../docs/configuration.md#profiles).
 
+## Config-load error translation
+
+`report_errors` (`untaped_core.cli`) only catches `UntapedError`
+subclasses — non-`UntapedError` exceptions surface as raw Python
+tracebacks, by design (those represent bugs). The implication: every
+site that ingests user data (YAML on disk, env vars, stdin) must
+translate library exceptions into a `ConfigError` (or other
+`UntapedError` subclass) at the boundary, so a stray typo in
+`~/.untaped/config.yml` doesn't look like a crash.
+
+Three sites cover the config-load path today:
+
+- `config_file.read_config_dict` — wraps `yaml.safe_load`, translates
+  `yaml.YAMLError` → `ConfigError("could not parse {path}: {exc}")`.
+- `settings.ProfilesSettingsSource._load_raw_yaml` — same translation
+  on the pydantic-settings source-chain path, so `Settings()`
+  construction can't leak a `YAMLError`.
+- `settings.get_settings` — wraps `Settings()`, translates
+  `pydantic.ValidationError` → `ConfigError("invalid config in {path}:
+  {first_validation_error(exc)}")`. Uses the
+  `errors.first_validation_error` helper for `loc: msg` formatting.
+
+`untaped-workspace`'s `infrastructure.manifest_repo.ManifestRepository`
+follows the same shape (`YAMLError` / `ValidationError` → `ManifestError`)
+for the per-workspace `untaped.yml` boundary. When you add a new
+user-data ingestion point, follow this pattern: catch the library
+exception, raise an `UntapedError` subclass that names the file path
+in the message, and chain with `from exc`.
+
 ## TLS verification
 
 Defaults to the **OS trust store** via the `truststore` package — corporate
