@@ -1,16 +1,10 @@
 """``untaped awx workflow-templates nodes`` — list a workflow's contents.
 
 Attaches a sibling ``nodes`` command to the factory-built
-``workflow-templates`` sub-app. Mirrors the ``unified_templates_commands``
-precedent: a read-only inspector that sits outside
+``workflow-templates`` sub-app: a read-only inspector that sits outside
 :func:`make_resource_app` because the factory's identity-based ``get``
 and CRUD assumptions don't apply to a nested sub-collection of a
 specific workflow.
-
-Recursion is opt-in via ``--recursive`` (or implicitly enabled by
-``--depth N`` for ``N > 0``). The traversal is cycle-guarded inside the
-use case; on cycle, a warning is emitted to stderr and the offending
-re-entry is skipped.
 """
 
 from __future__ import annotations
@@ -25,6 +19,7 @@ from untaped_core import (
 
 from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.domain import WorkflowNodeType
 from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
 _DEFAULT_COLUMNS = ["id", "name", "type", "depth"]
@@ -72,14 +67,12 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 "``--recursive`` is passed alone."
             ),
         ),
-        type_: str | None = typer.Option(
+        type_: WorkflowNodeType | None = typer.Option(
             None,
             "--type",
             help=(
-                "Filter output by template type discriminator: "
-                "``job_template``, ``workflow_job_template``, ``project``, "
-                "or ``inventory_source``. Traversal still descends into "
-                "every workflow node so a ``--type job_template`` view "
+                "Filter output by template type. Traversal still descends "
+                "into every workflow node so a ``--type job_template`` view "
                 "with ``--recursive`` surfaces nested job templates."
             ),
         ),
@@ -89,8 +82,12 @@ def register_nodes_command(parent: typer.Typer) -> None:
         """List the nodes (contents) of a workflow job template."""
         if depth is not None and depth < 0:
             raise typer.BadParameter("--depth must be non-negative")
-        do_recurse = recursive or (depth is not None and depth > 0)
-        max_depth = depth if do_recurse else 0
+        if depth is not None:
+            max_depth: int | None = depth
+        elif recursive:
+            max_depth = None
+        else:
+            max_depth = 0
 
         with report_errors(), open_context() as ctx:
             scope = scope_for_spec(
@@ -107,7 +104,6 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 WORKFLOW_JOB_TEMPLATE_SPEC,
                 identifier=identifier,
                 scope=scope,
-                recursive=do_recurse,
                 max_depth=max_depth,
             )
         if type_ is not None:

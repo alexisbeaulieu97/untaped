@@ -237,16 +237,10 @@ class FakeAap:
             # ``inventory``); ``rstrip`` would chew through every trailing
             # ``s``. Fall through to AWX's snake_case singular FK column.
             singular = _AWX_FK_SINGULAR.get(parent_path, parent_path[:-1])
-            # The ``unified_job_template == parent_id`` arm of the OR
-            # supports nested collections under unified-template kinds
-            # whose back-reference is the polymorphic ``unified_job_template``
-            # column. For ``workflow_job_templates/<id>/workflow_nodes/``
-            # the back-reference is the ``workflow_job_template`` column;
-            # the OR would otherwise match nodes from a *different*
-            # workflow that happen to point AT this workflow via
-            # ``unified_job_template`` (a node in the parent workflow
-            # referencing the sub-workflow's id) and mis-attribute them
-            # to the sub-workflow's listing.
+            # The ``unified_job_template`` arm supports nested collections
+            # under unified-template kinds; skip it for sub-paths whose
+            # back-reference is a *different* FK column (see
+            # ``_SUB_PATH_SKIPS_UJT_FALLBACK``).
             skip_ujt = (parent_path, sub_path) in _SUB_PATH_SKIPS_UJT_FALLBACK
             records = [
                 r

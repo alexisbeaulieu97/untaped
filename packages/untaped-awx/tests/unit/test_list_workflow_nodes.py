@@ -24,12 +24,6 @@ class _StubNodes:
 
 
 class _StubResources:
-    """Minimal stand-in for ``ResourceClient.find_by_identity``.
-
-    Only the one method the use case actually calls; tests that pass
-    a numeric identifier never hit the lookup path so the no-op default
-    is enough."""
-
     def __init__(self, found: ServerRecord | None = None) -> None:
         self.found = found
         self.calls: list[tuple[str, dict[str, str] | None]] = []
@@ -69,7 +63,7 @@ def _node(
     }
 
 
-def test_lists_top_level_nodes_with_depth_zero() -> None:
+def test_lists_top_level_nodes_with_default_depth_zero() -> None:
     nodes = _StubNodes(
         {
             100: [
@@ -86,7 +80,6 @@ def test_lists_top_level_nodes_with_depth_zero() -> None:
     assert [n.id for n in result] == [1, 2]
     assert all(n.depth == 0 for n in result)
     assert [n.name for n in result] == ["alpha", "beta"]
-    assert nodes.calls == [100]
 
 
 def test_numeric_identifier_skips_name_lookup() -> None:
@@ -124,7 +117,7 @@ def test_unknown_name_raises_resource_not_found() -> None:
         use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="does-not-exist")
 
 
-def test_recursive_expands_sub_workflows_unlimited() -> None:
+def test_unlimited_depth_expands_sub_workflows() -> None:
     nodes = _StubNodes(
         {
             100: [
@@ -147,13 +140,11 @@ def test_recursive_expands_sub_workflows_unlimited() -> None:
         cast(WorkflowNodeRepository, nodes),
         cast(ResourceClient, _StubResources()),
     )
-    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", recursive=True)
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None)
     assert [(n.id, n.depth) for n in result] == [(1, 0), (2, 0), (3, 1), (4, 1)]
 
 
 def test_max_depth_caps_recursion() -> None:
-    # 100 → 200 → 300; max_depth=1 should stop after pulling 200's nodes
-    # (depth 1) and not enter 300.
     nodes = _StubNodes(
         {
             100: [
@@ -183,12 +174,7 @@ def test_max_depth_caps_recursion() -> None:
         cast(WorkflowNodeRepository, nodes),
         cast(ResourceClient, _StubResources()),
     )
-    result = use(
-        WORKFLOW_JOB_TEMPLATE_SPEC,
-        identifier="100",
-        recursive=True,
-        max_depth=1,
-    )
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=1)
     assert [(n.id, n.depth) for n in result] == [(1, 0), (2, 1)]
     assert 300 not in nodes.calls
 
@@ -214,12 +200,7 @@ def test_max_depth_zero_returns_only_root() -> None:
         cast(WorkflowNodeRepository, nodes),
         cast(ResourceClient, _StubResources()),
     )
-    result = use(
-        WORKFLOW_JOB_TEMPLATE_SPEC,
-        identifier="100",
-        recursive=True,
-        max_depth=0,
-    )
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=0)
     assert [(n.id, n.depth) for n in result] == [(1, 0)]
     assert nodes.calls == [100]
 
@@ -254,14 +235,39 @@ def test_cycle_guard_emits_warning_and_skips() -> None:
         cast(ResourceClient, _StubResources()),
         warn=warnings.append,
     )
-    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", recursive=True)
-    # We see node 1 (depth 0) and node 2 (depth 1, the back-edge node
-    # itself). Recursion into workflow 100 from depth 2 is blocked by
-    # the visited guard.
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None)
     assert [(n.id, n.depth) for n in result] == [(1, 0), (2, 1)]
     assert len(warnings) == 1
     assert "cycle" in warnings[0]
     assert "100" in warnings[0]
+
+
+def test_shared_sub_workflow_is_not_a_false_cycle() -> None:
+    # Diamond: workflow 100 contains two nodes, each pointing at the same
+    # child workflow 300. That's a shared sub-workflow, not a cycle. The
+    # second reference must be skipped silently (no false-positive warning)
+    # AND no second fetch of 300's nodes.
+    nodes = _StubNodes(
+        {
+            100: [
+                _node(1, identifier="a", ujt_id=300, ujt_name="shared", ujt_type="workflow_job"),
+                _node(2, identifier="b", ujt_id=300, ujt_name="shared", ujt_type="workflow_job"),
+            ],
+            300: [
+                _node(3, identifier="leaf", ujt_id=11, ujt_name="leaf", ujt_type="job"),
+            ],
+        }
+    )
+    warnings: list[str] = []
+    use = ListWorkflowNodes(
+        cast(WorkflowNodeRepository, nodes),
+        cast(ResourceClient, _StubResources()),
+        warn=warnings.append,
+    )
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None)
+    assert [(n.id, n.depth) for n in result] == [(1, 0), (2, 0), (3, 1)]
+    assert warnings == []
+    assert nodes.calls.count(300) == 1
 
 
 def test_missing_summary_fields_degrades_to_none() -> None:
@@ -279,15 +285,10 @@ def test_missing_summary_fields_degrades_to_none() -> None:
 
 
 def test_normalises_unified_job_type_to_template_type() -> None:
-    """AWX returns the *job* type discriminator
-    (``unified_job_type``: ``"job"`` / ``"workflow_job"`` /
-    ``"project_update"`` / ``"inventory_update"``) — not the template
-    type. The use case maps it to the template-type discriminator the
-    rest of the CLI uses (``"job_template"``, ``"workflow_job_template"``,
-    …) so the ``type`` column matches ``unified-templates`` output AND
-    the recursion guard fires on real-world responses (regression: an
-    earlier version checked ``type == "workflow_job_template"`` against
-    the raw ``"workflow_job"`` string and never recursed)."""
+    # AWX returns ``unified_job_type`` (the *job* discriminator), not the
+    # template type. Regression: an earlier revision checked
+    # ``type == "workflow_job_template"`` against the raw ``"workflow_job"``
+    # string and never recursed.
     nodes = _StubNodes(
         {
             100: [
@@ -305,7 +306,7 @@ def test_normalises_unified_job_type_to_template_type() -> None:
         cast(WorkflowNodeRepository, nodes),
         cast(ResourceClient, _StubResources()),
     )
-    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", recursive=True)
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None)
     assert [(n.id, n.type, n.depth) for n in result] == [
         (1, "job_template", 0),
         (2, "workflow_job_template", 0),
@@ -313,7 +314,6 @@ def test_normalises_unified_job_type_to_template_type() -> None:
         (4, "inventory_source", 0),
         (5, "job_template", 1),
     ]
-    # Recursion fired on the workflow_job node (the bug was: it didn't).
     assert 20 in nodes.calls
 
 
@@ -324,7 +324,6 @@ def test_deleted_template_carries_null_unified_job_template() -> None:
         cast(WorkflowNodeRepository, nodes),
         cast(ResourceClient, _StubResources()),
     )
-    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", recursive=True)
-    # No recursion attempt — the FK is null, nothing to expand.
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None)
     assert nodes.calls == [100]
     assert result[0].unified_job_template is None

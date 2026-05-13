@@ -470,9 +470,5 @@ for spec in ALL_SPECS:
         continue
     sub_app = make_resource_app(spec)
     if spec.kind == "WorkflowJobTemplate":
-        # Attach the read-only ``nodes`` inspector — sits outside the
-        # CRUD factory because it walks a nested sub-collection
-        # (``workflow_job_templates/<id>/workflow_nodes/``), not the
-        # kind's own collection.
         register_nodes_command(sub_app)
     app.add_typer(sub_app, name=spec.cli_name)

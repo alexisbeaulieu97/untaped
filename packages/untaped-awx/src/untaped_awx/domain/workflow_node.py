@@ -5,30 +5,53 @@ workflow_nodes/``, flattened so the CLI can render a table without
 reaching into raw ``summary_fields`` dicts. ``depth`` records how far
 the node is from the root workflow when callers expand sub-workflows
 recursively (``0`` for the root's own nodes).
-
-The "what runs here" reference (the unified-job-template FK) is split
-into three flat columns — ``unified_job_template`` (the id),
-``name`` and ``type`` (flattened from ``summary_fields``) — so
-``--columns name,type`` works the same way as on every other AWX
-``list`` command without forcing users to type the longer FK path.
-Fields are optional where AWX can omit them: a node whose referenced
-template has been deleted carries ``unified_job_template: null``, and
-``identifier`` was added after the node concept itself so older nodes
-may have ``identifier: null``.
 """
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
+
+WorkflowNodeType = Literal[
+    "job_template",
+    "workflow_job_template",
+    "project",
+    "inventory_source",
+]
+"""Template-type discriminator the rest of the CLI exposes."""
+
+
+# AWX's ``summary_fields.unified_job_template.unified_job_type`` is the
+# *job* (execution) discriminator, not the *template* type — a node
+# referencing a WorkflowJobTemplate reports ``"workflow_job"``, not
+# ``"workflow_job_template"``.
+_JOB_TYPE_TO_TEMPLATE_TYPE: dict[str, WorkflowNodeType] = {
+    "job": "job_template",
+    "workflow_job": "workflow_job_template",
+    "project_update": "project",
+    "inventory_update": "inventory_source",
+}
+
+
+def normalise_unified_job_type(raw: str | None) -> WorkflowNodeType | None:
+    """Map AWX's ``unified_job_type`` to the template-type discriminator.
+
+    Returns ``None`` for unknown values so the recursion guard never
+    descends into kinds we don't recognise.
+    """
+    if raw is None:
+        return None
+    return _JOB_TYPE_TO_TEMPLATE_TYPE.get(raw)
 
 
 class WorkflowNode(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="allow")
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     id: int
     identifier: str | None = None
     workflow_job_template: int
     unified_job_template: int | None = None
     name: str | None = None
-    type: str | None = None
+    type: WorkflowNodeType | None = None
     depth: int = 0

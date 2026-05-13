@@ -260,24 +260,32 @@ introduced — the workflow node graph is still v0.5 territory for
 apply/save (`spec.fidelity = "partial"`). Layering: domain DTO
 `WorkflowNode` in `domain/workflow_node.py`; port
 `WorkflowNodeRepository` in `application/ports.py`; use case
-`ListWorkflowNodes` in `application/list_workflow_nodes.py` (cycle-
-guarded BFS with optional `max_depth`); concrete adapter in
-`infrastructure/workflow_node_repo.py`. The spec object
+`ListWorkflowNodes` in `application/list_workflow_nodes.py` (BFS with
+per-entry ancestor tracking and optional `max_depth`); concrete adapter
+in `infrastructure/workflow_node_repo.py`. The spec object
 (`WORKFLOW_JOB_TEMPLATE_SPEC`) is imported only at the CLI
 composition root and passed into the use case, preserving the
 `application → infrastructure` import ban. User-facing reference:
 [`docs/awx.md`](../../docs/awx.md).
 
-AWX returns the *job* (execution) discriminator on a node's
+**Cycle vs shared sub-workflow.** Both end up at the "child already
+in `listed`" check, but they're not the same incident: a true cycle is
+when the child is in the *current* path's `ancestors` (warn + skip);
+a diamond is when the child is in `listed` but *not* in `ancestors`
+(skip silently — same sub-workflow legitimately referenced from two
+parents). Conflating them produced false-positive cycle warnings every
+time a workflow contained two nodes pointing at the same child.
+
+**Type discriminator normalisation.** AWX returns the *job* (execution)
+discriminator on a node's
 `summary_fields.unified_job_template.unified_job_type` — `"job"`,
 `"workflow_job"`, `"project_update"`, `"inventory_update"` — not the
-*template* type. `_normalise_type` in `list_workflow_nodes.py` maps
-these to the template-type discriminator the rest of the CLI exposes
-(`"job_template"`, `"workflow_job_template"`, `"project"`,
-`"inventory_source"`), so the `type` column matches `unified-templates`
-output and `--recursive` actually fires on sub-workflows (an earlier
-revision tested the raw `"workflow_job"` against `"workflow_job_template"`
-and never descended).
+*template* type. `normalise_unified_job_type` in
+`domain/workflow_node.py` maps these to the template-type
+discriminator (`WorkflowNodeType` Literal: `"job_template"`,
+`"workflow_job_template"`, `"project"`, `"inventory_source"`), and
+returns `None` for unknown values so the recursion guard never
+descends into kinds we don't recognise.
 
 ## Test framework (`untaped awx test`) runner internals
 

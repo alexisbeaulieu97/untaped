@@ -1,11 +1,4 @@
-"""End-to-end CLI tests for ``untaped awx workflow-templates nodes``.
-
-``FakeAap``'s generic ``_sub_list`` handler serves ``GET
-/workflow_job_templates/<id>/workflow_nodes/`` for free: it falls
-through to the FK-column fallback (``workflow_job_template == <id>``)
-which matches whatever we seed under ``self.store["workflow_nodes"]``.
-No fixture changes are needed beyond the seed helpers below.
-"""
+"""End-to-end CLI tests for ``untaped awx workflow-templates nodes``."""
 
 from __future__ import annotations
 
@@ -129,7 +122,15 @@ def test_nodes_lists_top_level_by_id(fake_aap: Any) -> None:
             "--format",
             "raw",
             "--columns",
-            "id,identifier,name,type,depth",
+            "id",
+            "--columns",
+            "identifier",
+            "--columns",
+            "name",
+            "--columns",
+            "type",
+            "--columns",
+            "depth",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -181,7 +182,9 @@ def test_nodes_recursive_flattens_sub_workflow(fake_aap: Any) -> None:
             "--format",
             "raw",
             "--columns",
-            "id,depth",
+            "id",
+            "--columns",
+            "depth",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -215,7 +218,6 @@ def test_nodes_depth_zero_returns_only_root(fake_aap: Any) -> None:
 def test_nodes_depth_one_caps_nested(fake_aap: Any) -> None:
     _seed_org_and_root_workflow(fake_aap)
     _seed_nested(fake_aap)
-    # Without ``--recursive``, ``--depth 1`` implicitly enables recursion.
     result = CliRunner().invoke(
         app,
         [
@@ -236,9 +238,9 @@ def test_nodes_depth_one_caps_nested(fake_aap: Any) -> None:
 
 
 def test_nodes_type_filter_keeps_only_matching_kind(fake_aap: Any) -> None:
-    """``--type job_template`` with ``--recursive`` should still descend
-    into workflow nodes so nested job templates surface — the filter is
-    applied to the *output*, not the traversal."""
+    # ``--type job_template`` with ``--recursive`` must still descend into
+    # workflow nodes so nested job templates surface — the filter is on
+    # the output, not the traversal.
     _seed_org_and_root_workflow(fake_aap)
     _seed_nested(fake_aap)
     result = CliRunner().invoke(
@@ -253,14 +255,13 @@ def test_nodes_type_filter_keeps_only_matching_kind(fake_aap: Any) -> None:
             "--format",
             "raw",
             "--columns",
-            "id,type",
+            "id",
+            "--columns",
+            "type",
         ],
     )
     assert result.exit_code == 0, result.output
     rows = sorted(result.stdout.strip().splitlines(), key=lambda r: int(r.split("\t")[0]))
-    # Node 2 (the nested workflow_job_template) is filtered out; nodes
-    # 1, 3, 4 (all job_templates, including the two from inside node 2)
-    # remain.
     assert rows == [
         "1\tjob_template",
         "3\tjob_template",
@@ -295,5 +296,15 @@ def test_nodes_rejects_negative_depth(fake_aap: Any) -> None:
     result = CliRunner().invoke(
         app,
         ["workflow-templates", "nodes", "100", "--depth", "-1"],
+    )
+    assert result.exit_code != 0
+
+
+def test_nodes_rejects_unknown_type_value(fake_aap: Any) -> None:
+    # ``--type`` is a Literal; a typo must fail at parse time, not
+    # silently return an empty result set.
+    result = CliRunner().invoke(
+        app,
+        ["workflow-templates", "nodes", "100", "--type", "job-template"],
     )
     assert result.exit_code != 0
