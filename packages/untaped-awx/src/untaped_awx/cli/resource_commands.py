@@ -12,11 +12,13 @@ import typer
 from rich.console import Console
 from untaped_core import (
     ColumnsOption,
+    ConfigError,
     OutputFormat,
     UntapedError,
     format_output,
     parse_kv_pairs,
     read_identifiers,
+    read_stdin,
     report_errors,
 )
 
@@ -84,6 +86,11 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             ),
         ),
         limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+        stdin: bool = typer.Option(
+            False,
+            "--stdin",
+            help="Read names or numeric ids from stdin (one per line); render only those records.",
+        ),
         with_names: bool = typer.Option(
             False,
             "--with-names",
@@ -97,19 +104,44 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None, "--columns", "-c", help="Columns to include (repeatable)."
         ),
     ) -> None:
-        """List resources."""
-        filters = parse_kv_pairs(filter_, flag="--filter")
+        """List resources, optionally restricted to names/ids from stdin.
+
+        With ``--stdin``, reads newline-separated names or numeric ids and
+        renders only those records — same identifier semantics as ``get
+        --stdin`` but with the tabular columns view ``list`` uses. Cannot
+        be combined with ``--search``/``--filter``/``--limit``.
+        """
+        if stdin and (search or filter_ or limit is not None):
+            raise typer.BadParameter("--stdin cannot be combined with --search/--filter/--limit")
+        records: list[dict[str, Any]] = []
+        any_failed = False
         with report_errors(), open_context() as ctx:
-            records = list(
-                ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
-            )
+            if stdin:
+                ids = read_stdin()
+                if not ids:
+                    raise ConfigError("no identifiers received on stdin")
+                getter = GetResource(ctx.repo)
+                for n in ids:
+                    try:
+                        records.append(_get_one(getter, spec, n, scope=None))
+                    except UntapedError as exc:
+                        typer.echo(f"error: {n}: {exc}", err=True)
+                        any_failed = True
+            else:
+                filters = parse_kv_pairs(filter_, flag="--filter")
+                records = list(
+                    ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
+                )
         cols = list(columns) if columns else list(spec.list_columns)
         if with_names:
             # Pass ``cols`` so display-only FK columns (e.g. Host's
             # ``inventory``, which lives in ``read_only_fields`` rather
             # than ``fk_refs``) get flattened from ``summary_fields``.
             records = flatten_fks(records, spec, columns=cols)
-        typer.echo(format_output(records, fmt=fmt, columns=cols))
+        if records:
+            typer.echo(format_output(records, fmt=fmt, columns=cols))
+        if any_failed:
+            raise typer.Exit(code=1)
 
 
 # ---- get ----

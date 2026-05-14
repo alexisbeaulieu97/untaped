@@ -66,8 +66,8 @@ the sub-apps above.
 
 ```bash
 untaped awx <kind> list [--search <q>] [--filter KEY=VALUE]... [--limit N]
-                        [--with-names] [--format json|yaml|table|raw]
-                        [--columns ...]
+                        [--stdin] [--with-names]
+                        [--format json|yaml|table|raw] [--columns ...]
 
 untaped awx <kind> get <name>... [--stdin] [--organization <org>]
                                  [--with-names]
@@ -102,6 +102,21 @@ untaped awx job-templates list --with-names
 untaped awx job-templates list --columns project --format raw \
   | sort -u \
   | untaped awx projects get --stdin --columns name
+```
+
+`--stdin` flips `list` into a consumer: it reads newline-separated
+names or numeric ids from stdin and renders only those records using
+the tabular columns view. Same identifier semantics as `get --stdin`
+(digits → id, otherwise name), but the output is `list`'s columns
+table rather than `get`'s per-record yaml. Cannot be combined with
+`--search`, `--filter`, or `--limit` — those are server-side filtering
+knobs and identifier lookup is a different mode.
+
+```bash
+# Curated tabular view across a known set of templates
+echo -e "deploy-web\ndeploy-api" \
+  | untaped awx job-templates list --stdin --with-names \
+                                   --columns name --columns project
 ```
 
 For nested fields outside the FK set (e.g. last-job status, polymorphic
