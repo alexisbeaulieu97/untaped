@@ -40,8 +40,11 @@ def test_resolve_by_path_registered_returns_registry_entry() -> None:
 
     found = resolver.resolve(path=ws_path)
 
-    assert found.name == "prod"
-    assert found.path == ws_path
+    # Identity assertion (not just field equality) pins that the registry
+    # entry is returned verbatim — a regression where `_workspace_for`
+    # synthesises a fresh `Workspace` with matching fields instead of
+    # returning the registered one would silently pass an equality check.
+    assert found is registered
 
 
 def test_resolve_by_path_unregistered_synthesises_from_dirname() -> None:
