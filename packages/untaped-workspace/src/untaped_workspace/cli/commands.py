@@ -36,6 +36,7 @@ from untaped_workspace.application import (
     ShellInit,
     SyncWorkspace,
     WorkspacePath,
+    WorkspaceResolver,
     WorkspaceStatus,
 )
 from untaped_workspace.cli.completions import complete_workspace_name
@@ -48,7 +49,6 @@ from untaped_workspace.infrastructure import (
     LocalRepoDiscoverer,
     ManifestRepository,
     WorkspaceRegistryRepository,
-    WorkspaceResolver,
     editor_runner,
     resolve_editor_argv,
     shell_runner,
@@ -70,7 +70,10 @@ def _callback() -> None:
 
 
 def _resolve(name: str | None, path: Path | None, *, cwd: Path | None = None) -> Workspace:
-    return WorkspaceResolver().resolve(name=name, path=path, cwd=cwd)
+    return WorkspaceResolver(
+        registry=WorkspaceRegistryRepository(),
+        manifests=ManifestRepository(),
+    ).resolve(name=name, path=path, cwd=cwd)
 
 
 def _all_workspaces() -> list[Workspace]:
