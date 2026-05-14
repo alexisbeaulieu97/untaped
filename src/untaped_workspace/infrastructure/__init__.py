@@ -18,9 +18,6 @@ from untaped_workspace.infrastructure.system_adapters import (
     resolve_editor_argv,
     shell_runner,
 )
-from untaped_workspace.infrastructure.workspace_resolver import (
-    WorkspaceResolver,
-)
 
 __all__ = [
     "DEFAULT_SLOW_TIMEOUT",
@@ -31,7 +28,6 @@ __all__ = [
     "LocalRepoDiscoverer",
     "ManifestRepository",
     "WorkspaceRegistryRepository",
-    "WorkspaceResolver",
     "cache_path_for",
     "editor_runner",
     "resolve_editor_argv",
