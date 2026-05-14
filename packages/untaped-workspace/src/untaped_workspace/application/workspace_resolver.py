@@ -46,19 +46,25 @@ class WorkspaceResolver:
         canonical = path.expanduser().resolve()
         if not self._manifests.exists(canonical):
             raise ConfigError(f"no workspace manifest at {canonical}/untaped.yml")
+        return self._workspace_for(canonical)
+
+    def _resolve_from_cwd(self, cwd: Path) -> Workspace:
+        cwd = cwd.expanduser().resolve()
+        for parent in [cwd, *cwd.parents]:
+            if self._manifests.exists(parent):
+                # `parent` is already canonical (derived from `cwd.resolve()`)
+                # and we've just confirmed the manifest — skip the
+                # `_resolve_by_path` re-check + re-resolve.
+                return self._workspace_for(parent)
+        raise ConfigError(
+            "not inside a workspace — pass --name or --path, or `cd` into a "
+            "workspace directory containing untaped.yml"
+        )
+
+    def _workspace_for(self, canonical: Path) -> Workspace:
         existing = self._registry.find_by_path(canonical)
         if existing is not None:
             return existing
         # Unregistered manifest — synthesise a Workspace from the dirname so
         # cwd-discovered workspaces still work for non-registry commands.
         return Workspace(name=canonical.name, path=canonical)
-
-    def _resolve_from_cwd(self, cwd: Path) -> Workspace:
-        cwd = cwd.expanduser().resolve()
-        for parent in [cwd, *cwd.parents]:
-            if self._manifests.exists(parent):
-                return self._resolve_by_path(parent)
-        raise ConfigError(
-            "not inside a workspace — pass --name or --path, or `cd` into a "
-            "workspace directory containing untaped.yml"
-        )

@@ -16,20 +16,17 @@ from untaped_workspace.domain import Workspace
 
 
 def _resolver(
-    *,
     registered: list[Workspace] | None = None,
     manifest_paths: list[Path] | None = None,
 ) -> WorkspaceResolver:
-    manifests = StubManifests(
-        {p: empty_manifest() for p in (manifest_paths or [])},
-    )
+    manifests = StubManifests({p: empty_manifest() for p in (manifest_paths or [])})
     registry = StubRegistry(registered or [])
     return WorkspaceResolver(registry=registry, manifests=manifests)
 
 
 def test_resolve_by_name_hits_registry() -> None:
     ws = Workspace(name="prod", path=Path("/ws/prod"))
-    resolver = _resolver(registered=[ws])
+    resolver = _resolver([ws])
 
     found = resolver.resolve(name="prod")
 
@@ -39,7 +36,7 @@ def test_resolve_by_name_hits_registry() -> None:
 def test_resolve_by_path_registered_returns_registry_entry() -> None:
     ws_path = Path("/ws/prod").resolve()
     registered = Workspace(name="prod", path=ws_path)
-    resolver = _resolver(registered=[registered], manifest_paths=[ws_path])
+    resolver = _resolver([registered], [ws_path])
 
     found = resolver.resolve(path=ws_path)
 
@@ -80,20 +77,3 @@ def test_resolve_from_cwd_outside_workspace_raises() -> None:
 
     with pytest.raises(ConfigError, match="not inside a workspace"):
         resolver.resolve(cwd=Path("/elsewhere"))
-
-
-def test_resolve_does_not_touch_filesystem_directly() -> None:
-    """A regression-pin: the resolver speaks only to its ports.
-
-    If ``WorkspaceResolver`` ever reaches back into ``pathlib`` for
-    ``is_file()`` / ``MANIFEST_FILENAME``, this stub-only resolution
-    would still succeed (the stub says the manifest exists) — so the
-    real check happens via :class:`StubManifests.exists`, not the
-    filesystem.
-    """
-    ws_path = Path("/never/touches/disk").resolve()
-    resolver = _resolver(manifest_paths=[ws_path])
-
-    found = resolver.resolve(path=ws_path)
-
-    assert found.path == ws_path

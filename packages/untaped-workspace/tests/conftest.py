@@ -210,7 +210,6 @@ class StubManifests:
 
     def __init__(self, manifests: dict[Path, WorkspaceManifest] | None = None) -> None:
         self._manifests = dict(manifests or {})
-        self.writes: list[tuple[Path, WorkspaceManifest]] = []
 
     def exists(self, workspace_dir: Path) -> bool:
         return workspace_dir in self._manifests
@@ -222,7 +221,6 @@ class StubManifests:
 
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
         self._manifests[workspace_dir] = manifest
-        self.writes.append((workspace_dir, manifest))
 
     def read_external(self, source: Path) -> ManifestSource:
         raise NotImplementedError("StubManifests.read_external is not used by current tests")
