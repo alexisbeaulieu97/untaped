@@ -24,9 +24,13 @@ sync and status tests; per-test failure injection rides on the kwargs
 seeding so empty-init and seeded-init test sites both keep working
 unchanged. ``StubFilesystem`` satisfies the widened ``Filesystem`` port
 with an in-memory set of paths — lets use-case tests assert disk
-predicates without touching ``tmp_path``. ``empty_manifest()`` is a
-default-constructed ``WorkspaceManifest`` for tests that only need an
-empty file on disk (init/add/remove/import + workspace-resolver tests).
+predicates without touching ``tmp_path``. ``StubManifests`` satisfies
+the ``ManifestRepository`` port with an in-memory map of paths to
+manifests — used by the resolver's stub-based unit tests where the
+disk-touching ``ManifestRepository`` would force a real workspace
+on disk. ``empty_manifest()`` is a default-constructed
+``WorkspaceManifest`` for tests that only need an empty file on disk
+(init/add/remove/import + workspace-resolver tests).
 """
 
 from __future__ import annotations
@@ -35,8 +39,13 @@ from collections.abc import Iterable, Iterator, Set
 from pathlib import Path
 from typing import Any
 
-from untaped_workspace.domain import RepoStatus, Workspace, WorkspaceManifest
-from untaped_workspace.errors import GitError, RegistryError
+from untaped_workspace.domain import (
+    ManifestSource,
+    RepoStatus,
+    Workspace,
+    WorkspaceManifest,
+)
+from untaped_workspace.errors import GitError, ManifestError, RegistryError
 
 
 def empty_manifest() -> WorkspaceManifest:
@@ -187,3 +196,31 @@ class StubFilesystem:
     def rmtree(self, path: Path) -> None:
         self.events.append(("rmtree", path))
         self._dirs = {p for p in self._dirs if p != path and path not in p.parents}
+
+
+class StubManifests:
+    """In-memory ``ManifestRepository`` for stub-driven use-case tests.
+
+    Seed ``manifests`` with the workspace dirs that should have a
+    manifest; ``exists`` and ``read`` honour the map. ``read`` on an
+    unseeded dir raises :class:`ManifestError` to match the real
+    adapter's contract; ``write`` / ``read_external`` are stubbed out
+    (no caller in the stub-only test set today).
+    """
+
+    def __init__(self, manifests: dict[Path, WorkspaceManifest] | None = None) -> None:
+        self._manifests = dict(manifests or {})
+
+    def exists(self, workspace_dir: Path) -> bool:
+        return workspace_dir in self._manifests
+
+    def read(self, workspace_dir: Path) -> WorkspaceManifest:
+        if workspace_dir not in self._manifests:
+            raise ManifestError(f"no manifest at {workspace_dir}/untaped.yml")
+        return self._manifests[workspace_dir]
+
+    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
+        self._manifests[workspace_dir] = manifest
+
+    def read_external(self, source: Path) -> ManifestSource:
+        raise NotImplementedError("StubManifests.read_external is not used by current tests")

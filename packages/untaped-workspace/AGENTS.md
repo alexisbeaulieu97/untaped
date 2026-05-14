@@ -52,7 +52,11 @@ workspace by name or path — `add`, `remove`, `sync`, `status`,
 2. Explicit `--path` → manifest lookup
 3. Otherwise: walk up from cwd looking for `untaped.yml`
 
-Implemented in `infrastructure.WorkspaceResolver`.
+Implemented in `application.WorkspaceResolver` — takes a `RegistryReader`
++ `ManifestReader` via constructor injection, so precedence can be
+unit-tested with stubs (no real registry or on-disk manifest required).
+The CLI composition root wires `WorkspaceRegistryRepository` and
+`ManifestRepository`.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
 `forget <name>`, `import <source>`, `path <name>`, `edit <name>`) take
@@ -280,11 +284,17 @@ sibling identifier matched.
 ## Shared test stubs
 
 `StubGit` (satisfies the `GitRunner` port), `StubRegistry`
-(satisfies `WorkspaceRegistryRepository`), and the
+(satisfies `WorkspaceRegistryRepository`), `StubFilesystem`
+(satisfies the `Filesystem` port with an in-memory set of paths so
+use-case tests assert disk predicates without touching `tmp_path`),
+`StubManifests` (satisfies the `ManifestRepository` port with an
+in-memory map — used by the resolver's stub-driven unit tests where
+the real adapter would force a real workspace on disk), and the
 `empty_manifest()` helper (default-constructed
 `WorkspaceManifest` for tests that only need an empty file on disk)
 live in `tests/conftest.py`. Sibling unit tests import them via
-`from conftest import StubGit, StubRegistry, empty_manifest` — the root
+`from conftest import StubGit, StubRegistry, StubFilesystem,
+StubManifests, empty_manifest` — the root
 `pyproject.toml` adds this package's `tests/` dir to
 `[tool.pytest.ini_options] pythonpath` so the conftest module is
 runtime-importable (pytest's `--import-mode=importlib` otherwise
