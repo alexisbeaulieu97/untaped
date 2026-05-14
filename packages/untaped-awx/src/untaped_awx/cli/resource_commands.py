@@ -36,6 +36,7 @@ from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._names import flatten_fks
+from untaped_awx.cli.membership_commands import register_membership_subapp
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
@@ -65,6 +66,9 @@ def make_resource_app(spec: AwxResourceSpec) -> typer.Typer:
         builder = ACTION_BUILDERS.get(action.name)
         if builder is not None:
             builder(app, spec)
+    for ref in spec.fk_refs:
+        if ref.multi and ref.sub_endpoint:
+            register_membership_subapp(app, spec, ref)
 
     return app
 
