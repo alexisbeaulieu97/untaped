@@ -202,20 +202,26 @@ rows regardless of completion timing. The CLI clamps `-j` at
 `_PARALLEL_CAP=32` and rejects `parallel > 1` outside `--all` with a
 `typer.BadParameter` (single-workspace parallelism would have to push
 inside `SyncWorkspace` and racing the bare-cache per-repo isn't worth
-the complexity — see #11 / #30). When `--all -j N>1` is in play, the
+the complexity — see #30). When `--all -j N>1` is in play, the
 CLI emits a stderr "syncing N workspaces with up to M workers" header
 so users can tell the parallel path was taken.
 
-`SyncWorkspace._ensure_bare_fresh` carries a per-URL `threading.Lock`
-plus a shared `_fetched: set[Path]` so concurrent `__call__`s sharing
-a repo URL serialise on the bare cache (one thread does
-`ensure_bare → bare_fetch`; siblings see the URL in `_fetched` and
-skip). Threads on **different** URLs proceed in parallel, which is
-the whole point. On `GitError`, the URL is left unclaimed so the next
-caller retries — same semantics as the pre-parallel serial path. Issue
-#11 will replace the in-instance cache + locks with an external cache
-argument owned by the composition root; until then the lock plumbing
-lives next to the `_fetched` set with a `TODO(#11)` marker.
+Bare-fetch dedup lives on a session-scoped `BareFetchTracker` object
+(`fetched: set[Path]` + per-URL `threading.Lock`s + a guard) **owned
+by the composition root**. The CLI's `sync` command allocates one per
+invocation and threads it into every `SyncWorkspace.__call__` —
+serial path and `_sync_parallel` alike — so workspaces sharing a
+repo URL share one `ensure_bare + bare_fetch` round-trip. The
+`BareFetchTracker.lock_for(url)` helper serialises
+`ensure_bare → check → fetch → add` for one URL while letting threads
+on different URLs proceed in parallel. On `GitError`, the URL is
+left out of `tracker.fetched` so the next caller retries — same
+semantics as the pre-parallel serial path. `__call__` accepts
+`bare_tracker: BareFetchTracker | None = None`; the default allocates
+a fresh per-call tracker (no cross-call dedup), which is what
+single-workspace callers and unit tests want. **Never reach into
+`tracker.fetched` directly from a worker — always go through the use
+case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
 
 ## `init` vs. `adopt` vs. `forget`
 

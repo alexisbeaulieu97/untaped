@@ -25,6 +25,7 @@ from untaped_core import (
 from untaped_workspace.application import (
     AddRepo,
     AdoptWorkspace,
+    BareFetchTracker,
     EditWorkspace,
     Foreach,
     ForgetWorkspace,
@@ -343,6 +344,7 @@ def sync_command(
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
+        bare_tracker = BareFetchTracker()
         if all_workspaces and workers > 1 and len(targets) > 1:
             typer.echo(
                 f"syncing {len(targets)} workspaces with up to {workers} workers",
@@ -355,12 +357,19 @@ def sync_command(
                 prune=prune,
                 strict_only=not all_workspaces,
                 workers=workers,
+                bare_tracker=bare_tracker,
             )
         else:
             outcomes = []
             for ws in targets:
                 outcomes.extend(
-                    use_case(ws, only=only, prune=prune, strict_only=not all_workspaces)
+                    use_case(
+                        ws,
+                        only=only,
+                        prune=prune,
+                        strict_only=not all_workspaces,
+                        bare_tracker=bare_tracker,
+                    )
                 )
         _print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
 
@@ -373,6 +382,7 @@ def _sync_parallel(
     prune: bool,
     strict_only: bool,
     workers: int,
+    bare_tracker: BareFetchTracker,
 ) -> list[SyncOutcome]:
     """Dispatch ``use_case`` across ``targets`` on a ThreadPoolExecutor.
 
@@ -382,12 +392,21 @@ def _sync_parallel(
     matches ``SyncWorkspace.__call__``'s parameter so a future caller
     that opens this helper to single-workspace use can't silently lose
     strict ``--only`` semantics; the sweep drains to completion (no
-    fail-fast) so a plain list of futures is enough.
+    fail-fast) so a plain list of futures is enough. ``bare_tracker`` is
+    threaded into every worker so workspaces sharing repo URLs share
+    one ``ensure_bare + bare_fetch`` round-trip.
     """
     outcomes: list[SyncOutcome] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [
-            pool.submit(use_case, ws, only=only, prune=prune, strict_only=strict_only)
+            pool.submit(
+                use_case,
+                ws,
+                only=only,
+                prune=prune,
+                strict_only=strict_only,
+                bare_tracker=bare_tracker,
+            )
             for ws in targets
         ]
         for fut in as_completed(futures):
