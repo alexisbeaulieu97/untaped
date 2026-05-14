@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from conftest import StubGit
-from untaped_workspace.application import SyncWorkspace
+from untaped_workspace.application import BareFetchTracker, SyncWorkspace
 from untaped_workspace.domain import (
     ManifestDefaults,
     Repo,
@@ -470,7 +470,34 @@ def test_prune_status_failure_yields_not_usable_skip(tmp_path: Path) -> None:
 
 
 def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
-    """Two workspaces sharing a repo URL on the same use-case instance → bare_fetch runs once."""
+    """Two ``__call__``s sharing a ``BareFetchTracker`` → bare_fetch runs once."""
+    manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
+    ws_a_path = tmp_path / "a"
+    ws_b_path = tmp_path / "b"
+    ws_a_path.mkdir()
+    ws_b_path.mkdir()
+    ManifestRepository().write(ws_a_path, manifest)
+    ManifestRepository().write(ws_b_path, manifest)
+    ws_a = Workspace(name="a", path=ws_a_path)
+    ws_b = Workspace(name="b", path=ws_b_path)
+
+    git = StubGit()
+    use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+    tracker = BareFetchTracker()
+    use_case(ws_a, bare_tracker=tracker)
+    use_case(ws_b, bare_tracker=tracker)
+
+    ensure_bare_count = sum(1 for e in git.events if e[0] == "ensure_bare")
+    bare_fetch_count = sum(1 for e in git.events if e[0] == "bare_fetch")
+    assert ensure_bare_count == 2  # lookup happened both times
+    assert bare_fetch_count == 1  # fetch deduped via shared cache
+
+
+def test_no_shared_tracker_means_each_call_refetches(tmp_path: Path) -> None:
+    """Default ``bare_tracker=None`` allocates a fresh tracker per call —
+    two unrelated single-workspace invocations both fetch. Pins that
+    the dedup is now a session contract owned by the caller, not a
+    silent instance-state side effect."""
     manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
     ws_a_path = tmp_path / "a"
     ws_b_path = tmp_path / "b"
@@ -486,19 +513,17 @@ def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
     use_case(ws_a)
     use_case(ws_b)
 
-    ensure_bare_count = sum(1 for e in git.events if e[0] == "ensure_bare")
     bare_fetch_count = sum(1 for e in git.events if e[0] == "bare_fetch")
-    assert ensure_bare_count == 2  # lookup happened both times
-    assert bare_fetch_count == 1  # fetch deduped via _fetched cache
+    assert bare_fetch_count == 2, git.events
 
 
 def test_bare_fetch_dedup_is_threadsafe(tmp_path: Path) -> None:
-    """Concurrent ``__call__`` invocations sharing a repo URL must still
-    bare_fetch exactly once. Without a lock, the check-and-add window in
-    ``_ensure_bare_fresh`` is wide enough for every thread to slip past
-    the membership check before any of them adds — we sleep inside the
-    stub's ``bare_fetch`` to make the race deterministic on a normal
-    CPython runtime."""
+    """Concurrent ``__call__`` invocations sharing a ``BareFetchTracker``
+    and repo URL must still bare_fetch exactly once. Without per-URL
+    locking, the check-and-add window in ``_ensure_bare_fresh`` is
+    wide enough for every thread to slip past the membership check
+    before any of them adds — we sleep inside the stub's ``bare_fetch``
+    to make the race deterministic on a normal CPython runtime."""
     import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -518,12 +543,13 @@ def test_bare_fetch_dedup_is_threadsafe(tmp_path: Path) -> None:
 
     git = SlowFetchStub()
     use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+    tracker = BareFetchTracker()
 
     barrier = threading.Barrier(len(workspaces))
 
     def run(ws: Workspace) -> list:  # type: ignore[type-arg]
         barrier.wait()
-        return use_case(ws)
+        return use_case(ws, bare_tracker=tracker)
 
     with ThreadPoolExecutor(max_workers=len(workspaces)) as pool:
         list(pool.map(run, workspaces))
@@ -534,11 +560,11 @@ def test_bare_fetch_dedup_is_threadsafe(tmp_path: Path) -> None:
 
 def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> None:
     """If ``bare_fetch`` raises ``GitError``, the URL must stay out of
-    ``_fetched`` so a subsequent ``__call__`` retries instead of
-    silently re-using a bare that was never fetched. Pins the
-    pre-parallel "retry on failure" semantics that the parallel rewrite
-    is documented to preserve (see ``packages/untaped-workspace/AGENTS.md``,
-    "sync --all -j N parallelism")."""
+    the shared cache so a subsequent ``__call__`` (with the same cache)
+    retries instead of silently re-using a bare that was never fetched.
+    Pins the pre-parallel "retry on failure" semantics that the parallel
+    rewrite is documented to preserve (see
+    ``packages/untaped-workspace/AGENTS.md``, "sync --all -j N parallelism")."""
     calls = {"n": 0}
 
     class FlakyFetchStub(StubGit):
@@ -559,13 +585,14 @@ def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> No
 
     git = FlakyFetchStub()
     use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+    tracker = BareFetchTracker()
 
-    first = use_case(Workspace(name="a", path=ws_a_path))
+    first = use_case(Workspace(name="a", path=ws_a_path), bare_tracker=tracker)
     assert first[0].action == "skip"
     assert "cache fetch failed" in first[0].detail
 
     # Second call must retry — the URL is unclaimed after the failure.
-    second = use_case(Workspace(name="b", path=ws_b_path))
+    second = use_case(Workspace(name="b", path=ws_b_path), bare_tracker=tracker)
     assert second[0].action == "clone", second
     bare_fetch_successes = sum(1 for e in git.events if e[0] == "bare_fetch")
     assert bare_fetch_successes == 1, git.events
