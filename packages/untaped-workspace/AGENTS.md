@@ -52,7 +52,11 @@ workspace by name or path — `add`, `remove`, `sync`, `status`,
 2. Explicit `--path` → manifest lookup
 3. Otherwise: walk up from cwd looking for `untaped.yml`
 
-Implemented in `infrastructure.WorkspaceResolver`.
+Implemented in `application.WorkspaceResolver` — takes a `RegistryReader`
++ `ManifestReader` via constructor injection, so precedence can be
+unit-tested with stubs (no real registry or on-disk manifest required).
+The CLI composition root wires `WorkspaceRegistryRepository` and
+`ManifestRepository`.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
 `forget <name>`, `import <source>`, `path <name>`, `edit <name>`) take

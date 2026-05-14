@@ -1,7 +1,15 @@
 """Resolve which workspace a command should act on.
 
 Resolution order: explicit ``name`` (registry lookup) → explicit ``path``
-→ walk up from ``cwd`` looking for ``untaped.yml`` → error.
+→ walk up from ``cwd`` looking for a workspace manifest → error.
+
+Lives in ``application/`` because *how to name a workspace* is the
+package's ubiquitous language — every target-resolving command
+(``add``, ``remove``, ``sync``, ``status``, ``foreach``) inherits the
+same precedence. The resolver speaks only to its
+:class:`untaped_workspace.application.ports.RegistryReader` and
+:class:`untaped_workspace.application.ports.ManifestReader` ports;
+the CLI composition root wires the concrete repositories.
 """
 
 from __future__ import annotations
@@ -10,14 +18,14 @@ from pathlib import Path
 
 from untaped_core import ConfigError
 
+from untaped_workspace.application.ports import ManifestReader, RegistryReader
 from untaped_workspace.domain import Workspace
-from untaped_workspace.infrastructure.manifest_repo import MANIFEST_FILENAME
-from untaped_workspace.infrastructure.registry_repo import WorkspaceRegistryRepository
 
 
 class WorkspaceResolver:
-    def __init__(self, registry: WorkspaceRegistryRepository | None = None) -> None:
-        self._registry = registry or WorkspaceRegistryRepository()
+    def __init__(self, *, registry: RegistryReader, manifests: ManifestReader) -> None:
+        self._registry = registry
+        self._manifests = manifests
 
     def resolve(
         self,
@@ -36,8 +44,8 @@ class WorkspaceResolver:
 
     def _resolve_by_path(self, path: Path) -> Workspace:
         canonical = path.expanduser().resolve()
-        if not (canonical / MANIFEST_FILENAME).is_file():
-            raise ConfigError(f"no workspace manifest at {canonical / MANIFEST_FILENAME}")
+        if not self._manifests.exists(canonical):
+            raise ConfigError(f"no workspace manifest at {canonical}/untaped.yml")
         existing = self._registry.find_by_path(canonical)
         if existing is not None:
             return existing
@@ -48,7 +56,7 @@ class WorkspaceResolver:
     def _resolve_from_cwd(self, cwd: Path) -> Workspace:
         cwd = cwd.expanduser().resolve()
         for parent in [cwd, *cwd.parents]:
-            if (parent / MANIFEST_FILENAME).is_file():
+            if self._manifests.exists(parent):
                 return self._resolve_by_path(parent)
         raise ConfigError(
             "not inside a workspace — pass --name or --path, or `cd` into a "
