@@ -493,8 +493,8 @@ def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
     assert bare_fetch_count == 1  # fetch deduped via shared cache
 
 
-def test_no_shared_cache_means_each_call_refetches(tmp_path: Path) -> None:
-    """Default ``bare_cache=None`` allocates a fresh cache per call —
+def test_no_shared_tracker_means_each_call_refetches(tmp_path: Path) -> None:
+    """Default ``bare_tracker=None`` allocates a fresh tracker per call —
     two unrelated single-workspace invocations both fetch. Pins that
     the dedup is now a session contract owned by the caller, not a
     silent instance-state side effect."""
