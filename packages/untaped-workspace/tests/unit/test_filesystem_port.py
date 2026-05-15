@@ -22,20 +22,15 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import StubFilesystem, StubRegistry
-from untaped_workspace.application import (
-    Foreach,
-    InitWorkspace,
-    WorkspaceBootstrapper,
-    WorkspaceStatus,
-)
+from conftest import StubFilesystem
+from untaped_workspace.application import Foreach, WorkspaceStatus
 from untaped_workspace.domain import (
     Repo,
     RepoStatus,
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
+from untaped_workspace.infrastructure import LocalFilesystem
 
 # ── LocalFilesystem pass-through ──────────────────────────────────────────
 
@@ -129,24 +124,6 @@ def test_no_pathlib_io_in_application_layer() -> None:
 
 
 # ── Payoff: a use-case test with no tmp_path ──────────────────────────────
-
-
-def test_init_workspace_can_be_tested_with_stub_filesystem(tmp_path: Path) -> None:
-    """The widened port lets `InitWorkspace` be tested with a stub.
-
-    The manifest still writes to disk through the real
-    ``ManifestRepository`` here — that's a separate seam. The point
-    is that the directory-creation side effect now goes through the
-    port and is therefore observable / mockable.
-    """
-    fs = StubFilesystem()
-    ws_path = tmp_path / "prod"  # manifest repository still needs a real path
-    reg = StubRegistry()
-    InitWorkspace(WorkspaceBootstrapper(ManifestRepository(), reg, fs=fs))(ws_path, name="prod")
-    # The use case's *single* disk side effect is the mkdir call — pinned
-    # via the StubFilesystem events list rather than via filesystem
-    # introspection.
-    assert ("mkdir", ws_path.resolve()) in fs.events
 
 
 def test_workspace_status_uses_port_to_check_clone_presence() -> None:

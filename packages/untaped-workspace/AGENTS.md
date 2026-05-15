@@ -18,6 +18,12 @@ A workspace has two homes:
   `--name X` lookups, and tab completion. Read/written by
   `infrastructure.WorkspaceRegistryRepository`.
 
+`ManifestRepository.write` owns workspace-dir creation — it mkdirs the
+manifest's parent (which *is* the workspace dir) before writing. Use
+cases do not call `Filesystem.mkdir` / `Path.mkdir` for the workspace
+root themselves; they persist the manifest and the directory exists as
+a side effect.
+
 Method names on the registry are `entries`, `get`, `find_by_path`,
 `register`, `unregister` — *not* `list`, which would shadow the `list`
 builtin in nested annotations within the class.
@@ -231,12 +237,14 @@ case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
 
 The shared opening for every bootstrap-style entry point
 (`init` / `adopt` / `import`) — canonicalise the target path,
-derive `ws_name`, raise on manifest/registry collision, `mkdir`,
-write the manifest, register — lives on
-`application.WorkspaceBootstrapper`. Each lifecycle use case
-constructs the bootstrapper with the same
-`ManifestRepository` / `WorkspaceRegistryRepository` / `Filesystem`
-adapters at the CLI composition root, then delegates by passing a
+derive `ws_name`, raise on manifest/registry collision, write the
+manifest, register — lives on `application.WorkspaceBootstrapper`.
+The workspace directory itself is created as a side effect of
+`ManifestRepository.write` (see "Manifest + registry split" above),
+so the bootstrapper takes no `Filesystem` dep. Each lifecycle use
+case constructs the bootstrapper with the same
+`ManifestRepository` / `WorkspaceRegistryRepository` adapters at the
+CLI composition root, then delegates by passing a
 `build_manifest(ws_name) -> WorkspaceManifest` closure that owns the
 caller-specific variation (e.g. `init` plugs in the `--branch` flag;
 `adopt` plugs in the discovered repos; `import` plugs in the

@@ -13,13 +13,11 @@ from pathlib import Path
 
 from conftest import StubRegistry
 from untaped_workspace.application import ImportWorkspace, WorkspaceBootstrapper
-from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
-
-_FS = LocalFilesystem()
+from untaped_workspace.infrastructure import ManifestRepository
 
 
 def _import(repo: ManifestRepository, reg: StubRegistry) -> ImportWorkspace:
-    return ImportWorkspace(repo, WorkspaceBootstrapper(repo, reg, fs=_FS))
+    return ImportWorkspace(repo, WorkspaceBootstrapper(repo, reg))
 
 
 def test_import_creates_workspace_from_external_manifest(tmp_path: Path) -> None:
