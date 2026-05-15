@@ -109,15 +109,21 @@ class HttpClient:
     def get_json_dict(self, path: str, **kwargs: Any) -> dict[str, Any]:
         """GET ``path`` and assert the JSON body decodes to an object.
 
-        Raises :class:`HttpError` when the body is anything other than a
-        JSON object (array, scalar, ``null``). Adapter sites that promise
-        ``-> dict[str, Any]`` call this instead of ``get_json`` so they
-        don't have to suppress ``no-any-return`` at the seam.
+        Raises :class:`HttpError` (with full URL + status + body snippet,
+        same shape as other ``HttpClient`` errors) when the body is
+        anything other than a JSON object (array, scalar, ``null``).
+        Adapter sites that promise ``-> dict[str, Any]`` call this
+        instead of ``get_json`` so they don't have to suppress
+        ``no-any-return`` at the seam.
         """
-        body = self.get_json(path, **kwargs)
+        response = self.request("GET", path, **kwargs)
+        body = _decode_json(response)
         if not isinstance(body, dict):
             raise HttpError(
-                f"expected JSON object from {path}, got {type(body).__name__}",
+                f"expected JSON object from {response.request.url}, got {type(body).__name__}",
+                status_code=response.status_code,
+                url=str(response.request.url),
+                body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
             )
         return body
 
@@ -127,10 +133,14 @@ class HttpClient:
         Raises :class:`HttpError` when the body is anything other than a
         JSON array (object, scalar, ``null``).
         """
-        body = self.get_json(path, **kwargs)
+        response = self.request("GET", path, **kwargs)
+        body = _decode_json(response)
         if not isinstance(body, list):
             raise HttpError(
-                f"expected JSON array from {path}, got {type(body).__name__}",
+                f"expected JSON array from {response.request.url}, got {type(body).__name__}",
+                status_code=response.status_code,
+                url=str(response.request.url),
+                body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
             )
         return body
 

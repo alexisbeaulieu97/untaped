@@ -237,6 +237,23 @@ def test_get_json_dict_raises_when_body_is_not_an_object(
     assert shape_label in msg
 
 
+def test_get_json_dict_shape_error_carries_response_context() -> None:
+    """Shape-mismatch HttpError pins url / status_code / body snippet —
+    same diagnostic shape as the rest of the module's HttpError
+    sites (`_decode_json`, the 4xx wrap). Without this the operator
+    sees a bare message and has to reproduce the call to debug."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/oops").mock(return_value=httpx.Response(200, json=[1, 2, 3]))
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json_dict("/oops")
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.url == "https://example.com/oops"
+    assert exc_info.value.body == "[1,2,3]"
+
+
 def test_get_json_list_returns_decoded_array() -> None:
     """Happy path: a JSON-array body is returned as the decoded ``list``."""
     with (
@@ -273,6 +290,20 @@ def test_get_json_list_raises_when_body_is_not_an_array(
     assert "/oops" in msg
     assert "JSON array" in msg
     assert shape_label in msg
+
+
+def test_get_json_list_shape_error_carries_response_context() -> None:
+    """Same as the get_json_dict variant — pin the diagnostic context."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/oops").mock(return_value=httpx.Response(200, json={"x": 1}))
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json_list("/oops")
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.url == "https://example.com/oops"
+    assert exc_info.value.body == '{"x":1}'
 
 
 def test_request_json_does_not_decode_on_4xx() -> None:
