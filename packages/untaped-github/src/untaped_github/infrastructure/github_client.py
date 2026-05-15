@@ -35,7 +35,7 @@ class GithubClient:
         )
 
     def me(self) -> dict[str, Any]:
-        return self._http.get_json("/user")  # type: ignore[no-any-return]
+        return self._http.get_json_dict("/user")
 
     def search_repositories(
         self, q: str, *, sort: str | None = None, limit: int | None = None

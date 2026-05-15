@@ -199,6 +199,82 @@ def test_non_2xx_replaces_truncated_multibyte_at_cap_boundary() -> None:
     assert exc_info.value.body == "x" * 2047 + "�"
 
 
+def test_get_json_dict_returns_decoded_object() -> None:
+    """Happy path: a JSON-object body is returned as the decoded ``dict``."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/obj").mock(return_value=httpx.Response(200, json={"x": 1, "y": "two"}))
+        body = client.get_json_dict("/obj")
+    assert body == {"x": 1, "y": "two"}
+
+
+@pytest.mark.parametrize(
+    ("payload_kwargs", "shape_label"),
+    [
+        ({"json": [1, 2, 3]}, "list"),
+        ({"json": "scalar"}, "str"),
+        ({"json": 42}, "int"),
+        ({"content": b"null", "headers": {"content-type": "application/json"}}, "NoneType"),
+    ],
+    ids=["array", "string-scalar", "int-scalar", "null"],
+)
+def test_get_json_dict_raises_when_body_is_not_an_object(
+    payload_kwargs: dict[str, object], shape_label: str
+) -> None:
+    """A non-object JSON body must raise HttpError with the observed type."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/oops").mock(return_value=httpx.Response(200, **payload_kwargs))  # type: ignore[arg-type]
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json_dict("/oops")
+    msg = str(exc_info.value)
+    assert "/oops" in msg
+    assert "JSON object" in msg
+    assert shape_label in msg
+
+
+def test_get_json_list_returns_decoded_array() -> None:
+    """Happy path: a JSON-array body is returned as the decoded ``list``."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/arr").mock(return_value=httpx.Response(200, json=[1, 2, 3]))
+        body = client.get_json_list("/arr")
+    assert body == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    ("payload_kwargs", "shape_label"),
+    [
+        ({"json": {"x": 1}}, "dict"),
+        ({"json": "scalar"}, "str"),
+        ({"json": 42}, "int"),
+        ({"content": b"null", "headers": {"content-type": "application/json"}}, "NoneType"),
+    ],
+    ids=["object", "string-scalar", "int-scalar", "null"],
+)
+def test_get_json_list_raises_when_body_is_not_an_array(
+    payload_kwargs: dict[str, object], shape_label: str
+) -> None:
+    """A non-array JSON body must raise HttpError with the observed type."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/oops").mock(return_value=httpx.Response(200, **payload_kwargs))  # type: ignore[arg-type]
+        with pytest.raises(HttpError) as exc_info:
+            client.get_json_list("/oops")
+    msg = str(exc_info.value)
+    assert "/oops" in msg
+    assert "JSON array" in msg
+    assert shape_label in msg
+
+
 def test_request_json_does_not_decode_on_4xx() -> None:
     """A 4xx with an HTML body must surface its HTTP status — never the
     decode error. Locks the order of operations: status check happens
