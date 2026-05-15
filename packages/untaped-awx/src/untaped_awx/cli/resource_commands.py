@@ -662,6 +662,13 @@ class LaunchFlag:
     AAP-side payload field). ``LaunchFlag`` collapses them into one
     row so adding a ninth flag is one tuple entry instead of four
     parallel edits.
+
+    The inline ``payload_builder`` is a deliberate departure from the
+    project's usual ``apply_strategy: str`` + resolver pattern (see
+    :class:`ResourceSpec`). That pattern earns its keep by keeping
+    ``domain/`` pure of behaviour selectors; ``LaunchFlag`` lives in
+    ``cli/`` (composition root) where the closures are trivial and
+    not independently injectable.
     """
 
     flag: str
