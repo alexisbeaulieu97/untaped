@@ -15,11 +15,11 @@ from untaped_core import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
-    UntapedError,
     format_output,
     get_settings,
     read_identifiers,
     report_errors,
+    resolve_each,
 )
 
 from untaped_workspace.application import (
@@ -247,22 +247,19 @@ def remove_command(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
 ) -> None:
     """Remove one or more repos from a workspace's manifest."""
-    any_failed = False
     with report_errors():
         idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = _resolve(name, path)
-        for ident in idents:
+        remove_repo = RemoveRepo(ManifestRepository(), fs=LocalFilesystem(), status=GitRunner())
+
+        def _remove_one(ident: str) -> None:
             if prune and not _confirm(f"prune local clone for {ident!r} in {ws.name!r}?", yes=yes):
                 typer.echo("aborted", err=True)
                 raise typer.Exit(code=1)
-            try:
-                removed = RemoveRepo(
-                    ManifestRepository(), fs=LocalFilesystem(), status=GitRunner()
-                )(ws, ident=ident, prune=prune)
-                typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
-            except UntapedError as exc:
-                typer.echo(f"error: {ident}: {exc}", err=True)
-                any_failed = True
+            removed = remove_repo(ws, ident=ident, prune=prune)
+            typer.echo(f"removed {removed.name} from {ws.name!r}", err=True)
+
+        _, any_failed = resolve_each(idents, _remove_one)
     if any_failed:
         raise typer.Exit(code=1)
 
