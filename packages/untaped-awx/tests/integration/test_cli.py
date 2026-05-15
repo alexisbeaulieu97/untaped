@@ -613,6 +613,226 @@ def test_get_rejects_mixed_positional_and_stdin(seeded_default_org: Any) -> None
     assert "stdin" in (result.output + (result.stderr or "")).lower()
 
 
+def test_list_reads_names_from_stdin(seeded_default_org: Any) -> None:
+    """`list --stdin` consumes newline-separated names — same identifier
+    semantics as `get --stdin`, but rendered through `list`'s tabular
+    columns view rather than the per-record yaml/json of `get`."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    seeded_default_org.seed(
+        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
+    )
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "list", "--stdin", "--format", "raw", "--columns", "name"],
+        input="alpha\nbeta\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.stdout
+    assert "beta" in result.stdout
+
+
+def test_list_reads_ids_from_stdin(seeded_default_org: Any) -> None:
+    """Numeric identifiers piped into `list --stdin` use the id-lookup
+    path — mirrors the documented FK-piping shape into a tabular view."""
+    seeded_default_org.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    seeded_default_org.seed(
+        "projects",
+        id=11,
+        name="ops",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--stdin", "--format", "raw", "--columns", "name"],
+        input="10\n11\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "playbooks" in result.stdout
+    assert "ops" in result.stdout
+
+
+def test_list_stdin_all_failed_exits_one_and_suppresses_empty_stdout(
+    seeded_default_org: Any,
+) -> None:
+    """When every piped identifier 404s, the command exits 1 and stays
+    silent on stdout — per-id errors went to stderr; emitting an empty
+    ``[]`` would be redundant noise for the all-failed batch. The
+    non-stdin path still emits ``[]`` (pinned by
+    ``test_list_empty_result_still_renders_in_non_stdin_mode``)."""
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--stdin", "--format", "json"],
+        input="missing-a\nmissing-b\n",
+    )
+    assert result.exit_code != 0
+    assert result.stdout.strip() == ""
+    err = (result.output or "") + (result.stderr or "")
+    assert "error: missing-a:" in err
+    assert "error: missing-b:" in err
+
+
+def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: Any) -> None:
+    """A regular `list` with zero matches must still emit a valid
+    document for the chosen format so pipelines (``| jq '.[]'`` etc.)
+    don't break on no-result queries. The ``--stdin`` path is the only
+    one allowed to suppress empty stdout (its per-id errors went to
+    stderr)."""
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--filter", "name=does-not-exist", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "[]"
+
+
+def test_list_stdin_empty_errors(seeded_default_org: Any) -> None:
+    """An empty stdin under `--stdin` must error rather than silently
+    no-op (consistent with the `read_identifiers` empty-input contract)."""
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--stdin"],
+        input="",
+    )
+    assert result.exit_code != 0
+    assert "no identifiers received on stdin" in (result.output + (result.stderr or ""))
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [["--search", "foo"], ["--filter", "name=alpha"], ["--limit", "5"]],
+)
+def test_list_stdin_rejects_server_filter_flags(seeded_default_org: Any, extra: list[str]) -> None:
+    """`--stdin` is identifier-based lookup; server filtering knobs are a
+    different mode. Combining them is rejected up front."""
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "list", "--stdin", *extra],
+        input="alpha\n",
+    )
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "--search/--filter/--limit" in output
+
+
+def test_list_stdin_continues_on_missing_name(seeded_default_org: Any) -> None:
+    """A missing name in `list --stdin` must not suppress the names that
+    resolved (same per-id error reporting as `get --stdin`)."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "list", "--stdin", "--format", "raw", "--columns", "name"],
+        input="alpha\nghost\n",
+    )
+    assert result.exit_code != 0
+    assert "alpha" in result.stdout
+    assert "ghost" in (result.output + (result.stderr or ""))
+
+
+def test_list_stdin_renders_table_format(seeded_default_org: Any) -> None:
+    """Default `--format` (table) under `--stdin` produces the same
+    tabular columns view `list` normally renders — the user-visible
+    promise of "tabular semantics for a known set"."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    seeded_default_org.seed(
+        "job_templates", id=11, name="beta", organization=1, organization_name="Default"
+    )
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "list", "--stdin"],
+        input="alpha\nbeta\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.stdout
+    assert "beta" in result.stdout
+
+
+def test_list_stdin_with_names_flips_fks(seeded_default_org: Any) -> None:
+    """`--with-names` flattens FK ids to names under `--stdin` just like
+    it does under the existing filter-based `list` path."""
+    seeded_default_org.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    seeded_default_org.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        project=10,
+        project_name="playbooks",
+        playbook="a.yml",
+        summary_fields={
+            "organization": {"id": 1, "name": "Default"},
+            "project": {"id": 10, "name": "playbooks"},
+        },
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "list",
+            "--stdin",
+            "--with-names",
+            "--format",
+            "raw",
+            "--columns",
+            "project",
+        ],
+        input="deploy\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "playbooks"
+
+
+def test_list_stdin_mixes_names_and_ids(seeded_default_org: Any) -> None:
+    """A single `list --stdin` batch can mix names and numeric ids,
+    matching `get`'s mixed-batch semantic."""
+    seeded_default_org.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    seeded_default_org.seed(
+        "projects",
+        id=11,
+        name="ops",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--stdin", "--format", "raw", "--columns", "name"],
+        input="playbooks\n11\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "playbooks" in result.stdout
+    assert "ops" in result.stdout
+
+
 def test_launch_reads_names_from_stdin(seeded_default_org: Any) -> None:
     """`launch --stdin` fans out launches across every identifier read from
     stdin — same pipeline shape as `get --stdin`."""

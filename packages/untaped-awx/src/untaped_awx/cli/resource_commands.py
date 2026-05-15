@@ -33,7 +33,9 @@ from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
+from untaped_awx.cli._lookup import resolve_each
 from untaped_awx.cli._names import flatten_fks
+from untaped_awx.cli.membership_commands import register_membership_subapp
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
@@ -63,6 +65,9 @@ def make_resource_app(spec: AwxResourceSpec) -> typer.Typer:
         builder = ACTION_BUILDERS.get(action.name)
         if builder is not None:
             builder(app, spec)
+    for ref in spec.fk_refs:
+        if ref.multi and ref.sub_endpoint:
+            register_membership_subapp(app, spec, ref)
 
     return app
 
@@ -84,6 +89,26 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             ),
         ),
         limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+        stdin: bool = typer.Option(
+            False,
+            "--stdin",
+            help="Read names or numeric ids from stdin (one per line); render only those records.",
+        ),
+        organization: str | None = typer.Option(
+            None,
+            "--organization",
+            help="Scope ``--stdin`` name lookups to an organization (ignored for numeric ids).",
+        ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help="Scope ``--stdin`` name lookups to an inventory (Host/Group only).",
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
         with_names: bool = typer.Option(
             False,
             "--with-names",
@@ -97,19 +122,56 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None, "--columns", "-c", help="Columns to include (repeatable)."
         ),
     ) -> None:
-        """List resources."""
-        filters = parse_kv_pairs(filter_, flag="--filter")
+        """List resources, optionally restricted to names/ids from stdin.
+
+        With ``--stdin``, reads newline-separated names or numeric ids and
+        renders only those records — same identifier semantics as ``get
+        --stdin`` but with the tabular columns view ``list`` uses. Cannot
+        be combined with ``--search``/``--filter``/``--limit``. The
+        ``--organization`` / ``--inventory`` / ``--inventory-organization``
+        scope flags apply to ``--stdin`` name lookups only (they have no
+        effect on server-side filtering, which already accepts
+        ``--filter organization__name=…``).
+        """
+        if stdin and (search or filter_ or limit is not None):
+            raise typer.BadParameter("--stdin cannot be combined with --search/--filter/--limit")
+        records: list[dict[str, Any]] = []
+        any_failed = False
         with report_errors(), open_context() as ctx:
-            records = list(
-                ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
-            )
+            if stdin:
+                ids = read_identifiers([], stdin=True)
+                scope = _scope(
+                    ctx,
+                    organization,
+                    spec,
+                    inventory=inventory,
+                    inventory_organization=inventory_organization,
+                )
+                getter = GetResource(ctx.repo)
+                records, any_failed = resolve_each(
+                    ids, lambda n: getter.by_identifier(spec, n, scope=scope)
+                )
+            else:
+                filters = parse_kv_pairs(filter_, flag="--filter")
+                records = list(
+                    ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
+                )
         cols = list(columns) if columns else list(spec.list_columns)
         if with_names:
             # Pass ``cols`` so display-only FK columns (e.g. Host's
             # ``inventory``, which lives in ``read_only_fields`` rather
             # than ``fk_refs``) get flattened from ``summary_fields``.
             records = flatten_fks(records, spec, columns=cols)
-        typer.echo(format_output(records, fmt=fmt, columns=cols))
+        # In ``--stdin`` mode every input identifier already reported its
+        # own ``error:`` line; an all-failed batch leaves ``records``
+        # empty and we skip the redundant ``[]`` to keep stdout clean for
+        # piping. In normal mode an empty list still renders (``[]`` for
+        # json/yaml, header-only table, blank for raw) so downstream
+        # tools like ``jq`` always see a valid document.
+        if records or not stdin:
+            typer.echo(format_output(records, fmt=fmt, columns=cols))
+        if any_failed:
+            raise typer.Exit(code=1)
 
 
 # ---- get ----
@@ -173,12 +235,9 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 inventory_organization=inventory_organization,
             )
             getter = GetResource(ctx.repo)
-            for n in ids:
-                try:
-                    records.append(_get_one(getter, spec, n, scope, by_name=by_name))
-                except UntapedError as exc:
-                    typer.echo(f"error: {n}: {exc}", err=True)
-                    any_failed = True
+            records, any_failed = resolve_each(
+                ids, lambda n: getter.by_identifier(spec, n, scope=scope, by_name=by_name)
+            )
         if records:
             cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
             if with_names:
@@ -203,22 +262,6 @@ def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[
     if fmt == "table":
         return list(default_cols)
     return None
-
-
-def _get_one(
-    getter: GetResource,
-    spec: AwxResourceSpec,
-    identifier: str,
-    scope: dict[str, str] | None,
-    *,
-    by_name: bool = False,
-) -> dict[str, Any]:
-    # `isdecimal()` matches Unicode category Nd — exactly the set
-    # `int()` accepts. `isdigit()` admits superscripts/subscripts
-    # like "²" that `int()` would reject with ValueError.
-    if not by_name and identifier.isdecimal():
-        return getter(spec, id_=int(identifier))
-    return getter(spec, name=identifier, scope=scope)
 
 
 # ---- save ----
