@@ -8,10 +8,9 @@ from pathlib import Path
 
 from untaped_workspace.application.ports import (
     Filesystem,
-    ManifestRepository,
     RepoDiscoverer,
-    WorkspaceRegistry,
 )
+from untaped_workspace.application.workspace_bootstrapper import WorkspaceBootstrapper
 from untaped_workspace.domain import (
     DiscoveredRepo,
     ManifestDefaults,
@@ -35,15 +34,13 @@ def _noop(_: str) -> None:
 class AdoptWorkspace:
     def __init__(
         self,
-        manifest_repo: ManifestRepository,
-        registry: WorkspaceRegistry,
+        bootstrapper: WorkspaceBootstrapper,
         discoverer: RepoDiscoverer,
         *,
         fs: Filesystem,
         warn: Callable[[str], None] = _noop,
     ) -> None:
-        self._manifests = manifest_repo
-        self._registry = registry
+        self._bootstrap = bootstrapper
         self._discoverer = discoverer
         self._fs = fs
         self._warn = warn
@@ -60,25 +57,17 @@ class AdoptWorkspace:
         if not self._fs.is_dir(canonical):
             raise WorkspaceError(f"not a directory: {canonical}")
 
-        ws_name = name or canonical.name
-        if not ws_name:
-            raise WorkspaceError(f"unable to derive workspace name from {path}")
-
-        if self._manifests.exists(canonical):
-            raise WorkspaceError(f"workspace already initialised at {canonical}")
-        if self._registry.find_by_path(canonical) is not None:
-            raise WorkspaceError(f"path already registered: {canonical}")
+        # Fail fast before discovery — discoverer.discover() does an
+        # iterdir plus 2 git subprocess spawns per child directory.
+        self._bootstrap.verify(path, name=name)
 
         result = self._discoverer.discover(canonical)
         for reason in result.skipped:
             self._warn(reason)
         repos = [Repo(url=d.url, name=d.name, branch=d.branch) for d in result.repos]
 
-        manifest = WorkspaceManifest(
-            name=ws_name,
-            defaults=ManifestDefaults(),
-            repos=repos,
-        )
-        self._manifests.write(canonical, manifest)
-        workspace = self._registry.register(name=ws_name, path=canonical)
+        def _build(ws_name: str) -> WorkspaceManifest:
+            return WorkspaceManifest(name=ws_name, defaults=ManifestDefaults(), repos=repos)
+
+        workspace = self._bootstrap(path, build_manifest=_build, name=name)
         return AdoptResult(workspace=workspace, repos=list(result.repos))

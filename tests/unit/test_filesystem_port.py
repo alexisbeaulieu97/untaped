@@ -26,6 +26,7 @@ from conftest import StubFilesystem, StubRegistry
 from untaped_workspace.application import (
     Foreach,
     InitWorkspace,
+    WorkspaceBootstrapper,
     WorkspaceStatus,
 )
 from untaped_workspace.domain import (
@@ -141,7 +142,7 @@ def test_init_workspace_can_be_tested_with_stub_filesystem(tmp_path: Path) -> No
     fs = StubFilesystem()
     ws_path = tmp_path / "prod"  # manifest repository still needs a real path
     reg = StubRegistry()
-    InitWorkspace(ManifestRepository(), reg, fs=fs)(ws_path, name="prod")
+    InitWorkspace(WorkspaceBootstrapper(ManifestRepository(), reg, fs=fs))(ws_path, name="prod")
     # The use case's *single* disk side effect is the mkdir call — pinned
     # via the StubFilesystem events list rather than via filesystem
     # introspection.

@@ -1,21 +1,29 @@
-"""Unit tests for the ``InitWorkspace`` use case."""
+"""Unit tests for the ``InitWorkspace`` use case.
+
+Collision raises and name-derivation invariants live on
+``test_workspace_bootstrapper.py``. This file pins only what
+``InitWorkspace`` itself owns: plumbing ``branch`` into the manifest's
+defaults.
+"""
 
 from pathlib import Path
 
-import pytest
-from conftest import StubRegistry, empty_manifest
-from untaped_workspace.application import InitWorkspace
-from untaped_workspace.errors import WorkspaceError
+from conftest import StubRegistry
+from untaped_workspace.application import InitWorkspace, WorkspaceBootstrapper
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
+
+
+def _init(repo: ManifestRepository, reg: StubRegistry) -> InitWorkspace:
+    return InitWorkspace(WorkspaceBootstrapper(repo, reg, fs=_FS))
 
 
 def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
     repo = ManifestRepository()
     reg = StubRegistry()
     ws_path = tmp_path / "prod"
-    result = InitWorkspace(repo, reg, fs=_FS)(ws_path, name="prod", branch="main")
+    result = _init(repo, reg)(ws_path, name="prod", branch="main")
     assert result.name == "prod"
     assert (ws_path / "untaped.yml").is_file()
     manifest = repo.read(ws_path)
@@ -24,13 +32,7 @@ def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
     assert reg.registered[0].name == "prod"
 
 
-def test_init_derives_name_from_path(tmp_path: Path) -> None:
-    InitWorkspace(ManifestRepository(), StubRegistry(), fs=_FS)(tmp_path / "lab")
-    assert (tmp_path / "lab" / "untaped.yml").is_file()
-
-
-def test_init_refuses_existing_manifest(tmp_path: Path) -> None:
-    ws = tmp_path / "prod"
-    ManifestRepository().write(ws, empty_manifest())
-    with pytest.raises(WorkspaceError, match="already initialised"):
-        InitWorkspace(ManifestRepository(), StubRegistry(), fs=_FS)(ws, name="prod")
+def test_init_without_branch_leaves_defaults_branch_unset(tmp_path: Path) -> None:
+    repo = ManifestRepository()
+    _init(repo, StubRegistry())(tmp_path / "lab")
+    assert repo.read(tmp_path / "lab").defaults.branch is None
