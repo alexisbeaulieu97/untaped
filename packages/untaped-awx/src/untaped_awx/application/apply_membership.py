@@ -146,8 +146,8 @@ class MembershipReconciler:
         parent_id: int,
         ref: FkRef,
         member_ids: Iterable[int],
-        client: ResourceClient,
         disassociate: bool = False,
+        client: ResourceClient,
     ) -> None:
         """Issue associate (or disassociate) sub-endpoint POSTs without a diff.
 
@@ -158,6 +158,12 @@ class MembershipReconciler:
         directly by
         :class:`untaped_awx.application.manage_membership.ManageMembership`
         for the additive ``<parent> <sub_endpoint> add/remove`` CLI flow.
+
+        ``ref.sub_endpoint is None`` short-circuits before iterating
+        ``member_ids``. :class:`MembershipPlan` and :class:`FkRef` are
+        both public — a future external caller could build a plan with
+        ``FkRef(sub_endpoint=None)`` and reach this method through
+        :meth:`execute`; the guard ensures no malformed POST escapes.
         """
         if ref.sub_endpoint is None:
             return
