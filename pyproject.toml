@@ -47,15 +47,31 @@ dev = [
     "types-pyyaml>=6.0.12.20260408",
 ]
 
+[tool.untaped]
+# Sole source of truth for "what domain packages does the suite expose".
+# `scripts/sync_domains.py` regenerates the four Import Linter blocks and
+# the mypy `packages` list from this when run. `untaped` (root aggregator)
+# and `untaped_core` (shared kit) are intentionally absent here — they
+# aren't domains. Add a new domain by appending its import root here, then
+# `uv run python scripts/sync_domains.py --write` (or let the pre-commit
+# hook flag drift on commit).
+domains = [
+    "untaped_awx",
+    "untaped_config",
+    "untaped_github",
+    "untaped_profile",
+    "untaped_workspace",
+]
+
 [tool.importlinter]
 root_packages = [
     "untaped",
     "untaped_core",
+    "untaped_awx",
     "untaped_config",
+    "untaped_github",
     "untaped_profile",
     "untaped_workspace",
-    "untaped_awx",
-    "untaped_github",
 ]
 # TYPE_CHECKING imports don't create runtime edges; the layered DDD rule
 # allows them. tests/unit/test_layering.py documents and enforces the same
@@ -65,14 +81,14 @@ exclude_type_checking_imports = true
 # `untaped` (root aggregator: importing every domain is its job) and
 # `untaped_core` (flat shared library, no DDD layers) are intentionally
 # absent from the per-domain layers + independence contracts. The
-# `core → siblings` direction is forbidden separately below. When adding
-# a new domain *to this config block*, append its import root to
-# `root_packages` above, the `independence` contract's `modules`, the
-# layers contract's `containers`, and the `untaped_core does not depend
-# on any domain` contract's `forbidden_modules`. (Wider workspace
-# touchpoints — `[tool.mypy] packages`, root `[project] dependencies`,
-# `src/untaped/main.py` — are covered by the "Add a new domain package"
-# recipe in the root AGENTS.md.)
+# `core → siblings` direction is forbidden separately below. The
+# `root_packages`, `modules`, `containers`, `forbidden_modules`, and
+# `[tool.mypy] packages` lists are regenerated from
+# `[tool.untaped].domains` by `scripts/sync_domains.py` — edit the
+# source list (and run the script / let the pre-commit hook flag drift)
+# instead of these blocks. (Other workspace touchpoints — root
+# `[project] dependencies`, `src/untaped/main.py` — stay manual; see
+# the "Add a new domain package" recipe in the root AGENTS.md.)
 
 [[tool.importlinter.contracts]]
 name = "Sibling domains are mutually independent"
@@ -82,10 +98,10 @@ name = "Sibling domains are mutually independent"
 type = "independence"
 modules = [
     "untaped_awx",
-    "untaped_workspace",
-    "untaped_github",
     "untaped_config",
+    "untaped_github",
     "untaped_profile",
+    "untaped_workspace",
 ]
 
 [[tool.importlinter.contracts]]
@@ -93,10 +109,10 @@ name = "Per-domain layers (cli > application | infrastructure > domain)"
 type = "layers"
 containers = [
     "untaped_awx",
-    "untaped_workspace",
     "untaped_config",
-    "untaped_profile",
     "untaped_github",
+    "untaped_profile",
+    "untaped_workspace",
 ]
 # `application | infrastructure` makes the two siblings of the same
 # layer: `cli` may import both, both may import `domain`, but neither
@@ -118,10 +134,10 @@ source_modules = ["untaped_core"]
 forbidden_modules = [
     "untaped",
     "untaped_awx",
-    "untaped_workspace",
-    "untaped_github",
     "untaped_config",
+    "untaped_github",
     "untaped_profile",
+    "untaped_workspace",
 ]
 
 [tool.ruff]
@@ -188,11 +204,11 @@ plugins = ["pydantic.mypy"]
 packages = [
     "untaped",
     "untaped_core",
+    "untaped_awx",
     "untaped_config",
+    "untaped_github",
     "untaped_profile",
     "untaped_workspace",
-    "untaped_awx",
-    "untaped_github",
 ]
 
 [tool.pytest.ini_options]
