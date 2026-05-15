@@ -10,13 +10,11 @@ from pathlib import Path
 
 from conftest import StubRegistry
 from untaped_workspace.application import InitWorkspace, WorkspaceBootstrapper
-from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
-
-_FS = LocalFilesystem()
+from untaped_workspace.infrastructure import ManifestRepository
 
 
 def _init(repo: ManifestRepository, reg: StubRegistry) -> InitWorkspace:
-    return InitWorkspace(WorkspaceBootstrapper(repo, reg, fs=_FS))
+    return InitWorkspace(WorkspaceBootstrapper(repo, reg))
 
 
 def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:

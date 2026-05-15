@@ -125,9 +125,7 @@ def init_command(
     """
     with report_errors():
         target = path or (get_settings().workspace.workspaces_dir.expanduser() / name)
-        bootstrapper = WorkspaceBootstrapper(
-            ManifestRepository(), WorkspaceRegistryRepository(), fs=LocalFilesystem()
-        )
+        bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
 
@@ -146,14 +144,11 @@ def adopt_command(
     `untaped.yml` with its current `origin` URL and checked-out branch.
     """
     with report_errors():
-        fs = LocalFilesystem()
-        bootstrapper = WorkspaceBootstrapper(
-            ManifestRepository(), WorkspaceRegistryRepository(), fs=fs
-        )
+        bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         result = AdoptWorkspace(
             bootstrapper,
             LocalRepoDiscoverer(GitRunner()),
-            fs=fs,
+            fs=LocalFilesystem(),
             warn=lambda m: typer.echo(f"warning: {m}", err=True),
         )(path, name=name)
         ws = result.workspace
@@ -553,9 +548,7 @@ def import_command(
     """Adopt a workspace from a local YAML manifest."""
     with report_errors():
         manifests = ManifestRepository()
-        bootstrapper = WorkspaceBootstrapper(
-            manifests, WorkspaceRegistryRepository(), fs=LocalFilesystem()
-        )
+        bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
         ws = ImportWorkspace(manifests, bootstrapper)(source, path=path, name=name)
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
