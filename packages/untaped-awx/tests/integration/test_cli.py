@@ -662,6 +662,26 @@ def test_list_reads_ids_from_stdin(seeded_default_org: Any) -> None:
     assert "ops" in result.stdout
 
 
+def test_list_stdin_all_failed_exits_one_and_suppresses_empty_stdout(
+    seeded_default_org: Any,
+) -> None:
+    """When every piped identifier 404s, the command exits 1 and stays
+    silent on stdout — per-id errors went to stderr; emitting an empty
+    ``[]`` would be redundant noise for the all-failed batch. The
+    non-stdin path still emits ``[]`` (pinned by
+    ``test_list_empty_result_still_renders_in_non_stdin_mode``)."""
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--stdin", "--format", "json"],
+        input="missing-a\nmissing-b\n",
+    )
+    assert result.exit_code != 0
+    assert result.stdout.strip() == ""
+    err = (result.output or "") + (result.stderr or "")
+    assert "error: missing-a:" in err
+    assert "error: missing-b:" in err
+
+
 def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: Any) -> None:
     """A regular `list` with zero matches must still emit a valid
     document for the chosen format so pipelines (``| jq '.[]'`` etc.)

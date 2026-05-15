@@ -94,6 +94,21 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             "--stdin",
             help="Read names or numeric ids from stdin (one per line); render only those records.",
         ),
+        organization: str | None = typer.Option(
+            None,
+            "--organization",
+            help="Scope ``--stdin`` name lookups to an organization (ignored for numeric ids).",
+        ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help="Scope ``--stdin`` name lookups to an inventory (Host/Group only).",
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
         with_names: bool = typer.Option(
             False,
             "--with-names",
@@ -112,7 +127,11 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
         With ``--stdin``, reads newline-separated names or numeric ids and
         renders only those records — same identifier semantics as ``get
         --stdin`` but with the tabular columns view ``list`` uses. Cannot
-        be combined with ``--search``/``--filter``/``--limit``.
+        be combined with ``--search``/``--filter``/``--limit``. The
+        ``--organization`` / ``--inventory`` / ``--inventory-organization``
+        scope flags apply to ``--stdin`` name lookups only (they have no
+        effect on server-side filtering, which already accepts
+        ``--filter organization__name=…``).
         """
         if stdin and (search or filter_ or limit is not None):
             raise typer.BadParameter("--stdin cannot be combined with --search/--filter/--limit")
@@ -121,9 +140,16 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
         with report_errors(), open_context() as ctx:
             if stdin:
                 ids = read_identifiers([], stdin=True)
+                scope = _scope(
+                    ctx,
+                    organization,
+                    spec,
+                    inventory=inventory,
+                    inventory_organization=inventory_organization,
+                )
                 getter = GetResource(ctx.repo)
                 records, any_failed = resolve_each(
-                    ids, lambda n: getter.by_identifier(spec, n, scope=None)
+                    ids, lambda n: getter.by_identifier(spec, n, scope=scope)
                 )
             else:
                 filters = parse_kv_pairs(filter_, flag="--filter")

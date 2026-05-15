@@ -555,6 +555,54 @@ def test_groups_hosts_add_continues_on_missing_name(fake_aap: Any) -> None:
     assert "ghost" in (result.output + (result.stderr or ""))
 
 
+def test_groups_hosts_add_disambiguates_parent_with_inventory_flag(fake_aap: Any) -> None:
+    """When the same group name lives in two inventories, ``--inventory``
+    picks the right parent for the add. Without it, a name lookup is
+    global and the test for "first match wins" is brittle — so the
+    flag must round-trip through ``scope_for_spec`` into the lookup."""
+    _seed_inventory(fake_aap)
+    fake_aap.seed(
+        "inventories",
+        id=21,
+        name="staging",
+        organization=1,
+        organization_name="Default",
+        kind="",
+    )
+    fake_aap.seed(
+        "groups",
+        id=200,
+        name="web-servers",
+        inventory=20,
+        inventory_name="prod",
+        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+    )
+    fake_aap.seed(
+        "groups",
+        id=300,
+        name="web-servers",
+        inventory=21,
+        inventory_name="staging",
+        summary_fields={"inventory": {"id": 21, "name": "staging"}},
+    )
+    fake_aap.seed(
+        "hosts",
+        id=101,
+        name="web-01",
+        inventory=21,
+        inventory_name="staging",
+        summary_fields={"inventory": {"id": 21, "name": "staging"}},
+    )
+    result = CliRunner().invoke(
+        app,
+        ["groups", "hosts", "add", "web-servers", "web-01", "--inventory", "staging"],
+    )
+    assert result.exit_code == 0, result.output
+    # The staging group (id=300) got the association — not the prod one (200).
+    assert fake_aap.memberships[("groups", 300, "hosts")] == {101}
+    assert fake_aap.memberships[("groups", 200, "hosts")] == set()
+
+
 def test_groups_hosts_add_resolves_by_id_skipping_scope(fake_aap: Any) -> None:
     """Numeric ids bypass name lookup so the scope (inventory) doesn't
     matter — the natural pipeline shape when piping FK columns."""
