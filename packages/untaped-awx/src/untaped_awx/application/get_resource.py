@@ -29,3 +29,22 @@ class GetResource:
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
         return record.model_dump()
+
+    def by_identifier(
+        self,
+        spec: ResourceSpec,
+        identifier: str,
+        *,
+        scope: dict[str, str] | None = None,
+        by_name: bool = False,
+    ) -> dict[str, Any]:
+        """Dispatch between id-lookup (all-digits) and name-lookup.
+
+        ``isdecimal()`` matches Unicode category Nd — exactly the set
+        ``int()`` accepts. ``isdigit()`` admits superscripts/subscripts
+        like ``"²"`` that ``int()`` would reject. ``by_name=True`` is
+        the escape hatch for resources whose name is all digits.
+        """
+        if not by_name and identifier.isdecimal():
+            return self(spec, id_=int(identifier))
+        return self(spec, name=identifier, scope=scope)

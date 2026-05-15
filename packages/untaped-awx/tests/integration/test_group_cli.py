@@ -461,3 +461,170 @@ def test_groups_apply_unchanged_when_membership_matches(fake_aap: Any, tmp_path:
     assert result.exit_code == 0, result.output
     # Membership preserved exactly.
     assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
+
+
+# ---- `groups <sub_endpoint> add/remove` (spec-driven membership commands) ----
+
+
+def _seed_two_hosts(fake: Any) -> None:
+    fake.seed(
+        "hosts",
+        id=101,
+        name="web-01",
+        inventory=20,
+        inventory_name="prod",
+        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+    )
+    fake.seed(
+        "hosts",
+        id=102,
+        name="web-02",
+        inventory=20,
+        inventory_name="prod",
+        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+    )
+
+
+def test_groups_hosts_add_associates_via_stdin(fake_aap: Any) -> None:
+    """`hosts list … | groups hosts add <group> --stdin` POSTs each
+    host's id into the group's sub-endpoint."""
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["groups", "hosts", "add", "web-servers", "--stdin"],
+        input="web-01\nweb-02\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101, 102}
+
+
+def test_groups_hosts_add_accepts_positional_names(fake_aap: Any) -> None:
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    result = CliRunner().invoke(app, ["groups", "hosts", "add", "web-servers", "web-01", "web-02"])
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101, 102}
+
+
+def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["groups", "hosts", "add", "web-servers", "web-01", "--stdin"],
+        input="web-02\n",
+    )
+    assert result.exit_code != 0
+    output = result.output + (result.stderr or "")
+    assert "stdin" in output.lower()
+    # Neither host was associated — the command rejected up front.
+    assert fake_aap.memberships[("groups", 200, "hosts")] == set()
+
+
+def test_groups_hosts_add_empty_stdin_errors(fake_aap: Any) -> None:
+    _seed_groups(fake_aap)
+    result = CliRunner().invoke(app, ["groups", "hosts", "add", "web-servers", "--stdin"], input="")
+    assert result.exit_code != 0
+    assert "no identifiers received on stdin" in (result.output + (result.stderr or ""))
+
+
+def test_groups_hosts_remove_disassociates_listed_members(fake_aap: Any) -> None:
+    """`remove` sends ``{id, disassociate: true}``; only listed members
+    drop, the rest stay."""
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    fake_aap.memberships[("groups", 200, "hosts")] = {101, 102}
+    result = CliRunner().invoke(app, ["groups", "hosts", "remove", "web-servers", "web-01"])
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {102}
+
+
+def test_groups_hosts_add_continues_on_missing_name(fake_aap: Any) -> None:
+    """A missing member name surfaces per-id on stderr and exits 1, but
+    the names that resolved still get associated."""
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["groups", "hosts", "add", "web-servers", "--stdin"],
+        input="web-01\nghost\n",
+    )
+    assert result.exit_code != 0
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
+    assert "ghost" in (result.output + (result.stderr or ""))
+
+
+def test_groups_hosts_add_disambiguates_parent_with_inventory_flag(fake_aap: Any) -> None:
+    """When the same group name lives in two inventories, ``--inventory``
+    picks the right parent for the add. Without it, a name lookup is
+    global and the test for "first match wins" is brittle — so the
+    flag must round-trip through ``scope_for_spec`` into the lookup."""
+    _seed_inventory(fake_aap)
+    fake_aap.seed(
+        "inventories",
+        id=21,
+        name="staging",
+        organization=1,
+        organization_name="Default",
+        kind="",
+    )
+    fake_aap.seed(
+        "groups",
+        id=200,
+        name="web-servers",
+        inventory=20,
+        inventory_name="prod",
+        summary_fields={"inventory": {"id": 20, "name": "prod"}},
+    )
+    fake_aap.seed(
+        "groups",
+        id=300,
+        name="web-servers",
+        inventory=21,
+        inventory_name="staging",
+        summary_fields={"inventory": {"id": 21, "name": "staging"}},
+    )
+    fake_aap.seed(
+        "hosts",
+        id=101,
+        name="web-01",
+        inventory=21,
+        inventory_name="staging",
+        summary_fields={"inventory": {"id": 21, "name": "staging"}},
+    )
+    result = CliRunner().invoke(
+        app,
+        ["groups", "hosts", "add", "web-servers", "web-01", "--inventory", "staging"],
+    )
+    assert result.exit_code == 0, result.output
+    # The staging group (id=300) got the association — not the prod one (200).
+    assert fake_aap.memberships[("groups", 300, "hosts")] == {101}
+    assert fake_aap.memberships[("groups", 200, "hosts")] == set()
+
+
+def test_groups_hosts_add_resolves_by_id_skipping_scope(fake_aap: Any) -> None:
+    """Numeric ids bypass name lookup so the scope (inventory) doesn't
+    matter — the natural pipeline shape when piping FK columns."""
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["groups", "hosts", "add", "web-servers", "--stdin"],
+        input="101\n102\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101, 102}
+
+
+def test_groups_children_add_associates(fake_aap: Any) -> None:
+    """Spec-driven coverage: ``Group.children`` is also
+    ``FkRef(multi=True, sub_endpoint="children")`` so the same factory
+    wires ``groups children add`` with identical option surface."""
+    _seed_groups(fake_aap)  # seeds web-servers (200) and api-servers (201)
+    result = CliRunner().invoke(
+        app,
+        ["groups", "children", "add", "web-servers", "api-servers"],
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 200, "children")] == {201}
