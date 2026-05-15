@@ -23,8 +23,8 @@ from untaped_core.errors import ConfigError
 from untaped_core.settings import get_settings, resolve_config_path
 
 _MISSING = object()
-# Public ``Any``-typed alias of ``_MISSING`` so ``value is MISSING``
-# works at call sites without mypy narrowing the result to ``object``.
+# Typed as ``Any`` so ``value is MISSING`` at call sites doesn't
+# narrow the result to ``object`` under mypy strict.
 MISSING: Any = _MISSING
 
 _DEFAULT_LOCK_TIMEOUT = 5.0
