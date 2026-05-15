@@ -471,10 +471,16 @@ def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
     return bool(errors)
 
 
-# C901: per-kind launch-flag wiring dispatches over ``ActionSpec.accepts`` —
-# one branch per accepted narrowable flag. Splitting would shred the
-# structural guarantee the launch parser provides; see
-# packages/untaped-awx/AGENTS.md (Resource framework → _add_launch).
+# C901: ``_add_launch`` defines a Typer command with 12 parameters, each
+# carrying a ``hidden=hidden_by_flag[...]`` lookup from the per-kind
+# ``ActionSpec.accepts`` projection. The complexity comes from the
+# breadth of the Typer signature (one Option per launch flag), not from
+# branchy dispatch — the eight per-flag branches now live in
+# ``LAUNCH_FLAGS`` and are walked uniformly. Splitting the signature
+# would mean either (a) parsing in a sibling function and rebinding —
+# which Typer can't do — or (b) folding flags into a single ``--opt
+# k=v`` glob — which would lose ``--help`` discoverability and
+# per-flag typing.
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
