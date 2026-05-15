@@ -14,7 +14,7 @@ from typing import Any, cast
 import pytest
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
 from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import FieldChange, Metadata, Resource, ResourceSpec
+from untaped_awx.domain import FieldChange, FkRef, Metadata, Resource, ResourceSpec
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import GROUP_SPEC, JOB_TEMPLATE_SPEC
@@ -297,4 +297,72 @@ def test_execute_skips_plans_with_no_work() -> None:
         )
     ]
     rec.execute(GROUP_SPEC, 42, plans, client=cast(ResourceClient, client))
+    assert client.subendpoint_calls == []
+
+
+# ---- post_members ----
+
+
+def _hosts_ref() -> Any:
+    return next(r for r in GROUP_SPEC.fk_refs if r.field == "hosts")
+
+
+def test_post_members_associates_each_id() -> None:
+    rec = MembershipReconciler()
+    client = _StubClient()
+    rec.post_members(
+        GROUP_SPEC,
+        parent_id=42,
+        ref=_hosts_ref(),
+        member_ids=[7, 8],
+        client=cast(ResourceClient, client),
+    )
+    assert client.subendpoint_calls == [
+        (42, "hosts", "POST", {"id": 7}),
+        (42, "hosts", "POST", {"id": 8}),
+    ]
+
+
+def test_post_members_disassociate_sets_flag() -> None:
+    rec = MembershipReconciler()
+    client = _StubClient()
+    rec.post_members(
+        GROUP_SPEC,
+        parent_id=42,
+        ref=_hosts_ref(),
+        member_ids=[7],
+        disassociate=True,
+        client=cast(ResourceClient, client),
+    )
+    assert client.subendpoint_calls == [
+        (42, "hosts", "POST", {"id": 7, "disassociate": True}),
+    ]
+
+
+def test_post_members_empty_ids_is_a_noop() -> None:
+    rec = MembershipReconciler()
+    client = _StubClient()
+    rec.post_members(
+        GROUP_SPEC,
+        parent_id=42,
+        ref=_hosts_ref(),
+        member_ids=[],
+        client=cast(ResourceClient, client),
+    )
+    assert client.subendpoint_calls == []
+
+
+def test_post_members_ref_without_sub_endpoint_is_a_noop() -> None:
+    """Defensive: a ``FkRef(sub_endpoint=None)`` (the dataclass is public —
+    a future external caller could build one) must short-circuit before
+    iterating ``member_ids`` so no malformed POST is ever issued."""
+    rec = MembershipReconciler()
+    client = _StubClient()
+    rec.post_members(
+        GROUP_SPEC,
+        parent_id=42,
+        ref=FkRef(field="hosts", kind="Host"),  # sub_endpoint default = None
+        member_ids=[7, 8],
+        client=cast(ResourceClient, client),
+    )
     assert client.subendpoint_calls == []
