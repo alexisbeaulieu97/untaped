@@ -2,10 +2,13 @@
 
 ``InitWorkspace`` / ``AdoptWorkspace`` / ``ImportWorkspace`` each
 delegate the canonicalise → derive-name → collision-guard →
-``mkdir`` → ``manifests.write`` → ``registry.register`` scaffold to
-this class. Callers vary only in how their ``WorkspaceManifest`` is
-built, so they pass a ``build_manifest(ws_name) -> WorkspaceManifest``
-closure.
+``manifests.write`` → ``registry.register`` scaffold to this class.
+Callers vary only in how their ``WorkspaceManifest`` is built, so they
+pass a ``build_manifest(ws_name) -> WorkspaceManifest`` closure.
+
+Workspace-dir creation is a side effect of ``ManifestRepository.write``
+— it mkdirs the manifest's parent (which *is* the workspace dir) so
+callers don't need to. See ``untaped-workspace/AGENTS.md``.
 
 ``verify`` is the read-only subset of ``__call__`` — exposed so
 callers with expensive pre-bootstrap work (e.g. ``AdoptWorkspace``'s
@@ -18,11 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from untaped_workspace.application.ports import (
-    Filesystem,
-    ManifestRepository,
-    WorkspaceRegistry,
-)
+from untaped_workspace.application.ports import ManifestRepository, WorkspaceRegistry
 from untaped_workspace.domain import Workspace, WorkspaceManifest
 from untaped_workspace.errors import WorkspaceError
 
@@ -32,12 +31,9 @@ class WorkspaceBootstrapper:
         self,
         manifest_repo: ManifestRepository,
         registry: WorkspaceRegistry,
-        *,
-        fs: Filesystem,
     ) -> None:
         self._manifests = manifest_repo
         self._registry = registry
-        self._fs = fs
 
     def _resolve_and_check(self, path: Path, name: str | None) -> tuple[Path, str]:
         canonical = path.expanduser().resolve()
@@ -68,6 +64,5 @@ class WorkspaceBootstrapper:
     ) -> Workspace:
         canonical, ws_name = self._resolve_and_check(path, name)
         manifest = build_manifest(ws_name)
-        self._fs.mkdir(canonical, parents=True, exist_ok=True)
         self._manifests.write(canonical, manifest)
         return self._registry.register(name=ws_name, path=canonical)
