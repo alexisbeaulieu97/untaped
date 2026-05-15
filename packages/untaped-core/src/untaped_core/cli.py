@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from typing import Annotated
 
@@ -40,6 +40,25 @@ def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]
             raise typer.BadParameter(f"{flag} expects KEY=VALUE (got {entry!r})", param_hint=flag)
         out[key] = value
     return out
+
+
+def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
+    """Resolve each identifier via ``fn``; aggregate per-id failures.
+
+    Echoes ``error: <id>: <exc>`` to stderr for any :class:`UntapedError` and
+    returns ``(results, any_failed)`` so the caller decides exit code and
+    aggregate rendering. Companion to :func:`read_identifiers` for stdin-fed
+    list commands across domains.
+    """
+    results: list[R] = []
+    any_failed = False
+    for id_ in ids:
+        try:
+            results.append(fn(id_))
+        except UntapedError as exc:
+            typer.echo(f"error: {id_}: {exc}", err=True)
+            any_failed = True
+    return results, any_failed
 
 
 @contextmanager
