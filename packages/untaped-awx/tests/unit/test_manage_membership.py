@@ -1,8 +1,8 @@
 """Unit tests for ManageMembership.
 
 Drives the same write path as the apply pipeline (delegates to
-``MembershipReconciler.execute``) from an already-resolved id list, so
-the test focuses on the one-sided plan construction and the POST-call
+``MembershipReconciler.post_members``) from an already-resolved id list,
+so the test focuses on the bool-flag translation and the POST-call
 shapes the stub client receives.
 """
 
