@@ -105,19 +105,38 @@ invent your own.
    (one value per line — the identifier).
 
 The fallback in (2) makes the **first key of every row** load-bearing
-for shell pipelines. List use cases promise that the first key is the
-row's identifier (workspace `name`, job `id`, github `login`, …) — the
-value a downstream `xargs` would feed back into another `untaped`
-command. Reordering keys in a row dict or in a `model_dump()` source
-is a breaking change for pipeline callers; treat it as part of each
-list command's public contract.
+for shell pipelines. **List** use cases promise that the first key is
+the row's identifier — the value a downstream `xargs` would feed back
+into another `untaped` / `gh` / `awx-cli` command. Reordering keys in
+a row dict or in a `model_dump()` source is a breaking change for
+pipeline callers; treat it as part of each list command's public
+contract.
 
-Every current row source honours this — hand-built dicts (workspace
-`list_command`) put the identifier first by construction, pydantic
-models declare it as the first field, every
-`AwxResourceSpec.list_columns[0]` is `id`. When you add a new list
-command or row-source model, keep the identifier in position 0; a
-pytest invariant is planned (Tier 7).
+Scope: this contract covers **list-style data emission** (`list`,
+`get`, `status`, `search`, `jobs list`, …). Side-effect commands
+that still use `format_output` for a per-outcome summary (`awx
+apply`'s `outcome_rows`, future `sync`-style summaries) are exempt —
+their rows are keyed by `(kind, name)` or similar tuples, not a
+single pipeable identifier, and `--format raw` on them is not a
+documented pipe pattern.
+
+Audit of in-scope row sources (TODO(#158) will pin this by test):
+
+| Row source                                  | First key   |
+| ------------------------------------------- | ----------- |
+| workspace `list_command` (hand dict)        | `name`      |
+| `SyncOutcome` / `StatusEntry` / `ForeachOutcome` | `workspace` |
+| `Job` / `JobEvent`                          | `id` / `counter` |
+| `AwxResourceSpec.list_columns[0]` (every spec) | `id`     |
+| AWX REST record (raw dict from server)      | `id`        |
+| `GithubUser` (`whoami`)                     | `login`     |
+| `RepoResult` / `CodeResult` / `IssueResult` / `UserResult` | `id` |
+
+The github search models put numeric `id` first (matches the upstream
+REST shape); `--columns full_name` / `--columns login` is the more
+common pipeline incantation for those commands. When you add a new
+list command or row-source model, keep an identifier in position 0
+and add the row to the table.
 
 ## Recipe: add a new setting
 

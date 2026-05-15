@@ -99,8 +99,8 @@ def list_command(
     with report_errors():
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         # ``name`` first: ``--format raw`` without ``--columns`` emits
-        # the first key as the row's identifier (see ``output.py`` and
-        # ``packages/untaped-core/AGENTS.md``). Don't reorder.
+        # the first key as the row's identifier. See
+        # ``packages/untaped-core/AGENTS.md``. Don't reorder.
         rows: list[dict[str, object]] = [{"name": w.name, "path": str(w.path)} for w in use_case()]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
