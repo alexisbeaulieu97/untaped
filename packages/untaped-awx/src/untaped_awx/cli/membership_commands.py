@@ -90,9 +90,9 @@ def _add_membership_verb(
             help="Disambiguate same-named inventories across organizations.",
         ),
     ) -> None:
-        member_ids_input = read_identifiers(list(members or []), stdin=stdin)
         any_failed = False
         with report_errors(), open_context() as ctx:
+            member_ids_input = read_identifiers(list(members or []), stdin=stdin)
             parent_scope = scope_for_spec(
                 spec,
                 organization,
