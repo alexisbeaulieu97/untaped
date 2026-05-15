@@ -275,7 +275,11 @@ the body into a sequential launch phase and a parallel monitor phase.
 For two or more templates, `cli/resource_commands._drain_parallel`
 (`--track`) and `_wait_parallel` (`--wait`) drive a
 `ThreadPoolExecutor`; wall-clock collapses from `O(sum(durations))` to
-`O(max)`. `_drain_parallel` multiplexes per-job event streams onto a
+`O(max)`. Both share the executor / future-collection / error-wrap
+scaffolding via `_drain_parallel_with_worker(jobs, worker_fn, *,
+while_running=…)` — each caller contributes only its unique mechanics
+(queue + print loop for `--track`; `WatchJob` lambda for `--wait`).
+`_drain_parallel` multiplexes per-job event streams onto a
 `queue.Queue`; the main thread is the only one that prints, with each
 line carrying a `[<template>] ` prefix (via
 `render_event_text(ev, prefix=…)`) so concurrent stderr stays
