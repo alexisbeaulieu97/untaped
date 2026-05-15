@@ -44,7 +44,7 @@ class AwxClient:
         return f"{self._api_prefix}{path.lstrip('/')}"
 
     def ping(self) -> dict[str, Any]:
-        return self._http.get_json(self._url("ping/"))  # type: ignore[no-any-return]
+        return self._http.get_json_dict(self._url("ping/"))
 
     def get_json(self, path: str, **kwargs: Any) -> Any:
         """GET ``<api_prefix><path>`` and return the JSON body."""

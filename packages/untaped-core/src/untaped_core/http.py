@@ -106,6 +106,45 @@ class HttpClient:
     def get_json(self, path: str, **kwargs: Any) -> Any:
         return self.request_json("GET", path, **kwargs)
 
+    def get_json_dict(self, path: str, **kwargs: Any) -> dict[str, Any]:
+        """GET ``path`` and assert the JSON body decodes to an object.
+
+        Raises :class:`HttpError` (with full URL + status + body snippet,
+        same shape as other ``HttpClient`` errors) when the body is
+        anything other than a JSON object (array, scalar, ``null``).
+        Adapter sites that promise ``-> dict[str, Any]`` call this
+        instead of ``get_json`` so they don't have to suppress
+        ``no-any-return`` at the seam.
+        """
+        response = self.request("GET", path, **kwargs)
+        body = _decode_json(response)
+        if not isinstance(body, dict):
+            raise HttpError(
+                f"expected JSON object from {response.request.url}, got {type(body).__name__}",
+                status_code=response.status_code,
+                url=str(response.request.url),
+                body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
+            )
+        return body
+
+    def get_json_list(self, path: str, **kwargs: Any) -> list[Any]:
+        """GET ``path`` and assert the JSON body decodes to an array.
+
+        Raises :class:`HttpError` (with full URL + status + body snippet,
+        same shape as other ``HttpClient`` errors) when the body is
+        anything other than a JSON array (object, scalar, ``null``).
+        """
+        response = self.request("GET", path, **kwargs)
+        body = _decode_json(response)
+        if not isinstance(body, list):
+            raise HttpError(
+                f"expected JSON array from {response.request.url}, got {type(body).__name__}",
+                status_code=response.status_code,
+                url=str(response.request.url),
+                body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
+            )
+        return body
+
     def post_json(self, path: str, **kwargs: Any) -> Any:
         return self.request_json("POST", path, **kwargs)
 
