@@ -124,6 +124,25 @@ def test_scalar_list_renders_comma_separated_for_human_formats() -> None:
     assert "ssh, vault" in table
 
 
+def test_table_render_width_tracks_columns_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rendered table width follows ``COLUMNS`` instead of a hard-coded value.
+
+    Pins auto-detection: a regression to a fixed ``width=N`` would
+    produce identical render widths under both env values and this
+    test would fail.
+    """
+    rows = [{"name": "x" * 200}]
+
+    def render_width(cols: str) -> int:
+        monkeypatch.setenv("COLUMNS", cols)
+        return max(len(line) for line in format_output(rows, fmt="table").splitlines())
+
+    assert render_width("60") <= 60
+    assert render_width("240") >= 200
+
+
 def test_nested_list_falls_back_to_repr() -> None:
     """Lists of dicts are not flattened — they're structured data the
     user probably wants to inspect via json/yaml, not collapse."""
