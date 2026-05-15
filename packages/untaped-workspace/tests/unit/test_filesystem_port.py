@@ -11,8 +11,8 @@ These tests pin two invariants the port was widened to support:
    accidentally add ``Path.is_dir()`` / ``.exists()`` / ``.iterdir()``
    / ``.mkdir()`` calls back into application code.
 
-A worked example using :class:`conftest.StubFilesystem` demonstrates
-the payoff: a use case test that doesn't need ``tmp_path`` at all.
+Worked examples using :class:`conftest.StubFilesystem` demonstrate
+the payoff: use-case tests that don't need ``tmp_path`` at all.
 """
 
 from __future__ import annotations
