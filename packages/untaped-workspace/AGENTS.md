@@ -227,9 +227,23 @@ single-workspace callers and unit tests want. **Never reach into
 `tracker.fetched` directly from a worker — always go through the use
 case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
 
-## `init` vs. `adopt` vs. `forget`
+## `init` vs. `adopt` vs. `import` vs. `forget`
 
-Three workspace lifecycle commands with deliberately distinct shapes:
+The shared opening for every bootstrap-style entry point
+(`init` / `adopt` / `import`) — canonicalise the target path,
+derive `ws_name`, raise on manifest/registry collision, `mkdir`,
+write the manifest, register — lives on
+`application.WorkspaceBootstrapper`. Each lifecycle use case
+constructs the bootstrapper with the same
+`ManifestRepository` / `WorkspaceRegistryRepository` / `Filesystem`
+adapters at the CLI composition root, then delegates by passing a
+`build_manifest(ws_name) -> WorkspaceManifest` closure that owns the
+caller-specific variation (e.g. `init` plugs in the `--branch` flag;
+`adopt` plugs in the discovered repos; `import` plugs in the
+external-manifest contents). `ForgetWorkspace` is *teardown* and does
+not flow through the bootstrapper.
+
+Four workspace lifecycle commands with deliberately distinct shapes:
 
 - **`workspace init <name>`** — empty workspace by name; defaults the
   on-disk location to `<workspace.workspaces_dir>/<name>` (the
@@ -248,6 +262,15 @@ Three workspace lifecycle commands with deliberately distinct shapes:
   links new clones via `git clone --reference`. `<path>` stays
   positional because adopt fundamentally targets an already-populated
   directory. Implementation: `application.AdoptWorkspace`.
+- **`workspace import <source> --path <dest>`** — bootstraps a workspace
+  from a local YAML manifest file (e.g. one cloned from a shared repo).
+  Reads the external manifest via `ManifestRepository.read_external`
+  (the narrow `ExternalManifestReader` port is what `ImportWorkspace`
+  declares as its direct dep), then re-emits a manifest at `dest` whose
+  `name` falls back through `--name → loaded.manifest.name →
+  canonical.name`. `--sync` chains a `SyncWorkspace` call to clone the
+  declared repos after registration. Implementation:
+  `application.ImportWorkspace`.
 - **`workspace forget <name>`** — removes the workspace's registry
   entry only; the on-disk manifest and clones are preserved. Pass
   `--prune` to also `rmtree` the workspace directory; pruning is
