@@ -14,7 +14,7 @@ from typing import Any, cast
 import pytest
 from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
 from untaped_awx.application.ports import FkResolver, ResourceClient
-from untaped_awx.domain import FieldChange, Metadata, Resource, ResourceSpec
+from untaped_awx.domain import FieldChange, FkRef, Metadata, Resource, ResourceSpec
 from untaped_awx.domain.envelope import IdentityRef
 from untaped_awx.errors import BadRequest
 from untaped_awx.infrastructure.specs import GROUP_SPEC, JOB_TEMPLATE_SPEC
@@ -347,6 +347,22 @@ def test_post_members_empty_ids_is_a_noop() -> None:
         parent_id=42,
         ref=_hosts_ref(),
         member_ids=[],
+        client=cast(ResourceClient, client),
+    )
+    assert client.subendpoint_calls == []
+
+
+def test_post_members_ref_without_sub_endpoint_is_a_noop() -> None:
+    """Defensive: a ``FkRef(sub_endpoint=None)`` (the dataclass is public —
+    a future external caller could build one) must short-circuit before
+    iterating ``member_ids`` so no malformed POST is ever issued."""
+    rec = MembershipReconciler()
+    client = _StubClient()
+    rec.post_members(
+        GROUP_SPEC,
+        parent_id=42,
+        ref=FkRef(field="hosts", kind="Host"),  # sub_endpoint default = None
+        member_ids=[7, 8],
         client=cast(ResourceClient, client),
     )
     assert client.subendpoint_calls == []

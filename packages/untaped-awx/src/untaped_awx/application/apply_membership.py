@@ -146,16 +146,18 @@ class MembershipReconciler:
         parent_id: int,
         ref: FkRef,
         member_ids: Iterable[int],
-        disassociate: bool = False,
         client: ResourceClient,
+        disassociate: bool = False,
     ) -> None:
         """Issue associate (or disassociate) sub-endpoint POSTs without a diff.
 
-        AWX's sub-endpoint POSTs are idempotent (re-add / re-remove returns
-        the same 204), so callers can rely on additive semantics. Used by
-        :meth:`execute` for both directions of a diff-driven reconciliation
-        and directly by :class:`untaped_awx.application.manage_membership.ManageMembership`
-        for the additive `<parent> <sub_endpoint> add/remove` CLI flow.
+        AWX's sub-endpoint POSTs are idempotent — re-adding or
+        re-removing a member returns a 2xx without changing state — so
+        callers can rely on additive semantics. Used by :meth:`execute`
+        for both directions of a diff-driven reconciliation and
+        directly by
+        :class:`untaped_awx.application.manage_membership.ManageMembership`
+        for the additive ``<parent> <sub_endpoint> add/remove`` CLI flow.
         """
         if ref.sub_endpoint is None:
             return
