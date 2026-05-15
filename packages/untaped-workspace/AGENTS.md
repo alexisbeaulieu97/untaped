@@ -229,6 +229,20 @@ case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
 
 ## `init` vs. `adopt` vs. `forget`
 
+The shared opening for every bootstrap-style entry point
+(`init` / `adopt` / `import`) — canonicalise the target path,
+derive `ws_name`, raise on manifest/registry collision, `mkdir`,
+write the manifest, register — lives on
+`application.WorkspaceBootstrapper`. Each lifecycle use case
+constructs the bootstrapper with the same
+`ManifestRepository` / `WorkspaceRegistryRepository` / `Filesystem`
+adapters at the CLI composition root, then delegates by passing a
+`build_manifest(ws_name) -> WorkspaceManifest` closure that owns the
+caller-specific variation (e.g. `init` plugs in the `--branch` flag;
+`adopt` plugs in the discovered repos; `import` plugs in the
+external-manifest contents). `ForgetWorkspace` is *teardown* and does
+not flow through the bootstrapper.
+
 Three workspace lifecycle commands with deliberately distinct shapes:
 
 - **`workspace init <name>`** — empty workspace by name; defaults the

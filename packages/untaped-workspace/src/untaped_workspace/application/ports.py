@@ -24,9 +24,20 @@ class ManifestReader(Protocol):
     def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
 
 
-class ManifestRepository(ManifestReader, Protocol):
-    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
+class ExternalManifestReader(Protocol):
+    """Read a manifest from an arbitrary source path (not a workspace dir).
+
+    Split out from :class:`ManifestRepository` so :class:`ImportWorkspace`
+    can declare the narrowest dep it actually needs — the rest of the
+    repository (``exists`` / ``read`` / ``write``) is owned by the
+    bootstrapper it composes with.
+    """
+
     def read_external(self, source: Path) -> ManifestSource: ...
+
+
+class ManifestRepository(ManifestReader, ExternalManifestReader, Protocol):
+    def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
 
 
 class RegistryReader(Protocol):
