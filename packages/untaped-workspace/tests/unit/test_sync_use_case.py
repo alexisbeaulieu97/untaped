@@ -334,6 +334,27 @@ def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
     assert outcomes[0].detail == "cache fetch failed: network down"
 
 
+def test_ensure_bare_failure_yields_skip(tmp_path: Path) -> None:
+    """``ensure_bare`` raising ``GitError`` inside ``_ensure_bare_fresh``
+    surfaces under the same ``"cache fetch failed: <git err>"`` prefix
+    as ``bare_fetch`` failure — both are bare-cache plumbing from
+    ``_sync_repo``'s point of view, so the prefix is shared."""
+
+    class _BareErrorStub(StubGit):
+        def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
+            self.events.append(("ensure_bare", url))
+            raise GitError("permission denied")
+
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    git = _BareErrorStub()
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
+    assert outcomes[0].action == "skip"
+    assert outcomes[0].detail == "cache fetch failed: permission denied"
+
+
 def test_existing_clone_is_fetched_before_status(tmp_path: Path) -> None:
     """`status.behind` reads `origin/<branch>` from the working clone — that
     ref is stale unless we fetch the clone first."""
@@ -599,7 +620,7 @@ def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> No
 
     first = use_case(Workspace(name="a", path=ws_a_path), bare_tracker=tracker)
     assert first[0].action == "skip"
-    assert "cache fetch failed" in first[0].detail
+    assert first[0].detail == "cache fetch failed: transient network failure"
 
     # Second call must retry — the URL is unclaimed after the failure.
     second = use_case(Workspace(name="b", path=ws_b_path), bare_tracker=tracker)
