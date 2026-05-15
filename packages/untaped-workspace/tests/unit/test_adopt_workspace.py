@@ -117,6 +117,32 @@ def test_adopt_short_circuits_on_collision_without_invoking_discoverer(
     assert discoverer.calls == []  # the expensive walk never happened
 
 
+def test_adopt_collision_check_runs_before_fs_existence_check(tmp_path: Path) -> None:
+    """When the canonical path is *both* missing on disk and already
+    registered, the collision error wins. Pins the ordering introduced
+    when ``AdoptWorkspace`` hoisted ``verify`` above the
+    ``fs.exists``/``fs.is_dir`` checks — without this test, a future
+    refactor reverting that order would silently flip the user-visible
+    error message.
+
+    Niche flow: user ``rm -rf``'d the workspace dir after registering,
+    then re-runs ``adopt``. Both errors point to the same problem;
+    the collision message is the more actionable one (tells the user
+    they already have a workspace entry to clean up).
+    """
+    from conftest import StubRegistry as _StubRegistry
+
+    ws_path = tmp_path / "deleted-but-registered"
+    # Note: NOT calling ws_path.mkdir() — the path is missing on disk.
+    from untaped_workspace.domain import Workspace
+
+    reg = _StubRegistry()
+    reg.registered.append(Workspace(name="ghost", path=ws_path.resolve()))
+
+    with pytest.raises(WorkspaceError, match="already registered"):
+        _adopt(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path, name="ghost")
+
+
 def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
     """The simplify pass moved ``warn`` from infrastructure (the discoverer)
     up to application (``AdoptWorkspace``). Verify each skipped reason
