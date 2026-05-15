@@ -19,7 +19,9 @@ write paths.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from untaped_awx.application.apply_planner import scope_for
 from untaped_awx.application.ports import FkResolver, ResourceClient
@@ -130,15 +132,44 @@ class MembershipReconciler:
             # build one with a ``FkRef(sub_endpoint=None)``.
             if plan.ref.sub_endpoint is None:
                 continue
-            for member_id in plan.to_associate:
-                client.sub_endpoint_request(
-                    spec, record_id, plan.ref.sub_endpoint, "POST", json={"id": member_id}
-                )
-            for member_id in plan.to_disassociate:
-                client.sub_endpoint_request(
-                    spec,
-                    record_id,
-                    plan.ref.sub_endpoint,
-                    "POST",
-                    json={"id": member_id, "disassociate": True},
-                )
+            self.post_members(
+                spec,
+                parent_id=record_id,
+                ref=plan.ref,
+                member_ids=plan.to_associate,
+                client=client,
+            )
+            self.post_members(
+                spec,
+                parent_id=record_id,
+                ref=plan.ref,
+                member_ids=plan.to_disassociate,
+                disassociate=True,
+                client=client,
+            )
+
+    def post_members(
+        self,
+        spec: ResourceSpec,
+        *,
+        parent_id: int,
+        ref: FkRef,
+        member_ids: Iterable[int],
+        disassociate: bool = False,
+        client: ResourceClient,
+    ) -> None:
+        """Issue associate (or disassociate) sub-endpoint POSTs without a diff.
+
+        AWX's sub-endpoint POSTs are idempotent (re-add / re-remove returns
+        the same 204), so callers can rely on additive semantics. Used by
+        :meth:`execute` for both directions of a diff-driven reconciliation
+        and directly by :class:`untaped_awx.application.manage_membership.ManageMembership`
+        for the additive `<parent> <sub_endpoint> add/remove` CLI flow.
+        """
+        if ref.sub_endpoint is None:
+            return
+        for member_id in member_ids:
+            body: dict[str, Any] = {"id": member_id}
+            if disassociate:
+                body["disassociate"] = True
+            client.sub_endpoint_request(spec, parent_id, ref.sub_endpoint, "POST", json=body)

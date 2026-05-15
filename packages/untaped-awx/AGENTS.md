@@ -190,10 +190,13 @@ for additive, sync-free use (e.g. `groups hosts add prod-web --stdin`).
 `make_resource_app` walks each spec's `FkRef(multi=True, sub_endpoint=…)`
 and attaches a nested Typer sub-app via `register_membership_subapp`, so
 new multi-FK refs light up these subcommands for free.
-`application/manage_membership.py` builds a one-sided `MembershipPlan`
-(only `to_associate` or `to_disassociate` populated) and reuses
-`MembershipReconciler.execute` — no listing existing members first,
-matching the AWX-side idempotency of associate/disassociate POSTs.
+`application/manage_membership.py` calls
+`MembershipReconciler.post_members` directly with a `disassociate=bool`
+kwarg — no `MembershipPlan` construction, no listing existing members
+first. `MembershipReconciler.execute` routes the apply pipeline's
+two-tuple dispatch through the same `post_members`, so the POST loop
+lives in one place. AWX-side idempotency of associate/disassociate
+POSTs makes the additive shape safe.
 
 ### `Catalog`
 

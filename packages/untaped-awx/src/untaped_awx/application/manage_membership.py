@@ -1,8 +1,8 @@
 """Use case: associate or disassociate sub-endpoint members on a parent.
 
 Drives the same write path the apply pipeline uses
-(:class:`MembershipReconciler.execute`) from an already-resolved list of
-member ids, so a quick `groups hosts add ...` CLI invocation doesn't
+(:meth:`MembershipReconciler.post_members`) from an already-resolved list
+of member ids, so a quick `groups hosts add ...` CLI invocation doesn't
 have to round-trip through a YAML envelope and a desired-state diff.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from untaped_awx.application.apply_membership import MembershipPlan, MembershipReconciler
+from untaped_awx.application.apply_membership import MembershipReconciler
 from untaped_awx.application.ports import ResourceClient
 from untaped_awx.domain import FkRef, ResourceSpec
 
@@ -33,10 +33,11 @@ class ManageMembership:
     ) -> None:
         if not member_ids:
             return
-        plan = MembershipPlan(
+        self._reconciler.post_members(
+            spec,
+            parent_id=parent_id,
             ref=ref,
-            to_associate=tuple(member_ids) if action == "associate" else (),
-            to_disassociate=tuple(member_ids) if action == "disassociate" else (),
-            field_change=None,
+            member_ids=member_ids,
+            disassociate=action == "disassociate",
+            client=self._client,
         )
-        self._reconciler.execute(spec, parent_id, [plan], client=self._client)
