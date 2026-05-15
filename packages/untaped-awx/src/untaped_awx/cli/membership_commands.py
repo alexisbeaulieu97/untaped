@@ -11,11 +11,11 @@ Pipeline shape::
         --columns name --format raw \\
       | untaped awx groups hosts add prod-web --stdin
 
-Members are resolved per identifier — numeric → id lookup, otherwise
-name lookup scoped to the parent's inventory (mirroring ``_get_one``'s
-digit-vs-name decision in ``resource_commands.py``). AWX's
-associate/disassociate POSTs are idempotent (re-adding or re-removing
-returns 204), so ``add`` and ``remove`` are safe to run repeatedly.
+Members are resolved per identifier via :func:`untaped_awx.cli._lookup.get_one`
+(numeric → id lookup, otherwise name lookup scoped to the parent's
+inventory). AWX's associate/disassociate POSTs are idempotent
+(re-adding or re-removing returns 204), so ``add`` and ``remove`` are
+safe to run repeatedly.
 """
 
 from __future__ import annotations
@@ -23,10 +23,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import typer
-from untaped_core import UntapedError, read_identifiers, report_errors
+from untaped_core import read_identifiers, report_errors
 
 from untaped_awx.application import GetResource, ManageMembership
 from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._lookup import get_one, resolve_each
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -101,22 +102,16 @@ def _add_membership_verb(
                 inventory_organization=inventory_organization,
             )
             getter = GetResource(ctx.repo)
-            parent_rec = _resolve_one(getter, spec, parent, parent_scope)
+            parent_rec = get_one(getter, spec, parent, parent_scope)
             parent_id = int(parent_rec["id"])
 
-            # ``register_membership_subapp`` only attaches a sub-app for
-            # refs whose ``kind`` is non-None; assert narrows for mypy.
-            assert ref.kind is not None
+            assert ref.kind is not None  # guarded by register_membership_subapp
             member_spec = ctx.catalog.get(ref.kind)
             member_scope = _member_scope(parent_rec, ref)
-            resolved_ids: list[int] = []
-            for n in member_ids_input:
-                try:
-                    rec = _resolve_one(getter, member_spec, n, member_scope)
-                    resolved_ids.append(int(rec["id"]))
-                except UntapedError as exc:
-                    typer.echo(f"error: {n}: {exc}", err=True)
-                    any_failed = True
+            resolved_ids, any_failed = resolve_each(
+                member_ids_input,
+                lambda n: int(get_one(getter, member_spec, n, member_scope)["id"]),
+            )
 
             ManageMembership(ctx.repo)(
                 spec,
@@ -129,35 +124,27 @@ def _add_membership_verb(
             raise typer.Exit(code=1)
 
 
-def _resolve_one(
-    getter: GetResource,
-    spec: AwxResourceSpec,
-    identifier: str,
-    scope: dict[str, str] | None,
-) -> dict[str, Any]:
-    # Mirrors ``cli.resource_commands._get_one``: ``isdecimal()`` matches
-    # exactly the set ``int()`` accepts; importing the helper would
-    # introduce a circular dep with ``resource_commands`` which already
-    # imports this module's registrar.
-    if identifier.isdecimal():
-        return getter(spec, id_=int(identifier))
-    return getter(spec, name=identifier, scope=scope)
-
-
 def _member_scope(parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str] | None:
     """Derive the scope dict for member name lookups from the parent record.
 
     For ``scope_field="inventory"`` refs (Group's ``hosts`` / ``children``),
-    members live in the same inventory as the parent and we pull that
-    name out of ``summary_fields.inventory.name``. Numeric ids bypass
+    members live in the same inventory as the parent and we pull both
+    ``name`` and ``organization_name`` out of ``summary_fields.inventory``
+    so cross-org disambiguation (same-named inventories across orgs)
+    matches the convention ``scope_for_spec`` uses. Numeric ids bypass
     name lookup entirely so a missing scope only matters when the user
     pipes names.
     """
     if ref.scope_field != "inventory":
         return None
     inv = parent_rec.get("summary_fields", {}).get("inventory")
-    if isinstance(inv, dict):
-        name = inv.get("name")
-        if isinstance(name, str) and name:
-            return {"inventory": name}
-    return None
+    if not isinstance(inv, dict):
+        return None
+    name = inv.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    scope: dict[str, str] = {"inventory": name}
+    org_name = inv.get("organization_name")
+    if isinstance(org_name, str) and org_name:
+        scope["inventory__organization"] = org_name
+    return scope

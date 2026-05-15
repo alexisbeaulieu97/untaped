@@ -119,6 +119,28 @@ echo -e "deploy-web\ndeploy-api" \
                                    --columns name --columns project
 ```
 
+### Sub-endpoint membership: `<parent> <sub_endpoint> add/remove`
+
+Any kind whose spec declares an `FkRef(multi=True, sub_endpoint=…)`
+automatically gets a nested `add` / `remove` sub-app for that edge.
+Today that's `groups hosts` and `groups children`. The verbs are
+additive — they don't read existing members first, just POST
+associate/disassociate into AWX (which returns 204 on re-add or
+re-remove, so they're safe to run repeatedly).
+
+```bash
+# Add hosts directly
+untaped awx groups hosts add prod-web host-01 host-02
+
+# Pipe-friendly: feed a filtered host set into a group
+untaped awx hosts list --filter inventory__name=prod \
+                       --columns name --format raw \
+  | untaped awx groups hosts add prod-web --stdin
+
+# Remove the inverse
+untaped awx groups hosts remove prod-web host-01
+```
+
 For nested fields outside the FK set (e.g. last-job status, polymorphic
 schedule parents), use dotted column paths — `format_output` walks
 nested dicts:

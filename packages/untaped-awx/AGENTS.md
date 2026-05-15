@@ -174,6 +174,17 @@ list* explicitly clears membership. Sub-endpoint refs do not contribute
 apply-order edges, so `Group.children → Group` self-references don't trip
 the cycle detector.
 
+The same write path is also exposed directly via spec-driven
+`<parent> <sub_endpoint> add/remove` subcommands (`cli/membership_commands.py`)
+for additive, sync-free use (e.g. `groups hosts add prod-web --stdin`).
+`make_resource_app` walks each spec's `FkRef(multi=True, sub_endpoint=…)`
+and attaches a nested Typer sub-app via `register_membership_subapp`, so
+new multi-FK refs light up these subcommands for free.
+`application/manage_membership.py` builds a one-sided `MembershipPlan`
+(only `to_associate` or `to_disassociate` populated) and reuses
+`MembershipReconciler.execute` — no listing existing members first,
+matching the AWX-side idempotency of associate/disassociate POSTs.
+
 ### `Catalog`
 
 Also a Protocol; `infrastructure/catalog.py` provides the static

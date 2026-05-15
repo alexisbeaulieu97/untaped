@@ -12,13 +12,11 @@ import typer
 from rich.console import Console
 from untaped_core import (
     ColumnsOption,
-    ConfigError,
     OutputFormat,
     UntapedError,
     format_output,
     parse_kv_pairs,
     read_identifiers,
-    read_stdin,
     report_errors,
 )
 
@@ -35,6 +33,7 @@ from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
+from untaped_awx.cli._lookup import get_one, resolve_each
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.cli.membership_commands import register_membership_subapp
 from untaped_awx.domain import Job, JobEvent
@@ -121,16 +120,11 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
         any_failed = False
         with report_errors(), open_context() as ctx:
             if stdin:
-                ids = read_stdin()
-                if not ids:
-                    raise ConfigError("no identifiers received on stdin")
+                ids = read_identifiers([], stdin=True)
                 getter = GetResource(ctx.repo)
-                for n in ids:
-                    try:
-                        records.append(_get_one(getter, spec, n, scope=None))
-                    except UntapedError as exc:
-                        typer.echo(f"error: {n}: {exc}", err=True)
-                        any_failed = True
+                records, any_failed = resolve_each(
+                    ids, lambda n: get_one(getter, spec, n, scope=None)
+                )
             else:
                 filters = parse_kv_pairs(filter_, flag="--filter")
                 records = list(
@@ -142,7 +136,13 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
             # ``inventory``, which lives in ``read_only_fields`` rather
             # than ``fk_refs``) get flattened from ``summary_fields``.
             records = flatten_fks(records, spec, columns=cols)
-        if records:
+        # In ``--stdin`` mode every input identifier already reported its
+        # own ``error:`` line; an all-failed batch leaves ``records``
+        # empty and we skip the redundant ``[]`` to keep stdout clean for
+        # piping. In normal mode an empty list still renders (``[]`` for
+        # json/yaml, header-only table, blank for raw) so downstream
+        # tools like ``jq`` always see a valid document.
+        if records or not stdin:
             typer.echo(format_output(records, fmt=fmt, columns=cols))
         if any_failed:
             raise typer.Exit(code=1)
@@ -209,12 +209,9 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 inventory_organization=inventory_organization,
             )
             getter = GetResource(ctx.repo)
-            for n in ids:
-                try:
-                    records.append(_get_one(getter, spec, n, scope, by_name=by_name))
-                except UntapedError as exc:
-                    typer.echo(f"error: {n}: {exc}", err=True)
-                    any_failed = True
+            records, any_failed = resolve_each(
+                ids, lambda n: get_one(getter, spec, n, scope, by_name=by_name)
+            )
         if records:
             cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
             if with_names:
@@ -239,22 +236,6 @@ def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[
     if fmt == "table":
         return list(default_cols)
     return None
-
-
-def _get_one(
-    getter: GetResource,
-    spec: AwxResourceSpec,
-    identifier: str,
-    scope: dict[str, str] | None,
-    *,
-    by_name: bool = False,
-) -> dict[str, Any]:
-    # `isdecimal()` matches Unicode category Nd — exactly the set
-    # `int()` accepts. `isdigit()` admits superscripts/subscripts
-    # like "²" that `int()` would reject with ValueError.
-    if not by_name and identifier.isdecimal():
-        return getter(spec, id_=int(identifier))
-    return getter(spec, name=identifier, scope=scope)
 
 
 # ---- save ----

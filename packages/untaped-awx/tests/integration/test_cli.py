@@ -662,6 +662,20 @@ def test_list_reads_ids_from_stdin(seeded_default_org: Any) -> None:
     assert "ops" in result.stdout
 
 
+def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: Any) -> None:
+    """A regular `list` with zero matches must still emit a valid
+    document for the chosen format so pipelines (``| jq '.[]'`` etc.)
+    don't break on no-result queries. The ``--stdin`` path is the only
+    one allowed to suppress empty stdout (its per-id errors went to
+    stderr)."""
+    result = CliRunner().invoke(
+        app,
+        ["projects", "list", "--filter", "name=does-not-exist", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "[]"
+
+
 def test_list_stdin_empty_errors(seeded_default_org: Any) -> None:
     """An empty stdin under `--stdin` must error rather than silently
     no-op (consistent with the `read_identifiers` empty-input contract)."""
