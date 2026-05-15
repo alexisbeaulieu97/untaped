@@ -251,6 +251,21 @@ caller-specific variation (e.g. `init` plugs in the `--branch` flag;
 external-manifest contents). `ForgetWorkspace` is *teardown* and does
 not flow through the bootstrapper.
 
+The bootstrapper exposes two entry points:
+
+- **`__call__(path, build_manifest, name)`** — the do-it-all path used
+  by `InitWorkspace` and `ImportWorkspace`. One `path.expanduser()
+  .resolve()`, one collision check, derive `ws_name`, build the
+  manifest, write, register.
+- **`verify(path, name) -> (canonical, ws_name)`** +
+  **`bootstrap(canonical, ws_name, manifest)`** — the canonical-in fast
+  path used by `AdoptWorkspace`, which would otherwise canonicalise
+  three times per invocation (locally for `fs.exists`/`fs.is_dir`,
+  inside `verify`, and inside `__call__`). `verify` does the resolve +
+  collision check once and returns the inputs; `bootstrap` skips the
+  re-check and just writes + registers. The TOCTOU window between the
+  two is acceptable for the single-user CLI.
+
 Four workspace lifecycle commands with deliberately distinct shapes:
 
 - **`workspace init <name>`** — empty workspace by name; defaults the

@@ -161,3 +161,45 @@ def test_verify_raises_for_each_collision_without_mutating(tmp_path: Path) -> No
     registry = StubRegistry()
     WorkspaceBootstrapper(StubManifests(), registry).verify(tmp_path / "ok")
     assert registry.registered == []
+
+
+def test_verify_returns_canonical_path_and_derived_ws_name(tmp_path: Path) -> None:
+    """``verify`` returns ``(canonical, ws_name)`` so callers (Adopt)
+    can use them without re-canonicalising. Pins the new shape that
+    underwrites the canonical-once contract.
+    """
+    boot = WorkspaceBootstrapper(StubManifests(), StubRegistry())
+
+    # Path with `..` segments; explicit name overrides directory basename.
+    nested = tmp_path / "outer" / "inner" / ".." / "leaf"
+    canonical, ws_name = boot.verify(nested, name="override")
+    assert canonical == nested.expanduser().resolve()
+    assert ws_name == "override"
+
+    # No explicit name → ws_name derived from canonical's basename.
+    canonical2, ws_name2 = boot.verify(tmp_path / "leaf-from-dir")
+    assert canonical2 == (tmp_path / "leaf-from-dir").expanduser().resolve()
+    assert ws_name2 == "leaf-from-dir"
+
+
+def test_bootstrap_uses_canonical_inputs_without_re_resolving(tmp_path: Path) -> None:
+    """``bootstrap(canonical, ws_name, manifest)`` is the canonical-in
+    fast path: it writes the manifest at ``canonical`` and registers
+    ``ws_name → canonical`` with no further resolve and no name
+    derivation. Adopt uses this to avoid the triple canonicalisation.
+    """
+    manifests = ManifestRepository()
+    registry = StubRegistry()
+    boot = WorkspaceBootstrapper(manifests, registry)
+
+    ws_dir = (tmp_path / "prod").resolve()
+    manifest = WorkspaceManifest(name="prod", defaults=ManifestDefaults(branch="main"))
+
+    workspace = boot.bootstrap(ws_dir, "prod", manifest)
+
+    assert workspace.name == "prod"
+    assert workspace.path == ws_dir
+    loaded = manifests.read(ws_dir)
+    assert loaded.name == "prod"
+    assert loaded.defaults.branch == "main"
+    assert registry.registered[-1] is workspace
