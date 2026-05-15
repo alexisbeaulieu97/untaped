@@ -130,8 +130,9 @@ class HttpClient:
     def get_json_list(self, path: str, **kwargs: Any) -> list[Any]:
         """GET ``path`` and assert the JSON body decodes to an array.
 
-        Raises :class:`HttpError` when the body is anything other than a
-        JSON array (object, scalar, ``null``).
+        Raises :class:`HttpError` (with full URL + status + body snippet,
+        same shape as other ``HttpClient`` errors) when the body is
+        anything other than a JSON array (object, scalar, ``null``).
         """
         response = self.request("GET", path, **kwargs)
         body = _decode_json(response)
