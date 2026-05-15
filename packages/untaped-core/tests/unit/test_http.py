@@ -146,9 +146,9 @@ def test_get_json_truncates_long_body_to_snippet() -> None:
     assert exc_info.value.body == long_body[:256]
 
 
-def test_4xx_truncates_long_body_to_2kb() -> None:
-    """4xx with a multi-MB body must not pin that body on ``HttpError``;
-    capped at 2KB at the wrap site."""
+def test_non_2xx_truncates_long_body_to_2kb() -> None:
+    """Non-2xx with a multi-MB body must not pin that body on
+    ``HttpError``; capped at 2048 bytes at the wrap site."""
     long_body = "x" * 5000
     with (
         respx.mock(base_url="https://example.com") as mock,
@@ -162,6 +162,41 @@ def test_4xx_truncates_long_body_to_2kb() -> None:
     assert exc_info.value.body is not None
     assert len(exc_info.value.body) == 2048
     assert exc_info.value.body == long_body[:2048]
+
+
+def test_non_2xx_under_limit_preserves_body_exactly() -> None:
+    """Bodies under the 2KB cap pass through unchanged — pin no
+    padding, trimming, or normalisation creeps in for small inputs."""
+    body = "short error message"
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/x").mock(return_value=httpx.Response(400, text=body))
+        with pytest.raises(HttpError) as exc_info:
+            client.get("/x")
+    assert exc_info.value.body == body
+
+
+def test_non_2xx_replaces_truncated_multibyte_at_cap_boundary() -> None:
+    """The 2048-byte cap is applied to *bytes*, which can split a
+    multi-byte UTF-8 sequence. ``errors="replace"`` keeps the wrap-path
+    crash-free — pin the ``�`` output instead of a future regression
+    to ``errors="strict"`` (``UnicodeDecodeError``) or character-based
+    slicing (which would double the memory cost of the very 5MB page
+    this fix exists to avoid)."""
+    # 2047 ASCII 'x' bytes + 'é' (2 UTF-8 bytes) = 2049 bytes total.
+    # The 2048-byte slice keeps b"x" * 2047 + b"\xc3" — a partial
+    # sequence — which decodes to "x" * 2047 + "�".
+    body_bytes = b"x" * 2047 + "é".encode()
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/boom").mock(return_value=httpx.Response(503, content=body_bytes))
+        with pytest.raises(HttpError) as exc_info:
+            client.get("/boom")
+    assert exc_info.value.body == "x" * 2047 + "�"
 
 
 def test_request_json_does_not_decode_on_4xx() -> None:

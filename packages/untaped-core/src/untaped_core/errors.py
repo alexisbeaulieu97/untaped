@@ -23,7 +23,7 @@ class HttpError(UntapedError):
     ``errors="replace"``, so a non-UTF-8 charset surfaces as ``\\ufffd``
     rather than a crash) when the failure was a non-2xx status. It lets
     domain layers map status + payload into typed errors without
-    re-running the request. **Capped at ~2KB** (``_BODY_LIMIT`` in
+    re-running the request. **Capped at 2048 bytes** (``_BODY_LIMIT`` in
     :mod:`untaped_core.http`) so a multi-MB proxy error page doesn't
     live on the exception — and through ``report_errors`` to stderr —
     long after the underlying response is collected.
