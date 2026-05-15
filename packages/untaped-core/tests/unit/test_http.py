@@ -146,6 +146,24 @@ def test_get_json_truncates_long_body_to_snippet() -> None:
     assert exc_info.value.body == long_body[:256]
 
 
+def test_4xx_truncates_long_body_to_2kb() -> None:
+    """4xx with a multi-MB body must not pin that body on ``HttpError``;
+    capped at 2KB at the wrap site."""
+    long_body = "x" * 5000
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/boom").mock(
+            return_value=httpx.Response(503, text=long_body, headers={"content-type": "text/html"})
+        )
+        with pytest.raises(HttpError) as exc_info:
+            client.get("/boom")
+    assert exc_info.value.body is not None
+    assert len(exc_info.value.body) == 2048
+    assert exc_info.value.body == long_body[:2048]
+
+
 def test_request_json_does_not_decode_on_4xx() -> None:
     """A 4xx with an HTML body must surface its HTTP status — never the
     decode error. Locks the order of operations: status check happens

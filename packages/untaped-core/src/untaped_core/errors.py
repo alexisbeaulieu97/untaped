@@ -21,7 +21,10 @@ class HttpError(UntapedError):
 
     ``body`` carries the response text when the failure was a non-2xx
     status; it lets domain layers map status + payload into typed errors
-    without re-running the request.
+    without re-running the request. **Capped at ~2KB** (``_BODY_LIMIT``
+    in :mod:`untaped_core.http`) so a multi-MB proxy error page doesn't
+    live on the exception — and through ``report_errors`` to stderr —
+    long after the underlying response is collected.
     """
 
     def __init__(
