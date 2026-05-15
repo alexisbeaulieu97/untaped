@@ -95,6 +95,31 @@ system trust just work. User overrides (`http.ca_bundle`,
 `verify=resolve_verify(s.http)` when constructing `HttpClient`. Do not
 invent your own.
 
+## `--format raw` default-column contract
+
+`_format_raw` (`output.py`) has two paths:
+
+1. `--columns` supplied → emit those columns, tab-separated, one row
+   per line.
+2. `--columns` omitted → emit `next(iter(rows[0]))` for every row
+   (one value per line — the identifier).
+
+The fallback in (2) makes the **first key of every row** load-bearing
+for shell pipelines. List use cases promise that the first key is the
+row's identifier (workspace `name`, job `id`, github `login`, …) — the
+value a downstream `xargs` would feed back into another `untaped`
+command. Reordering keys in a row dict or in a `model_dump()` source
+is a breaking change for pipeline callers; treat it as part of each
+list command's public contract.
+
+Audit (2026-05-15) confirmed every live row source honours this:
+hand-built dicts (workspace `list_command`) put the identifier first
+by construction; pydantic models declare the identifier as the first
+field; every `AwxResourceSpec.list_columns[0]` is `id`. When you add
+a new list command or new row-source model, keep the identifier in
+position 0. Issue [#158] will pin this with a pytest invariant once
+that tier lands.
+
 ## Recipe: add a new setting
 
 1. Pick a section: top-level (rare) or one of the existing sub-models

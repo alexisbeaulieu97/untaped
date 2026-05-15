@@ -98,6 +98,11 @@ def list_command(
     """List registered workspaces."""
     with report_errors():
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
+        # ``name`` is intentionally first: ``--format raw`` without
+        # ``--columns`` emits the first key (see ``output.py``'s
+        # default-column contract), so pipelines like
+        # ``workspace list -f raw | xargs -I{} workspace path {}`` get
+        # the identifier. Don't reorder these keys.
         rows: list[dict[str, object]] = [{"name": w.name, "path": str(w.path)} for w in use_case()]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 

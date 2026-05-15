@@ -8,7 +8,14 @@ Conventions:
   Its width follows the ``COLUMNS`` env var (or the inherited TTY size);
   no hard-coded cap. Tests that need a stable render can pin ``COLUMNS``.
 
-If no ``columns`` are specified for ``raw``, the first key of each row is used.
+**``--format raw`` default-column contract.** When ``--columns`` is
+omitted, :func:`_format_raw` emits the value of the first key of
+``rows[0]`` for every row. List use cases therefore **promise that
+the first key of every row is the row's identifier** (workspace name,
+job id, login, …) — the value a shell pipeline would ``xargs`` into
+the next command. Reordering keys in a row dict or a ``model_dump()``
+source is a breaking change for pipeline callers; treat it as part
+of each list command's public contract.
 
 Column names support dotted paths (``a.b.c``) to address nested dict
 fields — e.g. ``--columns summary_fields.project.name``. Missing
