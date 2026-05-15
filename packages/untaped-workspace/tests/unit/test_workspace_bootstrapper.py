@@ -182,11 +182,12 @@ def test_verify_returns_canonical_path_and_derived_ws_name(tmp_path: Path) -> No
     assert ws_name2 == "leaf-from-dir"
 
 
-def test_bootstrap_uses_canonical_inputs_without_re_resolving(tmp_path: Path) -> None:
+def test_bootstrap_writes_and_registers_with_canonical_inputs(tmp_path: Path) -> None:
     """``bootstrap(canonical, ws_name, manifest)`` is the canonical-in
-    fast path: it writes the manifest at ``canonical`` and registers
-    ``ws_name → canonical`` with no further resolve and no name
-    derivation. Adopt uses this to avoid the triple canonicalisation.
+    fast path: it writes ``manifest`` at ``canonical`` and registers
+    ``ws_name → canonical`` directly, without deriving a name from
+    the path or re-validating the inputs. Adopt uses this to avoid the
+    triple canonicalisation that previously bracketed every adopt.
     """
     manifests = ManifestRepository()
     registry = StubRegistry()
