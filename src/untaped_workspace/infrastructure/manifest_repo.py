@@ -40,6 +40,14 @@ class ManifestRepository:
             ) from exc
 
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
+        """Persist ``manifest`` to ``<workspace_dir>/untaped.yml``,
+        creating ``workspace_dir`` if missing.
+
+        The mkdir is load-bearing — it's how every bootstrap-style
+        lifecycle command (``init``, ``adopt``, ``import``) obtains the
+        workspace dir. See ``untaped-workspace/AGENTS.md`` (the
+        "Manifest + registry split" section).
+        """
         path = self.manifest_path(workspace_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")

@@ -43,7 +43,7 @@ def _adopt(
     *,
     warn: Callable[[str], None] | None = None,
 ) -> AdoptWorkspace:
-    boot = WorkspaceBootstrapper(repo, reg, fs=_FS)
+    boot = WorkspaceBootstrapper(repo, reg)
     if warn is None:
         return AdoptWorkspace(boot, discoverer, fs=_FS)
     return AdoptWorkspace(boot, discoverer, fs=_FS, warn=warn)
