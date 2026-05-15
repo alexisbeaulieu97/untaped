@@ -19,9 +19,14 @@ class ConfigError(UntapedError):
 class HttpError(UntapedError):
     """Raised when an HTTP call fails (network, timeout, or non-2xx status).
 
-    ``body`` carries the response text when the failure was a non-2xx
-    status; it lets domain layers map status + payload into typed errors
-    without re-running the request.
+    ``body`` carries a UTF-8 snippet of the response body (decoded with
+    ``errors="replace"``, so a non-UTF-8 charset surfaces as ``\\ufffd``
+    rather than a crash) when the failure was a non-2xx status. It lets
+    domain layers map status + payload into typed errors without
+    re-running the request. **Capped at 2048 bytes** (``_BODY_LIMIT`` in
+    :mod:`untaped_core.http`) so a multi-MB proxy error page doesn't
+    live on the exception — and through ``report_errors`` to stderr —
+    long after the underlying response is collected.
     """
 
     def __init__(

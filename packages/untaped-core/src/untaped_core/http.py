@@ -85,7 +85,7 @@ class HttpClient:
                 f"HTTP {response.status_code} for {request.url}",
                 status_code=response.status_code,
                 url=str(request.url),
-                body=response.text,
+                body=_body_snippet(response, _BODY_LIMIT),
             )
         return response
 
@@ -124,7 +124,23 @@ class HttpClient:
         self.close()
 
 
+_BODY_LIMIT = 2048
 _BODY_SNIPPET_LIMIT = 256
+
+
+def _body_snippet(response: httpx.Response, limit: int) -> str:
+    """Decode at most ``limit`` bytes of ``response.content``.
+
+    Used at every site that attaches a response body to ``HttpError``:
+    the bytes are already buffered by httpx, but the decoded string
+    survives on the exception (often through ``report_errors`` to
+    stderr) long after the ``Response`` is collected — so the *string*
+    needs the cap, not the buffer. ``errors="replace"`` keeps the error
+    path crash-free on a truncated multi-byte sequence at the cost of
+    a few ``\\ufffd`` characters; charset from the response header is
+    intentionally ignored since this only ever feeds diagnostics.
+    """
+    return response.content[:limit].decode("utf-8", errors="replace")
 
 
 def _decode_json(response: httpx.Response) -> Any:
@@ -133,12 +149,9 @@ def _decode_json(response: httpx.Response) -> Any:
     try:
         return response.json()
     except ValueError as exc:
-        # Slice bytes before decoding so a multi-MB error page doesn't
-        # decode the whole body just to keep the first 256 chars.
-        snippet = response.content[:_BODY_SNIPPET_LIMIT].decode("utf-8", errors="replace")
         raise HttpError(
             f"non-JSON response from {response.request.url}: {exc}",
             status_code=response.status_code,
             url=str(response.request.url),
-            body=snippet,
+            body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
         ) from exc
