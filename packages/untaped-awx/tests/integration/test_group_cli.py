@@ -242,10 +242,13 @@ def test_groups_apply_associates_child_groups(fake_aap: Any, tmp_path: Path) -> 
     assert fake_aap.memberships[("groups", new_group["id"], "children")] == {201}
 
 
-def test_groups_apply_rejects_non_list_hosts(fake_aap: Any, tmp_path: Path) -> None:
+def test_groups_apply_rejects_non_list_hosts(
+    fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A bare string under ``hosts:`` would otherwise be normalised to ``[]``
     and silently disassociate every existing member on ``--yes`` — the worst
     possible failure mode. Reject at the boundary instead."""
+    monkeypatch.setenv("COLUMNS", "200")
     _seed_inventory(fake_aap)
     fake_aap.seed("hosts", id=101, name="web-01", inventory=20, inventory_name="prod")
     fake_aap.seed(

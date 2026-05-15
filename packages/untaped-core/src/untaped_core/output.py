@@ -5,6 +5,8 @@ Conventions:
 - ``raw`` produces newline-separated rows with tab-separated columns; this is the
   format you pipe into ``fzf``, ``cut``, or ``awk``.
 - ``table`` produces a rich-rendered ASCII table for human consumption.
+  Its width follows the ``COLUMNS`` env var (or the inherited TTY size);
+  no hard-coded cap. Tests that need a stable render can pin ``COLUMNS``.
 
 If no ``columns`` are specified for ``raw``, the first key of each row is used.
 
@@ -81,7 +83,7 @@ def _format_table(rows: Sequence[Row]) -> str:
     for row in rows:
         table.add_row(*[_render_cell(row.get(c, "")) for c in columns])
     buf = io.StringIO()
-    Console(file=buf, force_terminal=False, width=120).print(table)
+    Console(file=buf, force_terminal=False).print(table)
     return buf.getvalue().rstrip()
 
 
