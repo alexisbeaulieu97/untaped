@@ -49,6 +49,11 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
     returns ``(results, any_failed)`` so the caller decides exit code and
     aggregate rendering. Companion to :func:`read_identifiers` for stdin-fed
     list commands across domains.
+
+    Only :class:`UntapedError` is caught: non-:class:`UntapedError` exceptions
+    (including :class:`typer.Exit` raised by interactive prompts) propagate
+    immediately, aborting the loop. This is intentional — bugs and explicit
+    user aborts must not be swallowed alongside per-id resolution failures.
     """
     results: list[R] = []
     any_failed = False
