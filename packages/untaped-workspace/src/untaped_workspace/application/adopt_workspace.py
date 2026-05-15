@@ -51,23 +51,20 @@ class AdoptWorkspace:
         *,
         name: str | None = None,
     ) -> AdoptResult:
-        canonical = path.expanduser().resolve()
+        # Fail fast before discovery — `discoverer.discover()` does an
+        # iterdir + 2 git subprocess spawns per child directory.
+        canonical, ws_name = self._bootstrap.verify(path, name=name)
+
         if not self._fs.exists(canonical):
             raise WorkspaceError(f"path does not exist: {canonical}")
         if not self._fs.is_dir(canonical):
             raise WorkspaceError(f"not a directory: {canonical}")
-
-        # Fail fast before discovery — discoverer.discover() does an
-        # iterdir plus 2 git subprocess spawns per child directory.
-        self._bootstrap.verify(path, name=name)
 
         result = self._discoverer.discover(canonical)
         for reason in result.skipped:
             self._warn(reason)
         repos = [Repo(url=d.url, name=d.name, branch=d.branch) for d in result.repos]
 
-        def _build(ws_name: str) -> WorkspaceManifest:
-            return WorkspaceManifest(name=ws_name, defaults=ManifestDefaults(), repos=repos)
-
-        workspace = self._bootstrap(path, build_manifest=_build, name=name)
+        manifest = WorkspaceManifest(name=ws_name, defaults=ManifestDefaults(), repos=repos)
+        workspace = self._bootstrap.bootstrap(canonical, ws_name, manifest)
         return AdoptResult(workspace=workspace, repos=list(result.repos))

@@ -10,10 +10,12 @@ Workspace-dir creation is a side effect of ``ManifestRepository.write``
 — it mkdirs the manifest's parent (which *is* the workspace dir) so
 callers don't need to. See ``untaped-workspace/AGENTS.md``.
 
-``verify`` is the read-only subset of ``__call__`` — exposed so
-callers with expensive pre-bootstrap work (e.g. ``AdoptWorkspace``'s
-N x 2 ``git`` subprocess walk in ``LocalRepoDiscoverer``) can fail
-fast on collision instead of paying for the walk first.
+Two entry points: ``__call__`` for ``InitWorkspace`` /
+``ImportWorkspace`` (resolves once, derives name, writes, registers);
+``verify`` + ``bootstrap`` for ``AdoptWorkspace`` — the canonical-in
+fast path that would otherwise canonicalise three times per
+invocation. See ``packages/untaped-workspace/AGENTS.md``'s "`init`
+vs. `adopt` vs. `import` vs. `forget`" section for the long form.
 """
 
 from __future__ import annotations
@@ -46,14 +48,31 @@ class WorkspaceBootstrapper:
             raise WorkspaceError(f"path already registered: {canonical}")
         return canonical, ws_name
 
-    def verify(self, path: Path, *, name: str | None = None) -> None:
-        """Raise if ``path`` cannot become a new workspace.
+    def verify(self, path: Path, *, name: str | None = None) -> tuple[Path, str]:
+        """Resolve ``path``, raise on collision, return ``(canonical, ws_name)``.
 
-        Pure read; no mutation. ``__call__`` re-runs the same checks
-        before mutating, so this is a fail-fast hint for callers, not
-        a TOCTOU guarantee — fine for the single-user CLI today.
+        Pairs with :meth:`bootstrap`: the collision check happens here
+        and is the only one — calling ``bootstrap`` without ``verify``
+        writes/registers without checking for an existing workspace at
+        the same path. The TOCTOU window between the two is acceptable
+        for the single-user CLI today.
         """
-        self._resolve_and_check(path, name)
+        return self._resolve_and_check(path, name)
+
+    def bootstrap(
+        self,
+        canonical: Path,
+        ws_name: str,
+        manifest: WorkspaceManifest,
+    ) -> Workspace:
+        """Write ``manifest`` at ``canonical`` and register ``ws_name``.
+
+        Precondition: ``canonical`` + ``ws_name`` come from a prior
+        :meth:`verify` call. See ``verify`` for the consequence of
+        skipping it.
+        """
+        self._manifests.write(canonical, manifest)
+        return self._registry.register(name=ws_name, path=canonical)
 
     def __call__(
         self,
@@ -63,6 +82,4 @@ class WorkspaceBootstrapper:
         name: str | None = None,
     ) -> Workspace:
         canonical, ws_name = self._resolve_and_check(path, name)
-        manifest = build_manifest(ws_name)
-        self._manifests.write(canonical, manifest)
-        return self._registry.register(name=ws_name, path=canonical)
+        return self.bootstrap(canonical, ws_name, build_manifest(ws_name))
