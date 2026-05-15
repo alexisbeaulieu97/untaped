@@ -19,6 +19,7 @@ from untaped_core import (
     parse_kv_pairs,
     read_identifiers,
     report_errors,
+    resolve_each,
 )
 
 from untaped_awx.application import (
@@ -34,7 +35,6 @@ from untaped_awx.application.ports import FkResolver, JobMonitor, RawHttpResourc
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
-from untaped_awx.cli._lookup import resolve_each
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.cli.membership_commands import register_membership_subapp
 from untaped_awx.domain import Job, JobEvent

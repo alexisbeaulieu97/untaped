@@ -1,7 +1,8 @@
 # AGENTS.md — `untaped-core`
 
 Cross-cutting infrastructure: settings/profiles, http+TLS, config file,
-output formatting, stdin helpers, errors. Owns the `Settings` schema —
+output formatting, stdin helpers (`read_stdin`, `read_identifiers`, and
+the companion `resolve_each` per-id loop), errors. Owns the `Settings` schema —
 new settings land here. For workspace-wide rules and the cross-cutting
 helpers index, see the [root `AGENTS.md`](../../AGENTS.md). For
 user-facing config reference, see
