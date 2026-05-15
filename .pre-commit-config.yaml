@@ -25,6 +25,16 @@ repos:
 
   - repo: local
     hooks:
+      - id: sync-domains-check
+        name: sync-domains (--check)
+        # Fails when the five Import Linter + mypy domain lists drift
+        # from `[tool.untaped].domains`. Fix with
+        # `uv run python scripts/sync_domains.py --write`.
+        entry: uv run python scripts/sync_domains.py --check
+        language: system
+        pass_filenames: false
+        files: '^pyproject\.toml$'
+
       - id: lint-imports
         name: lint-imports (import-linter)
         entry: uv run lint-imports
