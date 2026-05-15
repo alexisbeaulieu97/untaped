@@ -23,6 +23,13 @@ from untaped_core.errors import ConfigError
 from untaped_core.settings import get_settings, resolve_config_path
 
 _MISSING = object()
+# Public sentinel returned by :func:`get_at_path` to disambiguate
+# "missing" from "value is None". The split into a private constructor
+# (``_MISSING``) and a public ``Any``-typed alias (``MISSING``) is
+# load-bearing: callers can ``if value is MISSING:`` without mypy
+# narrowing the result to ``object``.
+MISSING: Any = _MISSING
+
 _DEFAULT_LOCK_TIMEOUT = 5.0
 
 
@@ -247,7 +254,3 @@ def rename_profile(old: str, new: str, path: Path | None = None) -> None:
             data["active"] = new
 
     mutate_config(_apply, path)
-
-
-# Sentinel used by :func:`get_at_path` to disambiguate "missing" from "value is None".
-MISSING: Any = _MISSING
