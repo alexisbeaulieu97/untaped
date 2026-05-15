@@ -114,6 +114,7 @@ EditorRunner = Callable[[Sequence[str]], int]
 __all__ = [
     "CompletedCommand",
     "EditorRunner",
+    "ExternalManifestReader",
     "Filesystem",
     "GitInspector",
     "GitOperations",

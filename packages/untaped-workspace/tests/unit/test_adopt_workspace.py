@@ -96,6 +96,27 @@ def test_adopt_refuses_when_path_is_a_file(tmp_path: Path) -> None:
         _adopt(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(f)
 
 
+def test_adopt_short_circuits_on_collision_without_invoking_discoverer(
+    tmp_path: Path,
+) -> None:
+    """`AdoptWorkspace` calls `bootstrapper.verify()` *before* the
+    discoverer runs. Re-running `adopt` on an already-initialised
+    workspace should raise without N x 2 `git` subprocess spawns.
+    """
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    from untaped_workspace.domain import WorkspaceManifest
+
+    repo = ManifestRepository()
+    repo.write(ws_path, WorkspaceManifest())  # seed collision
+    discoverer = _StubDiscoverer([])
+
+    with pytest.raises(WorkspaceError, match="already initialised"):
+        _adopt(repo, StubRegistry(), discoverer)(ws_path, name="prod")
+
+    assert discoverer.calls == []  # the expensive walk never happened
+
+
 def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
     """The simplify pass moved ``warn`` from infrastructure (the discoverer)
     up to application (``AdoptWorkspace``). Verify each skipped reason
