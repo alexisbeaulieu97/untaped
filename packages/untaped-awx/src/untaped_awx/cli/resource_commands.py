@@ -308,6 +308,51 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
 # ---- launch ----
 
 
+def _drain_parallel_with_worker(
+    jobs: list[tuple[str, Job]],
+    worker_fn: Callable[[str, Job], Job],
+    *,
+    while_running: Callable[[], None] | None = None,
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Run ``worker_fn(name, job)`` concurrently and collect outcomes in
+    launch order.
+
+    ``UntapedError`` raised by ``worker_fn`` is captured into
+    ``errors``; any other ``Exception`` is wrapped at the worker
+    boundary as ``UntapedError("<ClassName>: <message>")``.
+
+    ``while_running``, if given, runs on the main thread between
+    ``pool.submit`` and result-collection — the seam a caller needs to
+    interleave foreground work with the still-pending pool, before
+    ``future.result()`` would block. It runs inside the same ``with``
+    block, so a raise still triggers ``shutdown(wait=True)``.
+    """
+
+    def _wrap(name: str, job: Job) -> Job:
+        # Catch ``Exception`` (not ``BaseException``) so ``KeyboardInterrupt``
+        # propagates to the main thread for the executor's ``shutdown(wait=True)``
+        # to cancel pending work cleanly. Widening this clause swallows Ctrl-C.
+        try:
+            return worker_fn(name, job)
+        except UntapedError:
+            raise
+        except Exception as exc:
+            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [(name, pool.submit(_wrap, name, job)) for name, job in jobs]
+        if while_running is not None:
+            while_running()
+        results: list[Job] = []
+        errors: list[tuple[str, UntapedError]] = []
+        for name, future in futures:
+            try:
+                results.append(future.result())
+            except UntapedError as exc:
+                errors.append((name, exc))
+    return results, errors
+
+
 def _drain_parallel(
     monitor: JobMonitor,
     jobs: list[tuple[str, Job]],
@@ -320,10 +365,9 @@ def _drain_parallel(
     template name as a prefix so concurrent output stays
     disambiguable on a shared stderr. After every worker has signalled
     completion (sentinel ``(name, None)``), each future's final
-    :class:`Job` (post ``monitor.fetch``) is collected in launch order.
-    Per-job :class:`UntapedError`s are returned alongside successful
-    results so the caller can preserve today's per-job error stderr
-    rows + ``any_failed`` exit-code semantics.
+    :class:`Job` (post ``monitor.fetch``) is collected in launch order
+    by :func:`_drain_parallel_with_worker` so the caller's per-job
+    error stderr rows + ``any_failed`` exit-code semantics stay stable.
 
     Note: ``Ctrl-C`` may take up to one polling interval to abort
     because workers don't cooperatively cancel — the executor's
@@ -333,30 +377,17 @@ def _drain_parallel(
     q: queue.Queue[tuple[str, JobEvent | None]] = queue.Queue()
 
     def _worker(name: str, job: Job) -> Job:
-        # Sentinel pushed in the inner ``finally`` *before*
-        # ``monitor.fetch`` so a slow or failing fetch never blocks
-        # the main thread's queue drain. Non-``UntapedError``
-        # exceptions are wrapped — message carries the original
-        # class name so the caller's ``error: <name>: <wrapped>``
-        # row reads as ``error: deploy-a: KeyError: 'foo'`` (the
-        # ``name`` is added once by ``_echo_parallel_errors``, not
-        # by the wrap). ``KeyboardInterrupt`` is a
-        # ``BaseException`` and skips this wrap, propagating to the
-        # main thread as expected.
+        # Sentinel pushed in ``finally`` *before* ``monitor.fetch`` so
+        # a slow or failing fetch never blocks the main thread's queue
+        # drain.
         try:
-            try:
-                for ev in StreamJobEvents(monitor)(job, follow=True):
-                    q.put((name, ev))
-            finally:
-                q.put((name, None))
-            return monitor.fetch(job)
-        except UntapedError:
-            raise
-        except Exception as exc:
-            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
+            for ev in StreamJobEvents(monitor)(job, follow=True):
+                q.put((name, ev))
+        finally:
+            q.put((name, None))
+        return monitor.fetch(job)
 
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-        futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
+    def _drain_queue() -> None:
         # Single-threaded printing: queue drain runs only here so a
         # multi-segment Rich Text never interleaves between workers.
         done = 0
@@ -366,18 +397,8 @@ def _drain_parallel(
                 done += 1
                 continue
             console.print(render_event_text(ev, prefix=name))
-        results: list[Job] = []
-        errors: list[tuple[str, UntapedError]] = []
-        # Iteration order is launch order: ``pool.submit`` returned
-        # immediately, ``futures`` is walked in submission order, and
-        # ``result()`` blocks per-future. Parallelism happened upstream
-        # during the queue drain — this loop only collects.
-        for name, future in futures:
-            try:
-                results.append(future.result())
-            except UntapedError as exc:
-                errors.append((name, exc))
-    return results, errors
+
+    return _drain_parallel_with_worker(jobs, _worker, while_running=_drain_queue)
 
 
 def _wait_parallel(
@@ -388,33 +409,12 @@ def _wait_parallel(
 
     Mirrors :func:`_drain_parallel` for the ``--wait`` (no
     ``--track``) path: each worker calls ``WatchJob(client)(job)``
-    until the job hits a terminal state and returns. Per-job
-    :class:`UntapedError`s are returned alongside successful results
-    so the caller preserves today's per-job error semantics; non-
-    ``UntapedError`` exceptions are wrapped at the worker boundary
-    for the same reason as :func:`_drain_parallel`.
+    until the job hits a terminal state and returns. The
+    executor / collection / error-wrap scaffolding lives in
+    :func:`_drain_parallel_with_worker`.
     """
     watch = WatchJob(client)
-
-    def _worker(name: str, job: Job) -> Job:
-        try:
-            return watch(job)
-        except UntapedError:
-            raise
-        except Exception as exc:
-            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
-
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-        futures = [(name, pool.submit(_worker, name, job)) for name, job in jobs]
-        results: list[Job] = []
-        errors: list[tuple[str, UntapedError]] = []
-        # Iteration order is launch order — see ``_drain_parallel``.
-        for name, future in futures:
-            try:
-                results.append(future.result())
-            except UntapedError as exc:
-                errors.append((name, exc))
-    return results, errors
+    return _drain_parallel_with_worker(jobs, lambda _name, job: watch(job))
 
 
 def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
