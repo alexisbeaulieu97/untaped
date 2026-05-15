@@ -308,6 +308,9 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
 
 
 def test_clone_failure_yields_skip(tmp_path: Path) -> None:
+    """``clone_with_reference`` raising ``GitError`` surfaces as a
+    ``"clone failed: <git err>"`` row. Pins the uniform ``<step>:
+    <error>`` prefixing that the ``_step`` contextmanager guarantees."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
@@ -315,9 +318,12 @@ def test_clone_failure_yields_skip(tmp_path: Path) -> None:
     git = StubGit(clone_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
+    assert outcomes[0].detail == "clone failed: clone failed"
 
 
 def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
+    """Bare-cache ``bare_fetch`` raising ``GitError`` surfaces as a
+    ``"cache fetch failed: <git err>"`` row."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
@@ -325,7 +331,7 @@ def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
     git = StubGit(fetch_fail=True)
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
-    assert "cache fetch failed" in outcomes[0].detail
+    assert outcomes[0].detail == "cache fetch failed: network down"
 
 
 def test_existing_clone_is_fetched_before_status(tmp_path: Path) -> None:
@@ -359,7 +365,9 @@ def test_fresh_clone_does_not_call_local_fetch(tmp_path: Path) -> None:
 
 
 def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
-    """A network-flaky `git fetch` on an existing clone is a skip, not abort."""
+    """A network-flaky `git fetch` on an existing clone is a skip, not abort.
+    Surfaces as ``"fetch failed: <git err>"`` — distinct from the
+    bare-cache prefix above so log-greppers can tell the two apart."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
@@ -368,11 +376,12 @@ def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
     git = StubGit(on_disk=["svc-a"], local_fetch_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
-    assert "fetch failed" in (outcomes[0].detail or "")
+    assert outcomes[0].detail == "fetch failed: network down"
 
 
 def test_status_failure_yields_skip(tmp_path: Path) -> None:
-    """``status()`` raising during sync surfaces as a skip carrying the error message."""
+    """``status()`` raising during sync surfaces as a
+    ``"status failed: <git err>"`` row."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
@@ -381,7 +390,7 @@ def test_status_failure_yields_skip(tmp_path: Path) -> None:
     git = StubGit(on_disk=["svc-a"], status_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
-    assert "status failed" in outcomes[0].detail
+    assert outcomes[0].detail == "status failed: status failed"
     assert ("status", "svc-a") in git.events  # the right skip path was taken
 
 
@@ -402,7 +411,8 @@ def test_detached_head_with_no_target_branch_yields_skip(tmp_path: Path) -> None
 
 
 def test_pull_failure_yields_skip(tmp_path: Path) -> None:
-    """``ff_only_pull`` raising (e.g. non-fast-forward) surfaces as a skip."""
+    """``ff_only_pull`` raising (e.g. non-fast-forward) surfaces as a
+    ``"ff-only pull failed: <git err>"`` row."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
@@ -415,7 +425,7 @@ def test_pull_failure_yields_skip(tmp_path: Path) -> None:
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
-    assert "non-fast-forward" in outcomes[0].detail
+    assert outcomes[0].detail == "ff-only pull failed: non-fast-forward pull"
 
 
 def test_prune_skipped_when_workspace_dir_missing(tmp_path: Path) -> None:
