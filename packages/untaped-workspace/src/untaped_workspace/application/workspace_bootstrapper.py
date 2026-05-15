@@ -10,19 +10,12 @@ Workspace-dir creation is a side effect of ``ManifestRepository.write``
 — it mkdirs the manifest's parent (which *is* the workspace dir) so
 callers don't need to. See ``untaped-workspace/AGENTS.md``.
 
-Two entry points:
-
-- ``__call__(path, build_manifest, name)`` is the do-it-all path for
-  ``InitWorkspace`` / ``ImportWorkspace`` — one resolve, derives
-  ``ws_name``, runs collision checks, invokes the manifest-builder
-  closure with the derived name, writes, registers.
-- ``verify(path, name) -> (canonical, ws_name)`` + ``bootstrap(canonical,
-  ws_name, manifest)`` is the canonical-in fast path for
-  ``AdoptWorkspace``, which would otherwise re-canonicalise three times
-  (locally for ``fs.exists`` / ``fs.is_dir``, inside ``verify``, and
-  inside ``__call__``). ``verify`` does the resolve + collision check
-  exactly once and returns the inputs the caller needs; ``bootstrap``
-  takes them as-given and only writes + registers.
+Two entry points: ``__call__`` for ``InitWorkspace`` /
+``ImportWorkspace`` (resolves once, derives name, writes, registers);
+``verify`` + ``bootstrap`` for ``AdoptWorkspace`` — the canonical-in
+fast path that would otherwise canonicalise three times per
+invocation. See ``packages/untaped-workspace/AGENTS.md``'s "`init`
+vs. `adopt` vs. `import` vs. `forget`" section for the long form.
 """
 
 from __future__ import annotations
@@ -58,9 +51,11 @@ class WorkspaceBootstrapper:
     def verify(self, path: Path, *, name: str | None = None) -> tuple[Path, str]:
         """Resolve ``path``, raise on collision, return ``(canonical, ws_name)``.
 
-        Must precede :meth:`bootstrap` — the collision check happens
-        here, not there. The TOCTOU window between the two is
-        acceptable for the single-user CLI today.
+        Pairs with :meth:`bootstrap`: the collision check happens here
+        and is the only one — calling ``bootstrap`` without ``verify``
+        writes/registers without checking for an existing workspace at
+        the same path. The TOCTOU window between the two is acceptable
+        for the single-user CLI today.
         """
         return self._resolve_and_check(path, name)
 
@@ -72,9 +67,9 @@ class WorkspaceBootstrapper:
     ) -> Workspace:
         """Write ``manifest`` at ``canonical`` and register ``ws_name``.
 
-        Precondition: ``canonical`` and ``ws_name`` come from
-        :meth:`verify`. Calling out of order skips the collision
-        check.
+        Precondition: ``canonical`` + ``ws_name`` come from a prior
+        :meth:`verify` call. See ``verify`` for the consequence of
+        skipping it.
         """
         self._manifests.write(canonical, manifest)
         return self._registry.register(name=ws_name, path=canonical)

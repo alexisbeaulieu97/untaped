@@ -262,9 +262,16 @@ The bootstrapper exposes two entry points:
   path used by `AdoptWorkspace`, which would otherwise canonicalise
   three times per invocation (locally for `fs.exists`/`fs.is_dir`,
   inside `verify`, and inside `__call__`). `verify` does the resolve +
-  collision check once and returns the inputs; `bootstrap` skips the
-  re-check and just writes + registers. The TOCTOU window between the
-  two is acceptable for the single-user CLI.
+  collision check once and returns the inputs; `bootstrap` writes +
+  registers without re-running the collision check. The TOCTOU window
+  between the two is acceptable for the single-user CLI.
+
+  `AdoptWorkspace` runs `verify` *before* its `fs.exists`/`fs.is_dir`
+  checks, so a path that's both missing on disk and already registered
+  surfaces the "already registered" error rather than "does not
+  exist" — pinned by
+  `test_adopt_collision_check_runs_before_fs_existence_check` in
+  `tests/unit/test_adopt_workspace.py`.
 
 Four workspace lifecycle commands with deliberately distinct shapes:
 
