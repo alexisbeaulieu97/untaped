@@ -11,11 +11,12 @@ Pipeline shape::
         --columns name --format raw \\
       | untaped awx groups hosts add prod-web --stdin
 
-Members are resolved per identifier via :func:`untaped_awx.cli._lookup.get_one`
-(numeric → id lookup, otherwise name lookup scoped to the parent's
-inventory). AWX's associate/disassociate POSTs are idempotent
-(re-adding or re-removing returns 204), so ``add`` and ``remove`` are
-safe to run repeatedly.
+Members are resolved per identifier via
+:meth:`untaped_awx.application.GetResource.by_identifier` (numeric →
+id lookup, otherwise name lookup scoped to the parent's inventory).
+AWX's associate/disassociate POSTs are idempotent (re-adding or
+re-removing returns 204), so ``add`` and ``remove`` are safe to run
+repeatedly.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from untaped_core import read_identifiers, report_errors
 
 from untaped_awx.application import GetResource, ManageMembership
 from untaped_awx.cli._context import open_context, scope_for_spec
-from untaped_awx.cli._lookup import get_one, resolve_each
+from untaped_awx.cli._lookup import resolve_each
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -102,7 +103,7 @@ def _add_membership_verb(
                 inventory_organization=inventory_organization,
             )
             getter = GetResource(ctx.repo)
-            parent_rec = get_one(getter, spec, parent, parent_scope)
+            parent_rec = getter.by_identifier(spec, parent, scope=parent_scope)
             parent_id = int(parent_rec["id"])
 
             assert ref.kind is not None  # guarded by register_membership_subapp
@@ -110,7 +111,7 @@ def _add_membership_verb(
             member_scope = _member_scope(parent_rec, ref)
             resolved_ids, any_failed = resolve_each(
                 member_ids_input,
-                lambda n: int(get_one(getter, member_spec, n, member_scope)["id"]),
+                lambda n: int(getter.by_identifier(member_spec, n, scope=member_scope)["id"]),
             )
 
             ManageMembership(ctx.repo)(

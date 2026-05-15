@@ -33,7 +33,7 @@ from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
-from untaped_awx.cli._lookup import get_one, resolve_each
+from untaped_awx.cli._lookup import resolve_each
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.cli.membership_commands import register_membership_subapp
 from untaped_awx.domain import Job, JobEvent
@@ -123,7 +123,7 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 ids = read_identifiers([], stdin=True)
                 getter = GetResource(ctx.repo)
                 records, any_failed = resolve_each(
-                    ids, lambda n: get_one(getter, spec, n, scope=None)
+                    ids, lambda n: getter.by_identifier(spec, n, scope=None)
                 )
             else:
                 filters = parse_kv_pairs(filter_, flag="--filter")
@@ -210,7 +210,7 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
             )
             getter = GetResource(ctx.repo)
             records, any_failed = resolve_each(
-                ids, lambda n: get_one(getter, spec, n, scope, by_name=by_name)
+                ids, lambda n: getter.by_identifier(spec, n, scope=scope, by_name=by_name)
             )
         if records:
             cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)

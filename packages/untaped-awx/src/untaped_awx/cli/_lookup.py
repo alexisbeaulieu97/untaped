@@ -1,39 +1,21 @@
-"""Shared per-identifier resolution helpers for CLI commands.
+"""Per-identifier resolution loop shared by CLI commands.
 
-`get_one` dispatches an identifier between numeric-id and name lookup;
-`resolve_each` walks a list of identifiers and aggregates per-id
-``UntapedError`` rows to stderr with an ``any_failed`` flag for the
-caller's exit code. Used by ``get``, ``list --stdin``, and the
-spec-driven membership subcommands so identifier-handling stays in
-one place.
+``resolve_each`` walks a list of identifiers, calls ``fn(id)``, and
+echoes ``error: <id>: <exc>`` for any ``UntapedError`` so the caller
+gets ``(results, any_failed)`` for stable per-id error reporting +
+exit-code aggregation. Used by ``get``, ``list --stdin``, and the
+spec-driven membership subcommands. Identifier-to-resource dispatch
+(digits → id, otherwise name) lives on
+:meth:`untaped_awx.application.GetResource.by_identifier` so application
+callers (e.g. :class:`ListWorkflowNodes`) can reuse the same rule.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 import typer
 from untaped_core import UntapedError
-
-from untaped_awx.application import GetResource
-from untaped_awx.infrastructure.spec import AwxResourceSpec
-
-
-def get_one(
-    getter: GetResource,
-    spec: AwxResourceSpec,
-    identifier: str,
-    scope: dict[str, str] | None,
-    *,
-    by_name: bool = False,
-) -> dict[str, Any]:
-    # `isdecimal()` matches Unicode category Nd — exactly the set
-    # `int()` accepts. `isdigit()` admits superscripts/subscripts
-    # like "²" that `int()` would reject with ValueError.
-    if not by_name and identifier.isdecimal():
-        return getter(spec, id_=int(identifier))
-    return getter(spec, name=identifier, scope=scope)
 
 
 def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
