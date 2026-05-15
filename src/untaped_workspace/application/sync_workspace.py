@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,6 +21,26 @@ from untaped_workspace.domain import (
     WorkspaceManifest,
 )
 from untaped_workspace.errors import GitError, UnmatchedOnlyFilter
+
+
+class _Skip(Exception):
+    """Module-private control-flow signal carrying a pre-formatted
+    ``"<step>: <git err>"`` detail string."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+@contextmanager
+def _step(prefix: str) -> Iterator[None]:
+    """Catch :class:`GitError` inside the body and re-raise as
+    :class:`_Skip` with ``prefix`` joined to the error message via
+    ``": "``. Keeps step-chained callers' decision trees linear."""
+    try:
+        yield
+    except GitError as exc:
+        raise _Skip(f"{prefix}: {exc}") from exc
 
 
 @dataclass
@@ -155,62 +177,50 @@ class SyncWorkspace:
     ) -> SyncOutcome:
         local = workspace.path / repo.name
         target_branch = manifest.target_branch_for(repo)
-
         try:
-            bare = self._ensure_bare_fresh(repo.url, tracker)
-        except GitError as exc:
-            return _outcome(workspace, repo, "skip", f"cache fetch failed: {exc}")
+            with _step("cache fetch failed"):
+                bare = self._ensure_bare_fresh(repo.url, tracker)
 
-        if not self._fs.exists(local):
-            try:
-                self._git.clone_with_reference(
-                    url=repo.url, dest=local, bare=bare, branch=target_branch
+            if not self._fs.exists(local):
+                with _step("clone failed"):
+                    self._git.clone_with_reference(
+                        url=repo.url, dest=local, bare=bare, branch=target_branch
+                    )
+                return _outcome(
+                    workspace, repo, "clone", f"branch {target_branch}" if target_branch else ""
                 )
-            except GitError as exc:
-                return _outcome(workspace, repo, "skip", str(exc))
-            return _outcome(
-                workspace, repo, "clone", f"branch {target_branch}" if target_branch else ""
-            )
 
-        # Refresh the working clone's remote refs so behind/ahead numbers are
-        # current. The bare cache already got `bare_fetch`, but each working
-        # clone keeps its own `origin/*` refs.
-        try:
-            self._git.fetch(local)
-        except GitError as exc:
-            return _outcome(workspace, repo, "skip", f"fetch failed: {exc}")
+            # Refresh the working clone's remote refs so behind/ahead numbers
+            # are current. The bare cache already got ``bare_fetch``, but each
+            # working clone keeps its own ``origin/*`` refs.
+            with _step("fetch failed"):
+                self._git.fetch(local)
+            with _step("status failed"):
+                status = self._git.status(local)
 
-        try:
-            status = self._git.status(local)
-        except GitError as exc:
-            return _outcome(workspace, repo, "skip", str(exc))
+            if status.dirty:
+                return _outcome(workspace, repo, "skip", "dirty working tree")
+            if target_branch is not None and status.branch != target_branch:
+                return _outcome(
+                    workspace,
+                    repo,
+                    "skip",
+                    f"on {status.branch or 'detached'}, expected {target_branch}",
+                )
+            if status.diverged:
+                return _outcome(workspace, repo, "skip", "diverged from origin")
+            if status.behind == 0:
+                detail = f"{status.ahead} ahead" if status.ahead else "already up to date"
+                return _outcome(workspace, repo, "up-to-date", detail)
 
-        if status.dirty:
-            return _outcome(workspace, repo, "skip", "dirty working tree")
-
-        if target_branch is not None and status.branch != target_branch:
-            return _outcome(
-                workspace,
-                repo,
-                "skip",
-                f"on {status.branch or 'detached'}, expected {target_branch}",
-            )
-
-        if status.diverged:
-            return _outcome(workspace, repo, "skip", "diverged from origin")
-
-        if status.behind == 0:
-            detail = f"{status.ahead} ahead" if status.ahead else "already up to date"
-            return _outcome(workspace, repo, "up-to-date", detail)
-
-        target = status.branch or target_branch
-        if target is None:
-            return _outcome(workspace, repo, "skip", "detached head")
-        try:
-            self._git.ff_only_pull(local, branch=target)
-        except GitError as exc:
-            return _outcome(workspace, repo, "skip", str(exc))
-        return _outcome(workspace, repo, "pull", f"{status.behind} commits")
+            target = status.branch or target_branch
+            if target is None:
+                return _outcome(workspace, repo, "skip", "detached head")
+            with _step("ff-only pull failed"):
+                self._git.ff_only_pull(local, branch=target)
+            return _outcome(workspace, repo, "pull", f"{status.behind} commits")
+        except _Skip as exc:
+            return _outcome(workspace, repo, "skip", exc.detail)
 
     def _prune_orphans(
         self, workspace: Workspace, manifest: WorkspaceManifest
