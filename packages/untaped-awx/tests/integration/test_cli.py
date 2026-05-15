@@ -976,6 +976,38 @@ def test_launch_forwards_full_action_payload(
     assert body["job_type"] == "check"
 
 
+def test_launch_round_trips_falsy_but_meaningful_flag_values(
+    seeded_default_org: Any,
+) -> None:
+    """``--verbosity 0`` and ``--no-diff-mode`` carry distinct meaning
+    from "flag not supplied" and must reach the AWX POST body. The
+    refactor's ``_is_supplied`` predicate is deliberately ``value is
+    not None and value != []`` (not ``bool(value)``) for exactly this
+    case; a future "simplify" pass that switched to truthy filtering
+    would silently drop both values."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "alpha",
+            "--verbosity",
+            "0",
+            "--no-diff-mode",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
+    assert len(launches) == 1
+    body = launches[0][3]
+    assert body["verbosity"] == 0
+    assert body["diff_mode"] is False
+
+
 def test_jobs_wait_supports_format_json(fake_aap: Any) -> None:
     """`awx jobs wait` must honour --format — CI scripts that pipe a
     wait verdict into ``jq`` rely on the structured shape."""
