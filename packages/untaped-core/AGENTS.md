@@ -112,13 +112,12 @@ command. Reordering keys in a row dict or in a `model_dump()` source
 is a breaking change for pipeline callers; treat it as part of each
 list command's public contract.
 
-Audit (2026-05-15) confirmed every live row source honours this:
-hand-built dicts (workspace `list_command`) put the identifier first
-by construction; pydantic models declare the identifier as the first
-field; every `AwxResourceSpec.list_columns[0]` is `id`. When you add
-a new list command or new row-source model, keep the identifier in
-position 0. Issue [#158] will pin this with a pytest invariant once
-that tier lands.
+Every current row source honours this — hand-built dicts (workspace
+`list_command`) put the identifier first by construction, pydantic
+models declare it as the first field, every
+`AwxResourceSpec.list_columns[0]` is `id`. When you add a new list
+command or row-source model, keep the identifier in position 0; a
+pytest invariant is planned (Tier 7).
 
 ## Recipe: add a new setting
 
