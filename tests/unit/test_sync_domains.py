@@ -194,6 +194,32 @@ def test_main_reports_misconfiguration_without_traceback(
     assert "tool.untaped" in err
 
 
+def test_main_reports_structural_drift_without_traceback(
+    sync_domains: types.ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Anchor failures (target block restructured) also exit 1 with a one-liner.
+
+    Pins the friendly-error path for ``regen`` failures too — not only
+    ``read_domains``. Reformatting a target block out from under the
+    anchor must not show a Python traceback in pre-commit output.
+    """
+    broken = tmp_path / "pyproject.toml"
+    # Valid source list but the `[tool.mypy] packages = [...]` block has
+    # been removed → `_replace_list_after` can't anchor.
+    broken.write_text(
+        '[tool.untaped]\ndomains = ["untaped_alpha"]\n\n'
+        '[tool.importlinter]\nroot_packages = [\n    "untaped",\n    "untaped_core",\n'
+        '    "untaped_alpha",\n]\n'
+    )
+    rc = sync_domains.main(["--check", "--path", str(broken)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "sync-domains:" in err
+    assert "Traceback" not in err
+
+
 def _drift_pyproject(text: str) -> str:
     """Add a new domain to the source list only — target blocks lag behind."""
     return text.replace(

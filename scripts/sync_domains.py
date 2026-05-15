@@ -126,8 +126,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         target = regen(text, read_domains(text))
     except (KeyError, ValueError) as exc:
-        # Misconfiguration → friendly one-liner, not a traceback in the
-        # pre-commit hook output.
+        # Misconfiguration (missing source list) or a structural drift the
+        # regenerator can't anchor (someone reformatted a target block) →
+        # friendly one-liner, not a traceback in the pre-commit hook output.
         print(f"sync-domains: {exc}", file=sys.stderr)
         return 1
 
