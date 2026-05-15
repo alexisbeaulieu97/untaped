@@ -35,6 +35,7 @@ from untaped_workspace.application import (
     RemoveRepo,
     ShellInit,
     SyncWorkspace,
+    WorkspaceBootstrapper,
     WorkspacePath,
     WorkspaceResolver,
     WorkspaceStatus,
@@ -124,9 +125,10 @@ def init_command(
     """
     with report_errors():
         target = path or (get_settings().workspace.workspaces_dir.expanduser() / name)
-        ws = InitWorkspace(
+        bootstrapper = WorkspaceBootstrapper(
             ManifestRepository(), WorkspaceRegistryRepository(), fs=LocalFilesystem()
-        )(target, name=name, branch=branch)
+        )
+        ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
 
 
@@ -144,11 +146,14 @@ def adopt_command(
     `untaped.yml` with its current `origin` URL and checked-out branch.
     """
     with report_errors():
+        fs = LocalFilesystem()
+        bootstrapper = WorkspaceBootstrapper(
+            ManifestRepository(), WorkspaceRegistryRepository(), fs=fs
+        )
         result = AdoptWorkspace(
-            ManifestRepository(),
-            WorkspaceRegistryRepository(),
+            bootstrapper,
             LocalRepoDiscoverer(GitRunner()),
-            fs=LocalFilesystem(),
+            fs=fs,
             warn=lambda m: typer.echo(f"warning: {m}", err=True),
         )(path, name=name)
         ws = result.workspace
@@ -547,9 +552,11 @@ def import_command(
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
     with report_errors():
-        ws = ImportWorkspace(
-            ManifestRepository(), WorkspaceRegistryRepository(), fs=LocalFilesystem()
-        )(source, path=path, name=name)
+        manifests = ManifestRepository()
+        bootstrapper = WorkspaceBootstrapper(
+            manifests, WorkspaceRegistryRepository(), fs=LocalFilesystem()
+        )
+        ws = ImportWorkspace(manifests, bootstrapper)(source, path=path, name=name)
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
             outcomes = SyncWorkspace(
