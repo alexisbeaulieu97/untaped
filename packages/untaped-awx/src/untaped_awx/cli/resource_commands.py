@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
-from untaped_awx.application.ports import JobMonitor, RawHttpResourceClient
+from untaped_awx.application.ports import FkResolver, JobMonitor, RawHttpResourceClient
 from untaped_awx.cli._apply_runner import run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
@@ -470,26 +471,24 @@ def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
     return bool(errors)
 
 
-# C901: per-kind launch-flag wiring dispatches over ``ActionSpec.accepts`` —
-# one branch per accepted narrowable flag. Splitting would shred the
-# structural guarantee the launch parser provides; see
-# packages/untaped-awx/AGENTS.md (Resource framework → _add_launch).
+# C901: ``_add_launch`` defines a Typer command with 12 parameters, each
+# carrying a ``hidden=hidden_by_flag[...]`` lookup from the per-kind
+# ``ActionSpec.accepts`` projection. The complexity comes from the
+# breadth of the Typer signature (one Option per launch flag), not from
+# branchy dispatch — the eight per-flag branches now live in
+# ``LAUNCH_FLAGS`` and are walked uniformly. Splitting the signature
+# would mean either (a) parsing in a sibling function and rebinding —
+# which Typer can't do — or (b) folding flags into a single ``--opt
+# k=v`` glob — which would lose ``--help`` discoverability and
+# per-flag typing.
 def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
-    # Hide each narrowable flag whose payload field isn't in this
-    # kind's ``ActionSpec.accepts``. ``_LAUNCH_FLAG_TO_ACCEPT`` is the
-    # single source of truth for the flag→field mapping (also consulted
-    # by the runtime guard); a hidden flag still parses, the guard
-    # catches misuse.
-    hide_inventory = _LAUNCH_FLAG_TO_ACCEPT["--inventory"] not in accepts
-    hide_credential = _LAUNCH_FLAG_TO_ACCEPT["--credential"] not in accepts
-    hide_scm_branch = _LAUNCH_FLAG_TO_ACCEPT["--scm-branch"] not in accepts
-    hide_job_tag = _LAUNCH_FLAG_TO_ACCEPT["--job-tag"] not in accepts
-    hide_skip_tag = _LAUNCH_FLAG_TO_ACCEPT["--skip-tag"] not in accepts
-    hide_verbosity = _LAUNCH_FLAG_TO_ACCEPT["--verbosity"] not in accepts
-    hide_diff_mode = _LAUNCH_FLAG_TO_ACCEPT["--diff-mode"] not in accepts
-    hide_job_type = _LAUNCH_FLAG_TO_ACCEPT["--job-type"] not in accepts
+    # Hide flags whose payload field isn't in this kind's
+    # ``ActionSpec.accepts``. ``LAUNCH_FLAGS`` is the single source of
+    # truth for the flag→field mapping (also consulted by the runtime
+    # guard); a hidden flag still parses, the guard catches misuse.
+    hidden_by_flag = {f.flag: f.accepts_key not in accepts for f in LAUNCH_FLAGS}
 
     # C901: launch dispatch is a 2x2 matrix — ``--track`` vs ``--wait``,
     # parallel (>=2 templates) vs sequential — plus per-id error capture
@@ -511,43 +510,46 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
             None,
             "--inventory",
             help="Override inventory by name (resolved to id).",
-            hidden=hide_inventory,
+            hidden=hidden_by_flag["--inventory"],
         ),
         credential: list[str] | None = typer.Option(
             None,
             "--credential",
             help="Override credential by name (repeatable; resolved to ids).",
-            hidden=hide_credential,
+            hidden=hidden_by_flag["--credential"],
         ),
         scm_branch: str | None = typer.Option(
-            None, "--scm-branch", help="SCM branch to run from.", hidden=hide_scm_branch
+            None,
+            "--scm-branch",
+            help="SCM branch to run from.",
+            hidden=hidden_by_flag["--scm-branch"],
         ),
         job_tag: list[str] | None = typer.Option(
             None,
             "--job-tag",
             help="Run only tasks with these tags (repeatable).",
-            hidden=hide_job_tag,
+            hidden=hidden_by_flag["--job-tag"],
         ),
         skip_tag: list[str] | None = typer.Option(
             None,
             "--skip-tag",
             help="Skip tasks with these tags (repeatable).",
-            hidden=hide_skip_tag,
+            hidden=hidden_by_flag["--skip-tag"],
         ),
         verbosity: int | None = typer.Option(
-            None, "--verbosity", help="0-4 (passed verbatim).", hidden=hide_verbosity
+            None, "--verbosity", help="0-4 (passed verbatim).", hidden=hidden_by_flag["--verbosity"]
         ),
         diff_mode: bool | None = typer.Option(
             None,
             "--diff-mode/--no-diff-mode",
             help="Override diff_mode for this run.",
-            hidden=hide_diff_mode,
+            hidden=hidden_by_flag["--diff-mode"],
         ),
         job_type: str | None = typer.Option(
             None,
             "--job-type",
             help="Override job_type (e.g. run, check).",
-            hidden=hide_job_type,
+            hidden=hidden_by_flag["--job-type"],
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
         track: bool = typer.Option(
@@ -565,18 +567,17 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
         columns: ColumnsOption = None,
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
-        _reject_unsupported_launch_flags(
-            kind=spec.kind,
-            accepts=accepts,
-            inventory=inventory,
-            credential=credential,
-            scm_branch=scm_branch,
-            job_tag=job_tag,
-            skip_tag=skip_tag,
-            verbosity=verbosity,
-            diff_mode=diff_mode,
-            job_type=job_type,
-        )
+        supplied: dict[str, object] = {
+            "--inventory": inventory,
+            "--credential": credential,
+            "--scm-branch": scm_branch,
+            "--job-tag": job_tag,
+            "--skip-tag": skip_tag,
+            "--verbosity": verbosity,
+            "--diff-mode": diff_mode,
+            "--job-type": job_type,
+        }
+        _reject_unsupported_launch_flags(kind=spec.kind, accepts=accepts, supplied=supplied)
         jobs: list[Job] = []
         any_failed = False
         # Stderr console for ``--track``: ANSI when stderr is a TTY,
@@ -588,14 +589,7 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
                 accepts=accepts,
                 extra_vars=extra_vars,
                 limit=limit,
-                inventory=inventory,
-                credential=credential,
-                scm_branch=scm_branch,
-                job_tag=job_tag,
-                skip_tag=skip_tag,
-                verbosity=verbosity,
-                diff_mode=diff_mode,
-                job_type=job_type,
+                supplied=supplied,
                 fk=ctx.fk,
                 org_scope=scope,
             )
@@ -663,33 +657,69 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
             raise typer.Exit(code=1)
 
 
-# Map CLI flag names → the field name in `ActionSpec.accepts` they target.
-# extra_vars and limit are accepted by every launch-capable kind today, so
-# they're not in the rejection map; if a future kind drops them, add them.
-_LAUNCH_FLAG_TO_ACCEPT: dict[str, str] = {
-    "--inventory": "inventory",
-    "--credential": "credentials",
-    "--scm-branch": "scm_branch",
-    "--job-tag": "job_tags",
-    "--skip-tag": "skip_tags",
-    "--verbosity": "verbosity",
-    "--diff-mode": "diff_mode",
-    "--job-type": "job_type",
-}
+@dataclass(frozen=True)
+class LaunchFlag:
+    """One row of the launch-flag dispatch table.
+
+    Each launch CLI flag has three orthogonal concerns that used to be
+    walked separately: visibility (``--help`` hides it on kinds that
+    don't accept the field), validation (rejecting the flag on those
+    kinds at runtime), and translation (mapping the CLI value to the
+    AAP-side payload field). ``LaunchFlag`` collapses them into one
+    row so adding a ninth flag is one tuple entry instead of four
+    parallel edits.
+
+    The inline ``payload_builder`` is a deliberate departure from the
+    project's usual ``apply_strategy: str`` + resolver pattern (see
+    :class:`ResourceSpec`). That pattern earns its keep by keeping
+    ``domain/`` pure of behaviour selectors; ``LaunchFlag`` lives in
+    ``cli/`` (composition root) where the closures are trivial and
+    not independently injectable.
+    """
+
+    flag: str
+    accepts_key: str
+    payload_builder: Callable[[Any, FkResolver, dict[str, str] | None], Any]
+
+
+# Source of truth for the launch CLI flag → payload-field mapping.
+# ``extra_vars`` and ``limit`` stay outside the table — both are
+# accepted by every launch-capable kind today, so they don't need
+# per-kind visibility / rejection logic. If a future kind drops one,
+# fold it in here.
+LAUNCH_FLAGS: tuple[LaunchFlag, ...] = (
+    LaunchFlag(
+        "--inventory",
+        "inventory",
+        lambda v, fk, scope: fk.name_to_id("Inventory", v, scope=scope),
+    ),
+    LaunchFlag(
+        "--credential",
+        "credentials",
+        lambda v, fk, scope: [fk.name_to_id("Credential", c, scope=scope) for c in v],
+    ),
+    LaunchFlag("--scm-branch", "scm_branch", lambda v, _fk, _scope: v),
+    LaunchFlag("--job-tag", "job_tags", lambda v, _fk, _scope: ",".join(v)),
+    LaunchFlag("--skip-tag", "skip_tags", lambda v, _fk, _scope: ",".join(v)),
+    LaunchFlag("--verbosity", "verbosity", lambda v, _fk, _scope: v),
+    LaunchFlag("--diff-mode", "diff_mode", lambda v, _fk, _scope: v),
+    LaunchFlag("--job-type", "job_type", lambda v, _fk, _scope: v),
+)
+
+
+def _is_supplied(value: object) -> bool:
+    # ``None`` (default) and ``[]`` (repeatable flag not given) mean
+    # "not supplied". ``False`` (``--no-diff-mode``) and ``0``
+    # (``--verbosity 0``) ARE supplied and must round-trip — so this
+    # is not ``bool(value)``.
+    return value is not None and value != []
 
 
 def _reject_unsupported_launch_flags(
     *,
     kind: str,
     accepts: frozenset[str],
-    inventory: str | None,
-    credential: list[str] | None,
-    scm_branch: str | None,
-    job_tag: list[str] | None,
-    skip_tag: list[str] | None,
-    verbosity: int | None,
-    diff_mode: bool | None,
-    job_type: str | None,
+    supplied: dict[str, object],
 ) -> None:
     """Fail loudly when the user supplies a flag this kind doesn't accept.
 
@@ -699,20 +729,10 @@ def _reject_unsupported_launch_flags(
     strict subset of a job template's, and silently dropping a value the
     user typed deliberately would be worse than rejecting up front.
     """
-    supplied: dict[str, object] = {
-        "--inventory": inventory,
-        "--credential": credential,
-        "--scm-branch": scm_branch,
-        "--job-tag": job_tag,
-        "--skip-tag": skip_tag,
-        "--verbosity": verbosity,
-        "--diff-mode": diff_mode,
-        "--job-type": job_type,
-    }
     bad = sorted(
-        flag
-        for flag, value in supplied.items()
-        if value is not None and value != [] and _LAUNCH_FLAG_TO_ACCEPT[flag] not in accepts
+        f.flag
+        for f in LAUNCH_FLAGS
+        if _is_supplied(supplied.get(f.flag)) and f.accepts_key not in accepts
     )
     if bad:
         raise typer.BadParameter(
@@ -726,15 +746,8 @@ def _build_launch_payload(
     accepts: frozenset[str],
     extra_vars: list[str] | None,
     limit: str | None,
-    inventory: str | None,
-    credential: list[str] | None,
-    scm_branch: str | None,
-    job_tag: list[str] | None,
-    skip_tag: list[str] | None,
-    verbosity: int | None,
-    diff_mode: bool | None,
-    job_type: str | None,
-    fk: Any,
+    supplied: dict[str, object],
+    fk: FkResolver,
     org_scope: dict[str, str] | None,
 ) -> dict[str, Any]:
     """Translate the launch CLI flags into the payload AAP expects.
@@ -742,31 +755,21 @@ def _build_launch_payload(
     Only fields listed in this kind's ``ActionSpec.accepts`` are
     forwarded; flags for fields not in ``accepts`` are silently
     ignored. FK flags (``--inventory``, ``--credential``) resolve
-    names to ids using the per-process :class:`FkResolver`.
+    names to ids using the per-process :class:`FkResolver` via each
+    row's ``payload_builder``.
     """
     payload: dict[str, Any] = {}
     if extra_vars and "extra_vars" in accepts:
         payload["extra_vars"] = "\n".join(extra_vars)
     if limit and "limit" in accepts:
         payload["limit"] = limit
-    if inventory and "inventory" in accepts:
-        payload["inventory"] = fk.name_to_id("Inventory", inventory, scope=org_scope)
-    if credential and "credentials" in accepts:
-        payload["credentials"] = [
-            fk.name_to_id("Credential", c, scope=org_scope) for c in credential
-        ]
-    if scm_branch and "scm_branch" in accepts:
-        payload["scm_branch"] = scm_branch
-    if job_tag and "job_tags" in accepts:
-        payload["job_tags"] = ",".join(job_tag)
-    if skip_tag and "skip_tags" in accepts:
-        payload["skip_tags"] = ",".join(skip_tag)
-    if verbosity is not None and "verbosity" in accepts:
-        payload["verbosity"] = verbosity
-    if diff_mode is not None and "diff_mode" in accepts:
-        payload["diff_mode"] = diff_mode
-    if job_type and "job_type" in accepts:
-        payload["job_type"] = job_type
+    for f in LAUNCH_FLAGS:
+        if f.accepts_key not in accepts:
+            continue
+        value = supplied.get(f.flag)
+        if not _is_supplied(value):
+            continue
+        payload[f.accepts_key] = f.payload_builder(value, fk, org_scope)
     return payload
 
 
