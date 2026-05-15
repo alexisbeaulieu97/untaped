@@ -329,6 +329,9 @@ def _drain_parallel_with_worker(
     """
 
     def _wrap(name: str, job: Job) -> Job:
+        # Catch ``Exception`` (not ``BaseException``) so ``KeyboardInterrupt``
+        # propagates to the main thread for the executor's ``shutdown(wait=True)``
+        # to cancel pending work cleanly. Widening this clause swallows Ctrl-C.
         try:
             return worker_fn(name, job)
         except UntapedError:
