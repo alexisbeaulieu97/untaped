@@ -114,12 +114,12 @@ class HttpClient:
         ``-> dict[str, Any]`` call this instead of ``get_json`` so they
         don't have to suppress ``no-any-return`` at the seam.
         """
-        result = self.request_json("GET", path, **kwargs)
-        if not isinstance(result, dict):
+        body = self.get_json(path, **kwargs)
+        if not isinstance(body, dict):
             raise HttpError(
-                f"expected JSON object from {path}, got {type(result).__name__}",
+                f"expected JSON object from {path}, got {type(body).__name__}",
             )
-        return result
+        return body
 
     def get_json_list(self, path: str, **kwargs: Any) -> list[Any]:
         """GET ``path`` and assert the JSON body decodes to an array.
@@ -127,12 +127,12 @@ class HttpClient:
         Raises :class:`HttpError` when the body is anything other than a
         JSON array (object, scalar, ``null``).
         """
-        result = self.request_json("GET", path, **kwargs)
-        if not isinstance(result, list):
+        body = self.get_json(path, **kwargs)
+        if not isinstance(body, list):
             raise HttpError(
-                f"expected JSON array from {path}, got {type(result).__name__}",
+                f"expected JSON array from {path}, got {type(body).__name__}",
             )
-        return result
+        return body
 
     def post_json(self, path: str, **kwargs: Any) -> Any:
         return self.request_json("POST", path, **kwargs)
