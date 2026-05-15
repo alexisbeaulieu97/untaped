@@ -51,10 +51,8 @@ class AdoptWorkspace:
         *,
         name: str | None = None,
     ) -> AdoptResult:
-        # `verify` runs the single canonicalisation and the fail-fast
-        # collision check before discovery — `discoverer.discover()`
-        # does an iterdir plus 2 git subprocess spawns per child
-        # directory, and we want to bail before paying for that.
+        # Fail fast before discovery — `discoverer.discover()` does an
+        # iterdir + 2 git subprocess spawns per child directory.
         canonical, ws_name = self._bootstrap.verify(path, name=name)
 
         if not self._fs.exists(canonical):

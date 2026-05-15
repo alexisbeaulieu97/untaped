@@ -58,11 +58,9 @@ class WorkspaceBootstrapper:
     def verify(self, path: Path, *, name: str | None = None) -> tuple[Path, str]:
         """Resolve ``path``, raise on collision, return ``(canonical, ws_name)``.
 
-        The canonical-once contract: callers that hand the result to
-        :meth:`bootstrap` pay for ``Path.resolve()`` exactly once and
-        skip the second collision pass that ``__call__`` would
-        otherwise run. The TOCTOU window between ``verify`` and
-        ``bootstrap`` is acceptable for the single-user CLI today.
+        Must precede :meth:`bootstrap` — the collision check happens
+        here, not there. The TOCTOU window between the two is
+        acceptable for the single-user CLI today.
         """
         return self._resolve_and_check(path, name)
 
@@ -74,9 +72,9 @@ class WorkspaceBootstrapper:
     ) -> Workspace:
         """Write ``manifest`` at ``canonical`` and register ``ws_name``.
 
-        Canonical-in: no re-resolve, no collision re-check, no name
-        derivation. Pair with :meth:`verify` to keep the resolve count
-        at one per adopt/init-style flow.
+        Precondition: ``canonical`` and ``ws_name`` come from
+        :meth:`verify`. Calling out of order skips the collision
+        check.
         """
         self._manifests.write(canonical, manifest)
         return self._registry.register(name=ws_name, path=canonical)
