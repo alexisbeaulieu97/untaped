@@ -13,7 +13,13 @@ Public API:
 - ``errors``           — base exception hierarchy
 """
 
-from untaped_core.cli import ColumnsOption, FormatOption, parse_kv_pairs, report_errors
+from untaped_core.cli import (
+    ColumnsOption,
+    FormatOption,
+    parse_kv_pairs,
+    report_errors,
+    resolve_each,
+)
 from untaped_core.config_schema import (
     FieldDescriptor,
     find_descriptor,
@@ -60,6 +66,7 @@ __all__ = [
     "redact_secrets",
     "report_errors",
     "resolve_config_path",
+    "resolve_each",
     "resolve_profiles",
     "resolve_verify",
     "secret_field_paths",

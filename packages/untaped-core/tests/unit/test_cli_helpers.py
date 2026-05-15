@@ -1,7 +1,7 @@
 import pytest
 import typer
 from typer.testing import CliRunner
-from untaped_core import UntapedError, parse_kv_pairs, report_errors
+from untaped_core import UntapedError, parse_kv_pairs, report_errors, resolve_each
 
 
 def test_clean_message_for_untaped_error() -> None:
@@ -86,3 +86,51 @@ def test_parse_kv_pairs_error_uses_provided_flag_name() -> None:
 
 def test_parse_kv_pairs_later_entries_overwrite_earlier() -> None:
     assert parse_kv_pairs(["k=first", "k=second"], flag="--filter") == {"k": "second"}
+
+
+# ---- resolve_each --------------------------------------------------------
+
+
+def test_resolve_each_with_empty_ids_returns_empty_and_no_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Empty input must not call ``fn`` and must report no failures."""
+    calls: list[str] = []
+    results, any_failed = resolve_each([], lambda n: calls.append(n) or n)
+    assert results == []
+    assert any_failed is False
+    assert calls == []
+    assert capsys.readouterr().err == ""
+
+
+def test_resolve_each_returns_results_when_all_succeed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    results, any_failed = resolve_each(["a", "b", "c"], lambda n: n.upper())
+    assert results == ["A", "B", "C"]
+    assert any_failed is False
+    assert capsys.readouterr().err == ""
+
+
+def test_resolve_each_collects_successes_and_echoes_per_id_untaped_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fn(n: str) -> str:
+        if n == "bad":
+            raise UntapedError("not found")
+        return n.upper()
+
+    results, any_failed = resolve_each(["a", "bad", "c"], fn)
+    assert results == ["A", "C"]
+    assert any_failed is True
+    assert "error: bad: not found" in capsys.readouterr().err
+
+
+def test_resolve_each_propagates_non_untaped_exceptions() -> None:
+    """Non-UntapedError exceptions are bugs and must surface, not be swallowed."""
+
+    def fn(n: str) -> str:
+        raise ValueError("bug")
+
+    with pytest.raises(ValueError, match="bug"):
+        resolve_each(["x"], fn)
