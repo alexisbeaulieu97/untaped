@@ -122,15 +122,15 @@ def apply_command(
         )
 
 
-# ---- top-level save (--all-kinds bulk dump) ----
+# ---- top-level save ----
 
 
 def _warn_legacy_all(value: bool) -> bool:
     """Fire a stderr deprecation notice when the legacy ``--all`` is used.
 
-    ``--all`` was renamed to ``--all-kinds`` in PR #192 (issue #155);
-    the alias stays for one release so existing scripts keep working
-    silently in terms of behaviour but loudly in terms of guidance.
+    The canonical flag is ``--all-kinds``; ``--all`` parses for one
+    release as a hidden alias so existing scripts keep working while
+    they migrate.
     """
     if value:
         typer.echo(

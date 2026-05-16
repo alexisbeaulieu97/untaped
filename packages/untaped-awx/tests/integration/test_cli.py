@@ -1965,35 +1965,28 @@ def test_workflow_save_emits_partial_warning(seeded_default_org: Any, tmp_path: 
     assert "partial save" in result.stderr
 
 
-def test_save_all_kinds_canonical_flag(seeded_default_org: Any, tmp_path: Path) -> None:
-    """`save --all-kinds` is the canonical type-axis iteration flag.
-
-    Pins: canonical name works AND emits no deprecation warning. Future
-    removal of the `--all` alias must leave `--all-kinds` untouched.
-    """
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
-    assert result.exit_code == 0, result.output
-    assert (out_dir / "Project__Default__playbooks.yml").exists()
-    assert "deprecated" not in result.stderr
-
-
-def test_save_all_legacy_alias_works_with_deprecation_warning(
-    seeded_default_org: Any, tmp_path: Path
+@pytest.mark.parametrize(
+    ("flags", "expect_warning"),
+    [
+        (["--all-kinds"], False),
+        (["--all"], True),
+        (["--all-kinds", "--all"], True),
+    ],
+    ids=["canonical", "legacy-alias", "both"],
+)
+def test_save_all_kinds_flag_aliases(
+    seeded_default_org: Any,
+    tmp_path: Path,
+    flags: list[str],
+    expect_warning: bool,
 ) -> None:
-    """`save --all` keeps parsing for one release as a deprecated alias.
+    """`--all-kinds` is canonical; `--all` is a deprecated alias.
 
-    Behaviour matches `--all-kinds` exactly; a stderr deprecation
-    warning fires so script authors know to migrate. The warning must
-    NOT land on stdout — the bulk dump pipes straight into `apply`.
+    Pins three behaviours at once:
+    - canonical name works silently,
+    - legacy alias works AND fires a stderr deprecation warning,
+    - the warning never leaks to stdout (pipeline contract — the bulk
+      dump pipes straight into ``apply``).
     """
     seeded_default_org.seed(
         "projects",
@@ -2004,32 +1997,15 @@ def test_save_all_legacy_alias_works_with_deprecation_warning(
         scm_type="git",
     )
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", *flags, "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
     assert (out_dir / "Project__Default__playbooks.yml").exists()
-    assert "--all is deprecated" in result.stderr
-    assert "--all-kinds" in result.stderr
     assert "deprecated" not in result.stdout
-
-
-def test_save_all_kinds_and_legacy_alias_together(seeded_default_org: Any, tmp_path: Path) -> None:
-    """Both flags together is not an error; result identical to either alone.
-
-    The deprecation warning still fires because the user passed `--all`.
-    """
-    seeded_default_org.seed(
-        "projects",
-        id=10,
-        name="playbooks",
-        organization=1,
-        organization_name="Default",
-        scm_type="git",
-    )
-    out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all-kinds", "--all", "--out-dir", str(out_dir)])
-    assert result.exit_code == 0, result.output
-    assert (out_dir / "Project__Default__playbooks.yml").exists()
-    assert "--all is deprecated" in result.stderr
+    if expect_warning:
+        assert "--all is deprecated" in result.stderr
+        assert "--all-kinds" in result.stderr
+    else:
+        assert "deprecated" not in result.stderr
 
 
 def test_project_update_calls_action(seeded_default_org: Any) -> None:
