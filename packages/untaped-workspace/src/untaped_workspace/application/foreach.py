@@ -55,6 +55,10 @@ class Foreach:
     def _run_parallel(
         self,
         workspace: Workspace,
+        # ``Sequence`` — not ``Iterable`` — because the body walks ``repos``
+        # twice (submit pass and the ``enumerate`` ordering pass below); a
+        # single-shot iterator would exhaust on the first walk and silently
+        # empty the ``order`` map.
         repos: Sequence[Repo],
         command: str,
         parallel: int,
