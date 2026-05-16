@@ -16,6 +16,7 @@ import typer
 from rich.console import Console
 from untaped_core import (
     ColumnsOption,
+    ConfigError,
     FormatOption,
     OutputFormat,
     format_output,
@@ -333,13 +334,13 @@ def _as_job_id(value: str) -> int:
 
     ``resolve_each`` only catches :class:`UntapedError`, so a raw
     ``ValueError`` from a malformed stdin line would otherwise abort the
-    batch — we wrap it as :class:`AwxApiError` so the per-id row is
-    emitted and the loop continues.
+    batch — wrapping in :class:`ConfigError` lets the loop continue and
+    emit a per-id ``error:`` row for the bad value alongside the good ones.
     """
     try:
         return int(value)
     except ValueError as exc:
-        raise AwxApiError(f"not a numeric job id: {value!r}") from exc
+        raise ConfigError(f"not a numeric job id: {value!r}") from exc
 
 
 @jobs_app.command("list")
@@ -445,8 +446,9 @@ def _emit_events(
     cols: list[str] | None,
     follow: bool,
 ) -> None:
-    """Render an event iterator using the same per-format dispatch the
-    single-id command has always used."""
+    """Lifted out of the per-id closure so multi-id callers reuse
+    the single-id rendering verbatim — no behavioural drift between
+    batch and single modes."""
     if not follow:
         # One-shot drain: collect everything then format as a single
         # table / json document so columns line up and yaml stays a
