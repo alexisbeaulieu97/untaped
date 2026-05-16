@@ -34,8 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from untaped_core import Settings
-from untaped_core.config_schema import walk_settings
+from untaped_core import Settings, walk_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
@@ -74,12 +73,12 @@ def test_credential_fields_are_secretstr() -> None:
         leaf_name = descriptor.path[-1].lower()
         if not _CREDENTIAL_NAME_RE.search(leaf_name):
             continue
-        # Use ``is_secret`` (a property the descriptor already computes)
-        # rather than ``descriptor.annotation is SecretStr``: the latter
-        # would silently break if ``walk_settings`` stopped unwrapping
-        # ``Optional`` at the leaf, since ``Optional[SecretStr]`` would
-        # no longer match. ``is_secret`` is the canonical "is this a
-        # secret" check.
+        # ``is_secret`` is the canonical "is this a credential" predicate
+        # on the descriptor. Equivalent to ``annotation is SecretStr``
+        # today, but a future widening of "what counts as a secret"
+        # (e.g. detecting secrets inside Union types properly) would
+        # land in ``is_secret``'s computation, and every caller would
+        # pick it up for free.
         if not descriptor.is_secret:
             offenders.append(f"{descriptor.key} :: {descriptor.annotation!r}")
     assert not offenders, (
@@ -179,16 +178,20 @@ def _has_required_arg(callback: Any) -> bool:
 
     Typer wraps every parameter's default in an ``ArgumentInfo`` /
     ``OptionInfo`` whose ``.default`` carries the *real* default. A
-    bare ``...`` (Ellipsis) means "no default — user must supply".
-    The ``Parameter.empty`` branch is belt-and-suspenders: Typer
-    rewraps unwrapped params at registration time, so it only fires
-    on pre-registration introspection cases. Cheap to keep.
+    bare ``...`` (Ellipsis) means "no default — user must supply",
+    which maps directly to "user-required argument".
+
+    Deliberately *doesn't* fall back on ``Parameter.empty`` for
+    unwrapped params: this helper only runs against commands
+    already registered on a ``typer.Typer`` app, where Typer
+    guarantees every param carries a wrapper. The ``Parameter.empty``
+    case would also false-positive on Typer-injected parameters like
+    ``ctx: typer.Context``, which the user never supplies on the
+    command line.
     """
     sig = inspect.signature(callback)
     for p in sig.parameters.values():
         info = p.default
-        if info is inspect.Parameter.empty:
-            return True
         if (
             isinstance(info, (typer.models.ArgumentInfo, typer.models.OptionInfo))
             and info.default is ...
