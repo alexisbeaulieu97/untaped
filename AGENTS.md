@@ -238,6 +238,13 @@ Cross-cutting subsystems with their own internals doc:
   {}` get the right value. Reordering keys in a row source — hand-built
   dict or pydantic model — is a contract break. Details:
   [`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md#--format-raw-default-column-contract).
+- **`--all` vs `--all-<axis>`.** Bare `--all` means "iterate every
+  instance of the noun the command targets" (`workspace sync --all`,
+  `workspace status --all`). When a command iterates a *different*
+  axis or changes view shape, use `--all-<axis>` to disambiguate
+  (`awx save --all-kinds` for the type axis, `config list
+  --all-profiles` for view shape). New commands that grow an `--all`
+  flag must cross-check this convention.
 
 Pipeline examples and the morning-routine workflow live in
 [`docs/README.md`](docs/README.md#pipe-friendly-by-design).
