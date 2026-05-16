@@ -848,10 +848,11 @@ def test_add_continues_when_one_url_fails(tmp_path: Path) -> None:
         ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--name", "lab"],
     )
     assert result.exit_code != 0
-    # The novel URL still landed.
+    # The novel URL still landed; both the success line and the per-id
+    # error row land on stderr — stdout stays clean for piping.
     assert "added svc-b" in (result.stderr or "")
-    # The duplicate surfaced as a per-id error row.
     assert "error: https://x/svc-a.git" in (result.stderr or "")
+    assert "error:" not in result.stdout
 
 
 def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
@@ -867,6 +868,30 @@ def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
     )
     assert result.exit_code != 0
     assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_add_repo_name_rejected_with_multiple_urls(tmp_path: Path) -> None:
+    """``--repo-name`` is single-valued — applying it to a batch would
+    produce a guaranteed ``DuplicateRepoName`` cascade on URL #2. The
+    CLI rejects upfront with a ``BadParameter`` rather than letting the
+    batch half-land."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    result = runner.invoke(
+        app,
+        [
+            "add",
+            "https://x/svc-a.git",
+            "https://x/svc-b.git",
+            "--repo-name",
+            "shared",
+            "--name",
+            "lab",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "--repo-name" in (result.output + (result.stderr or ""))
 
 
 def test_path_accepts_multiple_positional_names(tmp_path: Path) -> None:
@@ -902,9 +927,11 @@ def test_path_continues_when_one_name_missing(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "alpha", "--path", str(target)])
     result = runner.invoke(app, ["path", "ghost", "alpha"])
     assert result.exit_code != 0
-    # The known workspace's path was still printed.
-    assert str(target.resolve()) in result.stdout
+    # Known workspace's path reaches stdout; per-id error stays on
+    # stderr so ``cd "$(workspace path …)"`` doesn't ingest the row.
+    assert result.stdout.strip().splitlines() == [str(target.resolve())]
     assert "error: ghost" in (result.stderr or "")
+    assert "error:" not in result.stdout
 
 
 def test_path_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:

@@ -545,8 +545,11 @@ def test_jobs_get_continues_when_one_id_missing(fake_aap: Any) -> None:
         input="",
     )
     assert result.exit_code != 0
-    assert "42" in result.stdout
-    assert "error: 9999" in (result.output + (result.stderr or ""))
+    # The resolved id reaches stdout — pipeline still gets the row.
+    assert result.stdout.strip().splitlines() == ["42"]
+    # The per-id error row lands on stderr, never stdout (pipeline contract).
+    assert "error: 9999" in (result.stderr or "")
+    assert "error:" not in result.stdout
 
 
 def test_jobs_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
@@ -567,8 +570,11 @@ def test_jobs_get_rejects_non_numeric_stdin_entry(fake_aap: Any) -> None:
         input="not-a-number\n42\n",
     )
     assert result.exit_code != 0
-    assert "42" in result.stdout
-    assert "error: not-a-number" in (result.output + (result.stderr or ""))
+    # Good id reaches stdout; the bad-line error stays on stderr so a
+    # downstream pipe doesn't ingest ``error: …`` as data.
+    assert result.stdout.strip().splitlines() == ["42"]
+    assert "error: not-a-number" in (result.stderr or "")
+    assert "error:" not in result.stdout
 
 
 def test_jobs_wait_accepts_multiple_positional_ids(fake_aap: Any) -> None:

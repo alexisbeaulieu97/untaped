@@ -379,6 +379,10 @@ def jobs_get(
     columns: ColumnsOption = None,
 ) -> None:
     """Fetch one or more jobs by id."""
+    # Hoisted so they're bound even if ``report_errors`` swallows the
+    # body — keeps the post-``with`` exit-code dispatch safe.
+    records: list[dict[str, object]] = []
+    any_failed = False
     with report_errors(), open_context() as ctx:
         ids = read_identifiers(list(job_ids or []), stdin=stdin)
         records, any_failed = resolve_each(
@@ -419,6 +423,8 @@ def jobs_events(
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     cols = list(columns) if columns else ["counter", "event", "host_name", "task"]
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    any_failed = False
     with report_errors(), open_context() as ctx:
         ids = read_identifiers(list(job_ids or []), stdin=stdin)
         show_breadcrumb = len(ids) > 1
@@ -443,7 +449,7 @@ def _emit_events(
     events: Iterable[JobEvent],
     *,
     fmt: OutputFormat,
-    cols: list[str] | None,
+    cols: list[str],
     follow: bool,
 ) -> None:
     """Lifted out of the per-id closure so multi-id callers reuse
@@ -473,11 +479,8 @@ def _emit_events(
     # array brackets) to match ``kubectl get -w -o json`` and so
     # ``jq`` can ingest it directly without ``jq -s '.[]'``.
     if fmt == "json":
-        cols_filter = list(cols) if cols else None
         for ev in events:
-            row = ev.model_dump()
-            if cols_filter is not None:
-                row = {c: row.get(c) for c in cols_filter}
+            row = {c: ev.model_dump().get(c) for c in cols}
             typer.echo(json.dumps(row, default=str))
         return
     for ev in events:
@@ -516,6 +519,8 @@ def jobs_logs(
             re.compile(grep, re.IGNORECASE if ignore_case else 0)
         except re.error as exc:
             raise typer.BadParameter(f"--grep {grep!r} is not a valid regex: {exc}") from exc
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    any_failed = False
     with report_errors(), open_context() as ctx:
         ids = read_identifiers(list(job_ids or []), stdin=stdin)
         show_breadcrumb = len(ids) > 1
@@ -562,6 +567,9 @@ def jobs_wait(
     same contract as ``awx test``. Multiple ids drain serially; the
     ``--timeout`` budget applies per id.
     """
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    records: list[dict[str, object]] = []
+    any_failed = False
     timed_out: list[int] = []
     with report_errors(), open_context() as ctx:
         ids = read_identifiers(list(job_ids or []), stdin=stdin)

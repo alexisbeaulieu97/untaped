@@ -229,8 +229,18 @@ def add_command(
     the batch. ``--sync`` only clones URLs that actually landed.
     """
     add_repo = AddRepo(ManifestRepository())
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    any_failed = False
     with report_errors():
         idents = read_identifiers(list(urls or []), stdin=stdin)
+        # ``--repo-name`` is single-valued — refuse upfront when applying
+        # it to multiple URLs would produce a guaranteed ``DuplicateRepoName``
+        # cascade. Per-URL aliases require a structured input format
+        # (out of scope; see issue #154).
+        if repo_name is not None and len(idents) > 1:
+            raise typer.BadParameter(
+                "--repo-name applies to a single URL; drop --repo-name or pass URLs one at a time."
+            )
         ws = _resolve(name, path)
 
         def _add_one(url: str) -> str:
@@ -599,6 +609,8 @@ def path_command(
 ) -> None:
     """Print the absolute path of one or more workspaces (one per line)."""
     get_path = WorkspacePath(WorkspaceRegistryRepository())
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    any_failed = False
     with report_errors():
         idents = read_identifiers(list(names or []), stdin=stdin)
 
