@@ -126,12 +126,7 @@ def apply_command(
 
 
 def _warn_legacy_all(value: bool) -> bool:
-    """Fire a stderr deprecation notice when the legacy ``--all`` is used.
-
-    The canonical flag is ``--all-kinds``; ``--all`` parses for one
-    release as a hidden alias so existing scripts keep working while
-    they migrate.
-    """
+    """Emit the legacy-``--all`` deprecation warning on stderr."""
     if value:
         typer.echo(
             "warning: --all is deprecated; use --all-kinds instead. "

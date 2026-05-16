@@ -1197,7 +1197,7 @@ def test_save_all_rejects_traversal_in_resource_names(
         scm_type="git",
     )
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
     # No nested directories produced by stray `/`
@@ -1306,7 +1306,7 @@ def test_credentials_have_no_save_or_apply(fake_aap: Any) -> None:
 def test_save_all_filter_scopes_org_kinds_server_side(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:
-    """`save --all --filter organization__name=X` is passed verbatim to AWX
+    """`save --all-kinds --filter organization__name=X` is passed verbatim to AWX
     for every saved kind, so org-scoped kinds (JT, Project) get filtered
     server-side and other-org records don't leak through."""
     seeded_default_org.seed("organizations", id=2, name="Other")
@@ -1345,7 +1345,7 @@ def test_save_all_filter_scopes_org_kinds_server_side(
         app,
         [
             "save",
-            "--all",
+            "--all-kinds",
             "--out-dir",
             str(out_dir),
             "--filter",
@@ -1402,7 +1402,7 @@ def test_save_all_filter_skips_schedules_when_filter_field_absent(
         app,
         [
             "save",
-            "--all",
+            "--all-kinds",
             "--out-dir",
             str(out_dir),
             "--filter",
@@ -1480,7 +1480,7 @@ def test_save_all_filter_passes_through_read_only_field(
         app,
         [
             "save",
-            "--all",
+            "--all-kinds",
             "--out-dir",
             str(out_dir),
             "--filter",
@@ -1518,7 +1518,7 @@ def test_save_all_filter_passes_through_list_only_field(
         app,
         [
             "save",
-            "--all",
+            "--all-kinds",
             "--out-dir",
             str(out_dir),
             "--filter",
@@ -1575,7 +1575,7 @@ def test_save_all_with_no_filter_captures_every_kind(
     )
 
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
     saved_jts = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
@@ -1593,7 +1593,7 @@ def test_save_all_filter_rejects_malformed_entry(fake_aap: Any, tmp_path: Path) 
     """Same KEY=VALUE validation as ``<kind> list --filter``."""
     out_dir = tmp_path / "backup"
     result = CliRunner().invoke(
-        app, ["save", "--all", "--out-dir", str(out_dir), "--filter", "bogus"]
+        app, ["save", "--all-kinds", "--out-dir", str(out_dir), "--filter", "bogus"]
     )
     assert result.exit_code != 0
     output = result.output + (result.stderr or "")
@@ -1623,7 +1623,7 @@ def test_save_all_distinguishes_same_named_resources_across_orgs(
     )
 
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
     saved = sorted(p.name for p in out_dir.glob("JobTemplate__*.yml"))
@@ -1636,7 +1636,7 @@ def test_save_all_distinguishes_same_named_resources_across_orgs(
 def test_save_all_default_emits_yaml_envelopes_on_stdout(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:
-    """Default ``save --all`` stdout shape is a multi-doc YAML stream of
+    """Default ``save --all-kinds`` stdout shape is a multi-doc YAML stream of
     envelopes (one per written resource) so the bulk dump pipes straight
     into ``apply``. Files on disk are unchanged from today."""
     seeded_default_org.seed("organizations", id=2, name="Other")
@@ -1657,7 +1657,7 @@ def test_save_all_default_emits_yaml_envelopes_on_stdout(
         playbook="b.yml",
     )
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
     files = sorted(out_dir.glob("JobTemplate__*.yml"))
@@ -1691,7 +1691,9 @@ def test_save_all_print_paths_emits_filenames_on_stdout(
         playbook="a.yml",
     )
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir), "--print-paths"])
+    result = CliRunner().invoke(
+        app, ["save", "--all-kinds", "--out-dir", str(out_dir), "--print-paths"]
+    )
     assert result.exit_code == 0, result.output
     expected = out_dir / "JobTemplate__Default__deploy.yml"
     assert expected.exists()
@@ -1725,7 +1727,7 @@ def test_save_all_default_coexists_with_read_only_skip_notes(
         credential_type=1,
     )
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
     assert "skipping Credential" in result.stderr
     docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
@@ -1738,7 +1740,7 @@ def test_save_all_default_coexists_with_read_only_skip_notes(
 def test_save_kind_print_paths_legacy_shape(seeded_default_org: Any, tmp_path: Path) -> None:
     """``--print-paths`` with ``--kind`` (single-kind path through the
     same loop) keeps the legacy filename-list stdout — proves the flag
-    isn't ``--all``-only."""
+    isn't ``--all-kinds``-only."""
     seeded_default_org.seed(
         "job_templates",
         id=30,
@@ -1784,7 +1786,7 @@ def test_save_all_default_keeps_partial_fidelity_header_comment(
     )
     out_dir = tmp_path / "backup"
     result = CliRunner().invoke(
-        app, ["save", "--all", "--out-dir", str(out_dir), "--kind", "WorkflowJobTemplate"]
+        app, ["save", "--all-kinds", "--out-dir", str(out_dir), "--kind", "WorkflowJobTemplate"]
     )
     assert result.exit_code == 0, result.output
     # The disk file's first non-separator line is the comment; that
@@ -1819,7 +1821,9 @@ def test_save_all_expands_tilde_in_out_dir(
         organization_name="Default",
         playbook="a.yml",
     )
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", "~/backup", "--print-paths"])
+    result = CliRunner().invoke(
+        app, ["save", "--all-kinds", "--out-dir", "~/backup", "--print-paths"]
+    )
     assert result.exit_code == 0, result.output
     expanded = tmp_path / "backup" / "JobTemplate__Default__deploy.yml"
     backup_dir = tmp_path / "backup"
@@ -1832,9 +1836,9 @@ def test_save_all_expands_tilde_in_out_dir(
 def test_save_kind_default_emits_yaml_envelope_on_stdout(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:
-    """``save --kind --out-dir`` (no ``--all``) shares the bulk loop's
+    """``save --kind --out-dir`` (no ``--all-kinds``) shares the bulk loop's
     default stdout shape — one ``---``-prefixed envelope per record.
-    Coverage gap before this: only ``--all`` exercised the envelope
+    Coverage gap before this: only ``--all-kinds`` exercised the envelope
     path."""
     seeded_default_org.seed(
         "job_templates",
@@ -1869,7 +1873,7 @@ def test_save_all_with_only_read_only_kinds_emits_empty_stream(
         credential_type=1,
     )
     out_dir = tmp_path / "backup"
-    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    result = CliRunner().invoke(app, ["save", "--all-kinds", "--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
     assert result.stdout == "", f"expected empty stdout, got: {result.stdout!r}"
     assert "skipping Credential" in result.stderr
@@ -1927,7 +1931,7 @@ def test_save_all_skips_credentials(seeded_default_org: Any, tmp_path: Path) -> 
     out_dir = tmp_path / "backup"
     result = CliRunner().invoke(
         app,
-        ["save", "--all", "--out-dir", str(out_dir)],
+        ["save", "--all-kinds", "--out-dir", str(out_dir)],
     )
     assert result.exit_code == 0, result.output
     # Project file exists; Credential file does not.

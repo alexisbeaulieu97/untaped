@@ -251,10 +251,11 @@ untaped awx save --out-dir backup/ --all-kinds --filter organization__name=Engin
 untaped awx save --out-dir backup/ --kind JobTemplate
 ```
 
-`--all` is the deprecated legacy spelling; it still parses for one
-release with a stderr deprecation warning. New scripts should use
-`--all-kinds` — it's the type-axis iteration flag, distinct from
-`workspace sync --all` which iterates the instance axis.
+Use `--all-kinds` in new scripts — bare `--all` is reserved across
+`untaped` for commands that iterate every instance of the noun (e.g.
+`workspace sync --all` iterates workspaces). The legacy `--all`
+spelling on `save` still parses for one release with a stderr
+deprecation warning so existing scripts keep working.
 
 Writes one file per resource. Filenames encode the full identity so
 same-named records across organizations don't collide:
