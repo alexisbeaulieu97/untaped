@@ -44,9 +44,9 @@ coercion**. Direct construction uniformly keeps the
 `@model_validator(mode="after")` duplicate-rejection check available
 on every mutation, including non-repo-list edits like the rename in
 `ImportWorkspace`. `model_copy(update={"repos": [...]})` would *also*
-re-leave `.repos` as a plain `list`, defeating the tuple-based
-structural freeze; another reason to stay on the direct-construction
-path. `add_repo` raises typed `DuplicateRepoUrl` /
+leave `.repos` as a plain `list` after the copy, defeating the
+tuple-based structural freeze; another reason to stay on the
+direct-construction path. `add_repo` raises typed `DuplicateRepoUrl` /
 `DuplicateRepoName` exceptions (subclasses of `ValueError`), each
 carrying the incumbent `Repo` so callers can format CLI-facing
 errors without re-scanning the manifest; `remove_repo` raises
