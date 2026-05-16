@@ -132,9 +132,18 @@ def _is_resolve_verify_call(node: ast.expr) -> bool:
     Accepts both ``resolve_verify(...)`` (after ``from untaped_core.http
     import resolve_verify``) and ``mod.resolve_verify(...)``. Other
     shapes — bare ``True``/``False``, a string path, a different
-    callable — are rejected so AGENTS.md Hard Rule #12's prohibition on
-    hard-coded verify values is structurally enforced, not just the
-    weaker "kwarg present" version this test originally checked.
+    callable, or the bare uncalled reference — are rejected so AGENTS.md
+    Hard Rule #12's prohibition on hard-coded verify values is
+    structurally enforced, not just the weaker "kwarg present" version
+    this test originally checked.
+
+    Match is **structural, not provenance-based** — it doesn't trace the
+    name back to ``untaped_core.http.resolve_verify`` through imports, so
+    a contrived homonym (``other_lib.resolve_verify``) would pass. And
+    arity isn't checked: a zero-arg ``resolve_verify()`` would pass here
+    and fail-fast at runtime instead. Both are acceptable for a pin —
+    they keep the AST predicate small without sacrificing the
+    "hard-coded verify" prohibition the rule actually enforces.
     """
     if not isinstance(node, ast.Call):
         return False
@@ -388,6 +397,17 @@ _VERIFY_BAD_SOURCES: list[tuple[str, str]] = [
         "def custom() -> bool: return True\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', verify=custom())\n",
+    ),
+    (
+        # Regression: bare reference (not called). The predicate gates on
+        # ``isinstance(node, ast.Call)`` first, so the bare ``resolve_verify``
+        # name is correctly rejected — pin that here so a future "just
+        # accept the name" simplification fails loudly.
+        "bare-resolve-verify-reference",
+        "from untaped_core import HttpClient\n"
+        "from untaped_core.http import resolve_verify\n"
+        "def f() -> None:\n"
+        "    HttpClient(base_url='x', verify=resolve_verify)\n",
     ),
 ]
 
