@@ -520,6 +520,52 @@ def _emit_events(
         typer.echo(line)
 
 
+def _emit_log_lines(
+    lines: Iterable[str],
+    *,
+    fmt: OutputFormat,
+    cols: list[str] | None,
+    follow: bool,
+) -> None:
+    """Render the stdout of a job. Sibling of :func:`_emit_events`.
+
+    ``cols=None`` (vs ``_emit_events``'s required ``list[str]``) means
+    "emit every field of the row" — logs has no default columns whereas
+    events has ``["counter","event","host_name","task"]``.
+    """
+    if not follow:
+        rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
+        if rendered:
+            typer.echo(rendered)
+        return
+    # JSON streams as NDJSON (one bare object per line, no enclosing
+    # array brackets) to match ``jobs events --follow --format json``
+    # and so ``jq`` can ingest it directly without ``jq -s '.[]'``.
+    if fmt == "json":
+        for line in lines:
+            row: dict[str, object] = {"line": line}
+            if cols is not None:
+                row = {c: row.get(c) for c in cols}
+            typer.echo(json.dumps(row, default=str))
+        return
+    if fmt == "raw":
+        # Skip the no-op ``format_output`` round-trip — raw lines are
+        # already the final shape, and the per-line wrap is the hot path
+        # on a 100k-line follow stream. ``cols`` is ignored here: log
+        # rows are single-field (``line``), so any projection is either
+        # the identity or a path miss; the only meaningful value is
+        # ``--columns line``, which is what users pass.
+        for line in lines:
+            typer.echo(line)
+        return
+    # No Rich table branch (unlike ``_emit_events``): log lines are
+    # unstructured text, so ``--format table --follow`` falls through
+    # to per-line ``format_output`` like yaml does. Table-per-line is
+    # silly but the cost is on the user who asked for it.
+    for line in lines:
+        typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
+
+
 @jobs_app.command("logs", no_args_is_help=True)
 def jobs_logs(
     job_ids: list[str] | None = typer.Argument(None, help="Job ID(s)."),
@@ -567,13 +613,7 @@ def jobs_logs(
             lines = TailJobLogs(ctx.monitor)(
                 job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
             )
-            if follow:
-                for line in lines:
-                    typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
-                return
-            rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
-            if rendered:
-                typer.echo(rendered)
+            _emit_log_lines(lines, fmt=fmt, cols=cols, follow=follow)
 
         _, any_failed = resolve_each(ids, _logs_for_id)
     if any_failed:
