@@ -139,3 +139,28 @@ def test_manifest_allows_distinct_repos() -> None:
         ]
     )
     assert {r.name for r in m.repos} == {"alpha", "beta"}
+
+
+# ---- repos container is structurally immutable -----------------------------
+
+
+def test_manifest_repos_coerces_list_to_tuple_preserving_order() -> None:
+    """List inputs (the common call shape) coerce to tuple in field order."""
+    repos_list = [Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]
+    m = WorkspaceManifest(repos=repos_list)
+    assert isinstance(m.repos, tuple)
+    assert [r.url for r in m.repos] == [r.url for r in repos_list]
+
+
+def test_manifest_repos_in_place_append_raises() -> None:
+    """``manifest.repos.append(...)`` must fail loudly."""
+    m = WorkspaceManifest(repos=[Repo(url="https://x/a.git")])
+    with pytest.raises(AttributeError):
+        m.repos.append(Repo(url="https://x/b.git"))  # type: ignore[attr-defined]
+
+
+def test_manifest_repos_in_place_setitem_raises() -> None:
+    """``manifest.repos[0] = ...`` must fail loudly."""
+    m = WorkspaceManifest(repos=[Repo(url="https://x/a.git")])
+    with pytest.raises(TypeError):
+        m.repos[0] = Repo(url="https://x/b.git")  # type: ignore[index]
