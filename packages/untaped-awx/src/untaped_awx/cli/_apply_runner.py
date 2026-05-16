@@ -93,4 +93,20 @@ def _build_apply_resource(ctx: AwxContext) -> ApplyResource:
     )
 
 
-__all__ = ["run_apply"]
+def resolve_apply_file(positional: Path | None, option: Path | None) -> Path:
+    """Resolve apply's file target from positional + ``--file`` alias.
+
+    The ``--file`` option wins when both are given — mirrors how a
+    typing-twice user expects an explicit flag to override the
+    positional. Raises ``typer.BadParameter`` when neither is set.
+    """
+    target = option if option is not None else positional
+    if target is None:
+        raise typer.BadParameter(
+            "expected a FILE positional argument or --file/-f option",
+            param_hint="FILE",
+        )
+    return target
+
+
+__all__ = ["resolve_apply_file", "run_apply"]

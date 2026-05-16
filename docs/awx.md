@@ -75,7 +75,7 @@ untaped awx <kind> get <name>... [--stdin] [--organization <org>]
 
 untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 
-untaped awx <kind> apply --file FILE [--yes] [--fail-fast]
+untaped awx <kind> apply FILE [--yes] [--fail-fast]
                          [--format json|yaml|table|raw] [--columns ...]
 ```
 
@@ -179,6 +179,11 @@ field-level; declared secret paths (`inputs.*`, `webhook_key`)
 carrying `$encrypted$` are stripped from the PATCH and shown as
 `(preserved existing secret)` rows.
 
+The file is a **positional** argument. `--file` / `-f` is retained
+as a backward-compat alias for one release; new scripts should use
+the positional form to match every other "operate on a file/name"
+command in the suite.
+
 ### `launch` (job templates and workflow templates)
 
 ```bash
@@ -211,7 +216,7 @@ Triggers an SCM sync on the project.
 ### `untaped awx apply` (multi-kind)
 
 ```bash
-untaped awx apply --file FILE_OR_DIR [--yes] [--fail-fast]
+untaped awx apply FILE_OR_DIR [--yes] [--fail-fast]
 ```
 
 Apply a single file or a whole directory of YAML envelopes. When
@@ -455,17 +460,17 @@ untaped --profile staging awx job-templates save "Deploy app" \
   > deploy-app.yml
 
 # Preview against prod (no write).
-untaped --profile prod awx job-templates apply --file deploy-app.yml
+untaped --profile prod awx job-templates apply deploy-app.yml
 
 # Looks right? Apply for real.
-untaped --profile prod awx job-templates apply --file deploy-app.yml --yes
+untaped --profile prod awx job-templates apply deploy-app.yml --yes
 ```
 
 Or back up and restore in bulk:
 
 ```bash
 untaped --profile staging awx save --out-dir backup-staging/ --all
-untaped --profile prod awx apply --file backup-staging/ --yes
+untaped --profile prod awx apply backup-staging/ --yes
 ```
 
 Apply ordering ensures Organizations and Credentials land before the

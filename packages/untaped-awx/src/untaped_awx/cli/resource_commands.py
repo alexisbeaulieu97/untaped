@@ -32,7 +32,7 @@ from untaped_awx.application import (
 )
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.application.ports import FkResolver, JobMonitor, RawHttpResourceClient
-from untaped_awx.cli._apply_runner import run_apply
+from untaped_awx.cli._apply_runner import resolve_apply_file, run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._names import flatten_fks
@@ -314,7 +314,13 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
 def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
     @app.command("apply", no_args_is_help=True)
     def apply_command(
-        file: Path = typer.Option(..., "--file", help="YAML file to apply."),
+        file: Path | None = typer.Argument(None, help="YAML file to apply."),
+        file_opt: Path | None = typer.Option(
+            None,
+            "--file",
+            "-f",
+            help="Backward-compat alias for the FILE positional argument.",
+        ),
         yes: bool = typer.Option(False, "--yes", help="Actually write (default is preview only)."),
         fail_fast: bool = typer.Option(False, "--fail-fast", help="Abort on first error."),
         parallel: int = typer.Option(
@@ -327,7 +333,7 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 "(matches the HTTP connection pool default)."
             ),
         ),
-        fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
+        fmt: OutputFormat = typer.Option("table", "--format", help="Output format."),
         columns: list[str] | None = typer.Option(None, "--columns", "-c"),
     ) -> None:
         """Apply a YAML file. Default is preview-only — pass ``--yes`` to write.
@@ -335,10 +341,11 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
         Wrong-kind docs in the file are warned about and **never written** —
         this command is scoped to the kind of its parent sub-app.
         """
+        target = resolve_apply_file(file, file_opt)
         with report_errors(), open_context() as ctx:
             run_apply(
                 ctx,
-                file,
+                target,
                 write=yes,
                 fail_fast=fail_fast,
                 fmt=fmt,

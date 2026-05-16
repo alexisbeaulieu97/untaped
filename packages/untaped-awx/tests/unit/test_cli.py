@@ -223,3 +223,111 @@ def test_apply_emits_clamp_warning_above_cap(
     result = CliRunner().invoke(app, ["apply", "--file", str(yml), "--parallel", "100"])
     assert result.exit_code == 0, result.output
     assert "clamped to 10" in result.output
+
+
+def test_apply_accepts_file_as_positional(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``awx apply FILE`` — positional — must work; every other "operate
+    on a file/name" command in the suite (``workspace import <source>``,
+    ``workspace path <name>``, ``jobs get <id>``, …) takes the noun as a
+    positional. The ``--file`` option-required shape was the historical
+    odd-one-out."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")
+    result = CliRunner().invoke(app, ["apply", str(yml)])
+    assert result.exit_code == 0, result.output
+
+
+def test_apply_file_option_still_works_as_alias(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--file`` / ``-f`` is retained for one release as an alias so
+    existing scripts and muscle memory keep working. Drop later in a
+    separate deprecation PR."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")
+    result = CliRunner().invoke(app, ["apply", "--file", str(yml)])
+    assert result.exit_code == 0, result.output
+    short = CliRunner().invoke(app, ["apply", "-f", str(yml)])
+    assert short.exit_code == 0, short.output
+
+
+def test_apply_option_wins_when_both_positional_and_flag_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If a user passes both ``FILE`` positional and ``--file OTHER``,
+    the explicit flag wins — matches how a typing-twice user expects an
+    explicit flag to override the positional. We verify by passing a
+    non-existent positional and a real file via ``--file``; if the
+    option didn't win, the apply would fail to read the positional."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")
+    bogus = tmp_path / "does-not-exist.yml"
+    result = CliRunner().invoke(app, ["apply", str(bogus), "--file", str(yml)])
+    assert result.exit_code == 0, result.output
+
+
+def test_apply_bare_invocation_shows_help() -> None:
+    """``no_args_is_help=True`` on ``apply`` survives the positional shift —
+    bare ``awx apply`` shows help (exit code 2 is the codebase-wide
+    convention for help-on-no-args, same as ``workspace path`` /
+    ``workspace add``), not a "Missing option '--file'" error."""
+    result = CliRunner().invoke(app, ["apply"])
+    assert result.exit_code == 2
+    assert "Usage:" in result.output
+    assert "Missing option" not in result.output
+
+
+def test_apply_help_synopsis_shows_file_positional() -> None:
+    """The synopsis must advertise ``FILE`` as a positional so users see
+    the right shape in ``--help``."""
+    result = CliRunner().invoke(app, ["apply", "--help"])
+    assert result.exit_code == 0
+    assert "FILE" in result.output
+
+
+def test_per_kind_apply_accepts_file_as_positional(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-kind ``awx <kind> apply FILE`` picks up the same shape from
+    one edit in ``_add_apply``."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")
+    result = CliRunner().invoke(app, ["job-templates", "apply", str(yml)])
+    assert result.exit_code == 0, result.output
+
+
+def test_per_kind_apply_file_option_still_works(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--file`` alias on per-kind apply keeps working too."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")
+    result = CliRunner().invoke(app, ["job-templates", "apply", "--file", str(yml)])
+    assert result.exit_code == 0, result.output
+
+
+def test_per_kind_apply_bare_invocation_shows_help() -> None:
+    """``awx <kind> apply`` with no args shows help (exit code 2 — the
+    codebase-wide ``no_args_is_help`` convention), not a "Missing option
+    '--file'" error."""
+    result = CliRunner().invoke(app, ["job-templates", "apply"])
+    assert result.exit_code == 2
+    assert "Usage:" in result.output
+    assert "Missing option" not in result.output
+
+
+def test_per_kind_apply_help_shows_file_positional() -> None:
+    """Per-kind synopsis must advertise the ``FILE`` positional."""
+    result = CliRunner().invoke(app, ["job-templates", "apply", "--help"])
+    assert result.exit_code == 0
+    assert "FILE" in result.output
