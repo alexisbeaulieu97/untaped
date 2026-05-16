@@ -122,7 +122,18 @@ def apply_command(
         )
 
 
-# ---- top-level save (--all bulk dump) ----
+# ---- top-level save ----
+
+
+def _warn_legacy_all(value: bool) -> bool:
+    """Emit the legacy-``--all`` deprecation warning on stderr."""
+    if value:
+        typer.echo(
+            "warning: --all is deprecated; use --all-kinds instead. "
+            "--all will be removed in a future release.",
+            err=True,
+        )
+    return value
 
 
 @app.command("save", no_args_is_help=True)
@@ -130,7 +141,20 @@ def save_top_command(
     out_dir: Path = typer.Option(
         ..., "--out-dir", help="Directory to write per-resource files into."
     ),
-    all_kinds: bool = typer.Option(False, "--all", help="Save every saveable kind."),
+    all_kinds: bool = typer.Option(
+        False,
+        "--all-kinds",
+        help="Save every saveable kind (iterate the type axis).",
+    ),
+    # TODO(drop-legacy-all-alias): remove this Option and the
+    # _warn_legacy_all callback above in the next minor release.
+    legacy_all: bool = typer.Option(
+        False,
+        "--all",
+        hidden=True,
+        callback=_warn_legacy_all,
+        help="Deprecated alias for --all-kinds.",
+    ),
     kind: str | None = typer.Option(
         None,
         "--kind",
@@ -161,9 +185,9 @@ def save_top_command(
 ) -> None:
     """Bulk-save resources to a directory.
 
-    ``save --all --out-dir DIR`` writes one file per resource using the
-    full identity in the filename so same-named records across
-    organizations don't collide:
+    ``save --all-kinds --out-dir DIR`` writes one file per resource
+    using the full identity in the filename so same-named records
+    across organizations don't collide:
     ``<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml``.
     Kinds with read-only fidelity (Credential) are skipped with a
     one-line note.
@@ -174,8 +198,9 @@ def save_top_command(
     ``--print-paths`` to swap stdout for the written-file list
     instead.
     """
+    all_kinds = all_kinds or legacy_all
     if not all_kinds and not kind:
-        raise typer.BadParameter("pass --all or --kind")
+        raise typer.BadParameter("pass --all-kinds or --kind")
     filters = parse_kv_pairs(filter_, flag="--filter")
 
     with report_errors(), open_context() as ctx:

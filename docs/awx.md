@@ -243,13 +243,19 @@ Per-kind `apply` (e.g. `awx job-templates apply`) only writes its own
 kind — wrong-kind docs in the file are warned about and never written.
 Use the top-level `awx apply` when you want the dependency ordering.
 
-### `untaped awx save --all` (bulk dump)
+### `untaped awx save --all-kinds` (bulk dump)
 
 ```bash
-untaped awx save --out-dir backup/ --all
-untaped awx save --out-dir backup/ --all --filter organization__name=Engineering
+untaped awx save --out-dir backup/ --all-kinds
+untaped awx save --out-dir backup/ --all-kinds --filter organization__name=Engineering
 untaped awx save --out-dir backup/ --kind JobTemplate
 ```
+
+Use `--all-kinds` in new scripts — bare `--all` is reserved across
+`untaped` for commands that iterate every instance of the noun (e.g.
+`workspace sync --all` iterates workspaces). The legacy `--all`
+spelling on `save` still parses for one release with a stderr
+deprecation warning so existing scripts keep working.
 
 Writes one file per resource. Filenames encode the full identity so
 same-named records across organizations don't collide:
@@ -492,7 +498,7 @@ untaped --profile prod awx job-templates apply deploy-app.yml --yes
 Or back up and restore in bulk:
 
 ```bash
-untaped --profile staging awx save --out-dir backup-staging/ --all
+untaped --profile staging awx save --out-dir backup-staging/ --all-kinds
 untaped --profile prod awx apply backup-staging/ --yes
 ```
 
