@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from untaped_workspace.application.ports import Filesystem, ManifestReader, ShellRunner
@@ -39,7 +40,7 @@ class Foreach:
     def _run_serial(
         self,
         workspace: Workspace,
-        repos: list[Repo],
+        repos: Sequence[Repo],
         command: str,
         continue_on_error: bool,
     ) -> list[ForeachOutcome]:
@@ -54,7 +55,7 @@ class Foreach:
     def _run_parallel(
         self,
         workspace: Workspace,
-        repos: list[Repo],
+        repos: Sequence[Repo],
         command: str,
         parallel: int,
         continue_on_error: bool,

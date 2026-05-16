@@ -118,7 +118,7 @@ def test_writes_built_manifest_and_returns_registered_workspace(tmp_path: Path) 
     loaded = manifests.read(ws_dir.resolve())
     assert loaded.name == "prod"
     assert loaded.defaults.branch == "main"
-    assert loaded.repos == []
+    assert loaded.repos == ()
     assert registry.registered[-1] is result
 
 

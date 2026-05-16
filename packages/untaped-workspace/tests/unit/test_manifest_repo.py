@@ -81,3 +81,26 @@ def test_write_empty_defaults_omitted(tmp_path: Path) -> None:
     ManifestRepository().write(tmp_path, WorkspaceManifest())
     raw = yaml.safe_load((tmp_path / "untaped.yml").read_text())
     assert "defaults" not in raw
+
+
+def test_write_repos_emits_plain_yaml_sequence(tmp_path: Path) -> None:
+    """``repos`` is a tuple at the type level but must serialise as a plain
+    YAML sequence — no ``!!python/tuple`` tag and no ``RepresenterError``.
+
+    PyYAML's ``SafeRepresenter`` happens to represent tuples and lists the
+    same way today, so this test is a regression pin against a future
+    PyYAML / pydantic change that would otherwise leak the runtime
+    container type into the on-disk manifest.
+    """
+    manifest = WorkspaceManifest(
+        repos=[
+            Repo(url="https://github.com/org/svc-a.git"),
+            Repo(url="https://github.com/org/svc-b.git"),
+        ],
+    )
+    ManifestRepository().write(tmp_path, manifest)
+    text = (tmp_path / "untaped.yml").read_text()
+    assert "python/tuple" not in text
+    # Round-trip through the safe loader to confirm the dumped shape is
+    # a plain mapping/sequence pydantic can parse back without help.
+    assert ManifestRepository().read(tmp_path).repos == manifest.repos

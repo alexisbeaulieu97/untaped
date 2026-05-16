@@ -29,8 +29,12 @@ Method names on the registry are `entries`, `get`, `find_by_path`,
 builtin in nested annotations within the class.
 
 **Manifest mutation contract.** All three manifest models (`Repo`,
-`ManifestDefaults`, `WorkspaceManifest`) are `frozen=True`. Mutation
-goes through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`
+`ManifestDefaults`, `WorkspaceManifest`) are `frozen=True`, and
+`WorkspaceManifest.repos` is typed `tuple[Repo, ...]` (not `list`) so
+in-place mutation — `m.repos.append(r)`, `m.repos[0] = r` — raises at
+runtime. Pydantic's `frozen=True` only blocks attribute reassignment,
+not container mutation; the tuple closes that hole structurally. All
+edits go through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`
 and `WorkspaceManifest.remove_repo(ident) -> tuple[WorkspaceManifest,
 Repo]`, which return new manifests rather than mutating in place.
 Every manifest construction in the application layer uses
