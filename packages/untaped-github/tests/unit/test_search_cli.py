@@ -280,7 +280,6 @@ def test_search_repos_default_limit_is_30(tmp_path: Path, monkeypatch: pytest.Mo
     assert result.exit_code == 0, result.output
     parsed = json.loads(result.stdout)
     assert len(parsed) == 30
-    # First-page per_page shrinking should send per_page=30 — one round trip.
     assert route.calls[0].request.url.params["per_page"] == "30"
     assert route.call_count == 1
 

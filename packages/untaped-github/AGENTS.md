@@ -65,9 +65,11 @@ AGENTS.md Hard Rule 11). Don't invent your own verify resolution.
 Authenticated GitHub gives 5000 req/hour overall and a separate 30
 req/min budget for the `/search/*` endpoints. `whoami` is one call;
 `search` paginates 100 rows per page and stops at `--limit` (default
-30, max 1000). The 30-default keeps a casual exploratory query to a
-single round trip against the 30/min search budget; pass `--limit
-1000` to opt into GitHub's hard maximum.
+`30`). The 30-default keeps a casual exploratory query to a single
+round trip against the 30/min search budget; pass `--limit 1000` to
+opt into GitHub's hard search ceiling. GitHub enforces that ceiling
+on its side — the CLI accepts larger values, but the paginator stops
+once GitHub stops returning a `next` link.
 Future high-volume features should honour the `X-RateLimit-Remaining`
 / `X-RateLimit-Reset` response headers and back off on `429 Too Many
 Requests`.

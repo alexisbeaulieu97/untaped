@@ -8,7 +8,7 @@ own the orchestration.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 import typer
 from untaped_core import (
@@ -20,6 +20,21 @@ from untaped_core import (
 )
 
 from untaped_github.cli._client import open_client
+
+# Shared across all four search subcommands. GitHub-specific (the
+# 1000-result cap belongs to GitHub, not untaped_core), so it lives
+# here rather than in untaped_core's option aliases.
+SearchLimitOption = Annotated[
+    int,
+    typer.Option(
+        "--limit",
+        min=1,
+        help=(
+            "Cap result count. GitHub enforces a hard 1000-result cap "
+            "on search; pass --limit 1000 to opt into the maximum."
+        ),
+    ),
+]
 
 app = typer.Typer(
     name="search",
@@ -70,15 +85,7 @@ def repos_command(
     sort: Literal["stars", "forks", "help-wanted-issues", "updated"] | None = typer.Option(
         None, "--sort"
     ),
-    limit: int = typer.Option(
-        30,
-        "--limit",
-        min=1,
-        help=(
-            "Cap result count. GitHub enforces a hard 1000-result cap "
-            "on search; pass --limit 1000 to opt into the maximum."
-        ),
-    ),
+    limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -120,15 +127,7 @@ def code_command(
     filename: str | None = typer.Option(None, "--filename"),
     path: str | None = typer.Option(None, "--path"),
     extension: str | None = typer.Option(None, "--extension"),
-    limit: int = typer.Option(
-        30,
-        "--limit",
-        min=1,
-        help=(
-            "Cap result count. GitHub enforces a hard 1000-result cap "
-            "on search; pass --limit 1000 to opt into the maximum."
-        ),
-    ),
+    limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -177,15 +176,7 @@ def issues_command(
     mentions: str | None = typer.Option(None, "--mentions"),
     sort: Literal["comments", "reactions", "interactions", "created", "updated"]
     | None = typer.Option(None, "--sort"),
-    limit: int = typer.Option(
-        30,
-        "--limit",
-        min=1,
-        help=(
-            "Cap result count. GitHub enforces a hard 1000-result cap "
-            "on search; pass --limit 1000 to opt into the maximum."
-        ),
-    ),
+    limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -224,15 +215,7 @@ def users_command(
     location: str | None = typer.Option(None, "--location"),
     language: str | None = typer.Option(None, "--language"),
     sort: Literal["followers", "repositories", "joined"] | None = typer.Option(None, "--sort"),
-    limit: int = typer.Option(
-        30,
-        "--limit",
-        min=1,
-        help=(
-            "Cap result count. GitHub enforces a hard 1000-result cap "
-            "on search; pass --limit 1000 to opt into the maximum."
-        ),
-    ),
+    limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
