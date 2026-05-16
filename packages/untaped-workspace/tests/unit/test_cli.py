@@ -798,3 +798,119 @@ repos:
 
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert "imported" in listed.stdout.splitlines()
+
+
+# ── add / path --stdin pipeline shape (issue #154) ──────────────────────────
+
+
+def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
+    """``workspace add url-a url-b`` records both repos in one shot."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    result = runner.invoke(
+        app,
+        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--name", "lab"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "added svc-a" in (result.stderr or "")
+    assert "added svc-b" in (result.stderr or "")
+
+
+def test_add_reads_urls_from_stdin(tmp_path: Path) -> None:
+    """``workspace list --format raw | workspace add --stdin`` is the
+    documented pipeline shape."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    result = runner.invoke(
+        app,
+        ["add", "--stdin", "--name", "lab"],
+        input="https://x/svc-a.git\nhttps://x/svc-b.git\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "added svc-a" in (result.stderr or "")
+    assert "added svc-b" in (result.stderr or "")
+
+
+def test_add_continues_when_one_url_fails(tmp_path: Path) -> None:
+    """A duplicate URL doesn't suppress the URLs that landed cleanly —
+    same pipeline-resilience rule as ``workspace remove`` / ``awx get
+    --stdin``."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+
+    # svc-a is duplicate; svc-b is novel.
+    result = runner.invoke(
+        app,
+        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--name", "lab"],
+    )
+    assert result.exit_code != 0
+    # The novel URL still landed.
+    assert "added svc-b" in (result.stderr or "")
+    # The duplicate surfaced as a per-id error row.
+    assert "error: https://x/svc-a.git" in (result.stderr or "")
+
+
+def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
+    """Per ``read_identifiers``: mixing positional and ``--stdin``
+    is refused."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    result = runner.invoke(
+        app,
+        ["add", "https://x/svc-a.git", "--stdin", "--name", "lab"],
+        input="https://x/svc-b.git\n",
+    )
+    assert result.exit_code != 0
+    assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_path_accepts_multiple_positional_names(tmp_path: Path) -> None:
+    """``workspace path a b`` echoes one path per name in input order."""
+    runner = CliRunner()
+    target_a = tmp_path / "ws-a"
+    target_b = tmp_path / "ws-b"
+    runner.invoke(app, ["init", "alpha", "--path", str(target_a)])
+    runner.invoke(app, ["init", "beta", "--path", str(target_b)])
+    result = runner.invoke(app, ["path", "alpha", "beta"])
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.strip().splitlines()
+    assert lines == [str(target_a.resolve()), str(target_b.resolve())]
+
+
+def test_path_reads_names_from_stdin(tmp_path: Path) -> None:
+    """``workspace list --format raw | workspace path --stdin`` emits
+    one absolute path per registered workspace."""
+    runner = CliRunner()
+    target_a = tmp_path / "ws-a"
+    target_b = tmp_path / "ws-b"
+    runner.invoke(app, ["init", "alpha", "--path", str(target_a)])
+    runner.invoke(app, ["init", "beta", "--path", str(target_b)])
+    result = runner.invoke(app, ["path", "--stdin"], input="alpha\nbeta\n")
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.strip().splitlines()
+    assert lines == [str(target_a.resolve()), str(target_b.resolve())]
+
+
+def test_path_continues_when_one_name_missing(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "alpha", "--path", str(target)])
+    result = runner.invoke(app, ["path", "ghost", "alpha"])
+    assert result.exit_code != 0
+    # The known workspace's path was still printed.
+    assert str(target.resolve()) in result.stdout
+    assert "error: ghost" in (result.stderr or "")
+
+
+def test_path_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "alpha", "--path", str(target)])
+    result = runner.invoke(app, ["path", "alpha", "--stdin"], input="alpha\n")
+    assert result.exit_code != 0
+    assert "stdin" in (result.output + (result.stderr or "")).lower()

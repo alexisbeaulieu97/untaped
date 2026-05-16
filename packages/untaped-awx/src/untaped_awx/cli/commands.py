@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 import typer
@@ -20,7 +21,9 @@ from untaped_core import (
     format_output,
     get_settings,
     parse_kv_pairs,
+    read_identifiers,
     report_errors,
+    resolve_each,
 )
 
 from untaped_awx.application import (
@@ -40,7 +43,7 @@ from untaped_awx.cli.resource_commands import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped_awx.cli.workflow_node_commands import register_nodes_command
-from untaped_awx.domain import Job, Metadata
+from untaped_awx.domain import Job, JobEvent, Metadata
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient, AwxConfig
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
@@ -325,6 +328,20 @@ _JOB_KIND_HELP = (
 )
 
 
+def _as_job_id(value: str) -> int:
+    """Parse a stdin/positional job id; surface bad input as a per-id error.
+
+    ``resolve_each`` only catches :class:`UntapedError`, so a raw
+    ``ValueError`` from a malformed stdin line would otherwise abort the
+    batch — we wrap it as :class:`AwxApiError` so the per-id row is
+    emitted and the loop continues.
+    """
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise AwxApiError(f"not a numeric job id: {value!r}") from exc
+
+
 @jobs_app.command("list")
 def jobs_list(
     status: str | None = typer.Option(
@@ -354,20 +371,28 @@ def jobs_list(
 
 @jobs_app.command("get", no_args_is_help=True)
 def jobs_get(
-    job_id: int = typer.Argument(..., help="Job ID."),
+    job_ids: list[str] | None = typer.Argument(None, help="Job ID(s)."),
+    stdin: bool = typer.Option(False, "--stdin", help="Read job ids from stdin (one per line)."),
     kind: str = typer.Option("job", "--kind", help=_JOB_KIND_HELP),
     fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
     columns: ColumnsOption = None,
 ) -> None:
-    """Fetch a single job by id."""
+    """Fetch one or more jobs by id."""
     with report_errors(), open_context() as ctx:
-        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
-    typer.echo(format_output([record], fmt=fmt, columns=list(columns) if columns else []))
+        ids = read_identifiers(list(job_ids or []), stdin=stdin)
+        records, any_failed = resolve_each(
+            ids, lambda n: GetJob(ctx.jobs)(kind=kind, job_id=_as_job_id(n))
+        )
+    if records:
+        typer.echo(format_output(records, fmt=fmt, columns=list(columns) if columns else []))
+    if any_failed:
+        raise typer.Exit(code=1)
 
 
 @jobs_app.command("events", no_args_is_help=True)
 def jobs_events(
-    job_id: int = typer.Argument(..., help="Job ID."),
+    job_ids: list[str] | None = typer.Argument(None, help="Job ID(s)."),
+    stdin: bool = typer.Option(False, "--stdin", help="Read job ids from stdin (one per line)."),
     follow: bool = typer.Option(False, "--follow", help="Tail events live until terminal."),
     from_counter: int = typer.Option(
         0, "--from-counter", help="Skip events with counter <= this value."
@@ -381,60 +406,87 @@ def jobs_events(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Stream the structured per-task event log for a job.
+    """Stream the structured per-task event log for one or more jobs.
 
-    Without ``--follow`` this drains the current event log and exits;
-    with ``--follow`` it polls AWX every 2s until the job is terminal.
+    Without ``--follow`` this drains each job's event log and exits;
+    with ``--follow`` it polls AWX every 2s until each job is terminal.
     Filters reach AWX directly so you can scope server-side, e.g.
     ``--filter event=runner_on_failed --filter host=web-01``.
+
+    Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
+    between jobs. For a single id, output is identical to today.
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     cols = list(columns) if columns else ["counter", "event", "host_name", "task"]
     with report_errors(), open_context() as ctx:
-        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
-        job = Job.model_validate({**record, "kind": kind})
-        events = StreamJobEvents(ctx.monitor)(
-            job, from_counter=from_counter, filters=filters, follow=follow
-        )
-        if not follow:
-            # One-shot drain: collect everything then format as a single
-            # table / json document so columns line up and yaml stays a
-            # well-formed list.
-            rows = [ev.model_dump() for ev in events]
-            typer.echo(format_output(rows, fmt=fmt, columns=cols))
-            return
-        if fmt == "table":
-            # Table mode under --follow renders each event as a colored
-            # human-readable line (PLAY [..] / TASK [..] / "  ok: host"),
-            # similar to the AWX UI's Output tab. ``rich.console.Console``
-            # auto-detects TTY: ANSI on a real terminal, plain text when
-            # piped or redirected. No new dependency — Rich is already
-            # used for table rendering elsewhere.
-            console = Console(highlight=False)
-            for ev in events:
-                console.print(render_event_text(ev))
-            return
-        # Other formats (json/yaml/raw) stream one structured row at a
-        # time — useful for ``--follow | jq``-style pipelines.
-        # JSON streams as NDJSON (one bare object per line, no enclosing
-        # array brackets) to match ``kubectl get -w -o json`` and so
-        # ``jq`` can ingest it directly without ``jq -s '.[]'``.
-        if fmt == "json":
-            cols_filter = list(cols) if cols else None
-            for ev in events:
-                row = ev.model_dump()
-                if cols_filter is not None:
-                    row = {c: row.get(c) for c in cols_filter}
-                typer.echo(json.dumps(row, default=str))
-            return
+        ids = read_identifiers(list(job_ids or []), stdin=stdin)
+        show_breadcrumb = len(ids) > 1
+
+        def _events_for_id(n: str) -> None:
+            job_id = _as_job_id(n)
+            record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
+            job = Job.model_validate({**record, "kind": kind})
+            if show_breadcrumb:
+                typer.echo(f"[{job_id}]", err=True)
+            events = StreamJobEvents(ctx.monitor)(
+                job, from_counter=from_counter, filters=filters, follow=follow
+            )
+            _emit_events(events, fmt=fmt, cols=cols, follow=follow)
+
+        _, any_failed = resolve_each(ids, _events_for_id)
+    if any_failed:
+        raise typer.Exit(code=1)
+
+
+def _emit_events(
+    events: Iterable[JobEvent],
+    *,
+    fmt: OutputFormat,
+    cols: list[str] | None,
+    follow: bool,
+) -> None:
+    """Render an event iterator using the same per-format dispatch the
+    single-id command has always used."""
+    if not follow:
+        # One-shot drain: collect everything then format as a single
+        # table / json document so columns line up and yaml stays a
+        # well-formed list.
+        rows = [ev.model_dump() for ev in events]
+        typer.echo(format_output(rows, fmt=fmt, columns=cols))
+        return
+    if fmt == "table":
+        # Table mode under --follow renders each event as a colored
+        # human-readable line (PLAY [..] / TASK [..] / "  ok: host"),
+        # similar to the AWX UI's Output tab. ``rich.console.Console``
+        # auto-detects TTY: ANSI on a real terminal, plain text when
+        # piped or redirected. No new dependency — Rich is already
+        # used for table rendering elsewhere.
+        console = Console(highlight=False)
         for ev in events:
-            line = format_output([ev.model_dump()], fmt=fmt, columns=cols)
-            typer.echo(line)
+            console.print(render_event_text(ev))
+        return
+    # Other formats (json/yaml/raw) stream one structured row at a
+    # time — useful for ``--follow | jq``-style pipelines.
+    # JSON streams as NDJSON (one bare object per line, no enclosing
+    # array brackets) to match ``kubectl get -w -o json`` and so
+    # ``jq`` can ingest it directly without ``jq -s '.[]'``.
+    if fmt == "json":
+        cols_filter = list(cols) if cols else None
+        for ev in events:
+            row = ev.model_dump()
+            if cols_filter is not None:
+                row = {c: row.get(c) for c in cols_filter}
+            typer.echo(json.dumps(row, default=str))
+        return
+    for ev in events:
+        line = format_output([ev.model_dump()], fmt=fmt, columns=cols)
+        typer.echo(line)
 
 
 @jobs_app.command("logs", no_args_is_help=True)
 def jobs_logs(
-    job_id: int = typer.Argument(..., help="Job ID."),
+    job_ids: list[str] | None = typer.Argument(None, help="Job ID(s)."),
+    stdin: bool = typer.Option(False, "--stdin", help="Read job ids from stdin (one per line)."),
     follow: bool = typer.Option(False, "--follow", "-f", help="Tail until terminal."),
     tail: int | None = typer.Option(
         None, "--tail", help="Show only the last N historical lines before following."
@@ -449,7 +501,11 @@ def jobs_logs(
     ),
     columns: ColumnsOption = None,
 ) -> None:
-    """Print the job's stdout. Supports follow / tail / grep."""
+    """Print the stdout of one or more jobs. Supports follow / tail / grep.
+
+    Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
+    between jobs. For a single id, output is identical to today.
+    """
     if grep is not None:
         # Compile here so an invalid regex fails fast as a clean
         # ``BadParameter`` (cleanly mapped to exit 2 by Typer) rather than
@@ -459,26 +515,38 @@ def jobs_logs(
         except re.error as exc:
             raise typer.BadParameter(f"--grep {grep!r} is not a valid regex: {exc}") from exc
     with report_errors(), open_context() as ctx:
-        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
-        job = Job.model_validate({**record, "kind": kind})
-        lines = TailJobLogs(ctx.monitor)(
-            job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
-        )
+        ids = read_identifiers(list(job_ids or []), stdin=stdin)
+        show_breadcrumb = len(ids) > 1
         cols = list(columns) if columns else None
-        if follow:
-            for line in lines:
-                typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
-            return
-        rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
-        if rendered:
-            typer.echo(rendered)
+
+        def _logs_for_id(n: str) -> None:
+            job_id = _as_job_id(n)
+            record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
+            job = Job.model_validate({**record, "kind": kind})
+            if show_breadcrumb:
+                typer.echo(f"[{job_id}]", err=True)
+            lines = TailJobLogs(ctx.monitor)(
+                job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
+            )
+            if follow:
+                for line in lines:
+                    typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
+                return
+            rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
+            if rendered:
+                typer.echo(rendered)
+
+        _, any_failed = resolve_each(ids, _logs_for_id)
+    if any_failed:
+        raise typer.Exit(code=1)
 
 
 @jobs_app.command("wait", no_args_is_help=True)
 def jobs_wait(
-    job_id: int = typer.Argument(..., help="Job ID."),
+    job_ids: list[str] | None = typer.Argument(None, help="Job ID(s)."),
+    stdin: bool = typer.Option(False, "--stdin", help="Read job ids from stdin (one per line)."),
     timeout: float | None = typer.Option(
-        None, "--timeout", help="Seconds to wait before giving up."
+        None, "--timeout", help="Seconds to wait before giving up (applies per id)."
     ),
     kind: str = typer.Option("job", "--kind", help=_JOB_KIND_HELP),
     fmt: OutputFormat = typer.Option(
@@ -486,18 +554,31 @@ def jobs_wait(
     ),
     columns: ColumnsOption = None,
 ) -> None:
-    """Block until the job reaches a terminal state.
+    """Block until each named job reaches a terminal state.
 
-    Exits non-zero when ``--timeout`` is reached without the job
-    reaching a terminal state — same contract as ``awx test``.
+    Exits non-zero when any job times out or any id fails to resolve —
+    same contract as ``awx test``. Multiple ids drain serially; the
+    ``--timeout`` budget applies per id.
     """
+    timed_out: list[int] = []
     with report_errors(), open_context() as ctx:
-        record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
-        job = Job.model_validate({**record, "kind": kind})
-        final = WatchJob(ctx.repo)(job, timeout=timeout)
-    typer.echo(format_output([final.model_dump()], fmt=fmt, columns=columns))
-    if not final.is_terminal:
+        ids = read_identifiers(list(job_ids or []), stdin=stdin)
+
+        def _wait_one(n: str) -> dict[str, object]:
+            job_id = _as_job_id(n)
+            record = GetJob(ctx.jobs)(kind=kind, job_id=job_id)
+            job = Job.model_validate({**record, "kind": kind})
+            final = WatchJob(ctx.repo)(job, timeout=timeout)
+            if not final.is_terminal:
+                timed_out.append(job_id)
+            return final.model_dump()
+
+        records, any_failed = resolve_each(ids, _wait_one)
+    if records:
+        typer.echo(format_output(records, fmt=fmt, columns=columns))
+    for job_id in timed_out:
         typer.echo(f"timeout: job {job_id} did not reach terminal state", err=True)
+    if any_failed or timed_out:
         raise typer.Exit(code=1)
 
 

@@ -503,3 +503,173 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
     # The other worker isn't aborted by deploy-a's failure: deploy-b's
     # event still streams with its prefix.
     assert "[deploy-b]" in result.stderr
+
+
+# ── jobs --stdin pipeline shape (issue #154) ────────────────────────────────
+
+
+def test_jobs_get_accepts_multiple_positional_ids(fake_aap: Any) -> None:
+    """``jobs get 42 43`` resolves each id in turn — same contract as
+    ``awx <kind> get a b c``."""
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    result = CliRunner().invoke(
+        app, ["jobs", "get", "42", "43", "--format", "raw", "--columns", "id"]
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines())
+    assert ids == ["42", "43"]
+
+
+def test_jobs_get_reads_ids_from_stdin(fake_aap: Any) -> None:
+    """``jobs list -f raw | jobs get --stdin`` is the documented pipeline shape."""
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "get", "--stdin", "--format", "raw", "--columns", "id"],
+        input="42\n43\n",
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines())
+    assert ids == ["42", "43"]
+
+
+def test_jobs_get_continues_when_one_id_missing(fake_aap: Any) -> None:
+    """A missing id in a multi-id batch must not suppress the resolved
+    ids — same rule as ``awx <kind> get --stdin``."""
+    _seed_running_job(fake_aap, job_id=42)
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "get", "9999", "42", "--format", "raw", "--columns", "id"],
+        input="",
+    )
+    assert result.exit_code != 0
+    assert "42" in result.stdout
+    assert "error: 9999" in (result.output + (result.stderr or ""))
+
+
+def test_jobs_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
+    """Per ``read_identifiers``: mixing positional and ``--stdin`` is
+    refused, since a misplaced flag would silently act on the wrong set."""
+    _seed_running_job(fake_aap, job_id=42)
+    result = CliRunner().invoke(app, ["jobs", "get", "42", "--stdin"], input="43\n")
+    assert result.exit_code != 0
+    assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_jobs_get_rejects_non_numeric_stdin_entry(fake_aap: Any) -> None:
+    """Non-numeric job ids surface as a per-id error (not a crash)."""
+    _seed_running_job(fake_aap, job_id=42)
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "get", "--stdin", "--format", "raw", "--columns", "id"],
+        input="not-a-number\n42\n",
+    )
+    assert result.exit_code != 0
+    assert "42" in result.stdout
+    assert "error: not-a-number" in (result.output + (result.stderr or ""))
+
+
+def test_jobs_wait_accepts_multiple_positional_ids(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    result = CliRunner().invoke(
+        app, ["jobs", "wait", "42", "43", "--format", "raw", "--columns", "id"]
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines())
+    assert ids == ["42", "43"]
+
+
+def test_jobs_wait_reads_ids_from_stdin(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "wait", "--stdin", "--format", "raw", "--columns", "id"],
+        input="42\n43\n",
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines())
+    assert ids == ["42", "43"]
+
+
+def test_jobs_wait_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    result = CliRunner().invoke(app, ["jobs", "wait", "42", "--stdin"], input="43\n")
+    assert result.exit_code != 0
+    assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_jobs_logs_concatenates_streams_across_ids(fake_aap: Any) -> None:
+    """Multiple ids drain serially; each job's stdout is emitted in
+    turn. A ``[<id>] `` stderr breadcrumb identifies which job is up."""
+    fake_aap.seed("jobs", id=42, status="successful", stdout="alpha-1\nalpha-2\n")
+    fake_aap.seed("jobs", id=43, status="successful", stdout="beta-1\nbeta-2\n")
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "43"])
+    assert result.exit_code == 0, result.output
+    out = result.stdout.strip().splitlines()
+    assert out == ["alpha-1", "alpha-2", "beta-1", "beta-2"]
+    # Breadcrumb to stderr so stdout stays clean for piping.
+    assert "[42]" in result.stderr
+    assert "[43]" in result.stderr
+
+
+def test_jobs_logs_reads_ids_from_stdin(fake_aap: Any) -> None:
+    fake_aap.seed("jobs", id=42, status="successful", stdout="alpha\n")
+    fake_aap.seed("jobs", id=43, status="successful", stdout="beta\n")
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "logs", "--stdin"],
+        input="42\n43\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["alpha", "beta"]
+
+
+def test_jobs_logs_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
+    fake_aap.seed("jobs", id=42, status="successful", stdout="x\n")
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--stdin"], input="43\n")
+    assert result.exit_code != 0
+    assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_jobs_events_concatenates_streams_across_ids(fake_aap: Any) -> None:
+    """Two seeded jobs each get a one-event log; events ``--format raw
+    --columns counter`` emits both rows in id order with a breadcrumb."""
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
+    fake_aap.seed("job_events", id=2, job=43, counter=2, event="playbook_on_play_start")
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "events", "42", "43", "--format", "raw", "--columns", "counter"],
+    )
+    assert result.exit_code == 0, result.output
+    counters = result.stdout.strip().splitlines()
+    assert counters == ["1", "2"]
+    assert "[42]" in result.stderr
+    assert "[43]" in result.stderr
+
+
+def test_jobs_events_reads_ids_from_stdin(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
+    fake_aap.seed("job_events", id=2, job=43, counter=2, event="playbook_on_play_start")
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "events", "--stdin", "--format", "raw", "--columns", "counter"],
+        input="42\n43\n",
+    )
+    assert result.exit_code == 0, result.output
+    counters = result.stdout.strip().splitlines()
+    assert counters == ["1", "2"]
+
+
+def test_jobs_events_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
+    _seed_running_job(fake_aap, job_id=42)
+    result = CliRunner().invoke(app, ["jobs", "events", "42", "--stdin"], input="43\n")
+    assert result.exit_code != 0
+    assert "stdin" in (result.output + (result.stderr or "")).lower()
