@@ -520,6 +520,36 @@ def _emit_events(
         typer.echo(line)
 
 
+def _emit_log_lines(
+    lines: Iterable[str],
+    *,
+    fmt: OutputFormat,
+    cols: list[str] | None,
+    follow: bool,
+) -> None:
+    """Render the stdout of a job. Sibling of :func:`_emit_events`."""
+    if not follow:
+        rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
+        if rendered:
+            typer.echo(rendered)
+        return
+    # JSON streams as NDJSON (one bare object per line, no enclosing
+    # array brackets) to match ``jobs events --follow --format json``
+    # and so ``jq`` can ingest it directly without ``jq -s '.[]'``.
+    if fmt == "json":
+        for line in lines:
+            row: dict[str, object] = {"line": line}
+            if cols is not None:
+                row = {c: row.get(c) for c in cols}
+            typer.echo(json.dumps(row, default=str))
+        return
+    for line in lines:
+        if fmt == "raw":
+            typer.echo(line)
+        else:
+            typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
+
+
 @jobs_app.command("logs", no_args_is_help=True)
 def jobs_logs(
     job_ids: list[str] | None = typer.Argument(None, help="Job ID(s)."),
@@ -567,13 +597,7 @@ def jobs_logs(
             lines = TailJobLogs(ctx.monitor)(
                 job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
             )
-            if follow:
-                for line in lines:
-                    typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
-                return
-            rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
-            if rendered:
-                typer.echo(rendered)
+            _emit_log_lines(lines, fmt=fmt, cols=cols, follow=follow)
 
         _, any_failed = resolve_each(ids, _logs_for_id)
     if any_failed:
