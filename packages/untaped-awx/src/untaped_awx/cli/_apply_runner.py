@@ -98,7 +98,7 @@ def resolve_apply_file(positional: Path | None, option: Path | None) -> Path:
     a leftover positional."""
     target = option if option is not None else positional
     if target is None:
-        raise typer.BadParameter("expected a FILE positional argument or --file/-f option")
+        raise typer.BadParameter("pass FILE as a positional argument or via --file")
     return target
 
 

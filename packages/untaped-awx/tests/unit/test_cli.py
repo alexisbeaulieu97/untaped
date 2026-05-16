@@ -4,8 +4,10 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+import typer
 from typer.testing import CliRunner
 from untaped_awx import app
+from untaped_awx.cli._apply_runner import resolve_apply_file
 from untaped_core.settings import get_settings
 
 
@@ -226,22 +228,15 @@ def test_apply_emits_clamp_warning_above_cap(
 
 
 def test_resolve_apply_file_rejects_neither_set() -> None:
-    """``resolve_apply_file`` raises ``BadParameter`` when neither the
-    positional nor ``--file`` is provided. This is the body-level guard
-    that backs ``apply --yes`` (no file) — Typer can't trip
+    """Body-level guard for ``apply --yes`` (no file) — Typer can't trip
     ``no_args_is_help`` once any flag is on the line."""
-    import typer
-    from untaped_awx.cli._apply_runner import resolve_apply_file
-
-    with pytest.raises(typer.BadParameter):
+    with pytest.raises(typer.BadParameter, match="positional"):
         resolve_apply_file(None, None)
 
 
 def test_resolve_apply_file_option_wins_over_positional(tmp_path: Path) -> None:
-    """When both positional and ``--file`` are given, the option wins —
-    so an explicit flag overrides a leftover positional argument."""
-    from untaped_awx.cli._apply_runner import resolve_apply_file
-
+    """``--file`` wins when both are given so an explicit flag overrides
+    a leftover positional."""
     positional = tmp_path / "a.yml"
     option = tmp_path / "b.yml"
     assert resolve_apply_file(positional, option) == option
@@ -250,23 +245,23 @@ def test_resolve_apply_file_option_wins_over_positional(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("template", "expected_index"),
+    "template",
     [
-        pytest.param(["apply", "FILE"], 1, id="positional"),
-        pytest.param(["apply", "--file", "FILE"], 2, id="file-long"),
-        pytest.param(["apply", "-f", "FILE"], 2, id="file-short"),
-        # "Option wins" — bogus positional + real --file; if positional won the
-        # apply would fail to read it. apply still succeeds because --file is used.
-        pytest.param(["apply", "BOGUS", "--file", "FILE"], 3, id="option-wins"),
-        pytest.param(["job-templates", "apply", "FILE"], 2, id="per-kind-positional"),
-        pytest.param(["job-templates", "apply", "--file", "FILE"], 3, id="per-kind-file"),
+        pytest.param(["apply", "FILE"], id="positional"),
+        pytest.param(["apply", "--file", "FILE"], id="file-long"),
+        pytest.param(["apply", "-f", "FILE"], id="file-short"),
+        # "Option wins" — a real ``--file`` paired with a non-existent
+        # positional. If the positional ever won, ``read_resources``
+        # would fail and the test would non-zero.
+        pytest.param(["apply", "BOGUS", "--file", "FILE"], id="option-wins"),
+        pytest.param(["job-templates", "apply", "FILE"], id="per-kind-positional"),
+        pytest.param(["job-templates", "apply", "--file", "FILE"], id="per-kind-file"),
     ],
 )
 def test_apply_accepts_positional_and_file_alias(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     template: list[str],
-    expected_index: int,
 ) -> None:
     """The file may be passed as a positional or via the ``--file`` / ``-f``
     backward-compat alias; when both are given, ``--file`` wins."""
@@ -278,7 +273,6 @@ def test_apply_accepts_positional_and_file_alias(
     args = [str(yml) if a == "FILE" else str(bogus) if a == "BOGUS" else a for a in template]
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
-    assert args[expected_index] == str(yml)
 
 
 @pytest.mark.parametrize("cmd", [["apply"], ["job-templates", "apply"]])
