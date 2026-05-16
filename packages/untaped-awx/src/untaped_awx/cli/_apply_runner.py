@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import typer
-from untaped_core import OutputFormat, format_output
+from untaped_core import OutputFormat, clamp_parallel, format_output
 
 from untaped_awx.application import ApplyFile, ApplyResource
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
@@ -39,12 +39,9 @@ def run_apply(
     """End-to-end apply for one CLI invocation. Writes to stdout/stderr."""
     if parallel < 1:
         raise typer.BadParameter("--parallel must be >= 1")
-    if parallel > APPLY_PARALLEL_CAP:
-        typer.echo(
-            f"warning: --parallel {parallel} clamped to {APPLY_PARALLEL_CAP} "
-            "(matches the HTTP connection pool default)",
-            err=True,
-        )
+    parallel = clamp_parallel(
+        parallel, cap=APPLY_PARALLEL_CAP, policy="HTTP connection pool default"
+    )
     reader = _make_reader(kind_filter=kind_filter, cli_name=cli_name)
     apply_one = _build_apply_resource(ctx)
     outcomes = ApplyFile(apply_one, reader, ctx.catalog, ctx.fk, parallel=parallel)(

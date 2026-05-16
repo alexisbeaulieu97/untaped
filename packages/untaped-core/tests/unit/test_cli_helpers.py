@@ -1,7 +1,7 @@
 import pytest
 import typer
 from typer.testing import CliRunner
-from untaped_core import UntapedError, parse_kv_pairs, report_errors, resolve_each
+from untaped_core import UntapedError, clamp_parallel, parse_kv_pairs, report_errors, resolve_each
 
 
 def test_clean_message_for_untaped_error() -> None:
@@ -134,3 +134,50 @@ def test_resolve_each_propagates_non_untaped_exceptions() -> None:
 
     with pytest.raises(ValueError, match="bug"):
         resolve_each(["x"], fn)
+
+
+def test_clamp_parallel_returns_input_when_below_cap(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Below-cap values pass through untouched and emit no warning."""
+    assert clamp_parallel(4, cap=8, policy="2 * os.cpu_count()") == 4
+    assert capsys.readouterr().err == ""
+
+
+def test_clamp_parallel_returns_input_at_cap_boundary(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Exactly-at-cap is fine — no warning, no clamp."""
+    assert clamp_parallel(8, cap=8, policy="2 * os.cpu_count()") == 8
+    assert capsys.readouterr().err == ""
+
+
+def test_clamp_parallel_caps_above_with_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Above-cap returns ``cap`` and emits a stderr warning naming the policy."""
+    assert clamp_parallel(100, cap=8, policy="2 * os.cpu_count()") == 8
+    err = capsys.readouterr().err
+    assert "warning: --parallel 100 clamped to 8" in err
+    assert "(2 * os.cpu_count())" in err
+
+
+def test_clamp_parallel_policy_string_appears_in_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Caller-supplied ``policy`` text appears verbatim in the parens —
+    callers control the rationale (httpx pool, cpu_count, ...)."""
+    clamp_parallel(50, cap=10, policy="HTTP connection pool default")
+    err = capsys.readouterr().err
+    assert "clamped to 10 (HTTP connection pool default)" in err
+
+
+def test_clamp_parallel_does_not_handle_below_one(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``< 1`` policy is caller-specific (silent coerce vs BadParameter)
+    so the helper deliberately doesn't clamp at the lower bound — it
+    returns the input untouched, no warning."""
+    assert clamp_parallel(0, cap=8, policy="2 * os.cpu_count()") == 0
+    assert clamp_parallel(-3, cap=8, policy="2 * os.cpu_count()") == -3
+    assert capsys.readouterr().err == ""

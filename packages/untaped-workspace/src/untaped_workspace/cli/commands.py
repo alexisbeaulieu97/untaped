@@ -16,6 +16,7 @@ from untaped_core import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
+    clamp_parallel,
     format_output,
     get_settings,
     read_identifiers,
@@ -305,29 +306,15 @@ def remove_command(
 # sync -----------------------------------------------------------------------
 
 
-def _clamp_parallel(requested: int) -> int:
-    """Cap ``--parallel`` at ``2 * os.cpu_count()`` with a stderr warning.
+def _parallel_cap() -> int:
+    """Cap value for ``sync --all`` and ``foreach`` parallelism.
 
-    Shared by ``sync --all`` and ``foreach`` so both commands speak the
-    same cap policy — friendly clamp rather than ``BadParameter`` so
-    shell idioms like ``-j $(nproc)`` keep composing on hosts where
-    ``nproc`` already exceeds the cap.
-
-    Non-positive values coerce silently to 1 (serial). Typer's ``int``
-    accepts ``0`` and negatives; treating them as the implicit default
-    is quieter than rejecting them.
+    ``2 * os.cpu_count()`` matches the "I/O-bound work, threads cheap"
+    rule of thumb both commands rely on (git fetch / shell exec are
+    network- or syscall-bound, not CPU-bound). Computed per call so
+    ``os.cpu_count`` monkeypatching in tests stays live.
     """
-    cap = (os.cpu_count() or 1) * 2
-    if requested > cap:
-        typer.echo(
-            f"warning: --parallel {requested} exceeds cap {cap} "
-            f"(2 * os.cpu_count()); clamping to {cap}.",
-            err=True,
-        )
-        return cap
-    if requested < 1:
-        return 1
-    return requested
+    return (os.cpu_count() or 1) * 2
 
 
 @app.command("sync")
@@ -373,9 +360,11 @@ def sync_command(
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
         raise typer.BadParameter("--timeout must be positive")
+    if parallel < 1:
+        raise typer.BadParameter("--parallel must be >= 1")
     if parallel > 1 and not all_workspaces:
         raise typer.BadParameter("--parallel >1 requires --all")
-    workers = _clamp_parallel(parallel)
+    workers = clamp_parallel(parallel, cap=_parallel_cap(), policy="2 * os.cpu_count()")
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
         runner = (
@@ -556,7 +545,10 @@ def foreach_command(
     """
     with report_errors():
         ws = _resolve(name, path)
-        workers = _clamp_parallel(parallel)
+        # Foreach silently coerces ``< 1`` to serial (issue spec) rather than
+        # the BadParameter that ``sync`` and ``awx apply`` raise — different
+        # commands, different UX calls on the lower bound.
+        workers = clamp_parallel(max(parallel, 1), cap=_parallel_cap(), policy="2 * os.cpu_count()")
         keep_going = continue_on_error or ignore_errors
         outcomes = Foreach(ManifestRepository(), runner=shell_runner, fs=LocalFilesystem())(
             ws,

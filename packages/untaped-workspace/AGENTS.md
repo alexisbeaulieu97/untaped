@@ -194,13 +194,14 @@ regardless of mode — failures aren't silent even when ignored. The
 summary is suppressed in `--format json|yaml|raw` since each row's
 `returncode` already conveys the same information.
 
-`--parallel` (`-j`) shares a single cap helper with `sync --all`:
-`cli/commands.py::_clamp_parallel` caps at `2 * os.cpu_count()` and
-emits a stderr `warning: --parallel N exceeds cap M (2 *
-os.cpu_count()); clamping to M.` when the user asks for more. Values
-`<= 0` are coerced silently to 1 (serial). Friendly clamp rather than
-`BadParameter` so `-j $(nproc)` keeps composing on hosts where `nproc`
-already exceeds the cap.
+`--parallel` (`-j`) shares `untaped_core.clamp_parallel` with `sync
+--all` and `awx apply`: caps at `2 * os.cpu_count()` and emits a stderr
+`warning: --parallel N clamped to M (2 * os.cpu_count()).` when the
+user asks for more. Foreach silently coerces `<= 0` to serial (issue
+spec) — `sync` and `awx apply` raise `BadParameter` for the same input.
+Friendly clamp at the upper bound rather than `BadParameter` so `-j
+$(nproc)` keeps composing on hosts where `nproc` already exceeds the
+cap.
 
 ## Branch cascade is clone-time only
 
@@ -217,8 +218,9 @@ user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
 come back in `as_completed` order then get re-sorted by
 `(workspace_input_order, repo)` so JSON/table consumers see stable
 rows regardless of completion timing. The CLI clamps `-j` through
-`_clamp_parallel` (cap = `2 * os.cpu_count()`, shared with `foreach`)
-and rejects `parallel > 1` outside `--all` with a
+`untaped_core.clamp_parallel` (cap = `2 * os.cpu_count()`, shared with
+`foreach` and `awx apply`) and rejects `parallel > 1` outside `--all`
+with a
 `typer.BadParameter` — single-workspace parallelism would have to push
 inside `SyncWorkspace` and racing the bare-cache per-repo isn't worth
 the complexity. When `--all -j N>1` is in play, the CLI emits a
