@@ -527,7 +527,12 @@ def _emit_log_lines(
     cols: list[str] | None,
     follow: bool,
 ) -> None:
-    """Render the stdout of a job. Sibling of :func:`_emit_events`."""
+    """Render the stdout of a job. Sibling of :func:`_emit_events`.
+
+    ``cols=None`` (vs ``_emit_events``'s required ``list[str]``) means
+    "emit every field of the row" — logs has no default columns whereas
+    events has ``["counter","event","host_name","task"]``.
+    """
     if not follow:
         rendered = format_output([{"line": line} for line in lines], fmt=fmt, columns=cols)
         if rendered:

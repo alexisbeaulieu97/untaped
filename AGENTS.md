@@ -245,6 +245,13 @@ Cross-cutting subsystems with their own internals doc:
   (`awx save --all-kinds` for the type axis, `config list
   --all-profiles` for view shape). New commands that grow an `--all`
   flag must cross-check this convention.
+- **`--follow --format json` always emits NDJSON.** One bare JSON
+  object per line, no enclosing array brackets — so `jq` can ingest
+  the stream directly without `jq -s '.[]'`. Today: `awx jobs events
+  --follow` and `awx jobs logs --follow`. New `--follow` commands that
+  emit structured data under `--format json` must match this shape.
+  yaml/raw/table under `--follow` is per-line single-doc emission;
+  yaml has no canonical streaming form.
 
 Pipeline examples and the morning-routine workflow live in
 [`docs/README.md`](docs/README.md#pipe-friendly-by-design).
