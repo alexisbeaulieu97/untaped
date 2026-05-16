@@ -46,7 +46,7 @@ from untaped_awx.infrastructure import AwxClient, AwxConfig
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import ALL_SPECS
-from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
+from untaped_awx.infrastructure.yaml_io import dump_resource
 
 app = typer.Typer(
     name="awx",
@@ -180,7 +180,6 @@ def save_top_command(
         )
         save = SaveResource(ctx.repo, ctx.fk)
         out_dir.mkdir(parents=True, exist_ok=True)
-        written: list[str] = []
         for spec in target_specs:
             if spec.fidelity == "read_only":
                 typer.echo(
@@ -203,18 +202,19 @@ def save_top_command(
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
                 target = out_dir / _resource_filename(spec.kind, resource.metadata)
                 _assert_inside(out_dir, target)
-                write_resource(target, resource, header_comment=comment)
+                # One ``dump_resource`` per record — fan it out to the
+                # file and (when default) to the stdout multi-doc stream
+                # so the bytes stay identical and the YAML serialiser
+                # runs once.
+                text = dump_resource(resource, header_comment=comment)
+                target.expanduser().write_text(text)
                 if print_paths:
-                    written.append(str(target))
+                    typer.echo(str(target))
                 else:
-                    # Multi-doc YAML stream: each doc opened by ``---``
-                    # so the stream parses with ``yaml.safe_load_all``
-                    # and round-trips into ``apply``.
+                    # Leading ``---`` per doc so ``yaml.safe_load_all``
+                    # ingests the stream and ``apply`` round-trips.
                     typer.echo("---")
-                    typer.echo(dump_resource(resource, header_comment=comment))
-    if print_paths:
-        for path in written:
-            typer.echo(path)
+                    typer.echo(text)
 
 
 def _resolve_kind(catalog: AwxResourceCatalog, kind: str) -> AwxResourceSpec:
