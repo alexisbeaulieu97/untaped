@@ -36,6 +36,9 @@ class _QueryBase(BaseModel):
 
     raw_query: str | None = None
     sort: str | None = None
+    # ``None`` means unbounded (paginate until exhausted or GitHub's
+    # 1000-result cap). The CLI always supplies an int; non-CLI
+    # callers (tests, programmatic use) may still pass ``None``.
     limit: int | None = None
 
     def _prefix(self) -> list[str]:

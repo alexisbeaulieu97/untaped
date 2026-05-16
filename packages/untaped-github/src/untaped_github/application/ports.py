@@ -17,7 +17,10 @@ class GithubSearchService(Protocol):
 
     Adapters are expected to handle pagination internally (GitHub's
     Link-header walk) and honour ``limit`` so use cases never see the
-    raw page boundaries.
+    raw page boundaries. ``limit=None`` means unbounded (paginate
+    until exhausted or GitHub's 1000-result cap). The CLI always
+    supplies an int; ``None`` exists for non-CLI callers (tests,
+    programmatic use).
     """
 
     def search_repositories(

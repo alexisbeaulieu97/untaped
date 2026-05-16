@@ -72,7 +72,7 @@ Common flags (`repos`, `code`, `issues`):
 | `--org`        | `org:<name>` qualifier; repeatable.                                    |
 | `--repo`       | `repo:owner/name` qualifier; repeatable.                               |
 | `--team SLUG`  | Resolves the team's repos into `repo:` qualifiers. Requires `--org`.   |
-| `--limit N`    | Stop after N rows (GitHub's own ceiling is 1000).                      |
+| `--limit N`    | Stop after N rows. Default `30` (one screen + one search request); pass `--limit 1000` for GitHub's hard maximum. |
 | `--format`     | `table` (default), `json`, `yaml`, `raw`.                              |
 | `--columns`    | Repeatable; dotted paths supported.                                    |
 
