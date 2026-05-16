@@ -98,6 +98,18 @@ Note: `search code` does not accept `--sort` — GitHub no longer
 supports a sort parameter on code search (best-match is the only
 order).
 
+### `SearchLimitOption`
+
+`cli/search_commands.py` defines a package-local
+`SearchLimitOption = Annotated[int, typer.Option("--limit", min=1, help=...)]`
+applied to all four subcommands. The default (`30`) is supplied at the
+call site (`limit: SearchLimitOption = 30`) so future tweaks land in
+one place. The alias lives here rather than in `untaped_core`
+(root-AGENTS convention) because the help string names GitHub's
+1000-result search cap — that's a GitHub-specific contract, not a
+workspace-wide one. Future GitHub-only option aliases (e.g. a
+`--page-size`) should land beside it for the same reason.
+
 ### Default-scope rule
 
 `SearchRepos`, `SearchCode`, and `SearchIssues` inject `user:@me` into

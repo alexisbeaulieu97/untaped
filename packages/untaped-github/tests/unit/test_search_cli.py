@@ -319,6 +319,31 @@ def test_search_repos_limit_1000_paginates_fully(
     assert len(parsed) == 200
 
 
+def test_search_repos_limit_above_1000_stops_at_github_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The CLI deliberately does NOT enforce a client-side max — passing
+    # --limit 5000 is allowed and the paginator simply stops once
+    # GitHub stops returning a `next` Link. Lock this stance so a
+    # future contributor doesn't "tighten" the CLI with a max=1000
+    # validator (which the issue body called out as out of scope).
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    items = [
+        {"id": i, "name": f"r{i}", "full_name": f"me/r{i}", "html_url": "https://x"}
+        for i in range(100)
+    ]
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/search/repositories").mock(
+            return_value=httpx.Response(200, json={"items": items})  # no Link header
+        )
+        result = CliRunner().invoke(app, ["search", "repos", "--limit", "5000", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    parsed = json.loads(result.stdout)
+    assert len(parsed) == 100  # GitHub stopped sending more; we honour it.
+
+
 def test_search_repos_limit_zero_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A zero limit is a usage error, not a synonym for "all results".
     # Pin exit code 2 (click usage error) + the IntRange message so a
