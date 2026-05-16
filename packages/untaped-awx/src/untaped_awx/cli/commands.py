@@ -33,7 +33,7 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
-from untaped_awx.cli._apply_runner import run_apply
+from untaped_awx.cli._apply_runner import resolve_apply_file, run_apply
 from untaped_awx.cli._context import open_context
 from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli.resource_commands import make_resource_app
@@ -82,7 +82,13 @@ def ping_command(
 
 @app.command("apply", no_args_is_help=True)
 def apply_command(
-    file: Path = typer.Option(..., "--file", help="YAML file or directory."),
+    file: Path | None = typer.Argument(None, help="YAML file or directory."),
+    file_opt: Path | None = typer.Option(
+        None,
+        "--file",
+        "-f",
+        help="Deprecated alias; prefer the positional FILE.",
+    ),
     yes: bool = typer.Option(False, "--yes", help="Actually write (default is preview only)."),
     fail_fast: bool = typer.Option(False, "--fail-fast", help="Abort on first error."),
     parallel: int = typer.Option(
@@ -95,14 +101,15 @@ def apply_command(
             f"Capped at {APPLY_PARALLEL_CAP} (matches the HTTP connection pool default)."
         ),
     ),
-    fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Result-table format."),
+    fmt: OutputFormat = typer.Option("table", "--format", help="Result-table format."),
     columns: list[str] | None = typer.Option(None, "--columns", "-c"),
 ) -> None:
     """Apply YAML docs in dependency order. Default = preview; ``--yes`` writes."""
+    target = resolve_apply_file(file, file_opt)
     with report_errors(), open_context() as ctx:
         run_apply(
             ctx,
-            file,
+            target,
             write=yes,
             fail_fast=fail_fast,
             fmt=fmt,
