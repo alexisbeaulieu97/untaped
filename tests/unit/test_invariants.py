@@ -71,6 +71,14 @@ def _credential_offenders(model_cls: type[BaseModel]) -> list[str]:
     Walks via :func:`walk_settings` — the same path the live ``Settings``
     walk uses — so the synthetic negative-test schemas exercise the
     production code, with no parallel walker that could drift.
+
+    **Scope.** ``walk_settings`` only recurses through nested
+    ``BaseModel`` fields; leaves inside ``list[...]``, ``dict[...]``, or
+    other collections are skipped (per :func:`walk_settings`'s
+    documented behaviour). A credential-named leaf hidden inside a
+    collection would not be flagged here — by design, since collection
+    contents are managed by domain-specific commands rather than the
+    settings schema.
     """
     offenders: list[str] = []
     for descriptor in walk_settings(model_cls):
@@ -339,9 +347,13 @@ _CREDENTIAL_BAD_SCHEMAS: list[tuple[str, type[BaseModel], str]] = [
 def test_credential_detector_flags_bad_schemas(
     label: str, model_cls: type[BaseModel], expected: str
 ) -> None:
-    """The detector must flag every credential-named non-``SecretStr`` shape."""
-    offenders = _credential_offenders(model_cls)
-    assert expected in offenders, f"{label}: expected {expected!r} in {offenders}"
+    """The detector must flag every credential-named non-``SecretStr`` shape.
+
+    Each fixture is constructed with exactly one offending leaf, so equality
+    (not containment) is the tight assertion — a future bug that emits
+    spurious extra offenders would fail here, not silently pass.
+    """
+    assert _credential_offenders(model_cls) == [expected], f"{label}: wrong offender list"
 
 
 class _GoodSecretSchema(BaseModel):
@@ -470,6 +482,21 @@ def test_no_args_help_detector_flags_sub_app_missing_flag() -> None:
     root.add_typer(sub, name="sub")
     offenders = _no_args_help_offenders(root)
     assert "app: sub" in offenders
+
+
+def test_no_args_help_detector_walks_nested_sub_apps() -> None:
+    """``_walk_typer`` must recurse — an offender at depth 2 is still flagged.
+
+    Pins the prefix-rendering ("sub subsub", space-separated) so a future
+    "optimise away the recursion" refactor fails loudly.
+    """
+    root = typer.Typer(no_args_is_help=True)
+    sub = typer.Typer(no_args_is_help=True)
+    subsub = typer.Typer()  # missing the flag at depth 2
+    sub.add_typer(subsub, name="subsub")
+    root.add_typer(sub, name="sub")
+    offenders = _no_args_help_offenders(root)
+    assert "app: sub subsub" in offenders
 
 
 def test_no_args_help_detector_flags_required_arg_command_missing_flag() -> None:
