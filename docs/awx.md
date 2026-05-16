@@ -309,6 +309,12 @@ renders human PLAY/TASK output coloured to mirror AWX's UI, while
 `--format json` streams NDJSON (one event per line) so you can pipe
 into `jq` directly. Other formats stream one structured row per event.
 
+`jobs logs --follow` follows the same NDJSON contract under `--format
+json` — one bare `{"line": "..."}` per stdout line, ingestable by `jq`
+without `jq -s '.[]'`. `--format raw` (the default) streams raw log
+lines unwrapped; `--format yaml` emits one single-doc YAML block per
+line.
+
 Multi-id `get` / `wait` aggregate their results; multi-id `logs` /
 `events` drain serially with a `[<id>]` stderr breadcrumb between
 jobs. Pipeline-friendly:

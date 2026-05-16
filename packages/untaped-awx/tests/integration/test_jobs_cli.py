@@ -202,6 +202,111 @@ def test_jobs_logs_supports_structured_formatter_output(fake_aap: Any) -> None:
     assert result.stdout.strip() == ('[{"line": "line-0"}, {"line": "line-1"}, {"line": "line-2"}]')
 
 
+def test_jobs_logs_follow_emits_ndjson_under_json(fake_aap: Any) -> None:
+    """Pins the NDJSON contract: ``logs --follow --format json`` emits one
+    bare JSON object per line so ``jq`` can ingest directly without ``jq
+    -s '.[]'``. Mirrors ``jobs events --follow --format json`` and matches
+    ``kubectl get -w -o json``.
+    """
+    import json as _json
+
+    _seed_running_job(fake_aap)  # terminal — stream_stdout returns immediately
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--follow", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.stdout.strip().splitlines() if line]
+    parsed = [_json.loads(line) for line in lines]
+    # NDJSON: each line is a bare object, NOT a single-element array.
+    assert all(isinstance(p, dict) for p in parsed), parsed
+    assert [p["line"] for p in parsed] == ["line-0", "line-1", "line-2"]
+
+
+def test_jobs_logs_follow_columns_filter_under_json(fake_aap: Any) -> None:
+    """``--columns line`` keeps the row narrow under ``--follow --format
+    json`` — same shape as the events command's column filtering."""
+    import json as _json
+
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "logs", "42", "--follow", "--format", "json", "--columns", "line"],
+    )
+    assert result.exit_code == 0, result.output
+    parsed = [_json.loads(line) for line in result.stdout.strip().splitlines() if line]
+    assert parsed == [{"line": "line-0"}, {"line": "line-1"}, {"line": "line-2"}]
+
+
+def test_jobs_logs_follow_raw_passes_through(fake_aap: Any) -> None:
+    """``--follow --format raw`` (the default fmt) emits raw log lines with
+    no JSON wrapping — same observable shape as the non-follow raw path."""
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--follow"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
+
+
+def test_jobs_logs_follow_raw_columns_line_is_noop(fake_aap: Any) -> None:
+    """``--follow --format raw --columns line`` matches bare ``--follow``
+    output: log rows are single-field so ``--columns line`` is the only
+    meaningful projection, and the raw fast-path treats it as the
+    identity. Pins parity for the only realistic user-supplied value.
+    """
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(
+        app, ["jobs", "logs", "42", "--follow", "--format", "raw", "--columns", "line"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
+
+
+def test_jobs_logs_follow_yaml_keeps_per_line_emission(fake_aap: Any) -> None:
+    """``--follow --format yaml`` keeps the existing per-line single-doc
+    emission. YAML has no NDJSON-equivalent canonical streaming form, so
+    this is an explicit regression pin: don't accidentally fold yaml into
+    the NDJSON path while reshaping the json branch."""
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--follow", "--format", "yaml"])
+    assert result.exit_code == 0, result.output
+    # Three single-doc yaml blocks, one per log line.
+    out = result.stdout
+    assert out.count("line: line-0") == 1
+    assert out.count("line: line-1") == 1
+    assert out.count("line: line-2") == 1
+
+
+def test_jobs_logs_follow_json_empty_stream_emits_nothing(fake_aap: Any) -> None:
+    """An empty log under ``--follow --format json`` emits an empty stdout —
+    NOT ``[]`` or a blank document. Pins the NDJSON-of-zero-rows contract
+    so a downstream ``jq`` consumer doesn't trip on a single empty doc.
+    """
+    fake_aap.seed("jobs", id=42, name="empty", status="successful", stdout="")
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "--follow", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+
+
+def test_jobs_logs_follow_json_multi_id_keeps_stdout_pipe_clean(fake_aap: Any) -> None:
+    """Multi-id ``logs --follow --format json`` keeps the breadcrumbs on
+    stderr (``[<id>]``) and stdout pure NDJSON — a refactor that leaks
+    the breadcrumb to stdout would silently break ``jq`` consumers.
+    """
+    import json as _json
+
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    result = CliRunner().invoke(app, ["jobs", "logs", "42", "43", "--follow", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    # Breadcrumbs on stderr only.
+    assert "[42]" in result.stderr
+    assert "[43]" in result.stderr
+    assert "[42]" not in result.stdout
+    assert "[43]" not in result.stdout
+    # stdout is pure NDJSON: every non-empty line parses as a bare dict.
+    parsed = [_json.loads(line) for line in result.stdout.strip().splitlines() if line]
+    assert all(isinstance(p, dict) and "line" in p for p in parsed), parsed
+    # Both jobs' lines made it through (3 each = 6 total).
+    assert len(parsed) == 6
+
+
 def test_jobs_logs_tail_returns_only_last_n(fake_aap: Any) -> None:
     _seed_running_job(fake_aap)
     result = CliRunner().invoke(app, ["jobs", "logs", "42", "--tail", "2"])
