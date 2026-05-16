@@ -95,6 +95,72 @@ system trust just work. User overrides (`http.ca_bundle`,
 `verify=resolve_verify(s.http)` when constructing `HttpClient`. Do not
 invent your own.
 
+## `--format raw` default-column contract
+
+`_format_raw` (`output.py`) has two paths:
+
+1. `--columns` supplied → emit those columns, tab-separated, one row
+   per line.
+2. `--columns` omitted → emit `next(iter(rows[0]))` for every row
+   (one value per line — the identifier).
+
+The fallback in (2) makes the **first key of every row** load-bearing
+for shell pipelines. **List** use cases promise that the first key is
+the row's identifier — the value a downstream `xargs` would feed back
+into another `untaped` / `gh` / `awx-cli` command. Reordering keys in
+a row dict or in a `model_dump()` source is a breaking change for
+pipeline callers; treat it as part of each list command's public
+contract.
+
+Scope: this contract covers **list-style data emission** (`list`,
+`get`, `status`, `search`, `jobs list`, `test list`, …). Two
+categories are exempt:
+
+- **Side-effect summary rows** — `awx apply`'s `outcome_rows`
+  (`packages/untaped-awx/src/untaped_awx/cli/format.py`) keys by
+  `(kind, name)`, not a single pipeable identifier; `--format raw`
+  on `apply` is not a documented pipe pattern.
+- **Single-row payloads** — `awx ping` emits one `PingStatus` row
+  whose first field is `version` (a health discriminator, not an
+  identifier). The pipeline use case "feed back into the next
+  command" doesn't apply to one-shot health snapshots.
+
+Audit of in-scope row sources (TODO(#158) will pin this by test):
+
+| Row source                                  | First key   |
+| ------------------------------------------- | ----------- |
+| workspace `list_command` (hand dict)        | `name`      |
+| `SyncOutcome` / `StatusEntry` / `ForeachOutcome` | `workspace` |
+| profile `list_command` (hand dict)          | `name`      |
+| config `list_command` (`_entry_to_row`)     | `key`       |
+| `awx test list` (hand dict)                 | `suite`     |
+| `Job` / `JobEvent`                          | `id` / `counter` |
+| `AwxResourceSpec.list_columns[0]` (every spec) | `id`     |
+| AWX REST record (raw dict from server) — used by `awx <kind> get` when no `--columns` given | `id` |
+| `GithubUser` (`whoami`)                     | `login`     |
+| `RepoResult` / `IssueResult` / `UserResult` | `id`        |
+| `CodeResult`                                | `name`      |
+
+Two notes:
+
+- **GitHub REST shape.** `RepoResult`/`IssueResult`/`UserResult` lead
+  with numeric `id` (matches the upstream REST shape); pipelines
+  typically want `--columns full_name` (repos) or `--columns login`
+  (users) instead. `CodeResult` has no `id` at all and leads with
+  `name` (the filename) — the natural pipeable handle for code
+  search.
+- **`make_resource_app`-built `list` commands** always pass
+  `spec.list_columns` when the user omits `--columns`
+  (`cli/resource_commands.py:160`), so `_format_raw`'s first-key
+  fallback never fires for them; the table row above guards
+  `awx <kind> get` (which leaves cols `None` for non-table formats
+  via `default_get_columns`) and any future caller that swaps the
+  default. Similarly, `workflow-templates nodes` always passes
+  explicit columns.
+
+When you add a new list command or row-source model, keep an
+identifier in position 0 and add the row to the table.
+
 ## Recipe: add a new setting
 
 1. Pick a section: top-level (rare) or one of the existing sub-models

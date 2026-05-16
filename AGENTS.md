@@ -231,6 +231,13 @@ Cross-cutting subsystems with their own internals doc:
 - **Side-effect-only commands** (`use`, `delete`, `rename`,
   `apply --yes`, …) and interactive flows are exempt — no `--format`
   knob.
+- **`--format raw` without `--columns`** emits each row's first key.
+  Every list use case promises that the first key is the row's
+  identifier (workspace name, job id, login, …) so pipelines like
+  `untaped workspace list -f raw | xargs -I{} untaped workspace path
+  {}` get the right value. Reordering keys in a row source — hand-built
+  dict or pydantic model — is a contract break. Details:
+  [`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md#--format-raw-default-column-contract).
 
 Pipeline examples and the morning-routine workflow live in
 [`docs/README.md`](docs/README.md#pipe-friendly-by-design).

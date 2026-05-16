@@ -8,7 +8,12 @@ Conventions:
   Its width follows the ``COLUMNS`` env var (or the inherited TTY size);
   no hard-coded cap. Tests that need a stable render can pin ``COLUMNS``.
 
-If no ``columns`` are specified for ``raw``, the first key of each row is used.
+If no ``columns`` are specified for ``raw``, the value of the first
+key of each row is emitted — so the first key of every row is the
+row's identifier (workspace name, job id, login, …) for the
+``xargs``-into-the-next-command pipeline pattern. The full
+default-column contract lives in
+``packages/untaped-core/AGENTS.md``.
 
 Column names support dotted paths (``a.b.c``) to address nested dict
 fields — e.g. ``--columns summary_fields.project.name``. Missing
