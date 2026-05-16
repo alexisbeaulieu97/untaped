@@ -66,6 +66,35 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
     return results, any_failed
 
 
+def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
+    """Cap ``--parallel`` at ``cap`` with a uniform stderr warning.
+
+    Shared by every Typer command that exposes ``-j / --parallel``
+    (workspace sync, workspace foreach, awx apply, ...) so the
+    cap-with-warning shape is one helper, not one per call site.
+    Friendly clamp rather than ``BadParameter`` so shell idioms like
+    ``-j $(nproc)`` keep composing on hosts where ``nproc`` already
+    exceeds the cap.
+
+    Only handles the upper bound. ``< 1`` policy stays per-caller
+    (workspace foreach silently coerces; sync and awx apply reject
+    via ``BadParameter``) — the lower bound isn't a typo-vs-typo
+    judgement, it's per-command UX.
+
+    ``policy`` is a short human-readable rationale (e.g.
+    ``"2 * os.cpu_count()"`` or ``"HTTP connection pool default"``)
+    appended in parens so users know *why* their value was capped
+    without grepping source.
+    """
+    if requested <= cap:
+        return requested
+    typer.echo(
+        f"warning: --parallel {requested} clamped to {cap} ({policy})",
+        err=True,
+    )
+    return cap
+
+
 @contextmanager
 def report_errors() -> Iterator[None]:
     """Convert :class:`UntapedError` into a clean stderr message + exit code 1.

@@ -194,6 +194,15 @@ regardless of mode — failures aren't silent even when ignored. The
 summary is suppressed in `--format json|yaml|raw` since each row's
 `returncode` already conveys the same information.
 
+`--parallel` (`-j`) shares `untaped_core.clamp_parallel` with `sync
+--all` and `awx apply`: caps at `2 * os.cpu_count()` and emits a stderr
+`warning: --parallel N clamped to M (2 * os.cpu_count()).` when the
+user asks for more. Foreach silently coerces `<= 0` to serial (issue
+spec) — `sync` and `awx apply` raise `BadParameter` for the same input.
+Friendly clamp at the upper bound rather than `BadParameter` so `-j
+$(nproc)` keeps composing on hosts where `nproc` already exceeds the
+cap.
+
 ## Branch cascade is clone-time only
 
 Per-repo `branch` > workspace `defaults.branch` > the remote's HEAD —
@@ -208,13 +217,15 @@ user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
 `ThreadPoolExecutor` in `cli/commands.py::_sync_parallel`. Outcomes
 come back in `as_completed` order then get re-sorted by
 `(workspace_input_order, repo)` so JSON/table consumers see stable
-rows regardless of completion timing. The CLI clamps `-j` at
-`_PARALLEL_CAP=32` and rejects `parallel > 1` outside `--all` with a
-`typer.BadParameter` (single-workspace parallelism would have to push
+rows regardless of completion timing. The CLI clamps `-j` through
+`untaped_core.clamp_parallel` (cap = `2 * os.cpu_count()`, shared with
+`foreach` and `awx apply`) and rejects `parallel > 1` outside `--all`
+with a
+`typer.BadParameter` — single-workspace parallelism would have to push
 inside `SyncWorkspace` and racing the bare-cache per-repo isn't worth
-the complexity — see #30). When `--all -j N>1` is in play, the
-CLI emits a stderr "syncing N workspaces with up to M workers" header
-so users can tell the parallel path was taken.
+the complexity. When `--all -j N>1` is in play, the CLI emits a
+stderr "syncing N workspaces with up to M workers" header so users
+can tell the parallel path was taken.
 
 Bare-fetch dedup lives on a session-scoped `BareFetchTracker` object
 (`fetched: set[Path]` + per-URL `threading.Lock`s + a guard) **owned

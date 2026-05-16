@@ -510,16 +510,22 @@ def test_sync_parallel_without_all_is_rejected() -> None:
     assert "--all" in combined
 
 
-def test_sync_parallel_warns_when_clamped() -> None:
+def test_sync_parallel_warns_when_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     """Passing ``-j`` above the cap is honoured (clamped) but a stderr
     warning surfaces the truncation so users notice when they ask for
-    more concurrency than they get."""
+    more concurrency than they get.
+
+    The cap follows ``2 * os.cpu_count()`` (shared with ``foreach``);
+    we pin ``cpu_count`` so the assertion isn't CI-hardware dependent.
+    """
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
     runner = CliRunner()
     # No targets registered → the pool runs over an empty list, which is
     # fine for asserting the warning fires before the sweep starts.
     result = runner.invoke(app, ["sync", "--all", "-j", "100"])
     assert result.exit_code == 0, result.output
-    assert "clamped to 32" in result.output
+    assert "clamped to 8" in result.output
+    assert "2 * os.cpu_count()" in result.output
 
 
 def test_sync_all_parallel_covers_every_workspace(
@@ -761,6 +767,32 @@ def test_foreach_summary_suppressed_in_structured_format(
     assert isinstance(parsed, list) and parsed
     assert any(row["returncode"] != 0 for row in parsed)
     assert "failed in:" not in (result.stderr or "")
+
+
+# ── foreach --parallel: silent <1 coercion (foreach-specific UX) ─────────────
+# The cap-clamp policy is unit-tested at ``clamp_parallel`` in
+# ``packages/untaped-core/tests/unit/test_cli_helpers.py``; the sync CLI
+# test above exercises the wire-through end-to-end. Foreach has one
+# divergent contract: ``-j 0`` silently coerces to serial (sync and
+# ``awx apply`` raise ``BadParameter`` instead), so that's the only
+# foreach-specific case worth a CLI-level pin.
+
+
+def test_foreach_parallel_zero_coerces_to_serial(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """``foreach -j 0`` runs cleanly with exit 0 and no warning — the
+    ``max(parallel, 1)`` upstream of ``clamp_parallel`` keeps the use
+    case from seeing ``0`` and matches the issue spec."""
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "0"])
+    assert result.exit_code == 0, result.output
+    assert "clamped" not in result.output
 
 
 def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:

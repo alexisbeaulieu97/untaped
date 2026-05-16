@@ -148,6 +148,7 @@ A use case in `application/` is unit-testable with a stub satisfying its
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped_core import resolve_each`         |
 | Parse repeated `KEY=VALUE` flags           | `from untaped_core import parse_kv_pairs`                        |
+| Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped_core import clamp_parallel` (caller supplies `cap` and `policy`) |
 | Print a one-line message to stderr         | `typer.echo(msg, err=True)` — keep it boring; no helper          |
 | Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` |
 | Raise a typed error                        | subclass `untaped_core.UntapedError`                             |

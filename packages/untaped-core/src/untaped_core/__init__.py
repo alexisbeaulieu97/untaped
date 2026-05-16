@@ -16,6 +16,7 @@ Public API:
 from untaped_core.cli import (
     ColumnsOption,
     FormatOption,
+    clamp_parallel,
     parse_kv_pairs,
     report_errors,
     resolve_each,
@@ -54,6 +55,7 @@ __all__ = [
     "ProfileSource",
     "Settings",
     "UntapedError",
+    "clamp_parallel",
     "classify_active_profile",
     "effective_active_profile_name",
     "find_descriptor",
