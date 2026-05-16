@@ -199,7 +199,8 @@ def forget_command(
 
 @app.command("add", no_args_is_help=True)
 def add_command(
-    url: str = typer.Argument(..., help="Repo URL to add to the workspace."),
+    urls: list[str] | None = typer.Argument(None, help="Repo URL(s) to add."),
+    stdin: bool = typer.Option(False, "--stdin", help="Read repo URLs from stdin (one per line)."),
     name: str | None = typer.Option(
         None,
         "--name",
@@ -208,23 +209,56 @@ def add_command(
         autocompletion=complete_workspace_name,
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
-    branch: str | None = typer.Option(None, "--branch", "-b", help="Per-repo branch override."),
-    repo_name: str | None = typer.Option(None, "--repo-name", help="Local alias for the repo."),
-    sync: bool = typer.Option(False, "--sync", help="Also clone the new repo immediately."),
+    branch: str | None = typer.Option(
+        None,
+        "--branch",
+        "-b",
+        help="Per-repo branch override (applies uniformly to every URL).",
+    ),
+    repo_name: str | None = typer.Option(
+        None,
+        "--repo-name",
+        help="Local alias for the repo (applies uniformly to every URL).",
+    ),
+    sync: bool = typer.Option(False, "--sync", help="Also clone the new repos immediately."),
 ) -> None:
-    """Add a repo to a workspace's manifest."""
+    """Add one or more repos to a workspace's manifest.
+
+    Multiple URLs may be passed as positional args or via ``--stdin``;
+    ``--branch`` and ``--repo-name`` apply uniformly to every URL in
+    the batch. ``--sync`` only clones URLs that actually landed.
+    """
+    add_repo = AddRepo(ManifestRepository())
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    any_failed = False
     with report_errors():
+        idents = read_identifiers(list(urls or []), stdin=stdin)
+        # ``--repo-name`` is single-valued — refuse upfront when applying
+        # it to multiple URLs would produce a guaranteed ``DuplicateRepoName``
+        # cascade. Per-URL aliases require a structured input format
+        # (out of scope; see issue #154).
+        if repo_name is not None and len(idents) > 1:
+            raise typer.BadParameter(
+                "--repo-name applies to a single URL; drop --repo-name or pass URLs one at a time."
+            )
         ws = _resolve(name, path)
-        repo = AddRepo(ManifestRepository())(ws, url=url, repo_name=repo_name, branch=branch)
-        typer.echo(f"added {repo.name} to {ws.name!r}", err=True)
-        if sync:
+
+        def _add_one(url: str) -> str:
+            repo = add_repo(ws, url=url, repo_name=repo_name, branch=branch)
+            typer.echo(f"added {repo.name} to {ws.name!r}", err=True)
+            return repo.name
+
+        added, any_failed = resolve_each(idents, _add_one)
+        if sync and added:
             outcomes = SyncWorkspace(
                 ManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
                 cache_dir=get_settings().workspace.cache_dir,
-            )(ws, only=[repo.name])
+            )(ws, only=added)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
+    if any_failed:
+        raise typer.Exit(code=1)
 
 
 # remove ---------------------------------------------------------------------
@@ -566,12 +600,26 @@ def import_command(
 
 @app.command("path", no_args_is_help=True)
 def path_command(
-    name: str = typer.Argument(..., help="Workspace name.", autocompletion=complete_workspace_name),
+    names: list[str] | None = typer.Argument(
+        None, help="Workspace name(s).", autocompletion=complete_workspace_name
+    ),
+    stdin: bool = typer.Option(
+        False, "--stdin", help="Read workspace names from stdin (one per line)."
+    ),
 ) -> None:
-    """Print the absolute path of a workspace (single line)."""
+    """Print the absolute path of one or more workspaces (one per line)."""
+    get_path = WorkspacePath(WorkspaceRegistryRepository())
+    # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
+    any_failed = False
     with report_errors():
-        p = WorkspacePath(WorkspaceRegistryRepository())(name)
-        typer.echo(str(p))
+        idents = read_identifiers(list(names or []), stdin=stdin)
+
+        def _echo_path(workspace_name: str) -> None:
+            typer.echo(str(get_path(workspace_name)))
+
+        _, any_failed = resolve_each(idents, _echo_path)
+    if any_failed:
+        raise typer.Exit(code=1)
 
 
 # shell-init -----------------------------------------------------------------
