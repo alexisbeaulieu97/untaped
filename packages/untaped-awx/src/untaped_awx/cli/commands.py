@@ -420,6 +420,13 @@ def jobs_events(
 
     Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
     between jobs. For a single id, output is identical to today.
+
+    Multi-id non-follow drains emit one format block per job — for
+    ``--format json``/``yaml``/``table`` that means N separately framed
+    documents, not one merged document. Each row carries a ``job`` field
+    so jq pipelines that need a single document should use
+    ``--format raw`` (concatenated lines) or ``--follow --format json``
+    (NDJSON streams unframed).
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
     cols = list(columns) if columns else ["counter", "event", "host_name", "task"]

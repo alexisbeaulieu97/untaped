@@ -608,6 +608,36 @@ def test_jobs_wait_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
     assert "stdin" in (result.output + (result.stderr or "")).lower()
 
 
+def test_jobs_wait_continues_when_one_id_missing(fake_aap: Any) -> None:
+    """A missing id in a multi-id ``wait`` batch must not suppress the
+    resolved ids — same pipeline-resilience contract as ``jobs get``."""
+    _seed_running_job(fake_aap, job_id=42)
+    result = CliRunner().invoke(
+        app, ["jobs", "wait", "9999", "42", "--format", "raw", "--columns", "id"]
+    )
+    assert result.exit_code != 0
+    assert result.stdout.strip().splitlines() == ["42"]
+    assert "error: 9999" in (result.stderr or "")
+    assert "error:" not in result.stdout
+
+
+def test_jobs_wait_multi_id_timeout(fake_aap: Any) -> None:
+    """Multi-id ``wait --timeout`` aggregates timeout breadcrumbs to
+    stderr and exits 1 if any id never reaches terminal.
+
+    FakeAap returns the seeded job ``status="running"`` so ``WatchJob``
+    never sees a terminal state within ``--timeout 0``.
+    """
+    fake_aap.seed("jobs", id=42, status="running")
+    fake_aap.seed("jobs", id=43, status="running")
+    result = CliRunner().invoke(app, ["jobs", "wait", "42", "43", "--timeout", "0"])
+    assert result.exit_code == 1
+    stderr = result.stderr or ""
+    # One breadcrumb per id — neither was silently dropped.
+    assert "timeout: job 42" in stderr
+    assert "timeout: job 43" in stderr
+
+
 def test_jobs_logs_concatenates_streams_across_ids(fake_aap: Any) -> None:
     """Multiple ids drain serially; each job's stdout is emitted in
     turn. A ``[<id>] `` stderr breadcrumb identifies which job is up."""
@@ -639,6 +669,18 @@ def test_jobs_logs_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
     result = CliRunner().invoke(app, ["jobs", "logs", "42", "--stdin"], input="43\n")
     assert result.exit_code != 0
     assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_jobs_logs_continues_when_one_id_missing(fake_aap: Any) -> None:
+    """A missing id in a multi-id ``logs`` batch streams what landed
+    and emits a per-id error on stderr without aborting."""
+    fake_aap.seed("jobs", id=42, status="successful", stdout="alpha\n")
+    result = CliRunner().invoke(app, ["jobs", "logs", "9999", "42"])
+    assert result.exit_code != 0
+    # The reachable job's stdout still made it to stdout.
+    assert "alpha" in result.stdout
+    assert "error: 9999" in (result.stderr or "")
+    assert "error:" not in result.stdout
 
 
 def test_jobs_events_concatenates_streams_across_ids(fake_aap: Any) -> None:
@@ -679,3 +721,43 @@ def test_jobs_events_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
     result = CliRunner().invoke(app, ["jobs", "events", "42", "--stdin"], input="43\n")
     assert result.exit_code != 0
     assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_jobs_events_continues_when_one_id_missing(fake_aap: Any) -> None:
+    """A missing id in a multi-id ``events`` batch streams what landed
+    and emits a per-id error on stderr without aborting."""
+    _seed_running_job(fake_aap, job_id=42)
+    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
+    result = CliRunner().invoke(
+        app, ["jobs", "events", "9999", "42", "--format", "raw", "--columns", "counter"]
+    )
+    assert result.exit_code != 0
+    assert result.stdout.strip().splitlines() == ["1"]
+    assert "error: 9999" in (result.stderr or "")
+    assert "error:" not in result.stdout
+
+
+def test_jobs_events_multi_id_non_follow_emits_per_job_blocks(fake_aap: Any) -> None:
+    """Pin the v0 non-follow multi-id contract: each job emits its own
+    format block (not a single merged document). For ``--format json``
+    that means N separately framed arrays, so callers wanting one
+    document should use ``--format raw`` or ``--follow --format json``
+    (NDJSON). Documented in ``jobs events`` docstring."""
+    import json as _json
+
+    _seed_running_job(fake_aap, job_id=42)
+    _seed_running_job(fake_aap, job_id=43)
+    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
+    fake_aap.seed("job_events", id=2, job=43, counter=2, event="playbook_on_play_start")
+    result = CliRunner().invoke(
+        app,
+        ["jobs", "events", "42", "43", "--format", "json", "--columns", "counter"],
+    )
+    assert result.exit_code == 0, result.output
+    # Two separately framed arrays — verify they're parseable on their
+    # own, not as one document. ``json.loads`` would reject the
+    # concatenation; we split-then-parse.
+    chunks = result.stdout.replace("][", "]\n[").strip().splitlines()
+    assert len(chunks) == 2, result.stdout
+    parsed = [_json.loads(c) for c in chunks]
+    assert [row[0]["counter"] for row in parsed] == [1, 2]
