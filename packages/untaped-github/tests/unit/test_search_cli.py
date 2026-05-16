@@ -261,6 +261,112 @@ def test_search_repos_respects_limit(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert len(parsed) == 2
 
 
+def test_search_repos_default_limit_is_30(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Bare `search repos` (no --limit) used to paginate until GitHub's
+    # 1000-result cap. The default is now 30 so a casual exploratory
+    # query costs one of the user's 30/min search-rate-limit budget.
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    items = [
+        {"id": i, "name": f"r{i}", "full_name": f"me/r{i}", "html_url": "https://x"}
+        for i in range(50)
+    ]
+    with respx.mock(base_url="https://api.github.com") as mock:
+        route = mock.get("/search/repositories").mock(
+            return_value=httpx.Response(200, json={"items": items})
+        )
+        result = CliRunner().invoke(app, ["search", "repos", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    parsed = json.loads(result.stdout)
+    assert len(parsed) == 30
+    # First-page per_page shrinking should send per_page=30 — one round trip.
+    assert route.calls[0].request.url.params["per_page"] == "30"
+    assert route.call_count == 1
+
+
+def test_search_repos_limit_1000_paginates_fully(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `--limit 1000` is the documented escape hatch for opting into
+    # GitHub's hard maximum; the paginator must still walk the Link
+    # header chain when the user asks for it explicitly.
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    page1 = {
+        "items": [
+            {"id": i, "name": f"r{i}", "full_name": f"me/r{i}", "html_url": "https://x"}
+            for i in range(100)
+        ]
+    }
+    page2 = {
+        "items": [
+            {"id": i, "name": f"r{i}", "full_name": f"me/r{i}", "html_url": "https://x"}
+            for i in range(100, 200)
+        ]
+    }
+    link = '<https://api.github.com/search/repositories?page=2>; rel="next"'
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/search/repositories", params={"page": "2"}).mock(
+            return_value=httpx.Response(200, json=page2)
+        )
+        mock.get("/search/repositories").mock(
+            return_value=httpx.Response(200, json=page1, headers={"Link": link})
+        )
+        result = CliRunner().invoke(app, ["search", "repos", "--limit", "1000", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    parsed = json.loads(result.stdout)
+    assert len(parsed) == 200
+
+
+def test_search_repos_limit_zero_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A zero limit is a usage error, not a synonym for "all results".
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    result = CliRunner().invoke(app, ["search", "repos", "--limit", "0"])
+    assert result.exit_code != 0
+
+
+def test_search_repos_help_advertises_default_30(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    result = CliRunner().invoke(app, ["search", "repos", "--help"])
+    assert result.exit_code == 0, result.output
+    # Typer renders the default inline next to the option.
+    assert "30" in result.output
+    assert "1000" in result.output  # cap mentioned in the help string
+
+
+def test_search_issues_default_limit_is_30(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Lock the contract on a second subcommand so the default isn't
+    # accidentally regressed on only one of the four call sites.
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    items = [
+        {
+            "id": i,
+            "number": i,
+            "title": f"t{i}",
+            "state": "open",
+            "html_url": "https://x",
+            "repository_url": "https://api.github.com/repos/me/p",
+            "user": {"login": "octocat"},
+        }
+        for i in range(50)
+    ]
+    with respx.mock(base_url="https://api.github.com") as mock:
+        route = mock.get("/search/issues").mock(
+            return_value=httpx.Response(200, json={"items": items})
+        )
+        result = CliRunner().invoke(app, ["search", "issues", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    parsed = json.loads(result.stdout)
+    assert len(parsed) == 30
+    assert route.calls[0].request.url.params["per_page"] == "30"
+
+
 def test_search_team_without_org_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
     result = CliRunner().invoke(app, ["search", "repos", "--team", "backend"])

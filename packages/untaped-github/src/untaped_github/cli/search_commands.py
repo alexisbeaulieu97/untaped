@@ -70,7 +70,15 @@ def repos_command(
     sort: Literal["stars", "forks", "help-wanted-issues", "updated"] | None = typer.Option(
         None, "--sort"
     ),
-    limit: int | None = typer.Option(None, "--limit", help="Cap result count."),
+    limit: int = typer.Option(
+        30,
+        "--limit",
+        min=1,
+        help=(
+            "Cap result count. GitHub enforces a hard 1000-result cap "
+            "on search; pass --limit 1000 to opt into the maximum."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -112,7 +120,15 @@ def code_command(
     filename: str | None = typer.Option(None, "--filename"),
     path: str | None = typer.Option(None, "--path"),
     extension: str | None = typer.Option(None, "--extension"),
-    limit: int | None = typer.Option(None, "--limit"),
+    limit: int = typer.Option(
+        30,
+        "--limit",
+        min=1,
+        help=(
+            "Cap result count. GitHub enforces a hard 1000-result cap "
+            "on search; pass --limit 1000 to opt into the maximum."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -161,7 +177,15 @@ def issues_command(
     mentions: str | None = typer.Option(None, "--mentions"),
     sort: Literal["comments", "reactions", "interactions", "created", "updated"]
     | None = typer.Option(None, "--sort"),
-    limit: int | None = typer.Option(None, "--limit"),
+    limit: int = typer.Option(
+        30,
+        "--limit",
+        min=1,
+        help=(
+            "Cap result count. GitHub enforces a hard 1000-result cap "
+            "on search; pass --limit 1000 to opt into the maximum."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -200,7 +224,15 @@ def users_command(
     location: str | None = typer.Option(None, "--location"),
     language: str | None = typer.Option(None, "--language"),
     sort: Literal["followers", "repositories", "joined"] | None = typer.Option(None, "--sort"),
-    limit: int | None = typer.Option(None, "--limit"),
+    limit: int = typer.Option(
+        30,
+        "--limit",
+        min=1,
+        help=(
+            "Cap result count. GitHub enforces a hard 1000-result cap "
+            "on search; pass --limit 1000 to opt into the maximum."
+        ),
+    ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
