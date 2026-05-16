@@ -350,8 +350,8 @@ def sync_command(
         help=(
             "Concurrent workspaces (only with --all). Per-workspace "
             "outcomes are rows, not exceptions, so the pool drains "
-            "to completion. Capped at 2 * os.cpu_count(); values above "
-            "are clamped with a stderr warning."
+            "to completion. Capped at a CPU-relative ceiling; values "
+            "above are clamped with a stderr warning."
         ),
     ),
     fmt: FormatOption = "table",
@@ -511,10 +511,11 @@ def foreach_command(
         "--parallel",
         "-j",
         help=(
-            "Concurrent workers. Capped at 2 * os.cpu_count(); values "
-            "above are clamped with a stderr warning. Values <= 0 run "
-            "serially (1 worker). Fail-fast cancellation is best-effort: "
-            "in-flight commands run to completion; only queued work stops."
+            "Concurrent workers. Capped at a CPU-relative ceiling; "
+            "values above are clamped with a stderr warning. Values "
+            "<= 0 run serially (1 worker). Fail-fast cancellation is "
+            "best-effort: in-flight commands run to completion; only "
+            "queued work stops."
         ),
     ),
     continue_on_error: bool = typer.Option(

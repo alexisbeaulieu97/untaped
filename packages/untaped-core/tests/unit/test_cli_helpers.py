@@ -144,10 +144,11 @@ def test_clamp_parallel_returns_input_when_below_cap(
     assert capsys.readouterr().err == ""
 
 
-def test_clamp_parallel_returns_input_at_cap_boundary(
+def test_clamp_parallel_returns_input_at_cap_inclusive(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Exactly-at-cap is fine — no warning, no clamp."""
+    """``requested == cap`` is *inclusive* (no warning, no clamp); the
+    helper uses ``<= cap`` not ``< cap`` so the boundary is honoured."""
     assert clamp_parallel(8, cap=8, policy="2 * os.cpu_count()") == 8
     assert capsys.readouterr().err == ""
 
@@ -167,9 +168,9 @@ def test_clamp_parallel_policy_string_appears_in_warning(
 ) -> None:
     """Caller-supplied ``policy`` text appears verbatim in the parens —
     callers control the rationale (httpx pool, cpu_count, ...)."""
-    clamp_parallel(50, cap=10, policy="HTTP connection pool default")
+    clamp_parallel(50, cap=10, policy="httpx.Limits.max_connections=10")
     err = capsys.readouterr().err
-    assert "clamped to 10 (HTTP connection pool default)" in err
+    assert "clamped to 10 (httpx.Limits.max_connections=10)" in err
 
 
 def test_clamp_parallel_does_not_handle_below_one(

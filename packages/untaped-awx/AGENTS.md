@@ -259,9 +259,9 @@ mutation. The pool is capped at `APPLY_PARALLEL_CAP=10` to match
 `httpx.Client`'s default `max_connections=10` — anything higher just
 blocks on connection acquisition. The CLI clamps to this cap via
 `untaped_core.clamp_parallel` (shared with workspace `sync`/`foreach`,
-policy `"HTTP connection pool default"`); `ApplyFile` re-applies
-`min(parallel, APPLY_PARALLEL_CAP)` as a programmatic-caller safety
-net.
+policy `"httpx.Limits.max_connections=10"`); `ApplyFile.__init__`
+re-applies `min(parallel, APPLY_PARALLEL_CAP)` as a programmatic-caller
+safety net.
 
 Phase 2 (membership reconciliation) stays serial. Reasons:
 

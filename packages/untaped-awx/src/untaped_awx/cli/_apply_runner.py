@@ -40,7 +40,7 @@ def run_apply(
     if parallel < 1:
         raise typer.BadParameter("--parallel must be >= 1")
     parallel = clamp_parallel(
-        parallel, cap=APPLY_PARALLEL_CAP, policy="HTTP connection pool default"
+        parallel, cap=APPLY_PARALLEL_CAP, policy="httpx.Limits.max_connections=10"
     )
     reader = _make_reader(kind_filter=kind_filter, cli_name=cli_name)
     apply_one = _build_apply_resource(ctx)

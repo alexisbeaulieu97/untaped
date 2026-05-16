@@ -89,7 +89,7 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
     if requested <= cap:
         return requested
     typer.echo(
-        f"warning: --parallel {requested} clamped to {cap} ({policy}).",
+        f"warning: --parallel {requested} clamped to {cap} ({policy})",
         err=True,
     )
     return cap
