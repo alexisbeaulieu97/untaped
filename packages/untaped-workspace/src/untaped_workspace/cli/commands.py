@@ -512,9 +512,9 @@ def foreach_command(
         "-j",
         help=(
             "Concurrent workers. Capped at 2 * os.cpu_count(); values "
-            "above are clamped with a stderr warning. Fail-fast "
-            "cancellation is best-effort: in-flight commands run to "
-            "completion; only queued work stops."
+            "above are clamped with a stderr warning. Values <= 0 run "
+            "serially (1 worker). Fail-fast cancellation is best-effort: "
+            "in-flight commands run to completion; only queued work stops."
         ),
     ),
     continue_on_error: bool = typer.Option(

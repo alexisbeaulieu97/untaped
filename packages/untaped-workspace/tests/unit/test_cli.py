@@ -769,55 +769,21 @@ def test_foreach_summary_suppressed_in_structured_format(
     assert "failed in:" not in (result.stderr or "")
 
 
-# ── foreach --parallel clamp (shared with sync via clamp_parallel) ───────────
-
-
-def test_foreach_parallel_clamps_above_cap(
-    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``foreach -j 100`` on a 4-CPU box is clamped to 8 (= 2 * cpu_count)
-    with a single stderr warning naming the policy. End-to-end:
-    `clamp_parallel`'s policy is unit-tested in `untaped-core`; this
-    asserts the CLI wires it through and the real Foreach honours the
-    clamped worker count without hanging."""
-    monkeypatch.setattr("os.cpu_count", lambda: 4)
-    runner = CliRunner()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
-
-    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "100"])
-    assert result.exit_code == 0, result.output
-    assert "clamped to 8" in result.output
-    assert "2 * os.cpu_count()" in result.output
-
-
-def test_foreach_parallel_at_cap_no_warning(
-    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``foreach -j 4`` on a 4-CPU box (cap = 8) emits no clamp warning."""
-    monkeypatch.setattr("os.cpu_count", lambda: 4)
-    runner = CliRunner()
-    target = tmp_path / "ws"
-    runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
-
-    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "4"])
-    assert result.exit_code == 0, result.output
-    assert "clamped" not in result.output
+# ── foreach --parallel: silent <1 coercion (foreach-specific UX) ─────────────
+# The cap-clamp policy is unit-tested at ``clamp_parallel`` in
+# ``packages/untaped-core/tests/unit/test_cli_helpers.py``; the sync CLI
+# test above exercises the wire-through end-to-end. Foreach has one
+# divergent contract: ``-j 0`` silently coerces to serial (sync and
+# ``awx apply`` raise ``BadParameter`` instead), so that's the only
+# foreach-specific case worth a CLI-level pin.
 
 
 def test_foreach_parallel_zero_coerces_to_serial(
-    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
-    """``foreach -j 0`` (Typer accepts it; ``sync`` and ``awx apply``
-    raise BadParameter, but the issue body explicitly chose silent
-    coercion to serial for foreach) runs cleanly with exit 0 and no
-    warning — the silent ``max(parallel, 1)`` upstream of
-    ``clamp_parallel`` prevents the use case from seeing ``0``."""
-    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    """``foreach -j 0`` runs cleanly with exit 0 and no warning — the
+    ``max(parallel, 1)`` upstream of ``clamp_parallel`` keeps the use
+    case from seeing ``0`` and matches the issue spec."""
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
