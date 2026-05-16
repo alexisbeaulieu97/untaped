@@ -29,17 +29,24 @@ Method names on the registry are `entries`, `get`, `find_by_path`,
 builtin in nested annotations within the class.
 
 **Manifest mutation contract.** All three manifest models (`Repo`,
-`ManifestDefaults`, `WorkspaceManifest`) are `frozen=True`. Mutation
-goes through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`
+`ManifestDefaults`, `WorkspaceManifest`) are `frozen=True`, and
+`WorkspaceManifest.repos` is typed `tuple[Repo, ...]` (not `list`) so
+in-place mutation — `m.repos.append(r)`, `m.repos[0] = r` — raises at
+runtime. Pydantic's `frozen=True` only blocks attribute reassignment,
+not container mutation; the tuple closes that hole structurally. All
+edits go through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`
 and `WorkspaceManifest.remove_repo(ident) -> tuple[WorkspaceManifest,
 Repo]`, which return new manifests rather than mutating in place.
 Every manifest construction in the application layer uses
 `WorkspaceManifest(...)` — *not* `model_copy(update=...)` — because
-pydantic v2's `model_copy` deliberately skips validators. Using direct
-construction uniformly keeps the
+pydantic v2's `model_copy` deliberately skips validators **and field
+coercion**. Direct construction uniformly keeps the
 `@model_validator(mode="after")` duplicate-rejection check available
 on every mutation, including non-repo-list edits like the rename in
-`ImportWorkspace`. `add_repo` raises typed `DuplicateRepoUrl` /
+`ImportWorkspace`. `model_copy(update={"repos": [...]})` would *also*
+leave `.repos` as a plain `list` after the copy, defeating the
+tuple-based structural freeze; another reason to stay on the
+direct-construction path. `add_repo` raises typed `DuplicateRepoUrl` /
 `DuplicateRepoName` exceptions (subclasses of `ValueError`), each
 carrying the incumbent `Repo` so callers can format CLI-facing
 errors without re-scanning the manifest; `remove_repo` raises
