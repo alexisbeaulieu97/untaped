@@ -46,7 +46,7 @@ from untaped_awx.infrastructure import AwxClient, AwxConfig
 from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.specs import ALL_SPECS
-from untaped_awx.infrastructure.yaml_io import write_resource
+from untaped_awx.infrastructure.yaml_io import dump_resource
 
 app = typer.Typer(
     name="awx",
@@ -146,6 +146,14 @@ def save_top_command(
             "you need org-scoped schedules."
         ),
     ),
+    print_paths: bool = typer.Option(
+        False,
+        "--print-paths",
+        help=(
+            "Emit written filenames on stdout instead of the YAML envelopes. "
+            "Legacy shape — preserved for scripts that `git add` the dump."
+        ),
+    ),
 ) -> None:
     """Bulk-save resources to a directory.
 
@@ -155,6 +163,12 @@ def save_top_command(
     ``<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml``.
     Kinds with read-only fidelity (Credential) are skipped with a
     one-line note.
+
+    Default stdout shape is a multi-doc YAML stream of the same
+    envelopes the files contain, so the dump pipes straight into
+    ``apply`` (``---``-separated docs, one per record). Pass
+    ``--print-paths`` to swap stdout for the written-file list
+    instead.
     """
     if not all_kinds and not kind:
         raise typer.BadParameter("pass --all or --kind")
@@ -165,8 +179,12 @@ def save_top_command(
             list(ALL_SPECS) if all_kinds else [_resolve_kind(ctx.catalog, kind)]  # type: ignore[arg-type]
         )
         save = SaveResource(ctx.repo, ctx.fk)
+        # Expand once so ``out_dir.mkdir`` and the per-record
+        # ``target.write_text`` agree on the same on-disk location
+        # (``--out-dir ~/dump`` would otherwise create a literal
+        # ``./~/dump`` dir while files landed in ``$HOME/dump``).
+        out_dir = out_dir.expanduser()
         out_dir.mkdir(parents=True, exist_ok=True)
-        written: list[str] = []
         for spec in target_specs:
             if spec.fidelity == "read_only":
                 typer.echo(
@@ -189,10 +207,20 @@ def save_top_command(
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
                 target = out_dir / _resource_filename(spec.kind, resource.metadata)
                 _assert_inside(out_dir, target)
-                write_resource(target, resource, header_comment=comment)
-                written.append(str(target))
-    for path in written:
-        typer.echo(path)
+                # Serialise once and fan-out to disk + stdout so each
+                # record renders to the same YAML body. (``typer.echo``
+                # appends its own newline, so the stream has an extra
+                # trailing ``\n`` per record vs the file body — both
+                # parse identically through ``yaml.safe_load_all``.)
+                text = dump_resource(resource, header_comment=comment)
+                target.write_text(text)
+                if print_paths:
+                    typer.echo(str(target))
+                else:
+                    # Leading ``---`` per doc so ``yaml.safe_load_all``
+                    # ingests the stream and ``apply`` round-trips.
+                    typer.echo("---")
+                    typer.echo(text)
 
 
 def _resolve_kind(catalog: AwxResourceCatalog, kind: str) -> AwxResourceSpec:

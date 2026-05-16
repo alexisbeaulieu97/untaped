@@ -173,6 +173,12 @@ FK references are by **name** (scoped to `metadata.organization` where
 relevant), not by id, so a saved file is portable between AAP
 instances that share resource names.
 
+`save` accepts `--format yaml|json|raw` (default `yaml`). The yaml
+path emits a bare envelope so the output pipes straight into `apply`;
+`--format json` returns the envelope inside a one-element list (same
+shape as every other `--format json` command in the suite), and
+`--format raw` emits the resource kind on a single line.
+
 `apply` is **preview by default** — it prints what *would* change and
 exits without writing. Pass `--yes` to actually write. The diff is
 field-level; declared secret paths (`inputs.*`, `webhook_key`)
@@ -249,6 +255,12 @@ Writes one file per resource. Filenames encode the full identity so
 same-named records across organizations don't collide:
 `<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml`.
 Read-only kinds (Credential, etc.) are skipped with a one-line note.
+
+Default stdout is a **multi-doc YAML stream of the same envelopes the
+files contain** (one `---`-prefixed doc per record), so the dump pipes
+straight into a future `apply` invocation. Pass `--print-paths` to swap
+stdout for the legacy "one written-file path per line" shape — useful
+for scripts that `git add` the dump.
 
 `--filter KEY=VALUE` (repeatable) is passed verbatim to AWX for every
 saved kind. AWX's `/schedules/` endpoint has no `organization` field,
