@@ -146,6 +146,8 @@ def save_top_command(
         "--all-kinds",
         help="Save every saveable kind (iterate the type axis).",
     ),
+    # TODO(drop-legacy-all-alias): remove this Option and the
+    # _warn_legacy_all callback above in the next minor release.
     legacy_all: bool = typer.Option(
         False,
         "--all",
