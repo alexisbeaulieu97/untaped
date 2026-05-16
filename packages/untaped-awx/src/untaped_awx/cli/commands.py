@@ -543,11 +543,15 @@ def _emit_log_lines(
                 row = {c: row.get(c) for c in cols}
             typer.echo(json.dumps(row, default=str))
         return
-    for line in lines:
-        if fmt == "raw":
+    if fmt == "raw":
+        # Skip the no-op ``format_output`` round-trip — raw lines are
+        # already the final shape, and the per-line wrap is the hot path
+        # on a 100k-line follow stream.
+        for line in lines:
             typer.echo(line)
-        else:
-            typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
+        return
+    for line in lines:
+        typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
 
 
 @jobs_app.command("logs", no_args_is_help=True)
