@@ -95,11 +95,19 @@ def _build_apply_resource(ctx: AwxContext) -> ApplyResource:
 
 def resolve_apply_file(positional: Path | None, option: Path | None) -> Path:
     """``--file`` wins when both are given so an explicit flag overrides
-    a leftover positional."""
-    target = option if option is not None else positional
-    if target is None:
-        raise typer.BadParameter("pass FILE as a positional argument or via --file")
-    return target
+    a leftover positional. Emits a one-shot deprecation warning when the
+    alias is used so users migrate before the alias is dropped."""
+    if option is not None:
+        # TODO(deprecate-file-alias): drop ``--file``/``-f`` and this
+        # warning in the next minor release; positional is canonical.
+        typer.echo(
+            "warning: --file/-f is deprecated; pass FILE as a positional argument",
+            err=True,
+        )
+        return option
+    if positional is None:
+        raise typer.BadParameter("FILE is required (pass as positional or via --file/-f)")
+    return positional
 
 
 __all__ = ["resolve_apply_file", "run_apply"]

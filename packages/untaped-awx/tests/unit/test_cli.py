@@ -222,7 +222,7 @@ def test_apply_emits_clamp_warning_above_cap(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     yml = tmp_path / "empty.yml"
     yml.write_text("")  # zero docs → no AWX calls, runner just prints rows
-    result = CliRunner().invoke(app, ["apply", "--file", str(yml), "--parallel", "100"])
+    result = CliRunner().invoke(app, ["apply", str(yml), "--parallel", "100"])
     assert result.exit_code == 0, result.output
     assert "clamped to 10" in result.output
 
@@ -230,7 +230,7 @@ def test_apply_emits_clamp_warning_above_cap(
 def test_resolve_apply_file_rejects_neither_set() -> None:
     """Body-level guard for ``apply --yes`` (no file) — Typer can't trip
     ``no_args_is_help`` once any flag is on the line."""
-    with pytest.raises(typer.BadParameter, match="positional"):
+    with pytest.raises(typer.BadParameter, match="FILE is required"):
         resolve_apply_file(None, None)
 
 
@@ -255,7 +255,8 @@ def test_resolve_apply_file_option_wins_over_positional(tmp_path: Path) -> None:
         # would fail and the test would non-zero.
         pytest.param(["apply", "BOGUS", "--file", "FILE"], id="option-wins"),
         pytest.param(["job-templates", "apply", "FILE"], id="per-kind-positional"),
-        pytest.param(["job-templates", "apply", "--file", "FILE"], id="per-kind-file"),
+        pytest.param(["job-templates", "apply", "--file", "FILE"], id="per-kind-file-long"),
+        pytest.param(["job-templates", "apply", "-f", "FILE"], id="per-kind-file-short"),
     ],
 )
 def test_apply_accepts_positional_and_file_alias(
@@ -273,6 +274,37 @@ def test_apply_accepts_positional_and_file_alias(
     args = [str(yml) if a == "FILE" else str(bogus) if a == "BOGUS" else a for a in template]
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize(
+    ("args_template", "expect_warning"),
+    [
+        pytest.param(["apply", "FILE"], False, id="positional-no-warning"),
+        pytest.param(["apply", "--file", "FILE"], True, id="long-flag-warns"),
+        pytest.param(["apply", "-f", "FILE"], True, id="short-flag-warns"),
+        pytest.param(
+            ["job-templates", "apply", "FILE"], False, id="per-kind-positional-no-warning"
+        ),
+        pytest.param(["job-templates", "apply", "--file", "FILE"], True, id="per-kind-long-warns"),
+    ],
+)
+def test_apply_alias_emits_deprecation_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    args_template: list[str],
+    expect_warning: bool,
+) -> None:
+    """``--file`` / ``-f`` is deprecated for one release; using it must
+    emit a stderr warning so users migrate before the alias is dropped.
+    The positional form must NOT warn."""
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    yml = tmp_path / "empty.yml"
+    yml.write_text("")
+    args = [str(yml) if a == "FILE" else a for a in args_template]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert ("--file/-f is deprecated" in result.output) is expect_warning
 
 
 @pytest.mark.parametrize("cmd", [["apply"], ["job-templates", "apply"]])

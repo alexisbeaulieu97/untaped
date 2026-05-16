@@ -179,8 +179,8 @@ field-level; declared secret paths (`inputs.*`, `webhook_key`)
 carrying `$encrypted$` are stripped from the PATCH and shown as
 `(preserved existing secret)` rows.
 
-`--file` / `-f` remains as an alias for one release; prefer the
-positional form.
+`--file` / `-f` remains as a **deprecated alias** for one release —
+it still works but emits a stderr warning. Prefer the positional form.
 
 ### `launch` (job templates and workflow templates)
 
@@ -217,8 +217,8 @@ Triggers an SCM sync on the project.
 untaped awx apply FILE_OR_DIR [--yes] [--fail-fast]
 ```
 
-`--file` / `-f` remains as an alias for one release; prefer the
-positional form.
+`--file` / `-f` remains as a **deprecated alias** for one release —
+it still works but emits a stderr warning. Prefer the positional form.
 
 Apply a single file or a whole directory of YAML envelopes. When
 multiple kinds are present, `untaped` orders them by their declared FK

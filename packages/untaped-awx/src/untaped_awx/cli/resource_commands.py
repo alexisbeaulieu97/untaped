@@ -319,7 +319,7 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None,
             "--file",
             "-f",
-            help="Backward-compat alias for the FILE positional argument.",
+            help="Deprecated alias; prefer the positional FILE.",
         ),
         yes: bool = typer.Option(False, "--yes", help="Actually write (default is preview only)."),
         fail_fast: bool = typer.Option(False, "--fail-fast", help="Abort on first error."),
