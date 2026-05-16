@@ -244,6 +244,20 @@ def test_jobs_logs_follow_raw_passes_through(fake_aap: Any) -> None:
     assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
 
 
+def test_jobs_logs_follow_raw_columns_line_is_noop(fake_aap: Any) -> None:
+    """``--follow --format raw --columns line`` matches bare ``--follow``
+    output: log rows are single-field so ``--columns line`` is the only
+    meaningful projection, and the raw fast-path treats it as the
+    identity. Pins parity for the only realistic user-supplied value.
+    """
+    _seed_running_job(fake_aap)
+    result = CliRunner().invoke(
+        app, ["jobs", "logs", "42", "--follow", "--format", "raw", "--columns", "line"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
+
+
 def test_jobs_logs_follow_yaml_keeps_per_line_emission(fake_aap: Any) -> None:
     """``--follow --format yaml`` keeps the existing per-line single-doc
     emission. YAML has no NDJSON-equivalent canonical streaming form, so

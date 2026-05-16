@@ -551,10 +551,17 @@ def _emit_log_lines(
     if fmt == "raw":
         # Skip the no-op ``format_output`` round-trip — raw lines are
         # already the final shape, and the per-line wrap is the hot path
-        # on a 100k-line follow stream.
+        # on a 100k-line follow stream. ``cols`` is ignored here: log
+        # rows are single-field (``line``), so any projection is either
+        # the identity or a path miss; the only meaningful value is
+        # ``--columns line``, which is what users pass.
         for line in lines:
             typer.echo(line)
         return
+    # No Rich table branch (unlike ``_emit_events``): log lines are
+    # unstructured text, so ``--format table --follow`` falls through
+    # to per-line ``format_output`` like yaml does. Table-per-line is
+    # silly but the cost is on the user who asked for it.
     for line in lines:
         typer.echo(format_output([{"line": line}], fmt=fmt, columns=cols))
 
