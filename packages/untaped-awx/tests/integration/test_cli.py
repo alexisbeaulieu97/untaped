@@ -7,13 +7,16 @@ the importlib-mode cross-file import problem.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 from untaped_awx import app
+from untaped_awx.domain import Resource
 
 pytestmark = pytest.mark.integration
 
@@ -336,6 +339,51 @@ def test_job_templates_save_translates_fks(fake_aap: Any, tmp_path: Path) -> Non
     # FKs translated to names
     assert "project: playbooks" in text
     assert "inventory: prod" in text
+
+
+def test_job_templates_save_default_yaml_round_trips(fake_aap: Any) -> None:
+    """Default stdout (no ``--out``, no ``--format``) is a bare YAML
+    envelope — a single mapping that ``read_resources`` can ingest
+    without ``yaml.safe_load_all`` wrapping. Round-trip into apply
+    depends on this shape; using ``format_output(rows, fmt="yaml")``
+    would wrap in a top-level list and silently break it."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app, ["job-templates", "save", "deploy", "--organization", "Default"]
+    )
+    assert result.exit_code == 0, result.output
+    doc = yaml.safe_load(result.stdout)
+    assert isinstance(doc, dict), f"expected bare mapping, got {type(doc).__name__}"
+    assert doc["kind"] == "JobTemplate"
+    Resource.model_validate(doc)
+
+
+def test_job_templates_save_format_json_emits_envelope(fake_aap: Any) -> None:
+    """``--format json`` emits the envelope through ``format_output``
+    (one-element list, matching ``ping``'s single-row precedent)."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "save", "deploy", "--organization", "Default", "--format", "json"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list) and len(payload) == 1
+    envelope = payload[0]
+    assert envelope["kind"] == "JobTemplate"
+    assert envelope["metadata"]["name"] == "deploy"
+    assert envelope["spec"]["playbook"] == "deploy.yml"
+
+
+def test_job_templates_save_format_raw_emits_kind(fake_aap: Any) -> None:
+    """``--format raw`` emits the first key of the envelope per the
+    default-column contract. For a Resource that's ``kind``."""
+    _seed_basic(fake_aap)
+    result = CliRunner().invoke(
+        app, ["job-templates", "save", "deploy", "--organization", "Default", "--format", "raw"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "JobTemplate"
 
 
 def test_apply_preview_does_not_write(fake_aap: Any, tmp_path: Path) -> None:
@@ -1583,6 +1631,75 @@ def test_save_all_distinguishes_same_named_resources_across_orgs(
         "JobTemplate__Default__deploy.yml",
         "JobTemplate__Other__deploy.yml",
     ], f"expected two distinct files for same-named JTs in different orgs, got {saved}"
+
+
+def test_save_all_default_emits_yaml_envelopes_on_stdout(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    """Default ``save --all`` stdout shape is a multi-doc YAML stream of
+    envelopes (one per written resource) so the bulk dump pipes straight
+    into ``apply``. Files on disk are unchanged from today."""
+    seeded_default_org.seed("organizations", id=2, name="Other")
+    seeded_default_org.seed(
+        "job_templates",
+        id=30,
+        name="deploy-default",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    seeded_default_org.seed(
+        "job_templates",
+        id=31,
+        name="deploy-other",
+        organization=2,
+        organization_name="Other",
+        playbook="b.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+
+    files = sorted(out_dir.glob("JobTemplate__*.yml"))
+    assert len(files) == 2
+
+    docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
+    assert len(docs) == len(files), (
+        f"expected one stdout envelope per written file, got {len(docs)} docs "
+        f"for {len(files)} files"
+    )
+    for doc in docs:
+        assert isinstance(doc, dict)
+        Resource.model_validate(doc)
+        assert doc["kind"] == "JobTemplate"
+    names = sorted(d["metadata"]["name"] for d in docs)
+    assert names == ["deploy-default", "deploy-other"]
+
+
+def test_save_all_print_paths_emits_filenames_on_stdout(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    """``--print-paths`` is the legacy stdout shape: one written-file
+    path per line, no envelopes. Pre-existing scripts that consumed the
+    file list keep working by adding one flag."""
+    seeded_default_org.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir), "--print-paths"])
+    assert result.exit_code == 0, result.output
+    expected = out_dir / "JobTemplate__Default__deploy.yml"
+    assert expected.exists()
+    stdout_lines = [line for line in result.stdout.splitlines() if line]
+    assert stdout_lines == [str(expected)]
+    # Negative: no envelope content leaked onto stdout under --print-paths.
+    assert "kind:" not in result.stdout
+    assert "metadata:" not in result.stdout
 
 
 def test_save_all_skips_credentials(seeded_default_org: Any, tmp_path: Path) -> None:

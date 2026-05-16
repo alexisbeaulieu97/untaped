@@ -288,8 +288,19 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
             "--inventory-organization",
             help="Disambiguate same-named inventories across orgs (Host/Group only).",
         ),
+        fmt: OutputFormat = typer.Option(
+            "yaml", "--format", "-f", help="Output format (yaml|json|raw)."
+        ),
+        columns: ColumnsOption = None,
     ) -> None:
-        """Dump the resource as a portable YAML envelope."""
+        """Dump the resource as a portable YAML envelope.
+
+        Default ``--format yaml`` emits the bare envelope so the output
+        pipes straight into ``apply`` (multi-doc mapping shape that
+        ``read_resources`` ingests). Non-yaml formats go through
+        ``format_output`` for a one-row projection that matches the
+        suite-wide ``--columns`` contract.
+        """
         with report_errors(), open_context() as ctx:
             scope = _scope(
                 ctx,
@@ -304,8 +315,14 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
             typer.echo(f"{spec.fidelity} save: {comment}", err=True)
         if output:
             write_resource(output, resource, header_comment=comment)
-        else:
+            return
+        if fmt == "yaml":
+            # Bypass ``format_output`` so stdout is a bare mapping, not
+            # a one-element YAML list — apply's ``read_resources``
+            # rejects list-wrapped docs.
             typer.echo(dump_resource(resource, header_comment=comment))
+            return
+        typer.echo(format_output([resource.model_dump()], fmt=fmt, columns=columns))
 
 
 # ---- apply (per-kind, single file) ----
