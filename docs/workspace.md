@@ -144,13 +144,18 @@ a colleague shares a YAML file describing their workspace setup. Pass
 ### `add`
 
 ```bash
-untaped workspace add <url> [--name <ws>] [--path <ws-dir>]
-                            [--branch <b>] [--repo-name <alias>]
-                            [--sync]
+untaped workspace add <url>... [--name <ws>] [--path <ws-dir>]
+                               [--branch <b>] [--repo-name <alias>]
+                               [--sync]
+untaped workspace add --stdin --name <ws>
 ```
 
-Add a repo URL to the workspace's manifest. With `--sync`, also clone
-the new repo right away.
+Add one or more repo URLs to the workspace's manifest. Multiple URLs
+may be passed positionally or via `--stdin`; `--branch` and
+`--repo-name` apply uniformly to every URL in the batch (use one URL
+per invocation for per-repo overrides). With `--sync`, also clone
+the URLs that landed (a duplicate that fails to register won't try
+to clone).
 
 ### `remove`
 
@@ -271,10 +276,17 @@ always run to completion; only queued work is cancelled on fail-fast.
 ### `path`
 
 ```bash
-untaped workspace path <name>                   # absolute path, single line
+untaped workspace path <name>...                # one absolute path per name
+untaped workspace path --stdin                  # read names from stdin
 ```
 
-Pipe-friendly — pairs well with `cd "$(untaped workspace path prod)"`.
+Pipe-friendly — pairs well with `cd "$(untaped workspace path prod)"`,
+or to fan out paths:
+
+```bash
+untaped workspace list --format raw \
+  | untaped workspace path --stdin
+```
 
 ### `shell-init`
 

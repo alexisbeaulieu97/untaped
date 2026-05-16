@@ -280,27 +280,37 @@ All `jobs` subcommands take a common `--kind` discriminator (default
 # Newest-first list. Default columns: id,name,status.
 untaped awx jobs list [--status STATUS] [--filter K=V]... [--limit N]
 
-# Single job record (defaults to YAML).
-untaped awx jobs get <id>
+# One or more job records (defaults to YAML). Multiple ids may be
+# passed positionally or via --stdin.
+untaped awx jobs get <id> [<id>...] [--stdin]
 
 # Structured per-task events. Default columns: counter,event,host_name,task.
 # --filter reaches AWX server-side (event=runner_on_failed, host=web-01, …).
 # --follow polls until the job is terminal; --from-counter N skips early events.
-untaped awx jobs events <id> [--follow] [--from-counter N] [--filter K=V]...
+untaped awx jobs events <id> [<id>...] [--stdin] [--follow] [--from-counter N] [--filter K=V]...
 
 # Plain stdout (default --format raw). --follow polls until terminal;
 # --tail N keeps the last N historical lines before any follow phase;
 # --grep PATTERN is client-side regex (case-insensitive with -i).
-untaped awx jobs logs <id> [--follow|-f] [--tail N] [--grep PATTERN] [-i]
+untaped awx jobs logs <id> [<id>...] [--stdin] [--follow|-f] [--tail N] [--grep PATTERN] [-i]
 
-# Block until terminal. Exits 1 on --timeout.
-untaped awx jobs wait <id> [--timeout SECS]
+# Block until terminal. Exits 1 on --timeout (per id).
+untaped awx jobs wait <id> [<id>...] [--stdin] [--timeout SECS]
 ```
 
 `jobs events --follow` is format-aware: `--format table` (default)
 renders human PLAY/TASK output coloured to mirror AWX's UI, while
 `--format json` streams NDJSON (one event per line) so you can pipe
 into `jq` directly. Other formats stream one structured row per event.
+
+Multi-id `get` / `wait` aggregate their results; multi-id `logs` /
+`events` drain serially with a `[<id>]` stderr breadcrumb between
+jobs. Pipeline-friendly:
+
+```bash
+untaped awx jobs list --status failed --format raw \
+  | untaped awx jobs logs --stdin
+```
 
 ### `untaped awx unified-templates`
 
