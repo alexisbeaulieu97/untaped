@@ -289,7 +289,7 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
             help="Disambiguate same-named inventories across orgs (Host/Group only).",
         ),
         fmt: OutputFormat = typer.Option(
-            "yaml", "--format", "-f", help="Output format (yaml|json|raw)."
+            "yaml", "--format", "-f", help="Output format (yaml|json|raw|table)."
         ),
         columns: ColumnsOption = None,
     ) -> None:
@@ -299,7 +299,9 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
         pipes straight into ``apply`` (multi-doc mapping shape that
         ``read_resources`` ingests). Non-yaml formats go through
         ``format_output`` for a one-row projection that matches the
-        suite-wide ``--columns`` contract.
+        suite-wide ``--columns`` contract. ``--columns`` applies to
+        non-yaml formats only — yaml emits the bare envelope unfiltered
+        so the round-trip into ``apply`` stays intact.
         """
         with report_errors(), open_context() as ctx:
             scope = _scope(

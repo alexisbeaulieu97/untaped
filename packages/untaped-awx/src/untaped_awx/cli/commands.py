@@ -166,7 +166,7 @@ def save_top_command(
 
     Default stdout shape is a multi-doc YAML stream of the same
     envelopes the files contain, so the dump pipes straight into
-    ``apply`` (``--`` separated docs, one per record). Pass
+    ``apply`` (``---``-separated docs, one per record). Pass
     ``--print-paths`` to swap stdout for the written-file list
     instead.
     """
@@ -207,9 +207,11 @@ def save_top_command(
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
                 target = out_dir / _resource_filename(spec.kind, resource.metadata)
                 _assert_inside(out_dir, target)
-                # Serialise once, fan-out to disk + stdout so the bytes
-                # stay byte-identical and ``yaml.safe_dump`` runs once
-                # per record.
+                # Serialise once and fan-out to disk + stdout so each
+                # record renders to the same YAML body. (``typer.echo``
+                # appends its own newline, so the stream has an extra
+                # trailing ``\n`` per record vs the file body — both
+                # parse identically through ``yaml.safe_load_all``.)
                 text = dump_resource(resource, header_comment=comment)
                 target.write_text(text)
                 if print_paths:
