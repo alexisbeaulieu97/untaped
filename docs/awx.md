@@ -179,10 +179,8 @@ field-level; declared secret paths (`inputs.*`, `webhook_key`)
 carrying `$encrypted$` are stripped from the PATCH and shown as
 `(preserved existing secret)` rows.
 
-The file is a **positional** argument. `--file` / `-f` is retained
-as a backward-compat alias for one release; new scripts should use
-the positional form to match every other "operate on a file/name"
-command in the suite.
+`--file` / `-f` remains as an alias for one release; prefer the
+positional form.
 
 ### `launch` (job templates and workflow templates)
 
