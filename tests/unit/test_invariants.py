@@ -21,8 +21,8 @@ edit:
   least one required argument sets ``no_args_is_help=True`` (so
   no-args invocation shows help instead of erroring).
 
-Each detector is factored into a pure helper (``_credential_offenders_in``,
-``_verify_offenders_in_tree``, ``_no_args_help_offenders``); the
+Each detector is factored into a pure helper (``_credential_offenders``,
+``_verify_offenders``, ``_no_args_help_offenders``); the
 positive tests at the bottom feed the live workspace state through
 those helpers, and parametrised negative self-tests feed synthetic
 known-bad inputs so each detector is provably wired (sibling pattern to
@@ -64,25 +64,19 @@ PACKAGES_DIR = REPO_ROOT / "packages"
 _CREDENTIAL_NAME_RE = re.compile(r"(?:^|_)(token|secret|password|api_key)(?:$|_)")
 
 
-def _credential_offenders_in(model_cls: type[BaseModel]) -> list[str]:
+def _credential_offenders(model_cls: type[BaseModel]) -> list[str]:
     """Return ``"<dotted-key> :: <annotation>"`` rows for credential-named
     leaves on ``model_cls`` that are *not* typed ``SecretStr``.
 
-    Walks via :func:`walk_settings` so the same code path the live
-    ``Settings`` walk uses also exercises the synthetic negative-test
-    schemas — no separate code path that could drift.
+    Walks via :func:`walk_settings` — the same path the live ``Settings``
+    walk uses — so the synthetic negative-test schemas exercise the
+    production code, with no parallel walker that could drift.
     """
     offenders: list[str] = []
     for descriptor in walk_settings(model_cls):
         leaf_name = descriptor.path[-1].lower()
         if not _CREDENTIAL_NAME_RE.search(leaf_name):
             continue
-        # ``is_secret`` is the canonical "is this a credential" predicate
-        # on the descriptor. Equivalent to ``annotation is SecretStr``
-        # today, but a future widening of "what counts as a secret"
-        # (e.g. detecting secrets inside Union types properly) would
-        # land in ``is_secret``'s computation, and every caller would
-        # pick it up for free.
         if not descriptor.is_secret:
             offenders.append(f"{descriptor.key} :: {descriptor.annotation!r}")
     return offenders
@@ -104,7 +98,7 @@ def test_credential_fields_are_secretstr() -> None:
     inventory pin can't see because the field never makes it into
     ``secret_field_paths(...)``. Keep both.
     """
-    offenders = _credential_offenders_in(Settings)
+    offenders = _credential_offenders(Settings)
     assert not offenders, (
         "Credential-named fields must be pydantic.SecretStr "
         "(see AGENTS.md Hard Rule #11):\n  " + "\n  ".join(offenders)
@@ -152,7 +146,7 @@ def _is_resolve_verify_call(node: ast.expr) -> bool:
     return False
 
 
-def _verify_offenders_in_tree(tree: ast.Module, rel: str) -> list[str]:
+def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
     """Return ``"<rel>:<lineno>"`` rows for ``HttpClient(...)`` calls in
     ``tree`` whose ``verify=`` argument is missing or not a
     ``resolve_verify(...)`` call.
@@ -193,7 +187,7 @@ def test_httpclient_construction_passes_verify() -> None:
                 continue
             tree = ast.parse(text)
             rel = str(py_file.relative_to(REPO_ROOT))
-            offenders.extend(_verify_offenders_in_tree(tree, rel))
+            offenders.extend(_verify_offenders(tree, rel))
     assert not offenders, (
         "HttpClient(...) construction under infrastructure/ must pass "
         "verify=resolve_verify(...) (see AGENTS.md Hard Rule #12):\n  " + "\n  ".join(offenders)
@@ -317,21 +311,28 @@ class _BadApiKey(BaseModel):
     api_key: int = 0  # not str, not SecretStr — still a credential by name
 
 
-_CREDENTIAL_BAD_SCHEMAS: list[tuple[str, type[BaseModel]]] = [
-    ("nested-str-token", _BadSlackOuter),
-    ("flat-str-password", _BadFlatPassword),
-    ("non-secret-api-key", _BadApiKey),
+# Each row carries the *exact* offender string the detector should emit, so
+# the assertion catches a future bug that returns "something" but with the
+# wrong shape (off-by-one column, wrong field rendered, etc.). The `int`
+# case is what proves the detector flags by name regardless of annotation.
+_CREDENTIAL_BAD_SCHEMAS: list[tuple[str, type[BaseModel], str]] = [
+    ("nested-str-token", _BadSlackOuter, "slack.token :: <class 'str'>"),
+    ("flat-str-password", _BadFlatPassword, "api_password :: <class 'str'>"),
+    ("non-secret-int-api-key", _BadApiKey, "api_key :: <class 'int'>"),
 ]
 
 
 @pytest.mark.parametrize(
-    ("label", "model_cls"),
+    ("label", "model_cls", "expected"),
     _CREDENTIAL_BAD_SCHEMAS,
-    ids=[lbl for lbl, _ in _CREDENTIAL_BAD_SCHEMAS],
+    ids=[lbl for lbl, _, _ in _CREDENTIAL_BAD_SCHEMAS],
 )
-def test_credential_detector_flags_bad_schemas(label: str, model_cls: type[BaseModel]) -> None:
+def test_credential_detector_flags_bad_schemas(
+    label: str, model_cls: type[BaseModel], expected: str
+) -> None:
     """The detector must flag every credential-named non-``SecretStr`` shape."""
-    assert _credential_offenders_in(model_cls), f"expected {label} to be flagged"
+    offenders = _credential_offenders(model_cls)
+    assert expected in offenders, f"{label}: expected {expected!r} in {offenders}"
 
 
 class _GoodSecretSchema(BaseModel):
@@ -348,8 +349,8 @@ class _GoodNonCredentialSchema(BaseModel):
 
 def test_credential_detector_ignores_secretstr_and_non_credential_names() -> None:
     """Legitimate shapes must not be falsely flagged."""
-    assert _credential_offenders_in(_GoodSecretSchema) == []
-    assert _credential_offenders_in(_GoodNonCredentialSchema) == []
+    assert _credential_offenders(_GoodSecretSchema) == []
+    assert _credential_offenders(_GoodNonCredentialSchema) == []
 
 
 # (b) HttpClient construction sources. Each entry is (label, source) —
@@ -399,7 +400,7 @@ _VERIFY_BAD_SOURCES: list[tuple[str, str]] = [
 def test_verify_detector_flags_bad_sources(label: str, source: str) -> None:
     """The detector must flag every non-``resolve_verify(...)`` call shape."""
     tree = ast.parse(source)
-    assert _verify_offenders_in_tree(tree, "<test>"), f"expected {label} to be flagged"
+    assert _verify_offenders(tree, "<test>"), f"expected {label} to be flagged"
 
 
 _VERIFY_GOOD_SOURCES: list[tuple[str, str]] = [
@@ -427,7 +428,7 @@ _VERIFY_GOOD_SOURCES: list[tuple[str, str]] = [
 def test_verify_detector_ignores_resolve_verify(label: str, source: str) -> None:
     """The canonical ``verify=resolve_verify(...)`` call shape must pass."""
     tree = ast.parse(source)
-    assert _verify_offenders_in_tree(tree, "<test>") == [], f"expected {label} to be accepted"
+    assert _verify_offenders(tree, "<test>") == [], f"expected {label} to be accepted"
 
 
 # (c) Typer apps / commands missing ``no_args_is_help=True``. Synthetic
@@ -448,7 +449,7 @@ def test_no_args_help_detector_flags_sub_app_missing_flag() -> None:
     sub = typer.Typer()  # missing no_args_is_help
     root.add_typer(sub, name="sub")
     offenders = _no_args_help_offenders(root)
-    assert any("app: sub" in o for o in offenders)
+    assert "app: sub" in offenders
 
 
 def test_no_args_help_detector_flags_required_arg_command_missing_flag() -> None:
@@ -456,14 +457,14 @@ def test_no_args_help_detector_flags_required_arg_command_missing_flag() -> None
     root = typer.Typer(no_args_is_help=True)
     root.command("hit")(_required_arg_callback)  # missing no_args_is_help
     offenders = _no_args_help_offenders(root)
-    assert any("command: hit" in o for o in offenders)
+    assert "command: hit" in offenders
 
 
 def test_no_args_help_detector_flags_root_missing_flag() -> None:
     """The root app itself, if missing ``no_args_is_help=True``, must be flagged."""
     root = typer.Typer()  # missing no_args_is_help
     offenders = _no_args_help_offenders(root)
-    assert any("app: <root>" in o for o in offenders)
+    assert "app: <root>" in offenders
 
 
 def test_no_args_help_detector_ignores_optional_arg_command_without_flag() -> None:
