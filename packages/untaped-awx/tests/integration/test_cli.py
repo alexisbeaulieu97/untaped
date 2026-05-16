@@ -1702,6 +1702,132 @@ def test_save_all_print_paths_emits_filenames_on_stdout(
     assert "metadata:" not in result.stdout
 
 
+def test_save_all_default_coexists_with_read_only_skip_notes(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    """Read-only skip notes go to stderr; they must not corrupt the
+    multi-doc YAML stream on stdout. Seeds a Credential (read-only,
+    skipped) alongside a Project so the loop hits both branches."""
+    seeded_default_org.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=1,
+        organization_name="Default",
+        scm_type="git",
+    )
+    seeded_default_org.seed(
+        "credentials",
+        id=20,
+        name="ssh-key",
+        organization=1,
+        organization_name="Default",
+        credential_type=1,
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+    assert "skipping Credential" in result.stderr
+    docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
+    # Only the Project envelope should be on stdout; Credential was skipped.
+    assert len(docs) == 1
+    Resource.model_validate(docs[0])
+    assert docs[0]["kind"] == "Project"
+
+
+def test_save_kind_print_paths_legacy_shape(seeded_default_org: Any, tmp_path: Path) -> None:
+    """``--print-paths`` with ``--kind`` (single-kind path through the
+    same loop) keeps the legacy filename-list stdout — proves the flag
+    isn't ``--all``-only."""
+    seeded_default_org.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app,
+        [
+            "save",
+            "--out-dir",
+            str(out_dir),
+            "--kind",
+            "job-templates",
+            "--print-paths",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    expected = out_dir / "JobTemplate__Default__deploy.yml"
+    assert expected.exists()
+    assert result.stdout.strip() == str(expected)
+
+
+def test_save_all_default_keeps_partial_fidelity_header_comment(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    """Partial-fidelity kinds (WorkflowJobTemplate) carry an inline
+    ``# fidelity-note`` header in the saved YAML. That comment must
+    survive into the multi-doc stdout stream so the stream is
+    byte-identical to the files it shadows — and ``yaml.safe_load_all``
+    must still parse it (``#`` is a YAML comment, but tests cement the
+    contract)."""
+    seeded_default_org.seed(
+        "workflow_job_templates",
+        id=10,
+        name="pipeline",
+        organization=1,
+        organization_name="Default",
+        description="multi-step",
+    )
+    out_dir = tmp_path / "backup"
+    result = CliRunner().invoke(
+        app, ["save", "--all", "--out-dir", str(out_dir), "--kind", "WorkflowJobTemplate"]
+    )
+    assert result.exit_code == 0, result.output
+    # Inline comment present in stdout stream.
+    assert "# " in result.stdout
+    # The disk file's first non-separator line is the comment.
+    saved = out_dir / "WorkflowJobTemplate__Default__pipeline.yml"
+    file_text = saved.read_text()
+    first_comment_line = next(line for line in file_text.splitlines() if line.startswith("#"))
+    assert first_comment_line in result.stdout, (
+        "header_comment in file does not appear in stdout stream"
+    )
+    # Stream still parses despite the embedded comment.
+    docs = [d for d in yaml.safe_load_all(result.stdout) if d is not None]
+    assert len(docs) == 1
+    assert docs[0]["kind"] == "WorkflowJobTemplate"
+
+
+def test_save_all_expands_tilde_in_out_dir(
+    seeded_default_org: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--out-dir ~/dump`` must expand on both ``mkdir`` and the
+    per-record write. A regression that mkdir's the literal path while
+    write_text targets the expanded one leaves the files unwritten or
+    in two places."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    seeded_default_org.seed(
+        "job_templates",
+        id=30,
+        name="deploy",
+        organization=1,
+        organization_name="Default",
+        playbook="a.yml",
+    )
+    result = CliRunner().invoke(app, ["save", "--all", "--out-dir", "~/backup", "--print-paths"])
+    assert result.exit_code == 0, result.output
+    expanded = tmp_path / "backup" / "JobTemplate__Default__deploy.yml"
+    backup_dir = tmp_path / "backup"
+    actual = list(backup_dir.iterdir()) if backup_dir.exists() else "no backup dir"
+    assert expanded.exists(), f"expected file at {expanded}, found: {actual}"
+    # No literal ``./~/...`` directory created in cwd.
+    assert not Path("~/backup").exists()
+
+
 def test_save_all_skips_credentials(seeded_default_org: Any, tmp_path: Path) -> None:
     seeded_default_org.seed(
         "projects",

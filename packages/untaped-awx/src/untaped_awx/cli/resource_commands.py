@@ -317,12 +317,16 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
             write_resource(output, resource, header_comment=comment)
             return
         if fmt == "yaml":
-            # Bypass ``format_output`` so stdout is a bare mapping, not
-            # a one-element YAML list — apply's ``read_resources``
-            # rejects list-wrapped docs.
+            # Bypass format_output: apply's read_resources rejects
+            # list-wrapped docs.
             typer.echo(dump_resource(resource, header_comment=comment))
             return
-        typer.echo(format_output([resource.model_dump()], fmt=fmt, columns=columns))
+        # ``exclude_none=True`` keeps json/raw's projected fields in
+        # sync with yaml (which goes through ``dump_resource``'s
+        # ``exclude_none`` path), so the same envelope renders the same
+        # field set across formats.
+        envelope = resource.model_dump(exclude_none=True)
+        typer.echo(format_output([envelope], fmt=fmt, columns=columns))
 
 
 # ---- apply (per-kind, single file) ----

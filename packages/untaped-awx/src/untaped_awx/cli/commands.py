@@ -179,6 +179,11 @@ def save_top_command(
             list(ALL_SPECS) if all_kinds else [_resolve_kind(ctx.catalog, kind)]  # type: ignore[arg-type]
         )
         save = SaveResource(ctx.repo, ctx.fk)
+        # Expand once so ``out_dir.mkdir`` and the per-record
+        # ``target.write_text`` agree on the same on-disk location
+        # (``--out-dir ~/dump`` would otherwise create a literal
+        # ``./~/dump`` dir while files landed in ``$HOME/dump``).
+        out_dir = out_dir.expanduser()
         out_dir.mkdir(parents=True, exist_ok=True)
         for spec in target_specs:
             if spec.fidelity == "read_only":
@@ -202,12 +207,11 @@ def save_top_command(
                 comment = spec.fidelity_note if spec.fidelity != "full" else None
                 target = out_dir / _resource_filename(spec.kind, resource.metadata)
                 _assert_inside(out_dir, target)
-                # One ``dump_resource`` per record — fan it out to the
-                # file and (when default) to the stdout multi-doc stream
-                # so the bytes stay identical and the YAML serialiser
-                # runs once.
+                # Serialise once, fan-out to disk + stdout so the bytes
+                # stay byte-identical and ``yaml.safe_dump`` runs once
+                # per record.
                 text = dump_resource(resource, header_comment=comment)
-                target.expanduser().write_text(text)
+                target.write_text(text)
                 if print_paths:
                     typer.echo(str(target))
                 else:
