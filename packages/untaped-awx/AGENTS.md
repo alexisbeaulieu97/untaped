@@ -257,8 +257,11 @@ queued futures are cancelled but in-flight workers run to completion
 outcomes out of the futures so a `write=True` apply never silently loses an AWX
 mutation. The pool is capped at `APPLY_PARALLEL_CAP=10` to match
 `httpx.Client`'s default `max_connections=10` — anything higher just
-blocks on connection acquisition. Issue #30 / REVIEW finding 6.2 will
-revisit when pool tuning lands.
+blocks on connection acquisition. The CLI clamps to this cap via
+`untaped_core.clamp_parallel` (shared with workspace `sync`/`foreach`,
+policy `"httpx.Limits.max_connections=10"`); `ApplyFile.__init__`
+re-applies `min(parallel, APPLY_PARALLEL_CAP)` as a programmatic-caller
+safety net.
 
 Phase 2 (membership reconciliation) stays serial. Reasons:
 

@@ -6,6 +6,7 @@ formats output via :mod:`untaped_core.output`.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -15,6 +16,7 @@ from untaped_core import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
+    clamp_parallel,
     format_output,
     get_settings,
     read_identifiers,
@@ -303,11 +305,16 @@ def remove_command(
 
 # sync -----------------------------------------------------------------------
 
-# Upper bound on `sync --all --parallel`. Picked to match a generous
-# laptop's network concurrency without overwhelming git's per-process
-# locks; issue #30 will unify this with `foreach`'s clamp into a single
-# policy.
-_PARALLEL_CAP = 32
+
+def _parallel_cap() -> int:
+    """Cap value for ``sync --all`` and ``foreach`` parallelism.
+
+    ``2 * os.cpu_count()`` matches the "I/O-bound work, threads cheap"
+    rule of thumb both commands rely on (git fetch / shell exec are
+    network- or syscall-bound, not CPU-bound). Computed per call so
+    ``os.cpu_count`` monkeypatching in tests stays live.
+    """
+    return (os.cpu_count() or 1) * 2
 
 
 @app.command("sync")
@@ -343,8 +350,8 @@ def sync_command(
         help=(
             "Concurrent workspaces (only with --all). Per-workspace "
             "outcomes are rows, not exceptions, so the pool drains "
-            f"to completion. Capped at {_PARALLEL_CAP} (issue #30 will "
-            "unify the cap policy)."
+            "to completion. Capped at a CPU-relative ceiling; values "
+            "above are clamped with a stderr warning."
         ),
     ),
     fmt: FormatOption = "table",
@@ -357,13 +364,7 @@ def sync_command(
         raise typer.BadParameter("--parallel must be >= 1")
     if parallel > 1 and not all_workspaces:
         raise typer.BadParameter("--parallel >1 requires --all")
-    workers = min(parallel, _PARALLEL_CAP)
-    if parallel > workers:
-        typer.echo(
-            f"warning: --parallel {parallel} clamped to {workers} (issue #30 "
-            "will unify the cap policy across sync and foreach)",
-            err=True,
-        )
+    workers = clamp_parallel(parallel, cap=_parallel_cap(), policy="2 * os.cpu_count()")
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
         runner = (
@@ -510,8 +511,11 @@ def foreach_command(
         "--parallel",
         "-j",
         help=(
-            "Concurrent workers. Fail-fast cancellation is best-effort: "
-            "in-flight commands run to completion; only queued work stops."
+            "Concurrent workers. Capped at a CPU-relative ceiling; "
+            "values above are clamped with a stderr warning. Values "
+            "<= 0 run serially (1 worker). Fail-fast cancellation is "
+            "best-effort: in-flight commands run to completion; only "
+            "queued work stops."
         ),
     ),
     continue_on_error: bool = typer.Option(
@@ -542,11 +546,15 @@ def foreach_command(
     """
     with report_errors():
         ws = _resolve(name, path)
+        # Foreach silently coerces ``< 1`` to serial (issue spec) rather than
+        # the BadParameter that ``sync`` and ``awx apply`` raise — different
+        # commands, different UX calls on the lower bound.
+        workers = clamp_parallel(max(parallel, 1), cap=_parallel_cap(), policy="2 * os.cpu_count()")
         keep_going = continue_on_error or ignore_errors
         outcomes = Foreach(ManifestRepository(), runner=shell_runner, fs=LocalFilesystem())(
             ws,
             command=cmd,
-            parallel=parallel,
+            parallel=workers,
             continue_on_error=keep_going,
         )
         failed = [o.repo for o in outcomes if o.returncode != 0]
