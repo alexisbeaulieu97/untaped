@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from pydantic import SecretStr
 from untaped_core import Settings
 from untaped_core.config_schema import walk_settings
 
@@ -47,7 +46,10 @@ PACKAGES_DIR = REPO_ROOT / "packages"
 # Matches credential-implying leaf names: ``token``, ``api_token``,
 # ``access_token``, ``client_secret``, ``password``, ``api_key``, ...
 # Anchored to word boundaries (``_`` or start/end) so an unrelated name
-# like ``tokenize`` or ``passwordless`` wouldn't false-positive.
+# like ``tokenize`` or ``passwordless`` wouldn't false-positive. Scope
+# is deliberately snake_case-only — pydantic settings keys follow that
+# convention; ``clientSecret``-style camelCase would slip through but
+# is not idiomatic in this codebase.
 _CREDENTIAL_NAME_RE = re.compile(r"(?:^|_)(token|secret|password|api_key)(?:$|_)")
 
 
@@ -72,7 +74,13 @@ def test_credential_fields_are_secretstr() -> None:
         leaf_name = descriptor.path[-1].lower()
         if not _CREDENTIAL_NAME_RE.search(leaf_name):
             continue
-        if descriptor.annotation is not SecretStr:
+        # Use ``is_secret`` (a property the descriptor already computes)
+        # rather than ``descriptor.annotation is SecretStr``: the latter
+        # would silently break if ``walk_settings`` stopped unwrapping
+        # ``Optional`` at the leaf, since ``Optional[SecretStr]`` would
+        # no longer match. ``is_secret`` is the canonical "is this a
+        # secret" check.
+        if not descriptor.is_secret:
             offenders.append(f"{descriptor.key} :: {descriptor.annotation!r}")
     assert not offenders, (
         "Credential-named fields must be pydantic.SecretStr "
@@ -109,6 +117,11 @@ def test_httpclient_construction_passes_verify() -> None:
     comments that a string-match regex would be fooled by. A new client
     that forgets ``verify=resolve_verify(...)`` fails here with the
     ``file:line`` of the offending call.
+
+    **Scope.** Domain ``infrastructure/`` layers only. ``src/untaped/``
+    (the root binary) is excluded by design — it is ``add_typer``-only
+    aggregation and does not construct HTTP clients. If that ever
+    changes, widen the glob.
     """
     offenders: list[str] = []
     for infra_dir in sorted(PACKAGES_DIR.glob("*/src/*/infrastructure")):
@@ -127,7 +140,7 @@ def test_httpclient_construction_passes_verify() -> None:
                 if "verify" not in kwarg_names:
                     rel = py_file.relative_to(REPO_ROOT)
                     offenders.append(f"{rel}:{call.lineno}")
-    assert offenders == [], (
+    assert not offenders, (
         "HttpClient(...) construction under infrastructure/ must pass "
         "verify=resolve_verify(...) (see AGENTS.md Hard Rule #12):\n  " + "\n  ".join(offenders)
     )
@@ -137,12 +150,12 @@ def test_httpclient_construction_passes_verify() -> None:
 
 
 def _walk_typer(app: typer.Typer, prefix: str = "") -> list[tuple[str, Any]]:
-    """Yield ``(qualified_name, sub_app_or_command_info)`` recursively.
+    """Return every ``(qualified_name, item)`` reachable from ``app``.
 
-    Each entry is either a ``typer.Typer`` (sub-app) or a Typer
-    ``CommandInfo`` (leaf command). Names are space-separated so a
-    failure message reads like the actual command path
-    (``awx job-templates launch``).
+    ``item`` is either a ``typer.Typer`` instance (sub-app) or a Typer
+    ``CommandInfo`` (leaf command); the caller dispatches on type. Names
+    are space-separated so a failure message reads like the actual
+    command path (``awx job-templates launch``).
 
     Accesses ``app.registered_groups`` / ``registered_commands`` directly
     (no defensive ``getattr``) — both attributes are set unconditionally
@@ -167,9 +180,9 @@ def _has_required_arg(callback: Any) -> bool:
     Typer wraps every parameter's default in an ``ArgumentInfo`` /
     ``OptionInfo`` whose ``.default`` carries the *real* default. A
     bare ``...`` (Ellipsis) means "no default — user must supply".
-    Raw Python parameters without a Typer wrapper still show up as
-    ``Parameter.empty`` (defensive — Typer commands normally wrap
-    every param, but this keeps the helper honest if one isn't).
+    The ``Parameter.empty`` branch is belt-and-suspenders: Typer
+    rewraps unwrapped params at registration time, so it only fires
+    on pre-registration introspection cases. Cheap to keep.
     """
     sig = inspect.signature(callback)
     for p in sig.parameters.values():
@@ -203,7 +216,7 @@ def test_typer_apps_and_required_arg_commands_set_no_args_is_help() -> None:
             continue
         if _has_required_arg(item.callback) and not item.no_args_is_help:
             offenders.append(f"command: {name}")
-    assert offenders == [], (
+    assert not offenders, (
         "Typer apps and required-arg commands must set no_args_is_help=True "
         "(see AGENTS.md Hard Rule #9):\n  " + "\n  ".join(offenders)
     )
