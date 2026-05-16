@@ -6,6 +6,7 @@ formats output via :mod:`untaped_core.output`.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -303,11 +304,30 @@ def remove_command(
 
 # sync -----------------------------------------------------------------------
 
-# Upper bound on `sync --all --parallel`. Picked to match a generous
-# laptop's network concurrency without overwhelming git's per-process
-# locks; issue #30 will unify this with `foreach`'s clamp into a single
-# policy.
-_PARALLEL_CAP = 32
+
+def _clamp_parallel(requested: int) -> int:
+    """Cap ``--parallel`` at ``2 * os.cpu_count()`` with a stderr warning.
+
+    Shared by ``sync --all`` and ``foreach`` so both commands speak the
+    same cap policy — friendly clamp rather than ``BadParameter`` so
+    shell idioms like ``-j $(nproc)`` keep composing on hosts where
+    ``nproc`` already exceeds the cap.
+
+    Non-positive values coerce silently to 1 (serial). Typer's ``int``
+    accepts ``0`` and negatives; treating them as the implicit default
+    is quieter than rejecting them.
+    """
+    cap = (os.cpu_count() or 1) * 2
+    if requested > cap:
+        typer.echo(
+            f"warning: --parallel {requested} exceeds cap {cap} "
+            f"(2 * os.cpu_count()); clamping to {cap}.",
+            err=True,
+        )
+        return cap
+    if requested < 1:
+        return 1
+    return requested
 
 
 @app.command("sync")
@@ -343,8 +363,8 @@ def sync_command(
         help=(
             "Concurrent workspaces (only with --all). Per-workspace "
             "outcomes are rows, not exceptions, so the pool drains "
-            f"to completion. Capped at {_PARALLEL_CAP} (issue #30 will "
-            "unify the cap policy)."
+            "to completion. Capped at 2 * os.cpu_count(); values above "
+            "are clamped with a stderr warning."
         ),
     ),
     fmt: FormatOption = "table",
@@ -353,17 +373,9 @@ def sync_command(
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
         raise typer.BadParameter("--timeout must be positive")
-    if parallel < 1:
-        raise typer.BadParameter("--parallel must be >= 1")
     if parallel > 1 and not all_workspaces:
         raise typer.BadParameter("--parallel >1 requires --all")
-    workers = min(parallel, _PARALLEL_CAP)
-    if parallel > workers:
-        typer.echo(
-            f"warning: --parallel {parallel} clamped to {workers} (issue #30 "
-            "will unify the cap policy across sync and foreach)",
-            err=True,
-        )
+    workers = _clamp_parallel(parallel)
     with report_errors():
         targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
         runner = (
@@ -510,8 +522,10 @@ def foreach_command(
         "--parallel",
         "-j",
         help=(
-            "Concurrent workers. Fail-fast cancellation is best-effort: "
-            "in-flight commands run to completion; only queued work stops."
+            "Concurrent workers. Capped at 2 * os.cpu_count(); values "
+            "above are clamped with a stderr warning. Fail-fast "
+            "cancellation is best-effort: in-flight commands run to "
+            "completion; only queued work stops."
         ),
     ),
     continue_on_error: bool = typer.Option(
@@ -542,11 +556,12 @@ def foreach_command(
     """
     with report_errors():
         ws = _resolve(name, path)
+        workers = _clamp_parallel(parallel)
         keep_going = continue_on_error or ignore_errors
         outcomes = Foreach(ManifestRepository(), runner=shell_runner, fs=LocalFilesystem())(
             ws,
             command=cmd,
-            parallel=parallel,
+            parallel=workers,
             continue_on_error=keep_going,
         )
         failed = [o.repo for o in outcomes if o.returncode != 0]

@@ -510,16 +510,22 @@ def test_sync_parallel_without_all_is_rejected() -> None:
     assert "--all" in combined
 
 
-def test_sync_parallel_warns_when_clamped() -> None:
+def test_sync_parallel_warns_when_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
     """Passing ``-j`` above the cap is honoured (clamped) but a stderr
     warning surfaces the truncation so users notice when they ask for
-    more concurrency than they get."""
+    more concurrency than they get.
+
+    The cap follows ``2 * os.cpu_count()`` (shared with ``foreach``);
+    we pin ``cpu_count`` so the assertion isn't CI-hardware dependent.
+    """
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
     runner = CliRunner()
     # No targets registered → the pool runs over an empty list, which is
     # fine for asserting the warning fires before the sweep starts.
     result = runner.invoke(app, ["sync", "--all", "-j", "100"])
     assert result.exit_code == 0, result.output
-    assert "clamped to 32" in result.output
+    assert "clamping to 8" in result.output
+    assert "2 * os.cpu_count()" in result.output
 
 
 def test_sync_all_parallel_covers_every_workspace(
@@ -761,6 +767,90 @@ def test_foreach_summary_suppressed_in_structured_format(
     assert isinstance(parsed, list) and parsed
     assert any(row["returncode"] != 0 for row in parsed)
     assert "failed in:" not in (result.stderr or "")
+
+
+# ── foreach --parallel clamp (shared with sync via _clamp_parallel) ──────────
+
+
+def _stub_foreach_capture_parallel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, int]:
+    """Replace ``Foreach`` in ``cli.commands`` with a stub that records the
+    ``parallel`` kwarg and short-circuits to an empty outcome list.
+
+    Returns a dict mutated by the stub so each test can assert on the
+    value the clamp actually forwarded.
+    """
+    captured: dict[str, int] = {}
+
+    class _Stub:
+        def __init__(self, *_args: object, **_kwargs: object) -> None: ...
+
+        def __call__(self, *_args: object, parallel: int = 1, **_kwargs: object) -> list[object]:
+            captured["parallel"] = parallel
+            return []
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.Foreach", _Stub)
+    return captured
+
+
+def test_foreach_parallel_clamps_above_cap(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``foreach -j 100`` on a 4-CPU box is clamped to 8 (= 2 * cpu_count)
+    with a single stderr warning naming the policy."""
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    captured = _stub_foreach_capture_parallel(monkeypatch)
+
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "100"])
+    assert result.exit_code == 0, result.output
+    assert captured["parallel"] == 8
+    assert "clamping to 8" in result.output
+    assert "2 * os.cpu_count()" in result.output
+
+
+def test_foreach_parallel_at_cap_no_warning(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``foreach -j 4`` on a 4-CPU box (cap = 8) passes through untouched
+    and emits no clamp warning."""
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    captured = _stub_foreach_capture_parallel(monkeypatch)
+
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "4"])
+    assert result.exit_code == 0, result.output
+    assert captured["parallel"] == 4
+    assert "clamping" not in result.output
+
+
+def test_foreach_parallel_zero_coerces_to_serial(
+    tmp_path: Path, upstream: Path, isolated_cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``foreach -j 0`` (Typer accepts it) is coerced to 1 silently — no
+    warning, since the user didn't ask for *more* concurrency than the
+    cap allows."""
+    monkeypatch.setattr("os.cpu_count", lambda: 4)
+    captured = _stub_foreach_capture_parallel(monkeypatch)
+
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+
+    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "0"])
+    assert result.exit_code == 0, result.output
+    assert captured["parallel"] == 1
+    assert "clamping" not in result.output
 
 
 def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
