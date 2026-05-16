@@ -18,7 +18,7 @@ def test_remove_repo_by_url(tmp_path: Path) -> None:
     workspace = Workspace(name="prod", path=ws_path)
     AddRepo(ManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
     RemoveRepo(ManifestRepository(), fs=_FS)(workspace, ident="https://github.com/org/svc-a.git")
-    assert ManifestRepository().read(ws_path).repos == []
+    assert ManifestRepository().read(ws_path).repos == ()
 
 
 def test_remove_repo_by_alias(tmp_path: Path) -> None:
@@ -27,7 +27,7 @@ def test_remove_repo_by_alias(tmp_path: Path) -> None:
     workspace = Workspace(name="prod", path=ws_path)
     AddRepo(ManifestRepository())(workspace, url="https://x/svc-a.git")
     RemoveRepo(ManifestRepository(), fs=_FS)(workspace, ident="svc-a")
-    assert ManifestRepository().read(ws_path).repos == []
+    assert ManifestRepository().read(ws_path).repos == ()
 
 
 def test_remove_repo_unknown_raises(tmp_path: Path) -> None:

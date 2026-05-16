@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -92,10 +93,12 @@ class WorkspaceManifest(BaseModel):
 
     name: str | None = None
     defaults: ManifestDefaults = Field(default_factory=ManifestDefaults)
-    repos: list[Repo] = Field(default_factory=list)
+    # ``tuple`` (not ``list``) so in-place mutation raises at runtime —
+    # pydantic's ``frozen=True`` only blocks attribute reassignment.
+    repos: tuple[Repo, ...] = ()
 
     @staticmethod
-    def _first_duplicate(repos: list[Repo]) -> DuplicateRepoError | None:
+    def _first_duplicate(repos: Sequence[Repo]) -> DuplicateRepoError | None:
         # Sync and remove both key off the (name, url) pair: two repos
         # sharing either field would collide on disk or make `remove`
         # ambiguous. Single source of truth shared by the post-construct
@@ -153,12 +156,13 @@ class WorkspaceManifest(BaseModel):
         # incumbent. Reuses ``_first_duplicate`` — the same helper the
         # validator runs on YAML loads — so both paths raise the same
         # typed exception in the same precedence.
-        if (err := self._first_duplicate([*self.repos, repo])) is not None:
+        new_repos = (*self.repos, repo)
+        if (err := self._first_duplicate(new_repos)) is not None:
             raise err
         return WorkspaceManifest(
             name=self.name,
             defaults=self.defaults,
-            repos=[*self.repos, repo],
+            repos=new_repos,
         )
 
     def remove_repo(self, ident: str) -> tuple[WorkspaceManifest, Repo]:
@@ -176,7 +180,7 @@ class WorkspaceManifest(BaseModel):
                 defaults=self.defaults,
                 # `found` is a reference into `self.repos`, so identity
                 # match is unambiguous (and cheaper than value equality).
-                repos=[r for r in self.repos if r is not found],
+                repos=tuple(r for r in self.repos if r is not found),
             ),
             found,
         )

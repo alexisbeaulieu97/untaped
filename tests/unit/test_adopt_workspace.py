@@ -80,7 +80,7 @@ def test_adopt_with_empty_discovery_succeeds(tmp_path: Path) -> None:
     ws_path.mkdir()
     reg = StubRegistry()
     _adopt(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
-    assert ManifestRepository().read(ws_path).repos == []
+    assert ManifestRepository().read(ws_path).repos == ()
     assert reg.registered[0].path == ws_path.resolve()
 
 
