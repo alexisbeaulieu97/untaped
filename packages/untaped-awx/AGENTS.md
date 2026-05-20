@@ -365,6 +365,20 @@ discriminator (`WorkflowNodeType` Literal: `"job_template"`,
 returns `None` for unknown values so the recursion guard never
 descends into kinds we don't recognise.
 
+**`--stdin` for multi-root.** `nodes` accepts multiple workflow
+names/ids on stdin (`untaped awx workflow-templates list -f raw -c id
+| untaped awx workflow-templates nodes --stdin --recursive`),
+concatenating each root's node tree in input order. Identifier
+resolution goes through `untaped_core.read_identifiers` so the same
+"exactly one source" + "non-empty stdin" contract applies as on
+factory-built `list`/`get`. Per-root failures emit
+`warning: <id>: <exc>` to stderr and set a `--stdin`-wide
+non-zero exit; other roots still emit their rows. This deviates from
+the factory's `list --stdin` shape (one `error:` row per failure mixed
+into the output via `resolve_each`) because `nodes` emits typed rows
+(id/name/type/depth) — `error:` data rows would corrupt column shape
+for downstream `awk`/`grep` pipelines.
+
 ## Test framework (`untaped awx test`) runner internals
 
 User-facing reference (file shape, variables, name resolution, pass-through
