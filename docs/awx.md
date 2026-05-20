@@ -430,6 +430,19 @@ untaped awx workflow-templates nodes <name|id> --type workflow_job_template
 untaped awx workflow-templates list --filter organization__name=Default -f raw -c id \
   | untaped awx workflow-templates nodes --stdin --recursive --type job_template -f raw -c name \
   | grep '^t_' | sort -u
+
+# Server-side filter: ``--filter KEY=VALUE`` (repeatable, Django-style,
+# same shape as ``list --filter``). Reverse-lookup which workflows in
+# an org directly reference any JT in a given name set, without
+# fetching every node and grepping client-side.
+untaped awx workflow-templates list \
+    --filter organization__name=Default -f raw -c id -c name \
+  | while IFS=$'\t' read wid wname; do
+      untaped awx workflow-templates nodes "$wid" \
+          --filter "unified_job_template__name__in=t_foo,t_bar" \
+          -f raw -c id \
+        | grep -q . && echo "$wname"
+    done
 ```
 
 Numeric identifiers (`nodes 100`) skip the name lookup; names follow
@@ -441,6 +454,10 @@ template has been deleted (`unified_job_template: null`) still appear
 with `name` and `type` empty. With `--stdin`, a per-root failure
 (unknown workflow, lookup error) emits `warning: <id>: <exc>` to
 stderr and forces a non-zero exit; valid roots still emit their rows.
+With `--filter`, the filter is applied server-side on each
+`workflow_nodes` GET; combined with `--recursive` it applies at every
+BFS level, so a filter that excludes sub-workflow rows will prune
+them and stop the descent at that node.
 
 ## Test suites — `untaped awx test`
 

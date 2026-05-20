@@ -492,6 +492,118 @@ def test_nodes_stdin_partial_failure_warns_and_exits_nonzero(fake_aap: Any) -> N
     assert "does-not-exist" not in result.stdout
 
 
+def test_nodes_filter_narrows_results(fake_aap: Any) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--filter",
+            "unified_job_template=10",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["1"]
+
+
+def test_nodes_filter_repeatable(fake_aap: Any) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    # Two filters compose with AND server-side: ``__in`` narrows to
+    # nodes whose UJT is in {10, 200}; ``__gt`` then drops the UJT=10
+    # row. Verifies both flags reach AWX, not just the first.
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--filter",
+            "unified_job_template__in=10,200",
+            "--filter",
+            "unified_job_template__gt=11",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().splitlines() == ["2"]
+
+
+def test_nodes_filter_with_recursive_applies_at_every_level(fake_aap: Any) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    _seed_nested(fake_aap)
+    # ``unified_job_template__in=10,11,12,200`` matches: node 1 (JT 10)
+    # at root, the sub-workflow node 2 (UJT 200) at root, and nodes
+    # 3 (JT 11) + 4 (JT 12) inside the sub-workflow. Recursion succeeds
+    # because the filter keeps the workflow-job-template row that lets
+    # the BFS discover the child workflow.
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--recursive",
+            "--filter",
+            "unified_job_template__in=10,11,12,200",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines(), key=int)
+    assert ids == ["1", "2", "3", "4"]
+
+
+def test_nodes_filter_with_recursive_prunes_sub_workflow_descent(
+    fake_aap: Any,
+) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    _seed_nested(fake_aap)
+    # ``unified_job_template__in=10,11`` excludes node 2 (UJT 200, the
+    # sub-workflow link), so BFS never sees it and never descends into
+    # workflow 200 — nodes 3, 4 are absent. Locks in the documented
+    # pruning semantics: filters that exclude sub-workflow rows stop
+    # the descent at that node.
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--recursive",
+            "--filter",
+            "unified_job_template__in=10,11",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines(), key=int)
+    assert ids == ["1"]
+
+
+def test_nodes_filter_malformed_rejected(fake_aap: Any) -> None:
+    result = CliRunner().invoke(
+        app,
+        ["workflow-templates", "nodes", "100", "--filter", "no-equals-sign"],
+    )
+    assert result.exit_code != 0
+    assert "--filter" in result.stderr
+
+
 def test_nodes_stdin_recursive_type_filter_end_to_end(fake_aap: Any) -> None:
     _seed_org_and_root_workflow(fake_aap)
     _seed_nested(fake_aap)
