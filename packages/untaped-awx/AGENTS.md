@@ -406,6 +406,21 @@ AWX — `workflow_nodes` isn't a filterable relation on the workflow
 templates resource — so `nodes --filter` is the supported path for
 "which workflows reference these JTs?" queries.
 
+**`summary_fields` projection.** Each `WorkflowNode` row carries the
+AWX response's `summary_fields` dict unchanged (populated in
+`_build_node` at `application/list_workflow_nodes.py`), so the same
+dotted-path columns that work on `list` work here:
+`-c summary_fields.workflow_job_template.name` for the *immediate*
+parent workflow (per-level, not the BFS root —
+`test_nodes_recursive_summary_fields_carries_per_root_name` pins
+this), `-c summary_fields.unified_job_template.description` for the
+referenced template, etc. The default column set
+(`id name type depth`) is unchanged, so table output is unaffected;
+json/yaml without `--columns` include `summary_fields` to match
+`list`'s shape. The typed `name` field continues to flatten the
+referenced template's name as a convenience (also reachable as
+`summary_fields.unified_job_template.name`).
+
 ## Test framework (`untaped awx test`) runner internals
 
 User-facing reference (file shape, variables, name resolution, pass-through

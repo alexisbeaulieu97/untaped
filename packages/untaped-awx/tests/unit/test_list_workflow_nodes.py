@@ -374,3 +374,32 @@ def test_filters_default_to_none_when_unset() -> None:
     )
     use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100")
     assert nodes.params_received == [None]
+
+
+def test_summary_fields_passes_through_unchanged() -> None:
+    # Pins the contract that the application layer doesn't filter or
+    # transform ``summary_fields`` — the raw AWX dict reaches the typed
+    # ``WorkflowNode`` so CLI dotted-path projections work end-to-end.
+    summary = {
+        "unified_job_template": {
+            "id": 10,
+            "name": "smoke",
+            "unified_job_type": "job",
+            "description": "the description",
+        },
+        "workflow_job_template": {"id": 100, "name": "weekly-rollup"},
+        "created_by": {"id": 1, "username": "admin"},
+    }
+    raw = {
+        "id": 1,
+        "identifier": "leaf",
+        "unified_job_template": 10,
+        "summary_fields": summary,
+    }
+    nodes = _StubNodes({100: [raw]})
+    use = ListWorkflowNodes(
+        cast(WorkflowNodeRepository, nodes),
+        cast(ResourceClient, _StubResources()),
+    )
+    result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100")
+    assert result[0].summary_fields == summary
