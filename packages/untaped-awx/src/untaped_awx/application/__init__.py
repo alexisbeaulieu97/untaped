@@ -4,6 +4,7 @@ from untaped_awx.application.browse_unified_templates import (
     BrowseUnifiedTemplates,
     GetUnifiedTemplate,
 )
+from untaped_awx.application.delete_resource import DeleteResource
 from untaped_awx.application.get_job import GetJob
 from untaped_awx.application.get_resource import GetResource
 from untaped_awx.application.list_jobs import ListJobs
@@ -23,6 +24,7 @@ __all__ = [
     "ApplyResource",
     "AwxPingService",
     "BrowseUnifiedTemplates",
+    "DeleteResource",
     "GetJob",
     "GetResource",
     "GetUnifiedTemplate",
