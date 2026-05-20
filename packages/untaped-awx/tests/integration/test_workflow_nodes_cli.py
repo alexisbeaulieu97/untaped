@@ -392,8 +392,13 @@ def test_nodes_accepts_multiple_positional_roots(fake_aap: Any) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2", "3", "4"]
+    ids = [int(r) for r in result.stdout.strip().splitlines()]
+    assert sorted(ids) == [1, 2, 3, 4]
+    # Input-order pin: every root-100 id (1,2) precedes every root-200
+    # id (3,4); within-root order is intentionally not constrained.
+    last_root_100 = max(i for i, n in enumerate(ids) if n in {1, 2})
+    first_root_200 = min(i for i, n in enumerate(ids) if n in {3, 4})
+    assert last_root_100 < first_root_200
 
 
 def test_nodes_stdin_reads_multiple_roots_and_concatenates(fake_aap: Any) -> None:
@@ -413,8 +418,11 @@ def test_nodes_stdin_reads_multiple_roots_and_concatenates(fake_aap: Any) -> Non
         input="100\n200\n",
     )
     assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines(), key=int)
-    assert ids == ["1", "2", "3", "4"]
+    ids = [int(r) for r in result.stdout.strip().splitlines()]
+    assert sorted(ids) == [1, 2, 3, 4]
+    last_root_100 = max(i for i, n in enumerate(ids) if n in {1, 2})
+    first_root_200 = min(i for i, n in enumerate(ids) if n in {3, 4})
+    assert last_root_100 < first_root_200
 
 
 def test_nodes_stdin_rejects_positional_combo(fake_aap: Any) -> None:
@@ -425,6 +433,7 @@ def test_nodes_stdin_rejects_positional_combo(fake_aap: Any) -> None:
         input="200\n",
     )
     assert result.exit_code != 0
+    assert "stdin" in result.stderr
 
 
 def test_nodes_stdin_rejects_empty_input(fake_aap: Any) -> None:
@@ -434,6 +443,31 @@ def test_nodes_stdin_rejects_empty_input(fake_aap: Any) -> None:
         input="",
     )
     assert result.exit_code != 0
+    assert "stdin" in result.stderr
+
+
+def test_nodes_positional_partial_failure_warns_and_exits_nonzero(
+    fake_aap: Any,
+) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "does-not-exist",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    ids = sorted(result.stdout.strip().splitlines(), key=int)
+    assert ids == ["1", "2"]
+    assert "does-not-exist" in result.stderr
+    assert "does-not-exist" not in result.stdout
 
 
 def test_nodes_stdin_partial_failure_warns_and_exits_nonzero(fake_aap: Any) -> None:

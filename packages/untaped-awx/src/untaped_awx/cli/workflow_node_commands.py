@@ -118,10 +118,9 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 ctx.repo,
                 warn=lambda msg: typer.echo(f"warning: {msg}", err=True),
             )
-            # Stderr warnings (not ``resolve_each``-style ``error:``
-            # data rows) because ``nodes`` emits typed rows — error
-            # rows would corrupt column shape for downstream
-            # ``awk``/``grep``.
+            # ``resolve_each`` doesn't fit: its ``Callable[[str], R]``
+            # interface maps each id to a single record, but ``nodes``
+            # produces a ``list[WorkflowNode]`` per root.
             for root in roots:
                 try:
                     nodes.extend(
