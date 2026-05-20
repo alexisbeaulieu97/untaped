@@ -13,13 +13,15 @@ import typer
 from untaped_core import (
     ColumnsOption,
     FormatOption,
+    UntapedError,
     format_output,
+    read_identifiers,
     report_errors,
 )
 
 from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.cli._context import open_context, scope_for_spec
-from untaped_awx.domain import WorkflowNodeType
+from untaped_awx.domain import WorkflowNode, WorkflowNodeType
 from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
 _DEFAULT_COLUMNS = ["id", "name", "type", "depth"]
@@ -30,12 +32,25 @@ def register_nodes_command(parent: typer.Typer) -> None:
 
     @parent.command("nodes", no_args_is_help=True)
     def nodes_command(
-        identifier: str = typer.Argument(
-            ...,
+        identifiers: list[str] | None = typer.Argument(
+            None,
             help=(
-                "Workflow name OR numeric id. Numeric values skip name "
-                "lookup; otherwise the name is resolved against AWX with "
-                "the same org-scope rules as ``workflow-templates get``."
+                "Workflow name(s) or numeric id(s) — one or more, or "
+                "omit and pass ``--stdin``. Numeric values skip name "
+                "lookup; otherwise each name is resolved against AWX "
+                "with the same org-scope rules as ``workflow-templates "
+                "get``. Multiple roots concatenate their node trees in "
+                "the order given."
+            ),
+        ),
+        stdin: bool = typer.Option(
+            False,
+            "--stdin",
+            help=(
+                "Read workflow names or numeric ids from stdin (one per "
+                "line); equivalent to passing them positionally. Per-root "
+                "failures emit a stderr warning and force a non-zero "
+                "exit; other roots still emit their rows."
             ),
         ),
         organization: str | None = typer.Option(
@@ -79,7 +94,7 @@ def register_nodes_command(parent: typer.Typer) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List the nodes (contents) of a workflow job template."""
+        """List the nodes (contents) of one or more workflow job templates."""
         if depth is not None and depth < 0:
             raise typer.BadParameter("--depth must be non-negative")
         if depth is not None:
@@ -89,7 +104,10 @@ def register_nodes_command(parent: typer.Typer) -> None:
         else:
             max_depth = 0
 
+        nodes: list[WorkflowNode] = []
+        any_failed = False
         with report_errors(), open_context() as ctx:
+            roots = read_identifiers(list(identifiers or []), stdin=stdin)
             scope = scope_for_spec(
                 WORKFLOW_JOB_TEMPLATE_SPEC,
                 organization=organization,
@@ -100,14 +118,26 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 ctx.repo,
                 warn=lambda msg: typer.echo(f"warning: {msg}", err=True),
             )
-            nodes = use(
-                WORKFLOW_JOB_TEMPLATE_SPEC,
-                identifier=identifier,
-                scope=scope,
-                max_depth=max_depth,
-            )
+            # ``resolve_each`` doesn't fit: its ``Callable[[str], R]``
+            # interface maps each id to a single record, but ``nodes``
+            # produces a ``list[WorkflowNode]`` per root.
+            for root in roots:
+                try:
+                    nodes.extend(
+                        use(
+                            WORKFLOW_JOB_TEMPLATE_SPEC,
+                            identifier=root,
+                            scope=scope,
+                            max_depth=max_depth,
+                        )
+                    )
+                except UntapedError as exc:
+                    typer.echo(f"warning: {root}: {exc}", err=True)
+                    any_failed = True
         if type_ is not None:
             nodes = [n for n in nodes if n.type == type_]
         rows = [n.model_dump() for n in nodes]
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         typer.echo(format_output(rows, fmt=fmt, columns=cols))
+        if any_failed:
+            raise typer.Exit(code=1)
