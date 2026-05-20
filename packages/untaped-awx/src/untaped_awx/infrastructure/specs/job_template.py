@@ -120,6 +120,6 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         ),
     ),
     list_columns=("id", "name"),
-    commands=("list", "get", "save", "apply", "launch"),
+    commands=("list", "get", "save", "apply", "launch", "delete"),
     fidelity="full",
 )

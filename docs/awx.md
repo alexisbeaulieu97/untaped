@@ -77,6 +77,11 @@ untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 
 untaped awx <kind> apply FILE [--yes] [--fail-fast]
                          [--format json|yaml|table|raw] [--columns ...]
+
+untaped awx <kind> delete [<name>...] [--stdin] [--yes] [--dry-run]
+                                      [--organization <org>] [--by-name]
+                                      [--format json|yaml|table|raw] [--columns ...]
+# Exactly one of {positional names, --stdin} must be supplied.
 ```
 
 `--filter` is repeatable and passed verbatim to AWX's REST API, so any
@@ -187,6 +192,47 @@ carrying `$encrypted$` are stripped from the PATCH and shown as
 
 `--file` / `-f` remains as a **deprecated alias** for one release —
 it still works but emits a stderr warning. Prefer the positional form.
+
+### `delete` (mutable kinds)
+
+Wired on every kind that supports `save`/`apply`: `job-templates`,
+`projects`, `workflow-templates`, `schedules`, `hosts`, `groups`.
+Read-only kinds (`credentials`, `inventories`, `organizations`, …)
+intentionally do not expose `delete`.
+
+```bash
+# Single delete, interactive (prompts before calling DELETE).
+untaped awx job-templates delete deploy --organization Engineering
+
+# Skip the prompt (required for scripts / pipelines).
+untaped awx job-templates delete 42 --yes
+
+# Batch from stdin — refuses to consume stdin without --yes or --dry-run.
+untaped awx job-templates list -f raw \
+  | grep '^staging-' \
+  | untaped awx job-templates delete --stdin --yes
+
+# Preview first: resolves every id and prints what would be deleted.
+untaped awx job-templates list -f raw \
+  | grep '^staging-' \
+  | untaped awx job-templates delete --stdin --dry-run
+```
+
+Identifier semantics match `get`/`save`: numeric ids are looked up by
+id, anything else by name within the resolved scope (`--organization`
+for org-scoped kinds; `--inventory` for hosts/groups). `--by-name`
+forces the name path for resources whose name is all digits.
+
+Per-id errors (resolve-time 404, delete-time 409 "in use", permission
+denied, …) emit `error: <ident>: <message>` on stderr; successful
+deletes emit a row whose first key is `id` so `--format raw` returns
+the deleted ids straight back into another pipeline. Exit code is 1 if
+any identifier failed to resolve or delete, 0 otherwise.
+
+AWX's 409 ("resource in use") is surfaced verbatim rather than
+forced-cascaded — untaped does not invent a `--cascade` flag. Resolve
+the upstream dependency first (e.g. delete the schedules that point at
+a template before deleting the template).
 
 ### `launch` (job templates and workflow templates)
 

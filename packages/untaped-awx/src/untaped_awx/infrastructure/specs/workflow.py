@@ -74,7 +74,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         ),
     ),
     list_columns=("id", "name"),
-    commands=("list", "get", "save", "apply", "launch"),
+    commands=("list", "get", "save", "apply", "launch", "delete"),
     fidelity="partial",
     fidelity_note="node graph + edges not roundtripped (v0 limitation)",
 )
