@@ -443,6 +443,18 @@ untaped awx workflow-templates list \
           -f raw -c id \
         | grep -q . && echo "$wname"
     done
+
+# Project the parent workflow's name onto each row via the dotted-path
+# column syntax. ``summary_fields`` is preserved on each row, so any
+# AWX-side nested field is reachable. Combined with ``--stdin``, this
+# eliminates the shell loop for cross-workflow queries — each row is
+# self-describing.
+untaped awx workflow-templates list \
+    --filter organization__name=Default -f raw -c id \
+  | untaped awx workflow-templates nodes --stdin --recursive \
+      --type job_template -f raw \
+      -c summary_fields.workflow_job_template.name -c name \
+  | sort -u
 ```
 
 Numeric identifiers (`nodes 100`) skip the name lookup; names follow
