@@ -104,4 +104,5 @@ def _build_node(raw: dict[str, Any], *, workflow_id: int, depth: int) -> Workflo
         name=ujt_summary.get("name"),
         type=normalise_unified_job_type(ujt_summary.get("unified_job_type")),
         depth=depth,
+        summary_fields=summary,
     )

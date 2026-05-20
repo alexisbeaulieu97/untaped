@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -46,7 +47,8 @@ def _seed_org_and_root_workflow(fake: Any) -> None:
                 "id": 10,
                 "name": "smoke-test",
                 "unified_job_type": "job",
-            }
+            },
+            "workflow_job_template": {"id": 100, "name": "weekly-rollup"},
         },
     )
     fake.seed(
@@ -60,7 +62,8 @@ def _seed_org_and_root_workflow(fake: Any) -> None:
                 "id": 200,
                 "name": "nightly-backups",
                 "unified_job_type": "workflow_job",
-            }
+            },
+            "workflow_job_template": {"id": 100, "name": "weekly-rollup"},
         },
     )
 
@@ -92,7 +95,8 @@ def _seed_nested(fake: Any) -> None:
                 "id": 11,
                 "name": "db-backup",
                 "unified_job_type": "job",
-            }
+            },
+            "workflow_job_template": {"id": 200, "name": "nightly-backups"},
         },
     )
     fake.seed(
@@ -106,7 +110,8 @@ def _seed_nested(fake: Any) -> None:
                 "id": 12,
                 "name": "fs-backup",
                 "unified_job_type": "job",
-            }
+            },
+            "workflow_job_template": {"id": 200, "name": "nightly-backups"},
         },
     )
 
@@ -623,6 +628,89 @@ def test_nodes_filter_composes_with_depth_cap(fake_aap: Any) -> None:
     # Node 1 (UJT=10, depth 0), node 2 (UJT=200, depth 0), node 3
     # (UJT=11, depth 1). Node 4 (UJT=12) excluded by the filter.
     assert ids == ["1", "2", "3"]
+
+
+def test_nodes_projects_summary_fields_parent_workflow_name(fake_aap: Any) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--format",
+            "raw",
+            "--columns",
+            "summary_fields.workflow_job_template.name",
+            "--columns",
+            "name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = sorted(result.stdout.strip().splitlines())
+    assert rows == [
+        "weekly-rollup\tnightly-backups",
+        "weekly-rollup\tsmoke-test",
+    ]
+
+
+def test_nodes_json_explicit_summary_fields_column_projects_correctly(
+    fake_aap: Any,
+) -> None:
+    # ``-f json`` honours the default column set just like the other
+    # formats — ``summary_fields`` only appears when the user opts in
+    # via dotted-path projection. Pins that the column is reachable
+    # via projection, with the correct per-row parent-workflow name.
+    _seed_org_and_root_workflow(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--format",
+            "json",
+            "--columns",
+            "id",
+            "--columns",
+            "summary_fields.workflow_job_template.name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert {row["id"] for row in rows} == {1, 2}
+    assert all(row["summary_fields.workflow_job_template.name"] == "weekly-rollup" for row in rows)
+
+
+def test_nodes_recursive_summary_fields_carries_per_root_name(fake_aap: Any) -> None:
+    # ``summary_fields.workflow_job_template.name`` tracks the *immediate*
+    # parent workflow on each row, not the BFS root. Locks in that the
+    # field travels through recursion with per-level fidelity.
+    _seed_org_and_root_workflow(fake_aap)
+    _seed_nested(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--recursive",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+            "--columns",
+            "summary_fields.workflow_job_template.name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = sorted(result.stdout.strip().splitlines(), key=lambda r: int(r.split("\t")[0]))
+    assert rows == [
+        "1\tweekly-rollup",
+        "2\tweekly-rollup",
+        "3\tnightly-backups",
+        "4\tnightly-backups",
+    ]
 
 
 def test_nodes_filter_malformed_rejected(fake_aap: Any) -> None:

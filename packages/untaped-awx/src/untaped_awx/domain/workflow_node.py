@@ -2,16 +2,23 @@
 
 A frozen view of one row in ``/api/v2/workflow_job_templates/<id>/
 workflow_nodes/``, flattened so the CLI can render a table without
-reaching into raw ``summary_fields`` dicts. ``depth`` records how far
-the node is from the root workflow when callers expand sub-workflows
-recursively (``0`` for the root's own nodes).
+reaching into raw ``summary_fields`` dicts. The raw ``summary_fields``
+is also preserved verbatim — as a named field rather than via
+``ServerRecord``-style ``extra="allow"`` — because most of this
+DTO's surface (``name``, ``type``, ``workflow_job_template``,
+``depth``) is *derived* from the AWX row, not passed through. The
+named field documents which slice of the response is opaque vs
+flattened. Dotted-path projections (``-c summary_fields.workflow_job_template.name``)
+work the same way they do on ``list``/``get``. ``depth`` records
+how far the node is from the root workflow when callers expand
+sub-workflows recursively (``0`` for the root's own nodes).
 """
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 WorkflowNodeType = Literal[
     "job_template",
@@ -55,3 +62,4 @@ class WorkflowNode(BaseModel):
     name: str | None = None
     type: WorkflowNodeType | None = None
     depth: int = 0
+    summary_fields: dict[str, Any] = Field(default_factory=dict)
