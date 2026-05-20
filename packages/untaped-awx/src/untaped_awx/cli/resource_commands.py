@@ -23,6 +23,7 @@ from untaped_core import (
 )
 
 from untaped_awx.application import (
+    DeleteResource,
     GetResource,
     ListResources,
     RunAction,
@@ -62,6 +63,8 @@ def make_resource_app(spec: AwxResourceSpec) -> typer.Typer:
         _add_save(app, spec)
     if "apply" in spec.commands:
         _add_apply(app, spec)
+    if "delete" in spec.commands:
+        _add_delete(app, spec)
     for action in spec.actions:
         builder = ACTION_BUILDERS.get(action.name)
         if builder is not None:
@@ -377,6 +380,120 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 cli_name=spec.cli_name,
                 parallel=parallel,
             )
+
+
+# ---- delete ----
+
+
+def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
+    @app.command("delete", no_args_is_help=True)
+    def delete_command(
+        names: list[str] | None = typer.Argument(
+            None, help=f"{spec.kind} name(s) or numeric id(s)."
+        ),
+        stdin: bool = typer.Option(
+            False, "--stdin", help="Read names or numeric ids from stdin (one per line)."
+        ),
+        yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+        dry_run: bool = typer.Option(
+            False,
+            "--dry-run",
+            help="Resolve targets and print what would be deleted; don't call DELETE.",
+        ),
+        organization: str | None = typer.Option(
+            None, "--organization", help="Scope to organization (ignored for numeric ids)."
+        ),
+        inventory: str | None = typer.Option(
+            None,
+            "--inventory",
+            help="Scope to inventory (Host/Group only).",
+        ),
+        inventory_organization: str | None = typer.Option(
+            None,
+            "--inventory-organization",
+            help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        ),
+        by_name: bool = typer.Option(
+            False,
+            "--by-name",
+            help="Force name lookup (escape hatch for resources whose name is all digits).",
+        ),
+        fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
+        columns: list[str] | None = typer.Option(
+            None, "--columns", "-c", help="Columns to include (repeatable)."
+        ),
+    ) -> None:
+        """Delete one or more resources by name or numeric id.
+
+        ``--stdin`` reads newline-separated identifiers (same shape as
+        ``get --stdin``). Refuses to consume stdin without ``--yes`` or
+        ``--dry-run`` — can't prompt for confirmation while stdin is
+        being read. Each successful delete emits a row whose first key
+        is ``id``, so ``--format raw`` returns the deleted ids for
+        downstream pipelines.
+        """
+        if stdin and not yes and not dry_run:
+            raise typer.BadParameter(
+                "--stdin requires --yes (skip confirmation) or --dry-run (preview only)"
+            )
+        rows: list[dict[str, Any]] = []
+        any_failed = False
+        with report_errors(), open_context() as ctx:
+            ids = read_identifiers(list(names or []), stdin=stdin)
+            scope = _scope(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
+            deleter = DeleteResource(ctx.repo)
+            # Resolve every identifier first so per-id ``error:`` rows
+            # surface before any destructive call. Pair each result with
+            # its source identifier so the delete-phase error line shows
+            # what the user actually typed (id or name).
+            resolved, any_failed = resolve_each(
+                ids,
+                lambda n: (n, deleter.resolve(spec, n, scope=scope, by_name=by_name)),
+            )
+            if dry_run:
+                rows = [_delete_row(record, deleted=False) for _, record in resolved]
+            elif resolved:
+                if not yes and not _confirm_delete(resolved, spec):
+                    return
+                for identifier, record in resolved:
+                    try:
+                        deleter.delete(spec, int(record["id"]))
+                        rows.append(_delete_row(record, deleted=True))
+                    except UntapedError as exc:
+                        typer.echo(f"error: {identifier}: {exc}", err=True)
+                        any_failed = True
+        if rows:
+            typer.echo(format_output(rows, fmt=fmt, columns=columns))
+        if any_failed:
+            raise typer.Exit(code=1)
+
+
+def _delete_row(record: dict[str, Any], *, deleted: bool) -> dict[str, Any]:
+    # First key is ``id`` so ``--format raw`` returns the (would-be-)deleted
+    # id — preserves the pipe-friendly first-key contract used by every
+    # spec-driven list/get command (see untaped-core "--format raw" contract).
+    return {
+        "id": record.get("id"),
+        "name": record.get("name", ""),
+        "deleted": deleted,
+    }
+
+
+def _confirm_delete(
+    resolved: list[tuple[str, dict[str, Any]]],
+    spec: AwxResourceSpec,
+) -> bool:
+    """Print resolved targets to stderr and prompt; return user's choice."""
+    typer.echo(f"About to delete {len(resolved)} {spec.kind}(s):", err=True)
+    for _, record in resolved:
+        typer.echo(f"  - {record.get('id')}\t{record.get('name', '')}", err=True)
+    return typer.confirm("Continue?", default=False, err=True)
 
 
 # ---- launch ----
