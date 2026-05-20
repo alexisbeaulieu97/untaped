@@ -59,6 +59,6 @@ SCHEDULE_SPEC = AwxResourceSpec(
     ),
     apply_strategy="schedule",
     list_columns=("id", "name", "last_run", "next_run", "enabled"),
-    commands=("list", "get", "save", "apply"),
+    commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",
 )

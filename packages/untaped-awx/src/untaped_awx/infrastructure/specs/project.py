@@ -50,6 +50,6 @@ PROJECT_SPEC = AwxResourceSpec(
     ),
     actions=(ActionSpec(name="update", path="update", returns="job"),),
     list_columns=("id", "name", "status"),
-    commands=("list", "get", "save", "apply", "update"),
+    commands=("list", "get", "save", "apply", "update", "delete"),
     fidelity="full",
 )

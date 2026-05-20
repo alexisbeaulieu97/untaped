@@ -12,7 +12,7 @@ def test_host_spec_basics() -> None:
     assert HOST_SPEC.identity_keys == ("name",)
     assert HOST_SPEC.fidelity == "full"
     assert HOST_SPEC.apply_strategy == "inventory_child"
-    assert HOST_SPEC.commands == ("list", "get", "save", "apply")
+    assert HOST_SPEC.commands == ("list", "get", "save", "apply", "delete")
     # ``inventory`` is on every GET response but the apply strategy injects
     # it via the URL — never as a body field — so it must stay out of
     # canonical_fields and thus out of write payloads.
@@ -32,7 +32,7 @@ def test_group_spec_basics() -> None:
     assert GROUP_SPEC.identity_keys == ("name",)
     assert GROUP_SPEC.fidelity == "full"
     assert GROUP_SPEC.apply_strategy == "inventory_child"
-    assert GROUP_SPEC.commands == ("list", "get", "save", "apply")
+    assert GROUP_SPEC.commands == ("list", "get", "save", "apply", "delete")
     assert "inventory" not in GROUP_SPEC.canonical_fields
     assert "inventory" in GROUP_SPEC.read_only_fields
 

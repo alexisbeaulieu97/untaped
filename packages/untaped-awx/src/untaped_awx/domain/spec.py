@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict
 Fidelity = Literal["full", "partial", "read_only"]
 """Restore-fidelity tier per kind, surfaced on save."""
 
-CommandName = Literal["list", "get", "save", "apply", "launch", "update"]
+CommandName = Literal["list", "get", "save", "apply", "launch", "update", "delete"]
 """Commands the CLI factory may wire for a kind."""
 
 

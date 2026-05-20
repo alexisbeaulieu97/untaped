@@ -109,8 +109,7 @@ class FakeAap:
                 return self._update(parts[0], int(parts[1]), body)
         elif method == "DELETE":
             if len(parts) == 2 and parts[1].isdigit():
-                self._delete(parts[0], int(parts[1]))
-                return httpx.Response(204)
+                return self._delete(parts[0], int(parts[1]))
         return _err(404, f"no fake handler for {method} {path}")
 
     def _list(self, api_path: str, params: dict[str, str]) -> httpx.Response:
@@ -173,8 +172,13 @@ class FakeAap:
         record.update(body)
         return httpx.Response(200, json=record)
 
-    def _delete(self, api_path: str, id_: int) -> None:
-        self.store[api_path].pop(id_, None)
+    def _delete(self, api_path: str, id_: int) -> httpx.Response:
+        # Match real AWX: DELETE on a missing id returns 404 (the
+        # silent-pop shortcut hid id-typos behind a 204).
+        if id_ not in self.store.get(api_path, {}):
+            return _err(404, f"{api_path}/{id_}/ not found")
+        del self.store[api_path][id_]
+        return httpx.Response(204)
 
     def _action(
         self,

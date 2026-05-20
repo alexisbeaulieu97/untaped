@@ -33,7 +33,7 @@ HOST_SPEC = AwxResourceSpec(
         "ansible_facts_modified",
     ),
     list_columns=("id", "name", "inventory", "enabled"),
-    commands=("list", "get", "save", "apply"),
+    commands=("list", "get", "save", "apply", "delete"),
     apply_strategy="inventory_child",
     fidelity="full",
 )
