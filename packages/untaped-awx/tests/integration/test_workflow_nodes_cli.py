@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -651,6 +652,34 @@ def test_nodes_projects_summary_fields_parent_workflow_name(fake_aap: Any) -> No
         "weekly-rollup\tnightly-backups",
         "weekly-rollup\tsmoke-test",
     ]
+
+
+def test_nodes_json_explicit_summary_fields_column_projects_correctly(
+    fake_aap: Any,
+) -> None:
+    # ``-f json`` honours the default column set just like the other
+    # formats — ``summary_fields`` only appears when the user opts in
+    # via dotted-path projection. Pins that the column is reachable
+    # via projection, with the correct per-row parent-workflow name.
+    _seed_org_and_root_workflow(fake_aap)
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--format",
+            "json",
+            "--columns",
+            "id",
+            "--columns",
+            "summary_fields.workflow_job_template.name",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert {row["id"] for row in rows} == {1, 2}
+    assert all(row["summary_fields.workflow_job_template.name"] == "weekly-rollup" for row in rows)
 
 
 def test_nodes_recursive_summary_fields_carries_per_root_name(fake_aap: Any) -> None:

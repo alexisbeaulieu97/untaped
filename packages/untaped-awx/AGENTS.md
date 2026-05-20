@@ -414,11 +414,12 @@ dotted-path columns that work on `list` work here:
 parent workflow (per-level, not the BFS root —
 `test_nodes_recursive_summary_fields_carries_per_root_name` pins
 this), `-c summary_fields.unified_job_template.description` for the
-referenced template, etc. The default column set
-(`id name type depth`) is unchanged, so table output is unaffected;
-json/yaml without `--columns` include `summary_fields` to match
-`list`'s shape. The typed `name` field continues to flatten the
-referenced template's name as a convenience (also reachable as
+referenced template, etc. All formats (table/json/yaml/raw) honour
+the default column set (`id name type depth`) when `--columns` is
+absent, so `summary_fields` never appears in unprojected output and
+never bloats the default — users opt in via `-c summary_fields.<path>`.
+The typed `name` field continues to flatten the referenced template's
+name as a convenience (also reachable as
 `summary_fields.unified_job_template.name`).
 
 ## Test framework (`untaped awx test`) runner internals

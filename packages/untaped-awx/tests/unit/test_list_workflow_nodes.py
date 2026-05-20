@@ -289,6 +289,10 @@ def test_missing_summary_fields_degrades_to_none() -> None:
     assert result[0].name is None
     assert result[0].type is None
     assert result[0].identifier is None
+    # Missing ``summary_fields`` and explicit ``None`` both collapse
+    # to ``{}`` — no ``None`` leaks into the typed surface, so dotted
+    # projections always traverse a real dict.
+    assert result[0].summary_fields == {}
 
 
 def test_normalises_unified_job_type_to_template_type() -> None:
