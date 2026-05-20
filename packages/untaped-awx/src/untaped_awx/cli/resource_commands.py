@@ -471,9 +471,10 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
             )
             if dry_run:
                 rows = [_delete_row(record) for _, record in resolved]
-            elif resolved:
-                if not _confirm_delete(resolved, spec, yes=yes):
-                    return
+            elif resolved and _confirm_delete(resolved, spec, yes=yes):
+                # Flow through to the post-``with`` checks on decline so
+                # ``any_failed`` from a prior resolve error still drives
+                # the exit code — an early ``return`` here would mask it.
                 deleter = DeleteResource(ctx.repo)
                 for identifier, record in resolved:
                     try:

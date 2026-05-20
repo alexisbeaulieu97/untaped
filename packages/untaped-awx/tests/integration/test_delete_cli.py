@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 from untaped_awx import app
@@ -84,7 +85,9 @@ def test_delete_stdin_without_yes_or_dry_run_errors(seeded_default_org: Any) -> 
         ["job-templates", "delete", "--stdin"],
         input="10\n",
     )
-    assert result.exit_code != 0
+    # Typer/Click's standard exit code for BadParameter.
+    assert result.exit_code == 2
+    assert "--stdin requires" in (result.stderr or result.output)
     # Record must still exist.
     assert 10 in seeded_default_org.store["job_templates"]
 
@@ -147,6 +150,10 @@ def test_delete_prompt_accepts_yes(seeded_default_org: Any) -> None:
     )
     assert result.exit_code == 0, result.output
     assert 10 not in seeded_default_org.store["job_templates"]
+    # Preamble lands on stderr so stdout stays clean for piping.
+    preview = result.stderr or result.output
+    assert "About to delete 1 JobTemplate" in preview
+    assert "alpha" in preview
 
 
 def test_delete_prompt_declines_aborts(seeded_default_org: Any) -> None:
@@ -165,5 +172,92 @@ def test_delete_prompt_declines_aborts(seeded_default_org: Any) -> None:
 def test_delete_no_args_prints_help(seeded_default_org: Any) -> None:
     """Hard Rule #9: no positional args + no --stdin → show help."""
     result = CliRunner().invoke(app, ["job-templates", "delete"])
-    # ``no_args_is_help=True`` returns exit code 2 with usage on stdout.
-    assert "Usage" in result.output or "Options" in result.output
+    # Typer's ``no_args_is_help=True`` exits with code 2 and prints usage.
+    assert result.exit_code == 2
+    assert "Usage" in result.output
+
+
+def test_delete_by_name_flag_forces_name_lookup_for_digit_named(
+    seeded_default_org: Any,
+) -> None:
+    """``--by-name`` escapes the id-vs-name dispatch for all-digit names.
+
+    Without the flag, identifier ``42`` would be treated as an id and
+    miss the digit-named resource. The flag forces name lookup so the
+    resource is resolved (and deleted) by the literal name.
+    """
+    # A JobTemplate whose name happens to be all digits.
+    seeded_default_org.seed(
+        "job_templates",
+        id=99,
+        name="42",
+        organization=1,
+        organization_name="Default",
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "job-templates",
+            "delete",
+            "42",
+            "--by-name",
+            "--yes",
+            "--organization",
+            "Default",
+            "--format",
+            "raw",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert 99 not in seeded_default_org.store["job_templates"]
+    assert result.stdout.strip() == "99"
+
+
+def test_decline_after_prior_resolve_failure_exits_1(seeded_default_org: Any) -> None:
+    """Declining the prompt must NOT mask a prior resolve failure.
+
+    Regression test: an earlier `return` skipped the `if any_failed:`
+    check, so a batch like `delete 10 999` (one good + one missing)
+    would exit 0 when the user typed ``n`` at the prompt, despite a
+    real input error already reported on stderr.
+    """
+    _seed_jt(seeded_default_org, id_=10, name="alpha")
+    result = CliRunner().invoke(
+        app,
+        ["job-templates", "delete", "10", "999"],
+        input="n\n",
+    )
+    # Exit 1 because the resolve of 999 failed; the decline shouldn't
+    # erase that fact.
+    assert result.exit_code == 1
+    # 10 must still exist (the user declined the delete).
+    assert 10 in seeded_default_org.store["job_templates"]
+    # And the resolve error for 999 must have reached stderr.
+    assert "999" in (result.stderr or result.output)
+
+
+def test_delete_conflict_surfaces_per_id(
+    seeded_default_org: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 409 from AWX surfaces as a typed ``error: <id>: conflict: ...`` row.
+
+    Common operational failure: trying to delete a resource that's still
+    referenced by other AWX state (e.g., a project with running jobs).
+    """
+    _seed_jt(seeded_default_org, id_=10, name="alpha")
+    original = seeded_default_org._delete
+
+    def conflict_on_10(api_path: str, id_: int) -> httpx.Response:
+        if api_path == "job_templates" and id_ == 10:
+            return httpx.Response(409, json={"detail": "in use"})
+        return original(api_path, id_)
+
+    monkeypatch.setattr(seeded_default_org, "_delete", conflict_on_10)
+    result = CliRunner().invoke(app, ["job-templates", "delete", "10", "--yes", "--format", "raw"])
+    assert result.exit_code == 1
+    # Record still in the store (the conflict prevented the pop).
+    assert 10 in seeded_default_org.store["job_templates"]
+    # Error row mentions the id and the conflict reason.
+    err = result.stderr or result.output
+    assert "10" in err
+    assert "conflict" in err.lower() or "in use" in err.lower()
