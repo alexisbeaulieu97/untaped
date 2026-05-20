@@ -437,7 +437,6 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 "--stdin requires --yes (skip confirmation) or --dry-run (preview only)"
             )
         rows: list[dict[str, Any]] = []
-        any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
             scope = _scope(
@@ -447,23 +446,34 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 inventory=inventory,
                 inventory_organization=inventory_organization,
             )
-            deleter = DeleteResource(ctx.repo)
-            # Resolve every identifier first so per-id ``error:`` rows
-            # surface before any destructive call. Pair each result with
-            # its source identifier so the delete-phase error line shows
-            # what the user actually typed (id or name).
+            getter = GetResource(ctx.repo)
+            # Numeric-id fast path: under ``--yes`` (no prompt to show the
+            # name; no preview) the resolve GET is wasted work — AWX's
+            # DELETE returns the same ``not found: <url>`` shape on a
+            # missing id, so the only cost is an empty ``name`` column on
+            # the output row. Halves round trips on the canonical
+            # ``list -f raw | delete --stdin --yes`` pipeline.
+            fast_path = yes and not dry_run
             resolved, any_failed = resolve_each(
                 ids,
-                lambda n: (n, deleter.resolve(spec, n, scope=scope, by_name=by_name)),
+                lambda n: _resolve_for_delete(
+                    n,
+                    spec=spec,
+                    getter=getter,
+                    scope=scope,
+                    by_name=by_name,
+                    fast_path=fast_path,
+                ),
             )
             if dry_run:
-                rows = [_delete_row(record, deleted=False) for _, record in resolved]
+                rows = [_delete_row(record) for _, record in resolved]
             elif resolved:
-                if not yes and not _confirm_delete(resolved, spec):
+                if not _confirm_delete(resolved, spec, yes=yes):
                     return
+                deleter = DeleteResource(ctx.repo)
                 for identifier, record in resolved:
                     try:
-                        deleter.delete(spec, int(record["id"]))
+                        deleter(spec, int(record["id"]))
                         rows.append(_delete_row(record, deleted=True))
                     except UntapedError as exc:
                         typer.echo(f"error: {identifier}: {exc}", err=True)
@@ -474,22 +484,52 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
             raise typer.Exit(code=1)
 
 
-def _delete_row(record: dict[str, Any], *, deleted: bool) -> dict[str, Any]:
+def _resolve_for_delete(
+    n: str,
+    *,
+    spec: AwxResourceSpec,
+    getter: GetResource,
+    scope: dict[str, str] | None,
+    by_name: bool,
+    fast_path: bool,
+) -> tuple[str, dict[str, Any]]:
+    """Map an identifier to ``(identifier, record)``.
+
+    On the numeric-id fast path, returns a stub record with the id only
+    — the upcoming DELETE confirms existence. Off the fast path (or for
+    name-based identifiers) goes through the normal GET resolution.
+    """
+    if fast_path and not by_name and n.isdecimal():
+        return n, {"id": int(n)}
+    return n, getter.by_identifier(spec, n, scope=scope, by_name=by_name)
+
+
+def _delete_row(record: dict[str, Any], *, deleted: bool | None = None) -> dict[str, Any]:
     # First key is ``id`` so ``--format raw`` returns the (would-be-)deleted
     # id — preserves the pipe-friendly first-key contract used by every
     # spec-driven list/get command (see untaped-core "--format raw" contract).
-    return {
-        "id": record.get("id"),
-        "name": record.get("name", ""),
-        "deleted": deleted,
-    }
+    # The ``deleted`` key is set only after a successful DELETE; dry-run
+    # rows omit it so ``jq 'select(.deleted)'`` doesn't silently pick up
+    # preview rows.
+    row: dict[str, Any] = {"id": record.get("id"), "name": record.get("name", "")}
+    if deleted is not None:
+        row["deleted"] = deleted
+    return row
 
 
 def _confirm_delete(
     resolved: list[tuple[str, dict[str, Any]]],
     spec: AwxResourceSpec,
+    *,
+    yes: bool,
 ) -> bool:
-    """Print resolved targets to stderr and prompt; return user's choice."""
+    """Print resolved targets to stderr and prompt; return user's choice.
+
+    Matches ``untaped-workspace``'s ``_confirm(prompt, yes=…)`` shape so
+    the same gating idiom reads consistently across domains.
+    """
+    if yes:
+        return True
     typer.echo(f"About to delete {len(resolved)} {spec.kind}(s):", err=True)
     for _, record in resolved:
         typer.echo(f"  - {record.get('id')}\t{record.get('name', '')}", err=True)
