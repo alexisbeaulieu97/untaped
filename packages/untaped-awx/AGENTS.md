@@ -365,6 +365,29 @@ discriminator (`WorkflowNodeType` Literal: `"job_template"`,
 returns `None` for unknown values so the recursion guard never
 descends into kinds we don't recognise.
 
+**`--stdin` for multi-root.** `nodes` accepts multiple workflow
+names/ids on stdin (`untaped awx workflow-templates list -f raw -c id
+| untaped awx workflow-templates nodes --stdin --recursive`),
+concatenating each root's node tree in input order. Identifier
+resolution goes through `untaped_core.read_identifiers` so the same
+"exactly one source" + "non-empty stdin" contract applies as on
+factory-built `list`/`get`. Per-root failures emit
+`warning: <id>: <exc>` to stderr and set a process-wide non-zero
+exit; other roots still emit their rows. The factory's `list
+--stdin` uses `resolve_each` (`untaped_core.cli`) for this pattern,
+but `resolve_each` wraps a `Callable[[str], R] -> list[R]` shape
+that maps each id to a single record — `nodes` produces a
+`list[WorkflowNode]` per root, so the loop is hand-rolled here.
+Errors land on the same stderr channel `resolve_each` uses; only
+the per-id row shape differs.
+
+**Cross-root dedup is not done.** Each root starts BFS with fresh
+`listed`/`ancestors` state, so a sub-workflow referenced from two
+roots appears in both roots' output. Within-root cycle/diamond
+handling (above) doesn't carry across the loop because callers
+asking "which roots reference template X" need both rows. To
+collapse duplicates downstream, pipe through `sort -u`.
+
 ## Test framework (`untaped awx test`) runner internals
 
 User-facing reference (file shape, variables, name resolution, pass-through

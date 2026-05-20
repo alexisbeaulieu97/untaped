@@ -423,6 +423,13 @@ untaped awx workflow-templates nodes <name|id> --depth 1
 # the workflow tree.
 untaped awx workflow-templates nodes <name|id> --recursive --type job_template
 untaped awx workflow-templates nodes <name|id> --type workflow_job_template
+
+# Pipe multiple workflow roots in via stdin. The node trees are
+# concatenated in input order (one BFS per root). Pairs cleanly with
+# ``list --filter ... -f raw -c id`` to fan out across an org.
+untaped awx workflow-templates list --filter organization__name=Default -f raw -c id \
+  | untaped awx workflow-templates nodes --stdin --recursive --type job_template -f raw -c name \
+  | grep '^t_' | sort -u
 ```
 
 Numeric identifiers (`nodes 100`) skip the name lookup; names follow
@@ -431,7 +438,9 @@ cycle-guarded by workflow id — a workflow that re-enters itself emits
 a `warning: cycle: workflow <id> already visited; skipping` line to
 stderr and is skipped on the second visit. Nodes whose referenced
 template has been deleted (`unified_job_template: null`) still appear
-with `name` and `type` empty.
+with `name` and `type` empty. With `--stdin`, a per-root failure
+(unknown workflow, lookup error) emits `warning: <id>: <exc>` to
+stderr and forces a non-zero exit; valid roots still emit their rows.
 
 ## Test suites — `untaped awx test`
 
