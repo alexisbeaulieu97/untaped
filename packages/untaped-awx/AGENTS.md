@@ -388,6 +388,24 @@ handling (above) doesn't carry across the loop because callers
 asking "which roots reference template X" need both rows. To
 collapse duplicates downstream, pipe through `sort -u`.
 
+**`--filter` for server-side scoping.** `nodes` accepts repeatable
+`--filter KEY=VALUE` flags, parsed by `parse_kv_pairs` and passed
+verbatim to AWX as query params on each `workflow_nodes` GET
+(Django-style, same shape as `list --filter`). With `--recursive`,
+the filter applies at every BFS level — a filter that excludes
+sub-workflow rows (e.g. `unified_job_template__name__in=t_foo` when
+sub-workflows aren't named `t_foo`) will prune them and stop the
+descent at that node. Construct OR-style filters
+(`or__unified_job_template__name__in=…` +
+`or__unified_job_template__unified_job_type=workflow_job`) or
+post-filter on the output to preserve full recursion. The
+trust-the-user pass-through mirrors `list --filter`'s contract.
+The reverse-join approach (`workflow-templates list --filter
+workflow_nodes__unified_job_template__name__in=…`) is rejected by
+AWX — `workflow_nodes` isn't a filterable relation on the workflow
+templates resource — so `nodes --filter` is the supported path for
+"which workflows reference these JTs?" queries.
+
 ## Test framework (`untaped awx test`) runner internals
 
 User-facing reference (file shape, variables, name resolution, pass-through

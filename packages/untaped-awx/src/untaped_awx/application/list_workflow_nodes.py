@@ -47,6 +47,7 @@ class ListWorkflowNodes:
         identifier: str,
         scope: dict[str, str] | None = None,
         max_depth: int | None = 0,
+        filters: dict[str, str] | None = None,
     ) -> list[WorkflowNode]:
         root_id = self._resolve(spec, identifier, scope=scope)
         out: list[WorkflowNode] = []
@@ -55,7 +56,7 @@ class ListWorkflowNodes:
         while queue:
             workflow_id, depth, ancestors = queue.popleft()
             new_ancestors = ancestors | {workflow_id}
-            for raw in self._nodes.list_nodes(workflow_id=workflow_id):
+            for raw in self._nodes.list_nodes(workflow_id=workflow_id, params=filters):
                 node = _build_node(raw, workflow_id=workflow_id, depth=depth)
                 out.append(node)
                 child_id = node.unified_job_template

@@ -15,6 +15,7 @@ from untaped_core import (
     FormatOption,
     UntapedError,
     format_output,
+    parse_kv_pairs,
     read_identifiers,
     report_errors,
 )
@@ -91,6 +92,21 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 "with ``--recursive`` surfaces nested job templates."
             ),
         ),
+        filter_: list[str] | None = typer.Option(
+            None,
+            "--filter",
+            help=(
+                "Server-side filter, KEY=VALUE (repeatable). Passed "
+                "verbatim to AWX (e.g. ``--filter unified_job_template"
+                "__name__in=t_a,t_b``). With ``--recursive``, applied at "
+                "every BFS level — a filter that doesn't match "
+                "sub-workflow rows will prune them and stop the descent. "
+                "To preserve recursion, OR-in the workflow-job type "
+                "(``--filter or__unified_job_template__name__in=t_a,t_b "
+                "--filter or__unified_job_template__unified_job_type="
+                "workflow_job``) or post-filter on the output."
+            ),
+        ),
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
@@ -108,6 +124,7 @@ def register_nodes_command(parent: typer.Typer) -> None:
         any_failed = False
         with report_errors(), open_context() as ctx:
             roots = read_identifiers(list(identifiers or []), stdin=stdin)
+            filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_spec(
                 WORKFLOW_JOB_TEMPLATE_SPEC,
                 organization=organization,
@@ -129,6 +146,7 @@ def register_nodes_command(parent: typer.Typer) -> None:
                             identifier=root,
                             scope=scope,
                             max_depth=max_depth,
+                            filters=filters,
                         )
                     )
                 except UntapedError as exc:

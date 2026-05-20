@@ -17,9 +17,16 @@ class _StubNodes:
     def __init__(self, by_workflow: dict[int, list[dict[str, Any]]]) -> None:
         self._by_workflow = by_workflow
         self.calls: list[int] = []
+        self.params_received: list[dict[str, str] | None] = []
 
-    def list_nodes(self, *, workflow_id: int) -> Iterator[dict[str, Any]]:
+    def list_nodes(
+        self,
+        *,
+        workflow_id: int,
+        params: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
         self.calls.append(workflow_id)
+        self.params_received.append(params)
         return iter(self._by_workflow.get(workflow_id, []))
 
 
@@ -327,3 +334,43 @@ def test_deleted_template_carries_null_unified_job_template() -> None:
     result = use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100", max_depth=None)
     assert nodes.calls == [100]
     assert result[0].unified_job_template is None
+
+
+def test_filters_passed_to_every_recursive_list_nodes_call() -> None:
+    # ``filters`` must reach every BFS-level fetch unchanged — otherwise
+    # the server-side scope only applies at the root and silently
+    # widens for deeper levels.
+    nodes = _StubNodes(
+        {
+            100: [
+                _node(1, identifier="leaf", ujt_id=10, ujt_name="j", ujt_type="job"),
+                _node(2, identifier="sub", ujt_id=200, ujt_name="b", ujt_type="workflow_job"),
+            ],
+            200: [
+                _node(3, identifier="deep", ujt_id=11, ujt_name="k", ujt_type="job"),
+            ],
+        }
+    )
+    use = ListWorkflowNodes(
+        cast(WorkflowNodeRepository, nodes),
+        cast(ResourceClient, _StubResources()),
+    )
+    filters = {"unified_job_template__in": "10,11,200"}
+    use(
+        WORKFLOW_JOB_TEMPLATE_SPEC,
+        identifier="100",
+        max_depth=None,
+        filters=filters,
+    )
+    assert nodes.calls == [100, 200]
+    assert nodes.params_received == [filters, filters]
+
+
+def test_filters_default_to_none_when_unset() -> None:
+    nodes = _StubNodes({100: [_node(1, identifier="j", ujt_id=10, ujt_name="j", ujt_type="job")]})
+    use = ListWorkflowNodes(
+        cast(WorkflowNodeRepository, nodes),
+        cast(ResourceClient, _StubResources()),
+    )
+    use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="100")
+    assert nodes.params_received == [None]
