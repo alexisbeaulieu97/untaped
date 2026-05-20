@@ -78,9 +78,10 @@ untaped awx <kind> save <name> [--out FILE] [--organization <org>]
 untaped awx <kind> apply FILE [--yes] [--fail-fast]
                          [--format json|yaml|table|raw] [--columns ...]
 
-untaped awx <kind> delete <name>... [--stdin] [--yes] [--dry-run]
-                                    [--organization <org>] [--by-name]
-                                    [--format json|yaml|table|raw] [--columns ...]
+untaped awx <kind> delete [<name>...] [--stdin] [--yes] [--dry-run]
+                                      [--organization <org>] [--by-name]
+                                      [--format json|yaml|table|raw] [--columns ...]
+# Exactly one of {positional names, --stdin} must be supplied.
 ```
 
 `--filter` is repeatable and passed verbatim to AWX's REST API, so any

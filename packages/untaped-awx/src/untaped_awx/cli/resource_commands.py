@@ -406,7 +406,11 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
         inventory: str | None = typer.Option(
             None,
             "--inventory",
-            help="Scope to inventory (Host/Group only).",
+            help=(
+                "Scope to inventory (Host/Group only). Without this, name "
+                "lookup is global and ambiguous if the same name exists "
+                "across inventories."
+            ),
         ),
         inventory_organization: str | None = typer.Option(
             None,
