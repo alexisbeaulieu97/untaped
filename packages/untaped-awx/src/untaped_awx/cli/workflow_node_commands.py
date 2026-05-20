@@ -101,8 +101,10 @@ def register_nodes_command(parent: typer.Typer) -> None:
                 "__name__in=t_a,t_b``). With ``--recursive``, applied at "
                 "every BFS level — a filter that doesn't match "
                 "sub-workflow rows will prune them and stop the descent. "
-                "Construct OR-style filters or post-filter on the output "
-                "if you need full recursion."
+                "To preserve recursion, OR-in the workflow-job type "
+                "(``--filter or__unified_job_template__name__in=t_a,t_b "
+                "--filter or__unified_job_template__unified_job_type="
+                "workflow_job``) or post-filter on the output."
             ),
         ),
         fmt: FormatOption = "table",

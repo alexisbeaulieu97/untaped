@@ -595,6 +595,36 @@ def test_nodes_filter_with_recursive_prunes_sub_workflow_descent(
     assert ids == ["1"]
 
 
+def test_nodes_filter_composes_with_depth_cap(fake_aap: Any) -> None:
+    _seed_org_and_root_workflow(fake_aap)
+    _seed_nested(fake_aap)
+    # ``--depth 1`` descends one level, and the same filter applies at
+    # both levels. UJT 11 is inside sub-workflow 200 (depth 1); UJT 12
+    # is also there but excluded by the filter. Locks in that the
+    # filter reaches the depth-capped recursion frontier.
+    result = CliRunner().invoke(
+        app,
+        [
+            "workflow-templates",
+            "nodes",
+            "100",
+            "--depth",
+            "1",
+            "--filter",
+            "unified_job_template__in=10,11,200",
+            "--format",
+            "raw",
+            "--columns",
+            "id",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    ids = sorted(result.stdout.strip().splitlines(), key=int)
+    # Node 1 (UJT=10, depth 0), node 2 (UJT=200, depth 0), node 3
+    # (UJT=11, depth 1). Node 4 (UJT=12) excluded by the filter.
+    assert ids == ["1", "2", "3"]
+
+
 def test_nodes_filter_malformed_rejected(fake_aap: Any) -> None:
     result = CliRunner().invoke(
         app,
