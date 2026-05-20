@@ -436,8 +436,17 @@ class WorkflowNodeRepository(Protocol):
     template's name and type without a second round trip.
     """
 
-    def list_nodes(self, *, workflow_id: int) -> Iterator[dict[str, Any]]:
-        """Walk every node of ``workflow_id``."""
+    def list_nodes(
+        self,
+        *,
+        workflow_id: int,
+        params: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Walk every node of ``workflow_id``.
+
+        ``params`` are forwarded verbatim to the AWX API as query-string
+        parameters (Django-style filters).
+        """
         ...
 
 

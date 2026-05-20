@@ -19,7 +19,13 @@ class WorkflowNodeRepository:
     def __init__(self, client: RawHttpResourceClient) -> None:
         self._client = client
 
-    def list_nodes(self, *, workflow_id: int) -> Iterator[dict[str, Any]]:
+    def list_nodes(
+        self,
+        *,
+        workflow_id: int,
+        params: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
         return self._client.paginate_path(
             f"workflow_job_templates/{workflow_id}/workflow_nodes/",
+            params=params,
         )
