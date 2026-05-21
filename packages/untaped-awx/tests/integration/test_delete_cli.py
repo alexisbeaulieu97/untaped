@@ -261,3 +261,48 @@ def test_delete_conflict_surfaces_per_id(
     err = result.stderr or result.output
     assert "10" in err
     assert "conflict" in err.lower() or "in use" in err.lower()
+
+
+def test_delete_yes_numeric_id_populates_name_in_table(seeded_default_org: Any) -> None:
+    """``delete <id> --yes`` populates the ``name`` column in default table output.
+
+    Regression guard: the previous fast-path returned a stub
+    ``{"id": int(n)}`` with no ``name`` field, so the rendered table
+    advertised a ``name`` column header with an empty cell. The
+    bulk-prefetch via ``?id__in=…`` now fills it in.
+    """
+    _seed_jt(seeded_default_org, id_=10, name="alpha")
+    result = CliRunner().invoke(app, ["job-templates", "delete", "10", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert 10 not in seeded_default_org.store["job_templates"]
+    assert "10" in result.stdout
+    assert "alpha" in result.stdout
+    assert "deleted" in result.stdout.lower()
+
+
+def test_delete_stdin_bulk_prefetches_names_in_one_call(seeded_default_org: Any) -> None:
+    """Batch numeric-id delete fetches every name in a single ``?id__in=`` GET.
+
+    Pins the round-trip win of the fast-path optimisation: one bulk list
+    replaces N per-id resolves, and every row in the output table carries
+    the populated ``name``. Observes calls at the httpx layer (the
+    ``respx`` router installed by the ``fake_aap`` fixture) so the
+    assertion doesn't depend on ``FakeAap`` internals.
+    """
+    _seed_jt(seeded_default_org, id_=10, name="alpha")
+    _seed_jt(seeded_default_org, id_=11, name="beta")
+    result = CliRunner().invoke(
+        app, ["job-templates", "delete", "--stdin", "--yes"], input="10\n11\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert 10 not in seeded_default_org.store["job_templates"]
+    assert 11 not in seeded_default_org.store["job_templates"]
+    assert "alpha" in result.stdout
+    assert "beta" in result.stdout
+    id_in_calls = [
+        c
+        for c in seeded_default_org.router.calls
+        if c.request.method == "GET" and "id__in" in c.request.url.params
+    ]
+    assert len(id_in_calls) == 1
+    assert set(id_in_calls[0].request.url.params["id__in"].split(",")) == {"10", "11"}

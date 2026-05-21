@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -32,6 +33,7 @@ import yaml
 from rich import box
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 OutputFormat = Literal["json", "yaml", "table", "raw"]
 
@@ -86,9 +88,14 @@ def _format_table(rows: Sequence[Row]) -> str:
     for col in columns:
         table.add_column(col)
     for row in rows:
-        table.add_row(*[_render_cell(row.get(c, "")) for c in columns])
+        # Wrap each cell in ``Text`` so Rich does not interpret ``[…]`` in
+        # user data as console markup (e.g. an AWX template named
+        # ``JOB-foo-[v2.3.1]`` would have the bracketed suffix silently
+        # stripped as an unknown tag).
+        table.add_row(*[Text(_render_cell(row.get(c, ""))) for c in columns])
     buf = io.StringIO()
-    Console(file=buf, force_terminal=False).print(table)
+    width = shutil.get_terminal_size(fallback=(80, 24)).columns
+    Console(file=buf, force_terminal=False, width=width).print(table)
     return buf.getvalue().rstrip()
 
 
