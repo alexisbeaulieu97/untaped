@@ -63,6 +63,7 @@ class FakeAap:
         return list(self.store[api_path].values())
 
     def install(self, mock: respx.Router) -> None:
+        self.router = mock
         url_re = re.compile(rf"^{re.escape(self.base_url)}{re.escape(self.api_prefix)}.+")
         mock.route(url__regex=url_re.pattern).mock(side_effect=self._dispatch)
 

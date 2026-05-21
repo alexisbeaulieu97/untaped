@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 import yaml
@@ -141,6 +142,47 @@ def test_table_render_width_tracks_columns_env_var(
 
     assert render_width("60") <= 60
     assert render_width("240") >= 200
+
+
+def test_table_render_preserves_bracketed_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Square brackets in user data are not interpreted as Rich markup.
+
+    Regression guard: an AWX template named
+    ``JOB-commun-gerer-acls-nonprod-[v2.3.1-test-aap]`` previously rendered
+    in the ``--format table`` output as ``JOB-commun-gerer-acls-nonprod-``
+    because Rich parsed ``[v2.3.1-test-aap]`` as a (malformed) markup tag
+    and silently stripped it. Cells must be wrapped in ``rich.text.Text``
+    (or otherwise have markup disabled) so bracketed user data survives
+    rendering verbatim.
+    """
+    long_name = "JOB-commun-gerer-acls-nonprod-[v2.3.1-test-aap]"
+    monkeypatch.setenv("COLUMNS", "200")
+    out = format_output([{"name": long_name}], fmt="table")
+    assert long_name in out
+
+
+def test_table_render_uses_detected_terminal_width_when_columns_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``COLUMNS`` is unset, table width follows the detected TTY size.
+
+    Regression guard for the previous default: the Console wrote to a
+    ``StringIO`` without an explicit ``width``, so Rich could not inspect
+    the real TTY and fell back to its hard-coded 80 columns even in a
+    wide terminal. ``shutil.get_terminal_size()`` is the standard way to
+    pick up the actual size (or honour ``COLUMNS`` when it is set), so we
+    pin that ``shutil`` is consulted rather than Rich's 80-col default.
+    """
+    monkeypatch.delenv("COLUMNS", raising=False)
+    monkeypatch.setattr(
+        "shutil.get_terminal_size",
+        lambda fallback=(80, 24): os.terminal_size((220, 50)),
+    )
+    rows = [{"name": "x" * 200}]
+    width = max(len(line) for line in format_output(rows, fmt="table").splitlines())
+    assert width >= 200
 
 
 def test_nested_list_falls_back_to_repr() -> None:

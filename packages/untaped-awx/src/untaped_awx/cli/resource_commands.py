@@ -451,13 +451,12 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 inventory_organization=inventory_organization,
             )
             getter = GetResource(ctx.repo)
-            # Numeric-id fast path: under ``--yes`` (no prompt to show the
-            # name; no preview) the resolve GET is wasted work — AWX's
-            # DELETE returns the same ``not found: <url>`` shape on a
-            # missing id, so the only cost is an empty ``name`` column on
-            # the output row. Halves round trips on the canonical
-            # ``list -f raw | delete --stdin --yes`` pipeline.
+            # Under ``--yes`` (no preview to surface the name) we skip the
+            # per-id resolve GET — AWX's DELETE returns the same
+            # ``not found: <url>`` shape on a missing id. One bulk
+            # ``?id__in=…`` keeps the ``name`` column populated.
             fast_path = yes and not dry_run
+            prefetch = getter.by_ids(spec, ids) if fast_path and not by_name else {}
             resolved, any_failed = resolve_each(
                 ids,
                 lambda n: _resolve_for_delete(
@@ -467,6 +466,7 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     scope=scope,
                     by_name=by_name,
                     fast_path=fast_path,
+                    prefetch=prefetch,
                 ),
             )
             if dry_run:
@@ -497,14 +497,18 @@ def _resolve_for_delete(
     scope: dict[str, str] | None,
     by_name: bool,
     fast_path: bool,
+    prefetch: dict[int, dict[str, Any]],
 ) -> tuple[str, dict[str, Any]]:
     """Map an identifier to ``(identifier, record)``.
 
-    On the numeric-id fast path, returns a stub record with the id only
-    — the upcoming DELETE confirms existence. Off the fast path (or for
-    name-based identifiers) goes through the normal GET resolution.
+    On the numeric-id fast path, looks up the record in the caller's
+    bulk-prefetched cache; on a miss returns a stub record with the id
+    only — the upcoming DELETE confirms existence. Off the fast path
+    (or for name-based identifiers) goes through the normal GET.
     """
     if fast_path and not by_name and n.isdecimal():
+        if hit := prefetch.get(int(n)):
+            return n, hit
         return n, {"id": int(n)}
     return n, getter.by_identifier(spec, n, scope=scope, by_name=by_name)
 
