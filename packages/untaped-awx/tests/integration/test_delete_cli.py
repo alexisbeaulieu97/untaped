@@ -280,36 +280,29 @@ def test_delete_yes_numeric_id_populates_name_in_table(seeded_default_org: Any) 
     assert "deleted" in result.stdout.lower()
 
 
-def test_delete_stdin_bulk_prefetches_names_in_one_call(
-    seeded_default_org: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_delete_stdin_bulk_prefetches_names_in_one_call(seeded_default_org: Any) -> None:
     """Batch numeric-id delete fetches every name in a single ``?id__in=`` GET.
 
     Pins the round-trip win of the fast-path optimisation: one bulk list
     replaces N per-id resolves, and every row in the output table carries
-    the populated ``name``.
+    the populated ``name``. Observes calls at the httpx layer (the
+    ``respx`` router installed by the ``fake_aap`` fixture) so the
+    assertion doesn't depend on ``FakeAap`` internals.
     """
     _seed_jt(seeded_default_org, id_=10, name="alpha")
     _seed_jt(seeded_default_org, id_=11, name="beta")
-    calls: list[dict[str, str]] = []
-    original_list = seeded_default_org._list
-
-    def spy(api_path: str, params: dict[str, str]) -> httpx.Response:
-        if api_path == "job_templates":
-            calls.append(dict(params))
-        return original_list(api_path, params)
-
-    monkeypatch.setattr(seeded_default_org, "_list", spy)
     result = CliRunner().invoke(
         app, ["job-templates", "delete", "--stdin", "--yes"], input="10\n11\n"
     )
     assert result.exit_code == 0, result.output
     assert 10 not in seeded_default_org.store["job_templates"]
     assert 11 not in seeded_default_org.store["job_templates"]
-    # Both names appear in the rendered table.
     assert "alpha" in result.stdout
     assert "beta" in result.stdout
-    # Exactly one prefetch GET carrying ``id__in`` with both ids.
-    id_in_calls = [c for c in calls if "id__in" in c]
+    id_in_calls = [
+        c
+        for c in seeded_default_org.router.calls
+        if c.request.method == "GET" and "id__in" in c.request.url.params
+    ]
     assert len(id_in_calls) == 1
-    assert set(id_in_calls[0]["id__in"].split(",")) == {"10", "11"}
+    assert set(id_in_calls[0].request.url.params["id__in"].split(",")) == {"10", "11"}
