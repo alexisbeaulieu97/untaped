@@ -32,7 +32,12 @@ from untaped_awx.application import (
     WatchJob,
 )
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
-from untaped_awx.application.ports import FkResolver, JobMonitor, RawHttpResourceClient
+from untaped_awx.application.ports import (
+    FkResolver,
+    JobMonitor,
+    RawHttpResourceClient,
+    ResourceClient,
+)
 from untaped_awx.cli._apply_runner import resolve_apply_file, run_apply
 from untaped_awx.cli._context import open_context, scope_for_spec
 from untaped_awx.cli._event_render import render_event_text
@@ -452,12 +457,15 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
             )
             getter = GetResource(ctx.repo)
             # Numeric-id fast path: under ``--yes`` (no prompt to show the
-            # name; no preview) the resolve GET is wasted work — AWX's
-            # DELETE returns the same ``not found: <url>`` shape on a
-            # missing id, so the only cost is an empty ``name`` column on
-            # the output row. Halves round trips on the canonical
-            # ``list -f raw | delete --stdin --yes`` pipeline.
+            # name; no preview) the per-id resolve GET is wasted work —
+            # AWX's DELETE returns the same ``not found: <url>`` shape on a
+            # missing id. One bulk ``?id__in=…`` prefetch keeps the ``name``
+            # column populated without paying N per-id round trips on the
+            # canonical ``list -f raw | delete --stdin --yes`` pipeline.
             fast_path = yes and not dry_run
+            prefetch = (
+                _prefetch_for_delete(ctx.repo, spec, ids, by_name=by_name) if fast_path else {}
+            )
             resolved, any_failed = resolve_each(
                 ids,
                 lambda n: _resolve_for_delete(
@@ -467,6 +475,7 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
                     scope=scope,
                     by_name=by_name,
                     fast_path=fast_path,
+                    prefetch=prefetch,
                 ),
             )
             if dry_run:
@@ -489,6 +498,34 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
             raise typer.Exit(code=1)
 
 
+def _prefetch_for_delete(
+    repo: ResourceClient,
+    spec: AwxResourceSpec,
+    ids: Sequence[str],
+    *,
+    by_name: bool,
+) -> dict[int, dict[str, Any]]:
+    """Bulk-fetch records for the numeric-id fast path.
+
+    One ``?id__in=…`` GET replaces N per-id resolves so the rendered
+    table can carry a populated ``name`` column. Best-effort: a transient
+    list failure falls back to the per-id stub path inside
+    ``_resolve_for_delete``.
+    """
+    numeric_ids = [n for n in ids if not by_name and n.isdecimal()]
+    if not numeric_ids:
+        return {}
+    prefetch: dict[int, dict[str, Any]] = {}
+    try:
+        for rec in repo.list(spec, params={"id__in": ",".join(numeric_ids)}):
+            rid = rec.get("id")
+            if rid is not None:
+                prefetch[int(rid)] = dict(rec)
+    except UntapedError:
+        return {}
+    return prefetch
+
+
 def _resolve_for_delete(
     n: str,
     *,
@@ -497,14 +534,21 @@ def _resolve_for_delete(
     scope: dict[str, str] | None,
     by_name: bool,
     fast_path: bool,
+    prefetch: dict[int, dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Map an identifier to ``(identifier, record)``.
 
-    On the numeric-id fast path, returns a stub record with the id only
-    — the upcoming DELETE confirms existence. Off the fast path (or for
-    name-based identifiers) goes through the normal GET resolution.
+    On the numeric-id fast path, looks up the record in the caller's
+    bulk-prefetched cache (one ``?id__in=`` GET per batch); on a cache
+    miss returns a stub record with the id only — the upcoming DELETE
+    confirms existence. Off the fast path (or for name-based identifiers)
+    goes through the normal GET resolution.
     """
     if fast_path and not by_name and n.isdecimal():
+        if prefetch is not None:
+            hit = prefetch.get(int(n))
+            if hit is not None:
+                return n, hit
         return n, {"id": int(n)}
     return n, getter.by_identifier(spec, n, scope=scope, by_name=by_name)
 
