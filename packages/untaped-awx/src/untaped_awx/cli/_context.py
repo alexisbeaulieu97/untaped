@@ -73,6 +73,24 @@ def open_context() -> Iterator[AwxContext]:
         ctx.close()
 
 
+def _scope(
+    ctx: AwxContext,
+    organization: str | None,
+    spec: ResourceSpec,
+    *,
+    inventory: str | None = None,
+    inventory_organization: str | None = None,
+) -> dict[str, str] | None:
+    """Builder-side wrapper hoisting ``ctx.default_organization`` out of every call site."""
+    return scope_for_spec(
+        spec,
+        organization,
+        ctx.default_organization,
+        inventory=inventory,
+        inventory_organization=inventory_organization,
+    )
+
+
 def scope_for_spec(
     spec: ResourceSpec,
     organization: str | None,

@@ -179,9 +179,10 @@ max-complexity = 12
 # idiomatic in tests (no startup-latency cost).
 "**/tests/**" = ["S101", "PLC0415"]
 # Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...)).
-# Glob covers both ``commands.py`` and ``*_commands.py`` across every package so a new
-# Typer command module doesn't require a per-file-ignores edit.
-"**/cli/*commands*.py" = ["B008"]
+# Glob covers every module under a ``cli/`` directory — commands.py, *_commands.py, and
+# the underscore-prefixed builder modules of the AWX spec-driven factory (``_list.py``,
+# ``_get.py``, …) — so a new Typer command module doesn't require a per-file-ignores edit.
+"**/cli/*.py" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"
