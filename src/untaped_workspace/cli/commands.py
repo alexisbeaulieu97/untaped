@@ -222,7 +222,11 @@ def add_command(
         "--repo-name",
         help="Local alias for the repo (applies uniformly to every URL).",
     ),
-    sync: bool = typer.Option(False, "--sync", help="Also clone the new repos immediately."),
+    sync: bool = typer.Option(
+        False,
+        "--sync",
+        help="Clone the newly added repos immediately (only the ones this command actually added).",
+    ),
 ) -> None:
     """Add one or more repos to a workspace's manifest.
 
@@ -583,15 +587,20 @@ def import_command(
     source: Path = typer.Argument(
         ..., help="Path to a YAML manifest (e.g. one cloned from a shared repo)."
     ),
-    path: Path = typer.Option(..., "--path", "-p", help="Destination workspace directory."),
+    dest: Path = typer.Argument(..., help="Destination workspace directory."),
     name: str | None = typer.Option(None, "--name", "-n", help="Registry name override."),
-    sync: bool = typer.Option(False, "--sync", help="Clone repos after importing."),
+    sync: bool = typer.Option(
+        False,
+        "--sync",
+        help="Clone the imported repos immediately (only the repos in <source>).",
+    ),
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
     with report_errors():
         manifests = ManifestRepository()
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
-        ws = ImportWorkspace(manifests, bootstrapper)(source, path=path, name=name)
+        result = ImportWorkspace(manifests, bootstrapper)(source, path=dest, name=name)
+        ws = result.workspace
         typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
             outcomes = SyncWorkspace(
@@ -599,7 +608,7 @@ def import_command(
                 GitRunner(),
                 fs=LocalFilesystem(),
                 cache_dir=get_settings().workspace.cache_dir,
-            )(ws)
+            )(ws, only=result.repos)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
