@@ -218,34 +218,47 @@ user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
 
 ## `sync --all -j N` parallelism
 
-`workspace sync --all -j N` dispatches workspaces across a
-`ThreadPoolExecutor` in `cli/commands.py::_sync_parallel`. Outcomes
-come back in `as_completed` order then get re-sorted by
-`(workspace_input_order, repo)` so JSON/table consumers see stable
-rows regardless of completion timing. The CLI clamps `-j` through
-`untaped_core.clamp_parallel` (cap = `2 * os.cpu_count()`, shared with
-`foreach` and `awx apply`) and rejects `parallel > 1` outside `--all`
-with a
-`typer.BadParameter` — single-workspace parallelism would have to push
-inside `SyncWorkspace` and racing the bare-cache per-repo isn't worth
-the complexity. When `--all -j N>1` is in play, the CLI emits a
-stderr "syncing N workspaces with up to M workers" header so users
-can tell the parallel path was taken.
+`workspace sync --all -j N` dispatches workspaces through the
+plural `application.SyncWorkspaces` use case. The plural wraps the
+singular `SyncWorkspace` (constructor dep, typed via the
+`SyncWorkspaceCallable` Protocol in `application/ports.py`) with
+serial/parallel dispatch, outcome sort, and a `notify` stderr-hook
+seam. The CLI builds the singular, wraps it, and invokes the plural
+via `SyncWorkspaces.__call__(targets, parallel=workers, ...)` — no
+executor lives in `cli/commands.py` any more. The singular is still
+the right primitive for `add --sync` / `import --sync`, which sync a
+single workspace and don't need the plural's dispatch.
+
+When `parallel > 1` *and* `len(workspaces) > 1`, the plural emits
+`"syncing N workspaces with up to M workers"` via `notify`
+(`cli/commands.py` wires `notify=lambda m: typer.echo(m, err=True)`),
+dispatches via `ThreadPoolExecutor`, drains via `as_completed`, and
+re-sorts outcomes by `(workspace_input_order, repo)` so JSON/table
+consumers see stable rows regardless of completion timing. Below that
+threshold the plural runs a serial loop and stays silent (no header,
+no pool). The CLI clamps `-j` through `untaped_core.clamp_parallel`
+(cap = `2 * os.cpu_count()`, shared with `foreach` and `awx apply`)
+and rejects `parallel > 1` outside `--all` with `typer.BadParameter` —
+single-workspace parallelism would have to push inside `SyncWorkspace`
+and racing the bare-cache per-repo isn't worth the complexity.
 
 Bare-fetch dedup lives on a session-scoped `BareFetchTracker` object
-(`fetched: set[Path]` + per-URL `threading.Lock`s + a guard) **owned
-by the composition root**. The CLI's `sync` command allocates one per
-invocation and threads it into every `SyncWorkspace.__call__` —
-serial path and `_sync_parallel` alike — so workspaces sharing a
-repo URL share one `ensure_bare + bare_fetch` round-trip. The
-`BareFetchTracker.lock_for(url)` helper serialises
+(`fetched: set[Path]` + per-URL `threading.Lock`s + a guard).
+`SyncWorkspaces` allocates one per call by default and threads it
+into every `SyncWorkspace.__call__` in the sweep — serial and parallel
+paths alike — so workspaces sharing a repo URL share one
+`ensure_bare + bare_fetch` round-trip. Callers that need cross-call
+dedup can pass an explicit `bare_tracker=` (kept on the plural's
+signature so a future multi-sweep orchestrator doesn't have to fork).
+The `BareFetchTracker.lock_for(url)` helper serialises
 `ensure_bare → check → fetch → add` for one URL while letting threads
 on different URLs proceed in parallel. On `GitError`, the URL is
 left out of `tracker.fetched` so the next caller retries — same
-semantics as the pre-parallel serial path. `__call__` accepts
-`bare_tracker: BareFetchTracker | None = None`; the default allocates
-a fresh per-call tracker (no cross-call dedup), which is what
-single-workspace callers and unit tests want. **Never reach into
+semantics as the pre-parallel serial path. The singular's
+`__call__` still accepts `bare_tracker: BareFetchTracker | None =
+None`; the default allocates a fresh per-call tracker (no cross-call
+dedup), which is what single-workspace callers (`add --sync`,
+`import --sync`) and unit tests want. **Never reach into
 `tracker.fetched` directly from a worker — always go through the use
 case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
 

@@ -7,8 +7,6 @@ formats output via :mod:`untaped_core.output`.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import typer
@@ -27,7 +25,6 @@ from untaped_core import (
 from untaped_workspace.application import (
     AddRepo,
     AdoptWorkspace,
-    BareFetchTracker,
     EditWorkspace,
     Foreach,
     ForgetWorkspace,
@@ -37,6 +34,7 @@ from untaped_workspace.application import (
     RemoveRepo,
     ShellInit,
     SyncWorkspace,
+    SyncWorkspaces,
     WorkspaceBootstrapper,
     WorkspacePath,
     WorkspaceResolver,
@@ -374,7 +372,7 @@ def sync_command(
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
         )
-        use_case = SyncWorkspace(
+        sync = SyncWorkspace(
             ManifestRepository(),
             runner,
             fs=LocalFilesystem(),
@@ -386,76 +384,15 @@ def sync_command(
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
-        bare_tracker = BareFetchTracker()
-        if all_workspaces and workers > 1 and len(targets) > 1:
-            typer.echo(
-                f"syncing {len(targets)} workspaces with up to {workers} workers",
-                err=True,
-            )
-            outcomes = _sync_parallel(
-                use_case,
-                targets,
-                only=only,
-                prune=prune,
-                strict_only=not all_workspaces,
-                workers=workers,
-                bare_tracker=bare_tracker,
-            )
-        else:
-            outcomes = []
-            for ws in targets:
-                outcomes.extend(
-                    use_case(
-                        ws,
-                        only=only,
-                        prune=prune,
-                        strict_only=not all_workspaces,
-                        bare_tracker=bare_tracker,
-                    )
-                )
+        sweep = SyncWorkspaces(sync, notify=lambda m: typer.echo(m, err=True))
+        outcomes = sweep(
+            targets,
+            only=only,
+            prune=prune,
+            strict_only=not all_workspaces,
+            parallel=workers,
+        )
         _print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
-
-
-def _sync_parallel(
-    use_case: SyncWorkspace,
-    targets: Sequence[Workspace],
-    *,
-    only: list[str] | None,
-    prune: bool,
-    strict_only: bool,
-    workers: int,
-    bare_tracker: BareFetchTracker,
-) -> list[SyncOutcome]:
-    """Dispatch ``use_case`` across ``targets`` on a ThreadPoolExecutor.
-
-    Outcomes come back in ``as_completed`` order — sort them by input
-    workspace order then repo so table/JSON output stays predictable,
-    mirroring ``Foreach._run_parallel``'s tail sort. ``strict_only``
-    matches ``SyncWorkspace.__call__``'s parameter so a future caller
-    that opens this helper to single-workspace use can't silently lose
-    strict ``--only`` semantics; the sweep drains to completion (no
-    fail-fast) so a plain list of futures is enough. ``bare_tracker`` is
-    threaded into every worker so workspaces sharing repo URLs share
-    one ``ensure_bare + bare_fetch`` round-trip.
-    """
-    outcomes: list[SyncOutcome] = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(
-                use_case,
-                ws,
-                only=only,
-                prune=prune,
-                strict_only=strict_only,
-                bare_tracker=bare_tracker,
-            )
-            for ws in targets
-        ]
-        for fut in as_completed(futures):
-            outcomes.extend(fut.result())
-    order = {ws.name: i for i, ws in enumerate(targets)}
-    outcomes.sort(key=lambda o: (order.get(o.workspace, len(order)), o.repo))
-    return outcomes
 
 
 def _print_sync_outcomes(
