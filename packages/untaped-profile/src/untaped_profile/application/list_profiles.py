@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from untaped_core import DEFAULT_PROFILE
 
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import ProfileReader
 from untaped_profile.domain import Profile
 
 
 class ListProfiles:
     """Return one :class:`Profile` per stored profile."""
 
-    def __init__(self, repo: ProfileRepository) -> None:
+    def __init__(self, repo: ProfileReader) -> None:
         self._repo = repo
 
     def __call__(self) -> list[Profile]:

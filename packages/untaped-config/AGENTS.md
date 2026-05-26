@@ -100,13 +100,14 @@ shape.
 Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD".
 Two package-specific notes:
 
-- **One consolidated port.** `application/ports.py` declares a single
-  `SettingsRepository` Protocol with every method the use cases need —
-  the seven read-side methods that power `ListSettings` /
-  `ListAllProfilesSettings`, plus `set_value` and `unset_value` for
-  `SetSetting` / `UnsetSetting`. Each use case takes the wide port via
-  constructor injection and only calls the methods it needs; structural
-  typing doesn't penalise the unused surface.
+- **Reader/repository split.** `application/ports.py` declares two
+  Protocols: `SettingsReader` (six read-side methods that power
+  `ListSettings` / `ListAllProfilesSettings`) and `SettingsRepository`
+  (`SettingsReader ⊂ SettingsRepository`, adds `set_value` /
+  `unset_value` for `SetSetting` / `UnsetSetting`). Each use case takes
+  the narrowest port that satisfies its surface — read-only use cases
+  can't accidentally grow a mutation call past mypy, and reader-only
+  test stubs need only implement the six read methods.
 - **One concrete adapter.** `SettingsFileRepository` satisfies the port
   structurally (no inheritance). It owns coercion (`_coerce_scalar` via
   `yaml.safe_load`), validation, profile target resolution, and the
@@ -117,11 +118,11 @@ Two package-specific notes:
 1. Add a method to `SettingsFileRepository` if the new command needs an
    external operation the repo doesn't already expose (hypothetically,
    an `export_value` that emits dotted-form output).
-2. Add a use case in `application/`. If it needs a method
-   `SettingsRepository` doesn't expose yet, add the method to the
-   Protocol in `application/ports.py` and to the adapter; the use case
-   then takes `SettingsRepository` via constructor injection and calls
-   only what it needs.
+2. Add a use case in `application/`. Pick the narrowest Protocol that
+   satisfies its surface — `SettingsReader` for read-only commands,
+   `SettingsRepository` for mutating ones. If it needs a method neither
+   exposes, add it to the matching Protocol in `application/ports.py`
+   *and* to the adapter; constructor-inject via the narrowest type.
 3. Wire the Typer command in `cli/commands.py`. Mark
    `no_args_is_help=True` if it has required args. Pipe-friendly data
    output via `format_output` + `--format` / `--columns`. Side-effect

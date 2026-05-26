@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from untaped_core import ConfigError
 
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import ProfileWriter
 
 
 class DeleteProfile:
@@ -16,7 +16,7 @@ class DeleteProfile:
     values fall through to schema defaults.
     """
 
-    def __init__(self, repo: ProfileRepository) -> None:
+    def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
     def __call__(self, name: str) -> None:

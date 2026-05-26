@@ -7,21 +7,22 @@ from typing import Any, Protocol
 from untaped_core import FieldDescriptor, Settings
 
 
-class SettingsRepository(Protocol):
-    """Everything the config use cases need from the outside world.
-
-    The single concrete adapter (``SettingsFileRepository``) implements
-    every method structurally; per-command use cases call only the
-    subset they need. Read-side methods power ``untaped config list``;
-    ``set_value`` and ``unset_value`` power ``set`` / ``unset``.
-    """
+class SettingsReader(Protocol):
+    """Read-side surface used by ``ListSettings`` / ``ListAllProfilesSettings``."""
 
     def descriptors(self) -> list[FieldDescriptor]: ...
     def current_settings(self) -> Settings: ...
-    def yaml_dict(self) -> dict[str, Any]: ...
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None: ...
     def provenance(self) -> dict[tuple[str, ...], str]: ...
     def profile_data(self, name: str) -> dict[str, Any] | None: ...
     def profile_names(self) -> list[str]: ...
+
+
+class SettingsRepository(SettingsReader, Protocol):
+    """Read + write surface used by ``SetSetting`` / ``UnsetSetting``."""
+
     def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str: ...
     def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]: ...
+
+
+__all__ = ["SettingsReader", "SettingsRepository"]

@@ -5,18 +5,26 @@ from untaped_profile.application.current_profile import (
 )
 from untaped_profile.application.delete_profile import DeleteProfile
 from untaped_profile.application.list_profiles import ListProfiles
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import (
+    ActiveProfileWriter,
+    ProfileReader,
+    ProfileRepository,
+    ProfileWriter,
+)
 from untaped_profile.application.rename_profile import RenameProfile
 from untaped_profile.application.show_profile import ShowProfile
 from untaped_profile.application.use_profile import UseProfile
 
 __all__ = [
+    "ActiveProfileWriter",
     "CreateProfile",
     "CurrentProfile",
     "CurrentProfileResult",
     "DeleteProfile",
     "ListProfiles",
+    "ProfileReader",
     "ProfileRepository",
+    "ProfileWriter",
     "RenameProfile",
     "ShowProfile",
     "UseProfile",
