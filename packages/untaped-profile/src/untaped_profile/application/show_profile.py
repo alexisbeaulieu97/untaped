@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from untaped_core import DEFAULT_PROFILE, ConfigError
 
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import ProfileReader
 from untaped_profile.domain import Profile
 
 
@@ -16,7 +16,7 @@ class ShowProfile:
     what's literally written under ``profiles.<name>``.
     """
 
-    def __init__(self, repo: ProfileRepository) -> None:
+    def __init__(self, repo: ProfileReader) -> None:
         self._repo = repo
 
     def __call__(self, name: str, *, raw: bool = False) -> Profile:

@@ -144,3 +144,42 @@ def test_source_label_renders_string() -> None:
     assert Source(kind="default").label == "default"
     assert Source(kind="unset").label == "unset"
     assert Source(kind="profile", profile="prod").label == "profile:prod"
+
+
+def test_list_settings_accepts_reader_only_stub() -> None:
+    """Pin that ``ListSettings`` is typed against the narrow
+    :class:`SettingsReader` port: a stub satisfying only the seven read
+    methods (no ``set_value`` / ``unset_value``) must drive the use case
+    end-to-end. Regression cousin of the mypy-level guarantee — catches
+    an unannounced widening at runtime too.
+    """
+    from typing import Any
+
+    from untaped_core import FieldDescriptor, Settings
+
+    class ReaderOnly:
+        def descriptors(self) -> list[FieldDescriptor]:
+            return []
+
+        def current_settings(self) -> Settings:
+            return Settings()
+
+        def yaml_dict(self) -> dict[str, Any]:
+            return {}
+
+        def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
+            return None
+
+        def provenance(self) -> dict[tuple[str, ...], str]:
+            return {}
+
+        def profile_data(self, name: str) -> dict[str, Any] | None:
+            return None
+
+        def profile_names(self) -> list[str]:
+            return []
+
+    # Empty descriptors → empty result; the assertion is that
+    # construction + call succeed without AttributeError on a method
+    # the writer adds (set_value / unset_value).
+    assert ListSettings(ReaderOnly())() == []

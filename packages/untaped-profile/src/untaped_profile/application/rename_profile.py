@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from untaped_core import DEFAULT_PROFILE, ConfigError
 
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import ProfileWriter
 
 
 class RenameProfile:
@@ -15,7 +15,7 @@ class RenameProfile:
     the same operation so the pointer stays valid.
     """
 
-    def __init__(self, repo: ProfileRepository) -> None:
+    def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
     def __call__(self, old_name: str, new_name: str) -> None:

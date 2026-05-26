@@ -117,11 +117,24 @@ cousin used by `untaped config list`, see
 Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD".
 Three package-specific notes:
 
-- **`application/ports.py` already exists.** A single
-  `ProfileRepository` Protocol satisfies every use case — the same
-  shape used by other domains that have consolidated their ports
-  module. Domains that haven't yet consolidated should follow this
-  shape when they do.
+- **Reader / writer-axis split.** `application/ports.py` declares four
+  Protocols layered by two axes — read vs. write, and "writes profile
+  data" vs. "writes the active-profile pointer":
+  - `ProfileReader` — six read-side methods used by `ListProfiles` /
+    `ShowProfile` / `CurrentProfile`.
+  - `ProfileWriter(ProfileReader, Protocol)` — adds `write` / `delete`
+    / `rename` for `CreateProfile` / `DeleteProfile` / `RenameProfile`.
+  - `ActiveProfileWriter(ProfileReader, Protocol)` — adds `set_active`
+    for `UseProfile`. Parallel sibling to `ProfileWriter` because
+    `UseProfile`'s actual surface is `set_active` only; a linear
+    `ProfileReader ⊂ ProfileWriter ⊂ ProfileRepository` chain would
+    over-grant `write` / `delete` / `rename` to it.
+  - `ProfileRepository(ProfileWriter, ActiveProfileWriter, Protocol)` —
+    the widest variant; concrete adapters satisfy it structurally.
+  Pick the narrowest Protocol at each use case's constructor —
+  read-only use cases can't accidentally grow a mutation call past
+  mypy, and writer-axis writers can't accidentally rewrite the
+  active-profile pointer.
 - **One concrete adapter.** `ProfileFileRepository` is a thin pass
   through to `untaped_core.config_file` (`read_profile`,
   `write_profile`, `delete_profile`, `rename_profile`,
@@ -144,8 +157,11 @@ the root AGENTS.md "Recipe: Add a new command to an existing domain".
 Package-specific notes:
 
 1. If the command needs an external operation the repo doesn't already
-   expose, add a method to `ProfileRepository` in `application/ports.py`
-   *and* implement it on `ProfileFileRepository`.
+   expose, add the method to the matching Protocol in
+   `application/ports.py` (read-only → `ProfileReader`; data writes →
+   `ProfileWriter`; `active:` pointer → `ActiveProfileWriter`) *and*
+   to `ProfileFileRepository`. Constructor-inject via the narrowest
+   port the use case actually needs.
 2. For mutating use cases that touch `active:`, compare against
    `persisted_active_name()`, never `active_name()` — see "Active vs
    persisted-active" above.

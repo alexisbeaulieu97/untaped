@@ -41,3 +41,37 @@ def test_key_count_reflects_leaf_count(repo: Any) -> None:
 def test_empty_repo_returns_empty_list(empty_repo_factory: Any) -> None:
     repo = empty_repo_factory(profiles={})
     assert ListProfiles(repo)() == []
+
+
+def test_accepts_reader_only_stub() -> None:
+    """Pin that ``ListProfiles`` is typed against the narrow
+    :class:`ProfileReader` port: a stub satisfying only the six read
+    methods (no ``write`` / ``delete`` / ``rename`` / ``set_active``)
+    must drive the use case end-to-end. Regression cousin of the
+    mypy-level guarantee — catches an unannounced widening at runtime
+    too.
+    """
+    from untaped_core import ProfileSource
+
+    class ReaderOnly:
+        def names(self) -> list[str]:
+            return ["default"]
+
+        def active_name(self) -> str | None:
+            return "default"
+
+        def persisted_active_name(self) -> str | None:
+            return "default"
+
+        def classify_active(self) -> tuple[str | None, ProfileSource]:
+            return "default", "config"
+
+        def read(self, name: str) -> dict[str, Any] | None:
+            return {} if name == "default" else None
+
+        def resolved(self, name: str) -> dict[str, Any]:
+            return {}
+
+    profiles = ListProfiles(ReaderOnly())()
+    assert [p.name for p in profiles] == ["default"]
+    assert profiles[0].is_active is True
