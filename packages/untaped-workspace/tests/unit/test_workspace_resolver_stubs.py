@@ -17,15 +17,12 @@ from untaped_workspace.domain import Workspace, WorkspaceManifest
 
 def _resolver(
     registered: list[Workspace] | None = None,
-    manifest_paths: list[Path] | None = None,
-    *,
     manifests: dict[Path, WorkspaceManifest] | None = None,
 ) -> WorkspaceResolver:
-    seeded: dict[Path, WorkspaceManifest] = {p: empty_manifest() for p in (manifest_paths or [])}
-    if manifests:
-        seeded.update(manifests)
-    registry = StubRegistry(registered or [])
-    return WorkspaceResolver(registry=registry, manifests=StubManifests(seeded))
+    return WorkspaceResolver(
+        registry=StubRegistry(registered or []),
+        manifests=StubManifests(manifests or {}),
+    )
 
 
 def test_resolve_by_name_hits_registry() -> None:
@@ -40,7 +37,7 @@ def test_resolve_by_name_hits_registry() -> None:
 def test_resolve_by_path_registered_returns_registry_entry() -> None:
     ws_path = Path("/ws/prod").resolve()
     registered = Workspace(name="prod", path=ws_path)
-    resolver = _resolver([registered], [ws_path])
+    resolver = _resolver([registered], {ws_path: empty_manifest()})
 
     found = resolver.resolve(path=ws_path)
 
@@ -70,7 +67,7 @@ def test_resolve_by_path_unregistered_falls_back_to_dirname_when_manifest_has_no
     ``name:``) → the dirname-derived fallback wins.
     """
     ws_path = Path("/ws/lab").resolve()
-    resolver = _resolver(manifest_paths=[ws_path])
+    resolver = _resolver(manifests={ws_path: empty_manifest()})
 
     found = resolver.resolve(path=ws_path)
 
@@ -101,7 +98,7 @@ def test_resolve_from_cwd_walks_up_and_prefers_manifest_name() -> None:
 
 def test_resolve_from_cwd_walks_up_falls_back_to_dirname_when_manifest_has_no_name() -> None:
     ws_path = Path("/ws/prod").resolve()
-    resolver = _resolver(manifest_paths=[ws_path])
+    resolver = _resolver(manifests={ws_path: empty_manifest()})
     deep_cwd = ws_path / "src" / "deep"
 
     found = resolver.resolve(cwd=deep_cwd)
