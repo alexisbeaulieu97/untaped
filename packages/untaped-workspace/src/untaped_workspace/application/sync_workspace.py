@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,7 +86,7 @@ class SyncWorkspace:
         self,
         workspace: Workspace,
         *,
-        only: list[str] | None = None,
+        only: Sequence[str] | None = None,
         prune: bool = False,
         strict_only: bool = True,
         bare_tracker: BareFetchTracker | None = None,
@@ -140,7 +140,7 @@ class SyncWorkspace:
     # internal -----------------------------------------------------------
 
     def _select_repos(
-        self, manifest: WorkspaceManifest, only: list[str] | None
+        self, manifest: WorkspaceManifest, only: Sequence[str] | None
     ) -> tuple[list[Repo], tuple[str, ...]]:
         """Partition ``manifest.repos`` against ``--only``.
 

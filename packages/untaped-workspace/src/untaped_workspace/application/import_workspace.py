@@ -13,10 +13,6 @@ from untaped_workspace.domain import Workspace, WorkspaceManifest
 @dataclass(frozen=True)
 class ImportResult:
     workspace: Workspace
-    # Names of every repo imported from the external manifest, in
-    # source order. The CLI's ``--sync`` block feeds this to
-    # ``SyncWorkspace(..., only=…)`` so the scope contract matches
-    # ``add --sync`` — sync only what this command changed.
     repos: tuple[str, ...]
 
 

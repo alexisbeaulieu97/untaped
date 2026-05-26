@@ -225,7 +225,7 @@ def add_command(
     sync: bool = typer.Option(
         False,
         "--sync",
-        help="Clone only the repos this command added immediately (mirrors ``import --sync``).",
+        help="Clone the newly added repos immediately (only the URLs that landed).",
     ),
 ) -> None:
     """Add one or more repos to a workspace's manifest.
@@ -592,14 +592,10 @@ def import_command(
     sync: bool = typer.Option(
         False,
         "--sync",
-        help="Clone only the repos this command imported immediately (mirrors ``add --sync``).",
+        help="Clone the imported repos immediately (only the repos in <source>).",
     ),
 ) -> None:
-    """Adopt a workspace from a local YAML manifest.
-
-    Usage: ``workspace import <source.yml> <dest-dir>``. Pass ``--sync``
-    to clone the imported repos in the same invocation.
-    """
+    """Adopt a workspace from a local YAML manifest."""
     with report_errors():
         manifests = ManifestRepository()
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
@@ -612,7 +608,7 @@ def import_command(
                 GitRunner(),
                 fs=LocalFilesystem(),
                 cache_dir=get_settings().workspace.cache_dir,
-            )(ws, only=list(result.repos))
+            )(ws, only=result.repos)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
 
