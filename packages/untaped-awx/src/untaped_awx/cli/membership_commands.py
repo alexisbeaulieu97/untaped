@@ -27,7 +27,7 @@ import typer
 from untaped_core import read_identifiers, report_errors, resolve_each
 
 from untaped_awx.application import GetResource, ManageMembership
-from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.domain import FkRef
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -94,10 +94,10 @@ def _add_membership_verb(
         any_failed = False
         with report_errors(), open_context() as ctx:
             member_ids_input = read_identifiers(list(members or []), stdin=stdin)
-            parent_scope = scope_for_spec(
-                spec,
+            parent_scope = scope_for_command(
+                ctx,
                 organization,
-                ctx.default_organization,
+                spec,
                 inventory=inventory,
                 inventory_organization=inventory_organization,
             )

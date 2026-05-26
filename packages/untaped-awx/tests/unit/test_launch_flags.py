@@ -16,7 +16,7 @@ duplicated row fails CI before integration tests even run.
 
 from __future__ import annotations
 
-from untaped_awx.cli.resource_commands import LAUNCH_FLAGS
+from untaped_awx.cli._launch import LAUNCH_FLAGS
 
 
 def test_launch_flag_rows_are_uniquely_keyed() -> None:

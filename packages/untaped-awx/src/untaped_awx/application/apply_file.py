@@ -135,7 +135,7 @@ class ApplyFile:
 
         Serial when ``self._parallel <= 1`` or there's nothing to
         parallelise. The parallel branch mirrors
-        ``cli/resource_commands._drain_parallel``'s
+        ``cli/_parallel._drain_parallel``'s
         ``ThreadPoolExecutor + as_completed`` shape: outcomes are
         keyed by input index so the returned list matches input doc
         order regardless of completion order. Thread-safety relies on

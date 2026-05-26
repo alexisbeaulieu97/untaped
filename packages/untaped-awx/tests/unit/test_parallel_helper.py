@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import threading
 
-from untaped_awx.cli.resource_commands import _drain_parallel_with_worker
+from untaped_awx.cli._parallel import _drain_parallel_with_worker
 from untaped_awx.domain import Job
 
 

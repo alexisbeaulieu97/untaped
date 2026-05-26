@@ -452,7 +452,7 @@ def test_launch_track_parallel_drains_concurrently(
     """
     import threading
 
-    from untaped_awx.cli import resource_commands
+    from untaped_awx.cli import _parallel
 
     _seed_two_jts(fake_aap)
     barrier = threading.Barrier(2, timeout=15)
@@ -465,7 +465,7 @@ def test_launch_track_parallel_drains_concurrently(
             barrier.wait()
             return iter(())
 
-    monkeypatch.setattr(resource_commands, "StreamJobEvents", _BarrierStream)
+    monkeypatch.setattr(_parallel, "StreamJobEvents", _BarrierStream)
 
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 0, result.output
@@ -477,10 +477,10 @@ def test_launch_track_output_lines_carry_template_prefix(
     """Concurrent multi-template event output must be prefixed with the
     originating template name so a shared stderr stays disambiguable.
     """
-    from untaped_awx.cli import resource_commands
+    from untaped_awx.cli import _parallel
 
     _seed_two_jts(fake_aap)
-    monkeypatch.setattr(resource_commands, "StreamJobEvents", _PrefixingStubStream)
+    monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 0, result.output
@@ -501,11 +501,11 @@ def test_launch_track_one_failed_exits_one_and_logs_both(
     ``jobs`` and the post-loop ``any(j.status != "successful")`` block
     triggers ``exit 1``.
     """
-    from untaped_awx.cli import resource_commands
+    from untaped_awx.cli import _parallel
 
     _seed_two_jts(fake_aap)
     fake_aap.next_action_status = "failed"
-    monkeypatch.setattr(resource_commands, "StreamJobEvents", _PrefixingStubStream)
+    monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 1, result.output
@@ -528,7 +528,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
     """
     import time
 
-    from untaped_awx.cli import resource_commands
+    from untaped_awx.cli import _parallel
     from untaped_awx.domain import Job
 
     _seed_two_jts(fake_aap)
@@ -545,7 +545,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
                 time.sleep(0.05)
             return job.model_copy(update={"status": "successful"})
 
-    monkeypatch.setattr(resource_commands, "WatchJob", _StubWatch)
+    monkeypatch.setattr(_parallel, "WatchJob", _StubWatch)
 
     result = CliRunner().invoke(
         app,
@@ -581,7 +581,7 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
     Pins the wrap-message format so the ``error: deploy-a: deploy-a:
     ...`` double-prefix bug (round-2 review) cannot regress.
     """
-    from untaped_awx.cli import resource_commands
+    from untaped_awx.cli import _parallel
     from untaped_awx.domain import JobEvent
 
     _seed_two_jts(fake_aap)
@@ -598,7 +598,7 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
                 raise RuntimeError("boom")
             return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
 
-    monkeypatch.setattr(resource_commands, "StreamJobEvents", _StubStreamWithDeployAFailure)
+    monkeypatch.setattr(_parallel, "StreamJobEvents", _StubStreamWithDeployAFailure)
 
     result = CliRunner().invoke(app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"])
     assert result.exit_code == 1, result.output

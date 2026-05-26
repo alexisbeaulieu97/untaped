@@ -151,7 +151,7 @@ Two notes:
   search.
 - **`make_resource_app`-built `list` commands** always pass
   `spec.list_columns` when the user omits `--columns`
-  (`cli/resource_commands.py:160`), so `_format_raw`'s first-key
+  (`cli/_list.py`), so `_format_raw`'s first-key
   fallback never fires for them; the table row above guards
   `awx <kind> get` (which leaves cols `None` for non-table formats
   via `default_get_columns`) and any future caller that swaps the
