@@ -340,9 +340,13 @@ the CLI passes `only=` to `SyncWorkspace(..., only=names)` with the
 identifiers of the just-touched repos. `add --sync` passes the names
 returned by `resolve_each`; `import --sync` passes
 `ImportResult.repos`. If a user wants "sync everything after import",
-they chain `untaped workspace import <src> <dest> && untaped workspace
-sync -p <dest>` — the lifecycle command stays focused on its own
-deltas.
+they chain
+
+```bash
+untaped workspace import <src> <dest> && untaped workspace sync -p <dest>
+```
+
+— the lifecycle command stays focused on its own deltas.
 
 ## `sync --only` strict vs. relaxed semantics
 

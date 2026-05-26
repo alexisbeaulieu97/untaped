@@ -225,7 +225,7 @@ def add_command(
     sync: bool = typer.Option(
         False,
         "--sync",
-        help="Clone the newly added repos immediately (only the URLs that landed).",
+        help="Clone the newly added repos immediately (only the ones this command actually added).",
     ),
 ) -> None:
     """Add one or more repos to a workspace's manifest.

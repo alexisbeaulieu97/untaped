@@ -853,7 +853,14 @@ def test_import_sync_scopes_to_imported_repos(
     captured: dict[str, object] = {}
 
     class _StubSync:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
+        def __init__(
+            self,
+            manifests: object,
+            git: object,
+            *,
+            fs: object,
+            cache_dir: object,
+        ) -> None:
             pass
 
         def __call__(self, ws: object, *, only: object = None) -> list[object]:
