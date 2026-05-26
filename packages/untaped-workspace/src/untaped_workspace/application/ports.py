@@ -23,8 +23,9 @@ if TYPE_CHECKING:
     # Defer to break the cycle: ``sync_workspace`` already imports
     # ``ManifestReader`` / ``GitOperations`` / ``Filesystem`` from this
     # module, so a runtime import of ``BareFetchTracker`` here would be
-    # circular. AGENTS.md whitelists TYPE_CHECKING imports for exactly
-    # this case.
+    # circular. Standard idiom for breaking application-internal cycles
+    # in type-only positions; ``from __future__ import annotations``
+    # above keeps the runtime evaluation deferred.
     from untaped_workspace.application.sync_workspace import BareFetchTracker
 
 

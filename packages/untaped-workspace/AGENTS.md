@@ -220,13 +220,14 @@ user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
 
 `workspace sync --all -j N` dispatches workspaces through the
 plural `application.SyncWorkspaces` use case. The plural wraps the
-singular `SyncWorkspace` (constructor dep) with serial/parallel
-dispatch, outcome sort, and a `notify` stderr-hook seam. The CLI
-builds the singular, wraps it, and calls
-`sweep(targets, parallel=workers, ...)` — no executor lives in
-`cli/commands.py` any more. The singular is still the right primitive
-for `add --sync` / `import --sync`, which sync a single workspace and
-don't need the plural's dispatch.
+singular `SyncWorkspace` (constructor dep, typed via the
+`SyncWorkspaceCallable` Protocol in `application/ports.py`) with
+serial/parallel dispatch, outcome sort, and a `notify` stderr-hook
+seam. The CLI builds the singular, wraps it, and invokes the plural
+via `SyncWorkspaces.__call__(targets, parallel=workers, ...)` — no
+executor lives in `cli/commands.py` any more. The singular is still
+the right primitive for `add --sync` / `import --sync`, which sync a
+single workspace and don't need the plural's dispatch.
 
 When `parallel > 1` *and* `len(workspaces) > 1`, the plural emits
 `"syncing N workspaces with up to M workers"` via `notify`

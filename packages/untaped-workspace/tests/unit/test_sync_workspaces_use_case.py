@@ -22,14 +22,21 @@ from untaped_workspace.domain import SyncAction, SyncOutcome, Workspace
 
 
 class _StubSync:
-    """Stub satisfying ``SyncWorkspace.__call__``'s shape for the plural use case.
+    """Stub satisfying :class:`SyncWorkspaceCallable` for the plural use case.
 
     Records every call's positional + keyword args and returns a
-    pre-seeded ``list[SyncOutcome]`` keyed by workspace name. Per-call
-    ``gate_by_ws`` lets tests deterministically scramble parallel
-    completion order: each worker blocks on its workspace's
-    ``threading.Event`` until the test sets it, so the test controls
-    completion sequence without ``time.sleep``.
+    pre-seeded ``list[SyncOutcome]`` keyed by workspace name. The
+    ``gate_by_ws`` / ``release_after_by_ws`` knobs let tests
+    deterministically scramble parallel completion order without
+    any wall-clock sleep:
+
+    - ``gate_by_ws[name]`` — a worker for ``name`` blocks on this
+      ``Event`` until something sets it.
+    - ``release_after_by_ws[name]`` — *after* the worker for ``name``
+      returns, it sets this ``Event``. Chain ``release_after`` →
+      ``gate`` to guarantee strict completion ordering (worker A
+      finishes, then releases worker B's gate, so B can only complete
+      after A).
     """
 
     def __init__(
@@ -37,9 +44,11 @@ class _StubSync:
         *,
         outcomes_by_ws: dict[str, list[SyncOutcome]],
         gate_by_ws: dict[str, threading.Event] | None = None,
+        release_after_by_ws: dict[str, threading.Event] | None = None,
     ) -> None:
         self._outcomes = outcomes_by_ws
         self._gates = gate_by_ws or {}
+        self._release_after = release_after_by_ws or {}
         self.calls: list[dict[str, Any]] = []
         self._lock = threading.Lock()
 
@@ -65,7 +74,11 @@ class _StubSync:
         gate = self._gates.get(workspace.name)
         if gate is not None:
             gate.wait(timeout=2.0)
-        return list(self._outcomes.get(workspace.name, []))
+        result = list(self._outcomes.get(workspace.name, []))
+        post = self._release_after.get(workspace.name)
+        if post is not None:
+            post.set()
+        return result
 
 
 def _ws(name: str) -> Workspace:
@@ -133,30 +146,30 @@ def test_parallel_outcomes_sort_by_input_order_then_repo() -> None:
     by ``(workspace_input_order, repo)`` so JSON/table consumers see
     stable rows.
 
-    Gates the workers so 'second' completes *before* 'first' — opposite
-    of input order. The plural must still emit first's rows before
-    second's, sorted by workspace input order then repo.
+    Chains the gates so 'second' is guaranteed to complete *before*
+    'first': 'second' starts immediately (its gate is pre-set), and
+    only sets 'first''s gate *after* returning. The tail sort must
+    still place 'first''s rows ahead of 'second''s, even though
+    'second''s future settles first. No wall clock — strict happens-
+    before via ``threading.Event`` chaining.
     """
     first_gate = threading.Event()
     second_gate = threading.Event()
+    second_gate.set()  # 'second' runs immediately.
     stub = _StubSync(
         outcomes_by_ws={
             "first": [_outcome("first", "z-repo"), _outcome("first", "a-repo")],
             "second": [_outcome("second", "m-repo")],
         },
         gate_by_ws={"first": first_gate, "second": second_gate},
+        # 'second' releases 'first' only after returning — so 'first'
+        # cannot complete until 'second' has, regardless of OS
+        # scheduling. Guarantees as_completed sees second-then-first.
+        release_after_by_ws={"second": first_gate},
     )
     use_case = SyncWorkspaces(stub)
 
-    # Release 'second' first so its future completes first; the tail
-    # sort must still place 'first' ahead.
-    second_gate.set()
-    releaser = threading.Timer(0.01, first_gate.set)
-    releaser.start()
-    try:
-        outcomes = use_case([_ws("first"), _ws("second")], parallel=2)
-    finally:
-        releaser.cancel()
+    outcomes = use_case([_ws("first"), _ws("second")], parallel=2)
 
     # Sort key is (workspace_input_order, repo); within "first", the two
     # repos sort alphabetically: a-repo < z-repo.
