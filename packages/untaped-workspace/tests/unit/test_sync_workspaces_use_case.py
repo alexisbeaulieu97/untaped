@@ -13,13 +13,12 @@ returns a canned ``list[SyncOutcome]``.
 from __future__ import annotations
 
 import threading
-import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from untaped_workspace.application import BareFetchTracker, SyncWorkspaces
-from untaped_workspace.domain import SyncOutcome, Workspace
+from untaped_workspace.domain import SyncAction, SyncOutcome, Workspace
 
 
 class _StubSync:
@@ -27,18 +26,20 @@ class _StubSync:
 
     Records every call's positional + keyword args and returns a
     pre-seeded ``list[SyncOutcome]`` keyed by workspace name. Per-call
-    ``sleep_s`` lets tests scramble parallel completion order so the
-    plural's tail re-sort is observable.
+    ``gate_by_ws`` lets tests deterministically scramble parallel
+    completion order: each worker blocks on its workspace's
+    ``threading.Event`` until the test sets it, so the test controls
+    completion sequence without ``time.sleep``.
     """
 
     def __init__(
         self,
         *,
         outcomes_by_ws: dict[str, list[SyncOutcome]],
-        sleep_by_ws: dict[str, float] | None = None,
+        gate_by_ws: dict[str, threading.Event] | None = None,
     ) -> None:
         self._outcomes = outcomes_by_ws
-        self._sleep = sleep_by_ws or {}
+        self._gates = gate_by_ws or {}
         self.calls: list[dict[str, Any]] = []
         self._lock = threading.Lock()
 
@@ -61,7 +62,9 @@ class _StubSync:
                     "bare_tracker": bare_tracker,
                 }
             )
-        time.sleep(self._sleep.get(workspace.name, 0.0))
+        gate = self._gates.get(workspace.name)
+        if gate is not None:
+            gate.wait(timeout=2.0)
         return list(self._outcomes.get(workspace.name, []))
 
 
@@ -69,8 +72,8 @@ def _ws(name: str) -> Workspace:
     return Workspace(name=name, path=Path(f"/tmp/{name}"))
 
 
-def _outcome(workspace: str, repo: str, action: str = "up-to-date") -> SyncOutcome:
-    return SyncOutcome(workspace=workspace, repo=repo, action=action, detail="")  # type: ignore[arg-type]
+def _outcome(workspace: str, repo: str, action: SyncAction = "up-to-date") -> SyncOutcome:
+    return SyncOutcome(workspace=workspace, repo=repo, action=action, detail="")
 
 
 # ── serial dispatch ─────────────────────────────────────────────────────────
@@ -128,20 +131,32 @@ def test_parallel_dispatch_emits_one_header() -> None:
 def test_parallel_outcomes_sort_by_input_order_then_repo() -> None:
     """``as_completed`` order is non-deterministic; the plural re-sorts
     by ``(workspace_input_order, repo)`` so JSON/table consumers see
-    stable rows."""
-    # Make 'first' slow + 'second' fast so completion order is
-    # second-then-first, opposite of input order. The plural must
-    # still emit first's rows before second's.
+    stable rows.
+
+    Gates the workers so 'second' completes *before* 'first' — opposite
+    of input order. The plural must still emit first's rows before
+    second's, sorted by workspace input order then repo.
+    """
+    first_gate = threading.Event()
+    second_gate = threading.Event()
     stub = _StubSync(
         outcomes_by_ws={
             "first": [_outcome("first", "z-repo"), _outcome("first", "a-repo")],
             "second": [_outcome("second", "m-repo")],
         },
-        sleep_by_ws={"first": 0.05},
+        gate_by_ws={"first": first_gate, "second": second_gate},
     )
     use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
 
-    outcomes = use_case([_ws("first"), _ws("second")], parallel=2)
+    # Release 'second' first so its future completes first; the tail
+    # sort must still place 'first' ahead.
+    second_gate.set()
+    releaser = threading.Timer(0.01, first_gate.set)
+    releaser.start()
+    try:
+        outcomes = use_case([_ws("first"), _ws("second")], parallel=2)
+    finally:
+        releaser.cancel()
 
     # Sort key is (workspace_input_order, repo); within "first", the two
     # repos sort alphabetically: a-repo < z-repo.

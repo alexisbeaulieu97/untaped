@@ -76,6 +76,11 @@ class SyncWorkspaces:
 
     def _run_parallel(
         self,
+        # ``Sequence`` — not ``Iterable`` — because the body walks
+        # ``workspaces`` twice (the ``pool.submit`` pass and the
+        # ``enumerate``-driven ``order`` map for the tail sort); a
+        # single-shot iterator would exhaust on the first walk and
+        # silently empty the ordering map. Matches ``Foreach._run_parallel``.
         workspaces: Sequence[Workspace],
         only: Sequence[str] | None,
         prune: bool,
