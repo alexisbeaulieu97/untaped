@@ -824,12 +824,65 @@ repos:
     )
     dest = tmp_path / "ws-imported"
     runner = CliRunner()
-    result = runner.invoke(app, ["import", str(src), "--path", str(dest), "--name", "imported"])
+    result = runner.invoke(app, ["import", str(src), str(dest), "--name", "imported"])
     assert result.exit_code == 0, result.output
     assert (dest / "untaped.yml").is_file()
 
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert "imported" in listed.stdout.splitlines()
+
+
+def test_import_rejects_old_path_option(tmp_path: Path) -> None:
+    """The ``--path`` option was dropped when dest became positional —
+    invocations carrying it must surface as a usage error rather than
+    silently accepting and writing to the wrong directory."""
+    src = tmp_path / "m.yml"
+    src.write_text("name: x\nrepos: []\n")
+    dest = tmp_path / "ws"
+    result = CliRunner().invoke(app, ["import", str(src), "--path", str(dest)])
+    assert result.exit_code != 0
+
+
+def test_import_sync_scopes_to_imported_repos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``import --sync`` must pass ``only=`` matching the imported
+    manifest's repo names — same contract as ``add --sync``. Pinned
+    here so a future change can't silently revert to the
+    "sync the whole manifest" shape."""
+    captured: dict[str, object] = {}
+
+    class _StubSync:
+        def __init__(
+            self,
+            manifests: object,
+            git: object,
+            *,
+            fs: object,
+            cache_dir: object,
+        ) -> None:
+            pass
+
+        def __call__(self, ws: object, *, only: object = None) -> list[object]:
+            captured["only"] = only
+            return []
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.SyncWorkspace", _StubSync)
+
+    src = tmp_path / "m.yml"
+    src.write_text(
+        """\
+name: imported
+repos:
+  - url: https://github.com/org/svc-a.git
+  - url: https://github.com/org/svc-b.git
+    name: beta
+"""
+    )
+    dest = tmp_path / "ws"
+    result = CliRunner().invoke(app, ["import", str(src), str(dest), "--sync"])
+    assert result.exit_code == 0, result.output
+    assert tuple(captured["only"]) == ("svc-a", "beta")
 
 
 # ── add / path --stdin pipeline shape (issue #154) ──────────────────────────

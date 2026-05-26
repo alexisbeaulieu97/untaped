@@ -36,13 +36,33 @@ repos:
     repo = ManifestRepository()
     reg = StubRegistry()
     result = _import(repo, reg)(src, path=dest, name="imported")
-    assert result.name == "imported"
+    assert result.workspace.name == "imported"
     assert (dest / "untaped.yml").is_file()
     loaded = repo.read(dest)
     assert loaded.name == "imported"
     assert loaded.defaults.branch == "main"
     assert loaded.repos[0].name == "svc-a"
     assert reg.registered[0].name == "imported"
+
+
+def test_import_returns_imported_repo_names(tmp_path: Path) -> None:
+    """``ImportResult.repos`` carries the names of every repo from the
+    external manifest. CLI's ``--sync`` block passes these as ``only=``
+    so the sync contract matches ``add --sync``.
+    """
+    src = tmp_path / "team-prod.yml"
+    src.write_text(
+        """\
+name: prod-template
+repos:
+  - url: https://github.com/org/svc-a.git
+  - url: https://github.com/org/svc-b.git
+    name: beta
+"""
+    )
+    dest = tmp_path / "ws-imported"
+    result = _import(ManifestRepository(), StubRegistry())(src, path=dest)
+    assert result.repos == ("svc-a", "beta")
 
 
 def test_import_prefers_loaded_manifest_name_over_dirname(tmp_path: Path) -> None:

@@ -310,7 +310,7 @@ Four workspace lifecycle commands with deliberately distinct shapes:
   links new clones via `git clone --reference`. `<path>` stays
   positional because adopt fundamentally targets an already-populated
   directory. Implementation: `application.AdoptWorkspace`.
-- **`workspace import <source> --path <dest>`** — bootstraps a workspace
+- **`workspace import <source> <dest>`** — bootstraps a workspace
   from a local YAML manifest file (e.g. one cloned from a shared repo).
   Reads the external manifest via `ManifestRepository.read_external`
   (the narrow `ExternalManifestReader` port is what `ImportWorkspace`
@@ -318,7 +318,9 @@ Four workspace lifecycle commands with deliberately distinct shapes:
   `name` falls back through `--name → loaded.manifest.name →
   canonical.name`. `--sync` chains a `SyncWorkspace` call to clone the
   declared repos after registration. Implementation:
-  `application.ImportWorkspace`.
+  `application.ImportWorkspace` (returns an `ImportResult` carrying
+  the workspace + the imported repo names; the CLI feeds those names
+  to `SyncWorkspace(..., only=…)`).
 - **`workspace forget <name>`** — removes the workspace's registry
   entry only; the on-disk manifest and clones are preserved. Pass
   `--prune` to also `rmtree` the workspace directory; pruning is
@@ -328,6 +330,23 @@ Four workspace lifecycle commands with deliberately distinct shapes:
   `application.ForgetWorkspace` with explicit `Filesystem` +
   dirty-checker ports, wired to `LocalFilesystem` + `GitRunner` at the
   CLI composition root.
+
+### `--sync` scope contract
+
+`--sync` on lifecycle/mutation commands (`add`, `import`, and any
+future `restore --sync` style flag) **syncs only the repos this
+command added/changed — never the whole manifest.** Implementation:
+the CLI passes `only=` to `SyncWorkspace(..., only=names)` with the
+identifiers of the just-touched repos. `add --sync` passes the names
+returned by `resolve_each`; `import --sync` passes
+`ImportResult.repos`. If a user wants "sync everything after import",
+they chain
+
+```bash
+untaped workspace import <src> <dest> && untaped workspace sync -p <dest>
+```
+
+— the lifecycle command stays focused on its own deltas.
 
 ## `sync --only` strict vs. relaxed semantics
 
