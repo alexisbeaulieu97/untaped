@@ -73,6 +73,31 @@ def open_context() -> Iterator[AwxContext]:
         ctx.close()
 
 
+def scope_for_command(
+    ctx: AwxContext,
+    organization: str | None,
+    spec: ResourceSpec,
+    *,
+    inventory: str | None = None,
+    inventory_organization: str | None = None,
+) -> dict[str, str] | None:
+    """Builder-side wrapper around :func:`scope_for_spec`.
+
+    Hoists ``ctx.default_organization`` out of every Typer command body
+    so each builder calls a three-arg helper rather than the five-arg
+    form. Pure pass-through — every CLI module in ``cli/`` uses this;
+    ``scope_for_spec`` stays for the application layer's
+    no-context-bound case.
+    """
+    return scope_for_spec(
+        spec,
+        organization,
+        ctx.default_organization,
+        inventory=inventory,
+        inventory_organization=inventory_organization,
+    )
+
+
 def scope_for_spec(
     spec: ResourceSpec,
     organization: str | None,

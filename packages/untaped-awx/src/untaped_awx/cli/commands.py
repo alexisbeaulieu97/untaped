@@ -40,7 +40,7 @@ from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.cli._apply_runner import resolve_apply_file, run_apply
 from untaped_awx.cli._context import open_context
 from untaped_awx.cli._event_render import render_event_text
-from untaped_awx.cli.resource_commands import make_resource_app
+from untaped_awx.cli._factory import make_resource_app
 from untaped_awx.cli.test_commands import app as test_app
 from untaped_awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped_awx.cli.workflow_node_commands import register_nodes_command

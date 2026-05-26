@@ -36,7 +36,7 @@ from untaped_core import (
 
 from untaped_awx.application import BrowseUnifiedTemplates, GetUnifiedTemplate
 from untaped_awx.cli._context import open_context
-from untaped_awx.cli.resource_commands import default_get_columns
+from untaped_awx.cli._get import default_get_columns
 
 app = typer.Typer(
     name="unified-templates",

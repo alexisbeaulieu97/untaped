@@ -50,14 +50,14 @@ specs live in `infrastructure/specs/{job_template, workflow, project,
 credential, schedule, host, group, _support}.py` and are aggregated into
 `ALL_SPECS`. **Spec fields stay honest with the CLI:** a knob only lives in
 the spec if the factory actually wires it. The launch parser
-(`cli/resource_commands._add_launch`) enforces this structurally — each
+(`cli/_launch._add_launch`) enforces this structurally — each
 flag whose payload field isn't in the kind's `ActionSpec.accepts` is
 passed `Option(hidden=True)` so it's omitted from `--help` while still
 being parseable (the runtime guard `_reject_unsupported_launch_flags`
 catches a user who passes a hidden flag anyway). The flag→payload-field
 mapping, the visibility check, and the value translation all flow
 through one table — `LAUNCH_FLAGS: tuple[LaunchFlag, ...]` in
-`cli/resource_commands.py`. Adding a ninth launch flag is two edits:
+`cli/_launch.py`. Adding a ninth launch flag is two edits:
 one Typer `Option(..., hidden=hidden_by_flag["--nine"])` in
 `_add_launch`'s signature and one `LaunchFlag` row in the table
 (flag name + `ActionSpec.accepts` key + a `payload_builder` closure
@@ -282,6 +282,21 @@ on the main thread before any worker is dispatched. If a future
 implementation swaps `FkResolver`'s dict cache for a non-dict structure,
 revisit this section.
 
+## Delete: preview-and-confirm with a `--yes` fast path
+
+`cli/_delete.py` follows the apply pipeline's preview-by-default ethic:
+without `--yes`, each identifier is resolved via GET (so the prompt
+lists the names being deleted), the user confirms, then a per-id
+DELETE runs. Under `--yes` (no prompt to surface the name), the
+resolve phase skips the per-id GET — AWX's DELETE returns the same
+`not found: <url>` shape on a missing id, so one bulk `?id__in=…`
+prefetch (`GetResource.by_ids`) keeps the post-DELETE row's `name`
+column populated without N round trips. `--by-name` opts out of the
+fast path; identifiers go through the normal name lookup.
+`--stdin` requires `--yes` or `--dry-run` — confirmation can't share
+stdin with the identifier stream. Every emitted row leads with `id`
+so `--format raw` pipes the deleted ids to downstream xargs/jq.
+
 ## Job execution and `--track`
 
 Polling lives in `PollingJobMonitor` (`infrastructure/job_monitor.py`),
@@ -299,7 +314,7 @@ its old quiet-block semantics; `--monitor` (the v0 silent alias for
 
 **Multi-template launch** (`launch a b c --track` or `--wait`) splits
 the body into a sequential launch phase and a parallel monitor phase.
-For two or more templates, `cli/resource_commands._drain_parallel`
+For two or more templates, `cli/_parallel._drain_parallel`
 (`--track`) and `_wait_parallel` (`--wait`) drive a
 `ThreadPoolExecutor`; wall-clock collapses from `O(sum(durations))` to
 `O(max)`. Both share the executor / future-collection / error-wrap
