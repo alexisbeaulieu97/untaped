@@ -29,9 +29,17 @@ class FieldChange(BaseModel):
 
 
 class ApplyOutcome(BaseModel):
-    """The result of applying a single :class:`Resource`."""
+    """The result of applying a single :class:`Resource`.
 
-    model_config = ConfigDict(extra="forbid")
+    Frozen so that the parallel branch in
+    :class:`untaped_awx.application.apply_file.ApplyFile._apply_kind`
+    can't silently regress into in-place mutations of an outcome shared
+    across workers — phase 2's rewrites go through
+    :meth:`pydantic.BaseModel.model_copy` with ``update={...}``. See
+    ``packages/untaped-awx/AGENTS.md`` "Apply parallelism".
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str
     name: str

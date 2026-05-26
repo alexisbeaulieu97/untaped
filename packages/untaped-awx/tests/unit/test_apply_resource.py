@@ -612,3 +612,49 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
     )
     with pytest.raises(BadRequest, match="had no 'id'"):
         apply(resource, write=True)
+
+
+# ── parallelism invariant: ApplyResource statelessness across calls ─────────
+
+
+def test_apply_resource_is_stateless_across_calls() -> None:
+    """``ApplyFile._apply_kind`` dispatches ``ApplyResource`` calls across
+    a ``ThreadPoolExecutor``; thread-safety rests on the use case carrying
+    no per-call state. Pin it: a single instance, two sequential calls,
+    ``vars(use_case)`` snapshot equal before vs after.
+
+    A future change that adds e.g. a per-call cache or a retry counter
+    field surfaces here, *not* as a phase-1 parallel race.
+    """
+    strategy = _StubStrategy(existing=None)
+    use_case = _make_apply(
+        catalog_specs={"Project": PROJECT_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    resource = Resource(
+        kind="Project",
+        metadata=Metadata(name="playbooks", organization="Default"),
+        spec={"description": "demo", "scm_type": "git"},
+    )
+
+    before = dict(vars(use_case))
+    use_case(resource)
+    after_first = dict(vars(use_case))
+    use_case(resource)
+    after_second = dict(vars(use_case))
+
+    # Identity check on every attribute, not value equality: a fresh
+    # mutable container reassigned to the same key (e.g. ``self._cache
+    # = {}`` rebuilt per call) would tie on ``==`` but break the
+    # statelessness contract that thread-safety rests on.
+    assert before.keys() == after_first.keys() == after_second.keys()
+    for key in before:
+        assert before[key] is after_first[key], (
+            f"ApplyResource rebound attribute {key!r} during a call — "
+            "thread-safety guarantees rest on instance attributes being "
+            "immutable across calls"
+        )
+        assert before[key] is after_second[key], (
+            f"ApplyResource rebound attribute {key!r} on the second call"
+        )

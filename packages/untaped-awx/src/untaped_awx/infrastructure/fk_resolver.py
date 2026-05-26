@@ -11,10 +11,23 @@ resolve the scope itself.
 For bulk apply / save flows, callers can warm the cache via
 :meth:`prefetch` to collapse N per-name round trips into one paginated
 ``list`` per ``(kind, scope)`` group.
+
+**Thread-safety.** ``ApplyFile._apply_kind`` dispatches phase-1 doc
+applies across a ``ThreadPoolExecutor``; each worker may call
+:meth:`name_to_id` / :meth:`id_to_name` concurrently. The two caches
+(``_name_cache``, ``_id_cache``) are protected by a single
+``threading.RLock`` taken across the read + repo call + write window
+so a concurrent caller can't (a) race a check-then-set into duplicate
+repo calls for the same key, or (b) trip ``RuntimeError: dictionary
+changed size during iteration`` if another thread is iterating
+elsewhere. ``RLock`` (not ``Lock``) keeps the future safe: any
+cross-cache lookup that ends up calling back into this resolver
+won't deadlock on itself.
 """
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 from untaped_awx.errors import AwxApiError, ResourceNotFound
@@ -30,6 +43,10 @@ class FkResolver:
         self._catalog = catalog
         self._name_cache: dict[tuple[str, str, frozenset[tuple[str, str]]], int] = {}
         self._id_cache: dict[tuple[str, int], str] = {}
+        # See module docstring "Thread-safety". Held across the entire
+        # check-call-write window so two workers racing on the same
+        # ``(kind, name, scope)`` collapse into one repo lookup.
+        self._cache_lock = threading.RLock()
 
     def name_to_id(
         self,
@@ -40,26 +57,28 @@ class FkResolver:
     ) -> int:
         scope = scope or {}
         key = (kind, name, frozenset(scope.items()))
-        if key in self._name_cache:
-            return self._name_cache[key]
-        spec = self._catalog.get(kind)
-        record = self._repo.find_by_identity(spec, name=name, scope=scope)
-        if record is None:
-            raise ResourceNotFound(kind, {"name": name, **scope})
-        id_ = int(record["id"])
-        self._name_cache[key] = id_
-        self._id_cache[(kind, id_)] = name
-        return id_
+        with self._cache_lock:
+            if key in self._name_cache:
+                return self._name_cache[key]
+            spec = self._catalog.get(kind)
+            record = self._repo.find_by_identity(spec, name=name, scope=scope)
+            if record is None:
+                raise ResourceNotFound(kind, {"name": name, **scope})
+            id_ = int(record["id"])
+            self._name_cache[key] = id_
+            self._id_cache[(kind, id_)] = name
+            return id_
 
     def id_to_name(self, kind: str, id_: int) -> str:
         cache_key = (kind, id_)
-        if cache_key in self._id_cache:
-            return self._id_cache[cache_key]
-        spec = self._catalog.get(kind)
-        record = self._repo.get(spec, id_)
-        name = str(record.get("name", ""))
-        self._id_cache[cache_key] = name
-        return name
+        with self._cache_lock:
+            if cache_key in self._id_cache:
+                return self._id_cache[cache_key]
+            spec = self._catalog.get(kind)
+            record = self._repo.get(spec, id_)
+            name = str(record.get("name", ""))
+            self._id_cache[cache_key] = name
+            return name
 
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int]:
         """Resolve ``{"kind": ..., "name": ..., "organization": ...}`` to ``(kind, id)``."""
@@ -99,13 +118,14 @@ class FkResolver:
         params: dict[str, str] = {f"{k}__name": v for k, v in scope.items()}
         cache_scope = frozenset(scope.items())
         try:
-            for record in self._repo.list(spec, params=params or None):
-                record_name = record.get("name")
-                if not isinstance(record_name, str):
-                    continue
-                record_id = int(record["id"])
-                self._name_cache.setdefault((kind, record_name, cache_scope), record_id)
-                self._id_cache.setdefault((kind, record_id), record_name)
+            with self._cache_lock:
+                for record in self._repo.list(spec, params=params or None):
+                    record_name = record.get("name")
+                    if not isinstance(record_name, str):
+                        continue
+                    record_id = int(record["id"])
+                    self._name_cache.setdefault((kind, record_name, cache_scope), record_id)
+                    self._id_cache.setdefault((kind, record_id), record_name)
         except AwxApiError:
             # Per-record name_to_id calls remain authoritative; a flaky bulk
             # fetch silently degrades to per-call resolution rather than

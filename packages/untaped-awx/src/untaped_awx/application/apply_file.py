@@ -105,23 +105,25 @@ class ApplyFile:
         # Phase 2: reconcile sub-endpoint memberships now that every
         # doc has been written. Splice membership FieldChange rows back
         # into each doc's outcome so users see the full picture.
-        # ``ApplyOutcome`` is mutable and we mutate ``action`` / ``detail``
-        # / ``changes`` in place here. Safe today because phase 2 is
-        # serial — if a future refactor parallelises phase 2, freeze
-        # ``ApplyOutcome`` or switch to a builder pattern first.
-        for doc, outcome in zip(ordered, outcomes, strict=True):
+        # ``ApplyOutcome`` is frozen (see domain/outcomes.py), so each
+        # rewrite goes through ``model_copy(update=...)`` and rebinds
+        # the local ``outcomes`` slot rather than mutating in place.
+        # A future refactor that parallelises phase 2 is safe by
+        # construction — there's no shared mutable outcome to race on.
+        for i, (doc, outcome) in enumerate(zip(ordered, outcomes, strict=True)):
             if outcome.action == "failed":
                 continue
             try:
                 membership_changes = self._apply_one.reconcile_memberships(doc)
             except AwxApiError as exc:
-                outcome.action = "failed"
-                outcome.detail = str(exc)
+                outcomes[i] = outcome.model_copy(update={"action": "failed", "detail": str(exc)})
                 if fail_fast:
                     break
                 continue
             if membership_changes:
-                outcome.changes = list(outcome.changes) + list(membership_changes)
+                outcomes[i] = outcome.model_copy(
+                    update={"changes": list(outcome.changes) + list(membership_changes)}
+                )
         return outcomes
 
     def _apply_kind(
@@ -138,13 +140,17 @@ class ApplyFile:
         ``cli/_parallel._drain_parallel``'s
         ``ThreadPoolExecutor + as_completed`` shape: outcomes are
         keyed by input index so the returned list matches input doc
-        order regardless of completion order. Thread-safety relies on
-        the same guarantees the AGENTS.md "Job execution and
-        ``--track``" section documents — ``httpx.Client`` is
-        thread-safe, ``ApplyResource`` is stateless across calls (the
-        ``strip_encrypted`` pass mutates a per-call deepcopy), and
-        ``FkResolver``'s caches are read-mostly once ``prefetch`` has
-        run on the main thread.
+        order regardless of completion order. Thread-safety pins
+        (each one load-bearing for this branch):
+
+        - ``httpx.Client`` is documented thread-safe.
+        - ``ApplyResource`` is stateless across calls — pinned by
+          ``test_apply_resource_is_stateless_across_calls``.
+        - ``FkResolver``'s caches are guarded by ``threading.RLock``
+          across the read+write window — pinned by
+          ``test_concurrent_name_to_id_dedups_repo_calls_under_contention``.
+        - ``ApplyOutcome`` is frozen, so each worker's outcome is an
+          immutable value the main thread can collect without races.
         """
         if self._parallel <= 1 or len(docs) <= 1:
             outcomes: list[ApplyOutcome] = []
