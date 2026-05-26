@@ -1,10 +1,10 @@
 """Application-layer protocols (ports) for the profile bounded context.
 
-The four Protocols split the surface along two axes: read vs. write,
-and "writes profile data" vs. "writes the active-profile pointer".
-Use cases declare the narrowest port they actually need; the single
-concrete adapter (``ProfileFileRepository``) satisfies every variant
-structurally.
+Four Protocols layered along two axes — read vs. write, and "writes
+profile data" vs. "writes the active-profile pointer". The parallel
+sibling shape (``ProfileWriter`` and ``ActiveProfileWriter`` both
+extending ``ProfileReader``) lets ``UseProfile`` declare ``set_active``
+without inheriting the data-write surface it never touches.
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ from untaped_core import ProfileSource
 
 
 class ProfileReader(Protocol):
-    """Read-side surface used by ``ListProfiles`` / ``ShowProfile`` /
-    ``CurrentProfile``."""
+    """Read-side surface used by ``ListProfiles`` / ``ShowProfile`` / ``CurrentProfile``."""
 
     def names(self) -> list[str]: ...
     def active_name(self) -> str | None: ...
@@ -27,13 +26,7 @@ class ProfileReader(Protocol):
 
 
 class ProfileWriter(ProfileReader, Protocol):
-    """Adds profile-data mutations (``write`` / ``delete`` / ``rename``).
-
-    Used by ``CreateProfile`` / ``DeleteProfile`` / ``RenameProfile``.
-    Does **not** include ``set_active`` — that lives on
-    :class:`ActiveProfileWriter` so ``UseProfile`` doesn't have to
-    declare a write-data surface it never touches.
-    """
+    """Profile-data writes used by ``CreateProfile`` / ``DeleteProfile`` / ``RenameProfile``."""
 
     def write(self, name: str, data: dict[str, Any]) -> None: ...
     def delete(self, name: str) -> bool: ...
@@ -41,16 +34,18 @@ class ProfileWriter(ProfileReader, Protocol):
 
 
 class ActiveProfileWriter(ProfileReader, Protocol):
-    """Adds the ``set_active`` mutation. Used by ``UseProfile``."""
+    """Rewrites the ``active:`` pointer; used by ``UseProfile``."""
 
     def set_active(self, name: str) -> None: ...
 
 
 class ProfileRepository(ProfileWriter, ActiveProfileWriter, Protocol):
-    """The widest variant — combines both writer axes.
+    """Combines both writer axes; satisfied structurally by concrete adapters."""
 
-    Concrete adapters (``ProfileFileRepository`` plus the in-memory
-    ``FakeProfileRepository`` in this package's tests) satisfy this
-    Protocol structurally; no use case takes this widest variant
-    directly today.
-    """
+
+__all__ = [
+    "ActiveProfileWriter",
+    "ProfileReader",
+    "ProfileRepository",
+    "ProfileWriter",
+]

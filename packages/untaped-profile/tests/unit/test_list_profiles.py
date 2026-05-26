@@ -44,13 +44,7 @@ def test_empty_repo_returns_empty_list(empty_repo_factory: Any) -> None:
 
 
 def test_accepts_reader_only_stub() -> None:
-    """Pin that ``ListProfiles`` is typed against the narrow
-    :class:`ProfileReader` port: a stub satisfying only the six read
-    methods (no ``write`` / ``delete`` / ``rename`` / ``set_active``)
-    must drive the use case end-to-end. Regression cousin of the
-    mypy-level guarantee — catches an unannounced widening at runtime
-    too.
-    """
+    """A widening of ``ListProfiles``'s surface past ``ProfileReader`` must not slip past CI."""
     from untaped_core import ProfileSource
 
     class ReaderOnly:
