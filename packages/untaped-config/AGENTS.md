@@ -101,13 +101,13 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD".
 Two package-specific notes:
 
 - **Reader/repository split.** `application/ports.py` declares two
-  Protocols: `SettingsReader` (seven read-side methods that power
+  Protocols: `SettingsReader` (six read-side methods that power
   `ListSettings` / `ListAllProfilesSettings`) and `SettingsRepository`
   (`SettingsReader ⊂ SettingsRepository`, adds `set_value` /
   `unset_value` for `SetSetting` / `UnsetSetting`). Each use case takes
   the narrowest port that satisfies its surface — read-only use cases
   can't accidentally grow a mutation call past mypy, and reader-only
-  test stubs need only implement the seven read methods.
+  test stubs need only implement the six read methods.
 - **One concrete adapter.** `SettingsFileRepository` satisfies the port
   structurally (no inheritance). It owns coercion (`_coerce_scalar` via
   `yaml.safe_load`), validation, profile target resolution, and the

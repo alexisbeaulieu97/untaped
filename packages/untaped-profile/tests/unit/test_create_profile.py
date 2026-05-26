@@ -57,3 +57,49 @@ def test_create_does_not_materialise_default(empty_repo_factory: Any) -> None:
     repo = empty_repo_factory()
     CreateProfile(repo)("stage")
     assert repo.names() == ["stage"]
+
+
+def test_accepts_profile_writer_without_active_pointer_surface() -> None:
+    """Validates the parallel-sibling split: ``CreateProfile`` runs
+    against a stub that has ``write`` / ``delete`` / ``rename`` but
+    **not** ``set_active``. Same architectural pin as the
+    ``UseProfile`` counterpart — confirms the writer axes are
+    independent and a use case in one axis can't accidentally widen
+    into the other.
+    """
+    from untaped_core import ProfileSource
+
+    class DataWriterOnly:
+        def __init__(self) -> None:
+            self._profiles: dict[str, dict[str, Any]] = {}
+
+        def names(self) -> list[str]:
+            return list(self._profiles)
+
+        def active_name(self) -> str | None:
+            return None
+
+        def persisted_active_name(self) -> str | None:
+            return None
+
+        def classify_active(self) -> tuple[str | None, ProfileSource]:
+            return None, "fallback"
+
+        def read(self, name: str) -> dict[str, Any] | None:
+            return self._profiles.get(name)
+
+        def resolved(self, name: str) -> dict[str, Any]:
+            return self._profiles.get(name, {})
+
+        def write(self, name: str, data: dict[str, Any]) -> None:
+            self._profiles[name] = data
+
+        def delete(self, name: str) -> bool:
+            return self._profiles.pop(name, None) is not None
+
+        def rename(self, old: str, new: str) -> None:
+            self._profiles[new] = self._profiles.pop(old)
+
+    repo = DataWriterOnly()
+    CreateProfile(repo)("homelab")
+    assert "homelab" in repo.names()
