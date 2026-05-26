@@ -12,16 +12,20 @@ import pytest
 from conftest import StubManifests, StubRegistry, empty_manifest
 from untaped_core import ConfigError
 from untaped_workspace.application.workspace_resolver import WorkspaceResolver
-from untaped_workspace.domain import Workspace
+from untaped_workspace.domain import Workspace, WorkspaceManifest
 
 
 def _resolver(
     registered: list[Workspace] | None = None,
     manifest_paths: list[Path] | None = None,
+    *,
+    manifests: dict[Path, WorkspaceManifest] | None = None,
 ) -> WorkspaceResolver:
-    manifests = StubManifests({p: empty_manifest() for p in (manifest_paths or [])})
+    seeded: dict[Path, WorkspaceManifest] = {p: empty_manifest() for p in (manifest_paths or [])}
+    if manifests:
+        seeded.update(manifests)
     registry = StubRegistry(registered or [])
-    return WorkspaceResolver(registry=registry, manifests=manifests)
+    return WorkspaceResolver(registry=registry, manifests=StubManifests(seeded))
 
 
 def test_resolve_by_name_hits_registry() -> None:
@@ -47,7 +51,24 @@ def test_resolve_by_path_registered_returns_registry_entry() -> None:
     assert found is registered
 
 
-def test_resolve_by_path_unregistered_synthesises_from_dirname() -> None:
+def test_resolve_by_path_unregistered_prefers_manifest_name() -> None:
+    """Registry miss + manifest declares ``name: bar`` → manifest wins
+    over the directory's basename. The dirname-derived fallback only
+    runs when the manifest's ``name`` is empty.
+    """
+    ws_path = Path("/ws/lab").resolve()
+    resolver = _resolver(manifests={ws_path: WorkspaceManifest(name="bar")})
+
+    found = resolver.resolve(path=ws_path)
+
+    assert found.name == "bar"
+    assert found.path == ws_path
+
+
+def test_resolve_by_path_unregistered_falls_back_to_dirname_when_manifest_has_no_name() -> None:
+    """Manifest's ``name`` is ``None`` (e.g. hand-authored without
+    ``name:``) → the dirname-derived fallback wins.
+    """
     ws_path = Path("/ws/lab").resolve()
     resolver = _resolver(manifest_paths=[ws_path])
 
@@ -64,7 +85,21 @@ def test_resolve_by_path_missing_manifest_raises() -> None:
         resolver.resolve(path=Path("/ws/empty"))
 
 
-def test_resolve_from_cwd_walks_up_to_manifest() -> None:
+def test_resolve_from_cwd_walks_up_and_prefers_manifest_name() -> None:
+    """cwd-walk path mirrors the same precedence as path-resolved: a
+    declared ``manifest.name`` wins over the directory's basename.
+    """
+    ws_path = Path("/ws/prod").resolve()
+    resolver = _resolver(manifests={ws_path: WorkspaceManifest(name="bar")})
+    deep_cwd = ws_path / "src" / "deep"
+
+    found = resolver.resolve(cwd=deep_cwd)
+
+    assert found.path == ws_path
+    assert found.name == "bar"
+
+
+def test_resolve_from_cwd_walks_up_falls_back_to_dirname_when_manifest_has_no_name() -> None:
     ws_path = Path("/ws/prod").resolve()
     resolver = _resolver(manifest_paths=[ws_path])
     deep_cwd = ws_path / "src" / "deep"

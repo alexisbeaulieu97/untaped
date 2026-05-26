@@ -65,6 +65,13 @@ class WorkspaceResolver:
         existing = self._registry.find_by_path(canonical)
         if existing is not None:
             return existing
-        # Unregistered manifest — synthesise a Workspace from the dirname so
-        # cwd-discovered workspaces still work for non-registry commands.
-        return Workspace(name=canonical.name, path=canonical)
+        # Unregistered manifest — synthesise a Workspace using the manifest's
+        # declared name when present, falling back to the dirname. Manifest
+        # name is the documented source of truth (see AGENTS.md, "Manifest
+        # mutation contract"); without this precedence, `[<dirname>]` would
+        # silently shadow a hand-set `name:` in `status`/`foreach` output.
+        # Both callers (`_resolve_by_path`, `_resolve_from_cwd`) have already
+        # confirmed the manifest exists, so this read is safe and only lands
+        # on the fallback branch.
+        manifest = self._manifests.read(canonical)
+        return Workspace(name=manifest.name or canonical.name, path=canonical)
