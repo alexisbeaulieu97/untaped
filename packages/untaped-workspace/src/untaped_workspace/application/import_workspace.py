@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from untaped_workspace.application.ports import ExternalManifestReader
 from untaped_workspace.application.workspace_bootstrapper import WorkspaceBootstrapper
 from untaped_workspace.domain import Workspace, WorkspaceManifest
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    workspace: Workspace
+    repos: tuple[str, ...]
 
 
 class ImportWorkspace:
@@ -24,7 +31,7 @@ class ImportWorkspace:
         *,
         path: Path,
         name: str | None = None,
-    ) -> Workspace:
+    ) -> ImportResult:
         loaded = self._external.read_external(source.expanduser().resolve())
 
         # Direct construction (not `model_copy`) keeps this consistent
@@ -38,4 +45,8 @@ class ImportWorkspace:
                 repos=loaded.manifest.repos,
             )
 
-        return self._bootstrap(path, build_manifest=_build, name=name or loaded.manifest.name)
+        workspace = self._bootstrap(path, build_manifest=_build, name=name or loaded.manifest.name)
+        return ImportResult(
+            workspace=workspace,
+            repos=tuple(r.name for r in loaded.manifest.repos),
+        )
