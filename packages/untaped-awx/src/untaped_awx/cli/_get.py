@@ -22,7 +22,7 @@ from untaped_core import (
 )
 
 from untaped_awx.application import GetResource
-from untaped_awx.cli._context import _scope, open_context
+from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.cli._names import flatten_fks
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
@@ -77,7 +77,7 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
         any_failed = False
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
-            scope = _scope(
+            scope = scope_for_command(
                 ctx,
                 organization,
                 spec,

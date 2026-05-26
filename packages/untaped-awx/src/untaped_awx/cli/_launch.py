@@ -24,7 +24,7 @@ from untaped_core import (
 
 from untaped_awx.application import RunAction, StreamJobEvents, WatchJob
 from untaped_awx.application.ports import FkResolver
-from untaped_awx.cli._context import _scope, open_context
+from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.cli._event_render import render_event_text
 from untaped_awx.cli._parallel import _drain_parallel, _wait_parallel
 from untaped_awx.domain import Job
@@ -142,7 +142,7 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
         # plain text when redirected (CI logs, piped through ``tee``).
         track_console = Console(stderr=True, highlight=False)
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
+            scope = scope_for_command(ctx, organization, spec)
             payload = _build_launch_payload(
                 accepts=accepts,
                 extra_vars=extra_vars,

@@ -11,7 +11,7 @@ from untaped_core import (
 )
 
 from untaped_awx.application import RunAction, WatchJob
-from untaped_awx.cli._context import _scope, open_context
+from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -31,7 +31,7 @@ def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
     ) -> None:
         """Trigger an SCM sync (Project)."""
         with report_errors(), open_context() as ctx:
-            scope = _scope(ctx, organization, spec)
+            scope = scope_for_command(ctx, organization, spec)
             job = RunAction(ctx.repo)(spec, name=name, action="update", scope=scope)
             if wait:
                 job = WatchJob(ctx.repo)(job)

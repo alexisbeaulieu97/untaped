@@ -282,6 +282,21 @@ on the main thread before any worker is dispatched. If a future
 implementation swaps `FkResolver`'s dict cache for a non-dict structure,
 revisit this section.
 
+## Delete: preview-and-confirm with a `--yes` fast path
+
+`cli/_delete.py` follows the apply pipeline's preview-by-default ethic:
+without `--yes`, each identifier is resolved via GET (so the prompt
+lists the names being deleted), the user confirms, then a per-id
+DELETE runs. Under `--yes` (no prompt to surface the name), the
+resolve phase skips the per-id GET — AWX's DELETE returns the same
+`not found: <url>` shape on a missing id, so one bulk `?id__in=…`
+prefetch (`GetResource.by_ids`) keeps the post-DELETE row's `name`
+column populated without N round trips. `--by-name` opts out of the
+fast path; identifiers go through the normal name lookup.
+`--stdin` requires `--yes` or `--dry-run` — confirmation can't share
+stdin with the identifier stream. Every emitted row leads with `id`
+so `--format raw` pipes the deleted ids to downstream xargs/jq.
+
 ## Job execution and `--track`
 
 Polling lives in `PollingJobMonitor` (`infrastructure/job_monitor.py`),

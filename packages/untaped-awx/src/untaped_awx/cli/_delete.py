@@ -16,7 +16,7 @@ from untaped_core import (
 )
 
 from untaped_awx.application import DeleteResource, GetResource
-from untaped_awx.cli._context import _scope, open_context
+from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -76,7 +76,7 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
         rows: list[dict[str, Any]] = []
         with report_errors(), open_context() as ctx:
             ids = read_identifiers(list(names or []), stdin=stdin)
-            scope = _scope(
+            scope = scope_for_command(
                 ctx,
                 organization,
                 spec,

@@ -13,7 +13,7 @@ from untaped_core import (
 )
 
 from untaped_awx.application import SaveResource
-from untaped_awx.cli._context import _scope, open_context
+from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.infrastructure.spec import AwxResourceSpec
 from untaped_awx.infrastructure.yaml_io import dump_resource, write_resource
 
@@ -52,7 +52,7 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
         so the round-trip into ``apply`` stays intact.
         """
         with report_errors(), open_context() as ctx:
-            scope = _scope(
+            scope = scope_for_command(
                 ctx,
                 organization,
                 spec,
