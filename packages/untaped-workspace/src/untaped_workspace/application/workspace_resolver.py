@@ -66,7 +66,7 @@ class WorkspaceResolver:
         if existing is not None:
             return existing
         # Unregistered manifest — manifest name is the documented source of
-        # truth (see AGENTS.md, "Manifest mutation contract"); without this
+        # truth (see AGENTS.md, "Manifest + registry split"); without this
         # precedence, `[<dirname>]` would silently shadow a hand-set `name:`
         # in `status`/`foreach` output.
         manifest = self._manifests.read(canonical)

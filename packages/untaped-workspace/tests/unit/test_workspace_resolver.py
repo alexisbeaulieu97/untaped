@@ -51,9 +51,13 @@ def test_resolve_by_path_registered(_isolate: Path, tmp_path: Path) -> None:
     assert found.name == "prod"
 
 
-def test_resolve_by_path_unregistered_falls_back_to_dirname(_isolate: Path, tmp_path: Path) -> None:
+def test_resolve_by_path_unregistered_falls_back_to_dirname_when_manifest_has_no_name(
+    _isolate: Path,
+    tmp_path: Path,
+) -> None:
     """No registry entry + ``_make_workspace`` writes an
-    ``empty_manifest()`` (``name=None``) → dirname wins."""
+    ``empty_manifest()`` (``name=None``) → dirname wins.
+    """
     ws = _make_workspace(tmp_path / "lab")
     found = _resolver().resolve(path=ws)
     assert found.name == "lab"
