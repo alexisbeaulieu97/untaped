@@ -6,14 +6,14 @@ from typing import Any
 
 from untaped_core import FieldDescriptor
 
-from untaped_config.application.ports import SettingsRepository
+from untaped_config.application.ports import SettingsReader
 from untaped_config.domain import SettingEntry, Source, display_default, display_value
 
 
 class ListSettings:
     """Build the ``untaped config list`` table — one entry per leaf scalar."""
 
-    def __init__(self, repo: SettingsRepository) -> None:
+    def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
 
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
@@ -43,7 +43,7 @@ class ListAllProfilesSettings:
     the effective view).
     """
 
-    def __init__(self, repo: SettingsRepository) -> None:
+    def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
 
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:

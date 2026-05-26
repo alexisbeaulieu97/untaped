@@ -84,6 +84,11 @@ Non-negotiable. Every contribution must respect them.
     `infrastructure/` satisfy the Protocols structurally (no
     inheritance). Subsystems within a domain may add their own
     (`untaped-awx` has `application/test/ports.py` for the test runner).
+    Use cases declare the **narrowest port they need**; fatter ports
+    extend slimmer ones via `Protocol` inheritance so concrete adapters
+    satisfy every variant structurally (e.g. `untaped-workspace`'s
+    `ManifestReader ⊂ ManifestRepository`, `untaped-config`'s
+    `SettingsReader ⊂ SettingsRepository`).
 11. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
     keys. `untaped config list` redacts them; `repr(settings)` won't leak
     them in tracebacks. Call `.get_secret_value()` only at point of use.

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from untaped_core import DEFAULT_PROFILE, ConfigError, ProfileSource
 
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import ProfileReader
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +28,7 @@ class CurrentProfileResult:
 class CurrentProfile:
     """Resolve the effective active profile, classifying its source."""
 
-    def __init__(self, repo: ProfileRepository) -> None:
+    def __init__(self, repo: ProfileReader) -> None:
         self._repo = repo
 
     def __call__(self) -> CurrentProfileResult:

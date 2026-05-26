@@ -6,7 +6,7 @@ import copy
 
 from untaped_core import ConfigError
 
-from untaped_profile.application.ports import ProfileRepository
+from untaped_profile.application.ports import ProfileWriter
 
 
 class CreateProfile:
@@ -17,7 +17,7 @@ class CreateProfile:
     copy — later edits to the source must not affect the new profile.
     """
 
-    def __init__(self, repo: ProfileRepository) -> None:
+    def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
     def __call__(self, name: str, *, copy_from: str | None = None) -> None:

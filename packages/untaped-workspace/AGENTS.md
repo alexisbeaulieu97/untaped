@@ -107,17 +107,15 @@ translate to `skip` rows without further plumbing.
 ## Ports module
 
 Every cross-use-case `Protocol` and Callable alias lives in
-`application/ports.py`. Use cases declare the narrowest port they
-need (`ManifestReader` vs. `ManifestRepository`, `StatusInspector`
-vs. `GitInspector` vs. `GitOperations`); fatter ports extend slimmer
-ones via `Protocol` inheritance, so the concrete
-`ManifestRepository` / `WorkspaceRegistryRepository` / `GitRunner` /
-`LocalFilesystem` / `LocalRepoDiscoverer` adapters satisfy every
-variant structurally with no explicit base class.
-
-Mirrors `untaped-awx`'s `application/ports.py`. When you add a new
-shared port, put it here — never declare a private `_FooStorage`
-inside a use-case file.
+`application/ports.py`. Per root Hard Rule #10, use cases declare the
+narrowest port they need; this package's concrete chains are
+`ManifestReader ⊂ ManifestRepository`, `RegistryReader ⊂
+WorkspaceRegistry`, and `StatusInspector ⊂ GitInspector ⊂
+GitOperations`. The concrete `ManifestRepository` /
+`WorkspaceRegistryRepository` / `GitRunner` / `LocalFilesystem` /
+`LocalRepoDiscoverer` adapters satisfy every variant structurally
+with no explicit base class. When you add a new shared port, put it
+here — never declare a private `_FooStorage` inside a use-case file.
 
 DTOs that cross the application/infrastructure boundary
 (`DiscoveredRepo`, `DiscoveryResult`, `ManifestSource`) live in
