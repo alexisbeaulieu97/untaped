@@ -83,7 +83,7 @@ def test_serial_when_parallel_is_one() -> None:
     """``parallel=1`` → singular called in input order, no notify."""
     stub = _StubSync(outcomes_by_ws={"a": [_outcome("a", "r")], "b": [_outcome("b", "r")]})
     notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub, notify=notifications.append)
 
     outcomes = use_case([_ws("a"), _ws("b")], parallel=1)
 
@@ -96,7 +96,7 @@ def test_serial_when_only_one_workspace_even_at_high_parallel() -> None:
     """``len(workspaces)==1`` → never spin up the pool, never notify."""
     stub = _StubSync(outcomes_by_ws={"solo": [_outcome("solo", "r")]})
     notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub, notify=notifications.append)
 
     use_case([_ws("solo")], parallel=8)
 
@@ -107,7 +107,7 @@ def test_serial_when_only_one_workspace_even_at_high_parallel() -> None:
 def test_default_notify_is_silent_noop() -> None:
     """Use case constructible without a notify callable; parallel path stays silent."""
     stub = _StubSync(outcomes_by_ws={"a": [_outcome("a", "r")], "b": [_outcome("b", "r")]})
-    use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub)
     # Just must not raise — no header is emitted but the dispatch still works.
     outcomes = use_case([_ws("a"), _ws("b")], parallel=2)
     assert {o.workspace for o in outcomes} == {"a", "b"}
@@ -121,7 +121,7 @@ def test_parallel_dispatch_emits_one_header() -> None:
     canonical ``"syncing N workspaces with up to M workers"`` text."""
     stub = _StubSync(outcomes_by_ws={"a": [_outcome("a", "r")], "b": [_outcome("b", "r")]})
     notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub, notify=notifications.append)
 
     use_case([_ws("a"), _ws("b")], parallel=4)
 
@@ -146,7 +146,7 @@ def test_parallel_outcomes_sort_by_input_order_then_repo() -> None:
         },
         gate_by_ws={"first": first_gate, "second": second_gate},
     )
-    use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub)
 
     # Release 'second' first so its future completes first; the tail
     # sort must still place 'first' ahead.
@@ -176,7 +176,7 @@ def test_allocates_one_tracker_and_threads_it_into_every_call() -> None:
     singular ``__call__`` — that's how bare-cache dedup works across
     workspaces."""
     stub = _StubSync(outcomes_by_ws={"a": [], "b": [], "c": []})
-    use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub)
 
     use_case([_ws("a"), _ws("b"), _ws("c")], parallel=1)
 
@@ -190,7 +190,7 @@ def test_caller_supplied_tracker_is_passed_through() -> None:
     dedup in a custom orchestration); the plural must thread *that*
     instance, not allocate a fresh one."""
     stub = _StubSync(outcomes_by_ws={"a": [], "b": []})
-    use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub)
     explicit = BareFetchTracker()
 
     use_case([_ws("a"), _ws("b")], parallel=1, bare_tracker=explicit)
@@ -206,7 +206,7 @@ def test_passes_only_prune_strict_only_to_every_call() -> None:
     """The plural is pure dispatch — every singular call receives the
     same ``only`` / ``prune`` / ``strict_only`` the caller asked for."""
     stub = _StubSync(outcomes_by_ws={"a": [], "b": []})
-    use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub)
 
     use_case(
         [_ws("a"), _ws("b")],
@@ -235,7 +235,7 @@ def test_outcomes_aggregated_from_every_workspace_parallel_path() -> None:
             "c": [_outcome("c", "r4"), _outcome("c", "r5"), _outcome("c", "r6")],
         }
     )
-    use_case = SyncWorkspaces(stub)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub)
 
     outcomes = use_case([_ws("a"), _ws("b"), _ws("c")], parallel=4)
 
@@ -254,7 +254,7 @@ def test_empty_workspace_list_is_a_noop() -> None:
     """Zero workspaces → zero singular calls, zero outcomes, no header."""
     stub = _StubSync(outcomes_by_ws={})
     notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)  # type: ignore[arg-type]
+    use_case = SyncWorkspaces(stub, notify=notifications.append)
 
     outcomes = use_case([], parallel=4)
 

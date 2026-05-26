@@ -26,15 +26,24 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from untaped_workspace.application.sync_workspace import BareFetchTracker, SyncWorkspace
+from untaped_workspace.application.ports import SyncWorkspaceCallable
+from untaped_workspace.application.sync_workspace import BareFetchTracker
 from untaped_workspace.domain import SyncOutcome, Workspace
 
 
 class SyncWorkspaces:
     def __init__(
         self,
-        sync: SyncWorkspace,
+        sync: SyncWorkspaceCallable,
         *,
+        # ``notify`` not ``warn``: the canonical "warn" hook
+        # (see root AGENTS.md, used in e.g. ``AdoptWorkspace``) is for
+        # stderr *warnings* that the CLI prefixes with ``warning: ``.
+        # The string this seam carries — ``"syncing N workspaces with
+        # up to M workers"`` — is *progress* info, not a warning, so
+        # it goes through stderr without the prefix. Different
+        # semantics, different name. ``None`` collapses to a silent
+        # no-op so unit tests need not assert on it.
         notify: Callable[[str], None] | None = None,
     ) -> None:
         self._sync = sync
