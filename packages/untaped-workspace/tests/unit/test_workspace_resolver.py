@@ -91,6 +91,10 @@ def test_resolve_from_cwd_walks_up(_isolate: Path, tmp_path: Path) -> None:
     sub.mkdir(parents=True)
     found = _resolver().resolve(cwd=sub)
     assert found.path == ws.resolve()
+    # Mirror the stubs-side cwd-walk tests: pin that the synthesised
+    # Workspace.name reflects the resolver's precedence (here: empty
+    # manifest → dirname fallback).
+    assert found.name == "prod"
 
 
 def test_resolve_from_cwd_outside_errors(_isolate: Path, tmp_path: Path) -> None:

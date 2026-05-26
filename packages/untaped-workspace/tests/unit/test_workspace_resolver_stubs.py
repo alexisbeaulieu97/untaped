@@ -75,6 +75,23 @@ def test_resolve_by_path_unregistered_falls_back_to_dirname_when_manifest_has_no
     assert found.path == ws_path
 
 
+def test_resolve_by_path_unregistered_falls_back_to_dirname_when_manifest_name_is_empty() -> None:
+    """``WorkspaceManifest.name`` permits ``""`` (no
+    ``min_length`` validator); the resolver's ``or`` fallback treats
+    empty same as ``None`` and picks up the dirname. Pins the contract
+    so a future model-level validator that promotes ``""`` to
+    ``None`` (or rejects it outright) doesn't change resolver
+    behaviour silently.
+    """
+    ws_path = Path("/ws/lab").resolve()
+    resolver = _resolver(manifests={ws_path: WorkspaceManifest(name="")})
+
+    found = resolver.resolve(path=ws_path)
+
+    assert found.name == "lab"
+    assert found.path == ws_path
+
+
 def test_resolve_by_path_missing_manifest_raises() -> None:
     resolver = _resolver()
 
