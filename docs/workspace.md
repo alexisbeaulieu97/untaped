@@ -134,12 +134,13 @@ registry entry is removed regardless.
 ### `import`
 
 ```bash
-untaped workspace import <source.yml> --path <dest> [--name <name>] [--sync]
+untaped workspace import <source.yml> <dest> [--name <name>] [--sync]
 ```
 
 Adopt an existing manifest into a new workspace directory. Useful when
 a colleague shares a YAML file describing their workspace setup. Pass
-`--sync` to clone everything immediately.
+`--sync` to clone the imported repos immediately (only the repos in
+the imported manifest — same scope as `add --sync`).
 
 ### `add`
 
@@ -343,7 +344,7 @@ or use `--only` on `sync` instead.)
 
 ```bash
 git clone git@github.com:acme/devops-manifests ~/manifests
-untaped workspace import ~/manifests/prod.yml --path ~/work/prod --sync
+untaped workspace import ~/manifests/prod.yml ~/work/prod --sync
 ```
 
 ### Adopt a directory you've already cloned by hand

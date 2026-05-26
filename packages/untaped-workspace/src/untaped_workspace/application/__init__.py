@@ -3,7 +3,7 @@ from untaped_workspace.application.adopt_workspace import AdoptResult, AdoptWork
 from untaped_workspace.application.edit_workspace import EditWorkspace
 from untaped_workspace.application.foreach import Foreach
 from untaped_workspace.application.forget_workspace import ForgetWorkspace
-from untaped_workspace.application.import_workspace import ImportWorkspace
+from untaped_workspace.application.import_workspace import ImportResult, ImportWorkspace
 from untaped_workspace.application.init_workspace import InitWorkspace
 from untaped_workspace.application.list_workspaces import ListWorkspaces
 from untaped_workspace.application.remove_repo import RemoveRepo
@@ -22,6 +22,7 @@ __all__ = [
     "EditWorkspace",
     "Foreach",
     "ForgetWorkspace",
+    "ImportResult",
     "ImportWorkspace",
     "InitWorkspace",
     "ListWorkspaces",
