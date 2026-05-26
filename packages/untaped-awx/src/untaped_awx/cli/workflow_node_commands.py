@@ -21,7 +21,7 @@ from untaped_core import (
 )
 
 from untaped_awx.application import ListWorkflowNodes
-from untaped_awx.cli._context import open_context, scope_for_spec
+from untaped_awx.cli._context import _scope, open_context
 from untaped_awx.domain import WorkflowNode, WorkflowNodeType
 from untaped_awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
@@ -125,11 +125,7 @@ def register_nodes_command(parent: typer.Typer) -> None:
         with report_errors(), open_context() as ctx:
             roots = read_identifiers(list(identifiers or []), stdin=stdin)
             filters = parse_kv_pairs(filter_, flag="--filter")
-            scope = scope_for_spec(
-                WORKFLOW_JOB_TEMPLATE_SPEC,
-                organization=organization,
-                default_organization=ctx.default_organization,
-            )
+            scope = _scope(ctx, organization, WORKFLOW_JOB_TEMPLATE_SPEC)
             use = ListWorkflowNodes(
                 ctx.workflow_nodes,
                 ctx.repo,

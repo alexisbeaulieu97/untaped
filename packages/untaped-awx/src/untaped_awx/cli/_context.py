@@ -81,7 +81,15 @@ def _scope(
     inventory: str | None = None,
     inventory_organization: str | None = None,
 ) -> dict[str, str] | None:
-    """Builder-side wrapper hoisting ``ctx.default_organization`` out of every call site."""
+    """Builder-side wrapper around :func:`scope_for_spec`.
+
+    Hoists ``ctx.default_organization`` out of every Typer command body
+    so each builder calls the three-arg ``_scope(ctx, organization,
+    spec, …)`` rather than the five-arg form. Pure pass-through —
+    every CLI module in ``cli/`` uses this; ``scope_for_spec`` stays
+    public for the test/application layer reference. Keep both
+    signatures in lock-step.
+    """
     return scope_for_spec(
         spec,
         organization,

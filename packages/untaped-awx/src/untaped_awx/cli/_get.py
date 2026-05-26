@@ -12,6 +12,8 @@ from typing import Any
 
 import typer
 from untaped_core import (
+    ColumnsOption,
+    FormatOption,
     OutputFormat,
     format_output,
     read_identifiers,
@@ -61,8 +63,8 @@ def _add_get(app: typer.Typer, spec: AwxResourceSpec) -> None:
             "--with-names",
             help="Replace FK ids with names from summary_fields.",
         ),
-        fmt: OutputFormat = typer.Option("yaml", "--format", "-f"),
-        columns: list[str] | None = typer.Option(None, "--columns", "-c"),
+        fmt: FormatOption = "yaml",
+        columns: ColumnsOption = None,
     ) -> None:
         """Fetch one or more resources by name or numeric id.
 
@@ -110,3 +112,6 @@ def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[
     if fmt == "table":
         return list(default_cols)
     return None
+
+
+__all__ = ["default_get_columns"]

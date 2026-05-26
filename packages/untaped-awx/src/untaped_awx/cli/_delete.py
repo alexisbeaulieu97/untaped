@@ -6,7 +6,8 @@ from typing import Any
 
 import typer
 from untaped_core import (
-    OutputFormat,
+    ColumnsOption,
+    FormatOption,
     UntapedError,
     format_output,
     read_identifiers,
@@ -56,10 +57,8 @@ def _add_delete(app: typer.Typer, spec: AwxResourceSpec) -> None:
             "--by-name",
             help="Force name lookup (escape hatch for resources whose name is all digits).",
         ),
-        fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-        columns: list[str] | None = typer.Option(
-            None, "--columns", "-c", help="Columns to include (repeatable)."
-        ),
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
     ) -> None:
         """Delete one or more resources by name or numeric id.
 

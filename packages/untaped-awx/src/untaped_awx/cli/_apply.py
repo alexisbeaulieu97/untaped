@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from untaped_core import OutputFormat, report_errors
+from untaped_core import ColumnsOption, OutputFormat, report_errors
 
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.cli._apply_runner import resolve_apply_file, run_apply
@@ -36,7 +36,7 @@ def _add_apply(app: typer.Typer, spec: AwxResourceSpec) -> None:
             ),
         ),
         fmt: OutputFormat = typer.Option("table", "--format", help="Output format."),
-        columns: list[str] | None = typer.Option(None, "--columns", "-c"),
+        columns: ColumnsOption = None,
     ) -> None:
         """Apply a YAML file. Default is preview-only — pass ``--yes`` to write.
 

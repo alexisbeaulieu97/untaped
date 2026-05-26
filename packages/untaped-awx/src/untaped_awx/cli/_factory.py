@@ -68,3 +68,6 @@ ACTION_BUILDERS: dict[str, Callable[[typer.Typer, AwxResourceSpec], None]] = {
     "launch": _add_launch,
     "update": _add_update,
 }
+
+
+__all__ = ["ACTION_BUILDERS", "make_resource_app"]

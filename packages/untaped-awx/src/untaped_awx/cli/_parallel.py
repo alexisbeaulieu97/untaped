@@ -128,3 +128,6 @@ def _wait_parallel(
     """
     watch = WatchJob(client)
     return _drain_parallel_with_worker(jobs, lambda _name, job: watch(job))
+
+
+__all__ = ["_drain_parallel", "_drain_parallel_with_worker", "_wait_parallel"]

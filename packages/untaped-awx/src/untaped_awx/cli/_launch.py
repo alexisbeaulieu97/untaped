@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from untaped_core import (
     ColumnsOption,
-    OutputFormat,
+    FormatOption,
     UntapedError,
     format_output,
     read_identifiers,
@@ -121,9 +121,7 @@ def _add_launch(app: typer.Typer, spec: AwxResourceSpec) -> None:  # noqa: C901
                 "if any tracked job ends in a non-successful terminal state."
             ),
         ),
-        fmt: OutputFormat = typer.Option(
-            "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
-        ),
+        fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Launch one or more resources and (optionally) wait for each job."""
@@ -341,3 +339,6 @@ def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
     for failed_name, failure in errors:
         typer.echo(f"error: {failed_name}: {failure}", err=True)
     return bool(errors)
+
+
+__all__ = ["LAUNCH_FLAGS", "LaunchFlag"]

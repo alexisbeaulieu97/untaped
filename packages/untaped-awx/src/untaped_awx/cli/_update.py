@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 from untaped_core import (
     ColumnsOption,
-    OutputFormat,
+    FormatOption,
     format_output,
     report_errors,
 )
@@ -26,9 +26,7 @@ def _add_update(app: typer.Typer, spec: AwxResourceSpec) -> None:
             None, "--organization", help="Scope to organization."
         ),
         wait: bool = typer.Option(False, "--wait", help="Block until terminal."),
-        fmt: OutputFormat = typer.Option(
-            "table", "--format", "-f", help="Output format (json|yaml|table|raw)."
-        ),
+        fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """Trigger an SCM sync (Project)."""

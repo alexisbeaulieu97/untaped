@@ -6,7 +6,8 @@ from typing import Any
 
 import typer
 from untaped_core import (
-    OutputFormat,
+    ColumnsOption,
+    FormatOption,
     format_output,
     parse_kv_pairs,
     read_identifiers,
@@ -62,10 +63,8 @@ def _add_list(app: typer.Typer, spec: AwxResourceSpec) -> None:
                 "FKs (e.g. credentials) become lists of names."
             ),
         ),
-        fmt: OutputFormat = typer.Option("table", "--format", "-f", help="Output format."),
-        columns: list[str] | None = typer.Option(
-            None, "--columns", "-c", help="Columns to include (repeatable)."
-        ),
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
     ) -> None:
         """List resources, optionally restricted to names/ids from stdin.
 

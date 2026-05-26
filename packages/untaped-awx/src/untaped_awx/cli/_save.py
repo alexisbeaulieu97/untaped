@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 from untaped_core import (
     ColumnsOption,
-    OutputFormat,
+    FormatOption,
     format_output,
     report_errors,
 )
@@ -38,9 +38,7 @@ def _add_save(app: typer.Typer, spec: AwxResourceSpec) -> None:
             "--inventory-organization",
             help="Disambiguate same-named inventories across orgs (Host/Group only).",
         ),
-        fmt: OutputFormat = typer.Option(
-            "yaml", "--format", "-f", help="Output format (yaml|json|raw|table)."
-        ),
+        fmt: FormatOption = "yaml",
         columns: ColumnsOption = None,
     ) -> None:
         """Dump the resource as a portable YAML envelope.
