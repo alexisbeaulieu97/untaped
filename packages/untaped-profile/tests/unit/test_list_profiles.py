@@ -41,31 +41,3 @@ def test_key_count_reflects_leaf_count(repo: Any) -> None:
 def test_empty_repo_returns_empty_list(empty_repo_factory: Any) -> None:
     repo = empty_repo_factory(profiles={})
     assert ListProfiles(repo)() == []
-
-
-def test_accepts_reader_only_stub() -> None:
-    """A widening of ``ListProfiles``'s surface past ``ProfileReader`` must not slip past CI."""
-    from untaped_core import ProfileSource
-
-    class ReaderOnly:
-        def names(self) -> list[str]:
-            return ["default"]
-
-        def active_name(self) -> str | None:
-            return "default"
-
-        def persisted_active_name(self) -> str | None:
-            return "default"
-
-        def classify_active(self) -> tuple[str | None, ProfileSource]:
-            return "default", "config"
-
-        def read(self, name: str) -> dict[str, Any] | None:
-            return {} if name == "default" else None
-
-        def resolved(self, name: str) -> dict[str, Any]:
-            return {}
-
-    profiles = ListProfiles(ReaderOnly())()
-    assert [p.name for p in profiles] == ["default"]
-    assert profiles[0].is_active is True

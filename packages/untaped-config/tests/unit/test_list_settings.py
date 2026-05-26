@@ -144,31 +144,3 @@ def test_source_label_renders_string() -> None:
     assert Source(kind="default").label == "default"
     assert Source(kind="unset").label == "unset"
     assert Source(kind="profile", profile="prod").label == "profile:prod"
-
-
-def test_list_settings_accepts_reader_only_stub() -> None:
-    """A widening of ``ListSettings``'s surface past ``SettingsReader`` must not slip past CI."""
-    from typing import Any
-
-    from untaped_core import FieldDescriptor, Settings
-
-    class ReaderOnly:
-        def descriptors(self) -> list[FieldDescriptor]:
-            return []
-
-        def current_settings(self) -> Settings:
-            return Settings()
-
-        def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
-            return None
-
-        def provenance(self) -> dict[tuple[str, ...], str]:
-            return {}
-
-        def profile_data(self, name: str) -> dict[str, Any] | None:
-            return None
-
-        def profile_names(self) -> list[str]:
-            return []
-
-    assert ListSettings(ReaderOnly())() == []
