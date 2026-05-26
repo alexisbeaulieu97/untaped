@@ -47,11 +47,15 @@ def _step(prefix: str) -> Iterator[None]:
 class BareFetchTracker:
     """Session-scoped dedup state for ``SyncWorkspace`` bare fetches.
 
-    Owned by the composition root (the CLI's ``sync`` command), passed
-    into every ``SyncWorkspace.__call__`` in a ``--all`` sweep so the
-    same bare repo isn't fetched once per workspace. ``lock_for(url)``
-    serialises ``ensure_bare → check → fetch → add`` for one URL while
-    letting different URLs proceed in parallel — the contract that
+    Owned by the sweep's orchestrator — :class:`SyncWorkspaces` (the
+    plural use case) allocates one per ``__call__`` and threads it
+    into every singular ``SyncWorkspace.__call__`` in the sweep so the
+    same bare repo isn't fetched once per workspace. Per-call callers
+    that don't need cross-workspace dedup (``add --sync``,
+    ``import --sync``) let the singular allocate a fresh tracker via
+    its ``bare_tracker=None`` default. ``lock_for(url)`` serialises
+    ``ensure_bare → check → fetch → add`` for one URL while letting
+    different URLs proceed in parallel — the contract that
     ``sync --all -j N`` relies on.
     """
 
