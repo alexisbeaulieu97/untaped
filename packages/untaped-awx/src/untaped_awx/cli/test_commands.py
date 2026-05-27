@@ -247,13 +247,6 @@ def list_command(
     typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
-def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
-    # ``suite`` first: ``--format raw`` without ``--columns`` emits the
-    # first key as the row's identifier — pinned by
-    # ``tests/unit/test_format_raw_first_key.py``.
-    return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
-
-
 # ---- validate ------------------------------------------------------------
 
 
@@ -293,3 +286,8 @@ def validate_command(
     if any_errors:
         raise typer.Exit(code=1)
     typer.echo(f"OK — {sum(len(s.cases) for s in suites)} case(s) validated", err=True)
+
+
+def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
+    # First key pins the --format raw contract (tests/unit/test_format_raw_first_key.py).
+    return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}

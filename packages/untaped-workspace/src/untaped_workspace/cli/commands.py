@@ -102,13 +102,6 @@ def list_command(
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
-def _workspace_row(w: Workspace) -> dict[str, object]:
-    # ``name`` first: ``--format raw`` without ``--columns`` emits the
-    # first key as the row's identifier — pinned by
-    # ``tests/unit/test_format_raw_first_key.py``.
-    return {"name": w.name, "path": str(w.path)}
-
-
 # init -----------------------------------------------------------------------
 
 
@@ -607,3 +600,8 @@ def edit_command(
         rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, argv=argv)
         if rc != 0:
             raise typer.Exit(code=rc)
+
+
+def _workspace_row(w: Workspace) -> dict[str, object]:
+    # First key pins the --format raw contract (tests/unit/test_format_raw_first_key.py).
+    return {"name": w.name, "path": str(w.path)}

@@ -76,56 +76,60 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
 }
 
 
-def _hand_built_factories() -> list[tuple[str, Callable[[], dict[str, object]], str]]:
-    """Each entry returns one representative row from the helper that
-    every CLI command in the corresponding row-source path calls."""
-    return [
-        (
-            "untaped_workspace.cli.commands._workspace_row",
-            lambda: _workspace_row(Workspace(name="alpha", path=Path("/tmp/alpha"))),
-            "name",
+# Each entry returns one representative row from the helper that every
+# CLI command in the corresponding row-source path calls.
+HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] = [
+    (
+        "untaped_workspace.cli.commands._workspace_row",
+        lambda: _workspace_row(Workspace(name="alpha", path=Path("/tmp/alpha"))),
+        "name",
+    ),
+    (
+        "untaped_profile.cli.commands._profile_row",
+        lambda: _profile_row(Profile(name="default", data={}, is_active=True)),
+        "name",
+    ),
+    (
+        "untaped_config.cli.commands._entry_to_row",
+        lambda: _entry_to_row(
+            SettingEntry(
+                key="awx.base_url",
+                value="https://aap/",
+                default="",
+                source=Source(kind="profile", profile="default"),
+            )
         ),
-        (
-            "untaped_profile.cli.commands._profile_row",
-            lambda: _profile_row(Profile(name="default", data={}, is_active=True)),
-            "name",
+        "key",
+    ),
+    (
+        "untaped_awx.cli.test_commands._test_case_row",
+        lambda: _test_case_row(
+            TestSuite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
+            "c1",
         ),
-        (
-            "untaped_config.cli.commands._entry_to_row",
-            lambda: _entry_to_row(
-                SettingEntry(
-                    key="awx.base_url",
-                    value="https://aap/",
-                    default="",
-                    source=Source(kind="profile", profile="default"),
-                )
-            ),
-            "key",
-        ),
-        (
-            "untaped_awx.cli.test_commands._test_case_row",
-            lambda: _test_case_row(
-                TestSuite(
-                    name="suite-a",
-                    jobTemplate="jt",
-                    cases={"c1": Case(launch={})},
-                ),
-                "c1",
-            ),
-            "suite",
-        ),
-        (
-            "untaped_awx.cli._delete._delete_row",
-            lambda: _delete_row({"id": 7, "name": "alpha"}),
-            "id",
-        ),
-    ]
+        "suite",
+    ),
+    (
+        "untaped_awx.cli._delete._delete_row",
+        lambda: _delete_row({"id": 7, "name": "alpha"}),
+        "id",
+    ),
+]
 
 
 # BaseModel classes declared in row-bearing modules but explicitly not row
 # sources — composed into a row source or otherwise off the contract.
 # Keyed by module path so a fresh non-row-source `BaseModel` in either
 # module can be exempted without touching the discovery test.
+#
+# Scope is deliberately targeted: workspace's `domain/state.py` and
+# github's `domain/models.py` are the two modules where new `BaseModel`
+# row sources land today. Globbing every `packages/*/src/*/domain/`
+# module would pull in ~35 BaseModels (envelope, payloads, manifest,
+# filter VOs, …) of which only a handful are row sources — the exempt
+# bookkeeping would dominate. A new domain that adds a row model in a
+# new module is the bounded gap; AGENTS.md's catalogue is the
+# reviewer-facing checklist when that happens.
 _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
     # ``RepoStatus`` is composed into ``StatusEntry`` but never emitted directly.
     "untaped_workspace.domain.state": frozenset({"RepoStatus"}),
@@ -150,8 +154,8 @@ def test_pydantic_row_source_first_field(cls: type[BaseModel], expected_first_ke
 
 @pytest.mark.parametrize(
     ("label", "factory", "expected_first_key"),
-    _hand_built_factories(),
-    ids=[label for label, _, _ in _hand_built_factories()],
+    HAND_BUILT_ROW_SOURCES,
+    ids=[label for label, _, _ in HAND_BUILT_ROW_SOURCES],
 )
 def test_hand_built_row_first_key(
     label: str,

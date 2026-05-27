@@ -59,17 +59,6 @@ def list_command(
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
-def _profile_row(p: Profile) -> dict[str, object]:
-    # ``name`` first: ``--format raw`` without ``--columns`` emits the
-    # first key as the row's identifier — pinned by
-    # ``tests/unit/test_format_raw_first_key.py``.
-    return {
-        "name": p.name,
-        "active": "✓" if p.is_active else "",
-        "keys": p.key_count,
-    }
-
-
 @app.command("show", no_args_is_help=True)
 def show_command(
     name: str = typer.Argument(..., help="Profile name to inspect."),
@@ -186,3 +175,12 @@ def rename_command(
     with report_errors():
         RenameProfile(ProfileFileRepository())(old_name, new_name)
         typer.echo(f"renamed profile: {old_name} → {new_name}", err=True)
+
+
+def _profile_row(p: Profile) -> dict[str, object]:
+    # First key pins the --format raw contract (tests/unit/test_format_raw_first_key.py).
+    return {
+        "name": p.name,
+        "active": "✓" if p.is_active else "",
+        "keys": p.key_count,
+    }
