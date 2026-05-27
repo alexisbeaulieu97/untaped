@@ -1,8 +1,10 @@
 """RunTestSuite: load → plan → prefetch → resolve → launch+wait.
 
-Resolution finishes in the main thread before any worker is spawned —
-:class:`FkResolver`'s caches aren't thread-safe, so the launch+wait pool
-only sees fully-baked, immutable launch dicts.
+Resolution finishes in the main thread before any worker is spawned so
+the launch+wait pool only sees fully-baked, immutable launch dicts —
+keeps workers free of FK lookups entirely. (:class:`FkResolver`'s caches
+are thread-safe per issue #208, but skipping the lock dance is still
+cleaner than racing workers through it.)
 """
 
 from __future__ import annotations
