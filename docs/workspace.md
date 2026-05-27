@@ -315,6 +315,18 @@ untaped workspace edit <name> [--editor <cmd>]
 Opens the workspace directory in your editor. Honours `$VISUAL` then
 `$EDITOR`, overrideable with `--editor`.
 
+### Debugging silent completions
+
+Tab completion is defensive: any error reading the registry (broken
+YAML in `~/.untaped/config.yml`, a permission glitch, a malformed
+entry) returns an empty list rather than a traceback. If a workspace
+you expect to see is missing from the suggestions, set
+`UNTAPED_COMPLETION_DEBUG=1` and re-trigger completion — a single
+stderr line names the cause (`warning: completion: ConfigError: could
+not parse …`). Strict `"1"` match; other values keep the silent
+default. `untaped config list` and `untaped workspace list` are the
+other diagnostics for the same class of failures.
+
 ## Recipes
 
 ### Morning routine across every workspace
