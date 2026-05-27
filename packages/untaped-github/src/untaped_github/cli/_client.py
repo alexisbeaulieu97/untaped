@@ -1,10 +1,9 @@
 """Shared CLI composition-root helper for building :class:`GithubClient`.
 
-Both ``whoami`` and ``search`` need the same three-step recipe (read
-``Settings``, bridge to ``GithubConfig``, instantiate the client). Living
-in one place keeps the bridge symmetric with AWX's
-``AwxContext.__init__`` and makes adding a new top-level command a
-one-line composition-root call.
+Both ``whoami`` and ``search`` go through here so adding a new top-level
+command is a one-line composition-root call. See
+``untaped_awx.cli._context.AwxContext`` for the symmetric pattern in
+the AWX package.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ def open_client() -> GithubClient:
     — httpx, pydantic models, etc. — would otherwise pay on every
     ``untaped --help``).
     """
-    from untaped_github.infrastructure import GithubClient, GithubConfig  # noqa: PLC0415
+    from untaped_github.infrastructure import GithubClient  # noqa: PLC0415
 
     settings = get_settings()
-    return GithubClient(GithubConfig.from_settings(settings), http=settings.http)
+    return GithubClient(settings.github, http=settings.http)

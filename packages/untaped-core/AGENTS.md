@@ -22,6 +22,12 @@ cost of breaking the introspection contract. When a 7th or 8th domain
 lands and the coupling starts to feel real, reconsider; until then, new
 settings go in an existing sub-model or a new sub-model here.
 
+A commented sketch of the future federation hook (a `DomainSettings`
+Protocol plus an `importlib.metadata` entry-point loader) lives at the
+foot of `untaped_core/settings.py`. It's documentation, not code —
+turn prose into runnable Python when the domain count actually
+warrants the indirection.
+
 ## Profile resolution (internals)
 
 `~/.untaped/config.yml` is **profile-based**: every configurable value
@@ -82,6 +88,16 @@ for the per-workspace `untaped.yml` boundary. When you add a new
 user-data ingestion point, follow this pattern: catch the library
 exception, raise an `UntapedError` subclass that names the file path
 in the message, and chain with `from exc`.
+
+`validate_settings_isolated(data, settings_cls=Settings)` (also in
+`untaped_core.settings`) handles the inverse problem: validating a
+candidate dict against the schema *without* re-running the source
+chain. Read-modify-write flows that compose a new YAML state from
+disk + edits need this — otherwise the on-disk-but-not-yet-flushed
+file source masks bugs in the candidate (an `unset` that would leave
+the file invalid validates "successfully" because the file source
+still holds the value being removed). `untaped-config`'s
+`set`/`unset` write path is the canonical caller.
 
 ## TLS verification
 

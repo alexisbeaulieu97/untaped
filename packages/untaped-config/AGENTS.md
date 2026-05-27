@@ -46,15 +46,17 @@ the in-memory dict (`set_at_path` / `unset_at_path`), then
 `_merge_for_validation` (which runs `resolve_profiles` with
 `active_override=target` and then `splice_workspace_registry` to hoist
 the top-level `workspace.workspaces` registry back in), then
-`_validate_merged(settings_cls, merged)`. If validation fails,
-`_apply` raises `ConfigError` and `mutate_config` never flushes the
-new YAML to disk. A removal that would leave the merged dict in a
-state pydantic would reject surfaces here (with the offending key
-named in the message) — same shape `set_value` produces for an
-invalid value. The asymmetric "fail at next-load instead of at unset"
-behaviour the package used to ship is gone.
+`validate_settings_isolated(merged, settings_cls)` from `untaped_core`
+(`settings_cls` defaults to `Settings`; the repo passes it explicitly
+for testability).
+If validation fails, `_apply` raises `ConfigError` and `mutate_config`
+never flushes the new YAML to disk. A removal that would leave the
+merged dict in a state pydantic would reject surfaces here (with the
+offending key named in the message) — same shape `set_value` produces
+for an invalid value. The asymmetric "fail at next-load instead of at
+unset" behaviour the package used to ship is gone.
 
-`_validate_merged` is **not** a thin wrapper around
+`validate_settings_isolated` is **not** a thin wrapper around
 `Settings.model_validate(merged)`. `BaseSettings.model_validate`
 re-runs the configured source chain (YAML file, env vars, file
 secrets) and treats `merged` as the highest-priority init source. For
@@ -62,10 +64,11 @@ secrets) and treats `merged` as the highest-priority init source. For
 `unset` it would silently mask the bug: the file source still has
 the value we just removed (because `mutate_config` hasn't flushed
 yet), so the source chain fills the gap and validation passes against
-stale state. `_validate_merged` builds a one-shot subclass whose
-`settings_customise_sources` returns only `init_settings`, so the
-merged dict is the single input pydantic sees. Same schema, same
-validators, same `ConfigError` shape — but isolated from disk.
+stale state. The helper (defined in `untaped_core.settings`) builds a
+one-shot subclass whose `settings_customise_sources` returns only
+`init_settings`, so the merged dict is the single input pydantic
+sees. Same schema, same validators, same `ConfigError` shape — but
+isolated from disk and env.
 
 The `active_override=target` argument is load-bearing when writing to a
 non-active profile. Validating against the live profile's view would

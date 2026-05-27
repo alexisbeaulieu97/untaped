@@ -6,17 +6,16 @@ from collections.abc import Iterator
 from types import TracebackType
 from typing import Any
 
-from untaped_core import ConfigError, HttpClient, HttpSettings
+from untaped_core import ConfigError, GithubSettings, HttpClient, HttpSettings
 from untaped_core.http import resolve_verify
 
-from untaped_github.infrastructure.config import GithubConfig
 from untaped_github.infrastructure.pagination import paginate_list, paginate_search
 
 
 class GithubClient:
     """Talks to ``api.github.com`` (or a GHE base) using the configured token."""
 
-    def __init__(self, config: GithubConfig, *, http: HttpSettings | None = None) -> None:
+    def __init__(self, config: GithubSettings, *, http: HttpSettings | None = None) -> None:
         token = config.token.get_secret_value().strip() if config.token is not None else ""
         if not token:
             raise ConfigError(

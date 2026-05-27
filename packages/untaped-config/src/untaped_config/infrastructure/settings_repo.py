@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import yaml
 from pydantic import ValidationError
-from pydantic_settings import PydanticBaseSettingsSource
 from untaped_core import (
     DEFAULT_PROFILE,
     ConfigError,
@@ -19,6 +18,7 @@ from untaped_core import (
     get_settings,
     resolve_profiles,
     splice_workspace_registry,
+    validate_settings_isolated,
     walk_settings,
 )
 from untaped_core.config_file import (
@@ -103,7 +103,7 @@ class SettingsFileRepository:
             set_at_path(profile_data, descriptor.path, coerced)
             merged = _merge_for_validation(data, active=target)
             try:
-                _validate_merged(self._settings_cls, merged)
+                validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
                 raise ConfigError(
                     f"invalid value for {key!r}: {first_validation_error(exc)}"
@@ -146,7 +146,7 @@ class SettingsFileRepository:
             # default fields.
             merged = _merge_for_validation(data, active=target)
             try:
-                _validate_merged(self._settings_cls, merged)
+                validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
                 raise ConfigError(
                     f"unsetting {key!r} would leave profile {target!r} invalid: "
@@ -217,53 +217,6 @@ def _merge_for_validation(data: dict[str, Any], *, active: str) -> dict[str, Any
     effective, _ = resolve_profiles(data, active_override=active)
     splice_workspace_registry(data, effective)
     return effective
-
-
-def _init_only_sources(
-    cls: type[Settings],
-    settings_cls: type[Settings],
-    init_settings: PydanticBaseSettingsSource,
-    env_settings: PydanticBaseSettingsSource,
-    dotenv_settings: PydanticBaseSettingsSource,
-    file_secret_settings: PydanticBaseSettingsSource,
-) -> tuple[PydanticBaseSettingsSource, ...]:
-    """Source-chain override used by :func:`_validate_merged`.
-
-    The full six-parameter signature is required to match pydantic-
-    settings' ``settings_customise_sources`` classmethod contract; only
-    ``init_settings`` is consumed (the merged dict is the single input
-    pydantic sees). Unused parameters stay explicitly named rather than
-    ``_``-prefixed so the shape stays a drop-in match for the upstream
-    classmethod.
-    """
-    return (init_settings,)
-
-
-def _validate_merged(settings_cls: type[Settings], merged: dict[str, Any]) -> None:
-    """Validate ``merged`` as a complete Settings dict, isolated from disk.
-
-    ``BaseSettings.model_validate`` is NOT a pure dict validator — it
-    re-runs the configured source chain (YAML file, env vars, file
-    secrets) and overlays ``merged`` on top as the init source. That's
-    fine for ``set`` (the new value lands in init, which has highest
-    priority), but it silently masks ``unset`` (the file source fills
-    the gap with the value we just removed because ``mutate_config``
-    hasn't flushed yet). Symptom: an ``unset`` that would leave the
-    config schema-invalid validates "successfully" and lands on disk.
-
-    Fix: validate against a one-shot subclass whose source chain is
-    just ``init_settings``. Same schema, same validators, same error
-    shapes — but the merged dict is the only input pydantic sees.
-    """
-    validator_cls = cast(
-        "type[Settings]",
-        type(
-            "_ValidateOnly",
-            (settings_cls,),
-            {"settings_customise_sources": classmethod(_init_only_sources)},
-        ),
-    )
-    validator_cls.model_validate(merged)
 
 
 def _coerce_scalar(raw_value: str) -> Any:
