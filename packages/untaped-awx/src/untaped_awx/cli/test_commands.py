@@ -243,12 +243,15 @@ def list_command(
             for suite in suites
         ]
     else:
-        rows = [
-            {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
-            for suite in suites
-            for case_name in suite.cases
-        ]
+        rows = [_test_case_row(suite, case_name) for suite in suites for case_name in suite.cases]
     typer.echo(format_output(rows, fmt=fmt, columns=columns))
+
+
+def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
+    # ``suite`` first: ``--format raw`` without ``--columns`` emits the
+    # first key as the row's identifier — pinned by
+    # ``tests/unit/test_format_raw_first_key.py``.
+    return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
 
 
 # ---- validate ------------------------------------------------------------

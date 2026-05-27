@@ -125,7 +125,8 @@ categories are exempt:
   identifier). The pipeline use case "feed back into the next
   command" doesn't apply to one-shot health snapshots.
 
-Audit of in-scope row sources (TODO(#158) will pin this by test):
+Audit of in-scope row sources (pinned by
+`tests/unit/test_format_raw_first_key.py` at the workspace root):
 
 | Row source                                  | First key   |
 | ------------------------------------------- | ----------- |
