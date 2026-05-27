@@ -29,16 +29,11 @@ class FieldChange(BaseModel):
 
 
 class ApplyOutcome(BaseModel):
-    """The result of applying a single :class:`Resource`.
+    """The result of applying a single :class:`Resource`."""
 
-    Frozen so that the parallel branch in
-    :class:`untaped_awx.application.apply_file.ApplyFile._apply_kind`
-    can't silently regress into in-place mutations of an outcome shared
-    across workers — phase 2's rewrites go through
-    :meth:`pydantic.BaseModel.model_copy` with ``update={...}``. See
-    ``packages/untaped-awx/AGENTS.md`` "Apply parallelism".
-    """
-
+    # Frozen so phase 2's rewrites must produce a new instance (via
+    # `model_copy(update=...)`) instead of mutating one shared across
+    # workers. See `packages/untaped-awx/AGENTS.md` "Apply parallelism".
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str

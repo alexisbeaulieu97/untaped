@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 import pytest
@@ -237,25 +240,19 @@ def test_prefetch_propagates_programming_errors() -> None:
 
 
 def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
-    """``ApplyFile._apply_kind`` dispatches phase-1 doc applies across a
-    ``ThreadPoolExecutor``; each worker may hit ``FkResolver.name_to_id``
-    concurrently for the same name. Pin the contract that two threads
-    racing on a cache miss collapse into one repo call — without that,
-    the "FkResolver caches are read-mostly once prefetch has run" claim
-    in AGENTS.md "Apply parallelism" silently breaks the moment a
-    worker hits a miss the prefetch didn't cover.
+    """Pin the contract that two threads racing on a cache miss for the
+    same ``(kind, name, scope)`` collapse into one repo call.
 
-    A check-then-set pattern without locking would let both threads
-    pass the ``if key in self._name_cache`` gate before either writes
-    back, producing duplicate repo calls under contention.
+    Without the lock, both threads pass the ``if key in self._name_cache``
+    gate before either writes back, producing duplicate ``find_by_identity``
+    calls — silently defeating the "FkResolver caches are read-mostly
+    once prefetch has finished" guarantee `_apply_kind`'s parallel branch
+    rests on.
     """
-    import threading
-    import time
-    from concurrent.futures import ThreadPoolExecutor
 
     class _SlowCountingRepo(_StubRepo):
-        """Mimics a network call: brief sleep to widen the miss-then-fill
-        window so contention is *guaranteed* to surface."""
+        """A brief sleep widens the miss-then-fill window so the wrong
+        behaviour (under no lock) reliably surfaces."""
 
         def __init__(self, store: dict[str, list[dict[str, Any]]]) -> None:
             super().__init__(store)
@@ -271,14 +268,12 @@ def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
         ) -> dict[str, Any] | None:
             with self._call_lock:
                 self.find_count += 1
-            time.sleep(0.01)
+            time.sleep(0.001)
             return super().find_by_identity(spec, name=name, scope=scope)
 
     repo = _SlowCountingRepo({"Organization": [{"id": 7, "name": "Default"}]})
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
-    # 20 workers all racing on the same (kind, name) — under the lock,
-    # exactly one passes the cache-miss branch into ``find_by_identity``.
     start = threading.Event()
 
     def worker() -> int:
@@ -287,13 +282,10 @@ def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
 
     with ThreadPoolExecutor(max_workers=20) as pool:
         futures = [pool.submit(worker) for _ in range(20)]
-        # Release them simultaneously to maximise contention.
         start.set()
         results = [f.result() for f in futures]
 
     assert results == [7] * 20
-    # Without the lock this is 20 (every worker misses the cache and
-    # calls find_by_identity). With the lock, exactly one repo call.
     assert repo.find_count == 1, (
         f"FkResolver let {repo.find_count} concurrent cache misses "
         "through — the read+write window must be locked atomically"

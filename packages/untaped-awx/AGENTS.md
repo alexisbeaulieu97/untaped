@@ -278,13 +278,16 @@ Thread-safety relies on the same guarantees the "Job execution and
 `httpx.Client` is thread-safe, `ApplyResource` is stateless across calls
 (the `strip_encrypted` pass mutates a per-call deepcopy — see issue #10;
 pinned by `test_apply_resource_is_stateless_across_calls`), and
-`FkResolver`'s caches are protected by an explicit `threading.RLock`
-taken across the read + repo call + write window so two workers racing
-on the same `(kind, name, scope)` collapse into one repo lookup (pinned
-by `test_concurrent_name_to_id_dedups_repo_calls_under_contention`).
+`FkResolver`'s two caches are guarded by `self._cache_lock` across the
+read + repo call + write window so two workers racing on the same
+`(kind, name, scope)` collapse into one repo lookup (pinned by
+`test_concurrent_name_to_id_dedups_repo_calls_under_contention`).
 `ApplyOutcome` is frozen (`domain/outcomes.py`), so phase 2's outcome
 rewrites go through `model_copy(update={...})` instead of in-place
-mutation — a future phase-2 parallelisation is safe by construction.
+mutation. Parallelising phase 2 itself still requires an index-keyed
+collector (the same shape phase 1 uses) so two threads can't race on
+the same `outcomes` list slot — frozen rules out the in-place mutation
+race, not the slot race.
 
 ## Delete: preview-and-confirm with a `--yes` fast path
 
