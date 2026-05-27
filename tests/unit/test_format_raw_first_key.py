@@ -22,15 +22,25 @@ Three parametrised tests pin existing entries:
   spec-driven ``list`` command leads with ``"id"``.
 
 Two discovery tests close the "new ``BaseModel`` added without a
-catalogue entry" gap by walking the two row-bearing model modules
-(``untaped_workspace.domain.state`` and
-``untaped_github.domain.models``); a fresh ``BaseModel`` in either
-must be triaged into ``PYDANTIC_ROW_SOURCES`` or
-``_NOT_ROW_SOURCES_BY_MODULE``.
+catalogue entry" gap by walking every module registered in
+:data:`_NOT_ROW_SOURCES_BY_MODULE` (today: the home modules of every
+catalogued row source — workspace state, github models, AWX job /
+workflow node / test suite); a fresh ``BaseModel`` in any of those
+must be triaged into ``PYDANTIC_ROW_SOURCES`` or the per-module
+exempt set. ``test_every_catalogued_pydantic_module_is_discovery_registered``
+keeps the two constants in lockstep — cataloguing a row source in a
+new module is rejected until that module is registered.
+
+A structural check (``test_list_commands_call_their_row_helper``)
+parses each list command's AST and asserts the row constructor at the
+call site IS still the extracted helper — closing the regression
+window where a future PR re-inlines a dict literal at the call site
+while leaving the helper (and its test pin) untouched.
 """
 
 from __future__ import annotations
 
+import ast
 import importlib
 import inspect
 from collections.abc import Callable
@@ -41,7 +51,7 @@ from pydantic import BaseModel
 from untaped_awx.cli._delete import _delete_row
 from untaped_awx.cli.test_commands import _test_case_row, _test_suite_row
 from untaped_awx.domain import Job, JobEvent, WorkflowNode
-from untaped_awx.domain.test_suite import Case, TestSuite
+from untaped_awx.domain.test_suite import Case, CaseResult, TestSuite
 from untaped_awx.infrastructure.specs import ALL_SPECS
 from untaped_config.cli.commands import _entry_to_row
 from untaped_config.domain.models import SettingEntry, Source
@@ -60,6 +70,8 @@ from untaped_workspace.domain.state import ForeachOutcome, StatusEntry, SyncOutc
 
 _CONTRACT_REF = "see packages/untaped-core/AGENTS.md '--format raw default-column contract'"
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
     SyncOutcome: "workspace",
@@ -68,6 +80,7 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
     Job: "id",
     JobEvent: "counter",
     WorkflowNode: "id",
+    CaseResult: "suite",
     GithubUser: "login",
     RepoResult: "id",
     IssueResult: "id",
@@ -125,33 +138,40 @@ HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] =
 
 
 # BaseModel classes declared in row-bearing modules but explicitly not row
-# sources — composed into a row source or otherwise off the contract.
-# Keyed by module path so a fresh non-row-source `BaseModel` in either
-# module can be exempted without touching the discovery test.
+# sources — value objects, aggregates, or feeder models that ``--format raw``
+# never emits directly. Keyed by module path so a fresh non-row-source
+# ``BaseModel`` in any of these modules can be exempted without touching
+# the discovery test body.
 #
-# Scope is deliberately targeted: workspace's `domain/state.py` and
-# github's `domain/models.py` are the two modules where new `BaseModel`
-# row sources land today. Globbing every `packages/*/src/*/domain/`
-# module would pull in ~35 BaseModels (envelope, payloads, manifest,
-# filter VOs, …) of which only a handful are row sources — the exempt
-# bookkeeping would dominate. A new domain that adds a row model in a
-# new module is the bounded gap; AGENTS.md's catalogue is the
-# reviewer-facing checklist when that happens.
+# Scope is the set of modules that host any catalogued row source today
+# (enforced by ``test_every_catalogued_pydantic_module_is_discovery_registered``).
+# Globbing every ``packages/*/src/*/domain/`` module would pull in ~40
+# BaseModels (envelope, payloads, manifest, filter VOs, …) of which only
+# a handful are row sources, so the exempt bookkeeping would dominate;
+# a new domain that adds a row model in a new module is the bounded gap,
+# caught loudly by the module-registration invariant above.
 _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
-    # ``RepoStatus`` is composed into ``StatusEntry`` but never emitted directly.
+    # ``RepoStatus`` is a git-state value object — its fields are
+    # re-declared flat on ``StatusEntry`` rather than nested, so the model
+    # itself never reaches ``format_output``.
     "untaped_workspace.domain.state": frozenset({"RepoStatus"}),
     "untaped_github.domain.models": frozenset(),
-    # AWX domain modules registered so the discovery walk covers them too —
-    # a sibling ``BaseModel`` added to either file lights up the test.
     "untaped_awx.domain.job": frozenset(),
     "untaped_awx.domain.workflow_node": frozenset(),
+    # ``CaseResult`` is the row source (``awx test run`` emits
+    # ``[r.model_dump() for r in outcome.results]``); the other four
+    # BaseModels are loaded-suite shapes (``TestSuite``/``Case``/
+    # ``VariableSpec``) or the aggregate (``TestRunOutcome``).
+    "untaped_awx.domain.test_suite": frozenset(
+        {"Case", "TestRunOutcome", "TestSuite", "VariableSpec"}
+    ),
 }
 
 
 @pytest.mark.parametrize(
     ("cls", "expected_first_key"),
     list(PYDANTIC_ROW_SOURCES.items()),
-    ids=lambda x: x.__name__ if inspect.isclass(x) else str(x),
+    ids=[cls.__name__ for cls in PYDANTIC_ROW_SOURCES],
 )
 def test_pydantic_row_source_first_field(cls: type[BaseModel], expected_first_key: str) -> None:
     """A pydantic row source's first declared field is its first emitted
@@ -184,9 +204,13 @@ def test_hand_built_row_first_key(
 
 
 def test_awx_resource_spec_list_columns_leads_with_id() -> None:
-    """Every spec-driven ``list`` command leads with ``id``. Catches a
-    new :class:`AwxResourceSpec` that drifts from the universal contract.
-    Specs without ``list_columns`` (catalog-only stubs) are skipped."""
+    """Every :class:`AwxResourceSpec`'s ``list_columns`` leads with ``id``.
+
+    Catches a new spec that drifts from the universal contract. Pin
+    covers catalog-only stubs (``commands=()``) too — their
+    ``list_columns`` is still populated and a future relax of
+    ``commands`` mustn't smuggle in a non-``id`` first column.
+    """
     offenders: list[tuple[str, tuple[str, ...]]] = [
         (spec.kind, spec.list_columns)
         for spec in ALL_SPECS
@@ -254,4 +278,79 @@ def test_every_basemodel_in_row_module_is_catalogued_or_exempt(module_path: str)
         f"nor exempt: {', '.join(o.__name__ for o in orphans)}. Add to "
         "PYDANTIC_ROW_SOURCES (with expected first key) or to "
         f"_NOT_ROW_SOURCES_BY_MODULE if off-contract ({_CONTRACT_REF})."
+    )
+
+
+# Each entry is (source file relative to repo root, name of the @app.command
+# function whose body constructs the rows, name of the extracted row helper
+# the body must call). The helper-level pin guards the helper's shape; this
+# structural pin guards that the live call site has not re-inlined a dict
+# literal — closing the bypass window the helper extraction created.
+_LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
+    (
+        _REPO_ROOT / "packages/untaped-workspace/src/untaped_workspace/cli/commands.py",
+        "list_command",
+        "_workspace_row",
+    ),
+    (
+        _REPO_ROOT / "packages/untaped-profile/src/untaped_profile/cli/commands.py",
+        "list_command",
+        "_profile_row",
+    ),
+    (
+        _REPO_ROOT / "packages/untaped-config/src/untaped_config/cli/commands.py",
+        "list_command",
+        "_entry_to_row",
+    ),
+    (
+        _REPO_ROOT / "packages/untaped-awx/src/untaped_awx/cli/test_commands.py",
+        "list_command",
+        "_test_case_row",
+    ),
+    (
+        _REPO_ROOT / "packages/untaped-awx/src/untaped_awx/cli/test_commands.py",
+        "list_command",
+        "_test_suite_row",
+    ),
+]
+
+
+def _function_calls(source: Path, function_name: str) -> set[str]:
+    """All bare-name :class:`ast.Call` targets reachable from a top-level
+    function body (recurses through comprehensions / nested expressions)."""
+    tree = ast.parse(source.read_text())
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            return {
+                sub.func.id
+                for sub in ast.walk(node)
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+            }
+    raise AssertionError(f"function {function_name!r} not found in {source}")
+
+
+@pytest.mark.parametrize(
+    ("source", "function_name", "helper_name"),
+    _LIST_COMMAND_CALLSITES,
+    ids=[
+        f"{source.name}::{function_name}->{helper_name}"
+        for source, function_name, helper_name in _LIST_COMMAND_CALLSITES
+    ],
+)
+def test_list_commands_call_their_row_helper(
+    source: Path,
+    function_name: str,
+    helper_name: str,
+) -> None:
+    """The list command body must still call the extracted row helper.
+
+    A future PR re-inlining the dict literal at the call site would
+    leave the helper-level pin pointing at dead code; this AST check
+    catches that the moment it lands.
+    """
+    callees = _function_calls(source, function_name)
+    assert helper_name in callees, (
+        f"{source.relative_to(_REPO_ROOT)}:{function_name} no longer calls "
+        f"{helper_name!r} — the helper-level pin would now point at dead "
+        f"code. Restore the call or update the catalogue ({_CONTRACT_REF})."
     )

@@ -178,7 +178,10 @@ def rename_command(
 
 
 def _profile_row(p: Profile) -> dict[str, object]:
-    # First key pins the --format raw contract (tests/unit/test_format_raw_first_key.py).
+    # ``name`` first: under ``--format raw`` the first key is what
+    # pipelines feed back into the next command (xargs identifier
+    # semantics). See packages/untaped-core/AGENTS.md '--format raw
+    # default-column contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {
         "name": p.name,
         "active": "✓" if p.is_active else "",

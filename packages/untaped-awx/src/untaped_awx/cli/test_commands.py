@@ -276,14 +276,20 @@ def validate_command(
 
 
 def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
-    # First key pins the --format raw contract (tests/unit/test_format_raw_first_key.py).
+    # ``suite`` first: under ``--format raw`` (table/raw branch) the
+    # first key is what pipelines feed back into the next command
+    # (xargs identifier semantics). See packages/untaped-core/AGENTS.md
+    # '--format raw default-column contract'; pinned by
+    # tests/unit/test_format_raw_first_key.py.
     return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
 
 
 def _test_suite_row(suite: TestSuite) -> dict[str, Any]:
-    # Suite-level shape for --format json|yaml so automation can introspect
-    # required vars, defaults, choices, and secret flags. First key pins the
-    # --format raw contract (tests/unit/test_format_raw_first_key.py).
+    # Suite-level shape for --format json|yaml only (raw uses
+    # _test_case_row). Kept ``suite``-first for symmetry with the raw
+    # row source — the contract is documented in
+    # packages/untaped-core/AGENTS.md '--format raw default-column
+    # contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {
         "suite": suite.name,
         "job_template": suite.job_template,

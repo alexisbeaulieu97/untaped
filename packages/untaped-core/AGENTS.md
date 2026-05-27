@@ -134,7 +134,9 @@ Audit of in-scope row sources (pinned by
 | `SyncOutcome` / `StatusEntry` / `ForeachOutcome` | `workspace` |
 | profile `list_command` (hand dict)          | `name`      |
 | config `list_command` (`_entry_to_row`)     | `key`       |
-| `awx test list` (hand dict, `_test_case_row` / `_test_suite_row`) | `suite` |
+| `awx test list` table/raw branch (hand dict, `_test_case_row`)    | `suite`     |
+| `awx test list` json/yaml branch (hand dict, `_test_suite_row`)   | `suite`     |
+| `CaseResult` (`awx test run`, every `--format`) | `suite`   |
 | `awx <kind> delete` (hand dict, `_delete_row`) | `id`     |
 | `Job` / `JobEvent`                          | `id` / `counter` |
 | `WorkflowNode` (`workflow-templates nodes`) | `id`        |
