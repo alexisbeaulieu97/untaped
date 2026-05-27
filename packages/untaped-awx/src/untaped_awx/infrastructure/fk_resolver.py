@@ -10,7 +10,9 @@ resolve the scope itself.
 
 For bulk apply / save flows, callers can warm the cache via
 :meth:`prefetch` to collapse N per-name round trips into one paginated
-``list`` per ``(kind, scope)`` group.
+``list`` per ``(kind, scope)`` group. Prefetch failures call the
+injected ``warn`` hook and fall back to per-record lookups so the
+degradation is visible without breaking the apply.
 
 Thread-safety: the two caches are guarded by ``self._cache_lock``
 across the read+repo-call+write window so concurrent workers racing
@@ -22,6 +24,7 @@ into the resolver surfaces as a deadlock rather than silent recursion.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from untaped_awx.errors import AwxApiError, ResourceNotFound
@@ -30,11 +33,23 @@ from untaped_awx.infrastructure.catalog import AwxResourceCatalog
 if TYPE_CHECKING:
     from untaped_awx.application.ports import ResourceClient
 
+WarnFn = Callable[[str], None]
+
+
+def _noop_warn(_msg: str) -> None: ...
+
 
 class FkResolver:
-    def __init__(self, repo: ResourceClient, catalog: AwxResourceCatalog) -> None:
+    def __init__(
+        self,
+        repo: ResourceClient,
+        catalog: AwxResourceCatalog,
+        *,
+        warn: WarnFn = _noop_warn,
+    ) -> None:
         self._repo = repo
         self._catalog = catalog
+        self._warn = warn
         self._name_cache: dict[tuple[str, str, frozenset[tuple[str, str]]], int] = {}
         self._id_cache: dict[tuple[str, int], str] = {}
         self._cache_lock = threading.Lock()
@@ -115,10 +130,16 @@ class FkResolver:
         # part with non-trivial I/O.
         try:
             records = list(self._repo.list(spec, params=params or None))
-        except AwxApiError:
-            # Per-record name_to_id calls remain authoritative; a flaky bulk
-            # fetch silently degrades to per-call resolution rather than
-            # failing an apply that the per-call path could still satisfy.
+        except AwxApiError as exc:
+            # Per-record name_to_id calls remain authoritative: a flaky bulk
+            # fetch falls back to per-call resolution rather than failing an
+            # apply that the per-call path could still satisfy. Warn so the
+            # user sees why the apply just slowed down.
+            scope_str = ", ".join(f"{k}={v}" for k, v in sorted(scope.items()))
+            target = f"{kind} ({scope_str})" if scope_str else kind
+            self._warn(
+                f"FK prefetch for {target} failed ({exc}); falling back to per-record lookups"
+            )
             return
         with self._cache_lock:
             for record in records:
