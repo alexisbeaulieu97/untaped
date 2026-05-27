@@ -31,7 +31,10 @@ class FieldChange(BaseModel):
 class ApplyOutcome(BaseModel):
     """The result of applying a single :class:`Resource`."""
 
-    model_config = ConfigDict(extra="forbid")
+    # Frozen so phase 2's rewrites must produce a new instance (via
+    # `model_copy(update=...)`) instead of mutating one shared across
+    # workers. See `packages/untaped-awx/AGENTS.md` "Apply parallelism".
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str
     name: str
