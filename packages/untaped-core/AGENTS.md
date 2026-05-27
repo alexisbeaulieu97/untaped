@@ -125,7 +125,8 @@ categories are exempt:
   identifier). The pipeline use case "feed back into the next
   command" doesn't apply to one-shot health snapshots.
 
-Audit of in-scope row sources (TODO(#158) will pin this by test):
+Audit of in-scope row sources (pinned by
+`tests/unit/test_format_raw_first_key.py` at the workspace root):
 
 | Row source                                  | First key   |
 | ------------------------------------------- | ----------- |
@@ -133,10 +134,14 @@ Audit of in-scope row sources (TODO(#158) will pin this by test):
 | `SyncOutcome` / `StatusEntry` / `ForeachOutcome` | `workspace` |
 | profile `list_command` (hand dict)          | `name`      |
 | config `list_command` (`_entry_to_row`)     | `key`       |
-| `awx test list` (hand dict)                 | `suite`     |
+| `awx test list` table/raw branch (hand dict, `_test_case_row`)    | `suite`     |
+| `awx test list` json/yaml branch (hand dict, `_test_suite_row`)   | `suite`     |
+| `CaseResult` (`awx test run`, every `--format`) | `suite`   |
+| `awx <kind> delete` (hand dict, `_delete_row`) | `id`     |
 | `Job` / `JobEvent`                          | `id` / `counter` |
+| `WorkflowNode` (`workflow-templates nodes`) | `id`        |
 | `AwxResourceSpec.list_columns[0]` (every spec) | `id`     |
-| AWX REST record (raw dict from server) — used by `awx <kind> get` when no `--columns` given | `id` |
+| AWX REST record (raw dict from server) — used by `awx <kind> get` when no `--columns` given; server-controlled, not test-pinned | `id` |
 | `GithubUser` (`whoami`)                     | `login`     |
 | `RepoResult` / `IssueResult` / `UserResult` | `id`        |
 | `CodeResult`                                | `name`      |

@@ -228,26 +228,9 @@ def list_command(
         )
 
     if fmt in {"json", "yaml"}:
-        # Suite-level shape with variable metadata so automation can
-        # introspect required vars, defaults, choices, and secret flags.
-        rows: list[dict[str, Any]] = [
-            {
-                "suite": suite.name,
-                "job_template": suite.job_template,
-                "cases": list(suite.cases.keys()),
-                "variables": {
-                    name: spec.model_dump(exclude_none=True)
-                    for name, spec in suite.variables.items()
-                },
-            }
-            for suite in suites
-        ]
+        rows: list[dict[str, Any]] = [_test_suite_row(suite) for suite in suites]
     else:
-        rows = [
-            {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
-            for suite in suites
-            for case_name in suite.cases
-        ]
+        rows = [_test_case_row(suite, case_name) for suite in suites for case_name in suite.cases]
     typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
@@ -290,3 +273,28 @@ def validate_command(
     if any_errors:
         raise typer.Exit(code=1)
     typer.echo(f"OK — {sum(len(s.cases) for s in suites)} case(s) validated", err=True)
+
+
+def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
+    # ``suite`` first: under ``--format raw`` (table/raw branch) the
+    # first key is what pipelines feed back into the next command
+    # (xargs identifier semantics). See packages/untaped-core/AGENTS.md
+    # '--format raw default-column contract'; pinned by
+    # tests/unit/test_format_raw_first_key.py.
+    return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
+
+
+def _test_suite_row(suite: TestSuite) -> dict[str, Any]:
+    # Suite-level shape for --format json|yaml only (raw uses
+    # _test_case_row). Kept ``suite``-first for symmetry with the raw
+    # row source — the contract is documented in
+    # packages/untaped-core/AGENTS.md '--format raw default-column
+    # contract'; pinned by tests/unit/test_format_raw_first_key.py.
+    return {
+        "suite": suite.name,
+        "job_template": suite.job_template,
+        "cases": list(suite.cases.keys()),
+        "variables": {
+            name: spec.model_dump(exclude_none=True) for name, spec in suite.variables.items()
+        },
+    }
