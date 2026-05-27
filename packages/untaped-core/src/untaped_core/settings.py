@@ -211,6 +211,10 @@ def validate_settings_isolated(
     isolated from disk and env.
     """
 
+    # Six-parameter shape is the pydantic-settings
+    # ``settings_customise_sources`` classmethod contract; only
+    # ``init_settings`` is consumed here so ``data`` is the single input
+    # pydantic sees.
     def _init_only(
         cls: type[Settings],
         settings_cls: type[Settings],
@@ -287,3 +291,8 @@ def validate_settings_isolated(
 #     bearing for the single-schema introspection contract; the
 #     federation hook must preserve walk_settings's output shape or
 #     update every consumer.
+#   - validate_settings_isolated builds a one-shot subclass of the
+#     static Settings class. With a dynamically-built aggregate, the
+#     "one-shot subclass" trick still works (create_model produces a
+#     real class) but the helper's signature needs verification that
+#     the dynamic aggregate satisfies ``type[Settings]`` invariants.
