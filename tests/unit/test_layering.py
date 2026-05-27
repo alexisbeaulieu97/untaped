@@ -247,9 +247,13 @@ def test_every_domain_has_application_layer() -> None:
 
 
 # AGENTS.md: "Only ``cli/`` modules read ``untaped_core.Settings``."
-# Infrastructure adapters must accept a package-local config struct
-# (e.g. ``AwxConfig``, ``GithubConfig``) instead, so they can be
-# constructed in tests without touching the global settings cache.
+# Infrastructure adapters consume settings narrowed at the composition
+# root — either a package-local config struct that adds invariants
+# (``AwxConfig`` carries ``gt=0`` / ``frozen=True``) or the schema
+# sub-model directly when no extra invariants apply (``GithubClient``
+# takes ``GithubSettings``). Either way, ``Settings`` / ``get_settings``
+# stay out of ``infrastructure/`` so adapters are constructible in
+# tests without touching the global settings cache.
 #
 # Allowlist entries live below ``infrastructure/`` and are written as
 # ``"<import_root>/<rel_path_under_src>"`` (POSIX separators):
@@ -362,11 +366,14 @@ def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_
     """Infrastructure adapters must not import ``Settings`` / ``get_settings``.
 
     AGENTS.md: only ``cli/`` modules read ``untaped_core.Settings``;
-    everything downstream consumes a package-local config struct (e.g.
-    :class:`untaped_awx.infrastructure.AwxConfig`,
-    :class:`untaped_github.infrastructure.GithubConfig`). Adapters that
-    read settings directly couple to the global cache and can't be
-    constructed in unit tests without monkey-patching it.
+    everything downstream consumes a narrower view — either a
+    package-local config struct (e.g.
+    :class:`untaped_awx.infrastructure.AwxConfig`, which adds
+    invariants beyond the schema) or a schema sub-model imported
+    directly from ``untaped_core`` (e.g. ``GithubSettings``,
+    ``HttpSettings``). Adapters that read ``Settings`` itself couple
+    to the global cache and can't be constructed in unit tests without
+    monkey-patching it.
 
     Documented exceptions live in ``_INFRA_MAY_READ_SETTINGS``. New
     violations should be fixed (composition root reads settings, builds

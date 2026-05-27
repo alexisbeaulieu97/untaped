@@ -103,7 +103,7 @@ class SettingsFileRepository:
             set_at_path(profile_data, descriptor.path, coerced)
             merged = _merge_for_validation(data, active=target)
             try:
-                validate_settings_isolated(self._settings_cls, merged)
+                validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
                 raise ConfigError(
                     f"invalid value for {key!r}: {first_validation_error(exc)}"
@@ -146,7 +146,7 @@ class SettingsFileRepository:
             # default fields.
             merged = _merge_for_validation(data, active=target)
             try:
-                validate_settings_isolated(self._settings_cls, merged)
+                validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
                 raise ConfigError(
                     f"unsetting {key!r} would leave profile {target!r} invalid: "

@@ -190,21 +190,9 @@ def get_settings() -> Settings:
         raise ConfigError(f"invalid config in {path}: {first_validation_error(exc)}") from exc
 
 
-def _init_only_sources(
-    cls: type[Settings],
-    settings_cls: type[Settings],
-    init_settings: PydanticBaseSettingsSource,
-    env_settings: PydanticBaseSettingsSource,
-    dotenv_settings: PydanticBaseSettingsSource,
-    file_secret_settings: PydanticBaseSettingsSource,
-) -> tuple[PydanticBaseSettingsSource, ...]:
-    # Full six-parameter signature matches pydantic-settings'
-    # ``settings_customise_sources`` classmethod contract; only
-    # ``init_settings`` is consumed by ``validate_settings_isolated``.
-    return (init_settings,)
-
-
-def validate_settings_isolated(settings_cls: type[Settings], data: dict[str, Any]) -> Settings:
+def validate_settings_isolated(
+    data: dict[str, Any], settings_cls: type[Settings] = Settings
+) -> Settings:
     """Validate ``data`` against ``settings_cls`` with the source chain bypassed.
 
     :class:`pydantic_settings.BaseSettings.model_validate` is **not** a
@@ -221,17 +209,24 @@ def validate_settings_isolated(settings_cls: type[Settings], data: dict[str, Any
     ``data`` is the single input pydantic sees. Same schema, same
     validators, same :class:`pydantic.ValidationError` shape — but
     isolated from disk and env.
-
-    Returns the validated :class:`Settings` instance so callers may bind
-    it; existing callers (``untaped-config``'s write path) consume it
-    purely for the side-effecting ``ValidationError`` raise.
     """
+
+    def _init_only(
+        cls: type[Settings],
+        settings_cls: type[Settings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (init_settings,)
+
     validator_cls = cast(
         "type[Settings]",
         type(
             "_ValidateOnly",
             (settings_cls,),
-            {"settings_customise_sources": classmethod(_init_only_sources)},
+            {"settings_customise_sources": classmethod(_init_only)},
         ),
     )
     return validator_cls.model_validate(data)
@@ -249,14 +244,18 @@ def validate_settings_isolated(settings_cls: type[Settings], data: dict[str, Any
 #
 # When that day comes, the seam looks roughly like this:
 #
-#     from typing import Protocol, runtime_checkable
+#     from typing import ClassVar, Protocol, runtime_checkable
 #     from importlib.metadata import entry_points
 #     from pydantic import create_model
+#     from pydantic.fields import FieldInfo
 #
 #     @runtime_checkable
 #     class DomainSettings(Protocol):
-#         """Sub-model contributed by a domain package."""
-#         ...
+#         """Sub-model contributed by a domain package.
+#         The model_fields member pins the structural requirement so
+#         isinstance checks aren't no-ops (an empty Protocol body
+#         matches every object)."""
+#         model_fields: ClassVar[dict[str, FieldInfo]]
 #
 #     def _discover_domain_settings() -> dict[str, type[BaseModel]]:
 #         """Walk the ``untaped.domain_settings`` entry-point group.
@@ -266,9 +265,12 @@ def validate_settings_isolated(settings_cls: type[Settings], data: dict[str, Any
 #         return {ep.name: ep.load() for ep in eps}
 #
 #     # Settings would then construct its sub-model fields dynamically
-#     # via pydantic.create_model from the discovered mapping.
-#     # HttpSettings + WorkspaceSettings stay first-class because they
-#     # are cross-cutting rather than domain-bounded.
+#     # via pydantic.create_model(__base__=BaseSettings, ...). The
+#     # __base__ kwarg is load-bearing: a plain create_model produces a
+#     # BaseModel and env-var resolution (UNTAPED_<SECTION>__<FIELD>)
+#     # silently breaks. HttpSettings + WorkspaceSettings stay
+#     # first-class because they are cross-cutting rather than
+#     # domain-bounded.
 #
 # Open questions to revisit at federation time:
 #   - walk_settings / redact_secrets currently assume static field
