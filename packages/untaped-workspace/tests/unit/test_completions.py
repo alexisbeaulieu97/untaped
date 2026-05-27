@@ -19,9 +19,9 @@ def silent_completion_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _stub_entries(
     monkeypatch: pytest.MonkeyPatch,
-    behaviour: BaseException | list[Workspace],
+    behaviour: Exception | list[Workspace],
 ) -> None:
-    if isinstance(behaviour, BaseException):
+    if isinstance(behaviour, Exception):
 
         def _raise(self: WorkspaceRegistryRepository) -> list[Workspace]:
             raise behaviour
@@ -60,7 +60,7 @@ def test_happy_path_filters_by_prefix(
         ConfigError("could not parse /tmp/config.yml: …"),
         OSError(13, "Permission denied"),
     ],
-    ids=["WorkspaceError", "ConfigError", "OSError"],
+    ids=["RegistryError", "ConfigError", "OSError"],
 )
 def test_any_error_silent_by_default(
     monkeypatch: pytest.MonkeyPatch,
@@ -85,7 +85,7 @@ def test_any_error_silent_by_default(
         (ConfigError("could not parse /tmp/config.yml: x"), "could not parse /tmp/config.yml: x"),
         (OSError(13, "Permission denied"), "Permission denied"),
     ],
-    ids=["WorkspaceError", "ConfigError", "OSError"],
+    ids=["RegistryError", "ConfigError", "OSError"],
 )
 def test_debug_env_var_emits_stderr_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
