@@ -27,6 +27,7 @@ from untaped_profile.application import (
     ShowProfile,
     UseProfile,
 )
+from untaped_profile.domain.models import Profile
 from untaped_profile.infrastructure import ProfileFileRepository
 
 # `profile show` returns a single nested object — `raw`/`table` (which want
@@ -54,14 +55,7 @@ def list_command(
     """List every profile, marking which one is active."""
     with report_errors():
         profiles = ListProfiles(ProfileFileRepository())()
-        rows: list[dict[str, object]] = [
-            {
-                "name": p.name,
-                "active": "✓" if p.is_active else "",
-                "keys": p.key_count,
-            }
-            for p in profiles
-        ]
+        rows: list[dict[str, object]] = [_profile_row(p) for p in profiles]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
@@ -181,3 +175,15 @@ def rename_command(
     with report_errors():
         RenameProfile(ProfileFileRepository())(old_name, new_name)
         typer.echo(f"renamed profile: {old_name} → {new_name}", err=True)
+
+
+def _profile_row(p: Profile) -> dict[str, object]:
+    # ``name`` first: under ``--format raw`` the first key is what
+    # pipelines feed back into the next command (xargs identifier
+    # semantics). See packages/untaped-core/AGENTS.md '--format raw
+    # default-column contract'; pinned by tests/unit/test_format_raw_first_key.py.
+    return {
+        "name": p.name,
+        "active": "✓" if p.is_active else "",
+        "keys": p.key_count,
+    }
