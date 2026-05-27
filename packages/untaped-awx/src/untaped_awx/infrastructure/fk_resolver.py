@@ -10,7 +10,9 @@ resolve the scope itself.
 
 For bulk apply / save flows, callers can warm the cache via
 :meth:`prefetch` to collapse N per-name round trips into one paginated
-``list`` per ``(kind, scope)`` group.
+``list`` per ``(kind, scope)`` group. Prefetch failures call the
+injected ``warn`` hook and fall back to per-record lookups so the
+degradation is visible without breaking the apply.
 
 Thread-safety: the two caches are guarded by ``self._cache_lock``
 across the read+repo-call+write window so concurrent workers racing
@@ -132,8 +134,7 @@ class FkResolver:
             # Per-record name_to_id calls remain authoritative; a flaky bulk
             # fetch silently degrades to per-call resolution rather than
             # failing an apply that the per-call path could still satisfy.
-            # The injected warn surfaces the degradation so users see why
-            # their apply just got ~80x slower.
+            # Warn so the user sees why the apply just slowed down.
             scope_str = ", ".join(f"{k}={v}" for k, v in sorted(scope.items()))
             target = f"{kind} ({scope_str})" if scope_str else kind
             self._warn(

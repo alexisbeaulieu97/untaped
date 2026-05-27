@@ -84,6 +84,22 @@ def _matches(record: dict[str, Any], param_key: str, value: str) -> bool:
     return str(record.get(param_key)) == value
 
 
+class _BoomRepo(_StubRepo):
+    """`.list` raises `AwxApiError` — exercises the prefetch degraded path."""
+
+    def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
+        raise AwxApiError("network down")
+        yield  # pragma: no cover - unreachable
+
+
+class _BuggyRepo(_StubRepo):
+    """`.list` raises `KeyError` — exercises the programmer-error escape path."""
+
+    def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
+        raise KeyError("forgot to seed")
+        yield  # pragma: no cover - unreachable
+
+
 def test_name_to_id_caches() -> None:
     repo = _StubRepo(
         {
@@ -208,12 +224,6 @@ def test_prefetch_swallows_awx_errors() -> None:
     Programming errors (KeyError, TypeError, etc.) propagate so they're
     visible during development; only AWX-side failures are absorbed.
     """
-
-    class _BoomRepo(_StubRepo):
-        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-            raise AwxApiError("network down")
-            yield  # pragma: no cover - unreachable
-
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.prefetch({"Organization": [None]})  # must not raise
@@ -224,12 +234,6 @@ def test_prefetch_swallows_awx_errors() -> None:
 def test_prefetch_propagates_programming_errors() -> None:
     """Bare `Exception` would mask typos / KeyErrors. Confirm those
     bubble up so they can be caught in development."""
-
-    class _BuggyRepo(_StubRepo):
-        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-            raise KeyError("forgot to seed")
-            yield  # pragma: no cover - unreachable
-
     repo = _BuggyRepo({})
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     with pytest.raises(KeyError):
@@ -237,12 +241,6 @@ def test_prefetch_propagates_programming_errors() -> None:
 
 
 # ── warn-callback contract: prefetch surfaces AwxApiError via injected warn ──
-
-
-class _BoomRepo(_StubRepo):
-    def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-        raise AwxApiError("network down")
-        yield  # pragma: no cover - unreachable
 
 
 def test_prefetch_warns_on_awx_error() -> None:
@@ -271,11 +269,6 @@ def test_prefetch_warn_renders_scope() -> None:
 
 
 def test_prefetch_no_warn_on_programming_error() -> None:
-    class _BuggyRepo(_StubRepo):
-        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-            raise KeyError("forgot to seed")
-            yield  # pragma: no cover - unreachable
-
     repo = _BuggyRepo({})
     warns: list[str] = []
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
