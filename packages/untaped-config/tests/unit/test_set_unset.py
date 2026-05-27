@@ -70,9 +70,9 @@ def test_set_validation_isolated_from_env_overlay(
     masks an invalid value landing on disk; the day the env var goes
     away, ``get_settings()`` falls over with no clue who wrote it.
 
-    Pins the issue #136 fix: ``_validate_merged`` builds a one-shot
-    Settings subclass that uses only ``init_settings`` so the source
-    chain doesn't paper over a structurally bad write."""
+    Pins the issue #136 fix: ``untaped_core.validate_settings_isolated``
+    builds a one-shot Settings subclass that uses only ``init_settings``
+    so the source chain doesn't paper over a structurally bad write."""
     # Env says verify_ssl=true (valid). If validation consulted env,
     # the bad YAML write below would be accepted because env wins.
     monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")

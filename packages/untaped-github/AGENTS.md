@@ -12,9 +12,10 @@ see [`docs/configuration.md`](../../docs/configuration.md).
 
 GitHub uses bearer-token auth. The token is a `SecretStr` read from
 `Settings.github.token` (or `UNTAPED_GITHUB__TOKEN` via the env-var
-shorthand). The CLI composition root reads it once, builds a
-`GithubConfig`, and passes that into `GithubClient`. Adapters never
-read `Settings` directly — same rule that applies to every other
+shorthand). The CLI composition root reads it once and passes
+`settings.github` (a `GithubSettings`) into `GithubClient`. Adapters
+never read `Settings` (the cross-cutting aggregate) directly — they
+take the narrowed sub-model — same rule that applies to every other
 domain package.
 
 `GithubClient.__init__` fail-fasts with `ConfigError` if the token is
@@ -29,24 +30,33 @@ Enterprise Server, point it at `https://<host>/api/v3`. Trailing
 slashes are stripped at client construction so URL joins are clean.
 No auto-detection — the user configures it explicitly.
 
-## `GithubConfig` (package-local config)
+## Settings sub-model: consume `GithubSettings` directly
 
-Lives in `infrastructure/config.py`. Mirrors the shape of
-`untaped_core.settings.GithubSettings` so the CLI can build one from
-settings in a single line via `GithubConfig.from_settings(settings)` —
-the canonical bridge. Declared in this package so adapters can depend
-on it without importing `untaped_core` (the classmethod imports
-`Settings` under `TYPE_CHECKING` only).
+`GithubClient.__init__` takes `settings.github` (a
+`GithubSettings` from `untaped_core`) directly — no package-local
+config struct in between. The two fields (`base_url`, `token`)
+have no per-package validators or invariants beyond what
+`GithubSettings` already declares, so a mirroring `GithubConfig`
+class would have been pure duplication. Symmetric with how
+`GithubClient` already consumes `HttpSettings` directly for TLS
+configuration.
 
-Adding a new field is a four-place edit (`GithubSettings`,
-`GithubConfig`, the `from_settings` body, and
-`test_config.test_from_settings_field_set_matches_githubsettings`);
-the field-inventory test fails CI loudly if you forget one of the first
-two.
+Adding a new field is a two-place edit (`GithubSettings` in
+`untaped_core/settings.py` + the `GithubClient` constructor or call
+site that needs it). The settings-schema tests in `untaped-core`
+pin loading/env-override behaviour.
 
-The CLI composition root lives in `cli/_client.py::open_client`, which
-all top-level commands (`whoami`, `search`) use. Adding a new top-level
-command is a one-line `with open_client() as client:` away.
+Contrast with `AwxConfig` (`packages/untaped-awx/src/untaped_awx/infrastructure/config.py`):
+that package keeps a local struct because it adds invariants on top
+of the schema (`gt=0` on `page_size`, `frozen=True` to lock the
+struct after composition-root assembly). The principle is: keep
+the package-local config only when the adapter needs to add
+validation or invariants beyond the schema sub-model.
+
+The CLI composition root lives in `cli/_client.py::open_client`,
+which all top-level commands (`whoami`, `search`) use. Adding a
+new top-level command is a one-line `with open_client() as client:`
+away.
 
 ## HTTP wiring
 
@@ -165,17 +175,15 @@ Standard 4-layer DDD per root AGENTS.md "Architecture: 4-Layer DDD":
   via constructor injection and call only the methods on them. Scope
   defaulting (`user:@me`) and team-to-repo resolution live in the
   search use cases.
-- `infrastructure/`: `GithubClient`, `GithubConfig`,
-  `pagination.py`. Adapters satisfy application Protocols structurally
-  — no import from `application/`. `GithubClient` exposes one method
-  per endpoint and delegates list/search calls to the pagination
-  helpers.
+- `infrastructure/`: `GithubClient` and `pagination.py`. Adapters
+  satisfy application Protocols structurally — no import from
+  `application/`. `GithubClient` exposes one method per endpoint and
+  delegates list/search calls to the pagination helpers.
 - `cli/`: composition root. The shared `cli/_client.open_client`
-  helper reads `Settings.github`, builds `GithubConfig` via
-  `from_settings`, and returns a context-managed `GithubClient`; every
-  top-level command (`whoami`, `search`) uses it. The `search` sub-app
-  lives in `cli/search_commands.py` and is mounted on the root app via
-  `app.add_typer(...)`.
+  helper reads `settings.github` and returns a context-managed
+  `GithubClient`; every top-level command (`whoami`, `search`) uses
+  it. The `search` sub-app lives in `cli/search_commands.py` and is
+  mounted on the root app via `app.add_typer(...)`.
 
 ## Recipe: add a new command
 

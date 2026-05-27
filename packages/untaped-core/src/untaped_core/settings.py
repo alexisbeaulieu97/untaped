@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
@@ -188,3 +188,111 @@ def get_settings() -> Settings:
         return Settings()
     except ValidationError as exc:
         raise ConfigError(f"invalid config in {path}: {first_validation_error(exc)}") from exc
+
+
+def validate_settings_isolated(
+    data: dict[str, Any], settings_cls: type[Settings] = Settings
+) -> Settings:
+    """Validate ``data`` against ``settings_cls`` with the source chain bypassed.
+
+    :class:`pydantic_settings.BaseSettings.model_validate` is **not** a
+    pure dict validator — it re-runs the configured source chain (YAML
+    file, env vars, file secrets) and overlays ``data`` on top as the
+    init source. That's fine when the new value lands in ``init`` (which
+    wins), but it silently masks unset-style flows where the caller has
+    *removed* a value the file source still holds (because the on-disk
+    write hasn't flushed yet). The source chain fills the gap and
+    validation passes against stale state.
+
+    This helper builds a one-shot subclass whose
+    ``settings_customise_sources`` returns only ``init_settings``, so
+    ``data`` is the single input pydantic sees. Same schema, same
+    validators, same :class:`pydantic.ValidationError` shape — but
+    isolated from disk and env.
+    """
+
+    # Six-parameter shape is the pydantic-settings
+    # ``settings_customise_sources`` classmethod contract; only
+    # ``init_settings`` is consumed here so ``data`` is the single input
+    # pydantic sees.
+    def _init_only(
+        cls: type[Settings],
+        settings_cls: type[Settings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (init_settings,)
+
+    validator_cls = cast(
+        "type[Settings]",
+        type(
+            "_ValidateOnly",
+            (settings_cls,),
+            {"settings_customise_sources": classmethod(_init_only)},
+        ),
+    )
+    return validator_cls.model_validate(data)
+
+
+# ---------------------------------------------------------------------------
+# Federation hook — sketch (not code)
+# ---------------------------------------------------------------------------
+#
+# The Settings class above couples to every domain by name
+# (AwxSettings, GithubSettings, WorkspaceSettings) — see
+# `packages/untaped-core/AGENTS.md` "Settings schema (intentional
+# inversion)" for why this is currently the right shape and when to
+# revisit ("the 7th or 8th domain").
+#
+# When that day comes, the seam looks roughly like this:
+#
+#     from typing import ClassVar, Protocol, runtime_checkable
+#     from importlib.metadata import entry_points
+#     from pydantic import create_model
+#     from pydantic.fields import FieldInfo
+#
+#     @runtime_checkable
+#     class DomainSettings(Protocol):
+#         """Sub-model contributed by a domain package.
+#         The model_fields member pins the structural requirement so
+#         isinstance checks aren't no-ops (an empty Protocol body
+#         matches every object)."""
+#         model_fields: ClassVar[dict[str, FieldInfo]]
+#
+#     def _discover_domain_settings() -> dict[str, type[BaseModel]]:
+#         """Walk the ``untaped.domain_settings`` entry-point group.
+#         Each entry resolves to a BaseModel subclass keyed by the
+#         section name it owns (e.g. ``"awx"`` -> AwxSettings)."""
+#         eps = entry_points(group="untaped.domain_settings")
+#         return {ep.name: ep.load() for ep in eps}
+#
+#     # Two-level construction:
+#     # 1. Per-domain sub-models (AwxSettings, GithubSettings, …) stay
+#     #    plain ``BaseModel`` subclasses owned by their domain package.
+#     # 2. The aggregate ``Settings`` is built dynamically via
+#     #    ``create_model(__base__=BaseSettings, ...)`` from the discovered
+#     #    sub-models. ``__base__=BaseSettings`` (not BaseModel) is
+#     #    load-bearing on this *outer* model: it's what makes env-var
+#     #    resolution (UNTAPED_<SECTION>__<FIELD>) work. A plain
+#     #    create_model on the aggregate silently breaks env-vars.
+#     # HttpSettings + WorkspaceSettings stay first-class on the
+#     # aggregate because they are cross-cutting rather than
+#     # domain-bounded.
+#
+# Open questions to revisit at federation time:
+#   - walk_settings / redact_secrets currently assume static field
+#     declaration on Settings; dynamic field creation needs to
+#     preserve their introspection path.
+#   - config_file.read_profile / write_profile use the static schema;
+#     federation must keep their callers stable.
+#   - The intentional-inversion defense in AGENTS.md is still load-
+#     bearing for the single-schema introspection contract; the
+#     federation hook must preserve walk_settings's output shape or
+#     update every consumer.
+#   - validate_settings_isolated builds a one-shot subclass of the
+#     static Settings class. With a dynamically-built aggregate, the
+#     "one-shot subclass" trick still works (create_model produces a
+#     real class) but the helper's signature needs verification that
+#     the dynamic aggregate satisfies ``type[Settings]`` invariants.
