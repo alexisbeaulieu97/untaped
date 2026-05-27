@@ -84,6 +84,22 @@ def _matches(record: dict[str, Any], param_key: str, value: str) -> bool:
     return str(record.get(param_key)) == value
 
 
+class _BoomRepo(_StubRepo):
+    """`.list` raises `AwxApiError` — exercises the prefetch degraded path."""
+
+    def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
+        raise AwxApiError("network down")
+        yield  # pragma: no cover - unreachable
+
+
+class _BuggyRepo(_StubRepo):
+    """`.list` raises `KeyError` — exercises the programmer-error escape path."""
+
+    def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
+        raise KeyError("forgot to seed")
+        yield  # pragma: no cover - unreachable
+
+
 def test_name_to_id_caches() -> None:
     repo = _StubRepo(
         {
@@ -208,12 +224,6 @@ def test_prefetch_swallows_awx_errors() -> None:
     Programming errors (KeyError, TypeError, etc.) propagate so they're
     visible during development; only AWX-side failures are absorbed.
     """
-
-    class _BoomRepo(_StubRepo):
-        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-            raise AwxApiError("network down")
-            yield  # pragma: no cover - unreachable
-
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.prefetch({"Organization": [None]})  # must not raise
@@ -224,16 +234,77 @@ def test_prefetch_swallows_awx_errors() -> None:
 def test_prefetch_propagates_programming_errors() -> None:
     """Bare `Exception` would mask typos / KeyErrors. Confirm those
     bubble up so they can be caught in development."""
-
-    class _BuggyRepo(_StubRepo):
-        def list(self, *a: Any, **kw: Any) -> Iterator[dict[str, Any]]:  # type: ignore[override]
-            raise KeyError("forgot to seed")
-            yield  # pragma: no cover - unreachable
-
     repo = _BuggyRepo({})
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     with pytest.raises(KeyError):
         fk.prefetch({"Organization": [None]})
+
+
+# ── warn-callback contract: prefetch surfaces AwxApiError via injected warn ──
+
+
+def test_prefetch_warns_on_awx_error() -> None:
+    repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
+    warns: list[str] = []
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
+
+    fk.prefetch({"Organization": [None]})
+
+    assert len(warns) == 1
+    msg = warns[0]
+    assert "FK prefetch for Organization" in msg
+    assert "network down" in msg
+    assert "falling back to per-record lookups" in msg
+
+
+def test_prefetch_warn_renders_scope() -> None:
+    repo = _BoomRepo({"Project": [{"id": 42, "name": "playbooks"}]})
+    warns: list[str] = []
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
+
+    fk.prefetch({"Project": [{"organization": "Default"}]})
+
+    assert len(warns) == 1
+    assert "FK prefetch for Project (organization=Default)" in warns[0]
+
+
+def test_prefetch_no_warn_on_programming_error() -> None:
+    repo = _BuggyRepo({})
+    warns: list[str] = []
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
+
+    with pytest.raises(KeyError):
+        fk.prefetch({"Organization": [None]})
+    assert warns == []
+
+
+def test_prefetch_propagates_warn_raise() -> None:
+    # Warns are expected to be infallible (loggers, stderr writes). A warn
+    # that raises is a caller bug, so let it propagate rather than wrap it
+    # in a try/except that masks the bug. Matches how `ApplyResource` calls
+    # its own `self._warn(...)` — unguarded.
+    repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
+
+    def _exploding_warn(_msg: str) -> None:
+        raise RuntimeError("warn broke")
+
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=_exploding_warn)
+    with pytest.raises(RuntimeError, match="warn broke"):
+        fk.prefetch({"Organization": [None]})
+
+
+def test_prefetch_default_warn_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
+    # Default warn is a no-op so prefetch failures stay silent for callers
+    # that haven't wired the hook — preserves today's contract and defends
+    # against an accidental ``print(...)`` slipping in next to ``self._warn``.
+    repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+
+    fk.prefetch({"Organization": [None]})
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
 # ── parallelism invariant: cache is thread-safe under concurrent name_to_id ──

@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING
 
+import typer
 from untaped_core import get_settings
 
 from untaped_awx.domain import ResourceSpec
@@ -41,7 +42,11 @@ class AwxContext:
         self.client = AwxClient(config, http=settings.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()
-        self.fk = FkResolver(self.repo, self.catalog)
+        self.fk = FkResolver(
+            self.repo,
+            self.catalog,
+            warn=lambda msg: typer.echo(f"warning: {msg}", err=True),
+        )
         self.strategies = StaticStrategyResolver()
         self.monitor = PollingJobMonitor(self.repo)
         self.jobs = JobRecordRepository(self.repo)
