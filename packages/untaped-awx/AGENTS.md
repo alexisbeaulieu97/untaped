@@ -211,7 +211,11 @@ infrastructure — CLI wires concrete adapters at the composition root
 `application/apply_file.py`, the FK plan derived from each doc's `fk_refs`
 is pre-fetched in one paginated `list` per `(kind, scope)`. Per-record
 lookups still fall through on cache miss; prefetch failures are
-best-effort (the per-call path is the authoritative one).
+best-effort (the per-call path is the authoritative one). The
+`AwxApiError` branch in `_prefetch_one` calls the `warn` hook injected
+at `cli/_context.py` so the user sees a `warning: FK prefetch for
+<kind> [(<scope>)] failed (...)` line on stderr instead of a silent
+fallback to N per-record GETs.
 
 ### Restore fidelity tiers
 

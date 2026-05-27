@@ -278,6 +278,21 @@ def test_prefetch_no_warn_on_programming_error() -> None:
     assert warns == []
 
 
+def test_prefetch_propagates_warn_raise() -> None:
+    # Warns are expected to be infallible (loggers, stderr writes). A warn
+    # that raises is a caller bug, so let it propagate rather than wrap it
+    # in a try/except that masks the bug. Matches how `ApplyResource` calls
+    # its own `self._warn(...)` — unguarded.
+    repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
+
+    def _exploding_warn(_msg: str) -> None:
+        raise RuntimeError("warn broke")
+
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=_exploding_warn)
+    with pytest.raises(RuntimeError, match="warn broke"):
+        fk.prefetch({"Organization": [None]})
+
+
 def test_prefetch_default_warn_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
     # Default warn is a no-op so prefetch failures stay silent for callers
     # that haven't wired the hook — preserves today's contract and defends
