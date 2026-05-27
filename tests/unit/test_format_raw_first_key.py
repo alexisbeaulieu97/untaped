@@ -39,7 +39,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 from untaped_awx.cli._delete import _delete_row
-from untaped_awx.cli.test_commands import _test_case_row
+from untaped_awx.cli.test_commands import _test_case_row, _test_suite_row
 from untaped_awx.domain import Job, JobEvent, WorkflowNode
 from untaped_awx.domain.test_suite import Case, TestSuite
 from untaped_awx.infrastructure.specs import ALL_SPECS
@@ -110,6 +110,13 @@ HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] =
         "suite",
     ),
     (
+        "untaped_awx.cli.test_commands._test_suite_row",
+        lambda: _test_suite_row(
+            TestSuite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
+        ),
+        "suite",
+    ),
+    (
         "untaped_awx.cli._delete._delete_row",
         lambda: _delete_row({"id": 7, "name": "alpha"}),
         "id",
@@ -134,6 +141,10 @@ _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
     # ``RepoStatus`` is composed into ``StatusEntry`` but never emitted directly.
     "untaped_workspace.domain.state": frozenset({"RepoStatus"}),
     "untaped_github.domain.models": frozenset(),
+    # AWX domain modules registered so the discovery walk covers them too —
+    # a sibling ``BaseModel`` added to either file lights up the test.
+    "untaped_awx.domain.job": frozenset(),
+    "untaped_awx.domain.workflow_node": frozenset(),
 }
 
 
@@ -195,6 +206,31 @@ def _basemodels_declared_in(module_path: str) -> list[type[BaseModel]]:
         for _, obj in inspect.getmembers(module, inspect.isclass)
         if issubclass(obj, BaseModel) and obj is not BaseModel and obj.__module__ == module_path
     ]
+
+
+def test_every_catalogued_pydantic_module_is_discovery_registered() -> None:
+    """Each catalogued pydantic model's home module must be a key in
+    :data:`_NOT_ROW_SOURCES_BY_MODULE` (even if its exempt set is empty).
+
+    Without this, a freshly catalogued row source in a new module
+    (e.g. a hypothetical ``untaped_awx.domain.scheduling.Schedule``) would
+    pin its own first key but never tell the discovery test to walk its
+    home module, leaving sibling ``BaseModel`` additions in that file
+    silently uncovered. This is the loud version of the bounded gap
+    that :data:`_NOT_ROW_SOURCES_BY_MODULE`'s comment names."""
+    orphans = sorted(
+        {
+            cls.__module__
+            for cls in PYDANTIC_ROW_SOURCES
+            if cls.__module__ not in _NOT_ROW_SOURCES_BY_MODULE
+        }
+    )
+    assert not orphans, (
+        "Catalogued pydantic row source(s) live in module(s) not registered "
+        f"with _NOT_ROW_SOURCES_BY_MODULE: {', '.join(orphans)}. Add each as "
+        "a key (with `frozenset()` if no exemptions) so the discovery test "
+        f"walks the module for orphan ``BaseModel`` subclasses ({_CONTRACT_REF})."
+    )
 
 
 @pytest.mark.parametrize(

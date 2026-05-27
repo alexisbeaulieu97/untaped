@@ -228,20 +228,7 @@ def list_command(
         )
 
     if fmt in {"json", "yaml"}:
-        # Suite-level shape with variable metadata so automation can
-        # introspect required vars, defaults, choices, and secret flags.
-        rows: list[dict[str, Any]] = [
-            {
-                "suite": suite.name,
-                "job_template": suite.job_template,
-                "cases": list(suite.cases.keys()),
-                "variables": {
-                    name: spec.model_dump(exclude_none=True)
-                    for name, spec in suite.variables.items()
-                },
-            }
-            for suite in suites
-        ]
+        rows: list[dict[str, Any]] = [_test_suite_row(suite) for suite in suites]
     else:
         rows = [_test_case_row(suite, case_name) for suite in suites for case_name in suite.cases]
     typer.echo(format_output(rows, fmt=fmt, columns=columns))
@@ -291,3 +278,17 @@ def validate_command(
 def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
     # First key pins the --format raw contract (tests/unit/test_format_raw_first_key.py).
     return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
+
+
+def _test_suite_row(suite: TestSuite) -> dict[str, Any]:
+    # Suite-level shape for --format json|yaml so automation can introspect
+    # required vars, defaults, choices, and secret flags. First key pins the
+    # --format raw contract (tests/unit/test_format_raw_first_key.py).
+    return {
+        "suite": suite.name,
+        "job_template": suite.job_template,
+        "cases": list(suite.cases.keys()),
+        "variables": {
+            name: spec.model_dump(exclude_none=True) for name, spec in suite.variables.items()
+        },
+    }
