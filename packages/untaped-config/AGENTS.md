@@ -46,7 +46,9 @@ the in-memory dict (`set_at_path` / `unset_at_path`), then
 `_merge_for_validation` (which runs `resolve_profiles` with
 `active_override=target` and then `splice_workspace_registry` to hoist
 the top-level `workspace.workspaces` registry back in), then
-`validate_settings_isolated(settings_cls, merged)` from `untaped_core`.
+`validate_settings_isolated(merged, settings_cls)` from `untaped_core`
+(`settings_cls` defaults to `Settings`; the repo passes it explicitly
+for testability).
 If validation fails, `_apply` raises `ConfigError` and `mutate_config`
 never flushes the new YAML to disk. A removal that would leave the
 merged dict in a state pydantic would reject surfaces here (with the

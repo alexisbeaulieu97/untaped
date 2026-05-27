@@ -89,7 +89,7 @@ user-data ingestion point, follow this pattern: catch the library
 exception, raise an `UntapedError` subclass that names the file path
 in the message, and chain with `from exc`.
 
-`validate_settings_isolated(settings_cls, data)` (also in
+`validate_settings_isolated(data, settings_cls=Settings)` (also in
 `untaped_core.settings`) handles the inverse problem: validating a
 candidate dict against the schema *without* re-running the source
 chain. Read-modify-write flows that compose a new YAML state from

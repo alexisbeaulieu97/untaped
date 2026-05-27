@@ -264,12 +264,17 @@ def validate_settings_isolated(
 #         eps = entry_points(group="untaped.domain_settings")
 #         return {ep.name: ep.load() for ep in eps}
 #
-#     # Settings would then construct its sub-model fields dynamically
-#     # via pydantic.create_model(__base__=BaseSettings, ...). The
-#     # __base__ kwarg is load-bearing: a plain create_model produces a
-#     # BaseModel and env-var resolution (UNTAPED_<SECTION>__<FIELD>)
-#     # silently breaks. HttpSettings + WorkspaceSettings stay
-#     # first-class because they are cross-cutting rather than
+#     # Two-level construction:
+#     # 1. Per-domain sub-models (AwxSettings, GithubSettings, …) stay
+#     #    plain ``BaseModel`` subclasses owned by their domain package.
+#     # 2. The aggregate ``Settings`` is built dynamically via
+#     #    ``create_model(__base__=BaseSettings, ...)`` from the discovered
+#     #    sub-models. ``__base__=BaseSettings`` (not BaseModel) is
+#     #    load-bearing on this *outer* model: it's what makes env-var
+#     #    resolution (UNTAPED_<SECTION>__<FIELD>) work. A plain
+#     #    create_model on the aggregate silently breaks env-vars.
+#     # HttpSettings + WorkspaceSettings stay first-class on the
+#     # aggregate because they are cross-cutting rather than
 #     # domain-bounded.
 #
 # Open questions to revisit at federation time:
