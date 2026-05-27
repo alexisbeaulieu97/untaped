@@ -614,17 +614,20 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
         apply(resource, write=True)
 
 
-# ── parallelism invariant: ApplyResource statelessness across calls ─────────
+# ── parallelism invariant: ApplyResource has no per-call attribute rebinds ──
 
 
-def test_apply_resource_is_stateless_across_calls() -> None:
-    """``ApplyFile._apply_kind`` dispatches ``ApplyResource`` calls across
-    a ``ThreadPoolExecutor``; thread-safety rests on the use case carrying
-    no per-call state. Pin it: a single instance, two sequential calls,
-    ``vars(use_case)`` snapshot equal before vs after.
+def test_apply_resource_has_no_per_call_attribute_rebinds() -> None:
+    """Structural pin: a ``__call__`` must not rebind any instance
+    attribute the constructor set up.
 
-    A future change that adds e.g. a per-call cache or a retry counter
-    field surfaces here, *not* as a phase-1 parallel race.
+    Phase-1 parallelism in ``ApplyFile._apply_kind`` shares one
+    ``ApplyResource`` across workers; if any ``__call__`` rebinds an
+    attribute (e.g. ``self._cache = {}`` swapped for a fresh dict per
+    call) the workers race on instance state. This test is a structural
+    proxy for that contract — it doesn't pin behaviour under concurrency
+    (the phase-1 parallel tests in ``test_apply_file.py`` do), only the
+    "no per-call attribute rebind" property the contract rests on.
     """
     strategy = _StubStrategy(existing=None)
     use_case = _make_apply(
@@ -644,16 +647,15 @@ def test_apply_resource_is_stateless_across_calls() -> None:
     use_case(resource)
     after_second = dict(vars(use_case))
 
-    # Identity check on every attribute, not value equality: a fresh
-    # mutable container reassigned to the same key (e.g. ``self._cache
-    # = {}`` rebuilt per call) would tie on ``==`` but break the
-    # statelessness contract that thread-safety rests on.
+    # ``is`` not ``==``: a fresh mutable container rebound to the same
+    # attribute (e.g. ``self._cache = {}`` rebuilt per call) would tie on
+    # ``==`` but still break thread-safety. (Mutations *inside* an
+    # attribute aren't caught here — that's what the parallel
+    # ``test_apply_file.py`` cases pin behaviourally.)
     assert before.keys() == after_first.keys() == after_second.keys()
     for key in before:
         assert before[key] is after_first[key], (
-            f"ApplyResource rebound attribute {key!r} during a call — "
-            "thread-safety guarantees rest on instance attributes being "
-            "immutable across calls"
+            f"ApplyResource rebound attribute {key!r} during a call"
         )
         assert before[key] is after_second[key], (
             f"ApplyResource rebound attribute {key!r} on the second call"

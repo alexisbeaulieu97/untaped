@@ -275,9 +275,10 @@ Phase 2 (membership reconciliation) stays serial. Reasons:
 
 Thread-safety relies on the same guarantees the "Job execution and
 `--track`" section above already documents for `_drain_parallel`:
-`httpx.Client` is thread-safe, `ApplyResource` is stateless across calls
-(the `strip_encrypted` pass mutates a per-call deepcopy — see issue #10;
-pinned by `test_apply_resource_is_stateless_across_calls`), and
+`httpx.Client` is thread-safe, `ApplyResource` has no per-call
+attribute rebinds (the `strip_encrypted` pass mutates a per-call
+deepcopy — see issue #10; structurally pinned by
+`test_apply_resource_has_no_per_call_attribute_rebinds`), and
 `FkResolver`'s two caches are guarded by `self._cache_lock` across the
 read + repo call + write window so two workers racing on the same
 `(kind, name, scope)` collapse into one repo lookup (pinned by
