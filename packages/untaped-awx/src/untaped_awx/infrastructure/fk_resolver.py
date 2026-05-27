@@ -131,10 +131,10 @@ class FkResolver:
         try:
             records = list(self._repo.list(spec, params=params or None))
         except AwxApiError as exc:
-            # Per-record name_to_id calls remain authoritative; a flaky bulk
-            # fetch silently degrades to per-call resolution rather than
-            # failing an apply that the per-call path could still satisfy.
-            # Warn so the user sees why the apply just slowed down.
+            # Per-record name_to_id calls remain authoritative: a flaky bulk
+            # fetch falls back to per-call resolution rather than failing an
+            # apply that the per-call path could still satisfy. Warn so the
+            # user sees why the apply just slowed down.
             scope_str = ", ".join(f"{k}={v}" for k, v in sorted(scope.items()))
             target = f"{kind} ({scope_str})" if scope_str else kind
             self._warn(
