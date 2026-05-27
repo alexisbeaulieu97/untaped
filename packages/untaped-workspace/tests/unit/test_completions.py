@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 from untaped_core import ConfigError
@@ -14,11 +13,14 @@ from untaped_workspace.infrastructure import WorkspaceRegistryRepository
 
 
 @pytest.fixture
-def _silent_completion_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def silent_completion_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_COMPLETION_DEBUG", raising=False)
 
 
-def _stub_entries(monkeypatch: pytest.MonkeyPatch, behaviour: Any) -> None:
+def _stub_entries(
+    monkeypatch: pytest.MonkeyPatch,
+    behaviour: BaseException | list[Workspace],
+) -> None:
     if isinstance(behaviour, BaseException):
 
         def _raise(self: WorkspaceRegistryRepository) -> list[Workspace]:
@@ -26,16 +28,17 @@ def _stub_entries(monkeypatch: pytest.MonkeyPatch, behaviour: Any) -> None:
 
         monkeypatch.setattr(WorkspaceRegistryRepository, "entries", _raise)
     else:
+        rows = list(behaviour)
 
         def _return(self: WorkspaceRegistryRepository) -> list[Workspace]:
-            return list(behaviour)
+            return rows
 
         monkeypatch.setattr(WorkspaceRegistryRepository, "entries", _return)
 
 
 def test_happy_path_filters_by_prefix(
     monkeypatch: pytest.MonkeyPatch,
-    _silent_completion_env: None,
+    silent_completion_env: None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _stub_entries(
@@ -50,25 +53,27 @@ def test_happy_path_filters_by_prefix(
     assert capsys.readouterr().err == ""
 
 
-def test_workspace_error_silent_by_default(
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RegistryError("invalid workspace registry entry"),
+        ConfigError("could not parse /tmp/config.yml: …"),
+        OSError(13, "Permission denied"),
+    ],
+    ids=["WorkspaceError", "ConfigError", "OSError"],
+)
+def test_any_error_silent_by_default(
     monkeypatch: pytest.MonkeyPatch,
-    _silent_completion_env: None,
+    silent_completion_env: None,
     capsys: pytest.CaptureFixture[str],
+    exc: Exception,
 ) -> None:
-    _stub_entries(monkeypatch, RegistryError("invalid workspace registry entry"))
-    assert list(complete_workspace_name("a")) == []
-    assert capsys.readouterr().err == ""
-
-
-def test_config_error_silent_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-    _silent_completion_env: None,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # Today's `except WorkspaceError` lets ConfigError escape — this
-    # regression-pins the broaden so a YAML typo in `~/.untaped/config.yml`
-    # produces an empty completion list, not a swallowed traceback.
-    _stub_entries(monkeypatch, ConfigError("could not parse /tmp/config.yml: …"))
+    # Completion must never raise. The catch covers `Exception` so a
+    # `ConfigError` from broken YAML, a malformed registry entry, or an
+    # `OSError` from a permission glitch on `~/.untaped/config.yml` all
+    # produce an empty completion list rather than a traceback the shell
+    # would swallow silently.
+    _stub_entries(monkeypatch, exc)
     assert list(complete_workspace_name("a")) == []
     assert capsys.readouterr().err == ""
 
@@ -78,8 +83,9 @@ def test_config_error_silent_by_default(
     [
         (RegistryError("invalid workspace registry entry"), "invalid workspace registry entry"),
         (ConfigError("could not parse /tmp/config.yml: x"), "could not parse /tmp/config.yml: x"),
+        (OSError(13, "Permission denied"), "Permission denied"),
     ],
-    ids=["RegistryError", "ConfigError"],
+    ids=["WorkspaceError", "ConfigError", "OSError"],
 )
 def test_debug_env_var_emits_stderr_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
@@ -91,7 +97,7 @@ def test_debug_env_var_emits_stderr_diagnostic(
     _stub_entries(monkeypatch, exc)
     assert list(complete_workspace_name("a")) == []
     err = capsys.readouterr().err
-    assert "untaped: completion: registry unreadable" in err
+    assert f"warning: completion: {type(exc).__name__}:" in err
     assert needle in err
 
 
