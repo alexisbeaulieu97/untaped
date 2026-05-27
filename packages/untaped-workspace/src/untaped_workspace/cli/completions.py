@@ -12,9 +12,9 @@ healthy configs.
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Iterable
 
+import typer
 from untaped_core import UntapedError
 
 from untaped_workspace.infrastructure import WorkspaceRegistryRepository
@@ -25,9 +25,9 @@ def complete_workspace_name(incomplete: str) -> Iterable[str]:
         names = [w.name for w in WorkspaceRegistryRepository().entries()]
     except UntapedError as exc:
         if os.environ.get("UNTAPED_COMPLETION_DEBUG") == "1":
-            print(
+            typer.echo(
                 f"untaped: completion: registry unreadable: {type(exc).__name__}: {exc}",
-                file=sys.stderr,
+                err=True,
             )
         return []
     return [n for n in names if n.startswith(incomplete)]

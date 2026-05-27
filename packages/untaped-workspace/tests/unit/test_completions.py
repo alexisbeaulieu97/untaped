@@ -1,15 +1,4 @@
-"""Tab-completion callback behaviour for ``untaped workspace`` commands.
-
-Pins the contract for ``complete_workspace_name``:
-
-- Happy path returns names matching the incomplete prefix.
-- Any :class:`UntapedError` raised on the registry-read path is
-  swallowed so typer's completion machinery returns an empty list
-  instead of a traceback the shell would discard silently.
-- ``UNTAPED_COMPLETION_DEBUG=1`` opt-in turns the swallow into a
-  single stderr line so users surprised by empty completions have a
-  trail; any other env-var value keeps the silent default.
-"""
+"""Pin ``complete_workspace_name``'s broad-catch + opt-in stderr-diagnostic contract."""
 
 from __future__ import annotations
 
@@ -106,13 +95,15 @@ def test_debug_env_var_emits_stderr_diagnostic(
     assert needle in err
 
 
-@pytest.mark.parametrize("falsy", ["", "0", "false", "true", "yes"])
+@pytest.mark.parametrize("non_one_value", ["", "0", "false", "true", "yes"])
 def test_only_strict_one_enables_diagnostic(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    falsy: str,
+    non_one_value: str,
 ) -> None:
-    monkeypatch.setenv("UNTAPED_COMPLETION_DEBUG", falsy)
+    # Strict equality with ``"1"`` — ``"true"`` / ``"yes"`` look truthy but
+    # don't enable the diagnostic. Listed here precisely to pin that.
+    monkeypatch.setenv("UNTAPED_COMPLETION_DEBUG", non_one_value)
     _stub_entries(monkeypatch, RegistryError("boom"))
     assert list(complete_workspace_name("a")) == []
     assert capsys.readouterr().err == ""
