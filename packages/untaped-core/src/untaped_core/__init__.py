@@ -39,7 +39,14 @@ from untaped_core.profile_resolver import (
     resolve_profiles,
     splice_workspace_registry,
 )
-from untaped_core.settings import HttpSettings, Settings, get_settings, resolve_config_path
+from untaped_core.settings import (
+    GithubSettings,
+    HttpSettings,
+    Settings,
+    get_settings,
+    resolve_config_path,
+    validate_settings_isolated,
+)
 from untaped_core.stdin import read_identifiers, read_stdin
 
 __all__ = [
@@ -48,6 +55,7 @@ __all__ = [
     "ConfigError",
     "FieldDescriptor",
     "FormatOption",
+    "GithubSettings",
     "HttpClient",
     "HttpError",
     "HttpSettings",
@@ -73,5 +81,6 @@ __all__ = [
     "resolve_verify",
     "secret_field_paths",
     "splice_workspace_registry",
+    "validate_settings_isolated",
     "walk_settings",
 ]

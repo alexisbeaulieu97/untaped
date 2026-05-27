@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
@@ -188,3 +188,95 @@ def get_settings() -> Settings:
         return Settings()
     except ValidationError as exc:
         raise ConfigError(f"invalid config in {path}: {first_validation_error(exc)}") from exc
+
+
+def _init_only_sources(
+    cls: type[Settings],
+    settings_cls: type[Settings],
+    init_settings: PydanticBaseSettingsSource,
+    env_settings: PydanticBaseSettingsSource,
+    dotenv_settings: PydanticBaseSettingsSource,
+    file_secret_settings: PydanticBaseSettingsSource,
+) -> tuple[PydanticBaseSettingsSource, ...]:
+    # Full six-parameter signature matches pydantic-settings'
+    # ``settings_customise_sources`` classmethod contract; only
+    # ``init_settings`` is consumed by ``validate_settings_isolated``.
+    return (init_settings,)
+
+
+def validate_settings_isolated(settings_cls: type[Settings], data: dict[str, Any]) -> Settings:
+    """Validate ``data`` against ``settings_cls`` with the source chain bypassed.
+
+    :class:`pydantic_settings.BaseSettings.model_validate` is **not** a
+    pure dict validator — it re-runs the configured source chain (YAML
+    file, env vars, file secrets) and overlays ``data`` on top as the
+    init source. That's fine when the new value lands in ``init`` (which
+    wins), but it silently masks unset-style flows where the caller has
+    *removed* a value the file source still holds (because the on-disk
+    write hasn't flushed yet). The source chain fills the gap and
+    validation passes against stale state.
+
+    This helper builds a one-shot subclass whose
+    ``settings_customise_sources`` returns only ``init_settings``, so
+    ``data`` is the single input pydantic sees. Same schema, same
+    validators, same :class:`pydantic.ValidationError` shape — but
+    isolated from disk and env.
+
+    Returns the validated :class:`Settings` instance so callers may bind
+    it; existing callers (``untaped-config``'s write path) consume it
+    purely for the side-effecting ``ValidationError`` raise.
+    """
+    validator_cls = cast(
+        "type[Settings]",
+        type(
+            "_ValidateOnly",
+            (settings_cls,),
+            {"settings_customise_sources": classmethod(_init_only_sources)},
+        ),
+    )
+    return validator_cls.model_validate(data)
+
+
+# ---------------------------------------------------------------------------
+# Federation hook — sketch (not code)
+# ---------------------------------------------------------------------------
+#
+# The Settings class above couples to every domain by name
+# (AwxSettings, GithubSettings, WorkspaceSettings) — see
+# `packages/untaped-core/AGENTS.md` "Settings schema (intentional
+# inversion)" for why this is currently the right shape and when to
+# revisit ("the 7th or 8th domain").
+#
+# When that day comes, the seam looks roughly like this:
+#
+#     from typing import Protocol, runtime_checkable
+#     from importlib.metadata import entry_points
+#     from pydantic import create_model
+#
+#     @runtime_checkable
+#     class DomainSettings(Protocol):
+#         """Sub-model contributed by a domain package."""
+#         ...
+#
+#     def _discover_domain_settings() -> dict[str, type[BaseModel]]:
+#         """Walk the ``untaped.domain_settings`` entry-point group.
+#         Each entry resolves to a BaseModel subclass keyed by the
+#         section name it owns (e.g. ``"awx"`` -> AwxSettings)."""
+#         eps = entry_points(group="untaped.domain_settings")
+#         return {ep.name: ep.load() for ep in eps}
+#
+#     # Settings would then construct its sub-model fields dynamically
+#     # via pydantic.create_model from the discovered mapping.
+#     # HttpSettings + WorkspaceSettings stay first-class because they
+#     # are cross-cutting rather than domain-bounded.
+#
+# Open questions to revisit at federation time:
+#   - walk_settings / redact_secrets currently assume static field
+#     declaration on Settings; dynamic field creation needs to
+#     preserve their introspection path.
+#   - config_file.read_profile / write_profile use the static schema;
+#     federation must keep their callers stable.
+#   - The intentional-inversion defense in AGENTS.md is still load-
+#     bearing for the single-schema introspection contract; the
+#     federation hook must preserve walk_settings's output shape or
+#     update every consumer.

@@ -2,7 +2,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from untaped_core import ConfigError, resolve_config_path
+from pydantic import ValidationError
+from untaped_core import ConfigError, resolve_config_path, validate_settings_isolated
 from untaped_core.settings import Settings, get_settings
 
 
@@ -213,3 +214,43 @@ def test_get_settings_translates_validation_error_to_config_error(
     # The path of the broken config is in the message so users know where
     # to edit.
     assert str(cfg) in str(exc_info.value)
+
+
+# -------------------- validate_settings_isolated -------------------- #
+
+
+def test_validate_settings_isolated_ignores_env_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # If validation re-ran the source chain, the env var would land on
+    # top of the dict and the bad value would silently validate against
+    # the env-supplied value. The helper exists precisely to bypass that
+    # — pins the source-chain-isolation contract at the helper boundary.
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
+    with pytest.raises(ValidationError):
+        validate_settings_isolated(Settings, {"http": {"verify_ssl": "not-a-bool"}})
+
+
+def test_validate_settings_isolated_returns_validated_settings_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    result = validate_settings_isolated(Settings, {"log_level": "DEBUG", "awx": {"page_size": 50}})
+    assert isinstance(result, Settings)
+    assert result.log_level == "DEBUG"
+    assert result.awx.page_size == 50
+
+
+def test_validate_settings_isolated_does_not_mutate_settings_class(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The helper builds a one-shot subclass to override
+    # ``settings_customise_sources``. The original class must keep its
+    # full source chain — otherwise ``get_settings()`` would stop reading
+    # YAML/env after any call to the helper.
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    validate_settings_isolated(Settings, {"log_level": "ERROR"})
+    assert get_settings().log_level == "DEBUG"
