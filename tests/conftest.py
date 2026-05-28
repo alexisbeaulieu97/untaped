@@ -1,16 +1,15 @@
 """Shared test scaffolding for the workspace use cases.
 
 This module is reachable by sibling test files via ``from conftest import
-StubGit, StubRegistry`` because the root ``pyproject.toml`` adds
-``packages/untaped-workspace/tests`` to ``[tool.pytest.ini_options]
-pythonpath``. Without that entry, pytest's ``--import-mode=importlib``
-hides per-package conftest modules from runtime import.
+StubGit, StubRegistry`` because ``pyproject.toml`` adds ``tests`` to
+``[tool.pytest.ini_options] pythonpath``. Without that entry, pytest's
+``--import-mode=importlib`` hides package-local conftest modules from
+runtime import.
 
 **Global-namespace caveat.** Adding the workspace tests dir to
 ``pythonpath`` claims the unqualified module name ``conftest`` for the
 whole pytest session. Do not add a second per-package tests dir to
-``pythonpath`` — pick a unique module name (e.g.
-``packages/untaped-<x>/tests/_<x>_stubs.py``) and import that instead.
+``pythonpath`` — pick a unique module name and import that instead.
 Other packages can still ship ``tests/conftest.py`` files for pytest's
 auto-discovery; only the ``from conftest import …`` runtime pattern is
 exclusive to this package.

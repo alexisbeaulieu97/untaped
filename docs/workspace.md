@@ -437,7 +437,7 @@ and bandwidth are shared without the branch conflicts that
 
 - [`untaped` configuration docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md)
   — `untaped config`, optional profile commands, and the YAML schema.
-- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped) — the AWX
-  plugin still lives in the core repo during the monorepo bridge step.
+- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) — the
+  optional AWX plugin.
 - [AGENTS.md](../AGENTS.md) — internals (manifest vs registry split, the
   `GitRunner` boundary, sync state machine).

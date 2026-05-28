@@ -36,8 +36,7 @@ class ImportWorkspace:
 
         # Direct construction (not `model_copy`) keeps this consistent
         # with the manifest mutation contract — see
-        # `packages/untaped-workspace/AGENTS.md` "Manifest mutation
-        # contract".
+        # `AGENTS.md` "Manifest mutation contract".
         def _build(ws_name: str) -> WorkspaceManifest:
             return WorkspaceManifest(
                 name=ws_name,

@@ -103,7 +103,7 @@ def test_no_pathlib_io_in_application_layer() -> None:
     followed by ``fs.is_dir(p)`` would trip a false positive — but that
     pattern would also defeat the readability the port is meant to
     deliver, so the convention doubles as a style rule. See
-    ``packages/untaped-workspace/AGENTS.md``.
+    ``AGENTS.md``.
 
     ``ports.py`` itself is skipped: the matches there are Protocol
     method *declarations*, not calls.

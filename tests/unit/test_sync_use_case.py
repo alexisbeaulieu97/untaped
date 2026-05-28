@@ -595,8 +595,8 @@ def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> No
     the shared cache so a subsequent ``__call__`` (with the same cache)
     retries instead of silently re-using a bare that was never fetched.
     Pins the pre-parallel "retry on failure" semantics that the parallel
-    rewrite is documented to preserve (see
-    ``packages/untaped-workspace/AGENTS.md``, "sync --all -j N parallelism")."""
+    rewrite is documented to preserve (see ``AGENTS.md``,
+    "sync --all -j N parallelism")."""
     calls = {"n": 0}
 
     class FlakyFetchStub(StubGit):
