@@ -47,8 +47,16 @@ without reinstalling.
 
 `untaped awx`, `untaped profile`, `untaped github`, and `untaped workspace`
 are not bundled in core. Install the standalone plugins when you want those
-commands. For an editable source install, record the plugin first, then sync
-the tool from this checkout:
+commands. For an editable source install, pass the source checkout as the
+tool spec when you add a plugin:
+
+```bash
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --tool-spec /path/to/untaped \
+  --editable-tool
+```
+
+For several plugins, record them first, then sync the tool from this checkout:
 
 ```bash
 untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git" --no-sync

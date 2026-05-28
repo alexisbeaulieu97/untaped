@@ -70,6 +70,50 @@ def test_plugins_add_sync_invokes_uv_tool_install(
     assert data["plugins"]["packages"] == [{"spec": "untaped-awx", "editable": False}]
 
 
+def test_plugins_add_sync_accepts_tool_spec_override(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    package = "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+
+    def _run(cmd: list[str], **_: Any) -> Any:
+        calls.append(cmd)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+
+    result = CliRunner().invoke(
+        plugins_app,
+        [
+            "add",
+            package,
+            "--tool-spec",
+            "/home/alexis/tools/untaped",
+            "--editable-tool",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        [
+            "uv",
+            "tool",
+            "install",
+            "/home/alexis/tools/untaped",
+            "--editable",
+            "--no-sources",
+            "--with",
+            package,
+            "--force",
+        ]
+    ]
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"] == {
+        "tool": {"spec": "/home/alexis/tools/untaped", "editable": True},
+        "packages": [{"spec": package, "editable": False}],
+    }
+
+
 def test_plugins_add_sync_rolls_back_state_when_uv_fails(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -166,6 +210,17 @@ def test_plugins_add_rejects_bare_direct_url(_isolated_config: Path) -> None:
     assert not _isolated_config.exists()
 
 
+def test_plugins_add_rejects_editable_tool_without_tool_spec(_isolated_config: Path) -> None:
+    result = CliRunner().invoke(
+        plugins_app,
+        ["add", "untaped-awx", "--editable-tool", "--no-sync"],
+    )
+
+    assert result.exit_code == 1
+    assert "--editable-tool requires --tool-spec" in result.output
+    assert not _isolated_config.exists()
+
+
 def test_plugins_remove_accepts_package_name_for_named_direct_reference(
     _isolated_config: Path,
 ) -> None:
@@ -179,6 +234,50 @@ def test_plugins_remove_accepts_package_name_for_named_direct_reference(
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == []
+
+
+def test_plugins_remove_sync_accepts_tool_spec_override(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    _isolated_config.write_text(
+        "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
+    )
+
+    def _run(cmd: list[str], **_: Any) -> Any:
+        calls.append(cmd)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+
+    result = CliRunner().invoke(
+        plugins_app,
+        [
+            "remove",
+            "untaped-awx",
+            "--tool-spec",
+            "/home/alexis/tools/untaped",
+            "--editable-tool",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        [
+            "uv",
+            "tool",
+            "install",
+            "/home/alexis/tools/untaped",
+            "--editable",
+            "--no-sources",
+            "--force",
+        ]
+    ]
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"] == {
+        "tool": {"spec": "/home/alexis/tools/untaped", "editable": True},
+        "packages": [],
+    }
 
 
 def test_plugins_sync_tool_spec_rolls_back_when_uv_fails(
