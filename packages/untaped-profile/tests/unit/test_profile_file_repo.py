@@ -11,8 +11,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from untaped_core import get_settings
 from untaped_profile.infrastructure import ProfileFileRepository
+
+from untaped import get_settings
 
 
 @pytest.fixture(autouse=True)

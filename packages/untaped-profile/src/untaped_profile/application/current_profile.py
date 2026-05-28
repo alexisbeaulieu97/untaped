@@ -14,8 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from untaped_core import DEFAULT_PROFILE, ConfigError, ProfileSource
-
+from untaped import DEFAULT_PROFILE, ConfigError, ProfileSource
 from untaped_profile.application.ports import ProfileReader
 
 

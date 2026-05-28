@@ -7,8 +7,8 @@ from itertools import islice
 from typing import Any
 
 from pydantic import BaseModel
-from untaped_core import ConfigError
 
+from untaped import ConfigError
 from untaped_github.application.ports import GithubSearchService, GithubTeamService
 from untaped_github.domain import (
     CodeResult,

@@ -1,4 +1,4 @@
-"""Architectural-rule tests: enforce DDD import direction across every domain.
+"""Architectural-rule tests: enforce DDD import direction across every plugin package.
 
 Two complementary rules (per ``AGENTS.md`` 4-layer DDD section):
 
@@ -11,14 +11,11 @@ Two complementary rules (per ``AGENTS.md`` 4-layer DDD section):
 ``TYPE_CHECKING`` imports are allowed because they don't create a runtime
 edge.
 
-These tests discover every domain package by globbing
+These tests discover every plugin package by globbing
 ``packages/*/src/<import_root>/{application,infrastructure}/``, walk the
 AST of every ``.py`` file in those directories, and assert the rules for
 each. The discovery is intentional: a new domain that follows the recipe
 in ``AGENTS.md`` is automatically covered with no test edits.
-
-``untaped-core`` has no ``application/`` or ``infrastructure/`` directory
-by design (it's a flat shared kit), so it is excluded automatically.
 
 These tests partially overlap with the ``[tool.importlinter]`` contracts
 in ``pyproject.toml`` (defense-in-depth on layers) but uniquely cover
@@ -209,12 +206,12 @@ def test_awx_application_does_not_read_infrastructure_only_spec_fields() -> None
     )
 
 
-# Workspace packages that intentionally have no ``application/`` layer
-# (flat shared kits without DDD layering). Every other package in
-# ``packages/`` must have one — adding a new domain without one trips
+# Workspace packages that intentionally have no ``application/`` layer.
+# Every package in ``packages/`` should be a plugin with a DDD shell now;
+# adding a new plugin without one trips
 # the guard below, prompting the contributor to either add the layer or
 # document the exception by listing the package here.
-_PACKAGES_WITHOUT_APPLICATION_LAYER = frozenset({"untaped_core"})
+_PACKAGES_WITHOUT_APPLICATION_LAYER = frozenset()
 
 
 def _discover_package_roots() -> list[tuple[str, Path]]:
@@ -226,13 +223,13 @@ def _discover_package_roots() -> list[tuple[str, Path]]:
     ]
 
 
-def test_every_domain_has_application_layer() -> None:
+def test_every_plugin_has_application_layer() -> None:
     """Every workspace package except known flat kits must have an
     ``application/`` directory.
 
-    Derives the expected set from disk so a new domain that follows the
+    Derives the expected set from disk so a new plugin that follows the
     recipe in ``AGENTS.md`` is automatically covered without test edits.
-    A new domain *without* an ``application/`` layer trips this guard.
+    A new plugin *without* an ``application/`` layer trips this guard.
     """
     missing = [
         f"{import_root} ({src_dir})"
@@ -246,12 +243,10 @@ def test_every_domain_has_application_layer() -> None:
     )
 
 
-# AGENTS.md: "Only ``cli/`` modules read ``untaped_core.Settings``."
+# AGENTS.md: "Only ``cli/`` modules read ``untaped.Settings``."
 # Infrastructure adapters consume settings narrowed at the composition
-# root — either a package-local config struct that adds invariants
-# (``AwxConfig`` carries ``gt=0`` / ``frozen=True``) or the schema
-# sub-model directly when no extra invariants apply (``GithubClient``
-# takes ``GithubSettings``). Either way, ``Settings`` / ``get_settings``
+# root by calling ``get_config_section`` and passing the package-local
+# model into the adapter. Either way, ``Settings`` / ``get_settings``
 # stay out of ``infrastructure/`` so adapters are constructible in
 # tests without touching the global settings cache.
 #
@@ -259,9 +254,9 @@ def test_every_domain_has_application_layer() -> None:
 # ``"<import_root>/<rel_path_under_src>"`` (POSIX separators):
 _INFRA_MAY_READ_SETTINGS: frozenset[str] = frozenset(
     {
-        # Meta-domain: the whole purpose of ``untaped-config`` is to read
+        # Meta-domain: the whole purpose of ``untaped config`` is to read
         # and edit ``Settings``; the introspection adapter has to import it.
-        "untaped_config/infrastructure/settings_repo.py",
+        "untaped.config/infrastructure/settings_repo.py",
     }
 )
 
@@ -278,25 +273,25 @@ def _discover_infrastructure_dirs() -> list[tuple[str, Path]]:
 
 
 # C901: layering contract walks the AST for the three forbidden Settings
-# read forms — direct import, attribute access on ``untaped_core.settings``,
+# read forms — direct import, attribute access on ``untaped.settings``,
 # alias rebinding. One branch per recognised form; refactoring would
 # obscure the 1:1 mapping between contract clause and detector.
 def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # noqa: C901
     """Return ``"file:line ..."`` strings for forbidden Settings reads.
 
     Direct imports (flagged at the import site):
-      - ``from untaped_core import Settings`` / ``get_settings``
-      - ``from untaped_core.settings import Settings`` / ``get_settings``
+      - ``from untaped import Settings`` / ``get_settings``
+      - ``from untaped.settings import Settings`` / ``get_settings``
 
     Module-alias bypasses (flagged at the *attribute access* site, since
     the import alone is harmless):
-      - ``import untaped_core`` → ``untaped_core.get_settings(...)``
-      - ``import untaped_core as c`` → ``c.Settings(...)``
-      - ``import untaped_core.settings`` → ``untaped_core.settings.get_settings(...)``
-      - ``import untaped_core.settings as s`` → ``s.get_settings(...)``
-      - ``from untaped_core import settings`` → ``settings.get_settings(...)``
+      - ``import untaped`` → ``untaped.get_settings(...)``
+      - ``import untaped as c`` → ``c.Settings(...)``
+      - ``import untaped.settings`` → ``untaped.settings.get_settings(...)``
+      - ``import untaped.settings as s`` → ``s.get_settings(...)``
+      - ``from untaped import settings`` → ``settings.get_settings(...)``
 
-    Plain ``import untaped_core`` *without* a ``Settings`` /
+    Plain ``import untaped`` *without* a ``Settings`` /
     ``get_settings`` attribute access is fine — adapters legitimately use
     ``HttpSettings`` and other public re-exports.
     """
@@ -306,8 +301,8 @@ def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # 
     typecheck_lines = _typecheck_block_lines(tree)
     found: list[str] = []
 
-    # Local names bound to ``untaped_core`` (the package) and
-    # ``untaped_core.settings`` (the submodule). Tracked so attribute
+    # Local names bound to ``untaped`` (the package) and
+    # ``untaped.settings`` (the submodule). Tracked so attribute
     # access through aliases (``c.get_settings``, ``s.Settings``) is
     # caught even when the import line itself is harmless.
     top_aliases: set[str] = set()
@@ -315,26 +310,26 @@ def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # 
 
     for imp in _runtime_imports(tree):
         if isinstance(imp, ast.ImportFrom):
-            if imp.module in {"untaped_core", "untaped_core.settings"}:
+            if imp.module in {"untaped", "untaped.settings"}:
                 bad = sorted({alias.name for alias in imp.names if alias.name in forbidden_names})
                 if bad:
                     found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)} from {imp.module}")
-            if imp.module == "untaped_core":
+            if imp.module == "untaped":
                 for alias in imp.names:
                     if alias.name == "settings":
                         sub_aliases.add(alias.asname or "settings")
         elif isinstance(imp, ast.Import):
             for alias in imp.names:
-                if alias.name == "untaped_core":
-                    top_aliases.add(alias.asname or "untaped_core")
-                elif alias.name == "untaped_core.settings":
+                if alias.name == "untaped":
+                    top_aliases.add(alias.asname or "untaped")
+                elif alias.name == "untaped.settings":
                     if alias.asname:
                         sub_aliases.add(alias.asname)
                     else:
-                        # ``import untaped_core.settings`` binds the
-                        # top-level ``untaped_core`` name; the submodule
+                        # ``import untaped.settings`` binds the
+                        # top-level ``untaped`` name; the submodule
                         # is reached via attribute access.
-                        top_aliases.add("untaped_core")
+                        top_aliases.add("untaped")
 
     if top_aliases or sub_aliases:
         for node in ast.walk(tree):
@@ -365,13 +360,9 @@ def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # 
 def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_dir: Path) -> None:
     """Infrastructure adapters must not import ``Settings`` / ``get_settings``.
 
-    AGENTS.md: only ``cli/`` modules read ``untaped_core.Settings``;
-    everything downstream consumes a narrower view — either a
-    package-local config struct (e.g.
-    :class:`untaped_awx.infrastructure.AwxConfig`, which adds
-    invariants beyond the schema) or a schema sub-model imported
-    directly from ``untaped_core`` (e.g. ``GithubSettings``,
-    ``HttpSettings``). Adapters that read ``Settings`` itself couple
+    AGENTS.md: only ``cli/`` modules read ``untaped.Settings``;
+    everything downstream consumes a narrower package-local model.
+    Adapters that read ``Settings`` itself couple
     to the global cache and can't be constructed in unit tests without
     monkey-patching it.
 
@@ -390,7 +381,7 @@ def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_
 
     assert not violations, (
         f"{import_root}/infrastructure must not import Settings / get_settings "
-        "from untaped_core (only cli/ may read settings; pass a package-local "
+        "from untaped (only cli/ may read settings; pass a package-local "
         "config struct in instead). To document an intentional exception, add "
         "the path to _INFRA_MAY_READ_SETTINGS above with a rationale.\n  " + "\n  ".join(violations)
     )
@@ -437,33 +428,31 @@ def test_infrastructure_does_not_import_application_at_runtime(
 _BYPASS_SOURCES: list[tuple[str, str]] = [
     (
         "import-alias-direct",
-        "import untaped_core as core\ndef f() -> None:\n    core.get_settings()\n",
+        "import untaped as core\ndef f() -> None:\n    core.get_settings()\n",
     ),
     (
         "import-alias-class",
-        "import untaped_core as core\ndef f() -> None:\n    core.Settings()\n",
+        "import untaped as core\ndef f() -> None:\n    core.Settings()\n",
     ),
     (
         "from-import-submodule",
-        "from untaped_core import settings\ndef f() -> None:\n    settings.get_settings()\n",
+        "from untaped import settings\ndef f() -> None:\n    settings.get_settings()\n",
     ),
     (
         "from-import-submodule-aliased",
-        "from untaped_core import settings as cfg\ndef f() -> None:\n    cfg.get_settings()\n",
+        "from untaped import settings as cfg\ndef f() -> None:\n    cfg.get_settings()\n",
     ),
     (
         "import-submodule-chained",
-        "import untaped_core.settings\n"
-        "def f() -> None:\n"
-        "    untaped_core.settings.get_settings()\n",
+        "import untaped.settings\ndef f() -> None:\n    untaped.settings.get_settings()\n",
     ),
     (
         "import-submodule-aliased",
-        "import untaped_core.settings as s\ndef f() -> None:\n    s.Settings()\n",
+        "import untaped.settings as s\ndef f() -> None:\n    s.Settings()\n",
     ),
     (
         "direct-import",
-        "from untaped_core import get_settings\ndef f() -> None:\n    get_settings()\n",
+        "from untaped import get_settings\ndef f() -> None:\n    get_settings()\n",
     ),
     (
         # Regression: only the `if TYPE_CHECKING:` branch is type-check-only.
@@ -473,9 +462,9 @@ _BYPASS_SOURCES: list[tuple[str, str]] = [
         "type-checking-else-branch",
         "from typing import TYPE_CHECKING\n"
         "if TYPE_CHECKING:\n"
-        "    from untaped_core import HttpSettings\n"
+        "    from untaped import HttpSettings\n"
         "else:\n"
-        "    from untaped_core import get_settings\n"
+        "    from untaped import get_settings\n"
         "def f() -> None:\n"
         "    get_settings()\n",
     ),
@@ -492,7 +481,7 @@ def test_settings_violation_helper_catches_alias_bypasses(
 ) -> None:
     """``_settings_violations_in_file`` must flag every alias-bypass form.
 
-    The direct ``from untaped_core import get_settings`` form is an
+    The direct ``from untaped import get_settings`` form is an
     existing case kept here so the parametrised set is self-contained;
     the rest are the patterns added in response to the PR review.
     """
@@ -515,10 +504,10 @@ def test_settings_violation_helper_ignores_legitimate_imports(tmp_path: Path) ->
     infra_dir.mkdir(parents=True)
     py_file = infra_dir / "client.py"
     py_file.write_text(
-        "from untaped_core import ConfigError, HttpClient, HttpSettings\n"
-        "import untaped_core\n"
+        "from untaped import ConfigError, HttpClient, HttpSettings\n"
+        "import untaped\n"
         "def f() -> None:\n"
-        "    untaped_core.HttpClient(base_url='x')\n",
+        "    untaped.HttpClient(base_url='x')\n",
         encoding="utf-8",
     )
 

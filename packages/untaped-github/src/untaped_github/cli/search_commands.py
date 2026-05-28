@@ -11,19 +11,19 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     ConfigError,
     FormatOption,
     format_output,
     report_errors,
 )
-
 from untaped_github.cli._client import open_client
 
 # Shared across all four search subcommands. GitHub-specific (the
-# 1000-result cap belongs to GitHub, not untaped_core), so it lives
-# here rather than in untaped_core's option aliases.
+# 1000-result cap belongs to GitHub, not untaped), so it lives
+# here rather than in untaped's option aliases.
 SearchLimitOption = Annotated[
     int,
     typer.Option(

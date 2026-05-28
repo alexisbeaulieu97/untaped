@@ -6,7 +6,7 @@ the generic use cases need. Commands construct the context inside a
 ``with`` block to ensure the HTTP client is closed.
 
 This module is the **only** place in ``untaped-awx`` that reads
-:class:`untaped_core.Settings`; everything downstream consumes the
+:class:`untaped.Settings`; everything downstream consumes the
 package-local :class:`AwxConfig`.
 """
 
@@ -17,8 +17,8 @@ from types import TracebackType
 from typing import TYPE_CHECKING
 
 import typer
-from untaped_core import get_settings
 
+from untaped import get_config_section, get_core_settings
 from untaped_awx.domain import ResourceSpec
 from untaped_awx.infrastructure import AwxClient, AwxConfig, AwxResourceCatalog
 from untaped_awx.infrastructure.fk_resolver import FkResolver
@@ -37,8 +37,8 @@ class AwxContext:
     """Holds wired-up dependencies for a single CLI invocation."""
 
     def __init__(self) -> None:
-        settings = get_settings()
-        config = AwxConfig.from_settings(settings)
+        settings = get_core_settings()
+        config = get_config_section("awx", AwxConfig)
         self.client = AwxClient(config, http=settings.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()

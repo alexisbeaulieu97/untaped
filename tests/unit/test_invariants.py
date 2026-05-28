@@ -7,7 +7,7 @@ so a freshly added domain is automatically covered without a test
 edit:
 
 - :func:`test_credential_fields_are_secretstr` — Hard Rule #11.
-  Every leaf on ``untaped_core.Settings`` whose name implies a
+  Every leaf on the registered settings model whose name implies a
   credential is typed :class:`pydantic.SecretStr` (so
   :func:`redact_secrets` covers it and ``repr(settings)`` won't leak
   it in tracebacks).
@@ -46,13 +46,14 @@ from typing import Any
 import pytest
 import typer
 from pydantic import BaseModel, SecretStr
-from untaped_core import Settings, walk_settings
+
+from untaped import get_settings_model, walk_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_DIR = REPO_ROOT / "packages"
 
 
-# ---- (a) every credential-named field on Settings is SecretStr -----------
+# ---- (a) every credential-named field is SecretStr -----------------------
 
 # Matches credential-implying leaf names: ``token``, ``api_token``,
 # ``access_token``, ``client_secret``, ``password``, ``api_key``, ...
@@ -93,20 +94,20 @@ def _credential_offenders(model_cls: type[BaseModel]) -> list[str]:
 def test_credential_fields_are_secretstr() -> None:
     """Every leaf whose name implies a credential must be ``SecretStr``.
 
-    Hard Rule #11. Walks the live ``Settings`` schema via the existing
+    Hard Rule #11. Walks the live registered settings schema via the existing
     :func:`walk_settings` helper. A new domain adding ``slack.token: str``
     fails here with the offending dotted key.
 
     **Complement to**
     ``test_secret_field_paths_matches_known_settings_secrets`` in
-    ``packages/untaped-core/tests/unit/test_config_schema.py``: that
+    ``tests/unit/test_config_schema.py``: that
     test pins the *inventory* of declared ``SecretStr`` paths (count +
     membership). This one catches the opposite mistake — a field
     *named* like a credential but *typed* as plain ``str``, which the
     inventory pin can't see because the field never makes it into
     ``secret_field_paths(...)``. Keep both.
     """
-    offenders = _credential_offenders(Settings)
+    offenders = _credential_offenders(get_settings_model())
     assert not offenders, (
         "Credential-named fields must be pydantic.SecretStr "
         "(see AGENTS.md Hard Rule #11):\n  " + "\n  ".join(offenders)
@@ -119,8 +120,8 @@ def test_credential_fields_are_secretstr() -> None:
 def _httpclient_calls_in(tree: ast.Module) -> list[ast.Call]:
     """Return every ``HttpClient(...)`` constructor call in ``tree``.
 
-    Matches both bare ``HttpClient(...)`` (after ``from untaped_core
-    import HttpClient``) and attribute-style ``untaped_core.HttpClient(...)``.
+    Matches both bare ``HttpClient(...)`` (after ``from untaped
+    import HttpClient``) and attribute-style ``untaped.HttpClient(...)``.
     """
     calls: list[ast.Call] = []
     for node in ast.walk(tree):
@@ -137,7 +138,7 @@ def _httpclient_calls_in(tree: ast.Module) -> list[ast.Call]:
 def _is_resolve_verify_call(node: ast.expr) -> bool:
     """``True`` if ``node`` is a call to a name ending in ``resolve_verify``.
 
-    Accepts both ``resolve_verify(...)`` (after ``from untaped_core.http
+    Accepts both ``resolve_verify(...)`` (after ``from untaped.http
     import resolve_verify``) and ``mod.resolve_verify(...)``. Other
     shapes — bare ``True``/``False``, a string path, a different
     callable, or the bare uncalled reference — are rejected so AGENTS.md
@@ -146,7 +147,7 @@ def _is_resolve_verify_call(node: ast.expr) -> bool:
     this test originally checked.
 
     Match is **structural, not provenance-based** — it doesn't trace the
-    name back to ``untaped_core.http.resolve_verify`` through imports, so
+    name back to ``untaped.http.resolve_verify`` through imports, so
     a contrived homonym (``other_lib.resolve_verify``) would pass. And
     arity isn't checked: a zero-arg ``resolve_verify()`` would pass here
     and fail-fast at runtime instead. Both are acceptable for a pin —
@@ -381,31 +382,31 @@ def test_credential_detector_ignores_secretstr_and_non_credential_names() -> Non
 _VERIFY_BAD_SOURCES: list[tuple[str, str]] = [
     (
         "missing-verify-kwarg",
-        "from untaped_core import HttpClient\n"
+        "from untaped import HttpClient\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', headers={})\n",
     ),
     (
         "hardcoded-verify-true",
-        "from untaped_core import HttpClient\n"
+        "from untaped import HttpClient\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', verify=True)\n",
     ),
     (
         "hardcoded-verify-false",
-        "from untaped_core import HttpClient\n"
+        "from untaped import HttpClient\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', verify=False)\n",
     ),
     (
         "hardcoded-ca-bundle-path",
-        "from untaped_core import HttpClient\n"
+        "from untaped import HttpClient\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', verify='/etc/ssl/cert.pem')\n",
     ),
     (
         "other-callable-not-resolve-verify",
-        "from untaped_core import HttpClient\n"
+        "from untaped import HttpClient\n"
         "def custom() -> bool: return True\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', verify=custom())\n",
@@ -416,8 +417,8 @@ _VERIFY_BAD_SOURCES: list[tuple[str, str]] = [
         # name is correctly rejected — pin that here so a future "just
         # accept the name" simplification fails loudly.
         "bare-resolve-verify-reference",
-        "from untaped_core import HttpClient\n"
-        "from untaped_core.http import resolve_verify\n"
+        "from untaped import HttpClient\n"
+        "from untaped.http import resolve_verify\n"
         "def f() -> None:\n"
         "    HttpClient(base_url='x', verify=resolve_verify)\n",
     ),
@@ -438,16 +439,16 @@ def test_verify_detector_flags_bad_sources(label: str, source: str) -> None:
 _VERIFY_GOOD_SOURCES: list[tuple[str, str]] = [
     (
         "bare-resolve-verify-call",
-        "from untaped_core import HttpClient\n"
-        "from untaped_core.http import resolve_verify\n"
+        "from untaped import HttpClient\n"
+        "from untaped.http import resolve_verify\n"
         "def f(http) -> None:\n"
         "    HttpClient(base_url='x', verify=resolve_verify(http))\n",
     ),
     (
         "attribute-resolve-verify-call",
-        "import untaped_core\n"
+        "import untaped\n"
         "def f(http) -> None:\n"
-        "    untaped_core.HttpClient(base_url='x', verify=untaped_core.resolve_verify(http))\n",
+        "    untaped.HttpClient(base_url='x', verify=untaped.resolve_verify(http))\n",
     ),
 ]
 

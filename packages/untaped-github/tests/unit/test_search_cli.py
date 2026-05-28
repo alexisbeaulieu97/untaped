@@ -10,8 +10,9 @@ import httpx
 import pytest
 import respx
 from typer.testing import CliRunner
-from untaped_core.settings import get_settings
 from untaped_github import app
+
+from untaped.settings import get_settings
 
 
 @pytest.fixture(autouse=True)

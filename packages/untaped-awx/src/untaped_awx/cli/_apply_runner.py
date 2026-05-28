@@ -13,8 +13,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import typer
-from untaped_core import OutputFormat, clamp_parallel, format_output
 
+from untaped import OutputFormat, clamp_parallel, format_output
 from untaped_awx.application import ApplyFile, ApplyResource
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.application.ports import ResourceDocumentReader

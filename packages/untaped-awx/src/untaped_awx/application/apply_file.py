@@ -36,7 +36,7 @@ from untaped_awx.errors import AwxApiError
 # Upper bound on `apply --parallel`. Matches ``httpx.Client``'s default
 # pool size of 10 (``httpx._config.DEFAULT_LIMITS.max_connections``) —
 # anything higher would just block on connection acquisition. Passed to
-# ``untaped_core.clamp_parallel`` at the CLI boundary (see
+# ``untaped.clamp_parallel`` at the CLI boundary (see
 # ``cli/_apply_runner.py``).
 APPLY_PARALLEL_CAP = 10
 

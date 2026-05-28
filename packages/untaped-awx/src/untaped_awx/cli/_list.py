@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     format_output,
@@ -14,7 +15,6 @@ from untaped_core import (
     report_errors,
     resolve_each,
 )
-
 from untaped_awx.application import GetResource, ListResources
 from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.cli._names import flatten_fks

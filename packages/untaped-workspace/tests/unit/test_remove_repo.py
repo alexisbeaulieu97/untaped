@@ -3,11 +3,12 @@
 from pathlib import Path
 
 import pytest
-from conftest import empty_manifest
 from untaped_workspace.application import AddRepo, RemoveRepo
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import GitError, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
+
+from conftest import empty_manifest
 
 _FS = LocalFilesystem()
 

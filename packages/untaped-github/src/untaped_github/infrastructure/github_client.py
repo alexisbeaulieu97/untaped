@@ -6,10 +6,10 @@ from collections.abc import Iterator
 from types import TracebackType
 from typing import Any
 
-from untaped_core import ConfigError, GithubSettings, HttpClient, HttpSettings
-from untaped_core.http import resolve_verify
-
+from untaped import ConfigError, HttpClient, HttpSettings
+from untaped.http import resolve_verify
 from untaped_github.infrastructure.pagination import paginate_list, paginate_search
+from untaped_github.settings import GithubSettings
 
 
 class GithubClient:

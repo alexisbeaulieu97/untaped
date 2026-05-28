@@ -9,14 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from untaped_core.config_file import (
+from untaped.config_file import (
     get_at_path,
     mutate_config,
     read_config_dict,
     set_at_path,
     unset_at_path,
 )
-
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError
 

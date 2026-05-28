@@ -10,12 +10,15 @@ dependencies = [
     "pydantic>=2.13.3",
     "pyyaml>=6.0.3",
     "typer>=0.25.1",
-    "untaped-core",
+    "untaped",
 ]
+
+[project.entry-points."untaped.plugins"]
+workspace = "untaped_workspace.plugin:plugin"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-untaped-core = { workspace = true }
+untaped = { workspace = true }

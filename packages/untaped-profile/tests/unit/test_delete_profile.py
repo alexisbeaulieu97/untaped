@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from untaped_core import ConfigError
 from untaped_profile.application import DeleteProfile
+
+from untaped import ConfigError
 
 
 def test_removes_profile(repo: Any) -> None:

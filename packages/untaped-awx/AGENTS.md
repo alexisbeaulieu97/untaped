@@ -9,17 +9,13 @@ Hard Rules, recipes), see the [root `AGENTS.md`](../../AGENTS.md).
 
 `AwxConfig` (`infrastructure/config.py`) is the package-local config struct
 (`base_url`, `token`, `api_prefix`, `default_organization`, `page_size`).
-The canonical bridge is `AwxConfig.from_settings(settings)` — a single
-classmethod that mirrors `untaped_core.settings.AwxSettings` field-for-field.
-Only `cli/` modules read `untaped_core.Settings` (and `infrastructure/config.py`
-imports it under `TYPE_CHECKING` purely for the classmethod signature) —
-today `cli/_context.AwxContext.__init__` and `cli/commands.py:ping_command`,
-plus any future CLI command. `application/`, `infrastructure/`, and `domain/`
-depend on `AwxConfig` so `untaped-awx` is extractable as a standalone library.
+The plugin registers this model as the `awx` profile settings section, and
+CLI composition roots read it with `get_config_section("awx", AwxConfig)`.
+`application/`, `infrastructure/`, and `domain/` depend on `AwxConfig` so
+`untaped-awx` is extractable as a standalone library.
 
-Adding a new field is a four-place edit (`AwxSettings`, `AwxConfig`, the
-`from_settings` body, and `test_config.test_from_settings_field_set_matches_awxsettings`);
-the field-inventory test fails CI loudly if you forget one of the first two.
+Adding a new field is a three-place edit: `AwxConfig`, the call site that
+needs the value, and tests for loading/env override where relevant.
 
 ## AAP/AWX compatibility
 
@@ -262,7 +258,7 @@ outcomes out of the futures so a `write=True` apply never silently loses an AWX
 mutation. The pool is capped at `APPLY_PARALLEL_CAP=10` to match
 `httpx.Client`'s default `max_connections=10` — anything higher just
 blocks on connection acquisition. The CLI clamps to this cap via
-`untaped_core.clamp_parallel` (shared with workspace `sync`/`foreach`,
+`untaped.clamp_parallel` (shared with workspace `sync`/`foreach`,
 policy `"httpx.Limits.max_connections=10"`); `ApplyFile.__init__`
 re-applies `min(parallel, APPLY_PARALLEL_CAP)` as a programmatic-caller
 safety net.
@@ -396,12 +392,12 @@ descends into kinds we don't recognise.
 names/ids on stdin (`untaped awx workflow-templates list -f raw -c id
 | untaped awx workflow-templates nodes --stdin --recursive`),
 concatenating each root's node tree in input order. Identifier
-resolution goes through `untaped_core.read_identifiers` so the same
+resolution goes through `untaped.read_identifiers` so the same
 "exactly one source" + "non-empty stdin" contract applies as on
 factory-built `list`/`get`. Per-root failures emit
 `warning: <id>: <exc>` to stderr and set a process-wide non-zero
 exit; other roots still emit their rows. The factory's `list
---stdin` uses `resolve_each` (`untaped_core.cli`) for this pattern,
+--stdin` uses `resolve_each` (`untaped.cli`) for this pattern,
 but `resolve_each` wraps a `Callable[[str], R] -> list[R]` shape
 that maps each id to a single record — `nodes` produces a
 `list[WorkflowNode]` per root, so the loop is hand-rolled here.
@@ -487,5 +483,5 @@ CLI flows.
 - [Root AGENTS.md](../../AGENTS.md) — 4-Layer DDD, Hard Rules, recipes
 - [`docs/awx.md`](../../docs/awx.md) — user-facing setup and command
   reference (covers `jobs`, `unified-templates`, `test`)
-- [`packages/untaped-core/AGENTS.md`](../untaped-core/AGENTS.md) —
-  profiles, TLS, `resolve_verify`
+- [Root AGENTS.md](../../AGENTS.md) — profiles, TLS, `resolve_verify`,
+  and plugin settings registration

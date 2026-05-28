@@ -10,7 +10,8 @@ from untaped_awx.infrastructure.yaml_io import (
     write_resource,
     write_resources,
 )
-from untaped_core import ConfigError
+
+from untaped import ConfigError
 
 
 def _resource(kind: str, name: str, **spec: object) -> Resource:

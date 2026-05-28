@@ -39,7 +39,7 @@ def _injected_violation(path: Path, source: str) -> Iterator[None]:
 
 def _run_lint_imports() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["uv", "run", "lint-imports"],
+        ["uv", "--cache-dir", ".uv-cache", "run", "--no-sync", "lint-imports"],
         capture_output=True,
         text=True,
         cwd=REPO_ROOT,
@@ -47,7 +47,7 @@ def _run_lint_imports() -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_independence_contract_catches_cross_domain_import() -> None:
+def test_independence_contract_catches_cross_plugin_import() -> None:
     fixture = REPO_ROOT / "packages/untaped-awx/src/untaped_awx/_contract_self_test_violation.py"
     with _injected_violation(
         fixture,
@@ -59,7 +59,7 @@ def test_independence_contract_catches_cross_domain_import() -> None:
         f"expected non-zero exit; got {result.returncode}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
-    assert "Sibling domains are mutually independent" in result.stdout
+    assert "Sibling plugins are mutually independent" in result.stdout
     assert "BROKEN" in result.stdout
 
 
@@ -78,12 +78,12 @@ def test_layers_contract_catches_application_imports_infrastructure() -> None:
         f"expected non-zero exit; got {result.returncode}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
-    assert "Per-domain layers" in result.stdout
+    assert "Per-plugin layers" in result.stdout
     assert "BROKEN" in result.stdout
 
 
-def test_forbidden_contract_catches_core_importing_domain() -> None:
-    fixture = REPO_ROOT / "packages/untaped-core/src/untaped_core/_contract_self_test_violation.py"
+def test_forbidden_contract_catches_core_importing_plugin() -> None:
+    fixture = REPO_ROOT / "src/untaped/_contract_self_test_violation.py"
     with _injected_violation(
         fixture,
         "from untaped_awx import app  # noqa: F401\n",
@@ -94,5 +94,5 @@ def test_forbidden_contract_catches_core_importing_domain() -> None:
         f"expected non-zero exit; got {result.returncode}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
-    assert "untaped_core does not depend on any domain" in result.stdout
+    assert "untaped core does not statically import plugins" in result.stdout
     assert "BROKEN" in result.stdout

@@ -14,19 +14,20 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     ConfigError,
     FormatOption,
     OutputFormat,
     format_output,
-    get_settings,
+    get_config_section,
+    get_core_settings,
     parse_kv_pairs,
     read_identifiers,
     report_errors,
     resolve_each,
 )
-
 from untaped_awx.application import (
     GetJob,
     ListJobs,
@@ -74,8 +75,8 @@ def ping_command(
 ) -> None:
     """Check control-plane health."""
     with report_errors():
-        settings = get_settings()
-        config = AwxConfig.from_settings(settings)
+        settings = get_core_settings()
+        config = get_config_section("awx", AwxConfig)
         with AwxClient(config, http=settings.http) as client:
             status = Ping(client)()
         typer.echo(format_output([status.model_dump()], fmt=fmt, columns=columns))

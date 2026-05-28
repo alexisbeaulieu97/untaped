@@ -21,7 +21,8 @@ import httpx
 import pytest
 import respx
 from untaped_awx.infrastructure import AwxConfig
-from untaped_core.settings import get_settings
+
+from untaped.settings import get_settings
 
 
 class FakeAap:

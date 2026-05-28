@@ -10,13 +10,13 @@ see [`docs/configuration.md`](../../docs/configuration.md).
 
 ## Auth model
 
-GitHub uses bearer-token auth. The token is a `SecretStr` read from
-`Settings.github.token` (or `UNTAPED_GITHUB__TOKEN` via the env-var
-shorthand). The CLI composition root reads it once and passes
-`settings.github` (a `GithubSettings`) into `GithubClient`. Adapters
-never read `Settings` (the cross-cutting aggregate) directly — they
-take the narrowed sub-model — same rule that applies to every other
-domain package.
+GitHub uses bearer-token auth. The token is a `SecretStr` read through
+`get_config_section("github", GithubSettings)` (or
+`UNTAPED_GITHUB__TOKEN` via the env-var shorthand). The CLI composition
+root reads it once and passes the narrowed `GithubSettings` into
+`GithubClient`. Adapters never read `Settings` (the cross-cutting
+aggregate) directly — they take the narrowed sub-model — same rule that
+applies to every other plugin package.
 
 `GithubClient.__init__` fail-fasts with `ConfigError` if the token is
 missing or whitespace-only. There is no anonymous-mode fallback —
@@ -30,21 +30,18 @@ Enterprise Server, point it at `https://<host>/api/v3`. Trailing
 slashes are stripped at client construction so URL joins are clean.
 No auto-detection — the user configures it explicitly.
 
-## Settings sub-model: consume `GithubSettings` directly
+## Settings sub-model: package-local `GithubSettings`
 
-`GithubClient.__init__` takes `settings.github` (a
-`GithubSettings` from `untaped_core`) directly — no package-local
-config struct in between. The two fields (`base_url`, `token`)
-have no per-package validators or invariants beyond what
-`GithubSettings` already declares, so a mirroring `GithubConfig`
-class would have been pure duplication. Symmetric with how
-`GithubClient` already consumes `HttpSettings` directly for TLS
-configuration.
+`GithubClient.__init__` takes `GithubSettings` from
+`untaped_github.settings` directly — no separate `GithubConfig` struct
+in between. The two fields (`base_url`, `token`) have no extra adapter
+invariants beyond what `GithubSettings` already declares, so a second
+mirroring config class would be pure duplication. Symmetric with how
+`GithubClient` consumes `HttpSettings` directly for TLS configuration.
 
-Adding a new field is a two-place edit (`GithubSettings` in
-`untaped_core/settings.py` + the `GithubClient` constructor or call
-site that needs it). The settings-schema tests in `untaped-core`
-pin loading/env-override behaviour.
+Adding a new field is a two-place edit (`GithubSettings` registration
+model + the `GithubClient` constructor or call site that needs it). The
+settings-schema tests in core pin loading/env-override behaviour.
 
 Contrast with `AwxConfig` (`packages/untaped-awx/src/untaped_awx/infrastructure/config.py`):
 that package keeps a local struct because it adds invariants on top
@@ -60,7 +57,7 @@ away.
 
 ## HTTP wiring
 
-`GithubClient` wraps `untaped_core.HttpClient` with three GitHub-specific
+`GithubClient` wraps `untaped.HttpClient` with three GitHub-specific
 headers:
 
 - `Accept: application/vnd.github+json`
@@ -102,7 +99,7 @@ common scope flags `--user`, `--org` (repeatable), `--repo`
 does not — GitHub's user-search endpoint ignores those qualifiers, so
 exposing them on the CLI would mislead. All four subcommands share
 `--limit` and the standard `--format/-f` + `--columns/-c` from
-`untaped_core`.
+`untaped`.
 
 Note: `search code` does not accept `--sort` — GitHub no longer
 supports a sort parameter on code search (best-match is the only
@@ -114,7 +111,7 @@ order).
 `SearchLimitOption = Annotated[int, typer.Option("--limit", min=1, help=...)]`
 applied to all four subcommands. The default (`30`) is supplied at the
 call site (`limit: SearchLimitOption = 30`) so future tweaks land in
-one place. The alias lives here rather than in `untaped_core`
+one place. The alias lives here rather than in `untaped`
 (root-AGENTS convention) because the help string names GitHub's
 1000-result search cap — that's a GitHub-specific contract, not a
 workspace-wide one. Future GitHub-only option aliases (e.g. a

@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     format_output,
     report_errors,
 )
-
 from untaped_awx.application import SaveResource
 from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.infrastructure.spec import AwxResourceSpec

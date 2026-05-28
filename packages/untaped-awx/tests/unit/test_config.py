@@ -1,8 +1,8 @@
 """Unit tests for ``AwxConfig.from_settings``.
 
-Pins the field-by-field bridge between ``untaped_core.Settings.awx`` and
-the package-local ``AwxConfig`` so a new field added to one side without
-the other surfaces as a test failure, not as a silent runtime drop.
+Pins the field-by-field bridge between the registered ``awx`` section
+and the package-local ``AwxConfig`` so a registration drift surfaces as
+a test failure, not as a silent runtime drop.
 """
 
 from __future__ import annotations
@@ -10,8 +10,9 @@ from __future__ import annotations
 import pytest
 from pydantic import SecretStr
 from untaped_awx.infrastructure import AwxConfig
-from untaped_core import Settings
-from untaped_core.settings import AwxSettings, get_settings
+
+from untaped import get_settings_model
+from untaped.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +25,7 @@ def _reset_settings_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_from_settings_copies_every_field_from_defaults() -> None:
     """A default ``Settings()`` round-trips into a default ``AwxConfig`` —
     each field on the bridge must read the same value from the source."""
-    settings = Settings()
+    settings = get_settings_model()()
     config = AwxConfig.from_settings(settings)
     assert config.base_url == settings.awx.base_url
     assert config.token == settings.awx.token
@@ -36,8 +37,8 @@ def test_from_settings_copies_every_field_from_defaults() -> None:
 def test_from_settings_copies_non_default_values() -> None:
     """Construct a non-default ``Settings`` and verify every field
     propagates. Catches a typo on either side of the bridge."""
-    settings = Settings(
-        awx=AwxSettings(
+    settings = get_settings_model()(
+        awx=AwxConfig(
             base_url="https://aap.example.com",
             token=SecretStr("a-token"),
             api_prefix="/api/v2/",
@@ -55,20 +56,11 @@ def test_from_settings_copies_non_default_values() -> None:
 
 
 def test_from_settings_returns_awxconfig_instance() -> None:
-    """Bridge must return the package-local type — not the cross-cutting
-    ``AwxSettings`` — so adapters keep their narrow import surface."""
-    config = AwxConfig.from_settings(Settings())
+    """Bridge must return the package-local type."""
+    config = AwxConfig.from_settings(get_settings_model()())
     assert isinstance(config, AwxConfig)
 
 
-def test_from_settings_field_set_matches_awxsettings() -> None:
-    """If a new field is added to ``AwxSettings`` but not to ``AwxConfig``
-    (or vice-versa), every test above could still pass. Pin the field
-    inventory here so adding a setting on one side without the bridge
-    fails loudly."""
-    settings_fields = set(AwxSettings.model_fields.keys())
-    config_fields = set(AwxConfig.model_fields.keys())
-    assert settings_fields == config_fields, {
-        "in_settings_only": sorted(settings_fields - config_fields),
-        "in_config_only": sorted(config_fields - settings_fields),
-    }
+def test_awx_section_is_registered_with_awxconfig() -> None:
+    """The AWX plugin must register its package-local config model."""
+    assert get_settings_model().model_fields["awx"].annotation is AwxConfig

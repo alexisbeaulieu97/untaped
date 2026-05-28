@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from untaped_core import ColumnsOption, FormatOption, format_output, parse_kv_pairs, report_errors
 
+from untaped import ColumnsOption, FormatOption, format_output, parse_kv_pairs, report_errors
 from untaped_awx.cli._context import AwxContext, open_context
 from untaped_awx.domain import Job
 from untaped_awx.domain.test_suite import TestSuite
@@ -278,7 +278,7 @@ def validate_command(
 def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
     # ``suite`` first: under ``--format raw`` (table/raw branch) the
     # first key is what pipelines feed back into the next command
-    # (xargs identifier semantics). See packages/untaped-core/AGENTS.md
+    # (xargs identifier semantics). See root AGENTS.md
     # '--format raw default-column contract'; pinned by
     # tests/unit/test_format_raw_first_key.py.
     return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
@@ -288,7 +288,7 @@ def _test_suite_row(suite: TestSuite) -> dict[str, Any]:
     # Suite-level shape for --format json|yaml only (raw uses
     # _test_case_row). Kept ``suite``-first for symmetry with the raw
     # row source — the contract is documented in
-    # packages/untaped-core/AGENTS.md '--format raw default-column
+    # root AGENTS.md '--format raw default-column
     # contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {
         "suite": suite.name,

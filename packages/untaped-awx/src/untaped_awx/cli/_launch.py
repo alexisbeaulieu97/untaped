@@ -13,7 +13,8 @@ from typing import Any
 
 import typer
 from rich.console import Console
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     UntapedError,
@@ -21,7 +22,6 @@ from untaped_core import (
     read_identifiers,
     report_errors,
 )
-
 from untaped_awx.application import RunAction, StreamJobEvents, WatchJob
 from untaped_awx.application.ports import FkResolver
 from untaped_awx.cli._context import open_context, scope_for_command

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from untaped_core import ProfileSource
+from untaped import ProfileSource
 
 
 class ProfileReader(Protocol):

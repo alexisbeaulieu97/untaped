@@ -7,17 +7,17 @@ from typing import Literal
 
 import typer
 import yaml
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
-    Settings,
     format_output,
+    get_profile_settings_model,
     redact_secrets,
     report_errors,
     resolve_config_path,
     secret_field_paths,
 )
-
 from untaped_profile.application import (
     CreateProfile,
     CurrentProfile,
@@ -101,7 +101,7 @@ def show_command(
         data = (
             profile.data
             if show_secrets
-            else redact_secrets(profile.data, secret_field_paths(Settings))
+            else redact_secrets(profile.data, secret_field_paths(get_profile_settings_model()))
         )
         if fmt == "json":
             envelope = {
@@ -180,7 +180,7 @@ def rename_command(
 def _profile_row(p: Profile) -> dict[str, object]:
     # ``name`` first: under ``--format raw`` the first key is what
     # pipelines feed back into the next command (xargs identifier
-    # semantics). See packages/untaped-core/AGENTS.md '--format raw
+    # semantics). See root AGENTS.md '--format raw
     # default-column contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {
         "name": p.name,
