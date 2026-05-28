@@ -110,17 +110,27 @@ uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
   --force
 ```
 
-To let `untaped plugins` remember that desired plugin state, record the
-plugin without syncing, then rebuild the tool from the same source spec:
+To let `untaped plugins` remember that desired plugin state, give `plugins add`
+the same source spec for the core tool:
 
 ```bash
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" --no-sync
-untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+```
+
+For editable source checkouts, use the checkout path and mark the tool editable:
+
+```bash
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --tool-spec /path/to/untaped \
+  --editable-tool
 ```
 
 Direct URL plugin specs must include the package name before `@`, for
 example `untaped-profile @ git+https://github.com/...`. That name is the
 stable key used when replacing or removing a recorded plugin.
+Without `--tool-spec`, `plugins add` syncs the recorded/default tool spec,
+which is `untaped` for the future published package.
 
 ```text
 untaped profile list                          # list profiles, ✓ marks active
