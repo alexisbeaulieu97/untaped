@@ -51,7 +51,7 @@ commands. For an editable source install, pass the source checkout as the
 tool spec when you add a plugin:
 
 ```bash
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
   --tool-spec /path/to/untaped \
   --editable-tool
 ```
@@ -59,10 +59,10 @@ untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/u
 For several plugins, record them first, then sync the tool from this checkout:
 
 ```bash
-untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git" --no-sync
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" --no-sync
-untaped plugins add "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git" --no-sync
-untaped plugins add "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git" --no-sync
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-awx.git --no-sync
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git --no-sync
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-github.git --no-sync
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-workspace.git --no-sync
 untaped plugins sync --tool-spec /path/to/untaped --editable-tool
 ```
 

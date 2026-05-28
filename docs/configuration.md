@@ -114,21 +114,24 @@ To let `untaped plugins` remember that desired plugin state, give `plugins add`
 the same source spec for the core tool:
 
 ```bash
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
   --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
 ```
 
 For editable source checkouts, use the checkout path and mark the tool editable:
 
 ```bash
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
   --tool-spec /path/to/untaped \
   --editable-tool
 ```
 
-Direct URL plugin specs must include the package name before `@`, for
-example `untaped-profile @ git+https://github.com/...`. That name is the
-stable key used when replacing or removing a recorded plugin.
+For direct URLs, `untaped plugins add` infers the plugin name from the
+repository basename and stores the canonical `name @ url` form. You can also
+provide that form explicitly, for example
+`untaped-profile @ git+https://github.com/...`. The normalized name is the
+stable key used when replacing or removing a recorded plugin, so
+`untaped plugins remove untaped-profile` works.
 Without `--tool-spec`, `plugins add` syncs the recorded/default tool spec,
 which is `untaped` for the future published package.
 
