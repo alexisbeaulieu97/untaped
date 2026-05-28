@@ -95,10 +95,20 @@ against `stage` without touching your persisted `active:`.
 
 `untaped profile` is provided by the standalone
 [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
-plugin. Install it into a `uv tool` managed `untaped` installation with:
+plugin. Install both `untaped` and the profile plugin from git with:
 
 ```bash
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
+  --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --force
+```
+
+To let `untaped plugins` remember that desired plugin state, record the
+plugin without syncing, then rebuild the tool from the same source spec:
+
+```bash
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" --no-sync
+untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
 ```
 
 ```text

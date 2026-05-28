@@ -46,10 +46,12 @@ uv tool install --editable .
 place, so local edits are picked up without reinstalling.
 
 `untaped profile` is no longer bundled in core. Install the standalone
-plugin when you want profile inventory commands:
+plugin when you want profile inventory commands. For an editable source
+install, record the plugin first, then sync the tool from this checkout:
 
 ```bash
-untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" --no-sync
+untaped plugins sync --tool-spec /path/to/untaped --editable-tool
 ```
 
 ## Documentation
