@@ -10,9 +10,8 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from untaped_core import ConfigError, HttpClient, HttpSettings
-from untaped_core.http import resolve_verify
-
+from untaped import ConfigError, HttpClient, HttpSettings
+from untaped.http import resolve_verify
 from untaped_awx.infrastructure.config import AwxConfig
 
 

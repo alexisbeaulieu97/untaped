@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from untaped_core import ConfigError
 from untaped_workspace.cli.completions import complete_workspace_name
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError
 from untaped_workspace.infrastructure import WorkspaceRegistryRepository
+
+from untaped import ConfigError
 
 
 @pytest.fixture

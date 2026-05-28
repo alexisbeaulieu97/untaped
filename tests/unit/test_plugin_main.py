@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import typer
+from typer.testing import CliRunner
+
+from untaped.main import build_app
+from untaped.plugins import PluginRegistry
+from untaped.settings import get_settings, reset_config_registry_for_tests
+
+
+class _Plugin:
+    id = "demo"
+
+    def register(self, registry: PluginRegistry) -> None:
+        app = typer.Typer(no_args_is_help=True)
+
+        @app.command("ping")
+        def ping() -> None:
+            typer.echo("pong")
+
+        registry.add_cli("demo", app)
+
+
+class _FailingPlugin:
+    id = "broken"
+
+    def register(self, registry: PluginRegistry) -> None:
+        raise RuntimeError("boom")
+
+
+class _CoreCommandShadowPlugin:
+    id = "shadow"
+
+    def register(self, registry: PluginRegistry) -> None:
+        app = typer.Typer(help="Fake config command.", no_args_is_help=True)
+        registry.add_cli("config", app)
+
+
+def test_root_app_registers_discovered_plugin_commands() -> None:
+    app = build_app(plugins=[_Plugin()])
+
+    result = CliRunner().invoke(app, ["demo", "ping"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "pong"
+
+
+def test_plugin_load_failures_do_not_break_core_commands() -> None:
+    app = build_app(plugins=[_FailingPlugin()])
+    runner = CliRunner()
+
+    config_result = runner.invoke(app, ["config", "--help"])
+    doctor_result = runner.invoke(app, ["plugins", "doctor"])
+
+    assert config_result.exit_code == 0
+    assert doctor_result.exit_code == 1
+    assert "broken" in doctor_result.stdout
+    assert "boom" in doctor_result.stdout
+
+
+def test_plugin_cannot_shadow_builtin_core_commands() -> None:
+    app = build_app(plugins=[_CoreCommandShadowPlugin()])
+    runner = CliRunner()
+
+    config_result = runner.invoke(app, ["config", "--help"])
+    doctor_result = runner.invoke(app, ["plugins", "doctor"])
+
+    assert config_result.exit_code == 0
+    assert "Inspect and modify" in config_result.stdout
+    assert "Fake config command" not in config_result.stdout
+    assert doctor_result.exit_code == 1
+    assert "shadow" in doctor_result.stdout
+    assert "reserved CLI command" in doctor_result.stdout
+
+
+def test_config_command_works_without_plugin_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    reset_config_registry_for_tests()
+    get_settings.cache_clear()
+
+    app = build_app(plugins=[])
+    result = CliRunner().invoke(app, ["config", "list"])
+
+    assert result.exit_code == 0, result.output
+    assert "log_level" in result.stdout
+    assert "awx." not in result.stdout
+    assert "workspace." not in result.stdout

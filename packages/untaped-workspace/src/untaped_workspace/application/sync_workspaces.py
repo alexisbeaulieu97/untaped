@@ -12,7 +12,7 @@ via ``as_completed``, then re-sorts outcomes by
 ``(workspace_input_order, repo)`` so table/JSON output stays
 predictable across runs.
 
-The CLI clamps ``parallel`` through :func:`untaped_core.clamp_parallel`
+The CLI clamps ``parallel`` through :func:`untaped.clamp_parallel`
 at the surface and trusts the value here, matching how
 :class:`Foreach` is wired. The session-scoped ``BareFetchTracker`` is
 allocated here unless the caller supplies one — shifting the

@@ -1,15 +1,13 @@
 """Pin the ``--format raw`` first-key contract by pytest.
 
-``untaped_core.output._format_raw`` emits ``next(iter(rows[0]))`` for
+``untaped.output._format_raw`` emits ``next(iter(rows[0]))`` for
 every row when ``--columns`` is omitted, so the first key of every row
 is load-bearing for shell pipelines (the ``xargs``-into-next-command
-pattern). The catalogue in
-``packages/untaped-core/AGENTS.md`` "``--format raw`` default-column
-contract" lists every row source — this module is the test that pins
+pattern). The catalogue in root ``AGENTS.md`` "``--format raw``
+default-column contract" lists every row source — this module is the test that pins
 it. Sibling of ``test_invariants.py`` / ``test_layering.py``; lives at
-the workspace root because every domain package contributes row
-sources, so the contract is workspace-wide and ``untaped-core`` (the
-shared kit) can't host it without inverting the dependency graph.
+the workspace root because every plugin package contributes row
+sources, so the contract is workspace-wide.
 
 Three parametrised tests pin existing entries:
 
@@ -53,8 +51,6 @@ from untaped_awx.cli.test_commands import _test_case_row, _test_suite_row
 from untaped_awx.domain import Job, JobEvent, WorkflowNode
 from untaped_awx.domain.test_suite import Case, CaseResult, TestSuite
 from untaped_awx.infrastructure.specs import ALL_SPECS
-from untaped_config.cli.commands import _entry_to_row
-from untaped_config.domain.models import SettingEntry, Source
 from untaped_github.domain.models import (
     CodeResult,
     GithubUser,
@@ -68,7 +64,10 @@ from untaped_workspace.cli.commands import _workspace_row
 from untaped_workspace.domain import Workspace
 from untaped_workspace.domain.state import ForeachOutcome, StatusEntry, SyncOutcome
 
-_CONTRACT_REF = "see packages/untaped-core/AGENTS.md '--format raw default-column contract'"
+from untaped.config.cli.commands import _entry_to_row
+from untaped.config.domain.models import SettingEntry, Source
+
+_CONTRACT_REF = "see root AGENTS.md '--format raw default-column contract'"
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -103,7 +102,7 @@ HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] =
         "name",
     ),
     (
-        "untaped_config.cli.commands._entry_to_row",
+        "untaped.config.cli.commands._entry_to_row",
         lambda: _entry_to_row(
             SettingEntry(
                 key="awx.base_url",
@@ -298,7 +297,7 @@ _LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
         "_profile_row",
     ),
     (
-        _REPO_ROOT / "packages/untaped-config/src/untaped_config/cli/commands.py",
+        _REPO_ROOT / "src/untaped/config/cli/commands.py",
         "list_command",
         "_entry_to_row",
     ),

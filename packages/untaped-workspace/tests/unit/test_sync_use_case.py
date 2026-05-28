@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-from conftest import StubGit
 from untaped_workspace.application import BareFetchTracker, SyncWorkspace
 from untaped_workspace.domain import (
     ManifestDefaults,
@@ -14,6 +13,8 @@ from untaped_workspace.domain import (
 )
 from untaped_workspace.errors import GitError, UnmatchedOnlyFilter, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
+
+from conftest import StubGit
 
 _FS = LocalFilesystem()
 

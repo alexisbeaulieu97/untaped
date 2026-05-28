@@ -1,7 +1,7 @@
 """Typer commands for the workspace domain.
 
 Thin layer: parses CLI arguments, delegates to application use cases,
-formats output via :mod:`untaped_core.output`.
+formats output via :mod:`untaped.output`.
 """
 
 from __future__ import annotations
@@ -10,18 +10,18 @@ import os
 from pathlib import Path
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
     clamp_parallel,
     format_output,
-    get_settings,
+    get_config_section,
     read_identifiers,
     report_errors,
     resolve_each,
 )
-
 from untaped_workspace.application import (
     AddRepo,
     AdoptWorkspace,
@@ -54,6 +54,12 @@ from untaped_workspace.infrastructure import (
     resolve_editor_argv,
     shell_runner,
 )
+from untaped_workspace.settings import WorkspaceSettings
+
+
+def _workspace_settings() -> WorkspaceSettings:
+    return get_config_section("workspace", WorkspaceSettings)
+
 
 app = typer.Typer(
     name="workspace",
@@ -124,7 +130,7 @@ def init_command(
     `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
     """
     with report_errors():
-        target = path or (get_settings().workspace.workspaces_dir.expanduser() / name)
+        target = path or (_workspace_settings().workspaces_dir.expanduser() / name)
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
         typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
@@ -255,7 +261,7 @@ def add_command(
                 ManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
-                cache_dir=get_settings().workspace.cache_dir,
+                cache_dir=_workspace_settings().cache_dir,
             )(ws, only=added)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
     if any_failed:
@@ -373,7 +379,7 @@ def sync_command(
             ManifestRepository(),
             runner,
             fs=LocalFilesystem(),
-            cache_dir=get_settings().workspace.cache_dir,
+            cache_dir=_workspace_settings().cache_dir,
         )
         if all_workspaces and only:
             typer.echo(
@@ -541,7 +547,7 @@ def import_command(
                 ManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
-                cache_dir=get_settings().workspace.cache_dir,
+                cache_dir=_workspace_settings().cache_dir,
             )(ws, only=result.repos)
             _print_sync_outcomes(outcomes, fmt="table", columns=None)
 
@@ -605,6 +611,6 @@ def edit_command(
 def _workspace_row(w: Workspace) -> dict[str, object]:
     # ``name`` first: under ``--format raw`` the first key is what
     # pipelines feed back into the next command (xargs identifier
-    # semantics). See packages/untaped-core/AGENTS.md '--format raw
+    # semantics). See root AGENTS.md '--format raw
     # default-column contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {"name": w.name, "path": str(w.path)}

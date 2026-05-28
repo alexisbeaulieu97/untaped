@@ -2,15 +2,16 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from conftest import empty_manifest
-from untaped_core import ConfigError
-from untaped_core.settings import get_settings
 from untaped_workspace.application import WorkspaceResolver
 from untaped_workspace.domain import WorkspaceManifest
 from untaped_workspace.infrastructure import (
     ManifestRepository,
     WorkspaceRegistryRepository,
 )
+
+from conftest import empty_manifest
+from untaped import ConfigError
+from untaped.settings import get_settings
 
 
 def _resolver() -> WorkspaceResolver:

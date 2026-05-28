@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import typer
-from untaped_core import ColumnsOption, FormatOption, format_output, report_errors
 
+from untaped import ColumnsOption, FormatOption, format_output, report_errors
 from untaped_github.cli._client import open_client
 from untaped_github.cli.search_commands import app as search_app
 

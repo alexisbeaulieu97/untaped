@@ -24,7 +24,8 @@ virtual collection cannot satisfy.
 from __future__ import annotations
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
@@ -33,7 +34,6 @@ from untaped_core import (
     read_identifiers,
     report_errors,
 )
-
 from untaped_awx.application import BrowseUnifiedTemplates, GetUnifiedTemplate
 from untaped_awx.cli._context import open_context
 from untaped_awx.cli._get import default_get_columns

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from untaped_core import ColumnsOption, OutputFormat, report_errors
 
+from untaped import ColumnsOption, OutputFormat, report_errors
 from untaped_awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped_awx.cli._apply_runner import resolve_apply_file, run_apply
 from untaped_awx.cli._context import open_context

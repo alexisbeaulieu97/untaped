@@ -11,7 +11,8 @@ from collections.abc import Sequence
 from typing import Any
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
@@ -20,7 +21,6 @@ from untaped_core import (
     report_errors,
     resolve_each,
 )
-
 from untaped_awx.application import GetResource
 from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.cli._names import flatten_fks

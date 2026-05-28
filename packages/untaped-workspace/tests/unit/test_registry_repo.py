@@ -2,9 +2,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from untaped_core.settings import get_settings
 from untaped_workspace.errors import RegistryError
 from untaped_workspace.infrastructure import WorkspaceRegistryRepository
+
+from untaped.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
