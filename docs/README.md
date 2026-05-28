@@ -9,13 +9,15 @@ are designed to be piped into `fzf`, `jq`, `awk`, or each other.
 
 - [Configuration](./configuration.md) — `~/.untaped/config.yml`,
   profiles, secrets, TLS, env-var overrides. Start here.
-- [Workspaces](./workspace.md) — install the optional workspace plugin
-  for local git workspace manifests, registry state, `sync` / `status` /
-  `foreach`, and the `uwcd` shell helper.
-- [AWX / AAP](./awx.md) — install the optional AWX plugin to talk to Ansible Automation Platform:
-  list / save / apply resources, launch jobs, run declarative test
-  suites.
-- [GitHub](./github.md) — install the optional GitHub user/search plugin.
+- [Plugins](./plugins.md) — install, sync, list, and diagnose optional
+  plugin packages.
+
+Plugin command references live in their plugin repos:
+
+- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
+- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
+- [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
+- [Profile](https://github.com/alexisbeaulieu97/untaped-profile)
 
 For installation, see the repo's [README](../README.md).
 
