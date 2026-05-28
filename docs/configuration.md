@@ -3,10 +3,11 @@
 `untaped` reads its settings from `~/.untaped/config.yml`. Core includes
 `untaped config` for editing keys. Profile inventory commands are
 provided by the optional `untaped-profile` plugin. Workspace registry
-commands are provided by the optional `untaped-workspace` plugin.
+commands are provided by the optional `untaped-workspace` plugin. AWX
+settings are available when the optional `untaped-awx` plugin is installed.
 
 - `untaped config` — read and write the *keys* inside a profile
-  (`awx.token`, `http.ca_bundle`, …).
+  (`http.ca_bundle`, plus plugin keys like `awx.token`).
 - `untaped profile` — manage the *profiles* (named overlays such as
   `dev`, `prod`, `homelab`) when the `untaped-profile` plugin is
   installed.
@@ -41,7 +42,7 @@ active: prod                       # optional; selects the overlay profile
 profiles:
   default:                         # the shared base layer (optional but conventional)
     log_level: INFO
-    awx:
+    awx:                              # optional AWX plugin
       base_url: https://aap.example.com
       token: <token>
       # api_prefix defaults to /api/controller/v2/ for AAP. Upstream AWX
@@ -53,7 +54,7 @@ profiles:
       workspaces_dir: ~/.untaped/workspaces
 
   prod:                            # overlays default; only declares what differs
-    awx:
+    awx:                              # optional AWX plugin
       base_url: https://aap.prod.example.com
       token: <prod token>
 
@@ -159,9 +160,9 @@ untaped config unset <key>                   # remove from the active profile
 untaped config unset <key> --profile <name>
 ```
 
-Keys are dotted paths into the active schema, e.g. `awx.token`,
-`awx.base_url`, `awx.default_organization`, `http.ca_bundle`, and
+Keys are dotted paths into the active schema, e.g. `http.ca_bundle` and
 `http.verify_ssl`. Installed plugins add their own sections, such as
+`awx.token` / `awx.base_url` when the optional AWX plugin is installed,
 `github.token` when the optional GitHub plugin is installed, or
 `workspace.cache_dir` when the optional workspace plugin is installed.
 Values are parsed as YAML scalars, so
@@ -173,8 +174,8 @@ with `untaped profile create <name>` if the profile plugin is installed,
 or by editing the YAML directly. The one exception is `default`, which is
 auto-bootstrapped on the first write so a fresh install doesn't need a
 setup step. So `untaped config set awx.token <tok>` on a brand-new system
-writes to `default`; `untaped config set awx.token <tok> --profile prod`
-requires `prod` to already exist.
+writes to `default` when the AWX plugin is installed; `untaped config set
+awx.token <tok> --profile prod` requires `prod` to already exist.
 
 ## Secrets
 
@@ -215,8 +216,8 @@ Any single setting can be overridden for one process via an env var
 named after its dotted path:
 
 ```text
-awx.token                  → UNTAPED_AWX__TOKEN
-awx.base_url               → UNTAPED_AWX__BASE_URL
+awx.token                  → UNTAPED_AWX__TOKEN       # optional AWX plugin
+awx.base_url               → UNTAPED_AWX__BASE_URL    # optional AWX plugin
 http.verify_ssl            → UNTAPED_HTTP__VERIFY_SSL
 github.token               → UNTAPED_GITHUB__TOKEN  # optional GitHub plugin
 workspace.workspaces_dir   → UNTAPED_WORKSPACE__WORKSPACES_DIR
@@ -231,8 +232,9 @@ than the file.
 ## Worked example: dev / prod profiles
 
 A common setup: one profile per environment, sharing a base layer for
-everything that doesn't change. The `untaped profile` commands in this
-example require the optional profile plugin.
+everything that doesn't change. The `awx.*` commands require the optional
+AWX plugin; the `untaped profile` commands require the optional profile
+plugin.
 
 ```bash
 # Start with a shared base.
@@ -259,8 +261,7 @@ untaped --profile prod awx ping
 
 - [`workspace.md`](./workspace.md) — install guidance for the optional
   workspace plugin.
-- [`awx.md`](./awx.md) — `untaped awx` commands and the resource
-  framework.
+- [`awx.md`](./awx.md) — optional AWX plugin install guidance.
 - [`github.md`](./github.md) — optional GitHub plugin install guidance.
 - [AGENTS.md](../AGENTS.md) — the architecture and contribution rules
   (read this if you're extending `untaped`).

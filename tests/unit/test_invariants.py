@@ -1,10 +1,8 @@
 """Pin load-bearing AGENTS.md Hard Rules by pytest.
 
 Three invariants documented in ``AGENTS.md`` are honoured by convention
-today and would silently bit-rot if a new domain forgot them. Each
-function below asserts one rule by walking the workspace at test time,
-so a freshly added domain is automatically covered without a test
-edit:
+today and would silently bit-rot if core drifted. Plugin repos carry their
+own copies of plugin-specific invariants.
 
 - :func:`test_credential_fields_are_secretstr` — Hard Rule #11.
   Every leaf on the registered settings model whose name implies a
@@ -12,10 +10,9 @@ edit:
   :func:`redact_secrets` covers it and ``repr(settings)`` won't leak
   it in tracebacks).
 - :func:`test_httpclient_construction_passes_verify` — Hard Rule #12.
-  Every ``HttpClient(...)`` call under
-  ``packages/*/src/*/infrastructure/`` passes ``verify=resolve_verify(...)``
-  (so TLS defaults flow through OS trust + ``http.ca_bundle``, never a
-  hard-coded ``True`` / ``False`` / path).
+  Every ``HttpClient(...)`` call under ``src/`` passes
+  ``verify=resolve_verify(...)`` (so TLS defaults flow through OS trust +
+  ``http.ca_bundle``, never a hard-coded ``True`` / ``False`` / path).
 - :func:`test_typer_apps_and_required_arg_commands_set_no_args_is_help` —
   Hard Rule #9. Every ``typer.Typer`` app and every command with at
   least one required argument sets ``no_args_is_help=True`` (so
@@ -30,9 +27,8 @@ known-bad inputs so each detector is provably wired (sibling pattern to
 detector silently broken to always-return-empty would still report
 "all rules pass" — defeating the pin.
 
-Sibling of ``test_layering.py`` / ``test_import_linter_contracts.py``;
-follows the same ``REPO_ROOT = parents[2]`` discovery pattern so the
-checks are workspace-wide by construction.
+Follows the same ``REPO_ROOT = parents[2]`` discovery pattern as the other
+core guard tests.
 """
 
 from __future__ import annotations
@@ -50,7 +46,7 @@ from pydantic import BaseModel, SecretStr
 from untaped import get_settings_model, walk_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGES_DIR = REPO_ROOT / "packages"
+SRC_DIR = REPO_ROOT / "src"
 
 
 # ---- (a) every credential-named field is SecretStr -----------------------
@@ -114,7 +110,7 @@ def test_credential_fields_are_secretstr() -> None:
     )
 
 
-# ---- (b) every HttpClient(...) under infrastructure/ passes verify= ------
+# ---- (b) every HttpClient(...) under src/ passes verify= -----------------
 
 
 def _httpclient_calls_in(tree: ast.Module) -> list[ast.Call]:
@@ -178,36 +174,27 @@ def _verify_offenders(tree: ast.Module, rel: str) -> list[str]:
 
 
 def test_httpclient_construction_passes_verify() -> None:
-    """Every ``HttpClient(...)`` under ``infrastructure/`` must pass
+    """Every ``HttpClient(...)`` under ``src/`` must pass
     ``verify=resolve_verify(...)``.
 
-    Hard Rule #12. AST walk over every domain's ``infrastructure/`` tree
+    Hard Rule #12. AST walk over core source
     so the check survives reformatting and ignores ``# verify=`` style
     comments that a string-match regex would be fooled by. A new client
     that hard-codes ``verify=False`` or forgets the kwarg entirely fails
     here with the ``file:line`` of the offending call.
-
-    **Scope.** Domain ``infrastructure/`` layers only. ``src/untaped/``
-    (the root binary) is excluded by design — it is ``add_typer``-only
-    aggregation and does not construct HTTP clients. If that ever
-    changes, widen the glob.
     """
     offenders: list[str] = []
-    for infra_dir in sorted(PACKAGES_DIR.glob("*/src/*/infrastructure")):
-        for py_file in sorted(infra_dir.rglob("*.py")):
-            text = py_file.read_text(encoding="utf-8")
-            # Cheap skip: most infra files don't construct HttpClient.
-            # Substring check elides ~90% of ast.parse calls without
-            # narrowing the workspace-wide discovery glob — false hits
-            # (e.g. "HttpClient" in a comment) still parse and then
-            # find no call.
-            if "HttpClient" not in text:
-                continue
-            tree = ast.parse(text)
-            rel = str(py_file.relative_to(REPO_ROOT))
-            offenders.extend(_verify_offenders(tree, rel))
+    for py_file in sorted(SRC_DIR.rglob("*.py")):
+        text = py_file.read_text(encoding="utf-8")
+        # Cheap skip: most files don't construct HttpClient. False hits
+        # (e.g. "HttpClient" in a comment) still parse and then find no call.
+        if "HttpClient" not in text:
+            continue
+        tree = ast.parse(text)
+        rel = str(py_file.relative_to(REPO_ROOT))
+        offenders.extend(_verify_offenders(tree, rel))
     assert not offenders, (
-        "HttpClient(...) construction under infrastructure/ must pass "
+        "HttpClient(...) construction under src/ must pass "
         "verify=resolve_verify(...) (see AGENTS.md Hard Rule #12):\n  " + "\n  ".join(offenders)
     )
 

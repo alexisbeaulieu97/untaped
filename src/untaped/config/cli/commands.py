@@ -63,7 +63,7 @@ def list_command(
 
 @app.command("set", no_args_is_help=True)
 def set_command(
-    key: str = typer.Argument(..., help="Dotted setting key, e.g. `awx.token`."),
+    key: str = typer.Argument(..., help="Dotted setting key, e.g. `http.verify_ssl`."),
     value: str = typer.Argument(..., help="New value (parsed as a YAML scalar)."),
     profile: str | None = typer.Option(
         None,

@@ -1,10 +1,9 @@
 # AGENTS.md — `untaped`
 
 Single source of truth for how `untaped` core is built. AI agents and
-humans both read this file; in-repo plugin internals live in
-`packages/<x>/AGENTS.md`, and extracted plugins own their own root
-`AGENTS.md`. If you change architecture, update the relevant file in the
-same commit.
+humans both read this file. Plugin internals live in their own repos and
+own `AGENTS.md` files. If you change architecture, update the relevant
+file in the same commit.
 
 ## Mission
 
@@ -18,14 +17,13 @@ existing CLIs (`gh`, `awx-cli`) where that is the right abstraction.
 
 ## Repository Map
 
-The workspace root **is** the `untaped` core package. Packages under
-`packages/` are in-repo plugins for this bridge step; they are designed to
-move to separate repos without changing the core contract.
+The workspace root **is** the `untaped` core package. Domain plugins live
+in separate repositories and integrate through entry points.
 
 ```
 untaped/
-├── pyproject.toml                # workspace root + the `untaped` package
-├── uv.lock                       # single shared lockfile (commit it)
+├── pyproject.toml                # the `untaped` package
+├── uv.lock                       # lockfile (commit it)
 ├── .python-version               # 3.14
 ├── .pre-commit-config.yaml
 ├── AGENTS.md                     # ← you are here (root rules)
@@ -33,19 +31,18 @@ untaped/
 ├── README.md                     # human-facing intro
 ├── docs/                         # user-facing reference
 ├── src/untaped/                  # core CLI, config, plugin plumbing, shared helpers
-├── tests/                        # tests for core and shared contracts
-└── packages/
-    └── untaped-awx/              # AWX/AAP API; AGENTS.md
+└── tests/                        # tests for core and shared contracts
 ```
 
 | Package             | Type | Owns                                                                  | Internals doc |
 | ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
 | `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, profile resolution, output/stdin/http/errors. | this file |
-| `untaped-awx`       | plugin | AWX/AAP bounded context (jobs, templates, inventories, …).          | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
 
-Extracted plugins live in their own repositories and depend on the public
-`untaped` plugin API. Current extracted plugins:
+Plugins live in their own repositories and depend on the public `untaped`
+plugin API. Current plugins:
 
+- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx)
+  — the `awx` command for Ansible Automation Platform / AWX workflows.
 - [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
   — the `profile` command for managing the profile inventory.
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
@@ -57,9 +54,9 @@ Extracted plugins live in their own repositories and depend on the public
 
 Non-negotiable. Every contribution must respect them.
 
-1. **Keep all `AGENTS.md` files up to date.** Root for cross-cutting
-   rules; `packages/<x>/AGENTS.md` for domain-specific architecture. If
-   you add a package, change the DDD layout, or add a cross-cutting
+1. **Keep all `AGENTS.md` files up to date.** Root for core and
+   cross-cutting rules; plugin repos for domain-specific architecture.
+   If you change the plugin contract, a DDD layout, or a cross-cutting
    helper, edit the relevant file in the same commit.
 2. **Prefer `uv` commands over manual `pyproject.toml` edits.** Use
    `uv add`, `uv add --package <name>`, `uv add --group dev`,
@@ -68,15 +65,15 @@ Non-negotiable. Every contribution must respect them.
 3. **Register every new plugin through an entry point.** Use
    `[project.entry-points."untaped.plugins"]`; the root must not
    statically import plugin modules.
-4. **Use `uv init --package` with `--lib` or `--app`.** Never the bare
-   `uv init` (gives flat layout).
+4. **Use `uv init --package` with `--lib` or `--app` for new plugin
+   repos.** Never the bare `uv init` (gives flat layout).
 5. **Create shared plumbing only when it is genuinely cross-cutting.**
    Don't duplicate code across plugins. If two plugins need the same
    helper and it is part of the hub contract, it belongs in `src/untaped/`;
    otherwise use a separate shared library.
-6. **Search before writing.** Grep `src/untaped` and other packages
-   before implementing a helper. If it exists in the wrong place, *move*
-   it (and update callers); don't fork.
+6. **Search before writing.** Grep `src/untaped` and relevant plugin
+   repos before implementing a helper. If it exists in the wrong place,
+   *move* it (and update callers); don't fork.
 7. **Finish each session with `uv run ruff check --fix && uv run ruff
    format`.** No exceptions.
 8. **Write tests that verify the result.** TDD: failing test first, then
@@ -97,10 +94,9 @@ Non-negotiable. Every contribution must respect them.
     them in tracebacks. Call `.get_secret_value()` only at point of use.
 12. **Use `resolve_verify(settings.http)` for every httpx client.** Never
     hard-code `verify=True/False` or a path.
-13. **Use absolute imports across the workspace.** `from untaped_<x>.… import …`
-    or `from untaped import …`, never `from .foo import bar`.
-    Enforced by ruff's `ban-relative-imports = "all"`; applies inside
-    every package, including tests.
+13. **Use absolute imports.** `from untaped import …`, never
+    `from .foo import bar`. Enforced by ruff's
+    `ban-relative-imports = "all"`; applies to tests too.
 
 ## Architecture: Core + Plugin DDD
 
@@ -196,8 +192,8 @@ commands such as `untaped config`.
 | Read/write a single profile                | `from untaped.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
 | Merge `default` ⤥ active to an effective dict | `from untaped import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr`                                             |
-| Declare port `Protocol`s for a plugin      | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
-| Declare DTOs that cross app/infra boundary | `packages/untaped-<x>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |
+| Declare port `Protocol`s for a plugin      | `<plugin>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
+| Declare DTOs that cross app/infra boundary | `<plugin>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |
 
 Cross-cutting subsystems with their own internals doc:
 
@@ -206,9 +202,10 @@ Cross-cutting subsystems with their own internals doc:
 - **Workspace management** lives in the extracted
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
   plugin. User-facing install guidance: [`docs/workspace.md`](docs/workspace.md).
-- **AWX resource framework, apply pipeline, jobs/track, test runner** —
-  see [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md).
-  User-facing reference: [`docs/awx.md`](docs/awx.md).
+- **AWX resource framework, apply pipeline, jobs/track, test runner** live
+  in the extracted
+  [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx)
+  plugin. User-facing install guidance: [`docs/awx.md`](docs/awx.md).
 - **GitHub authenticated user and search** live in the extracted
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
   plugin. User-facing install guidance: [`docs/github.md`](docs/github.md).
@@ -238,17 +235,11 @@ Cross-cutting subsystems with their own internals doc:
   additionally has `infrastructure/errors.py` for HTTP-status →
   exception mapping. Plugins that only raise `untaped` exceptions don't
   need an `errors.py`.
-- **Lazy imports on CLI startup paths.** Heavy transitive imports
-  (jinja2, yaml, application use cases, infrastructure clients) that
+- **Lazy imports on CLI startup paths.** Heavy transitive imports that
   would pay on every `untaped --help` are deferred into subcommand
   bodies and annotated `# noqa: PLC0415`. Scope: any module reached
-  on the import graph from `src/untaped/main.py` at startup (today:
-  `untaped-awx/cli/test_commands.py` and `untaped-awx/cli/completions.py`).
-  Enforced by ruff (`extend-select = ["PLC0415"]`); tests are exempted
-  (in-function imports are idiomatic there with no startup cost). A
-  bare `# noqa: PLC0415` is fine when the file's module-top comment
-  carries the rationale; otherwise add a one-line inline reason
-  naming the deferred cost.
+  on the import graph from `src/untaped/main.py` at startup. Enforced
+  by ruff (`extend-select = ["PLC0415"]`); tests are exempted.
 
 ## Output & Piping Conventions
 
@@ -294,9 +285,8 @@ Pipeline examples and the morning-routine workflow live in
 ## Development Workflow
 
 ```bash
-uv sync --all-packages                          # install / sync everything
+uv sync                                         # install / sync core
 uv run pre-commit install                       # local lint at commit + mypy at push
-uv add --package untaped-awx httpx-retries      # runtime dep on a package
 uv add --group dev some-test-helper             # dev dep on the root
 uv run pytest                                   # tests with coverage (gate: 80%)
 uv run ruff check --fix && uv run ruff format   # lint + format
@@ -320,30 +310,20 @@ behaviours worth knowing:
   and shaves a few hundred milliseconds per run.
 
 **TDD loop:**
-1. Write the failing test (`tests/unit/` for core, or
-   `packages/untaped-<x>/tests/unit/` for an in-repo plugin).
+1. Write the failing test (`tests/unit/` for core; plugin repos use
+   their own `tests/unit/`).
 2. Run it; confirm it fails for the right reason.
 3. Implement the smallest change that makes it pass.
 4. Refactor with the test still green.
 
 **Test layout:**
-- Core tests live in `tests/unit/`. In-repo plugin tests live in
-  `packages/<pkg>/tests/unit/` by default. Use
-  `tests/integration/` when the test exercises a real subprocess or
-  fake-server fixture (`untaped-awx`'s `FakeAap`). Pure use-case tests
-  with stubs stay in `unit/`.
+- Core tests live in `tests/unit/`. Plugin tests live in each plugin
+  repo. Use `tests/integration/` when the test exercises a real
+  subprocess or fake-server fixture.
 - No `__init__.py` files inside `tests/` — pytest uses
   `--import-mode=importlib`.
 - Mock httpx with `respx` (already a dev dep).
 - For CLI tests, use `typer.testing.CliRunner`.
-
-**Bridge-step plugin tests:** while some plugins still live under
-`packages/`, root tests may dynamically import local plugin packages only
-to preserve legacy coverage and verify in-monorepo entry-point
-registration. Core plugin-loading behavior must be tested with fake
-plugins, and production `src/untaped/` must stay free of static plugin
-imports. Before extracting another plugin, move its plugin-specific tests
-and AGENTS guidance into the target repository.
 
 ## Decision Tree: Where does this code go?
 
@@ -358,16 +338,16 @@ and AGENTS guidance into the target repository.
 5. **Orchestrates steps between domain and infrastructure?** →
    `application/`.
 
-## Recipe: Add a new in-repo plugin package
+## Recipe: Add a new plugin repo
 
 ```bash
-# 1. Create the package
-uv init --package --lib packages/untaped-<X>
+# 1. Create the plugin repo/package
+uv init --package --lib untaped-<X>
 # 2. Add deps
-uv add --package untaped-<X> typer untaped
+uv add typer untaped
 # 3. Build the 4 layers
-mkdir -p packages/untaped-<X>/src/untaped_<x>/{cli,application,domain,infrastructure}
-mkdir -p packages/untaped-<X>/tests/unit
+mkdir -p src/untaped_<x>/{cli,application,domain,infrastructure}
+mkdir -p tests/unit
 ```
 
 Then:
@@ -392,23 +372,16 @@ Then:
   [project.entry-points."untaped.plugins"]
   <x> = "untaped_<x>.plugin:plugin"
   ```
-- Append `untaped_<x>` to `[tool.untaped].plugin_modules` in the root
-  `pyproject.toml`, then run
-  `uv run python scripts/sync_plugins.py --write`. The script
-  regenerates the four `[tool.importlinter]` lists and the
-  `[tool.mypy] packages` list from that single source of truth; the
-  sync check pre-commit hook flags drift on commit.
-- Add the package to this file's Repository Map.
-- **Create `packages/untaped-<X>/AGENTS.md`** for domain-specific
-  internals (resource framework, side-effect adapters, polling cadence,
-  …) plus a short `CLAUDE.md` stub: `See @AGENTS.md for <pkg>
-  internals. For workspace-wide rules see @../../AGENTS.md.`
-- Run `uv sync && uv run pytest && uv run untaped --help`. If you have
-  the global tool installed, re-run `uv tool install --editable .`.
+- Add a package-local `AGENTS.md` for domain-specific internals
+  (resource framework, side-effect adapters, polling cadence, …) plus a
+  short `CLAUDE.md` stub pointing back to that file and the core repo.
+- Add install docs showing both direct `uv tool install ... --with ...`
+  and managed `untaped plugins add ... --no-sync` flows.
+- Run `uv sync && uv run pytest && uv run untaped <x> --help`.
 
 ## Recipe: Add a new command to an existing plugin
 
-1. **Test first** in `packages/untaped-<X>/tests/unit/test_<feature>.py`.
+1. **Test first** in the plugin repo's `tests/unit/test_<feature>.py`.
 2. New external call → add a method to the existing
    `infrastructure/<x>_client.py`. Don't create a new client class
    unless it's a different service.
@@ -441,7 +414,8 @@ Credentials must be `SecretStr`; HTTP clients must still consume
   instead of going through an `application/` use case.** Wiring concrete
   adapters at the composition root (e.g. `cli/_context.py`) is fine; the
   ban is on bypassing application use cases for the actual logic.
-- **Adding a new dep with `pyproject.toml` edits.** Use `uv add --package`.
+- **Adding a new dep with `pyproject.toml` edits.** Use `uv add` in the
+  repo that owns the dependency.
 - **Writing a helper inside a plugin that another plugin will need.**
   Move it to `src/untaped/` only if it is hub plumbing; otherwise use a
   separate shared lib (move ≠ copy).
@@ -453,7 +427,7 @@ Credentials must be `SecretStr`; HTTP clients must still consume
   dispatch from the root CLI.
 - **Adding a new setting without thinking about secrets and TLS.**
   Credentials → `pydantic.SecretStr`. Hostnames for TLS services → the
-  client must use `resolve_verify(s.http)`.
+  client must use `resolve_verify(get_core_settings().http)`.
 - **Forgetting `no_args_is_help=True` on commands with required args.**
 - **Naming a method `list` on a class whose annotations elsewhere include
   `list[X]`.** mypy resolves `list` to the method, not the builtin. Use
@@ -465,9 +439,8 @@ Credentials must be `SecretStr`; HTTP clients must still consume
 
 ## See also
 
-- **Per-package internals**:
-  [`untaped-awx`](packages/untaped-awx/AGENTS.md)
-- **Extracted plugins**:
+- **Plugins**:
+  [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx),
   [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)

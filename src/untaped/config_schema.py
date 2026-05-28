@@ -39,7 +39,7 @@ class FieldDescriptor:
 
     @property
     def key(self) -> str:
-        """Dotted key, e.g. ``"awx.token"``."""
+        """Dotted key, e.g. ``"http.verify_ssl"``."""
         return ".".join(self.path)
 
 

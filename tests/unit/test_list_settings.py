@@ -2,16 +2,25 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from untaped.config.application import ListSettings
 from untaped.config.domain import Source
 from untaped.config.infrastructure import SettingsFileRepository
-from untaped.settings import get_settings, register_profile_settings, register_state_settings
+from untaped.settings import (
+    get_settings,
+    register_profile_settings,
+    register_state_settings,
+    reset_config_registry_for_tests,
+)
 
 
 class DemoProfileSettings(BaseModel):
     directory: Path = Path("~/.demo")
+    token: SecretStr | None = None
+    api_prefix: str = "/api/demo/v1/"
+    default_scope: str | None = None
+    page_size: int = 200
 
 
 class DemoStateSettings(BaseModel):
@@ -20,17 +29,20 @@ class DemoStateSettings(BaseModel):
 
 @pytest.fixture(autouse=True)
 def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    reset_config_registry_for_tests()
+    register_profile_settings("demo", DemoProfileSettings)
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
     get_settings.cache_clear()
     yield
+    reset_config_registry_for_tests()
     get_settings.cache_clear()
 
 
 def test_unset_when_no_yaml_no_default() -> None:
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
-    awx_token = entries["awx.token"]
-    assert awx_token.source == Source(kind="unset")
-    assert awx_token.value == "—"
+    token = entries["demo.token"]
+    assert token.source == Source(kind="unset")
+    assert token.value == "—"
 
 
 def test_default_when_no_yaml_no_env() -> None:
@@ -87,22 +99,22 @@ def test_env_overrides_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 def test_secrets_redacted_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    awx:\n      token: super-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: super-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
-    assert entries["awx.token"].value == "***"
+    assert entries["demo.token"].value == "***"
 
 
 def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    awx:\n      token: super-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: super-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())(reveal_secrets=True)}
-    assert entries["awx.token"].value == "super-secret-value"
+    assert entries["demo.token"].value == "super-secret-value"
 
 
 def test_collection_fields_skipped() -> None:
@@ -124,22 +136,22 @@ def test_env_var_naming_for_top_level() -> None:
 
 def test_env_var_naming_for_nested() -> None:
     repo = SettingsFileRepository()
-    descriptor = repo.descriptor("awx.token")
-    assert repo.env_var_for(descriptor) == "UNTAPED_AWX__TOKEN"
+    descriptor = repo.descriptor("demo.token")
+    assert repo.env_var_for(descriptor) == "UNTAPED_DEMO__TOKEN"
 
 
-def test_awx_extended_keys_listed() -> None:
+def test_plugin_extended_keys_listed() -> None:
     keys = {e.key for e in ListSettings(SettingsFileRepository())()}
-    assert "awx.api_prefix" in keys
-    assert "awx.default_organization" in keys
-    assert "awx.page_size" in keys
+    assert "demo.api_prefix" in keys
+    assert "demo.default_scope" in keys
+    assert "demo.page_size" in keys
 
 
-def test_awx_api_prefix_default_shown() -> None:
+def test_plugin_api_prefix_default_shown() -> None:
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
-    api_prefix = entries["awx.api_prefix"]
+    api_prefix = entries["demo.api_prefix"]
     assert api_prefix.source == Source(kind="default")
-    assert api_prefix.value == "/api/controller/v2/"
+    assert api_prefix.value == "/api/demo/v1/"
 
 
 def test_plugin_profile_default_shown() -> None:

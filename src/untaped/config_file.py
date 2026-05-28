@@ -106,7 +106,7 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
 
 
 def parse_key(key: str) -> tuple[str, ...]:
-    """Convert ``"awx.token"`` to ``("awx", "token")``."""
+    """Convert ``"http.verify_ssl"`` to ``("http", "verify_ssl")``."""
     if not key or key.startswith(".") or key.endswith("."):
         raise ValueError(f"invalid setting key: {key!r}")
     return tuple(key.split("."))
