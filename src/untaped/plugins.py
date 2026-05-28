@@ -8,14 +8,17 @@ import subprocess
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from importlib.metadata import entry_points
+from pathlib import PurePosixPath
 from typing import Protocol
+from urllib.parse import unquote, urlparse
 
 import typer
 from pydantic import BaseModel, ValidationError
 
-from untaped.cli import report_errors
+from untaped.cli import ColumnsOption, FormatOption, report_errors
 from untaped.config_file import mutate_config, read_config_dict
 from untaped.errors import ConfigError, first_validation_error
+from untaped.output import Row, format_output
 from untaped.settings import (
     PluginInstallSpec,
     PluginsState,
@@ -33,7 +36,9 @@ _NAMED_DIRECT_REFERENCE_RE = re.compile(
 _REQUIREMENT_NAME_RE = re.compile(
     rf"^\s*(?P<name>{_PACKAGE_NAME})(?:\[[^\]]+\])?(?=\s*(?:$|[<>=!~;]))"
 )
+_VCS_PREFIX_RE = re.compile(r"^(?:git|hg|svn|bzr)\+")
 _DIRECT_REFERENCE_PREFIXES = ("git+", "hg+", "svn+", "bzr+", "file:")
+_ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".whl")
 
 
 class UntapedPlugin(Protocol):
@@ -191,7 +196,10 @@ def add_command(
 ) -> None:
     """Record a desired plugin package and optionally rebuild the uv tool env."""
     with report_errors():
-        spec = PluginInstallSpec(spec=package_spec, editable=editable)
+        spec = PluginInstallSpec(
+            spec=_canonical_plugin_spec(package_spec, reject_uninferable_direct=True),
+            editable=editable,
+        )
         tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
@@ -232,6 +240,7 @@ def remove_command(
             if tool is not None:
                 updated = _set_tool_spec(updated, tool)
             if not no_sync:
+                updated = _canonical_plugin_state(updated)
                 _sync_state(updated)
             data["plugins"] = updated.model_dump()
 
@@ -255,27 +264,27 @@ def sync_command(
         tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
-            state = _plugin_state_from_config(data)
+            state = _canonical_plugin_state(_plugin_state_from_config(data))
             updated = _set_tool_spec(state, tool) if tool is not None else state
             _sync_state(updated)
-            if tool is not None:
-                data["plugins"] = updated.model_dump()
+            data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
         typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
 
 @app.command("list")
-def list_command() -> None:
+def list_command(
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
     """List loaded plugins and desired plugin packages."""
     with report_errors():
         state = _plugin_state()
-        if _CURRENT_REGISTRY.plugin_ids:
-            for plugin_id in sorted(_CURRENT_REGISTRY.plugin_ids):
-                typer.echo(f"loaded\t{plugin_id}")
-        for package in state.packages:
-            mode = "editable" if package.editable else "package"
-            typer.echo(f"desired\t{mode}\t{package.spec}")
+        rows = _plugin_rows(state)
+        rendered = format_output(rows, fmt=fmt, columns=columns)
+        if rendered:
+            typer.echo(rendered)
 
 
 @app.command("doctor")
@@ -331,6 +340,36 @@ def _set_tool_spec(state: PluginsState, tool: PluginToolSpec) -> PluginsState:
     return state.model_copy(update={"tool": tool})
 
 
+def _canonical_plugin_state(state: PluginsState) -> PluginsState:
+    packages = [
+        package.model_copy(
+            update={
+                "spec": _canonical_plugin_spec(
+                    package.spec,
+                    reject_uninferable_direct=True,
+                )
+            }
+        )
+        for package in state.packages
+    ]
+    return state.model_copy(update={"packages": packages})
+
+
+def _canonical_plugin_spec(spec: str, *, reject_uninferable_direct: bool) -> str:
+    stripped = _stripped_plugin_spec(spec)
+    named_direct = _NAMED_DIRECT_REFERENCE_RE.match(stripped)
+    if named_direct is not None:
+        name = _normalize_package_name(named_direct.group("name"))
+        return f"{name} @ {named_direct.group('target').strip()}"
+    if _looks_like_direct_reference(stripped):
+        inferred = _infer_direct_reference_name(stripped)
+        if inferred is not None:
+            return f"{inferred} @ {stripped}"
+        if reject_uninferable_direct:
+            raise _uninferable_direct_reference_error(stripped)
+    return stripped
+
+
 def _tool_override(tool_spec: str | None, editable_tool: bool) -> PluginToolSpec | None:
     if tool_spec is None:
         if editable_tool:
@@ -340,9 +379,7 @@ def _tool_override(tool_spec: str | None, editable_tool: bool) -> PluginToolSpec
 
 
 def _plugin_spec_key(spec: str, *, reject_bare_direct: bool) -> str:
-    stripped = spec.strip()
-    if not stripped:
-        raise ConfigError("plugin package spec cannot be empty")
+    stripped = _stripped_plugin_spec(spec)
     named_direct = _NAMED_DIRECT_REFERENCE_RE.match(stripped)
     if named_direct is not None:
         return _normalize_package_name(named_direct.group("name"))
@@ -350,12 +387,19 @@ def _plugin_spec_key(spec: str, *, reject_bare_direct: bool) -> str:
     if requirement is not None:
         return _normalize_package_name(requirement.group("name"))
     if _looks_like_direct_reference(stripped):
+        inferred = _infer_direct_reference_name(stripped)
+        if inferred is not None:
+            return inferred
         if reject_bare_direct:
-            raise ConfigError(
-                "direct URL plugin specs must use 'name @ url' "
-                "(for example: untaped-awx @ git+https://github.com/org/repo.git)"
-            )
+            raise _uninferable_direct_reference_error(stripped)
         return stripped
+    return stripped
+
+
+def _stripped_plugin_spec(spec: str) -> str:
+    stripped = spec.strip()
+    if not stripped:
+        raise ConfigError("plugin package spec cannot be empty")
     return stripped
 
 
@@ -365,6 +409,58 @@ def _normalize_package_name(name: str) -> str:
 
 def _looks_like_direct_reference(spec: str) -> bool:
     return "://" in spec or spec.startswith(_DIRECT_REFERENCE_PREFIXES)
+
+
+def _infer_direct_reference_name(spec: str) -> str | None:
+    if spec.startswith("file:"):
+        return None
+    target = _VCS_PREFIX_RE.sub("", spec, count=1)
+    parsed = urlparse(target)
+    path = parsed.path if parsed.scheme else target
+    basename = PurePosixPath(unquote(path).rstrip("/")).name
+    lowered = basename.lower()
+    if lowered.endswith(_ARCHIVE_SUFFIXES):
+        return None
+    git_ref_index = lowered.find(".git@")
+    if git_ref_index != -1:
+        basename = basename[: git_ref_index + len(".git")]
+        lowered = basename.lower()
+    if lowered.endswith(".git"):
+        basename = basename[:-4]
+    if not basename or re.fullmatch(_PACKAGE_NAME, basename) is None:
+        return None
+    return _normalize_package_name(basename)
+
+
+def _uninferable_direct_reference_error(spec: str) -> ConfigError:
+    return ConfigError(
+        "could not infer plugin name from direct URL; use 'name @ url' "
+        f"(for example: untaped-awx @ {spec})"
+    )
+
+
+def _plugin_rows(state: PluginsState) -> list[Row]:
+    rows: list[Row] = [
+        {
+            "name": plugin_id,
+            "type": "loaded",
+            "mode": "entry-point",
+            "editable": None,
+            "spec": "",
+        }
+        for plugin_id in sorted(_CURRENT_REGISTRY.plugin_ids)
+    ]
+    for package in state.packages:
+        rows.append(
+            {
+                "name": _plugin_spec_key(package.spec, reject_bare_direct=False),
+                "type": "desired",
+                "mode": "editable" if package.editable else "package",
+                "editable": package.editable,
+                "spec": package.spec,
+            }
+        )
+    return rows
 
 
 def _sync_state(state: PluginsState) -> None:

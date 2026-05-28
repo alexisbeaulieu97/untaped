@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Event, Thread
@@ -199,14 +200,94 @@ def test_plugins_add_editable_maps_to_uv_with_editable(
     ]
 
 
-def test_plugins_add_rejects_bare_direct_url(_isolated_config: Path) -> None:
+def test_plugins_add_infers_name_from_bare_direct_url(_isolated_config: Path) -> None:
     result = CliRunner().invoke(
         plugins_app,
         ["add", "git+https://github.com/alexisbeaulieu97/untaped-awx.git", "--no-sync"],
     )
 
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [
+        {
+            "spec": "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git",
+            "editable": False,
+        }
+    ]
+
+
+def test_plugins_add_infers_name_from_bare_direct_url_with_git_ref(
+    _isolated_config: Path,
+) -> None:
+    result = CliRunner().invoke(
+        plugins_app,
+        [
+            "add",
+            "git+https://github.com/alexisbeaulieu97/untaped-profile.git@v1.2.3",
+            "--no-sync",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [
+        {
+            "spec": "untaped-profile @ "
+            "git+https://github.com/alexisbeaulieu97/untaped-profile.git@v1.2.3",
+            "editable": False,
+        }
+    ]
+
+
+def test_plugins_add_bare_direct_url_replaces_existing_named_reference(
+    _isolated_config: Path,
+) -> None:
+    named = "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git"
+    corrected = "git+https://github.com/example/untaped-awx.git"
+
+    first = CliRunner().invoke(plugins_app, ["add", named, "--no-sync"])
+    second = CliRunner().invoke(plugins_app, ["add", corrected, "--no-sync"])
+
+    assert first.exit_code == 0, first.output
+    assert second.exit_code == 0, second.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [
+        {
+            "spec": "untaped-awx @ git+https://github.com/example/untaped-awx.git",
+            "editable": False,
+        }
+    ]
+
+
+def test_plugins_add_no_sync_does_not_canonicalize_unrelated_legacy_direct_url(
+    _isolated_config: Path,
+) -> None:
+    legacy = "git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+    _isolated_config.write_text(
+        f"plugins:\n  packages:\n    - spec: {legacy!r}\n      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [
+        {"spec": legacy, "editable": False},
+        {"spec": "untaped-awx", "editable": False},
+    ]
+
+
+def test_plugins_add_rejects_bare_direct_url_when_name_cannot_be_inferred(
+    _isolated_config: Path,
+) -> None:
+    result = CliRunner().invoke(
+        plugins_app,
+        ["add", "git+https://github.com/alexisbeaulieu97/.git", "--no-sync"],
+    )
+
     assert result.exit_code == 1
-    assert "direct URL plugin specs must use 'name @ url'" in result.output
+    assert "could not infer plugin name from direct URL" in result.output
+    assert "use 'name @ url'" in result.output
     assert not _isolated_config.exists()
 
 
@@ -234,6 +315,43 @@ def test_plugins_remove_accepts_package_name_for_named_direct_reference(
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == []
+
+
+def test_plugins_remove_accepts_package_name_for_legacy_bare_direct_url(
+    _isolated_config: Path,
+) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-profile", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == []
+
+
+def test_plugins_remove_no_sync_does_not_canonicalize_unrelated_legacy_direct_url(
+    _isolated_config: Path,
+) -> None:
+    legacy = "git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+        f"    - spec: {legacy!r}\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [{"spec": legacy, "editable": False}]
 
 
 def test_plugins_remove_sync_accepts_tool_spec_override(
@@ -303,7 +421,7 @@ def test_plugins_sync_tool_spec_rolls_back_when_uv_fails(
     assert data == {"plugins": {"packages": [{"spec": "untaped-awx", "editable": False}]}}
 
 
-def test_plugins_sync_rejects_recorded_bare_direct_url_before_uv(
+def test_plugins_sync_canonicalizes_recorded_bare_direct_url_after_uv_success(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls: list[list[str]] = []
@@ -322,8 +440,72 @@ def test_plugins_sync_rejects_recorded_bare_direct_url_before_uv(
 
     result = CliRunner().invoke(plugins_app, ["sync"])
 
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        [
+            "uv",
+            "tool",
+            "install",
+            "untaped",
+            "--no-sources",
+            "--with",
+            "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git",
+            "--force",
+        ]
+    ]
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [
+        {
+            "spec": "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git",
+            "editable": False,
+        }
+    ]
+
+
+def test_plugins_sync_does_not_canonicalize_recorded_bare_direct_url_when_uv_fails(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = (
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: git+https://github.com/alexisbeaulieu97/untaped-awx.git\n"
+        "      editable: false\n"
+    )
+    _isolated_config.write_text(original)
+
+    def _run(_: list[str], **__: Any) -> Any:
+        return type("Result", (), {"returncode": 2})()
+
+    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+
+    result = CliRunner().invoke(plugins_app, ["sync"])
+
     assert result.exit_code == 1
-    assert "direct URL plugin specs must use 'name @ url'" in result.output
+    assert "plugin sync failed with exit 2" in result.output
+    assert _isolated_config.read_text() == original
+
+
+def test_plugins_sync_rejects_recorded_uninferable_bare_direct_url_before_uv(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: git+https://github.com/alexisbeaulieu97/.git\n"
+        "      editable: false\n"
+    )
+
+    def _run(cmd: list[str], **_: Any) -> Any:
+        calls.append(cmd)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+
+    result = CliRunner().invoke(plugins_app, ["sync"])
+
+    assert result.exit_code == 1
+    assert "could not infer plugin name from direct URL" in result.output
     assert calls == []
 
 
@@ -337,6 +519,86 @@ def test_plugins_list_reports_invalid_plugin_state_without_traceback(
     assert result.exit_code == 1
     assert "invalid plugins config" in result.output
     assert "Traceback" not in result.output
+
+
+def test_plugins_list_defaults_to_table_output(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert "name" in result.output
+    assert "type" in result.output
+    assert "untaped-profile" in result.output
+    assert "desired" in result.output
+
+
+def test_plugins_list_json_includes_loaded_and_desired_rows(_isolated_config: Path) -> None:
+    registry = PluginRegistry()
+    registry.add_plugin_id("demo")
+    set_current_registry(registry)
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["list", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == [
+        {"name": "demo", "type": "loaded", "mode": "entry-point", "editable": None, "spec": ""},
+        {
+            "name": "untaped-profile",
+            "type": "desired",
+            "mode": "package",
+            "editable": False,
+            "spec": "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git",
+        },
+    ]
+
+
+def test_plugins_list_raw_defaults_to_plugin_names(_isolated_config: Path) -> None:
+    registry = PluginRegistry()
+    registry.add_plugin_id("demo")
+    set_current_registry(registry)
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["list", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == ["demo", "untaped-profile"]
+
+
+def test_plugins_list_columns_select_output_fields(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(
+        plugins_app,
+        ["list", "--format", "raw", "--columns", "name", "--columns", "spec"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output == (
+        "untaped-profile\t"
+        "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+    )
 
 
 def test_plugins_doctor_success_path_reports_ok_diagnostics(_isolated_config: Path) -> None:
