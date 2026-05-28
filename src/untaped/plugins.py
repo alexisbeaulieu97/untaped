@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from importlib.metadata import entry_points
 from typing import Protocol
@@ -25,6 +26,14 @@ from untaped.settings import (
 )
 
 ENTRY_POINT_GROUP = "untaped.plugins"
+_PACKAGE_NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+_NAMED_DIRECT_REFERENCE_RE = re.compile(
+    rf"^\s*(?P<name>{_PACKAGE_NAME})(?:\[[^\]]+\])?\s*@\s*(?P<target>.+?)\s*$"
+)
+_REQUIREMENT_NAME_RE = re.compile(
+    rf"^\s*(?P<name>{_PACKAGE_NAME})(?:\[[^\]]+\])?(?=\s*(?:$|[<>=!~;]))"
+)
+_DIRECT_REFERENCE_PREFIXES = ("git+", "hg+", "svn+", "bzr+", "file:")
 
 
 class UntapedPlugin(Protocol):
@@ -176,10 +185,18 @@ def add_command(
 ) -> None:
     """Record a desired plugin package and optionally rebuild the uv tool env."""
     with report_errors():
-        _upsert_plugin_spec(PluginInstallSpec(spec=package_spec, editable=editable))
+        spec = PluginInstallSpec(spec=package_spec, editable=editable)
+
+        def _apply(data: dict[str, object]) -> None:
+            state = _plugin_state_from_config(data)
+            updated = _upsert_plugin_spec(state, spec)
+            if not no_sync:
+                _sync_state(updated)
+            data["plugins"] = updated.model_dump()
+
+        mutate_config(_apply)
         typer.echo(f"added plugin package: {package_spec}", err=True)
         if not no_sync:
-            _sync_from_state()
             typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
 
@@ -190,12 +207,19 @@ def remove_command(
 ) -> None:
     """Remove a desired plugin package and optionally rebuild the uv tool env."""
     with report_errors():
-        removed = _remove_plugin_spec(package_spec)
-        if not removed:
-            raise ConfigError(f"plugin package is not recorded: {package_spec}")
+
+        def _apply(data: dict[str, object]) -> None:
+            state = _plugin_state_from_config(data)
+            updated, removed = _remove_plugin_spec(state, package_spec)
+            if not removed:
+                raise ConfigError(f"plugin package is not recorded: {package_spec}")
+            if not no_sync:
+                _sync_state(updated)
+            data["plugins"] = updated.model_dump()
+
+        mutate_config(_apply)
         typer.echo(f"removed plugin package: {package_spec}", err=True)
         if not no_sync:
-            _sync_from_state()
             typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
 
@@ -210,9 +234,20 @@ def sync_command(
 ) -> None:
     """Rebuild the uv tool environment with every recorded plugin package."""
     with report_errors():
-        if tool_spec is not None:
-            _set_tool_spec(PluginToolSpec(spec=tool_spec, editable=editable_tool))
-        _sync_from_state()
+        tool = (
+            PluginToolSpec(spec=tool_spec, editable=editable_tool)
+            if tool_spec is not None
+            else None
+        )
+
+        def _apply(data: dict[str, object]) -> None:
+            state = _plugin_state_from_config(data)
+            updated = _set_tool_spec(state, tool) if tool is not None else state
+            _sync_state(updated)
+            if tool is not None:
+                data["plugins"] = updated.model_dump()
+
+        mutate_config(_apply)
         typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
 
@@ -249,71 +284,79 @@ def doctor_command() -> None:
 
 
 def _plugin_state() -> PluginsState:
-    data = read_config_dict().get("plugins") or {}
-    if not isinstance(data, dict):
+    return _plugin_state_from_config(read_config_dict())
+
+
+def _plugin_state_from_config(data: Mapping[str, object]) -> PluginsState:
+    raw = data.get("plugins") or {}
+    if not isinstance(raw, dict):
         return PluginsState()
     try:
-        return PluginsState.model_validate(data)
+        return PluginsState.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(f"invalid plugins config: {first_validation_error(exc)}") from exc
 
 
-def _upsert_plugin_spec(spec: PluginInstallSpec) -> None:
-    def _apply(data: dict[str, object]) -> None:
-        plugins = _ensure_plugins_state(data)
-        packages = _packages_list(plugins)
-        kept = [p for p in packages if p.get("spec") != spec.spec]
-        kept.append(spec.model_dump())
-        plugins["packages"] = kept
-
-    mutate_config(_apply)
+def _upsert_plugin_spec(state: PluginsState, spec: PluginInstallSpec) -> PluginsState:
+    key = _plugin_spec_key(spec.spec, reject_bare_direct=True)
+    kept = [p for p in state.packages if _plugin_spec_key(p.spec, reject_bare_direct=False) != key]
+    return state.model_copy(update={"packages": [*kept, spec]})
 
 
-def _remove_plugin_spec(package_spec: str) -> bool:
-    removed = False
-
-    def _apply(data: dict[str, object]) -> None:
-        nonlocal removed
-        plugins = _ensure_plugins_state(data)
-        packages = _packages_list(plugins)
-        kept = [p for p in packages if p.get("spec") != package_spec]
-        removed = len(kept) != len(packages)
-        plugins["packages"] = kept
-
-    mutate_config(_apply)
-    return removed
+def _remove_plugin_spec(state: PluginsState, package_spec: str) -> tuple[PluginsState, bool]:
+    key = _plugin_spec_key(package_spec, reject_bare_direct=False)
+    kept = [
+        p
+        for p in state.packages
+        if p.spec != package_spec and _plugin_spec_key(p.spec, reject_bare_direct=False) != key
+    ]
+    return state.model_copy(update={"packages": kept}), len(kept) != len(state.packages)
 
 
-def _set_tool_spec(tool: PluginToolSpec) -> None:
-    def _apply(data: dict[str, object]) -> None:
-        plugins = _ensure_plugins_state(data)
-        plugins["tool"] = tool.model_dump()
-
-    mutate_config(_apply)
+def _set_tool_spec(state: PluginsState, tool: PluginToolSpec) -> PluginsState:
+    return state.model_copy(update={"tool": tool})
 
 
-def _ensure_plugins_state(data: dict[str, object]) -> dict[str, object]:
-    plugins = data.get("plugins")
-    if not isinstance(plugins, dict):
-        plugins = {}
-        data["plugins"] = plugins
-    return plugins
+def _plugin_spec_key(spec: str, *, reject_bare_direct: bool) -> str:
+    stripped = spec.strip()
+    if not stripped:
+        raise ConfigError("plugin package spec cannot be empty")
+    named_direct = _NAMED_DIRECT_REFERENCE_RE.match(stripped)
+    if named_direct is not None:
+        return _normalize_package_name(named_direct.group("name"))
+    requirement = _REQUIREMENT_NAME_RE.match(stripped)
+    if requirement is not None:
+        return _normalize_package_name(requirement.group("name"))
+    if _looks_like_direct_reference(stripped):
+        if reject_bare_direct:
+            raise ConfigError(
+                "direct URL plugin specs must use 'name @ url' "
+                "(for example: untaped-awx @ git+https://github.com/org/repo.git)"
+            )
+        return stripped
+    return stripped
 
 
-def _packages_list(plugins: dict[str, object]) -> list[dict[str, object]]:
-    raw = plugins.get("packages")
-    if not isinstance(raw, list):
-        return []
-    return [item for item in raw if isinstance(item, dict)]
+def _normalize_package_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _sync_from_state() -> None:
-    state = _plugin_state()
+def _looks_like_direct_reference(spec: str) -> bool:
+    return "://" in spec or spec.startswith(_DIRECT_REFERENCE_PREFIXES)
+
+
+def _sync_state(state: PluginsState) -> None:
+    _validate_syncable_plugins(state)
     cmd = _uv_tool_install_command(state.tool, state.packages)
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
         rendered = " ".join(shlex.quote(part) for part in cmd)
         raise ConfigError(f"plugin sync failed with exit {result.returncode}: {rendered}")
+
+
+def _validate_syncable_plugins(state: PluginsState) -> None:
+    for package in state.packages:
+        _plugin_spec_key(package.spec, reject_bare_direct=True)
 
 
 def _uv_tool_install_command(tool: PluginToolSpec, packages: list[PluginInstallSpec]) -> list[str]:

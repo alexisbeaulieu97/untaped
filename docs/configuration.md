@@ -118,6 +118,10 @@ untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/u
 untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
 ```
 
+Direct URL plugin specs must include the package name before `@`, for
+example `untaped-profile @ git+https://github.com/...`. That name is the
+stable key used when replacing or removing a recorded plugin.
+
 ```text
 untaped profile list                          # list profiles, ✓ marks active
 untaped profile current                       # print the active profile name (pipe-friendly)
