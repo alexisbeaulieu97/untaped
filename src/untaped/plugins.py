@@ -182,14 +182,23 @@ def add_command(
     package_spec: str = typer.Argument(..., help="uv-compatible plugin package spec."),
     editable: bool = typer.Option(False, "--editable", help="Install with uv --with-editable."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Record only; do not run uv."),
+    tool_spec: str | None = typer.Option(
+        None,
+        "--tool-spec",
+        help="uv-compatible untaped tool spec to install instead of recorded/default spec.",
+    ),
+    editable_tool: bool = typer.Option(False, "--editable-tool", help="Install tool editable."),
 ) -> None:
     """Record a desired plugin package and optionally rebuild the uv tool env."""
     with report_errors():
         spec = PluginInstallSpec(spec=package_spec, editable=editable)
+        tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
             state = _plugin_state_from_config(data)
             updated = _upsert_plugin_spec(state, spec)
+            if tool is not None:
+                updated = _set_tool_spec(updated, tool)
             if not no_sync:
                 _sync_state(updated)
             data["plugins"] = updated.model_dump()
@@ -204,15 +213,24 @@ def add_command(
 def remove_command(
     package_spec: str = typer.Argument(..., help="Plugin package spec to remove."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Record only; do not run uv."),
+    tool_spec: str | None = typer.Option(
+        None,
+        "--tool-spec",
+        help="uv-compatible untaped tool spec to install instead of recorded/default spec.",
+    ),
+    editable_tool: bool = typer.Option(False, "--editable-tool", help="Install tool editable."),
 ) -> None:
     """Remove a desired plugin package and optionally rebuild the uv tool env."""
     with report_errors():
+        tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
             state = _plugin_state_from_config(data)
             updated, removed = _remove_plugin_spec(state, package_spec)
             if not removed:
                 raise ConfigError(f"plugin package is not recorded: {package_spec}")
+            if tool is not None:
+                updated = _set_tool_spec(updated, tool)
             if not no_sync:
                 _sync_state(updated)
             data["plugins"] = updated.model_dump()
@@ -234,11 +252,7 @@ def sync_command(
 ) -> None:
     """Rebuild the uv tool environment with every recorded plugin package."""
     with report_errors():
-        tool = (
-            PluginToolSpec(spec=tool_spec, editable=editable_tool)
-            if tool_spec is not None
-            else None
-        )
+        tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
             state = _plugin_state_from_config(data)
@@ -315,6 +329,14 @@ def _remove_plugin_spec(state: PluginsState, package_spec: str) -> tuple[Plugins
 
 def _set_tool_spec(state: PluginsState, tool: PluginToolSpec) -> PluginsState:
     return state.model_copy(update={"tool": tool})
+
+
+def _tool_override(tool_spec: str | None, editable_tool: bool) -> PluginToolSpec | None:
+    if tool_spec is None:
+        if editable_tool:
+            raise ConfigError("--editable-tool requires --tool-spec")
+        return None
+    return PluginToolSpec(spec=tool_spec, editable=editable_tool)
 
 
 def _plugin_spec_key(spec: str, *, reject_bare_direct: bool) -> str:
