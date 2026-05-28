@@ -670,6 +670,32 @@ def isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return cache
 
 
+def _push_branch(upstream: Path, tmp_path: Path, *, branch: str) -> None:
+    seed = tmp_path / f"_seed_{branch}"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "checkout", "-b", branch],
+        check=True,
+        capture_output=True,
+    )
+    (seed / f"{branch}.txt").write_text(branch)
+    subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", branch],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(seed), "push", "origin", branch],
+        check=True,
+        capture_output=True,
+    )
+    shutil.rmtree(seed)
+
+
 def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
@@ -683,6 +709,51 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
     assert result.exit_code == 0, result.output
     assert "clone" in result.stdout
     assert (target / "upstream").is_dir()
+
+
+def test_branch_set_apply_creates_tracking_branch_for_remote_target(
+    tmp_path: Path,
+    upstream: Path,
+    isolated_cache: Path,
+) -> None:
+    _push_branch(upstream, tmp_path, branch="develop")
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+    repo = target / "upstream"
+    subprocess.run(["git", "-C", str(repo), "config", "checkout.guess", "false"], check=True)
+
+    result = runner.invoke(
+        app,
+        ["branch", "set", "develop", "--name", "smoke", "--apply", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "repo": "upstream",
+            "workspace": "smoke",
+            "target_branch": "develop",
+            "action": "checkout",
+            "detail": "from main",
+        }
+    ]
+    head = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracking_remote = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "branch.develop.remote"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head == "develop"
+    assert tracking_remote == "origin"
 
 
 def test_sync_all_only_emits_warning_and_per_workspace_outcomes(

@@ -284,10 +284,14 @@ commands only: they update `defaults.branch` or a repo override in
 `workspace branch apply` is the explicit checkout command for existing
 clones. It fetches, reads status, refuses dirty/diverged repos, and calls
 `GitRunner.checkout_branch` only when a clean clone is on a different
-branch from the manifest target. Missing clones, repos without a target
-branch, fetch failures, status failures, and checkout failures are row-level
-`skip`s. `workspace show` is manifest-only; it formats the effective branch
-cascade without reading live git state.
+branch from the manifest target. `GitRunner.checkout_branch` checks out an
+existing local branch when present; if the local branch is missing but
+`origin/<branch>` exists, it creates a local tracking branch from that
+remote ref. It never creates arbitrary local-only branches. Missing clones,
+repos without a target branch, fetch failures, status failures, and checkout
+failures (including missing remote branches) are row-level `skip`s.
+`workspace show` is manifest-only; it formats the effective branch cascade
+without reading live git state.
 
 ## `sync --all -j N` parallelism
 

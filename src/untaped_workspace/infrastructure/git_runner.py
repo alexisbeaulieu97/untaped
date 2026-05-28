@@ -93,6 +93,9 @@ class GitRunner:
         self._run(["merge", "--ff-only", f"origin/{branch}"], cwd=repo_path)
 
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
+        if not self._local_branch_exists(repo_path, branch):
+            self._run(["checkout", "--track", "-b", branch, f"origin/{branch}"], cwd=repo_path)
+            return
         self._run(["checkout", branch], cwd=repo_path)
 
     def default_branch(self, bare_path: Path) -> str | None:
@@ -129,6 +132,13 @@ class GitRunner:
         return name
 
     # internal -----------------------------------------------------------
+
+    def _local_branch_exists(self, repo_path: Path, branch: str) -> bool:
+        try:
+            self._run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo_path)
+        except GitError:
+            return False
+        return True
 
     def _run(
         self,

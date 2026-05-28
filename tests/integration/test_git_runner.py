@@ -136,6 +136,10 @@ def test_checkout_branch_checks_out_remote_branch_after_fetch(
     bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
     workspace_repo = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
+    subprocess.run(
+        ["git", "-C", str(workspace_repo), "config", "checkout.guess", "false"],
+        check=True,
+    )
 
     runner.fetch(workspace_repo)
     runner.checkout_branch(workspace_repo, branch="develop")
@@ -147,6 +151,50 @@ def test_checkout_branch_checks_out_remote_branch_after_fetch(
         text=True,
     ).stdout.strip()
     assert head == "develop"
+    tracking_remote = subprocess.run(
+        ["git", "-C", str(workspace_repo), "config", "--get", "branch.develop.remote"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracking_merge = subprocess.run(
+        ["git", "-C", str(workspace_repo), "config", "--get", "branch.develop.merge"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert tracking_remote == "origin"
+    assert tracking_merge == "refs/heads/develop"
+
+
+def test_checkout_branch_checks_out_existing_local_branch(
+    tmp_path: Path,
+    upstream: Path,
+) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    workspace_repo = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
+    subprocess.run(
+        ["git", "-C", str(workspace_repo), "checkout", "-b", "local-only"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(workspace_repo), "checkout", "main"],
+        check=True,
+        capture_output=True,
+    )
+
+    runner.checkout_branch(workspace_repo, branch="local-only")
+
+    head = subprocess.run(
+        ["git", "-C", str(workspace_repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head == "local-only"
 
 
 def test_checkout_branch_raises_git_error_for_missing_branch(
