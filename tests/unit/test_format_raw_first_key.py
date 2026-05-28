@@ -6,8 +6,8 @@ is load-bearing for shell pipelines (the ``xargs``-into-next-command
 pattern). The catalogue in root ``AGENTS.md`` "``--format raw``
 default-column contract" lists every row source — this module is the test that pins
 it. Sibling of ``test_invariants.py`` / ``test_layering.py``; lives at
-the workspace root because bundled plugins contribute row sources, so
-the contract is workspace-wide. Extracted plugins carry their own copy
+the repository root because in-repo plugins contribute row sources, so
+the contract spans core plus local plugins. Extracted plugins carry their own copy
 of the relevant pin.
 
 Three parametrised tests pin existing entries:
@@ -23,8 +23,8 @@ Three parametrised tests pin existing entries:
 Two discovery tests close the "new ``BaseModel`` added without a
 catalogue entry" gap by walking every module registered in
 :data:`_NOT_ROW_SOURCES_BY_MODULE` (today: the home modules of every
-catalogued row source — workspace state, AWX job /
-workflow node / test suite); a fresh ``BaseModel`` in any of those
+catalogued row source — AWX job / workflow node / test suite); a fresh
+``BaseModel`` in any of those
 must be triaged into ``PYDANTIC_ROW_SOURCES`` or the per-module
 exempt set. ``test_every_catalogued_pydantic_module_is_discovery_registered``
 keeps the two constants in lockstep — cataloguing a row source in a
@@ -52,9 +52,6 @@ from untaped_awx.cli.test_commands import _test_case_row, _test_suite_row
 from untaped_awx.domain import Job, JobEvent, WorkflowNode
 from untaped_awx.domain.test_suite import Case, CaseResult, TestSuite
 from untaped_awx.infrastructure.specs import ALL_SPECS
-from untaped_workspace.cli.commands import _workspace_row
-from untaped_workspace.domain import Workspace
-from untaped_workspace.domain.state import ForeachOutcome, StatusEntry, SyncOutcome
 
 from untaped.config.cli.commands import _entry_to_row
 from untaped.config.domain.models import SettingEntry, Source
@@ -65,9 +62,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
-    SyncOutcome: "workspace",
-    StatusEntry: "workspace",
-    ForeachOutcome: "workspace",
     Job: "id",
     JobEvent: "counter",
     WorkflowNode: "id",
@@ -78,11 +72,6 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
 # Each entry returns one representative row from the helper that every
 # CLI command in the corresponding row-source path calls.
 HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] = [
-    (
-        "untaped_workspace.cli.commands._workspace_row",
-        lambda: _workspace_row(Workspace(name="alpha", path=Path("/tmp/alpha"))),
-        "name",
-    ),
     (
         "untaped.config.cli.commands._entry_to_row",
         lambda: _entry_to_row(
@@ -132,10 +121,6 @@ HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] =
 # a new domain that adds a row model in a new module is the bounded gap,
 # caught loudly by the module-registration invariant above.
 _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
-    # ``RepoStatus`` is a git-state value object — its fields are
-    # re-declared flat on ``StatusEntry`` rather than nested, so the model
-    # itself never reaches ``format_output``.
-    "untaped_workspace.domain.state": frozenset({"RepoStatus"}),
     "untaped_awx.domain.job": frozenset(),
     "untaped_awx.domain.workflow_node": frozenset(),
     # ``CaseResult`` is the row source (``awx test run`` emits
@@ -267,11 +252,6 @@ def test_every_basemodel_in_row_module_is_catalogued_or_exempt(module_path: str)
 # structural pin guards that the live call site has not re-inlined a dict
 # literal — closing the bypass window the helper extraction created.
 _LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
-    (
-        _REPO_ROOT / "packages/untaped-workspace/src/untaped_workspace/cli/commands.py",
-        "list_command",
-        "_workspace_row",
-    ),
     (
         _REPO_ROOT / "src/untaped/config/cli/commands.py",
         "list_command",

@@ -6,8 +6,8 @@ per domain, designed to pipe into the next.
 ```text
 untaped config ...       # inspect and edit ~/.untaped/config.yml
 untaped plugins ...      # add, sync, list, and diagnose plugins
-untaped workspace ...    # manage local git workspaces
 untaped awx ...          # Ansible Automation Platform / AWX
+untaped workspace ...    # optional plugin: manage local git workspaces
 untaped github ...       # optional plugin: GitHub user/search commands
 untaped profile ...      # optional plugin: manage configuration profiles
 ```
@@ -16,9 +16,9 @@ Data-emitting commands accept `--format json|yaml|table|raw` and
 `--columns`, so their output composes:
 
 ```bash
-untaped workspace status --all --format raw \
-    --columns workspace --columns repo --columns behind \
-  | awk '$3 > 0 { print }'
+untaped awx job-templates list --format raw --columns name \
+  | fzf \
+  | untaped awx job-templates get --stdin --format json
 ```
 
 ## Requirements
@@ -45,7 +45,8 @@ uv tool install --editable .
 `uv` resolves the core package and remaining in-repo plugin packages in
 place, so local edits are picked up without reinstalling.
 
-`untaped profile` and `untaped github` are no longer bundled in core.
+`untaped profile`, `untaped github`, and `untaped workspace` are no
+longer bundled in core.
 Install the standalone plugins when you want those commands. For an
 editable source install, record the plugin first, then sync the tool from
 this checkout:
@@ -53,6 +54,7 @@ this checkout:
 ```bash
 untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" --no-sync
 untaped plugins add "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git" --no-sync
+untaped plugins add "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git" --no-sync
 untaped plugins sync --tool-spec /path/to/untaped --editable-tool
 ```
 
@@ -61,7 +63,7 @@ untaped plugins sync --tool-spec /path/to/untaped --editable-tool
 User-facing docs live in [`docs/`](./docs/README.md):
 
 - [Configuration](./docs/configuration.md) — profiles, secrets, TLS.
-- [Workspaces](./docs/workspace.md) — `untaped workspace`.
+- [Workspaces](./docs/workspace.md) — optional `untaped workspace` plugin.
 - [AWX / AAP](./docs/awx.md) — `untaped awx`.
 - [GitHub](./docs/github.md) — optional `untaped github` plugin.
 

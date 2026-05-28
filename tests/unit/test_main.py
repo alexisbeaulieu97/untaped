@@ -31,9 +31,8 @@ def app() -> object:
     # package plugins still register. Core plugin-loading behavior is tested with
     # fake plugins in test_plugin_main.py and must stay plugin-agnostic.
     from untaped_awx.plugin import plugin as awx_plugin
-    from untaped_workspace.plugin import plugin as workspace_plugin
 
-    return build_app(plugins=[awx_plugin, workspace_plugin])
+    return build_app(plugins=[awx_plugin])
 
 
 @pytest.fixture(autouse=True)
@@ -53,16 +52,10 @@ def test_help_lists_in_repo_plugins(app: object) -> None:
     assert result.exit_code == 0
     output = result.stdout
     assert "config" in output
-    assert "workspace" in output
     assert "awx" in output
+    assert "workspace" not in output
     assert "github" not in output
     assert "Manage configuration profiles" not in output
-
-
-def test_workspace_subcommand_help(app: object) -> None:
-    result = CliRunner().invoke(app, ["workspace", "--help"])
-    assert result.exit_code == 0
-    assert "list" in result.stdout
 
 
 def test_config_subcommand_help(app: object) -> None:
