@@ -32,9 +32,12 @@ from untaped_workspace.application import (
     InitWorkspace,
     ListWorkspaces,
     RemoveRepo,
+    SetWorkspaceBranch,
     ShellInit,
+    ShowWorkspace,
     SyncWorkspace,
     SyncWorkspaces,
+    UnsetWorkspaceBranch,
     WorkspaceBootstrapper,
     WorkspacePath,
     WorkspaceResolver,
@@ -66,11 +69,24 @@ app = typer.Typer(
     help="Manage local git workspaces (collections of repos).",
     no_args_is_help=True,
 )
+branch_app = typer.Typer(
+    name="branch",
+    help="Manage workspace branch metadata.",
+    no_args_is_help=True,
+)
 
 
 @app.callback()
 def _callback() -> None:
     """Manage local git workspaces."""
+
+
+@branch_app.callback()
+def _branch_callback() -> None:
+    """Manage workspace branch metadata."""
+
+
+app.add_typer(branch_app, name="branch")
 
 
 # helpers --------------------------------------------------------------------
@@ -106,6 +122,91 @@ def list_command(
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
+
+
+# show -----------------------------------------------------------------------
+
+
+@app.command("show")
+def show_command(
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Workspace name.",
+        autocompletion=complete_workspace_name,
+    ),
+    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Show manifest details for one workspace."""
+    with report_errors():
+        ws = _resolve(name, path)
+        rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
+        typer.echo(format_output(rows, fmt=fmt, columns=columns))
+
+
+# branch ---------------------------------------------------------------------
+
+
+@branch_app.command("set", no_args_is_help=True)
+def branch_set_command(
+    branch: str = typer.Argument(..., help="Branch name to record in the manifest."),
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        help="Repo name or URL to set; omit for the workspace default.",
+    ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Workspace name.",
+        autocompletion=complete_workspace_name,
+    ),
+    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+) -> None:
+    """Set the default branch or a repo branch override in ``untaped.yml``."""
+    with report_errors():
+        ws = _resolve(name, path)
+        change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
+        if change.repo is None:
+            typer.echo(f"set default branch for {change.workspace!r} to {change.branch}", err=True)
+            return
+        typer.echo(
+            f"set branch for repo {change.repo!r} in {change.workspace!r} to {change.branch}",
+            err=True,
+        )
+
+
+@branch_app.command("unset")
+def branch_unset_command(
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        help="Repo name or URL to unset; omit for the workspace default.",
+    ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Workspace name.",
+        autocompletion=complete_workspace_name,
+    ),
+    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+) -> None:
+    """Unset the default branch or a repo branch override in ``untaped.yml``."""
+    with report_errors():
+        ws = _resolve(name, path)
+        change = UnsetWorkspaceBranch(ManifestRepository())(ws, repo=repo)
+        if change.repo is None:
+            typer.echo(f"unset default branch for {change.workspace!r}", err=True)
+            return
+        typer.echo(
+            f"unset branch for repo {change.repo!r} in {change.workspace!r}",
+            err=True,
+        )
 
 
 # init -----------------------------------------------------------------------

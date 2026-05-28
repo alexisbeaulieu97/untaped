@@ -144,6 +144,29 @@ class WorkspaceManifest(BaseModel):
         """
         return repo.branch or self.defaults.branch
 
+    def with_default_branch(self, branch: str | None) -> WorkspaceManifest:
+        """Return a manifest with the workspace-wide default branch updated."""
+        return WorkspaceManifest(
+            name=self.name,
+            defaults=ManifestDefaults(branch=branch),
+            repos=self.repos,
+        )
+
+    def with_repo_branch(self, ident: str, branch: str | None) -> tuple[WorkspaceManifest, Repo]:
+        """Return ``(new_manifest, updated_repo)`` with one repo branch changed."""
+        found = self.find_repo(ident)
+        if found is None:
+            raise ValueError(f"no repo matches {ident!r}")
+        updated_repo = Repo(url=found.url, name=found.name, branch=branch)
+        return (
+            WorkspaceManifest(
+                name=self.name,
+                defaults=self.defaults,
+                repos=tuple(updated_repo if r is found else r for r in self.repos),
+            ),
+            updated_repo,
+        )
+
     def add_repo(self, repo: Repo) -> WorkspaceManifest:
         """Return a new manifest with ``repo`` appended.
 

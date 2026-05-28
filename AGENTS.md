@@ -91,9 +91,12 @@ builtin in nested annotations within the class.
 in-place mutation — `m.repos.append(r)`, `m.repos[0] = r` — raises at
 runtime. Pydantic's `frozen=True` only blocks attribute reassignment,
 not container mutation; the tuple closes that hole structurally. All
-edits go through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`
-and `WorkspaceManifest.remove_repo(ident) -> tuple[WorkspaceManifest,
-Repo]`, which return new manifests rather than mutating in place.
+edits go through `WorkspaceManifest.add_repo(repo) -> WorkspaceManifest`,
+`WorkspaceManifest.remove_repo(ident) -> tuple[WorkspaceManifest, Repo]`,
+`WorkspaceManifest.with_default_branch(branch) -> WorkspaceManifest`,
+and `WorkspaceManifest.with_repo_branch(ident, branch) ->
+tuple[WorkspaceManifest, Repo]`, which return new manifests rather than
+mutating in place.
 Every manifest construction in the application layer uses
 `WorkspaceManifest(...)` — *not* `model_copy(update=...)` — because
 pydantic v2's `model_copy` deliberately skips validators **and field
@@ -116,7 +119,7 @@ disambiguation hints. No application-layer code mutates
 
 Lookup-precedence applies only to commands that act on an existing
 workspace by name or path — `add`, `remove`, `sync`, `status`,
-`foreach`. For those commands:
+`foreach`, `show`, `branch set`, and `branch unset`. For those commands:
 
 1. Explicit `--name` → registry lookup
 2. Explicit `--path` → manifest lookup
@@ -272,6 +275,12 @@ honoured **only at clone time**. Subsequent `sync`s do *not* auto-switch
 branches: they skip-with-warning when the on-disk branch doesn't match the
 manifest's target. This stops a stale `defaults.branch` from kidnapping a
 user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
+
+`workspace branch set` and `workspace branch unset` are manifest-editing
+commands only: they update `defaults.branch` or a repo override in
+`untaped.yml`, then stop. They never invoke `GitRunner`, never checkout,
+and never inspect the clone. `workspace show` is also manifest-only; it
+formats the effective branch cascade without reading live git state.
 
 ## `sync --all -j N` parallelism
 

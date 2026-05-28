@@ -44,3 +44,28 @@ class ManifestSource(BaseModel):
 
     manifest: WorkspaceManifest
     source: Path
+
+
+class WorkspaceDetailRow(BaseModel):
+    """One data row for ``workspace show`` output."""
+
+    model_config = ConfigDict(frozen=True)
+
+    workspace: str
+    path: str
+    default_branch: str | None
+    repo_count: int
+    repo: str
+    url: str
+    repo_branch: str | None
+    target_branch: str | None
+
+
+class BranchChange(BaseModel):
+    """Manifest branch metadata changed by ``workspace branch`` commands."""
+
+    model_config = ConfigDict(frozen=True)
+
+    workspace: str
+    repo: str | None
+    branch: str | None

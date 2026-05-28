@@ -1,11 +1,13 @@
 """CLI smoke + workflow tests for `untaped workspace`."""
 
+import json
 import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 from untaped.settings import get_settings
 
@@ -41,6 +43,8 @@ def test_help_lists_all_commands() -> None:
         "path",
         "shell-init",
         "edit",
+        "show",
+        "branch",
     ):
         assert cmd in result.stdout
 
@@ -58,12 +62,19 @@ def test_help_lists_all_commands() -> None:
         "path",
         "shell-init",
         "edit",
+        "branch",
     ],
 )
 def test_no_args_shows_help(cmd: str) -> None:
     result = CliRunner().invoke(app, [cmd])
     # no_args_is_help: exit 0 (help) or 2 (Click's missing arg)
     assert result.exit_code in (0, 2)
+
+
+def test_branch_set_no_args_shows_help() -> None:
+    result = CliRunner().invoke(app, ["branch", "set"])
+    assert result.exit_code in (0, 2)
+    assert "Usage:" in result.stdout
 
 
 # ── init / list ─────────────────────────────────────────────────────────────
@@ -108,6 +119,156 @@ def test_init_default_path_uses_workspaces_dir(
     result = CliRunner().invoke(app, ["init", "prod"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "ws-root" / "prod" / "untaped.yml").is_file()
+
+
+# ── show / branch metadata ─────────────────────────────────────────────────
+
+
+def test_show_workspace_json_details(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(
+        app,
+        [
+            "add",
+            "https://x/ui.git",
+            "--repo-name",
+            "ui",
+            "--branch",
+            "develop",
+            "--name",
+            "prod",
+        ],
+    )
+
+    result = runner.invoke(app, ["show", "--name", "prod", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "workspace": "prod",
+            "path": str(target.resolve()),
+            "default_branch": "main",
+            "repo_count": 2,
+            "repo": "api",
+            "url": "https://x/api.git",
+            "repo_branch": None,
+            "target_branch": "main",
+        },
+        {
+            "workspace": "prod",
+            "path": str(target.resolve()),
+            "default_branch": "main",
+            "repo_count": 2,
+            "repo": "ui",
+            "url": "https://x/ui.git",
+            "repo_branch": "develop",
+            "target_branch": "develop",
+        },
+    ]
+
+
+def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "empty"
+    runner.invoke(app, ["init", "empty", "--path", str(target)])
+
+    result = runner.invoke(app, ["show", "--name", "empty", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "workspace": "empty",
+            "path": str(target.resolve()),
+            "default_branch": None,
+            "repo_count": 0,
+            "repo": "",
+            "url": "",
+            "repo_branch": None,
+            "target_branch": None,
+        }
+    ]
+
+
+def test_show_raw_columns_emit_repo_names(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+
+    result = runner.invoke(app, ["show", "--name", "prod", "--format", "raw", "--columns", "repo"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["api"]
+
+
+def test_branch_set_and_unset_default_branch(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+
+    set_result = runner.invoke(app, ["branch", "set", "main", "--name", "prod"])
+    unset_result = runner.invoke(app, ["branch", "unset", "--name", "prod"])
+
+    assert set_result.exit_code == 0, set_result.output
+    assert "set default branch for 'prod' to main" in set_result.output
+    assert unset_result.exit_code == 0, unset_result.output
+    assert "unset default branch for 'prod'" in unset_result.output
+    raw = yaml.safe_load((target / "untaped.yml").read_text()) or {}
+    assert "defaults" not in raw
+
+
+def test_branch_set_and_unset_repo_branch(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+
+    set_result = runner.invoke(
+        app,
+        ["branch", "set", "develop", "--repo", "api", "--name", "prod"],
+    )
+    manifest_after_set = yaml.safe_load((target / "untaped.yml").read_text())
+    unset_result = runner.invoke(app, ["branch", "unset", "--repo", "api", "--name", "prod"])
+    manifest_after_unset = yaml.safe_load((target / "untaped.yml").read_text())
+
+    assert set_result.exit_code == 0, set_result.output
+    assert "set branch for repo 'api' in 'prod' to develop" in set_result.output
+    assert manifest_after_set["repos"][0]["branch"] == "develop"
+    assert unset_result.exit_code == 0, unset_result.output
+    assert "unset branch for repo 'api' in 'prod'" in unset_result.output
+    assert "branch" not in manifest_after_unset["repos"][0]
+
+
+def test_branch_commands_resolve_workspace_from_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    child = target / "src"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    child.mkdir()
+    monkeypatch.chdir(child)
+
+    result = runner.invoke(app, ["branch", "set", "main"])
+
+    assert result.exit_code == 0, result.output
+    assert "set default branch for 'prod' to main" in result.output
+    raw = yaml.safe_load((target / "untaped.yml").read_text())
+    assert raw["defaults"]["branch"] == "main"
+
+
+def test_branch_set_unknown_repo_errors(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+
+    result = runner.invoke(app, ["branch", "set", "main", "--repo", "ghost", "--name", "prod"])
+
+    assert result.exit_code == 1
+    assert "repo 'ghost' not declared in workspace 'prod'" in result.output
 
 
 # ── adopt ───────────────────────────────────────────────────────────────────

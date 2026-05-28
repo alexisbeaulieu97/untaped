@@ -24,6 +24,8 @@ want; the registry is local-only.
 ```bash
 untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
 untaped workspace add git@github.com:acme/api --name prod  # add a repo
+untaped workspace show --name prod                         # inspect manifest details
+untaped workspace branch set main --name prod              # update manifest default branch
 untaped workspace sync --name prod              # clone everything in the manifest
 untaped workspace status --name prod            # per-repo git status
 ```
@@ -70,6 +72,21 @@ untaped workspace list --format raw --columns name
 
 Lists the central registry — every workspace `untaped` knows about by
 name and path.
+
+### `show`
+
+```bash
+untaped workspace show [--name <ws> | --path <dir>]
+                       [--format json|yaml|table|raw] [--columns ...]
+```
+
+Show the manifest details for one workspace. Each repo produces one
+row with the workspace name, manifest path, default branch, repo name,
+repo URL, per-repo branch override, and effective target branch. Empty
+manifests still emit a single summary row with `repo_count: 0`.
+
+`show` reads `untaped.yml` only. It does not inspect git status or
+remote state; use `workspace status` for live checkout data.
 
 ### `init`
 
@@ -176,6 +193,21 @@ untaped workspace status --name prod --format raw --columns repo \
   | fzf -m \
   | untaped workspace remove --stdin --name prod
 ```
+
+### `branch`
+
+```bash
+untaped workspace branch set <branch> [--repo <repo>]
+untaped workspace branch unset [--repo <repo>]
+```
+
+Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
+command updates `defaults.branch`; with `--repo`, it updates the
+matching repo override by alias or URL.
+
+These commands never run `git checkout` and never mutate on-disk
+clones. They only change the target branch used for future clones and
+for `sync` branch-mismatch checks.
 
 ### `sync`
 

@@ -9,9 +9,11 @@ from untaped_workspace.domain.manifest import (
 )
 from untaped_workspace.domain.models import Workspace
 from untaped_workspace.domain.payloads import (
+    BranchChange,
     DiscoveredRepo,
     DiscoveryResult,
     ManifestSource,
+    WorkspaceDetailRow,
 )
 from untaped_workspace.domain.state import (
     ForeachOutcome,
@@ -22,6 +24,7 @@ from untaped_workspace.domain.state import (
 )
 
 __all__ = [
+    "BranchChange",
     "DiscoveredRepo",
     "DiscoveryResult",
     "DuplicateRepoError",
@@ -36,6 +39,7 @@ __all__ = [
     "SyncAction",
     "SyncOutcome",
     "Workspace",
+    "WorkspaceDetailRow",
     "WorkspaceManifest",
     "derive_repo_name",
 ]

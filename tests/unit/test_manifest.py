@@ -62,6 +62,56 @@ def test_manifest_target_branch_none_when_no_default() -> None:
     assert m.target_branch_for(m.repos[0]) is None
 
 
+def test_manifest_with_default_branch_sets_and_unsets() -> None:
+    original = WorkspaceManifest(
+        name="prod",
+        defaults=ManifestDefaults(branch="main"),
+        repos=[Repo(url="https://x/api.git")],
+    )
+
+    updated = original.with_default_branch("develop")
+    cleared = updated.with_default_branch(None)
+
+    assert updated.defaults.branch == "develop"
+    assert updated.repos == original.repos
+    assert cleared.defaults.branch is None
+    assert cleared.repos == original.repos
+    assert original.defaults.branch == "main"
+
+
+def test_manifest_with_repo_branch_sets_and_unsets_by_name_preserving_order() -> None:
+    original = WorkspaceManifest(
+        name="prod",
+        defaults=ManifestDefaults(branch="main"),
+        repos=[
+            Repo(url="https://x/api.git", name="api"),
+            Repo(url="https://x/ui.git", name="ui", branch="release"),
+        ],
+    )
+
+    updated, repo = original.with_repo_branch("api", "develop")
+    cleared, cleared_repo = updated.with_repo_branch("api", None)
+
+    assert repo.name == "api"
+    assert updated.repos[0].branch == "develop"
+    assert updated.repos[1] == original.repos[1]
+    assert [r.name for r in updated.repos] == ["api", "ui"]
+    assert cleared_repo.name == "api"
+    assert cleared.repos[0].branch is None
+    assert original.repos[0].branch is None
+
+
+def test_manifest_with_repo_branch_accepts_url_and_errors_on_unknown_repo() -> None:
+    original = WorkspaceManifest(repos=[Repo(url="https://x/api.git", name="api")])
+
+    updated, repo = original.with_repo_branch("https://x/api.git", "main")
+
+    assert repo.name == "api"
+    assert updated.repos[0].branch == "main"
+    with pytest.raises(ValueError, match="no repo matches 'ghost'"):
+        original.with_repo_branch("ghost", "main")
+
+
 def test_manifest_find_by_name_or_url() -> None:
     m = WorkspaceManifest(
         repos=[
