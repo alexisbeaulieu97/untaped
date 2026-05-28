@@ -92,3 +92,23 @@ def test_state_sections_are_spliced_from_top_level(_isolated_config: Path) -> No
 
     assert settings.demo.endpoint == "https://profile.example"
     assert settings.demo.entries == ["alpha"]
+
+
+def test_state_splice_only_uses_registered_state_fields(_isolated_config: Path) -> None:
+    register_profile_settings("demo", DemoSettings)
+    register_state_settings("demo", DemoState)
+    _isolated_config.write_text(
+        "profiles:\n"
+        "  default:\n"
+        "    demo:\n"
+        "      endpoint: https://profile.example\n"
+        "demo:\n"
+        "  endpoint: https://state.example\n"
+        "  entries:\n"
+        "    - alpha\n"
+    )
+
+    settings = get_settings()
+
+    assert settings.demo.endpoint == "https://profile.example"
+    assert settings.demo.entries == ["alpha"]

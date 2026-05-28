@@ -65,3 +65,15 @@ def test_plugins_add_editable_maps_to_uv_with_editable(
     assert calls == [
         ["uv", "tool", "install", "untaped", "--with-editable", "../untaped-awx", "--force"]
     ]
+
+
+def test_plugins_list_reports_invalid_plugin_state_without_traceback(
+    _isolated_config: Path,
+) -> None:
+    _isolated_config.write_text("plugins:\n  packages:\n    - spec: 123\n")
+
+    result = CliRunner().invoke(plugins_app, ["list"])
+
+    assert result.exit_code == 1
+    assert "invalid plugins config" in result.output
+    assert "Traceback" not in result.output

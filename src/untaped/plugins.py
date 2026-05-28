@@ -10,11 +10,11 @@ from importlib.metadata import entry_points
 from typing import Protocol
 
 import typer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from untaped.cli import report_errors
 from untaped.config_file import mutate_config, read_config_dict
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, first_validation_error
 from untaped.settings import (
     PluginInstallSpec,
     PluginToolSpec,
@@ -53,7 +53,8 @@ class PluginLoadError:
 class PluginRegistry:
     """In-process registry populated by installed plugins."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, reserved_cli_names: Iterable[str] = ()) -> None:
+        self.reserved_cli_names = set(reserved_cli_names)
         self.plugin_ids: set[str] = set()
         self.clis: dict[str, typer.Typer] = {}
         self.profile_sections: dict[str, type[BaseModel]] = {}
@@ -67,6 +68,8 @@ class PluginRegistry:
         self.plugin_ids.add(plugin_id)
 
     def add_cli(self, name: str, app: typer.Typer) -> None:
+        if name in self.reserved_cli_names:
+            raise ConfigError(f"reserved CLI command: {name}")
         if name in self.clis:
             raise ConfigError(f"duplicate CLI command: {name}")
         self.clis[name] = app
@@ -127,6 +130,7 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
     for plugin in plugins:
         plugin_id = getattr(plugin, "id", plugin.__class__.__module__)
         clis = dict(registry.clis)
+        plugin_ids = set(registry.plugin_ids)
         profile_sections = dict(registry.profile_sections)
         state_sections = dict(registry.state_sections)
         diagnostics = dict(registry.diagnostics)
@@ -135,10 +139,10 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
             plugin.register(registry)
         except Exception as exc:
             registry.clis = clis
+            registry.plugin_ids = plugin_ids
             registry.profile_sections = profile_sections
             registry.state_sections = state_sections
             registry.diagnostics = diagnostics
-            registry.plugin_ids.discard(plugin_id)
             registry.record_load_error(plugin_id, exc)
     registry.apply_config_sections()
     return registry
@@ -240,7 +244,10 @@ def _plugin_state() -> PluginStateView:
     data = read_config_dict().get("plugins") or {}
     if not isinstance(data, dict):
         return PluginStateView()
-    return PluginStateView.model_validate(data)
+    try:
+        return PluginStateView.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigError(f"invalid plugins config: {first_validation_error(exc)}") from exc
 
 
 class PluginStateView(BaseModel):

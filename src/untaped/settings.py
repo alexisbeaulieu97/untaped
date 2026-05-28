@@ -163,15 +163,23 @@ class ProfilesSettingsSource(InitSettingsSource):
 
 def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -> None:
     """Merge registered top-level state sections into an effective profile dict."""
-    for section in _CONFIG_REGISTRY.state_sections:
+    for section, model in _CONFIG_REGISTRY.state_sections.items():
         state = raw.get(section)
         if not isinstance(state, dict):
             continue
+        try:
+            state_data = model.model_validate(state).model_dump(exclude_unset=True)
+        except ValidationError as exc:
+            path = resolve_config_path()
+            raise ConfigError(
+                f"invalid top-level config section {section!r} in {path}: "
+                f"{first_validation_error(exc)}"
+            ) from exc
         merged = effective.setdefault(section, {})
         if isinstance(merged, dict):
-            merged.update(state)
+            merged.update(state_data)
         else:
-            effective[section] = dict(state)
+            effective[section] = state_data
 
 
 def resolve_config_path() -> Path:

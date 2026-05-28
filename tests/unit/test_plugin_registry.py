@@ -5,7 +5,7 @@ import typer
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
-from untaped.plugins import DiagnosticResult, PluginRegistry
+from untaped.plugins import DiagnosticResult, PluginRegistry, register_plugins
 
 
 class DemoSettings(BaseModel):
@@ -30,6 +30,39 @@ def test_registry_rejects_duplicate_cli_names() -> None:
 
     with pytest.raises(ConfigError, match="duplicate CLI command"):
         registry.add_cli("demo", typer.Typer())
+
+
+def test_registry_rejects_reserved_cli_names() -> None:
+    registry = PluginRegistry(reserved_cli_names={"config"})
+
+    with pytest.raises(ConfigError, match="reserved CLI command"):
+        registry.add_cli("config", typer.Typer())
+
+
+def test_register_plugins_restores_plugin_ids_after_duplicate_failure() -> None:
+    class DemoPlugin:
+        id = "demo"
+
+        def __init__(self, command: str) -> None:
+            self.command = command
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_cli(self.command, typer.Typer())
+
+    registry = PluginRegistry()
+
+    register_plugins(
+        registry,
+        [
+            DemoPlugin("first"),
+            DemoPlugin("second"),
+            DemoPlugin("third"),
+        ],
+    )
+
+    assert registry.plugin_ids == {"demo"}
+    assert sorted(registry.clis) == ["first"]
+    assert [error.name for error in registry.load_errors] == ["demo", "demo"]
 
 
 def test_registry_rejects_duplicate_profile_setting_sections() -> None:

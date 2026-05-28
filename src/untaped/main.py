@@ -20,10 +20,12 @@ from untaped.plugins import (
 )
 from untaped.settings import get_settings
 
+CORE_COMMAND_NAMES = frozenset({"config", "plugins"})
+
 
 def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> typer.Typer:
     """Build a root app and register core commands plus discovered plugins."""
-    registry = PluginRegistry()
+    registry = PluginRegistry(reserved_cli_names=CORE_COMMAND_NAMES)
     selected = list(discover_plugins(registry) if plugins is None else plugins)
     register_plugins(registry, selected)
     set_current_registry(registry)

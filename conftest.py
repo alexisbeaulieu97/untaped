@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import pytest
 from untaped_awx.infrastructure import AwxConfig
 from untaped_github.settings import GithubSettings
-from untaped_workspace.settings import WorkspaceSettings
+from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
 from untaped.settings import (
     get_settings,
@@ -24,7 +24,7 @@ def _register_legacy_plugin_settings_for_tests() -> Iterator[None]:
     register_profile_settings("awx", AwxConfig)
     register_profile_settings("github", GithubSettings)
     register_profile_settings("workspace", WorkspaceSettings)
-    register_state_settings("workspace", WorkspaceSettings)
+    register_state_settings("workspace", WorkspaceState)
     get_settings.cache_clear()
     yield
     reset_config_registry_for_tests()

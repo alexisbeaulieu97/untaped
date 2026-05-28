@@ -15,8 +15,13 @@ class WorkspaceEntry(BaseModel):
 
 
 class WorkspaceSettings(BaseModel):
-    """Workspace plugin settings plus top-level registry state."""
+    """User-tunable workspace profile settings."""
 
-    workspaces: list[WorkspaceEntry] = Field(default_factory=list)
     cache_dir: Path = Field(default=Path("~/.untaped/repositories"))
     workspaces_dir: Path = Field(default=Path("~/.untaped/workspaces"))
+
+
+class WorkspaceState(BaseModel):
+    """Top-level workspace app state."""
+
+    workspaces: list[WorkspaceEntry] = Field(default_factory=list)

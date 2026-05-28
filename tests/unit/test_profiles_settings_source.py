@@ -184,6 +184,30 @@ def test_top_level_workspace_registry_does_not_clobber_profile_cache_dir(
     assert s.workspace.workspaces[0].name == "prod"
 
 
+def test_top_level_workspace_state_cannot_override_profile_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        profiles:
+          default:
+            workspace:
+              cache_dir: /from/profile
+        workspace:
+          cache_dir: /from/state
+          workspaces:
+            - name: prod
+              path: /tmp/prod
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.workspace.cache_dir == Path("/from/profile")
+    assert len(s.workspace.workspaces) == 1
+    assert s.workspace.workspaces[0].name == "prod"
+
+
 def test_empty_config_file_yields_schema_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
