@@ -97,12 +97,16 @@ class GitRunner:
         self._run(["merge", "--ff-only", f"origin/{branch}"], cwd=repo_path)
 
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
-        if not self._local_branch_exists(repo_path, branch):
-            self._run(["checkout", "-b", branch, f"refs/remotes/origin/{branch}"], cwd=repo_path)
+        if self._ref_exists(repo_path, f"refs/heads/{branch}"):
+            self._run(["checkout", branch], cwd=repo_path)
+            return
+        remote_ref = f"refs/remotes/origin/{branch}"
+        if self._ref_exists(repo_path, remote_ref):
+            self._run(["checkout", "-b", branch, remote_ref], cwd=repo_path)
             self._run(["config", f"branch.{branch}.remote", "origin"], cwd=repo_path)
             self._run(["config", f"branch.{branch}.merge", f"refs/heads/{branch}"], cwd=repo_path)
             return
-        self._run(["checkout", branch], cwd=repo_path)
+        self._run(["checkout", "-b", branch], cwd=repo_path)
 
     def default_branch(self, bare_path: Path) -> str | None:
         """Return the branch the bare's HEAD points at, or ``None``."""
@@ -139,9 +143,9 @@ class GitRunner:
 
     # internal -----------------------------------------------------------
 
-    def _local_branch_exists(self, repo_path: Path, branch: str) -> bool:
+    def _ref_exists(self, repo_path: Path, ref: str) -> bool:
         try:
-            self._run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo_path)
+            self._run(["show-ref", "--verify", "--quiet", ref], cwd=repo_path)
         except GitError:
             return False
         return True

@@ -168,9 +168,9 @@ translate to `skip` rows without further plumbing.
 `GitRunner.fetch` explicitly fetches all `origin` branch heads into
 `refs/remotes/origin/*`, instead of relying on the clone's configured
 fetch refspec. Some existing/adopted repos are single-branch clones whose
-refspec only tracks the original branch; widening the fetch here is what
-lets `workspace branch apply` create a tracking branch for a later
-manifest target.
+refspec only tracks the original branch; widening the fetch here lets
+`workspace branch apply` discover later manifest target branches when
+they already exist on the remote.
 
 ## Ports module
 
@@ -295,11 +295,11 @@ branch from the manifest target. `GitRunner.checkout_branch` checks out an
 existing local branch when present; if the local branch is missing but
 `origin/<branch>` exists, it creates a local tracking branch from that
 remote ref and sets the upstream config explicitly so narrow single-branch
-clones work too. It never creates arbitrary local-only branches. Missing
-clones, repos without a target branch, fetch failures, status failures, and
-checkout failures (including missing remote branches) are row-level `skip`s.
-`workspace show` is manifest-only; it formats the effective branch cascade
-without reading live git state.
+clones work too. If neither local nor `origin/<branch>` exists, it creates
+a local branch from the current clean HEAD. Missing clones, repos without
+a target branch, fetch failures, status failures, and checkout failures are
+row-level `skip`s. `workspace show` is manifest-only; it formats the
+effective branch cascade without reading live git state.
 
 ## `sync --all -j N` parallelism
 

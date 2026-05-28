@@ -809,6 +809,47 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
     assert tracking_remote == "origin"
 
 
+def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
+    tmp_path: Path,
+    upstream: Path,
+    isolated_cache: Path,
+) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["branch", "set", "ticket-123", "--name", "smoke"])
+    repo = target / "upstream"
+
+    result = runner.invoke(app, ["branch", "apply", "--name", "smoke", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "repo": "upstream",
+            "workspace": "smoke",
+            "target_branch": "ticket-123",
+            "action": "checkout",
+            "detail": "from main",
+        }
+    ]
+    head = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracking_remote = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "branch.ticket-123.remote"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert head == "ticket-123"
+    assert tracking_remote.returncode != 0
+
+
 def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:

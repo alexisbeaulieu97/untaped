@@ -55,11 +55,12 @@ Branch resolution at clone time follows a cascade: per-repo `branch` >
 uses explicit manifest branch targets (`repos[].branch` or
 `defaults.branch`) and skips repos with no target. It checks out an
 existing local branch when present, or creates a local tracking branch
-when `origin/<branch>` exists. It does not create local-only branches.
-Subsequent `sync`s will not check out a different branch for you — if
-the on-disk branch diverges from the manifest's target, `sync` skips
-that repo with a warning, so a stale `defaults.branch` can't kidnap a
-repo you've moved to a feature branch.
+when `origin/<branch>` exists. If the branch is missing locally and on
+`origin`, it creates a local branch from the current clean HEAD.
+Subsequent `sync`s will not check out a different branch for you — if the
+on-disk branch diverges from the manifest's target, `sync` skips that
+repo with a warning, so a stale `defaults.branch` can't kidnap a repo
+you've moved to a feature branch.
 
 `repos[].name` is what shows up on disk under the workspace directory
 and what you pass to `--only` / `remove`. Names and URLs must both be
@@ -229,8 +230,8 @@ untaped workspace branch set main --name prod --apply
 one row per repo with `checkout`, `up-to-date`, or `skip`. Missing
 clones and repos without a target branch are skipped. If the target
 branch exists on `origin` but not locally, `branch apply` creates a
-local tracking branch. It does not create local-only branches; missing
-remote branches are reported as `skip` rows.
+local tracking branch. If the target branch is missing locally and on
+`origin`, it creates a local branch from the current clean HEAD.
 
 ### `sync`
 

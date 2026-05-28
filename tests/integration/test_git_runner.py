@@ -220,6 +220,34 @@ def test_fetch_populates_remote_branch_for_single_branch_clone(
     assert head == "develop"
 
 
+def test_checkout_branch_creates_local_branch_when_remote_branch_is_missing(
+    tmp_path: Path,
+    upstream: Path,
+) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    workspace_repo = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
+
+    runner.fetch(workspace_repo)
+    runner.checkout_branch(workspace_repo, branch="ticket-123")
+
+    head = subprocess.run(
+        ["git", "-C", str(workspace_repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracking_remote = subprocess.run(
+        ["git", "-C", str(workspace_repo), "config", "--get", "branch.ticket-123.remote"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert head == "ticket-123"
+    assert tracking_remote.returncode != 0
+
+
 def test_checkout_branch_checks_out_existing_local_branch(
     tmp_path: Path,
     upstream: Path,
@@ -250,7 +278,7 @@ def test_checkout_branch_checks_out_existing_local_branch(
     assert head == "local-only"
 
 
-def test_checkout_branch_raises_git_error_for_missing_branch(
+def test_checkout_branch_raises_git_error_for_invalid_branch_name(
     tmp_path: Path,
     upstream: Path,
 ) -> None:
@@ -260,7 +288,7 @@ def test_checkout_branch_raises_git_error_for_missing_branch(
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
 
     with pytest.raises(GitError):
-        runner.checkout_branch(workspace_repo, branch="ghost")
+        runner.checkout_branch(workspace_repo, branch="bad..branch")
 
 
 def test_status_clean_repo(tmp_path: Path, upstream: Path) -> None:
