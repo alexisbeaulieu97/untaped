@@ -56,7 +56,7 @@ def test_write_uses_secure_perms(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_parse_key_simple() -> None:
-    assert parse_key("awx.token") == ("awx", "token")
+    assert parse_key("demo.token") == ("demo", "token")
 
 
 def test_parse_key_top_level() -> None:

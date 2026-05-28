@@ -12,18 +12,22 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from untaped.settings import (
     get_settings,
     get_settings_model,
     register_profile_settings,
     register_state_settings,
+    reset_config_registry_for_tests,
 )
 
 
 class DemoProfileSettings(BaseModel):
     cache_dir: Path = Path("~/.demo/cache")
+    base_url: str | None = None
+    token: SecretStr | None = None
+    api_prefix: str = "/api/demo/v1/"
 
 
 class DemoStateSettings(BaseModel):
@@ -32,8 +36,11 @@ class DemoStateSettings(BaseModel):
 
 @pytest.fixture(autouse=True)
 def _reset_cache() -> Iterator[None]:
+    reset_config_registry_for_tests()
+    register_profile_settings("demo", DemoProfileSettings)
     get_settings.cache_clear()
     yield
+    reset_config_registry_for_tests()
     get_settings.cache_clear()
 
 
@@ -44,7 +51,7 @@ def test_loads_default_profile_only(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         profiles:
           default:
             log_level: DEBUG
-            awx:
+            demo:
               base_url: https://aap.local
               token: secret-default
         """
@@ -52,9 +59,9 @@ def test_loads_default_profile_only(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
     assert s.log_level == "DEBUG"
-    assert s.awx.base_url == "https://aap.local"
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "secret-default"
+    assert s.demo.base_url == "https://aap.local"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "secret-default"
 
 
 def test_active_overrides_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,13 +71,13 @@ def test_active_overrides_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         profiles:
           default:
             log_level: INFO
-            awx:
+            demo:
               base_url: https://default.example
               token: default-tok
               api_prefix: /api/v2/
           prod:
             log_level: WARNING
-            awx:
+            demo:
               base_url: https://prod.example
               token: prod-tok
         active: prod
@@ -79,11 +86,11 @@ def test_active_overrides_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
     assert s.log_level == "WARNING"
-    assert s.awx.base_url == "https://prod.example"
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "prod-tok"
+    assert s.demo.base_url == "https://prod.example"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "prod-tok"
     # api_prefix stays from default (not redeclared in prod)
-    assert s.awx.api_prefix == "/api/v2/"
+    assert s.demo.api_prefix == "/api/v2/"
 
 
 def test_untaped_profile_env_overrides_active(
@@ -94,13 +101,13 @@ def test_untaped_profile_env_overrides_active(
         """
         profiles:
           default:
-            awx:
+            demo:
               base_url: https://default.example
           prod:
-            awx:
+            demo:
               base_url: https://prod.example
           stage:
-            awx:
+            demo:
               base_url: https://stage.example
         active: prod
         """
@@ -108,7 +115,7 @@ def test_untaped_profile_env_overrides_active(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     monkeypatch.setenv("UNTAPED_PROFILE", "stage")
     s = get_settings()
-    assert s.awx.base_url == "https://stage.example"
+    assert s.demo.base_url == "https://stage.example"
 
 
 def test_untaped_field_env_still_beats_profile(
@@ -119,15 +126,15 @@ def test_untaped_field_env_still_beats_profile(
         """
         profiles:
           default:
-            awx:
+            demo:
               token: from-yaml
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "from-env")
+    monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
     s = get_settings()
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "from-env"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "from-env"
 
 
 def test_registered_state_lives_at_top_level(
@@ -228,7 +235,7 @@ def test_empty_config_file_yields_schema_defaults(
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
     assert s.log_level == "INFO"
-    assert s.awx.token is None
+    assert s.demo.token is None
 
 
 def test_missing_default_profile_no_active_uses_schema(
@@ -236,18 +243,18 @@ def test_missing_default_profile_no_active_uses_schema(
 ) -> None:
     """`default` is optional. With profiles defined but no `default` and
     no `active:` key, no profile layer applies — Settings falls through
-    to schema defaults (`log_level == "INFO"`, `awx.token is None`)."""
+    to schema defaults (`log_level == "INFO"`, `demo.token is None`)."""
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
         profiles:
-          prod: {awx: {token: x}}
+          prod: {demo: {token: x}}
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings_model()()
     assert s.log_level == "INFO"
-    assert s.awx.token is None
+    assert s.demo.token is None
 
 
 def test_missing_default_profile_with_active_uses_active(
@@ -259,15 +266,15 @@ def test_missing_default_profile_with_active_uses_active(
     cfg.write_text(
         """
         profiles:
-          prod: {awx: {token: x}}
+          prod: {demo: {token: x}}
         active: prod
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings_model()()
     assert s.log_level == "INFO"
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "x"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "x"
 
 
 def test_unknown_active_profile_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
