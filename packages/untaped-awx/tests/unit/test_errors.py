@@ -8,7 +8,8 @@ from untaped_awx.errors import (
     ResourceNotFound,
 )
 from untaped_awx.infrastructure.errors import to_awx_error
-from untaped_core import HttpError, UntapedError
+
+from untaped import HttpError, UntapedError
 
 
 def test_awx_api_error_is_untaped_error() -> None:
@@ -35,7 +36,7 @@ def test_to_awx_error_degrades_gracefully_on_body_truncated_mid_token() -> None:
     """`HttpError.body` is capped at ~2KB at the wrap site, so the body
     can land mid-JSON-token. `to_awx_error` must fall back to the raw
     snippet (no crash, no exception leak) rather than failing JSON
-    parsing — pins the contract that lets `untaped-core` truncate
+    parsing — pins the contract that lets `untaped` core truncate
     without coordinating with `untaped-awx`.
     """
     truncated = '{"name": ["Already exi'  # cut mid-string

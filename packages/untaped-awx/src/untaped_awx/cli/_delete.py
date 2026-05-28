@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     UntapedError,
@@ -14,7 +15,6 @@ from untaped_core import (
     report_errors,
     resolve_each,
 )
-
 from untaped_awx.application import DeleteResource, GetResource
 from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.infrastructure.spec import AwxResourceSpec
@@ -149,7 +149,7 @@ def _resolve_for_delete(
 def _delete_row(record: dict[str, Any], *, deleted: bool | None = None) -> dict[str, Any]:
     # First key is ``id`` so ``--format raw`` returns the (would-be-)deleted
     # id — preserves the pipe-friendly first-key contract used by every
-    # spec-driven list/get command (see untaped-core "--format raw" contract).
+    # spec-driven list/get command (see root AGENTS.md "--format raw" contract).
     # The ``deleted`` key is set only after a successful DELETE; dry-run
     # rows omit it so ``jq 'select(.deleted)'`` doesn't silently pick up
     # preview rows.

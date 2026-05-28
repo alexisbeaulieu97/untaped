@@ -5,9 +5,18 @@ from pathlib import Path
 import pytest
 import yaml
 from typer.testing import CliRunner
-from untaped_core import get_settings
+from untaped_awx.plugin import plugin as awx_plugin
+from untaped_github.plugin import plugin as github_plugin
+from untaped_profile.plugin import plugin as profile_plugin
+from untaped_workspace.plugin import plugin as workspace_plugin
 
-from untaped.main import app
+from untaped import get_settings
+from untaped.main import build_app
+
+
+@pytest.fixture
+def app() -> object:
+    return build_app(plugins=[awx_plugin, github_plugin, profile_plugin, workspace_plugin])
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +31,7 @@ def _isolate_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
     get_settings.cache_clear()
 
 
-def test_help_lists_all_domains() -> None:
+def test_help_lists_all_plugins(app: object) -> None:
     result = CliRunner().invoke(app, ["--help"])
     assert result.exit_code == 0
     output = result.stdout
@@ -33,13 +42,13 @@ def test_help_lists_all_domains() -> None:
     assert "profile" in output
 
 
-def test_workspace_subcommand_help() -> None:
+def test_workspace_subcommand_help(app: object) -> None:
     result = CliRunner().invoke(app, ["workspace", "--help"])
     assert result.exit_code == 0
     assert "list" in result.stdout
 
 
-def test_config_subcommand_help() -> None:
+def test_config_subcommand_help(app: object) -> None:
     result = CliRunner().invoke(app, ["config", "--help"])
     assert result.exit_code == 0
     assert "list" in result.stdout
@@ -47,14 +56,14 @@ def test_config_subcommand_help() -> None:
     assert "unset" in result.stdout
 
 
-def test_profile_subcommand_help() -> None:
+def test_profile_subcommand_help(app: object) -> None:
     result = CliRunner().invoke(app, ["profile", "--help"])
     assert result.exit_code == 0
     for cmd in ("list", "show", "use", "current", "create", "delete", "rename"):
         assert cmd in result.stdout
 
 
-def test_root_profile_flag_reflected_by_profile_current(_isolate_config: Path) -> None:
+def test_root_profile_flag_reflected_by_profile_current(app: object, _isolate_config: Path) -> None:
     """`untaped --profile stage profile current` must report 'stage' with
     source=env (the root flag stuffs UNTAPED_PROFILE into os.environ)."""
     _isolate_config.write_text(
@@ -70,7 +79,7 @@ def test_root_profile_flag_reflected_by_profile_current(_isolate_config: Path) -
     assert "(source: env)" in result.stderr
 
 
-def test_root_profile_flag_overrides_active(_isolate_config: Path) -> None:
+def test_root_profile_flag_overrides_active(app: object, _isolate_config: Path) -> None:
     """``untaped --profile <name> ...`` swaps the active profile for the
     invocation without touching the persisted ``active:``."""
     _isolate_config.write_text(

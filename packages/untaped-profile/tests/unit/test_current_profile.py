@@ -12,8 +12,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from untaped_core import ConfigError
 from untaped_profile.application import CurrentProfile
+
+from untaped import ConfigError
 
 
 def test_returns_persisted_active_when_env_unset(repo: Any) -> None:

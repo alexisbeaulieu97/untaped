@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
-from untaped_core.settings import get_settings
 from untaped_workspace import app
+
+from untaped.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -771,7 +772,7 @@ def test_foreach_summary_suppressed_in_structured_format(
 
 # ── foreach --parallel: silent <1 coercion (foreach-specific UX) ─────────────
 # The cap-clamp policy is unit-tested at ``clamp_parallel`` in
-# ``packages/untaped-core/tests/unit/test_cli_helpers.py``; the sync CLI
+# ``tests/unit/test_cli_helpers.py``; the sync CLI
 # test above exercises the wire-through end-to-end. Foreach has one
 # divergent contract: ``-j 0`` silently coerces to serial (sync and
 # ``awx apply`` raise ``BadParameter`` instead), so that's the only

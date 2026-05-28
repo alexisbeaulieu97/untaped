@@ -8,7 +8,8 @@ import typer
 from typer.testing import CliRunner
 from untaped_awx import app
 from untaped_awx.cli._apply_runner import resolve_apply_file
-from untaped_core.settings import get_settings
+
+from untaped.settings import get_settings
 
 
 @pytest.fixture(autouse=True)

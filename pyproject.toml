@@ -8,13 +8,14 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "filelock>=3.29.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.3",
+    "pydantic-settings>=2.14.0",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "truststore>=0.10.4",
     "typer>=0.25.1",
-    "untaped-core",
-    "untaped-config",
-    "untaped-workspace",
-    "untaped-awx",
-    "untaped-github",
-    "untaped-profile",
 ]
 
 [project.scripts]
@@ -25,11 +26,15 @@ requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = [
+    "packages/untaped-awx",
+    "packages/untaped-github",
+    "packages/untaped-profile",
+    "packages/untaped-workspace",
+]
 
 [tool.uv.sources]
-untaped-core = { workspace = true }
-untaped-config = { workspace = true }
+untaped = { workspace = true }
 untaped-workspace = { workspace = true }
 untaped-awx = { workspace = true }
 untaped-github = { workspace = true }
@@ -48,16 +53,10 @@ dev = [
 ]
 
 [tool.untaped]
-# Sole source of truth for "what domain packages does the suite expose".
-# `scripts/sync_domains.py` regenerates the four Import Linter blocks and
-# the mypy `packages` list from this when run. `untaped` (root aggregator)
-# and `untaped_core` (shared kit) are intentionally absent here — they
-# aren't domains. Add a new domain by appending its import root here, then
-# `uv run python scripts/sync_domains.py --write` (or let the pre-commit
-# hook flag drift on commit).
-domains = [
+# Sole source of truth for local plugin modules in this monorepo bridge step.
+# `scripts/sync_plugins.py` regenerates Import Linter and mypy lists from this.
+plugin_modules = [
     "untaped_awx",
-    "untaped_config",
     "untaped_github",
     "untaped_profile",
     "untaped_workspace",
@@ -66,9 +65,7 @@ domains = [
 [tool.importlinter]
 root_packages = [
     "untaped",
-    "untaped_core",
     "untaped_awx",
-    "untaped_config",
     "untaped_github",
     "untaped_profile",
     "untaped_workspace",
@@ -78,38 +75,27 @@ root_packages = [
 # exception via AST walk — keep both checkers in sync if the rule changes.
 exclude_type_checking_imports = true
 
-# `untaped` (root aggregator: importing every domain is its job) and
-# `untaped_core` (flat shared library, no DDD layers) are intentionally
-# absent from the per-domain layers + independence contracts. The
-# `core → siblings` direction is forbidden separately below. The
-# `root_packages`, `modules`, `containers`, `forbidden_modules`, and
-# `[tool.mypy] packages` lists are regenerated from
-# `[tool.untaped].domains` by `scripts/sync_domains.py` — edit the
-# source list (and run the script / let the pre-commit hook flag drift)
-# instead of these blocks. (Other workspace touchpoints — root
-# `[project] dependencies`, `src/untaped/main.py` — stay manual; see
-# the "Add a new domain package" recipe in the root AGENTS.md.)
+# The plugin module lists below and `[tool.mypy] packages` are regenerated
+# from `[tool.untaped].plugin_modules`; edit that source list first.
 
 [[tool.importlinter.contracts]]
-name = "Sibling domains are mutually independent"
+name = "Sibling plugins are mutually independent"
 # `independence` says "these modules cannot import each other" — it does
-# not restrict imports of any other module (e.g. `untaped_core` and
+# not restrict imports of any other module (e.g. `untaped` and
 # third-party libs remain fair game).
 type = "independence"
 modules = [
     "untaped_awx",
-    "untaped_config",
     "untaped_github",
     "untaped_profile",
     "untaped_workspace",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Per-domain layers (cli > application | infrastructure > domain)"
+name = "Per-plugin layers (cli > application | infrastructure > domain)"
 type = "layers"
 containers = [
     "untaped_awx",
-    "untaped_config",
     "untaped_github",
     "untaped_profile",
     "untaped_workspace",
@@ -125,16 +111,11 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "untaped_core does not depend on any domain"
-# `untaped_core` is the shared kit — by definition downstream-only.
-# An accidental `core → sibling` import would invert the dependency
-# direction and likely cause cycles at startup.
+name = "untaped core does not statically import plugins"
 type = "forbidden"
-source_modules = ["untaped_core"]
+source_modules = ["untaped"]
 forbidden_modules = [
-    "untaped",
     "untaped_awx",
-    "untaped_config",
     "untaped_github",
     "untaped_profile",
     "untaped_workspace",
@@ -204,9 +185,7 @@ plugins = ["pydantic.mypy"]
 # unambiguously (mixing `src/` and `packages/*/src/` causes "found twice" errors).
 packages = [
     "untaped",
-    "untaped_core",
     "untaped_awx",
-    "untaped_config",
     "untaped_github",
     "untaped_profile",
     "untaped_workspace",

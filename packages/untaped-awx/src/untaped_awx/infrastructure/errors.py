@@ -1,7 +1,7 @@
-"""Map :class:`untaped_core.HttpError` to typed AWX exceptions.
+"""Map :class:`untaped.HttpError` to typed AWX exceptions.
 
 The mapping uses status codes plus response bodies for actionable
-messages. 401 maps to :class:`untaped_core.ConfigError` so the user
+messages. 401 maps to :class:`untaped.ConfigError` so the user
 sees `awx.token` guidance in their CLI output instead of an opaque
 HTTP error.
 """
@@ -13,8 +13,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from untaped_core import ConfigError, HttpError, UntapedError
-
+from untaped import ConfigError, HttpError, UntapedError
 from untaped_awx.errors import (
     AwxApiError,
     BadRequest,

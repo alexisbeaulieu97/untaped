@@ -7,17 +7,19 @@ file in the same commit.
 
 ## Mission
 
-`untaped` is a personal DevOps CLI suite. Each domain (workspace, awx,
-github, …) is its own Python package exposing a Typer sub-app; one binary
-(`untaped`) aggregates them. Daily DevOps work composes — data-emitting
-commands are pipe-friendly. We build *on top of* existing CLIs (`gh`,
-`awx-cli`), never reimplement them.
+`untaped` is a personal DevOps CLI hub. The root package owns plumbing:
+the binary, plugin discovery, configuration/profile resolution, output,
+stdin, HTTP/TLS, and shared errors. Domain functionality (workspace, awx,
+github, profile, …) is delivered by plugins exposing Typer sub-apps
+through the `untaped.plugins` entry point group. Daily DevOps work
+composes — data-emitting commands are pipe-friendly. We build *on top of*
+existing CLIs (`gh`, `awx-cli`) where that is the right abstraction.
 
 ## Repository Map
 
-The workspace root **is** the `untaped` package — it owns the binary and
-aggregates every domain. Each domain lives as a workspace member under
-`packages/`.
+The workspace root **is** the `untaped` core package. Packages under
+`packages/` are in-repo plugins for this bridge step; they are designed to
+move to separate repos without changing the core contract.
 
 ```
 untaped/
@@ -29,11 +31,9 @@ untaped/
 ├── CLAUDE.md                     # imports @AGENTS.md
 ├── README.md                     # human-facing intro
 ├── docs/                         # user-facing reference
-├── src/untaped/                  # root CLI: aggregates domains via add_typer
-├── tests/                        # tests for the root CLI
+├── src/untaped/                  # core CLI, config, plugin plumbing, shared helpers
+├── tests/                        # tests for core and shared contracts
 └── packages/
-    ├── untaped-core/             # shared infra; AGENTS.md
-    ├── untaped-config/           # `config` meta-domain
     ├── untaped-profile/          # `profile` meta-domain
     ├── untaped-workspace/        # local git workspaces; AGENTS.md
     ├── untaped-awx/              # AWX/AAP API; AGENTS.md
@@ -42,13 +42,11 @@ untaped/
 
 | Package             | Type | Owns                                                                  | Internals doc |
 | ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
-| `untaped` (root)    | app  | The `untaped` binary; aggregates domain sub-apps. Hosts `--profile`.  | this file     |
-| `untaped-core`      | lib  | Settings, http+TLS, config schema/file, profiles, output, stdin.      | [`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md) |
-| `untaped-config`    | lib  | The `config` meta-domain (operates on profile contents).              | [`packages/untaped-config/AGENTS.md`](packages/untaped-config/AGENTS.md) |
-| `untaped-profile`   | lib  | The `profile` meta-domain (manages the profile inventory).            | [`packages/untaped-profile/AGENTS.md`](packages/untaped-profile/AGENTS.md) |
-| `untaped-workspace` | lib  | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
-| `untaped-awx`       | lib  | AWX/AAP bounded context (jobs, templates, inventories, …).            | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
-| `untaped-github`    | lib  | GitHub bounded context — authenticated user only today.               | [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md) |
+| `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, profile resolution, output/stdin/http/errors. | this file |
+| `untaped-profile`   | plugin | The `profile` command (manages the profile inventory).              | [`packages/untaped-profile/AGENTS.md`](packages/untaped-profile/AGENTS.md) |
+| `untaped-workspace` | plugin | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
+| `untaped-awx`       | plugin | AWX/AAP bounded context (jobs, templates, inventories, …).          | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
+| `untaped-github`    | plugin | GitHub bounded context — authenticated user and search today.       | [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md) |
 
 ## Hard Rules
 
@@ -62,14 +60,16 @@ Non-negotiable. Every contribution must respect them.
    `uv add`, `uv add --package <name>`, `uv add --group dev`,
    `uv init --package --lib|--app`. Hand-editing is fine for tool config
    (`[tool.ruff]`, `[tool.mypy]`, …) but never for dependencies.
-3. **Register every new domain in `src/untaped/main.py`.** A domain not
-   wired into the root CLI does not exist as far as users are concerned.
+3. **Register every new plugin through an entry point.** Use
+   `[project.entry-points."untaped.plugins"]`; the root must not
+   statically import plugin modules.
 4. **Use `uv init --package` with `--lib` or `--app`.** Never the bare
    `uv init` (gives flat layout).
-5. **Create a lib if reuse is likely.** Don't duplicate code across
-   domains. If two domains need the same helper, it belongs in
-   `untaped-core` (or a new shared lib if it's a coherent subdomain).
-6. **Search before writing.** Grep `untaped-core` and other packages
+5. **Create shared plumbing only when it is genuinely cross-cutting.**
+   Don't duplicate code across plugins. If two plugins need the same
+   helper and it is part of the hub contract, it belongs in `src/untaped/`;
+   otherwise use a separate shared library.
+6. **Search before writing.** Grep `src/untaped` and other packages
    before implementing a helper. If it exists in the wrong place, *move*
    it (and update callers); don't fork.
 7. **Finish each session with `uv run ruff check --fix && uv run ruff
@@ -79,7 +79,7 @@ Non-negotiable. Every contribution must respect them.
    access private members.
 9. **Every Typer app and every command with required args sets
    `no_args_is_help=True`.** No-args invocation must show help, not error.
-10. **Every domain declares port `Protocol`s in `application/ports.py`.**
+10. **Every plugin declares port `Protocol`s in `application/ports.py`.**
     Use cases import their ports from there; concrete adapters in
     `infrastructure/` satisfy the Protocols structurally (no
     inheritance). Subsystems within a domain may add their own
@@ -87,25 +87,25 @@ Non-negotiable. Every contribution must respect them.
     Use cases declare the **narrowest port they need**; fatter ports
     extend slimmer ones via `Protocol` inheritance so concrete adapters
     satisfy every variant structurally (e.g. `untaped-workspace`'s
-    `ManifestReader ⊂ ManifestRepository`, `untaped-config`'s
-    `SettingsReader ⊂ SettingsRepository`).
+    `ManifestReader ⊂ ManifestRepository`).
 11. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
     keys. `untaped config list` redacts them; `repr(settings)` won't leak
     them in tracebacks. Call `.get_secret_value()` only at point of use.
 12. **Use `resolve_verify(settings.http)` for every httpx client.** Never
     hard-code `verify=True/False` or a path.
 13. **Use absolute imports across the workspace.** `from untaped_<x>.… import …`
-    or `from untaped_core import …`, never `from .foo import bar`.
+    or `from untaped import …`, never `from .foo import bar`.
     Enforced by ruff's `ban-relative-imports = "all"`; applies inside
     every package, including tests.
 
-## Architecture: 4-Layer DDD per domain
+## Architecture: Core + Plugin DDD
 
-`untaped-core` is the exception: it's a shared library, not a domain,
-so its layout is intentionally flat (`config_file.py`, `http.py`,
-`output.py`, …) — no `cli/`/`application/`/`domain/`/`infrastructure/`.
+`untaped` core is the exception: it is the hub and shared library, not a
+domain plugin. Its layout is intentionally mostly flat for plumbing
+(`plugins.py`, `settings.py`, `config_file.py`, `http.py`, `output.py`,
+…), with built-in `config` under `src/untaped/config/`.
 
-Every *domain* package (`untaped-<X>`) has the same internal layout:
+Every plugin package (`untaped-<X>`) has the same internal layout:
 
 ```
 src/untaped_<x>/
@@ -139,38 +139,65 @@ cli  →  application  →  domain
 A use case in `application/` is unit-testable with a stub satisfying its
 `Protocol` — no httpx, no fixtures, no settings file.
 
-## Cross-Cutting helpers (`untaped-core`)
+## Plugin Contract
+
+Plugins expose one object through the `untaped.plugins` entry point group:
+
+```python
+class UntapedPlugin(Protocol):
+    id: str
+    def register(self, registry: PluginRegistry) -> None: ...
+```
+
+Available registry hooks:
+
+- `add_cli(name, app)` adds a root command.
+- `add_profile_settings(section, model)` contributes a typed profile
+  settings section.
+- `add_state_settings(section, model)` contributes top-level app state
+  spliced into the effective settings model.
+- `add_diagnostic(name, check)` contributes `untaped plugins doctor`
+  checks.
+
+Duplicate plugin ids, CLI command names, profile sections, or state
+sections fail with `ConfigError`. Plugin load failures are recorded and
+reported by `untaped plugins doctor`; they must not break built-in core
+commands such as `untaped config`.
+
+## Cross-Cutting helpers (`untaped`)
 
 | Need                                       | Use                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------- |
-| Read user configuration                    | `from untaped_core import get_settings`                          |
-| Resolve TLS verify (OS trust + ca_bundle)  | `from untaped_core import resolve_verify`                        |
-| Make an HTTP call                          | `from untaped_core import HttpClient`                            |
-| Format output for stdout                   | `from untaped_core import format_output, OutputFormat`           |
-| Add `--format` / `--columns` to a Typer command | `from untaped_core import FormatOption, ColumnsOption`      |
-| Wrap a command body so `UntapedError` → exit 1 | `from untaped_core import report_errors`                     |
-| Read piped values from stdin               | `from untaped_core import read_stdin`                            |
-| Resolve identifiers from positionals or stdin (one source only) | `from untaped_core import read_identifiers` |
-| Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped_core import resolve_each`         |
-| Parse repeated `KEY=VALUE` flags           | `from untaped_core import parse_kv_pairs`                        |
-| Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped_core import clamp_parallel` (caller supplies `cap` and `policy`) |
+| Read typed plugin config                   | `from untaped import get_config_section`                    |
+| Read core settings only                    | `from untaped import get_core_settings`                     |
+| Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
+| Make an HTTP call                          | `from untaped import HttpClient`                            |
+| Format output for stdout                   | `from untaped import format_output, OutputFormat`           |
+| Add `--format` / `--columns` to a Typer command | `from untaped import FormatOption, ColumnsOption`      |
+| Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
+| Read piped values from stdin               | `from untaped import read_stdin`                            |
+| Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` |
+| Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped import resolve_each`         |
+| Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
+| Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
 | Print a one-line message to stderr         | `typer.echo(msg, err=True)` — keep it boring; no helper          |
 | Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` |
-| Raise a typed error                        | subclass `untaped_core.UntapedError`                             |
-| Walk the Settings schema (for tooling)     | `from untaped_core import walk_settings`                         |
-| Validate a Settings dict in isolation from disk/env | `from untaped_core import validate_settings_isolated` (used by `untaped-config` write path; same shape any future read-modify-write helper needs) |
-| Read/write `~/.untaped/config.yml`         | `from untaped_core.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
-| Atomic read-modify-write the config file   | `from untaped_core.config_file import mutate_config` (file-locked) |
-| Read/write a single profile                | `from untaped_core.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
-| Merge `default` ⤥ active to an effective dict | `from untaped_core import resolve_profiles` |
+| Raise a typed error                        | subclass `untaped.UntapedError`                             |
+| Walk the Settings schema (for tooling)     | `from untaped import walk_settings`                         |
+| Register profile settings                  | `from untaped import register_profile_settings`             |
+| Register top-level app state               | `from untaped import register_state_settings`               |
+| Validate a Settings dict in isolation from disk/env | `from untaped import validate_settings_isolated` (used by built-in `config` write path; same shape any future read-modify-write helper needs) |
+| Read/write `~/.untaped/config.yml`         | `from untaped.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
+| Atomic read-modify-write the config file   | `from untaped.config_file import mutate_config` (file-locked) |
+| Read/write a single profile                | `from untaped.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
+| Merge `default` ⤥ active to an effective dict | `from untaped import resolve_profiles` |
 | Mark a secret field                        | `pydantic.SecretStr`                                             |
-| Declare port `Protocol`s for a domain      | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
+| Declare port `Protocol`s for a plugin      | `packages/untaped-<x>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
 | Declare DTOs that cross app/infra boundary | `packages/untaped-<x>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |
 
 Cross-cutting subsystems with their own internals doc:
 
-- **Profiles** and **TLS** — see
-  [`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md).
+- **Configuration, profiles, plugin installs, and TLS** live in `src/untaped/`.
   User-facing reference: [`docs/configuration.md`](docs/configuration.md).
 - **Workspace internals** — see
   [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md).
@@ -190,25 +217,23 @@ Cross-cutting subsystems with their own internals doc:
   `infrastructure/__init__.py`, …) are exempt — they're plumbing,
   with nothing to describe.
 - **Re-export the public surface.**
-  - **Domain packages**: `<pkg>/__init__.py` re-exports `app:
-    typer.Typer` (root CLI dispatch) — that's all callers need from
-    the package face. Public adapters live in
-    `infrastructure/__init__.py` with explicit `__all__` so
-    composition roots can `from untaped_<x>.infrastructure import …`
-    without reaching into adapter modules.
-  - **`untaped-core`**: re-exports its full public API from
-    `__init__.py` with explicit `__all__`.
+  - **Plugin packages**: `<pkg>/__init__.py` re-exports `app:
+    typer.Typer`; `<pkg>/plugin.py` exposes the entry-point object that
+    registers the app and config sections. Public adapters live in
+    `infrastructure/__init__.py` with explicit `__all__`.
+  - **`untaped`**: re-exports its public plugin/core API from
+    `src/untaped/__init__.py` with explicit `__all__`.
 - **Per-command flags vs shared option types.** Per-command flags in
   `cli/commands.py` use call-site defaults
   (`field: Type = typer.Option(..., "--flag", help="…")`). Shared
-  option types reused across commands live in `untaped_core` as
+  option types reused across commands live in `untaped` as
   `Annotated[…, typer.Option(…)]` aliases (e.g. `FormatOption`,
   `ColumnsOption`).
 - **`errors.py` placement.** Domain packages with their own exception
   subclasses keep them in a top-level `errors.py`; `untaped-awx`
   additionally has `infrastructure/errors.py` for HTTP-status →
-  exception mapping. Domains that only raise `untaped_core`'s
-  exceptions (`untaped-config`, `untaped-github`, `untaped-profile`)
+  exception mapping. Domains that only raise `untaped`'s
+  exceptions (`untaped-github`, `untaped-profile`)
   don't need an `errors.py`.
 - **Lazy imports on CLI startup paths.** Heavy transitive imports
   (jinja2, yaml, application use cases, infrastructure clients) that
@@ -244,7 +269,7 @@ Cross-cutting subsystems with their own internals doc:
   `untaped workspace list -f raw | xargs -I{} untaped workspace path
   {}` get the right value. Reordering keys in a row source — hand-built
   dict or pydantic model — is a contract break. Details:
-  [`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md#--format-raw-default-column-contract).
+  this section's `--format raw` default-column contract.
 - **`--all` vs `--all-<axis>`.** Bare `--all` means "iterate every
   instance of the noun the command targets" (`workspace sync --all`,
   `workspace status --all`). When a command iterates a *different*
@@ -310,8 +335,8 @@ behaviours worth knowing:
 
 ## Decision Tree: Where does this code go?
 
-1. **Shared across two or more domains?** → `untaped-core/` (or a new
-   shared lib if it's a coherent subdomain).
+1. **Shared across two or more plugins?** → `src/untaped/` if it is hub
+   plumbing, or a separate shared lib if it is a coherent subdomain.
 2. **CLI-only (argument parsing, output formatting)?** → `cli/` inside
    the domain.
 3. **Pure business logic — entities, value objects, invariants?** →
@@ -321,13 +346,13 @@ behaviours worth knowing:
 5. **Orchestrates steps between domain and infrastructure?** →
    `application/`.
 
-## Recipe: Add a new domain package
+## Recipe: Add a new plugin package
 
 ```bash
 # 1. Create the package
 uv init --package --lib packages/untaped-<X>
 # 2. Add deps
-uv add --package untaped-<X> typer untaped-core
+uv add --package untaped-<X> typer untaped
 # 3. Build the 4 layers
 mkdir -p packages/untaped-<X>/src/untaped_<x>/{cli,application,domain,infrastructure}
 mkdir -p packages/untaped-<X>/tests/unit
@@ -338,18 +363,29 @@ Then:
   `application/<use_case>.py`, `cli/commands.py`. Add `@app.callback()`
   (single-command Typer apps collapse without it).
 - Re-export `app` from `cli/__init__.py` and the package `__init__.py`.
-- **Register in `src/untaped/main.py`:**
+- Add `plugin.py` and register the Typer app/config sections:
   ```python
-  from untaped_<x> import app as <x>_app
-  app.add_typer(<x>_app, name="<x>")
+  from untaped.plugins import PluginRegistry
+  from untaped_<x> import app
+
+  class XPlugin:
+      id = "<x>"
+      def register(self, registry: PluginRegistry) -> None:
+          registry.add_cli("<x>", app)
+
+  plugin = XPlugin()
   ```
-- `uv add untaped-<X>` to add the package as a runtime dep of the root.
-- Append `untaped_<x>` to `[tool.untaped].domains` in the root
+- Add the entry point to the package `pyproject.toml`:
+  ```toml
+  [project.entry-points."untaped.plugins"]
+  <x> = "untaped_<x>.plugin:plugin"
+  ```
+- Append `untaped_<x>` to `[tool.untaped].plugin_modules` in the root
   `pyproject.toml`, then run
-  `uv run python scripts/sync_domains.py --write`. The script
+  `uv run python scripts/sync_plugins.py --write`. The script
   regenerates the four `[tool.importlinter]` lists and the
   `[tool.mypy] packages` list from that single source of truth; the
-  `sync-domains-check` pre-commit hook flags drift on commit.
+  sync check pre-commit hook flags drift on commit.
 - Add the package to this file's Repository Map.
 - **Create `packages/untaped-<X>/AGENTS.md`** for domain-specific
   internals (resource framework, side-effect adapters, polling cadence,
@@ -358,7 +394,7 @@ Then:
 - Run `uv sync && uv run pytest && uv run untaped --help`. If you have
   the global tool installed, re-run `uv tool install --editable .`.
 
-## Recipe: Add a new command to an existing domain
+## Recipe: Add a new command to an existing plugin
 
 1. **Test first** in `packages/untaped-<X>/tests/unit/test_<feature>.py`.
 2. New external call → add a method to the existing
@@ -379,8 +415,11 @@ Then:
 
 ## Recipe: Add a new setting
 
-The schema lives in `untaped-core`; the recipe lives there too. See
-[`packages/untaped-core/AGENTS.md`](packages/untaped-core/AGENTS.md#recipe-add-a-new-setting).
+Core settings (`log_level`, `http`) live in `src/untaped/settings.py`.
+Plugin settings live with the plugin and are registered from
+`plugin.py` with `add_profile_settings` and/or `add_state_settings`.
+Credentials must be `SecretStr`; HTTP clients must still consume
+`resolve_verify(get_core_settings().http)`.
 
 ## Common Mistakes
 
@@ -391,10 +430,12 @@ The schema lives in `untaped-core`; the recipe lives there too. See
   adapters at the composition root (e.g. `cli/_context.py`) is fine; the
   ban is on bypassing application use cases for the actual logic.
 - **Adding a new dep with `pyproject.toml` edits.** Use `uv add --package`.
-- **Writing a helper inside a domain that another domain will need.**
-  Move it to `untaped-core` immediately (move ≠ copy).
-- **Forgetting to register a new domain in `src/untaped/main.py`.**
-  Test: does `uv run untaped --help` list it?
+- **Writing a helper inside a plugin that another plugin will need.**
+  Move it to `src/untaped/` only if it is hub plumbing; otherwise use a
+  separate shared lib (move ≠ copy).
+- **Forgetting the plugin entry point.** Test: does
+  `uv run untaped --help` list the plugin command after the package is
+  installed in the environment?
 - **Adding a single-command Typer app without `@app.callback()`.** Typer
   collapses single-command apps into a flat command, breaking subcommand
   dispatch from the root CLI.
@@ -416,8 +457,6 @@ The schema lives in `untaped-core`; the recipe lives there too. See
 ## See also
 
 - **Per-package internals**:
-  [`untaped-core`](packages/untaped-core/AGENTS.md),
-  [`untaped-config`](packages/untaped-config/AGENTS.md),
   [`untaped-profile`](packages/untaped-profile/AGENTS.md),
   [`untaped-workspace`](packages/untaped-workspace/AGENTS.md),
   [`untaped-awx`](packages/untaped-awx/AGENTS.md),

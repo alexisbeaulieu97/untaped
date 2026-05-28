@@ -199,7 +199,7 @@ regardless of mode — failures aren't silent even when ignored. The
 summary is suppressed in `--format json|yaml|raw` since each row's
 `returncode` already conveys the same information.
 
-`--parallel` (`-j`) shares `untaped_core.clamp_parallel` with `sync
+`--parallel` (`-j`) shares `untaped.clamp_parallel` with `sync
 --all` and `awx apply`: caps at `2 * os.cpu_count()` and emits a stderr
 `warning: --parallel N clamped to M (2 * os.cpu_count()).` when the
 user asks for more. Foreach silently coerces `<= 0` to serial (issue
@@ -236,7 +236,7 @@ dispatches via `ThreadPoolExecutor`, drains via `as_completed`, and
 re-sorts outcomes by `(workspace_input_order, repo)` so JSON/table
 consumers see stable rows regardless of completion timing. Below that
 threshold the plural runs a serial loop and stays silent (no header,
-no pool). The CLI clamps `-j` through `untaped_core.clamp_parallel`
+no pool). The CLI clamps `-j` through `untaped.clamp_parallel`
 (cap = `2 * os.cpu_count()`, shared with `foreach` and `awx apply`)
 and rejects `parallel > 1` outside `--all` with `typer.BadParameter` —
 single-workspace parallelism would have to push inside `SyncWorkspace`

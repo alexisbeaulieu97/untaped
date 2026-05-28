@@ -10,7 +10,8 @@ specific workflow.
 from __future__ import annotations
 
 import typer
-from untaped_core import (
+
+from untaped import (
     ColumnsOption,
     FormatOption,
     UntapedError,
@@ -19,7 +20,6 @@ from untaped_core import (
     read_identifiers,
     report_errors,
 )
-
 from untaped_awx.application import ListWorkflowNodes
 from untaped_awx.cli._context import open_context, scope_for_command
 from untaped_awx.domain import WorkflowNode, WorkflowNodeType

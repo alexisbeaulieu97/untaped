@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from untaped_core import ConfigError
-
+from untaped import ConfigError
 from untaped_profile.application.ports import ActiveProfileWriter
 
 

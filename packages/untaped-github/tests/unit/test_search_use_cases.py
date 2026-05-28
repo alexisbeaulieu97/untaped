@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
-from untaped_core import ConfigError
 from untaped_github.application import (
     GithubSearchService,
     GithubTeamService,
@@ -22,6 +21,8 @@ from untaped_github.domain import (
     RepoSearchFilters,
     UserSearchFilters,
 )
+
+from untaped import ConfigError
 
 
 class _StubSearch:

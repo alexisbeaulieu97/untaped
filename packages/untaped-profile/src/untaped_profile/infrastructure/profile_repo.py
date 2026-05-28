@@ -1,7 +1,7 @@
 """YAML-backed adapter that satisfies :class:`ProfileRepository`.
 
 This is the only profile module that knows about the on-disk layout — the
-use cases stay portable. Every method delegates to ``untaped_core``'s
+use cases stay portable. Every method delegates to ``untaped``'s
 profile-aware helpers in ``config_file`` and ``profile_resolver``.
 """
 
@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped_core import (
+from untaped import (
     ProfileSource,
     classify_active_profile,
     effective_active_profile_name,
     resolve_profiles,
 )
-from untaped_core.config_file import (
+from untaped.config_file import (
     delete_profile,
     get_active_profile_name,
     list_profile_names,
@@ -55,7 +55,7 @@ class ProfileFileRepository:
     def classify_active(self) -> tuple[str | None, ProfileSource]:
         """Return the effective active profile name + the layer that supplied it.
 
-        Delegates to :func:`untaped_core.classify_active_profile`, which
+        Delegates to :func:`untaped.classify_active_profile`, which
         is the single source of truth for the env/active/fallback
         precedence.
         """

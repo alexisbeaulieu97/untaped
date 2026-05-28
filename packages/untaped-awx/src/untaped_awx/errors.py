@@ -3,14 +3,14 @@
 Concrete mapping from HTTP status to exception type lives in
 ``infrastructure.errors`` (it consumes the response body for actionable
 messages). These types are surfaced to the CLI via
-:func:`untaped_core.report_errors`.
+:func:`untaped.report_errors`.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from untaped_core import UntapedError
+from untaped import UntapedError
 
 
 class AwxApiError(UntapedError):

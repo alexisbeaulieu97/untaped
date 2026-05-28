@@ -16,7 +16,7 @@ import re
 from collections.abc import Iterator
 from typing import Any
 
-from untaped_core import HttpClient, UntapedError
+from untaped import HttpClient, UntapedError
 
 _NEXT_LINK = re.compile(r'<(?P<url>[^>]+)>;\s*rel="next"')
 

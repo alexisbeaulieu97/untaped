@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from untaped_core import get_settings
+from untaped import get_config_section, get_core_settings
+from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
     from untaped_github.infrastructure import GithubClient
@@ -26,5 +27,5 @@ def open_client() -> GithubClient:
     """
     from untaped_github.infrastructure import GithubClient  # noqa: PLC0415
 
-    settings = get_settings()
-    return GithubClient(settings.github, http=settings.http)
+    settings = get_core_settings()
+    return GithubClient(get_config_section("github", GithubSettings), http=settings.http)

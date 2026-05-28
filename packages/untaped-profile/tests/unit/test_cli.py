@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 from typer.testing import CliRunner
-from untaped_core import get_settings
 from untaped_profile import app
+
+from untaped import get_settings
 
 
 @pytest.fixture(autouse=True)
