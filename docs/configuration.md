@@ -276,9 +276,12 @@ untaped --profile prod awx ping
 
 ## See also
 
-- [`workspace.md`](./workspace.md) — install guidance for the optional
-  workspace plugin.
-- [`awx.md`](./awx.md) — optional AWX plugin install guidance.
-- [`github.md`](./github.md) — optional GitHub plugin install guidance.
+- [`plugins.md`](./plugins.md) — install and sync optional plugin packages.
+- [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
+  — workspace plugin command reference.
+- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) —
+  AWX plugin command reference.
+- [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github) —
+  GitHub plugin command reference.
 - [AGENTS.md](../AGENTS.md) — the architecture and contribution rules
   (read this if you're extending `untaped`).
