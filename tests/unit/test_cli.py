@@ -756,6 +756,59 @@ def test_branch_set_apply_creates_tracking_branch_for_remote_target(
     assert tracking_remote == "origin"
 
 
+def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
+    tmp_path: Path,
+    upstream: Path,
+    isolated_cache: Path,
+) -> None:
+    _push_branch(upstream, tmp_path, branch="develop")
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target), "--branch", "develop"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    repo = target / "upstream"
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--single-branch",
+            "--branch",
+            "main",
+            str(upstream),
+            str(repo),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    result = runner.invoke(app, ["branch", "apply", "--name", "smoke", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "repo": "upstream",
+            "workspace": "smoke",
+            "target_branch": "develop",
+            "action": "checkout",
+            "detail": "from main",
+        }
+    ]
+    head = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracking_remote = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "branch.develop.remote"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head == "develop"
+    assert tracking_remote == "origin"
+
+
 def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:

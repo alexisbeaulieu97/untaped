@@ -87,14 +87,20 @@ class GitRunner:
     # update -------------------------------------------------------------
 
     def fetch(self, repo_path: Path) -> None:
-        self._run(["fetch", "--all", "--prune"], cwd=repo_path, timeout=self._slow_timeout)
+        self._run(
+            ["fetch", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*"],
+            cwd=repo_path,
+            timeout=self._slow_timeout,
+        )
 
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
         self._run(["merge", "--ff-only", f"origin/{branch}"], cwd=repo_path)
 
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
         if not self._local_branch_exists(repo_path, branch):
-            self._run(["checkout", "--track", "-b", branch, f"origin/{branch}"], cwd=repo_path)
+            self._run(["checkout", "-b", branch, f"refs/remotes/origin/{branch}"], cwd=repo_path)
+            self._run(["config", f"branch.{branch}.remote", "origin"], cwd=repo_path)
+            self._run(["config", f"branch.{branch}.merge", f"refs/heads/{branch}"], cwd=repo_path)
             return
         self._run(["checkout", branch], cwd=repo_path)
 

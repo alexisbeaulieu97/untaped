@@ -167,6 +167,59 @@ def test_checkout_branch_checks_out_remote_branch_after_fetch(
     assert tracking_merge == "refs/heads/develop"
 
 
+def test_fetch_populates_remote_branch_for_single_branch_clone(
+    tmp_path: Path,
+    upstream: Path,
+) -> None:
+    runner = GitRunner()
+    seed = tmp_path / "_seed_single_branch"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "checkout", "-b", "develop"], check=True, capture_output=True
+    )
+    (seed / "develop.txt").write_text("develop")
+    subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", "develop"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(seed), "push", "origin", "develop"],
+        check=True,
+        capture_output=True,
+    )
+
+    workspace_repo = tmp_path / "ws" / "svc-a"
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--single-branch",
+            "--branch",
+            "main",
+            str(upstream),
+            str(workspace_repo),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    runner.fetch(workspace_repo)
+    runner.checkout_branch(workspace_repo, branch="develop")
+
+    head = subprocess.run(
+        ["git", "-C", str(workspace_repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head == "develop"
+
+
 def test_checkout_branch_checks_out_existing_local_branch(
     tmp_path: Path,
     upstream: Path,
