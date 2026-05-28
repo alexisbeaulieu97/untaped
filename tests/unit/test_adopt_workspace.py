@@ -11,11 +11,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from conftest import StubRegistry
 from untaped_workspace.application import AdoptWorkspace, WorkspaceBootstrapper
 from untaped_workspace.domain import DiscoveredRepo
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
+
+from conftest import StubRegistry
 
 _FS = LocalFilesystem()
 

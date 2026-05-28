@@ -3,10 +3,11 @@
 from pathlib import Path
 
 import pytest
-from conftest import StubRegistry
 from untaped_workspace.application import EditWorkspace, ShellInit, WorkspacePath
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError, WorkspaceError
+
+from conftest import StubRegistry
 
 
 def test_workspace_path_returns_registered_path(tmp_path: Path) -> None:

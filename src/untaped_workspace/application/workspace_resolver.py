@@ -16,8 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped_core import ConfigError
-
+from untaped import ConfigError
 from untaped_workspace.application.ports import ManifestReader, RegistryReader
 from untaped_workspace.domain import Workspace
 

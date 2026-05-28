@@ -11,9 +11,10 @@ bootstrapper).
 
 from pathlib import Path
 
-from conftest import StubRegistry
 from untaped_workspace.application import ImportWorkspace, WorkspaceBootstrapper
 from untaped_workspace.infrastructure import ManifestRepository
+
+from conftest import StubRegistry
 
 
 def _import(repo: ManifestRepository, reg: StubRegistry) -> ImportWorkspace:

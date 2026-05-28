@@ -7,8 +7,8 @@ from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
-from untaped_core import first_validation_error
 
+from untaped import first_validation_error
 from untaped_workspace.domain import ManifestSource, WorkspaceManifest
 from untaped_workspace.errors import ManifestError
 
