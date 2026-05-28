@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from untaped.plugins import PluginRegistry
+
 from untaped_workspace import app
 from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 

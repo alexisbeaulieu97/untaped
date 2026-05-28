@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+
 from untaped_workspace.domain import (
     ManifestDefaults,
     Repo,

@@ -9,11 +9,11 @@ end-to-end tests live next door in ``test_workspace_resolver.py``.
 from pathlib import Path
 
 import pytest
-from untaped_workspace.application.workspace_resolver import WorkspaceResolver
-from untaped_workspace.domain import Workspace, WorkspaceManifest
-
 from conftest import StubManifests, StubRegistry, empty_manifest
 from untaped import ConfigError
+
+from untaped_workspace.application.workspace_resolver import WorkspaceResolver
+from untaped_workspace.domain import Workspace, WorkspaceManifest
 
 
 def _resolver(

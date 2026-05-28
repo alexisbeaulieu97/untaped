@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from conftest import StubGit
+
 from untaped_workspace.application import WorkspaceStatus
 from untaped_workspace.domain import (
     Repo,
@@ -8,8 +10,6 @@ from untaped_workspace.domain import (
     WorkspaceManifest,
 )
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
-
-from conftest import StubGit
 
 _FS = LocalFilesystem()
 

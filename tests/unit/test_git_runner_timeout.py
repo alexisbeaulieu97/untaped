@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
@@ -164,9 +165,9 @@ def test_timeout_message_carries_no_returncode() -> None:
 def test_sync_timeout_zero_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`--timeout 0` and negative values are rejected up front."""
     from typer.testing import CliRunner
-    from untaped_workspace import app
-
     from untaped.settings import get_settings
+
+    from untaped_workspace import app
 
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
     get_settings.cache_clear()
@@ -184,9 +185,9 @@ def test_sync_timeout_overrides_both_buckets(
 ) -> None:
     """`--timeout N` caps every git invocation at N (fast and slow bucket alike)."""
     from typer.testing import CliRunner
-    from untaped_workspace import app
-
     from untaped.settings import get_settings
+
+    from untaped_workspace import app
 
     # Init an empty workspace so `sync` has a target with no repos to walk —
     # the test only verifies the GitRunner construction, not real git work.

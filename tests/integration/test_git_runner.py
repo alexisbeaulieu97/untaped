@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure import GitRunner
 

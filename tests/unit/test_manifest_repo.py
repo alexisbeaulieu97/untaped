@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from untaped_workspace.domain import (
     ManifestDefaults,
     Repo,

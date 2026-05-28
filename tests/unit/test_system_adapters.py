@@ -10,6 +10,7 @@ runner's OS.
 from __future__ import annotations
 
 import pytest
+
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure.system_adapters import resolve_editor_argv
 

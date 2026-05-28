@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 
 import typer
-
 from untaped import (
     ColumnsOption,
     FormatOption,
@@ -22,6 +21,7 @@ from untaped import (
     report_errors,
     resolve_each,
 )
+
 from untaped_workspace.application import (
     AddRepo,
     AdoptWorkspace,

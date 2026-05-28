@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
-from untaped_workspace import app
-
 from untaped.settings import get_settings
+
+from untaped_workspace import app
 
 
 @pytest.fixture(autouse=True)

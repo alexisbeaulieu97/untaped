@@ -1,10 +1,67 @@
-# AGENTS.md — `untaped-workspace`
+# AGENTS.md - `untaped-workspace`
 
-Internals of the workspace bounded context for AI agents and contributors.
-For user-facing manifest shape, registry, and command reference, see
-[`docs/workspace.md`](../../docs/workspace.md). For workspace-wide rules
-(4-layer DDD, Hard Rules, recipes), see the [root
-`AGENTS.md`](../../AGENTS.md).
+Single source of truth for this standalone plugin repo. If you change
+architecture, command behavior, settings behavior, or the development
+workflow, update this file in the same commit.
+
+## Mission
+
+`untaped-workspace` is an `untaped` plugin. It owns the `untaped workspace`
+command group for local git workspaces: per-workspace `untaped.yml`
+manifests, central registry state, git sync/status operations, and shell
+helpers. `untaped` core owns the binary, plugin discovery, config/profile
+resolution, output helpers, stdin helpers, HTTP/TLS primitives, and shared
+errors.
+
+## Hard Rules
+
+1. **Keep `AGENTS.md` up to date.** Architecture changes and new command
+   patterns must be documented here.
+2. **Prefer `uv` commands over manual dependency edits.** Use `uv add` and
+   `uv add --group dev`; hand-edit tool config only.
+3. **Expose the plugin through the `untaped.plugins` entry point.**
+   `workspace = "untaped_workspace.plugin:plugin"` is the public integration
+   point.
+4. **Use the 4-layer DDD layout.** `cli -> application -> domain`, with
+   `infrastructure -> domain`; `application` and `infrastructure` must not
+   import each other at runtime.
+5. **Declare ports in `application/ports.py`.** Use cases depend on the
+   narrowest `Protocol`; concrete adapters satisfy ports structurally.
+6. **Use absolute imports.** `from untaped_workspace...` and
+   `from untaped...`, never relative imports.
+7. **Every source module has a module docstring.** Re-export `__init__.py`
+   files are exempt.
+8. **Every Typer app and every command with required args sets
+   `no_args_is_help=True`.**
+9. **stdout is data only.** Prompts, progress, and status messages go to
+   stderr via `typer.echo(..., err=True)`.
+10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
+    registry rows start with `name`; sync/status/foreach rows start with
+    `workspace`.
+11. **Plugin code reads typed settings through `get_config_section`.** Use
+    `get_config_section("workspace", WorkspaceSettings)`, not a global
+    aggregate `settings.workspace` attribute.
+12. **All git subprocess calls live behind infrastructure ports.** New git
+    operations go in `GitRunner`; application code depends on Protocols.
+13. **Finish with verification.** Run `uv run ruff check --fix`,
+    `uv run ruff format`, `uv run mypy`, and `uv run pytest`.
+
+## Architecture
+
+```text
+src/untaped_workspace/
+├── __init__.py           # re-exports app
+├── plugin.py             # entry-point plugin object
+├── settings.py           # plugin-owned profile settings and app state
+├── cli/                  # Typer commands; composition root
+├── application/          # use cases and ports
+├── domain/               # pure models and value objects
+└── infrastructure/       # git, manifest, registry, filesystem adapters
+```
+
+The plugin object registers `WorkspaceSettings` as the `workspace` profile
+settings section, `WorkspaceState` as the top-level `workspace` app-state
+section, and mounts the Typer app as the root `workspace` command.
 
 ## Manifest + registry split
 
@@ -107,8 +164,8 @@ translate to `skip` rows without further plumbing.
 ## Ports module
 
 Every cross-use-case `Protocol` and Callable alias lives in
-`application/ports.py`. Per root Hard Rule #10, use cases declare the
-narrowest port they need; this package's concrete chains are
+`application/ports.py`. Use cases declare the narrowest port they need;
+this package's concrete chains are
 `ManifestReader ⊂ ManifestRepository`, `RegistryReader ⊂
 WorkspaceRegistry`, and `StatusInspector ⊂ GitInspector ⊂
 GitOperations`. The concrete `ManifestRepository` /
@@ -395,18 +452,47 @@ the real adapter would force a real workspace on disk), and the
 `WorkspaceManifest` for tests that only need an empty file on disk)
 live in `tests/conftest.py`. Sibling unit tests import them via
 `from conftest import StubGit, StubRegistry, StubFilesystem,
-StubManifests, empty_manifest` — the root
-`pyproject.toml` adds this package's `tests/` dir to
-`[tool.pytest.ini_options] pythonpath` so the conftest module is
-runtime-importable (pytest's `--import-mode=importlib` otherwise
-hides it). See the conftest docstring for the global-namespace
-caveat. New shared scaffolding for this package belongs in the
-same module; new shared scaffolding for *other* packages must pick
-a unique module name (e.g. `_<pkg>_stubs.py`) — `conftest` is
-claimed.
+StubManifests, empty_manifest` — `pyproject.toml` adds this repo's
+`tests/` dir to `[tool.pytest.ini_options] pythonpath` so the conftest
+module is runtime-importable (pytest's `--import-mode=importlib` otherwise
+hides it). New shared scaffolding for this package belongs in the same
+module.
 
-## See also
+## Development Workflow
 
-- [Root AGENTS.md](../../AGENTS.md) — 4-Layer DDD, Hard Rules, recipes
-- [`docs/workspace.md`](../../docs/workspace.md) — user-facing manifest,
-  registry, command reference, `uwcd` shell helper
+```bash
+uv sync
+uv run pre-commit install
+uv run pytest
+uv run mypy
+uv run ruff check --fix
+uv run ruff format
+uv run untaped workspace --help
+```
+
+Use `pytest --no-cov` for tight local loops. Full `pytest` enforces the
+coverage gate.
+
+## Recipe: Add A Workspace Command
+
+1. Write a use-case test with a stub satisfying the narrowest port.
+2. Add or narrow a port in `application/ports.py` if the command needs new
+   service behavior.
+3. Add or adjust a domain model/value object only when the behavior has pure
+   workspace semantics.
+4. Add infrastructure adapter methods behind existing ports for git,
+   filesystem, manifest, or registry side effects.
+5. Wire the Typer command in `cli/commands.py`; keep stdout data-only and
+   expose `--format`/`--columns` for data output.
+6. If the command emits rows, update `tests/unit/test_format_raw_first_key.py`.
+7. Run `uv run untaped workspace <command> --help` plus the full verification
+   commands above.
+
+## See Also
+
+- [`untaped` core](https://github.com/alexisbeaulieu97/untaped) - plugin
+  runtime, settings registry, config-file helpers, output helpers.
+- [`untaped` configuration docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md)
+  - user-facing profile, config, secrets, and TLS behavior.
+- [`docs/workspace.md`](docs/workspace.md) - user-facing manifest,
+  registry, command reference, `uwcd` shell helper.

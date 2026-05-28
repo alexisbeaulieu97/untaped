@@ -22,6 +22,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import StubFilesystem
+
 from untaped_workspace.application import Foreach, WorkspaceStatus
 from untaped_workspace.domain import (
     Repo,
@@ -30,8 +32,6 @@ from untaped_workspace.domain import (
     WorkspaceManifest,
 )
 from untaped_workspace.infrastructure import LocalFilesystem
-
-from conftest import StubFilesystem
 
 # ── LocalFilesystem pass-through ──────────────────────────────────────────
 

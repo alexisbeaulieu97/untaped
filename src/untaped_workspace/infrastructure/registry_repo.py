@@ -16,6 +16,7 @@ from untaped.config_file import (
     set_at_path,
     unset_at_path,
 )
+
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError
 

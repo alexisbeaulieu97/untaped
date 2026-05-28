@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+
 from untaped_workspace.domain import (
     DuplicateRepoName,
     DuplicateRepoUrl,
