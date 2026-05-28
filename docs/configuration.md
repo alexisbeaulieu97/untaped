@@ -45,7 +45,7 @@ profiles:
       # api_prefix defaults to /api/controller/v2/ for AAP. Upstream AWX
       # users should override it to /api/v2/ here.
     github:
-      token: ghp_xxx
+      token: ghp_xxx                 # optional GitHub plugin
 
   prod:                            # overlays default; only declares what differs
     awx:
@@ -100,6 +100,7 @@ plugin. Install both `untaped` and the profile plugin from git with:
 ```bash
 uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
   --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --no-sources \
   --force
 ```
 
@@ -153,11 +154,12 @@ untaped config unset <key>                   # remove from the active profile
 untaped config unset <key> --profile <name>
 ```
 
-Keys are dotted paths into the schema, e.g. `awx.token`,
-`awx.base_url`, `awx.default_organization`, `http.ca_bundle`,
-`http.verify_ssl`, `github.token`. Values are parsed as YAML scalars,
-so `untaped config set http.verify_ssl false` writes a real `false`,
-not the string `"false"`.
+Keys are dotted paths into the active schema, e.g. `awx.token`,
+`awx.base_url`, `awx.default_organization`, `http.ca_bundle`, and
+`http.verify_ssl`. Installed plugins add their own sections, such as
+`github.token` when the optional GitHub plugin is installed. Values are
+parsed as YAML scalars, so `untaped config set http.verify_ssl false`
+writes a real `false`, not the string `"false"`.
 
 Writing to a profile that doesn't exist is rejected — create it first
 with `untaped profile create <name>` if the profile plugin is installed,
@@ -196,7 +198,7 @@ untaped config set http.verify_ssl false       # last-resort escape hatch
 
 `http.verify_ssl: false` disables certificate validation entirely. Only
 use it on a network you trust completely: traffic is open to MITM, and
-any tokens you've configured (AWX, GitHub) become visible to anyone
+tokens configured through installed plugins become visible to anyone
 on-path. Prefer `http.ca_bundle` whenever the certificate is the real
 problem.
 
@@ -209,7 +211,7 @@ named after its dotted path:
 awx.token                  → UNTAPED_AWX__TOKEN
 awx.base_url               → UNTAPED_AWX__BASE_URL
 http.verify_ssl            → UNTAPED_HTTP__VERIFY_SSL
-github.token               → UNTAPED_GITHUB__TOKEN
+github.token               → UNTAPED_GITHUB__TOKEN  # optional GitHub plugin
 ```
 
 Note the **double underscore** between the section and the field, and
@@ -227,7 +229,7 @@ example require the optional profile plugin.
 # Start with a shared base.
 untaped config set awx.base_url https://aap.example.com
 untaped config set awx.token    <dev-token>
-untaped config set github.token ghp_xxx
+untaped config set github.token ghp_xxx  # optional GitHub plugin
 
 # Branch a prod profile from default and override what differs.
 # `prod` must exist before any --profile prod write; create it first.
@@ -250,6 +252,6 @@ untaped --profile prod awx ping
   the manifest / registry split.
 - [`awx.md`](./awx.md) — `untaped awx` commands and the resource
   framework.
-- [`github.md`](./github.md) — the (small) GitHub domain.
+- [`github.md`](./github.md) — optional GitHub plugin install guidance.
 - [AGENTS.md](../AGENTS.md) — the architecture and contribution rules
   (read this if you're extending `untaped`).

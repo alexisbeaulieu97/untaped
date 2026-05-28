@@ -25,9 +25,6 @@ def test_walks_nested_models() -> None:
     # AWX plugin settings
     assert "awx.base_url" in keys
     assert "awx.token" in keys
-    # GitHub plugin settings
-    assert "github.base_url" in keys
-    assert "github.token" in keys
 
 
 def test_skips_collection_fields() -> None:
@@ -63,10 +60,6 @@ def test_defaults_are_captured() -> None:
     assert verify is not None
     assert verify.default is True
 
-    github_base = find_descriptor(descriptors, "github.base_url")
-    assert github_base is not None
-    assert github_base.default == "https://api.github.com"
-
 
 def test_optional_unwrapped() -> None:
     descriptors = walk_settings(get_settings_model())
@@ -83,10 +76,10 @@ def test_find_descriptor_returns_none_for_unknown() -> None:
 def test_redact_secrets_replaces_secret_leaves() -> None:
     data: dict[str, Any] = {
         "awx": {"token": "xoxb-secret"},
-        "github": {"token": "ghp_secret"},
+        "external": {"token": "ghp_secret"},
     }
-    out = redact_secrets(data, [("awx", "token"), ("github", "token")])
-    assert out == {"awx": {"token": "***"}, "github": {"token": "***"}}
+    out = redact_secrets(data, [("awx", "token"), ("external", "token")])
+    assert out == {"awx": {"token": "***"}, "external": {"token": "***"}}
     # Source dict is not mutated.
     assert data["awx"]["token"] == "xoxb-secret"
 
@@ -101,7 +94,7 @@ def test_redact_secrets_skips_missing_paths() -> None:
     # Profile-shaped data may omit any subset of the schema; missing
     # paths are silently skipped rather than raising.
     data: dict[str, Any] = {"awx": {}}
-    out = redact_secrets(data, [("awx", "token"), ("github", "token")])
+    out = redact_secrets(data, [("awx", "token"), ("external", "token")])
     assert out == {"awx": {}}
 
 
@@ -111,5 +104,4 @@ def test_secret_field_paths_matches_known_settings_secrets() -> None:
     # setting") must make this test fail until the new path lands here.
     paths = secret_field_paths(get_settings_model())
     assert ("awx", "token") in paths
-    assert ("github", "token") in paths
-    assert len(paths) == 2  # Update when adding a new SecretStr to Settings.
+    assert len(paths) == 1  # Update when adding a new SecretStr to Settings.

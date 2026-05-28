@@ -36,8 +36,7 @@ untaped/
 ├── tests/                        # tests for core and shared contracts
 └── packages/
     ├── untaped-workspace/        # local git workspaces; AGENTS.md
-    ├── untaped-awx/              # AWX/AAP API; AGENTS.md
-    └── untaped-github/           # GitHub authenticated user
+    └── untaped-awx/              # AWX/AAP API; AGENTS.md
 ```
 
 | Package             | Type | Owns                                                                  | Internals doc |
@@ -45,13 +44,14 @@ untaped/
 | `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, profile resolution, output/stdin/http/errors. | this file |
 | `untaped-workspace` | plugin | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
 | `untaped-awx`       | plugin | AWX/AAP bounded context (jobs, templates, inventories, …).          | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
-| `untaped-github`    | plugin | GitHub bounded context — authenticated user and search today.       | [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md) |
 
 Extracted plugins live in their own repositories and depend on the public
-`untaped` plugin API. Current extracted plugin:
+`untaped` plugin API. Current extracted plugins:
 
 - [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
   — the `profile` command for managing the profile inventory.
+- [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
+  — the `github` command for authenticated user and search workflows.
 
 ## Hard Rules
 
@@ -210,9 +210,9 @@ Cross-cutting subsystems with their own internals doc:
 - **AWX resource framework, apply pipeline, jobs/track, test runner** —
   see [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md).
   User-facing reference: [`docs/awx.md`](docs/awx.md).
-- **GitHub authenticated user** — see
-  [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md).
-  User-facing reference: [`docs/github.md`](docs/github.md).
+- **GitHub authenticated user and search** live in the extracted
+  [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
+  plugin. User-facing install guidance: [`docs/github.md`](docs/github.md).
 
 ## Conventions
 
@@ -237,8 +237,8 @@ Cross-cutting subsystems with their own internals doc:
 - **`errors.py` placement.** Domain packages with their own exception
   subclasses keep them in a top-level `errors.py`; `untaped-awx`
   additionally has `infrastructure/errors.py` for HTTP-status →
-  exception mapping. Domains that only raise `untaped`'s
-  exceptions (`untaped-github`) don't need an `errors.py`.
+  exception mapping. Plugins that only raise `untaped` exceptions don't
+  need an `errors.py`.
 - **Lazy imports on CLI startup paths.** Heavy transitive imports
   (jinja2, yaml, application use cases, infrastructure clients) that
   would pay on every `untaped --help` are deferred into subcommand
@@ -472,9 +472,9 @@ Credentials must be `SecretStr`; HTTP clients must still consume
 
 - **Per-package internals**:
   [`untaped-workspace`](packages/untaped-workspace/AGENTS.md),
-  [`untaped-awx`](packages/untaped-awx/AGENTS.md),
-  [`untaped-github`](packages/untaped-github/AGENTS.md)
+  [`untaped-awx`](packages/untaped-awx/AGENTS.md)
 - **Extracted plugins**:
-  [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
+  [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
+  [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
 - **User-facing docs**: [`docs/`](docs/README.md) — configuration,
   workspaces, AWX, GitHub

@@ -320,6 +320,11 @@ def _uv_tool_install_command(tool: PluginToolSpec, packages: list[PluginInstallS
     cmd = ["uv", "tool", "install", tool.spec]
     if tool.editable:
         cmd.append("--editable")
+    # Plugin repos may carry `tool.uv.sources` for their own development.
+    # The installed tool env should resolve only from the explicit tool/plugin
+    # specs recorded in untaped state, otherwise editable core installs can
+    # conflict with a plugin's dev-only source pin back to core.
+    cmd.append("--no-sources")
     for package in packages:
         cmd.extend(["--with-editable" if package.editable else "--with", package.spec])
     # `uv tool install` refuses an already installed tool without --force; sync

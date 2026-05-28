@@ -48,7 +48,9 @@ def test_plugins_add_sync_invokes_uv_tool_install(
     result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
 
     assert result.exit_code == 0, result.output
-    assert calls == [["uv", "tool", "install", "untaped", "--with", "untaped-awx", "--force"]]
+    assert calls == [
+        ["uv", "tool", "install", "untaped", "--no-sources", "--with", "untaped-awx", "--force"]
+    ]
 
 
 def test_plugins_add_editable_maps_to_uv_with_editable(
@@ -66,7 +68,16 @@ def test_plugins_add_editable_maps_to_uv_with_editable(
 
     assert result.exit_code == 0, result.output
     assert calls == [
-        ["uv", "tool", "install", "untaped", "--with-editable", "../untaped-awx", "--force"]
+        [
+            "uv",
+            "tool",
+            "install",
+            "untaped",
+            "--no-sources",
+            "--with-editable",
+            "../untaped-awx",
+            "--force",
+        ]
     ]
 
 

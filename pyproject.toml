@@ -28,7 +28,6 @@ build-backend = "uv_build"
 [tool.uv.workspace]
 members = [
     "packages/untaped-awx",
-    "packages/untaped-github",
     "packages/untaped-workspace",
 ]
 
@@ -36,7 +35,6 @@ members = [
 untaped = { workspace = true }
 untaped-workspace = { workspace = true }
 untaped-awx = { workspace = true }
-untaped-github = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -55,7 +53,6 @@ dev = [
 # `scripts/sync_plugins.py` regenerates Import Linter and mypy lists from this.
 plugin_modules = [
     "untaped_awx",
-    "untaped_github",
     "untaped_workspace",
 ]
 
@@ -63,7 +60,6 @@ plugin_modules = [
 root_packages = [
     "untaped",
     "untaped_awx",
-    "untaped_github",
     "untaped_workspace",
 ]
 # TYPE_CHECKING imports don't create runtime edges; the layered DDD rule
@@ -82,7 +78,6 @@ name = "Sibling plugins are mutually independent"
 type = "independence"
 modules = [
     "untaped_awx",
-    "untaped_github",
     "untaped_workspace",
 ]
 
@@ -91,7 +86,6 @@ name = "Per-plugin layers (cli > application | infrastructure > domain)"
 type = "layers"
 containers = [
     "untaped_awx",
-    "untaped_github",
     "untaped_workspace",
 ]
 # `application | infrastructure` makes the two siblings of the same
@@ -110,7 +104,6 @@ type = "forbidden"
 source_modules = ["untaped"]
 forbidden_modules = [
     "untaped_awx",
-    "untaped_github",
     "untaped_workspace",
 ]
 
@@ -179,7 +172,6 @@ plugins = ["pydantic.mypy"]
 packages = [
     "untaped",
     "untaped_awx",
-    "untaped_github",
     "untaped_workspace",
 ]
 

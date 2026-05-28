@@ -23,7 +23,7 @@ Three parametrised tests pin existing entries:
 Two discovery tests close the "new ``BaseModel`` added without a
 catalogue entry" gap by walking every module registered in
 :data:`_NOT_ROW_SOURCES_BY_MODULE` (today: the home modules of every
-catalogued row source — workspace state, github models, AWX job /
+catalogued row source — workspace state, AWX job /
 workflow node / test suite); a fresh ``BaseModel`` in any of those
 must be triaged into ``PYDANTIC_ROW_SOURCES`` or the per-module
 exempt set. ``test_every_catalogued_pydantic_module_is_discovery_registered``
@@ -52,13 +52,6 @@ from untaped_awx.cli.test_commands import _test_case_row, _test_suite_row
 from untaped_awx.domain import Job, JobEvent, WorkflowNode
 from untaped_awx.domain.test_suite import Case, CaseResult, TestSuite
 from untaped_awx.infrastructure.specs import ALL_SPECS
-from untaped_github.domain.models import (
-    CodeResult,
-    GithubUser,
-    IssueResult,
-    RepoResult,
-    UserResult,
-)
 from untaped_workspace.cli.commands import _workspace_row
 from untaped_workspace.domain import Workspace
 from untaped_workspace.domain.state import ForeachOutcome, StatusEntry, SyncOutcome
@@ -79,11 +72,6 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
     JobEvent: "counter",
     WorkflowNode: "id",
     CaseResult: "suite",
-    GithubUser: "login",
-    RepoResult: "id",
-    IssueResult: "id",
-    UserResult: "id",
-    CodeResult: "name",
 }
 
 
@@ -148,7 +136,6 @@ _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
     # re-declared flat on ``StatusEntry`` rather than nested, so the model
     # itself never reaches ``format_output``.
     "untaped_workspace.domain.state": frozenset({"RepoStatus"}),
-    "untaped_github.domain.models": frozenset(),
     "untaped_awx.domain.job": frozenset(),
     "untaped_awx.domain.workflow_node": frozenset(),
     # ``CaseResult`` is the row source (``awx test run`` emits
