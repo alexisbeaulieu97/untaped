@@ -1,9 +1,10 @@
 # AGENTS.md — `untaped`
 
-Single source of truth for how `untaped` is built. AI agents and humans
-both read this file; per-package internals live in
-`packages/<x>/AGENTS.md`. If you change architecture, update the relevant
-file in the same commit.
+Single source of truth for how `untaped` core is built. AI agents and
+humans both read this file; in-repo plugin internals live in
+`packages/<x>/AGENTS.md`, and extracted plugins own their own root
+`AGENTS.md`. If you change architecture, update the relevant file in the
+same commit.
 
 ## Mission
 
@@ -34,7 +35,6 @@ untaped/
 ├── src/untaped/                  # core CLI, config, plugin plumbing, shared helpers
 ├── tests/                        # tests for core and shared contracts
 └── packages/
-    ├── untaped-profile/          # `profile` meta-domain
     ├── untaped-workspace/        # local git workspaces; AGENTS.md
     ├── untaped-awx/              # AWX/AAP API; AGENTS.md
     └── untaped-github/           # GitHub authenticated user
@@ -43,10 +43,15 @@ untaped/
 | Package             | Type | Owns                                                                  | Internals doc |
 | ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
 | `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, profile resolution, output/stdin/http/errors. | this file |
-| `untaped-profile`   | plugin | The `profile` command (manages the profile inventory).              | [`packages/untaped-profile/AGENTS.md`](packages/untaped-profile/AGENTS.md) |
 | `untaped-workspace` | plugin | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
 | `untaped-awx`       | plugin | AWX/AAP bounded context (jobs, templates, inventories, …).          | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
 | `untaped-github`    | plugin | GitHub bounded context — authenticated user and search today.       | [`packages/untaped-github/AGENTS.md`](packages/untaped-github/AGENTS.md) |
+
+Extracted plugins live in their own repositories and depend on the public
+`untaped` plugin API. Current extracted plugin:
+
+- [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
+  — the `profile` command for managing the profile inventory.
 
 ## Hard Rules
 
@@ -233,8 +238,7 @@ Cross-cutting subsystems with their own internals doc:
   subclasses keep them in a top-level `errors.py`; `untaped-awx`
   additionally has `infrastructure/errors.py` for HTTP-status →
   exception mapping. Domains that only raise `untaped`'s
-  exceptions (`untaped-github`, `untaped-profile`)
-  don't need an `errors.py`.
+  exceptions (`untaped-github`) don't need an `errors.py`.
 - **Lazy imports on CLI startup paths.** Heavy transitive imports
   (jinja2, yaml, application use cases, infrastructure clients) that
   would pay on every `untaped --help` are deferred into subcommand
@@ -302,8 +306,8 @@ uv run untaped --help                           # run the CLI from source
 uv tool install --editable .                    # install the `untaped` binary globally
 ```
 
-User-facing config / profile commands are documented in
-[`docs/configuration.md`](docs/configuration.md).
+User-facing config, profile resolution, and the optional profile plugin
+workflow are documented in [`docs/configuration.md`](docs/configuration.md).
 
 **Coverage measurement.** `--cov` is in `addopts`, so every `pytest`
 invocation measures coverage by default (gate: 80%). Two non-obvious
@@ -317,13 +321,15 @@ behaviours worth knowing:
   and shaves a few hundred milliseconds per run.
 
 **TDD loop:**
-1. Write the failing test (in `packages/untaped-<x>/tests/unit/`).
+1. Write the failing test (`tests/unit/` for core, or
+   `packages/untaped-<x>/tests/unit/` for an in-repo plugin).
 2. Run it; confirm it fails for the right reason.
 3. Implement the smallest change that makes it pass.
 4. Refactor with the test still green.
 
 **Test layout:**
-- Tests live in `packages/<pkg>/tests/unit/` by default. Use
+- Core tests live in `tests/unit/`. In-repo plugin tests live in
+  `packages/<pkg>/tests/unit/` by default. Use
   `tests/integration/` when the test exercises a real subprocess or
   fake-server fixture (`untaped-awx`'s `FakeAap`, `untaped-workspace`'s
   shell-driven git tests). Pure use-case tests with stubs stay in
@@ -333,13 +339,13 @@ behaviours worth knowing:
 - Mock httpx with `respx` (already a dev dep).
 - For CLI tests, use `typer.testing.CliRunner`.
 
-**Bridge-step plugin tests:** while plugins still live under `packages/`,
-root tests may dynamically import local plugin packages only to preserve
-legacy coverage and verify in-monorepo entry-point registration. Core
-plugin-loading behavior must be tested with fake plugins, and production
-`src/untaped/` must stay free of static plugin imports. Delete bridge
-fixtures such as the root `conftest.py` settings shim before extracting
-plugins to separate repos.
+**Bridge-step plugin tests:** while some plugins still live under
+`packages/`, root tests may dynamically import local plugin packages only
+to preserve legacy coverage and verify in-monorepo entry-point
+registration. Core plugin-loading behavior must be tested with fake
+plugins, and production `src/untaped/` must stay free of static plugin
+imports. Before extracting another plugin, move its plugin-specific tests
+and AGENTS guidance into the target repository.
 
 ## Decision Tree: Where does this code go?
 
@@ -354,7 +360,7 @@ plugins to separate repos.
 5. **Orchestrates steps between domain and infrastructure?** →
    `application/`.
 
-## Recipe: Add a new plugin package
+## Recipe: Add a new in-repo plugin package
 
 ```bash
 # 1. Create the package
@@ -465,9 +471,10 @@ Credentials must be `SecretStr`; HTTP clients must still consume
 ## See also
 
 - **Per-package internals**:
-  [`untaped-profile`](packages/untaped-profile/AGENTS.md),
   [`untaped-workspace`](packages/untaped-workspace/AGENTS.md),
   [`untaped-awx`](packages/untaped-awx/AGENTS.md),
   [`untaped-github`](packages/untaped-github/AGENTS.md)
+- **Extracted plugins**:
+  [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
 - **User-facing docs**: [`docs/`](docs/README.md) — configuration,
   workspaces, AWX, GitHub

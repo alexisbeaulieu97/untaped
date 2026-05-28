@@ -1,7 +1,7 @@
 """Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
 
 The resolver is layer-agnostic: callers (tests, ``ProfilesSettingsSource``,
-``untaped config list``, ``untaped profile show``) hand it the parsed
+``untaped config list``, profile plugins) hand it the parsed
 ``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when
 ``UNTAPED_PROFILE`` or the root ``--profile`` flag is used). It returns:
 
@@ -41,9 +41,8 @@ def classify_active_profile(
     Same precedence as :func:`effective_active_profile_name` (env var >
     ``data['active']`` > unset), but also tells the caller whether the
     answer came from the env var, the persisted ``active:`` key, or
-    neither (fallback). Powers ``untaped profile current``'s
-    ``(source: …)`` breadcrumb and any other code path that needs to
-    classify the layer.
+    neither (fallback). Powers the profile plugin's ``current`` command
+    and any other code path that needs to classify the layer.
     """
     env_override = os.environ.get(ACTIVE_PROFILE_ENV)
     if env_override:

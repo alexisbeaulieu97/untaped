@@ -3,11 +3,26 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import typer
 import yaml
 from typer.testing import CliRunner
 
 from untaped import get_settings
 from untaped.main import build_app
+from untaped.plugins import PluginRegistry
+
+
+class _ProfileEnvProbePlugin:
+    id = "profile-env-probe"
+
+    def register(self, registry: PluginRegistry) -> None:
+        probe_app = typer.Typer(no_args_is_help=True)
+
+        @probe_app.command("current")
+        def current() -> None:
+            typer.echo(os.environ.get("UNTAPED_PROFILE", ""))
+
+        registry.add_cli("probe", probe_app)
 
 
 @pytest.fixture
@@ -17,10 +32,9 @@ def app() -> object:
     # fake plugins in test_plugin_main.py and must stay plugin-agnostic.
     from untaped_awx.plugin import plugin as awx_plugin
     from untaped_github.plugin import plugin as github_plugin
-    from untaped_profile.plugin import plugin as profile_plugin
     from untaped_workspace.plugin import plugin as workspace_plugin
 
-    return build_app(plugins=[awx_plugin, github_plugin, profile_plugin, workspace_plugin])
+    return build_app(plugins=[awx_plugin, github_plugin, workspace_plugin])
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +57,7 @@ def test_help_lists_all_plugins(app: object) -> None:
     assert "workspace" in output
     assert "awx" in output
     assert "github" in output
-    assert "profile" in output
+    assert "Manage configuration profiles" not in output
 
 
 def test_workspace_subcommand_help(app: object) -> None:
@@ -60,27 +74,14 @@ def test_config_subcommand_help(app: object) -> None:
     assert "unset" in result.stdout
 
 
-def test_profile_subcommand_help(app: object) -> None:
-    result = CliRunner().invoke(app, ["profile", "--help"])
-    assert result.exit_code == 0
-    for cmd in ("list", "show", "use", "current", "create", "delete", "rename"):
-        assert cmd in result.stdout
+def test_root_profile_flag_is_visible_to_plugin_commands() -> None:
+    """Root ``--profile`` remains core plumbing even when profile is external."""
+    app = build_app(plugins=[_ProfileEnvProbePlugin()])
 
+    result = CliRunner().invoke(app, ["--profile", "stage", "probe", "current"])
 
-def test_root_profile_flag_reflected_by_profile_current(app: object, _isolate_config: Path) -> None:
-    """`untaped --profile stage profile current` must report 'stage' with
-    source=env (the root flag stuffs UNTAPED_PROFILE into os.environ)."""
-    _isolate_config.write_text(
-        "profiles:\n"
-        "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: WARNING\n"
-        "  stage:\n    log_level: DEBUG\n"
-        "active: prod\n"
-    )
-    result = CliRunner().invoke(app, ["--profile", "stage", "profile", "current"])
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["stage"]
-    assert "(source: env)" in result.stderr
 
 
 def test_root_profile_flag_overrides_active(app: object, _isolate_config: Path) -> None:
