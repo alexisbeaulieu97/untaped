@@ -191,12 +191,14 @@ class SettingsFileRepository:
             raise ConfigError(
                 f"active profile {name!r} does not exist; "
                 f"known profiles: {known_str}. "
-                "Run `untaped profile use <name>` or `untaped profile create` first."
+                "Install the `untaped-profile` plugin, then run "
+                "`untaped profile use <name>` or `untaped profile create` first."
             )
         raise ConfigError(
             f"profile {name!r} does not exist; "
             f"known profiles: {known_str}. "
-            "Create it first with `untaped profile create`."
+            "Install the `untaped-profile` plugin, then create it first with "
+            "`untaped profile create`."
         )
 
 

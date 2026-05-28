@@ -29,7 +29,6 @@ build-backend = "uv_build"
 members = [
     "packages/untaped-awx",
     "packages/untaped-github",
-    "packages/untaped-profile",
     "packages/untaped-workspace",
 ]
 
@@ -38,7 +37,6 @@ untaped = { workspace = true }
 untaped-workspace = { workspace = true }
 untaped-awx = { workspace = true }
 untaped-github = { workspace = true }
-untaped-profile = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -58,7 +56,6 @@ dev = [
 plugin_modules = [
     "untaped_awx",
     "untaped_github",
-    "untaped_profile",
     "untaped_workspace",
 ]
 
@@ -67,7 +64,6 @@ root_packages = [
     "untaped",
     "untaped_awx",
     "untaped_github",
-    "untaped_profile",
     "untaped_workspace",
 ]
 # TYPE_CHECKING imports don't create runtime edges; the layered DDD rule
@@ -87,7 +83,6 @@ type = "independence"
 modules = [
     "untaped_awx",
     "untaped_github",
-    "untaped_profile",
     "untaped_workspace",
 ]
 
@@ -97,7 +92,6 @@ type = "layers"
 containers = [
     "untaped_awx",
     "untaped_github",
-    "untaped_profile",
     "untaped_workspace",
 ]
 # `application | infrastructure` makes the two siblings of the same
@@ -117,7 +111,6 @@ source_modules = ["untaped"]
 forbidden_modules = [
     "untaped_awx",
     "untaped_github",
-    "untaped_profile",
     "untaped_workspace",
 ]
 
@@ -187,7 +180,6 @@ packages = [
     "untaped",
     "untaped_awx",
     "untaped_github",
-    "untaped_profile",
     "untaped_workspace",
 ]
 

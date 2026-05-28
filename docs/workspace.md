@@ -379,8 +379,8 @@ and bandwidth are shared without the branch conflicts that
 
 ## See also
 
-- [`configuration.md`](./configuration.md) — `untaped config` /
-  `untaped profile` and the YAML schema.
+- [`configuration.md`](./configuration.md) — `untaped config`, the
+  optional `untaped profile` plugin, and the YAML schema.
 - [`awx.md`](./awx.md) — `untaped awx` commands.
 - [`packages/untaped-workspace/AGENTS.md`](../packages/untaped-workspace/AGENTS.md) —
   internals (manifest vs registry split, the `GitRunner` boundary, sync

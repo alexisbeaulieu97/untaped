@@ -4,11 +4,12 @@ A personal DevOps CLI suite. One binary (`untaped`), one sub-command
 per domain, designed to pipe into the next.
 
 ```text
-untaped profile ...      # manage configuration profiles
 untaped config ...       # inspect and edit ~/.untaped/config.yml
+untaped plugins ...      # add, sync, list, and diagnose plugins
 untaped workspace ...    # manage local git workspaces
 untaped awx ...          # Ansible Automation Platform / AWX
 untaped github ...       # inspect the authenticated GitHub user
+untaped profile ...      # optional plugin: manage configuration profiles
 ```
 
 Data-emitting commands accept `--format json|yaml|table|raw` and
@@ -41,8 +42,15 @@ Or install an editable `untaped` binary on your `PATH`:
 uv tool install --editable .
 ```
 
-`uv` resolves every workspace member in place, so local edits across
-packages are picked up without reinstalling.
+`uv` resolves the core package and remaining in-repo plugin packages in
+place, so local edits are picked up without reinstalling.
+
+`untaped profile` is no longer bundled in core. Install the standalone
+plugin when you want profile inventory commands:
+
+```bash
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+```
 
 ## Documentation
 
