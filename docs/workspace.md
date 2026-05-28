@@ -33,25 +33,8 @@ untaped plugins add "untaped-workspace @ git+https://github.com/alexisbeaulieu97
 untaped plugins sync --tool-spec /path/to/untaped --editable-tool
 ```
 
-## Commands
-
-```text
-untaped workspace list
-untaped workspace init <name>
-untaped workspace adopt <path>
-untaped workspace import <source.yml> <dest>
-untaped workspace add <url>...
-untaped workspace remove <repo>...
-untaped workspace sync
-untaped workspace status
-untaped workspace foreach <cmd>
-untaped workspace path <name>...
-untaped workspace shell-init zsh
-untaped workspace edit <name>
-```
-
-See the plugin docs for manifest shape, command details, registry behavior,
-and shell helper examples:
+See the plugin docs for the command reference, manifest shape, registry
+behavior, and shell helper examples:
 
 - [`untaped-workspace` README](https://github.com/alexisbeaulieu97/untaped-workspace)
 - [`untaped-workspace` workspace docs](https://github.com/alexisbeaulieu97/untaped-workspace/blob/main/docs/workspace.md)

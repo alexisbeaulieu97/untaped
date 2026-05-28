@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PACKAGES_DIR = REPO_ROOT / "packages"
 
 
 @contextmanager
@@ -50,16 +51,27 @@ def _run_lint_imports() -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_independence_contract_catches_cross_plugin_import() -> None:
+def _plugin_modules() -> list[str]:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
-    plugin_modules = pyproject["tool"]["untaped"]["plugin_modules"]
+    return list(pyproject["tool"]["untaped"]["plugin_modules"])
+
+
+def _plugin_src_root(module: str) -> Path:
+    matches = sorted(PACKAGES_DIR.glob(f"*/src/{module}"))
+    assert matches, f"could not find source root for plugin module {module!r}"
+    return matches[0]
+
+
+def test_independence_contract_catches_cross_plugin_import() -> None:
+    plugin_modules = _plugin_modules()
     if len(plugin_modules) < 2:
         pytest.skip("sibling independence contract is vacuous with fewer than two in-repo plugins")
 
-    fixture = REPO_ROOT / "packages/untaped-awx/src/untaped_awx/_contract_self_test_violation.py"
+    source_module, forbidden_module = plugin_modules[:2]
+    fixture = _plugin_src_root(source_module) / "_contract_self_test_violation.py"
     with _injected_violation(
         fixture,
-        "from untaped_workspace import app  # noqa: F401\n",
+        f"from {forbidden_module} import app  # noqa: F401\n",
     ):
         result = _run_lint_imports()
 

@@ -6,8 +6,8 @@ is load-bearing for shell pipelines (the ``xargs``-into-next-command
 pattern). The catalogue in root ``AGENTS.md`` "``--format raw``
 default-column contract" lists every row source — this module is the test that pins
 it. Sibling of ``test_invariants.py`` / ``test_layering.py``; lives at
-the workspace root because bundled plugins contribute row sources, so
-the contract is workspace-wide. Extracted plugins carry their own copy
+the repository root because in-repo plugins contribute row sources, so
+the contract spans core plus local plugins. Extracted plugins carry their own copy
 of the relevant pin.
 
 Three parametrised tests pin existing entries:
@@ -23,8 +23,8 @@ Three parametrised tests pin existing entries:
 Two discovery tests close the "new ``BaseModel`` added without a
 catalogue entry" gap by walking every module registered in
 :data:`_NOT_ROW_SOURCES_BY_MODULE` (today: the home modules of every
-catalogued row source — workspace state, AWX job /
-workflow node / test suite); a fresh ``BaseModel`` in any of those
+catalogued row source — AWX job / workflow node / test suite); a fresh
+``BaseModel`` in any of those
 must be triaged into ``PYDANTIC_ROW_SOURCES`` or the per-module
 exempt set. ``test_every_catalogued_pydantic_module_is_discovery_registered``
 keeps the two constants in lockstep — cataloguing a row source in a
