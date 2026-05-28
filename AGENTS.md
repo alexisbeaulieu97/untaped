@@ -333,6 +333,14 @@ behaviours worth knowing:
 - Mock httpx with `respx` (already a dev dep).
 - For CLI tests, use `typer.testing.CliRunner`.
 
+**Bridge-step plugin tests:** while plugins still live under `packages/`,
+root tests may dynamically import local plugin packages only to preserve
+legacy coverage and verify in-monorepo entry-point registration. Core
+plugin-loading behavior must be tested with fake plugins, and production
+`src/untaped/` must stay free of static plugin imports. Delete bridge
+fixtures such as the root `conftest.py` settings shim before extracting
+plugins to separate repos.
+
 ## Decision Tree: Where does this code go?
 
 1. **Shared across two or more plugins?** → `src/untaped/` if it is hub

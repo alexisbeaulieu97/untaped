@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from importlib import import_module
 
 import pytest
-from untaped_awx.infrastructure import AwxConfig
-from untaped_github.settings import GithubSettings
-from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
+from untaped.plugins import PluginRegistry, set_current_registry
 from untaped.settings import (
     get_settings,
     register_profile_settings,
@@ -19,13 +18,22 @@ from untaped.settings import (
 
 @pytest.fixture(autouse=True)
 def _register_legacy_plugin_settings_for_tests() -> Iterator[None]:
-    """Keep pre-plugin tests focused while package settings move behind plugins."""
+    """Keep bridge-step tests focused while package settings move behind plugins."""
+    # Bridge-step only: these dynamic imports preserve legacy tests while plugin
+    # packages still live in the monorepo. Delete this fixture when they move out.
+    awx_config = import_module("untaped_awx.infrastructure").AwxConfig
+    github_settings = import_module("untaped_github.settings").GithubSettings
+    workspace_settings = import_module("untaped_workspace.settings").WorkspaceSettings
+    workspace_state = import_module("untaped_workspace.settings").WorkspaceState
+
     reset_config_registry_for_tests()
-    register_profile_settings("awx", AwxConfig)
-    register_profile_settings("github", GithubSettings)
-    register_profile_settings("workspace", WorkspaceSettings)
-    register_state_settings("workspace", WorkspaceState)
+    set_current_registry(PluginRegistry())
+    register_profile_settings("awx", awx_config)
+    register_profile_settings("github", github_settings)
+    register_profile_settings("workspace", workspace_settings)
+    register_state_settings("workspace", workspace_state)
     get_settings.cache_clear()
     yield
     reset_config_registry_for_tests()
+    set_current_registry(PluginRegistry())
     get_settings.cache_clear()

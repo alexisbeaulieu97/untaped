@@ -5,10 +5,6 @@ from pathlib import Path
 import pytest
 import yaml
 from typer.testing import CliRunner
-from untaped_awx.plugin import plugin as awx_plugin
-from untaped_github.plugin import plugin as github_plugin
-from untaped_profile.plugin import plugin as profile_plugin
-from untaped_workspace.plugin import plugin as workspace_plugin
 
 from untaped import get_settings
 from untaped.main import build_app
@@ -16,6 +12,14 @@ from untaped.main import build_app
 
 @pytest.fixture
 def app() -> object:
+    # Bridge-step only: this is the in-monorepo integration check that the local
+    # package plugins still register. Core plugin-loading behavior is tested with
+    # fake plugins in test_plugin_main.py and must stay plugin-agnostic.
+    from untaped_awx.plugin import plugin as awx_plugin
+    from untaped_github.plugin import plugin as github_plugin
+    from untaped_profile.plugin import plugin as profile_plugin
+    from untaped_workspace.plugin import plugin as workspace_plugin
+
     return build_app(plugins=[awx_plugin, github_plugin, profile_plugin, workspace_plugin])
 
 

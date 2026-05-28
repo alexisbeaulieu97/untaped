@@ -10,13 +10,14 @@ from importlib.metadata import entry_points
 from typing import Protocol
 
 import typer
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from untaped.cli import report_errors
 from untaped.config_file import mutate_config, read_config_dict
 from untaped.errors import ConfigError, first_validation_error
 from untaped.settings import (
     PluginInstallSpec,
+    PluginsState,
     PluginToolSpec,
     register_profile_settings,
     register_state_settings,
@@ -247,21 +248,14 @@ def doctor_command() -> None:
             raise typer.Exit(1)
 
 
-def _plugin_state() -> PluginStateView:
+def _plugin_state() -> PluginsState:
     data = read_config_dict().get("plugins") or {}
     if not isinstance(data, dict):
-        return PluginStateView()
+        return PluginsState()
     try:
-        return PluginStateView.model_validate(data)
+        return PluginsState.model_validate(data)
     except ValidationError as exc:
         raise ConfigError(f"invalid plugins config: {first_validation_error(exc)}") from exc
-
-
-class PluginStateView(BaseModel):
-    """Validated top-level plugin install state."""
-
-    tool: PluginToolSpec = Field(default_factory=PluginToolSpec)
-    packages: list[PluginInstallSpec] = Field(default_factory=list)
 
 
 def _upsert_plugin_spec(spec: PluginInstallSpec) -> None:
@@ -328,5 +322,7 @@ def _uv_tool_install_command(tool: PluginToolSpec, packages: list[PluginInstallS
         cmd.append("--editable")
     for package in packages:
         cmd.extend(["--with-editable" if package.editable else "--with", package.spec])
+    # `uv tool install` refuses an already installed tool without --force; sync
+    # intentionally rebuilds the existing untaped tool env with the recorded set.
     cmd.append("--force")
     return cmd

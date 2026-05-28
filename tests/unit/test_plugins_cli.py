@@ -8,6 +8,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from untaped.plugins import DiagnosticResult, PluginRegistry, set_current_registry
 from untaped.plugins import app as plugins_app
 from untaped.settings import get_settings, reset_config_registry_for_tests
 
@@ -17,9 +18,11 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     reset_config_registry_for_tests()
+    set_current_registry(PluginRegistry())
     get_settings.cache_clear()
     yield cfg
     reset_config_registry_for_tests()
+    set_current_registry(PluginRegistry())
     get_settings.cache_clear()
 
 
@@ -77,3 +80,15 @@ def test_plugins_list_reports_invalid_plugin_state_without_traceback(
     assert result.exit_code == 1
     assert "invalid plugins config" in result.output
     assert "Traceback" not in result.output
+
+
+def test_plugins_doctor_success_path_reports_ok_diagnostics(_isolated_config: Path) -> None:
+    registry = PluginRegistry()
+    registry.add_plugin_id("demo")
+    registry.add_diagnostic("demo", lambda: DiagnosticResult(name="demo", status="ok"))
+    set_current_registry(registry)
+
+    result = CliRunner().invoke(plugins_app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["ok\tdemo"]
