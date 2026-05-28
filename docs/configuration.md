@@ -100,6 +100,7 @@ plugin. Install both `untaped` and the profile plugin from git with:
 ```bash
 uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
   --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --no-sources \
   --force
 ```
 

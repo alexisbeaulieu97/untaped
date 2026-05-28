@@ -12,6 +12,7 @@ Install both `untaped` and the GitHub plugin from git:
 ```bash
 uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
   --with "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git" \
+  --no-sources \
   --force
 ```
 
