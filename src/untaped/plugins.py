@@ -212,7 +212,7 @@ def add_command(
             data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
-        typer.echo(f"added plugin package: {package_spec}", err=True)
+        typer.echo(f"added plugin package: {spec.spec}", err=True)
         if not no_sync:
             typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
@@ -282,6 +282,8 @@ def list_command(
     with report_errors():
         state = _plugin_state()
         rows = _plugin_rows(state)
+        if fmt == "raw" and columns is None:
+            rows = [row for row in rows if row["spec"]]
         rendered = format_output(rows, fmt=fmt, columns=columns)
         if rendered:
             typer.echo(rendered)
@@ -315,9 +317,20 @@ def _plugin_state_from_config(data: Mapping[str, object]) -> PluginsState:
     if not isinstance(raw, dict):
         return PluginsState()
     try:
-        return PluginsState.model_validate(raw)
+        state = PluginsState.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(f"invalid plugins config: {first_validation_error(exc)}") from exc
+    _validate_unique_plugin_specs(state)
+    return state
+
+
+def _validate_unique_plugin_specs(state: PluginsState) -> None:
+    seen: set[str] = set()
+    for package in state.packages:
+        key = _plugin_spec_key(package.spec, reject_bare_direct=False)
+        if key in seen:
+            raise ConfigError(f"duplicate plugin package spec: {key}")
+        seen.add(key)
 
 
 def _upsert_plugin_spec(state: PluginsState, spec: PluginInstallSpec) -> PluginsState:
@@ -440,27 +453,44 @@ def _uninferable_direct_reference_error(spec: str) -> ConfigError:
 
 
 def _plugin_rows(state: PluginsState) -> list[Row]:
-    rows: list[Row] = [
-        {
+    loaded_ids = set(_CURRENT_REGISTRY.plugin_ids)
+    matched_loaded_ids: set[str] = set()
+    rows: dict[str, Row] = {}
+
+    for package in state.packages:
+        package_name = _plugin_spec_key(package.spec, reject_bare_direct=False)
+        plugin_id = _matched_loaded_plugin_id(package_name, loaded_ids)
+        if plugin_id is not None:
+            matched_loaded_ids.add(plugin_id)
+        rows[package_name] = {
+            "name": package_name,
+            "status": "installed" if plugin_id is not None else "recorded",
+            "plugin_id": plugin_id or "",
+            "editable": package.editable,
+            "spec": package.spec,
+        }
+
+    for plugin_id in sorted(loaded_ids - matched_loaded_ids):
+        rows[plugin_id] = {
             "name": plugin_id,
-            "type": "loaded",
-            "mode": "entry-point",
+            "status": "loaded",
+            "plugin_id": plugin_id,
             "editable": None,
             "spec": "",
         }
-        for plugin_id in sorted(_CURRENT_REGISTRY.plugin_ids)
-    ]
-    for package in state.packages:
-        rows.append(
-            {
-                "name": _plugin_spec_key(package.spec, reject_bare_direct=False),
-                "type": "desired",
-                "mode": "editable" if package.editable else "package",
-                "editable": package.editable,
-                "spec": package.spec,
-            }
-        )
-    return rows
+    return [rows[name] for name in sorted(rows)]
+
+
+def _matched_loaded_plugin_id(package_name: str, loaded_ids: set[str]) -> str | None:
+    normalized_loaded_ids = {
+        _normalize_package_name(plugin_id): plugin_id for plugin_id in loaded_ids
+    }
+    direct = normalized_loaded_ids.get(package_name)
+    if direct is not None:
+        return direct
+    if package_name.startswith("untaped-"):
+        return normalized_loaded_ids.get(package_name.removeprefix("untaped-"))
+    return None
 
 
 def _sync_state(state: PluginsState) -> None:
