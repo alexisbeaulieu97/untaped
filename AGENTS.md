@@ -216,14 +216,20 @@ Cross-cutting subsystems with their own internals doc:
   User-facing reference: [`docs/configuration.md`](docs/configuration.md).
 - **Workspace management** lives in the extracted
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
-  plugin. User-facing install guidance: [`docs/workspace.md`](docs/workspace.md).
+  plugin. Core plugin install guidance lives in
+  [`docs/plugins.md`](docs/plugins.md); command reference lives in the plugin
+  repo.
 - **AWX resource framework, apply pipeline, jobs/track, test runner** live
   in the extracted
   [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx)
-  plugin. User-facing install guidance: [`docs/awx.md`](docs/awx.md).
+  plugin. Core plugin install guidance lives in
+  [`docs/plugins.md`](docs/plugins.md); command reference lives in the plugin
+  repo.
 - **GitHub authenticated user and search** live in the extracted
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
-  plugin. User-facing install guidance: [`docs/github.md`](docs/github.md).
+  plugin. Core plugin install guidance lives in
+  [`docs/plugins.md`](docs/plugins.md); command reference lives in the plugin
+  repo.
 
 ## Conventions
 
@@ -262,7 +268,7 @@ Cross-cutting subsystems with their own internals doc:
   stdout.
 - **stderr = everything else.** Logs, progress, prompts. Use
   `typer.echo(msg, err=True)`.
-- **Data-emitting commands** (`list`, `get`, `status`, …) expose:
+- **Row-oriented data commands** (`list`, `get`, `status`, …) expose:
   - `--format / -f` (`json | yaml | table | raw`); default `table` for
     `list`, `yaml` for `get`.
   - `--columns / -c` (repeatable). Dotted paths supported
@@ -459,5 +465,5 @@ Credentials must be `SecretStr`; HTTP clients must still consume
   [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
-- **User-facing docs**: [`docs/`](docs/README.md) — configuration,
-  workspaces, AWX, GitHub
+- **User-facing docs**: [`docs/`](docs/README.md) — core configuration and
+  plugin install/sync UX. Plugin command references live in the plugin repos.
