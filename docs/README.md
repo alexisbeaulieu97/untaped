@@ -21,8 +21,8 @@ For installation, see the repo's [README](../README.md).
 
 ## Pipe-friendly by design
 
-Every data-emitting command (`list`, `get`, `status`, …) supports
-`--format json|yaml|table|raw` and `--columns <field>` so its stdout
+Row-oriented `list`/`get`/`status`-style commands support
+`--format json|yaml|table|raw` and `--columns <field>` so their stdout
 can feed into the next tool:
 
 ```bash

@@ -12,8 +12,9 @@ untaped github ...       # optional plugin: GitHub user/search commands
 untaped profile ...      # optional plugin: manage configuration profiles
 ```
 
-Data-emitting commands accept `--format json|yaml|table|raw` and
-`--columns`, so their output composes:
+Row-oriented `list`/`get`/`status`-style commands accept
+`--format json|yaml|table|raw` and `--columns`, so their output
+composes:
 
 ```bash
 untaped awx job-templates list --format raw --columns name \
