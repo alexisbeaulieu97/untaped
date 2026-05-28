@@ -1,12 +1,14 @@
 # Configuration
 
-`untaped` reads its settings from `~/.untaped/config.yml`. The two
-commands you'll use to manage that file are:
+`untaped` reads its settings from `~/.untaped/config.yml`. Core includes
+`untaped config` for editing keys. Profile inventory commands are
+provided by the optional `untaped-profile` plugin.
 
-- `untaped profile` — manage the *profiles* (named overlays such as
-  `dev`, `prod`, `homelab`).
 - `untaped config` — read and write the *keys* inside a profile
   (`awx.token`, `http.ca_bundle`, …).
+- `untaped profile` — manage the *profiles* (named overlays such as
+  `dev`, `prod`, `homelab`) when the `untaped-profile` plugin is
+  installed.
 
 Both end up editing the same file. This page covers what's in it, how
 the values are resolved, and how to manage profiles and keys without
@@ -91,6 +93,24 @@ against `stage` without touching your persisted `active:`.
 
 ## Managing profiles — `untaped profile`
 
+`untaped profile` is provided by the standalone
+[`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
+plugin. Install both `untaped` and the profile plugin from git with:
+
+```bash
+uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
+  --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
+  --force
+```
+
+To let `untaped plugins` remember that desired plugin state, record the
+plugin without syncing, then rebuild the tool from the same source spec:
+
+```bash
+untaped plugins add "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" --no-sync
+untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+```
+
 ```text
 untaped profile list                          # list profiles, ✓ marks active
 untaped profile current                       # print the active profile name (pipe-friendly)
@@ -140,19 +160,20 @@ so `untaped config set http.verify_ssl false` writes a real `false`,
 not the string `"false"`.
 
 Writing to a profile that doesn't exist is rejected — create it first
-with `untaped profile create <name>`. The one exception is `default`,
-which is auto-bootstrapped on the first write so a fresh install
-doesn't need a setup step. So `untaped config set awx.token <tok>` on
-a brand-new system writes to `default`; `untaped config set awx.token
-<tok> --profile prod` requires `prod` to already exist.
+with `untaped profile create <name>` if the profile plugin is installed,
+or by editing the YAML directly. The one exception is `default`, which is
+auto-bootstrapped on the first write so a fresh install doesn't need a
+setup step. So `untaped config set awx.token <tok>` on a brand-new system
+writes to `default`; `untaped config set awx.token <tok> --profile prod`
+requires `prod` to already exist.
 
 ## Secrets
 
 Tokens, passwords, and API keys are typed as `SecretStr` in the schema.
 That has two consequences:
 
-- `untaped config list` and `untaped profile show` redact them as `***`
-  by default. Pass `--show-secrets` to reveal.
+- `untaped config list` and the profile plugin's `untaped profile show`
+  redact them as `***` by default. Pass `--show-secrets` to reveal.
 - Tracebacks won't leak them — `repr(settings)` shows `***` too.
 
 Mark a new credential field as `pydantic.SecretStr` when you add it to
@@ -199,7 +220,8 @@ than the file.
 ## Worked example: dev / prod profiles
 
 A common setup: one profile per environment, sharing a base layer for
-everything that doesn't change.
+everything that doesn't change. The `untaped profile` commands in this
+example require the optional profile plugin.
 
 ```bash
 # Start with a shared base.

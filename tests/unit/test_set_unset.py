@@ -102,15 +102,18 @@ def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
 
 
 def test_set_rejects_unknown_profile(_isolate_settings: Path) -> None:
-    """Explicit ``--profile`` keeps its original "Create it first" wording —
-    distinct from the implicit-path message added for issue #22, so a
-    future refactor can't accidentally collapse the two phrasings (the
-    remediations differ: the user typed a wrong flag here, vs. their
-    persisted ``active:`` is stale)."""
+    """Explicit ``--profile`` names the profile plugin remediation.
+
+    This stays distinct from the implicit-path message added for issue #22,
+    so a future refactor can't accidentally collapse the two phrasings (the
+    user typed a wrong flag here, while a stale persisted ``active:`` points
+    to ``profile use`` instead).
+    """
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    with pytest.raises(ConfigError, match=r"Create it first") as excinfo:
+    with pytest.raises(ConfigError, match=r"untaped-profile") as excinfo:
         SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="ghost")
     assert "ghost" in str(excinfo.value)
+    assert "profile create" in str(excinfo.value)
 
 
 def test_set_default_profile_auto_creates_default_block(_isolate_settings: Path) -> None:

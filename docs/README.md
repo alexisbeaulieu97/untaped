@@ -39,7 +39,8 @@ untaped workspace status --all --format raw \
   | awk '$3 > 0 { print }'
 ```
 
-Side-effect commands (`profile use`, `config set`, `apply --yes`, …)
+Side-effect commands (`profile use` from the optional profile plugin,
+`config set`, `apply --yes`, …)
 print a short confirmation to stderr and exit. **Logs go to stderr;
 only data hits stdout** — so pipes stay clean.
 

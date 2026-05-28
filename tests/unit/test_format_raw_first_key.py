@@ -6,8 +6,9 @@ is load-bearing for shell pipelines (the ``xargs``-into-next-command
 pattern). The catalogue in root ``AGENTS.md`` "``--format raw``
 default-column contract" lists every row source — this module is the test that pins
 it. Sibling of ``test_invariants.py`` / ``test_layering.py``; lives at
-the workspace root because every plugin package contributes row
-sources, so the contract is workspace-wide.
+the workspace root because bundled plugins contribute row sources, so
+the contract is workspace-wide. Extracted plugins carry their own copy
+of the relevant pin.
 
 Three parametrised tests pin existing entries:
 
@@ -58,8 +59,6 @@ from untaped_github.domain.models import (
     RepoResult,
     UserResult,
 )
-from untaped_profile.cli.commands import _profile_row
-from untaped_profile.domain.models import Profile
 from untaped_workspace.cli.commands import _workspace_row
 from untaped_workspace.domain import Workspace
 from untaped_workspace.domain.state import ForeachOutcome, StatusEntry, SyncOutcome
@@ -94,11 +93,6 @@ HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] =
     (
         "untaped_workspace.cli.commands._workspace_row",
         lambda: _workspace_row(Workspace(name="alpha", path=Path("/tmp/alpha"))),
-        "name",
-    ),
-    (
-        "untaped_profile.cli.commands._profile_row",
-        lambda: _profile_row(Profile(name="default", data={}, is_active=True)),
         "name",
     ),
     (
@@ -290,11 +284,6 @@ _LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
         _REPO_ROOT / "packages/untaped-workspace/src/untaped_workspace/cli/commands.py",
         "list_command",
         "_workspace_row",
-    ),
-    (
-        _REPO_ROOT / "packages/untaped-profile/src/untaped_profile/cli/commands.py",
-        "list_command",
-        "_profile_row",
     ),
     (
         _REPO_ROOT / "src/untaped/config/cli/commands.py",
