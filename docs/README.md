@@ -1,9 +1,9 @@
 # `untaped` — documentation
 
-`untaped` is a personal DevOps CLI suite. One binary aggregates a
-handful of domain sub-apps (workspaces, AWX/AAP, GitHub, …) so daily
-DevOps work composes — commands that emit data are designed to be
-piped into `fzf`, `jq`, `awk`, or each other.
+`untaped` is a personal DevOps CLI suite. One binary loads core
+commands and installed domain plugins (workspaces, AWX/AAP, GitHub,
+profile, ...), so daily DevOps work composes — commands that emit data
+are designed to be piped into `fzf`, `jq`, `awk`, or each other.
 
 ## Pages
 
@@ -15,8 +15,7 @@ piped into `fzf`, `jq`, `awk`, or each other.
 - [AWX / AAP](./awx.md) — talk to Ansible Automation Platform:
   list / save / apply resources, launch jobs, run declarative test
   suites.
-- [GitHub](./github.md) — inspect the authenticated GitHub user
-  (intentionally narrow today).
+- [GitHub](./github.md) — install the optional GitHub user/search plugin.
 
 For installation, see the repo's [README](../README.md).
 
