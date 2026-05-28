@@ -12,7 +12,7 @@ are designed to be piped into `fzf`, `jq`, `awk`, or each other.
 - [Workspaces](./workspace.md) — install the optional workspace plugin
   for local git workspace manifests, registry state, `sync` / `status` /
   `foreach`, and the `uwcd` shell helper.
-- [AWX / AAP](./awx.md) — talk to Ansible Automation Platform:
+- [AWX / AAP](./awx.md) — install the optional AWX plugin to talk to Ansible Automation Platform:
   list / save / apply resources, launch jobs, run declarative test
   suites.
 - [GitHub](./github.md) — install the optional GitHub user/search plugin.

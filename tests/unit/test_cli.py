@@ -3,18 +3,31 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import BaseModel, SecretStr
 from typer.testing import CliRunner
 
 from untaped.config import app
-from untaped.settings import get_settings
+from untaped.settings import (
+    get_settings,
+    register_profile_settings,
+    reset_config_registry_for_tests,
+)
+
+
+class DemoPluginSettings(BaseModel):
+    base_url: str | None = None
+    token: SecretStr | None = None
 
 
 @pytest.fixture(autouse=True)
 def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     cfg = tmp_path / "config.yml"
+    reset_config_registry_for_tests()
+    register_profile_settings("demo", DemoPluginSettings)
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
     yield cfg
+    reset_config_registry_for_tests()
     get_settings.cache_clear()
 
 
@@ -23,7 +36,7 @@ def test_list_outputs_keys(_isolate_settings: Path) -> None:
     assert result.exit_code == 0, result.output
     keys = result.stdout.splitlines()
     assert "log_level" in keys
-    assert "awx.token" in keys
+    assert "demo.token" in keys
     assert "http.ca_bundle" in keys
     assert "http.verify_ssl" in keys
 
@@ -31,7 +44,7 @@ def test_list_outputs_keys(_isolate_settings: Path) -> None:
 def test_list_redacts_secrets_by_default(
     _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "abcdef-secret")
+    monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "abcdef-secret")
     get_settings.cache_clear()
 
     result = CliRunner().invoke(
@@ -39,13 +52,13 @@ def test_list_redacts_secrets_by_default(
     )
     assert result.exit_code == 0
     assert "abcdef-secret" not in result.stdout
-    assert "awx.token\t***" in result.stdout
+    assert "demo.token\t***" in result.stdout
 
 
 def test_list_show_secrets_reveals(
     _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "abcdef-secret")
+    monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "abcdef-secret")
     get_settings.cache_clear()
 
     result = CliRunner().invoke(
@@ -194,7 +207,7 @@ def test_list_all_profiles_shows_per_profile_rows(_isolate_settings: Path) -> No
     _isolate_settings.write_text(
         "profiles:\n"
         "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: DEBUG\n    awx:\n      base_url: https://p\n"
+        "  prod:\n    log_level: DEBUG\n    demo:\n      base_url: https://p\n"
         "active: prod\n"
     )
     result = CliRunner().invoke(
@@ -216,4 +229,4 @@ def test_list_all_profiles_shows_per_profile_rows(_isolate_settings: Path) -> No
     lines = set(result.stdout.splitlines())
     assert "default\tlog_level\tINFO" in lines
     assert "prod\tlog_level\tDEBUG" in lines
-    assert "prod\tawx.base_url\thttps://p" in lines
+    assert "prod\tdemo.base_url\thttps://p" in lines

@@ -25,32 +25,11 @@ repos:
 
   - repo: local
     hooks:
-      - id: sync-plugins-check
-        name: sync-plugins (--check)
-        # Fails when the Import Linter + mypy plugin lists drift from
-        # `[tool.untaped].plugin_modules`. Fix with
-        # `uv run python scripts/sync_plugins.py --write`.
-        entry: uv run python scripts/sync_plugins.py --check
-        language: system
-        pass_filenames: false
-        files: '^pyproject\.toml$'
-
-      - id: lint-imports
-        name: lint-imports (import-linter)
-        entry: uv run lint-imports
-        language: system
-        pass_filenames: false
-        # Trigger on Python edits and on `pyproject.toml` (where the
-        # `[tool.importlinter]` config lives) — a config edit alone must
-        # still re-run the contracts.
-        files: '\.py$|^pyproject\.toml$'
-
       # Strict-mypy gate at push time. Mypy is slow enough that running
       # it per-commit discourages frequent commits; ``pre-push`` catches
       # regressions before CI without paying the cost on every commit.
-      # ``uv run mypy`` reuses the workspace venv so the local invocation
-      # matches CI exactly. Trigger mirrors ``lint-imports`` above so a
-      # ``[tool.mypy]`` config edit alone re-runs the gate.
+      # ``uv run mypy`` reuses the project venv so the local invocation
+      # matches CI exactly.
       - id: mypy
         name: mypy
         entry: uv run mypy

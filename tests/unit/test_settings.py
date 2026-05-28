@@ -2,16 +2,39 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError, field_validator
 
 from untaped import ConfigError, resolve_config_path, validate_settings_isolated
-from untaped.settings import Settings, get_settings
+from untaped.settings import (
+    Settings,
+    get_settings,
+    register_profile_settings,
+    reset_config_registry_for_tests,
+)
+
+
+class DemoPluginSettings(BaseModel):
+    base_url: str | None = None
+    token: SecretStr | None = None
+    api_prefix: str = "/api/demo/v1/"
+    default_organization: str | None = None
+    page_size: int = 200
+
+    @field_validator("api_prefix")
+    @classmethod
+    def _api_prefix_has_slashes(cls, value: str) -> str:
+        if not (value.startswith("/") and value.endswith("/")):
+            raise ValueError("must start and end with /")
+        return value
 
 
 @pytest.fixture(autouse=True)
 def _reset_cache() -> Iterator[None]:
+    reset_config_registry_for_tests()
+    register_profile_settings("demo", DemoPluginSettings)
     get_settings.cache_clear()
     yield
+    reset_config_registry_for_tests()
     get_settings.cache_clear()
 
 
@@ -19,8 +42,8 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
     assert s.log_level == "INFO"
-    assert s.awx.base_url is None
-    assert s.awx.token is None
+    assert s.demo.base_url is None
+    assert s.demo.token is None
     assert s.http.verify_ssl is True
     assert s.http.ca_bundle is None
 
@@ -35,7 +58,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
             http:
               ca_bundle: /etc/ssl/corp-ca.pem
               verify_ssl: true
-            awx:
+            demo:
               base_url: https://aap.example.com
               token: secret
         """
@@ -44,31 +67,31 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     s = get_settings()
     assert s.log_level == "DEBUG"
     assert s.http.ca_bundle == Path("/etc/ssl/corp-ca.pem")
-    assert s.awx.base_url == "https://aap.example.com"
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "secret"
+    assert s.demo.base_url == "https://aap.example.com"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "secret"
 
 
 def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    awx:\n      token: ultra-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: ultra-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "ultra-secret-value"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "ultra-secret-value"
     assert "ultra-secret-value" not in repr(s)
     assert "ultra-secret-value" not in str(s)
-    assert "ultra-secret-value" not in str(s.awx)
+    assert "ultra-secret-value" not in str(s.demo)
 
 
 def test_env_var_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    awx:\n      token: from-yaml\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: from-yaml\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.setenv("UNTAPED_AWX__TOKEN", "from-env")
+    monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
     s = get_settings()
-    assert s.awx.token is not None
-    assert s.awx.token.get_secret_value() == "from-env"
+    assert s.demo.token is not None
+    assert s.demo.token.get_secret_value() == "from-env"
 
 
 def test_get_settings_is_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,22 +106,21 @@ def test_settings_class_can_be_instantiated_directly() -> None:
     assert isinstance(s, Settings)
 
 
-def test_awx_defaults_aap_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """AAP is the default deployment target; controller v2 prefix is canonical."""
+def test_plugin_defaults_are_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     s = get_settings()
-    assert s.awx.api_prefix == "/api/controller/v2/"
-    assert s.awx.default_organization is None
-    assert s.awx.page_size == 200
+    assert s.demo.api_prefix == "/api/demo/v1/"
+    assert s.demo.default_organization is None
+    assert s.demo.page_size == 200
 
 
-def test_awx_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
         profiles:
           default:
-            awx:
+            demo:
               base_url: https://awx.example.com
               api_prefix: /api/v2/
               default_organization: Default
@@ -107,26 +129,23 @@ def test_awx_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.awx.api_prefix == "/api/v2/"
-    assert s.awx.default_organization == "Default"
-    assert s.awx.page_size == 100
+    assert s.demo.api_prefix == "/api/v2/"
+    assert s.demo.default_organization == "Default"
+    assert s.demo.page_size == 100
 
 
-def test_awx_api_prefix_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plugin_api_prefix_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    monkeypatch.setenv("UNTAPED_AWX__API_PREFIX", "/api/v2/")
+    monkeypatch.setenv("UNTAPED_DEMO__API_PREFIX", "/api/v2/")
     s = get_settings()
-    assert s.awx.api_prefix == "/api/v2/"
+    assert s.demo.api_prefix == "/api/v2/"
 
 
-def test_awx_api_prefix_must_start_and_end_with_slash() -> None:
-    from pydantic import ValidationError
-    from untaped_awx.infrastructure import AwxConfig
-
+def test_plugin_api_prefix_must_start_and_end_with_slash() -> None:
     with pytest.raises(ValidationError):
-        AwxConfig(api_prefix="api/v2/")
+        DemoPluginSettings(api_prefix="api/v2/")
     with pytest.raises(ValidationError):
-        AwxConfig(api_prefix="/api/v2")
+        DemoPluginSettings(api_prefix="/api/v2")
 
 
 def test_resolve_config_path_honours_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -166,14 +185,14 @@ def test_get_settings_translates_validation_error_to_config_error(
         """
         profiles:
           default:
-            awx:
+            demo:
               page_size: not-an-int
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     # Match the dotted ``loc`` so a regression that stops joining the path
     # tuple in ``first_validation_error`` would fail the assertion.
-    with pytest.raises(ConfigError, match=r"awx\.page_size") as exc_info:
+    with pytest.raises(ConfigError, match=r"demo\.page_size") as exc_info:
         get_settings()
     # The path of the broken config is in the message so users know where
     # to edit.
@@ -203,10 +222,10 @@ def test_validate_settings_isolated_returns_validated_settings_instance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    result = validate_settings_isolated({"log_level": "DEBUG", "awx": {"page_size": 50}})
+    result = validate_settings_isolated({"log_level": "DEBUG", "demo": {"page_size": 50}})
     assert isinstance(result, Settings)
     assert result.log_level == "DEBUG"
-    assert result.awx.page_size == 50
+    assert result.demo.page_size == 50
 
 
 def test_validate_settings_isolated_does_not_mutate_settings_class(

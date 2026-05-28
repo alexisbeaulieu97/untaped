@@ -1,8 +1,10 @@
 """Tests for the settings schema walker."""
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped import (
@@ -12,15 +14,28 @@ from untaped import (
     secret_field_paths,
     walk_settings,
 )
-from untaped.settings import register_profile_settings, register_state_settings
+from untaped.settings import (
+    register_profile_settings,
+    register_state_settings,
+    reset_config_registry_for_tests,
+)
 
 
 class DemoProfileSettings(BaseModel):
     directory: Path = Path("~/.demo")
+    token: SecretStr | None = None
 
 
 class DemoStateSettings(BaseModel):
     entries: list[str] = Field(default_factory=list)
+
+
+@pytest.fixture(autouse=True)
+def _reset_registry() -> Iterator[None]:
+    reset_config_registry_for_tests()
+    register_profile_settings("demo", DemoProfileSettings)
+    yield
+    reset_config_registry_for_tests()
 
 
 def test_walks_nested_models() -> None:
@@ -31,9 +46,9 @@ def test_walks_nested_models() -> None:
     # HttpSettings
     assert "http.ca_bundle" in keys
     assert "http.verify_ssl" in keys
-    # AWX plugin settings
-    assert "awx.base_url" in keys
-    assert "awx.token" in keys
+    # Plugin settings
+    assert "demo.directory" in keys
+    assert "demo.token" in keys
 
 
 def test_skips_collection_fields() -> None:
@@ -50,10 +65,10 @@ def test_skips_collection_fields() -> None:
 
 def test_secrets_are_marked() -> None:
     descriptors = walk_settings(get_settings_model())
-    awx_token = find_descriptor(descriptors, "awx.token")
-    assert awx_token is not None
-    assert awx_token.is_secret is True
-    assert awx_token.annotation is SecretStr
+    token = find_descriptor(descriptors, "demo.token")
+    assert token is not None
+    assert token.is_secret is True
+    assert token.annotation is SecretStr
 
     log_level = find_descriptor(descriptors, "log_level")
     assert log_level is not None
@@ -114,5 +129,5 @@ def test_secret_field_paths_matches_known_settings_secrets() -> None:
     # new SecretStr to the schema (per AGENTS.md "Recipe: add a new
     # setting") must make this test fail until the new path lands here.
     paths = secret_field_paths(get_settings_model())
-    assert ("awx", "token") in paths
+    assert ("demo", "token") in paths
     assert len(paths) == 1  # Update when adding a new SecretStr to Settings.

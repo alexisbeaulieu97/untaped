@@ -25,18 +25,8 @@ untaped = "untaped.main:app"
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 
-[tool.uv.workspace]
-members = [
-    "packages/untaped-awx",
-]
-
-[tool.uv.sources]
-untaped = { workspace = true }
-untaped-awx = { workspace = true }
-
 [dependency-groups]
 dev = [
-    "import-linter>=2.4",
     "mypy>=1.20.2",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
@@ -44,60 +34,6 @@ dev = [
     "respx>=0.23.1",
     "ruff>=0.15.12",
     "types-pyyaml>=6.0.12.20260408",
-]
-
-[tool.untaped]
-# Sole source of truth for local plugin modules in this monorepo bridge step.
-# `scripts/sync_plugins.py` regenerates Import Linter and mypy lists from this.
-plugin_modules = [
-    "untaped_awx",
-]
-
-[tool.importlinter]
-root_packages = [
-    "untaped",
-    "untaped_awx",
-]
-# TYPE_CHECKING imports don't create runtime edges; the layered DDD rule
-# allows them. tests/unit/test_layering.py documents and enforces the same
-# exception via AST walk — keep both checkers in sync if the rule changes.
-exclude_type_checking_imports = true
-
-# The plugin module lists below and `[tool.mypy] packages` are regenerated
-# from `[tool.untaped].plugin_modules`; edit that source list first.
-
-[[tool.importlinter.contracts]]
-name = "Sibling plugins are mutually independent"
-# `independence` says "these modules cannot import each other" — it does
-# not restrict imports of any other module (e.g. `untaped` and
-# third-party libs remain fair game).
-type = "independence"
-modules = [
-    "untaped_awx",
-]
-
-[[tool.importlinter.contracts]]
-name = "Per-plugin layers (cli > application | infrastructure > domain)"
-type = "layers"
-containers = [
-    "untaped_awx",
-]
-# `application | infrastructure` makes the two siblings of the same
-# layer: `cli` may import both, both may import `domain`, but neither
-# may import the other. This is the partial-order shape the 4-layer
-# DDD diagram in AGENTS.md describes.
-layers = [
-    "cli",
-    "application | infrastructure",
-    "domain",
-]
-
-[[tool.importlinter.contracts]]
-name = "untaped core does not statically import plugins"
-type = "forbidden"
-source_modules = ["untaped"]
-forbidden_modules = [
-    "untaped_awx",
 ]
 
 [tool.ruff]
@@ -116,16 +52,7 @@ select = [
     "C90",  # mccabe complexity (gate set in [tool.ruff.lint.mccabe])
     "RUF",  # ruff-specific
 ]
-# Narrow opt-in:
-# - S701 (jinja-autoescape): load-bearing for the noqa in
-#   untaped_awx.infrastructure.test.parser's build_jinja_env, which
-#   documents why HTML escaping is intentionally off for YAML output.
-# - PLC0415 (import-outside-top-level): load-bearing for the lazy-import
-#   noqas in untaped_awx.cli.test_commands and untaped_awx.cli.completions,
-#   which keep `awx --help` and `awx ping` fast by deferring jinja2/yaml/
-#   the loader/runner. Tests use in-function imports freely and are
-#   exempted via per-file-ignores below.
-extend-select = ["S701", "PLC0415"]
+extend-select = ["PLC0415"]
 ignore = []
 
 [tool.ruff.lint.flake8-tidy-imports]
@@ -139,9 +66,6 @@ max-complexity = 12
 # idiomatic in tests (no startup-latency cost).
 "**/tests/**" = ["S101", "PLC0415"]
 # Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...)).
-# Glob covers every module under a ``cli/`` directory — commands.py, *_commands.py, and
-# the underscore-prefixed builder modules of the AWX spec-driven factory (``_list.py``,
-# ``_get.py``, …) — so a new Typer command module doesn't require a per-file-ignores edit.
 "**/cli/*.py" = ["B008"]
 
 [tool.ruff.format]
@@ -160,16 +84,13 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 plugins = ["pydantic.mypy"]
 # Type-check src/ only; tests are validated by running them.
-# Point at each package directory directly so mypy can derive module names
-# unambiguously (mixing `src/` and `packages/*/src/` causes "found twice" errors).
 packages = [
     "untaped",
-    "untaped_awx",
 ]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests", "packages"]
+testpaths = ["tests"]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -184,7 +105,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["src", "packages"]
+source = ["src"]
 omit = ["**/tests/**", "**/__main__.py"]
 
 [tool.coverage.report]
