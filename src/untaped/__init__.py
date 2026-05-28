@@ -24,7 +24,6 @@ from untaped.profile_resolver import (
     classify_active_profile,
     effective_active_profile_name,
     resolve_profiles,
-    splice_workspace_registry,
 )
 from untaped.settings import (
     HttpSettings,
@@ -83,7 +82,6 @@ __all__ = [
     "resolve_verify",
     "secret_field_paths",
     "splice_registered_state",
-    "splice_workspace_registry",
     "validate_settings_isolated",
     "walk_settings",
 ]

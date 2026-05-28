@@ -2,11 +2,20 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, Field
 
 from untaped.config.application import ListSettings
 from untaped.config.domain import Source
 from untaped.config.infrastructure import SettingsFileRepository
-from untaped.settings import get_settings
+from untaped.settings import get_settings, register_profile_settings, register_state_settings
+
+
+class DemoProfileSettings(BaseModel):
+    directory: Path = Path("~/.demo")
+
+
+class DemoStateSettings(BaseModel):
+    entries: list[str] = Field(default_factory=list)
 
 
 @pytest.fixture(autouse=True)
@@ -97,12 +106,14 @@ def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 def test_collection_fields_skipped() -> None:
+    register_profile_settings("demo", DemoProfileSettings)
+    register_state_settings("demo", DemoStateSettings)
+
     entries = {e.key for e in ListSettings(SettingsFileRepository())()}
-    # ``workspace.workspaces`` is a list of WorkspaceEntry — collections are
-    # skipped. The sibling scalar ``workspace.workspaces_dir`` must still
-    # appear, so the prefix check would be too broad.
-    assert "workspace.workspaces" not in entries
-    assert "workspace.workspaces_dir" in entries
+    # ``demo.entries`` is a list — collections are skipped. The sibling scalar
+    # ``demo.directory`` must still appear, so the prefix check would be too broad.
+    assert "demo.entries" not in entries
+    assert "demo.directory" in entries
 
 
 def test_env_var_naming_for_top_level() -> None:
@@ -131,11 +142,13 @@ def test_awx_api_prefix_default_shown() -> None:
     assert api_prefix.value == "/api/controller/v2/"
 
 
-def test_workspaces_dir_default_shown() -> None:
+def test_plugin_profile_default_shown() -> None:
+    register_profile_settings("demo", DemoProfileSettings)
+
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
-    workspaces_dir = entries["workspace.workspaces_dir"]
-    assert workspaces_dir.source == Source(kind="default")
-    assert str(workspaces_dir.value) == "~/.untaped/workspaces"
+    directory = entries["demo.directory"]
+    assert directory.source == Source(kind="default")
+    assert str(directory.value) == "~/.demo"
 
 
 def test_source_label_renders_string() -> None:

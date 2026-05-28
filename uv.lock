@@ -10,7 +10,6 @@ resolution-markers = [
 members = [
     "untaped",
     "untaped-awx",
-    "untaped-workspace",
 ]
 
 [[package]]
@@ -783,25 +782,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "pydantic", specifier = ">=2.13.3" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "typer", specifier = ">=0.25.1" },
-    { name = "untaped", editable = "." },
-]
-
-[[package]]
-name = "untaped-workspace"
-version = "0.1.0"
-source = { editable = "packages/untaped-workspace" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "typer" },
-    { name = "untaped" },
-]
-
-[package.metadata]
-requires-dist = [
     { name = "pydantic", specifier = ">=2.13.3" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "typer", specifier = ">=0.25.1" },

@@ -35,14 +35,12 @@ untaped/
 ├── src/untaped/                  # core CLI, config, plugin plumbing, shared helpers
 ├── tests/                        # tests for core and shared contracts
 └── packages/
-    ├── untaped-workspace/        # local git workspaces; AGENTS.md
     └── untaped-awx/              # AWX/AAP API; AGENTS.md
 ```
 
 | Package             | Type | Owns                                                                  | Internals doc |
 | ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
 | `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, profile resolution, output/stdin/http/errors. | this file |
-| `untaped-workspace` | plugin | Per-workspace `untaped.yml` manifests + central registry; subprocess `git`. | [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md) |
 | `untaped-awx`       | plugin | AWX/AAP bounded context (jobs, templates, inventories, …).          | [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md) |
 
 Extracted plugins live in their own repositories and depend on the public
@@ -52,6 +50,8 @@ Extracted plugins live in their own repositories and depend on the public
   — the `profile` command for managing the profile inventory.
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
   — the `github` command for authenticated user and search workflows.
+- [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
+  — the `workspace` command for local git workspace manifests and registry state.
 
 ## Hard Rules
 
@@ -91,8 +91,7 @@ Non-negotiable. Every contribution must respect them.
     (`untaped-awx` has `application/test/ports.py` for the test runner).
     Use cases declare the **narrowest port they need**; fatter ports
     extend slimmer ones via `Protocol` inheritance so concrete adapters
-    satisfy every variant structurally (e.g. `untaped-workspace`'s
-    `ManifestReader ⊂ ManifestRepository`).
+    satisfy every variant structurally.
 11. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
     keys. `untaped config list` redacts them; `repr(settings)` won't leak
     them in tracebacks. Call `.get_secret_value()` only at point of use.
@@ -204,9 +203,9 @@ Cross-cutting subsystems with their own internals doc:
 
 - **Configuration, profiles, plugin installs, and TLS** live in `src/untaped/`.
   User-facing reference: [`docs/configuration.md`](docs/configuration.md).
-- **Workspace internals** — see
-  [`packages/untaped-workspace/AGENTS.md`](packages/untaped-workspace/AGENTS.md).
-  User-facing reference: [`docs/workspace.md`](docs/workspace.md).
+- **Workspace management** lives in the extracted
+  [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
+  plugin. User-facing install guidance: [`docs/workspace.md`](docs/workspace.md).
 - **AWX resource framework, apply pipeline, jobs/track, test runner** —
   see [`packages/untaped-awx/AGENTS.md`](packages/untaped-awx/AGENTS.md).
   User-facing reference: [`docs/awx.md`](docs/awx.md).
@@ -331,9 +330,8 @@ behaviours worth knowing:
 - Core tests live in `tests/unit/`. In-repo plugin tests live in
   `packages/<pkg>/tests/unit/` by default. Use
   `tests/integration/` when the test exercises a real subprocess or
-  fake-server fixture (`untaped-awx`'s `FakeAap`, `untaped-workspace`'s
-  shell-driven git tests). Pure use-case tests with stubs stay in
-  `unit/`.
+  fake-server fixture (`untaped-awx`'s `FakeAap`). Pure use-case tests
+  with stubs stay in `unit/`.
 - No `__init__.py` files inside `tests/` — pytest uses
   `--import-mode=importlib`.
 - Mock httpx with `respx` (already a dev dep).
@@ -461,20 +459,17 @@ Credentials must be `SecretStr`; HTTP clients must still consume
   `list[X]`.** mypy resolves `list` to the method, not the builtin. Use
   `entries` instead, or `Iterator[X]` / `Iterable[X]` returns (no
   collision).
-- **Adding a new git operation outside `GitRunner`.** All git subprocess
-  calls live in
-  `untaped_workspace.infrastructure.git_runner.GitRunner`.
-- **Auto-switching branches on `sync`.** Don't. Branch cascade is
-  clone-time only; diverged on-disk vs target → skip-with-warning, never
-  `git checkout` for the user.
+- **Changing workspace git semantics in core.** Workspace git operations
+  live in the extracted `untaped-workspace` plugin; update that repo's
+  `AGENTS.md` and tests with any workspace behavior change.
 
 ## See also
 
 - **Per-package internals**:
-  [`untaped-workspace`](packages/untaped-workspace/AGENTS.md),
   [`untaped-awx`](packages/untaped-awx/AGENTS.md)
 - **Extracted plugins**:
   [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
-  [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
+  [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
+  [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
 - **User-facing docs**: [`docs/`](docs/README.md) — configuration,
   workspaces, AWX, GitHub

@@ -2,7 +2,8 @@
 
 `untaped` reads its settings from `~/.untaped/config.yml`. Core includes
 `untaped config` for editing keys. Profile inventory commands are
-provided by the optional `untaped-profile` plugin.
+provided by the optional `untaped-profile` plugin. Workspace registry
+commands are provided by the optional `untaped-workspace` plugin.
 
 - `untaped config` — read and write the *keys* inside a profile
   (`awx.token`, `http.ca_bundle`, …).
@@ -30,8 +31,9 @@ Every configurable value lives under `profiles.<name>`. Two keys live
 *outside* the `profiles` block:
 
 - `active: <name>` — selects which profile is on top. Optional.
-- `workspace.workspaces` — the workspace registry. App state, not
-  user-tunable config; managed by `untaped workspace` commands.
+- Plugin-owned top-level app state, such as `workspace.workspaces` when
+  `untaped-workspace` is installed. App state is not user-tunable scalar
+  config; it is managed by the owning plugin's commands.
 
 ```yaml
 active: prod                       # optional; selects the overlay profile
@@ -46,13 +48,16 @@ profiles:
       # users should override it to /api/v2/ here.
     github:
       token: ghp_xxx                 # optional GitHub plugin
+    workspace:
+      cache_dir: ~/.untaped/repositories       # optional Workspace plugin
+      workspaces_dir: ~/.untaped/workspaces
 
   prod:                            # overlays default; only declares what differs
     awx:
       base_url: https://aap.prod.example.com
       token: <prod token>
 
-workspace:                         # registry: name → path only
+workspace:                         # optional Workspace plugin state
   workspaces:
     - name: prod
       path: ~/work/prod
@@ -157,9 +162,11 @@ untaped config unset <key> --profile <name>
 Keys are dotted paths into the active schema, e.g. `awx.token`,
 `awx.base_url`, `awx.default_organization`, `http.ca_bundle`, and
 `http.verify_ssl`. Installed plugins add their own sections, such as
-`github.token` when the optional GitHub plugin is installed. Values are
-parsed as YAML scalars, so `untaped config set http.verify_ssl false`
-writes a real `false`, not the string `"false"`.
+`github.token` when the optional GitHub plugin is installed, or
+`workspace.cache_dir` when the optional workspace plugin is installed.
+Values are parsed as YAML scalars, so
+`untaped config set http.verify_ssl false` writes a real `false`, not
+the string `"false"`.
 
 Writing to a profile that doesn't exist is rejected — create it first
 with `untaped profile create <name>` if the profile plugin is installed,
@@ -212,6 +219,8 @@ awx.token                  → UNTAPED_AWX__TOKEN
 awx.base_url               → UNTAPED_AWX__BASE_URL
 http.verify_ssl            → UNTAPED_HTTP__VERIFY_SSL
 github.token               → UNTAPED_GITHUB__TOKEN  # optional GitHub plugin
+workspace.workspaces_dir   → UNTAPED_WORKSPACE__WORKSPACES_DIR
+                                                    # optional Workspace plugin
 ```
 
 Note the **double underscore** between the section and the field, and
@@ -248,8 +257,8 @@ untaped --profile prod awx ping
 
 ## See also
 
-- [`workspace.md`](./workspace.md) — `untaped workspace` commands and
-  the manifest / registry split.
+- [`workspace.md`](./workspace.md) — install guidance for the optional
+  workspace plugin.
 - [`awx.md`](./awx.md) — `untaped awx` commands and the resource
   framework.
 - [`github.md`](./github.md) — optional GitHub plugin install guidance.

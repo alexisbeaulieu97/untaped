@@ -28,12 +28,10 @@ build-backend = "uv_build"
 [tool.uv.workspace]
 members = [
     "packages/untaped-awx",
-    "packages/untaped-workspace",
 ]
 
 [tool.uv.sources]
 untaped = { workspace = true }
-untaped-workspace = { workspace = true }
 untaped-awx = { workspace = true }
 
 [dependency-groups]
@@ -53,14 +51,12 @@ dev = [
 # `scripts/sync_plugins.py` regenerates Import Linter and mypy lists from this.
 plugin_modules = [
     "untaped_awx",
-    "untaped_workspace",
 ]
 
 [tool.importlinter]
 root_packages = [
     "untaped",
     "untaped_awx",
-    "untaped_workspace",
 ]
 # TYPE_CHECKING imports don't create runtime edges; the layered DDD rule
 # allows them. tests/unit/test_layering.py documents and enforces the same
@@ -78,7 +74,6 @@ name = "Sibling plugins are mutually independent"
 type = "independence"
 modules = [
     "untaped_awx",
-    "untaped_workspace",
 ]
 
 [[tool.importlinter.contracts]]
@@ -86,7 +81,6 @@ name = "Per-plugin layers (cli > application | infrastructure > domain)"
 type = "layers"
 containers = [
     "untaped_awx",
-    "untaped_workspace",
 ]
 # `application | infrastructure` makes the two siblings of the same
 # layer: `cli` may import both, both may import `domain`, but neither
@@ -104,7 +98,6 @@ type = "forbidden"
 source_modules = ["untaped"]
 forbidden_modules = [
     "untaped_awx",
-    "untaped_workspace",
 ]
 
 [tool.ruff]
@@ -172,25 +165,11 @@ plugins = ["pydantic.mypy"]
 packages = [
     "untaped",
     "untaped_awx",
-    "untaped_workspace",
 ]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests", "packages"]
-# ``--import-mode=importlib`` doesn't expose ``tests`` as a package, so per-package
-# ``tests/conftest.py`` modules aren't importable by sibling test files via
-# ``from tests.conftest import …`` at runtime. Adding the workspace tests dir to
-# ``pythonpath`` lets workspace test files share stubs via
-# ``from conftest import StubGit, StubRegistry`` (avoiding 40+ fixture parameter
-# additions). Awx keeps its TYPE_CHECKING + fixture pattern unchanged.
-#
-# Caveat: this claims the unqualified module name ``conftest`` globally for the
-# pytest session. Do not add a second per-package tests dir to ``pythonpath`` —
-# pick a unique module name (e.g. ``_<pkg>_stubs.py``) and import that. Other
-# packages can still ship ``tests/conftest.py`` for pytest's auto-discovery;
-# only the runtime ``from conftest import …`` pattern is exclusive to workspace.
-pythonpath = ["packages/untaped-workspace/tests"]
 addopts = [
     "-ra",
     "--strict-markers",
