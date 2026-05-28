@@ -48,8 +48,8 @@ without reinstalling.
 
 `untaped awx`, `untaped profile`, `untaped github`, and `untaped workspace`
 are not bundled in core. Install the standalone plugins when you want those
-commands. For an editable source install, pass the source checkout as the
-tool spec when you add a plugin:
+commands. For example, with an editable source install, pass the source
+checkout as the tool spec when you add a plugin:
 
 ```bash
 untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
@@ -57,24 +57,23 @@ untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git 
   --editable-tool
 ```
 
-For several plugins, record them first, then sync the tool from this checkout:
-
-```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-awx.git --no-sync
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git --no-sync
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-github.git --no-sync
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-workspace.git --no-sync
-untaped plugins sync --tool-spec /path/to/untaped --editable-tool
-```
+See [Plugins](./docs/plugins.md) for direct git installs, managed plugin
+state, and multi-plugin sync examples.
 
 ## Documentation
 
 User-facing docs live in [`docs/`](./docs/README.md):
 
 - [Configuration](./docs/configuration.md) — profiles, secrets, TLS.
-- [Workspaces](./docs/workspace.md) — optional `untaped workspace` plugin.
-- [AWX / AAP](./docs/awx.md) — optional `untaped awx` plugin.
-- [GitHub](./docs/github.md) — optional `untaped github` plugin.
+- [Plugins](./docs/plugins.md) — installing, syncing, listing, and
+  diagnosing optional plugins.
+
+Plugin command references live in their plugin repos:
+
+- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
+- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
+- [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
+- [Profile](https://github.com/alexisbeaulieu97/untaped-profile)
 
 ## Contributing
 
