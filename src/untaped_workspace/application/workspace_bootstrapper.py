@@ -8,14 +8,14 @@ pass a ``build_manifest(ws_name) -> WorkspaceManifest`` closure.
 
 Workspace-dir creation is a side effect of ``ManifestRepository.write``
 — it mkdirs the manifest's parent (which *is* the workspace dir) so
-callers don't need to. See ``untaped-workspace/AGENTS.md``.
+callers don't need to. See ``AGENTS.md``.
 
 Two entry points: ``__call__`` for ``InitWorkspace`` /
 ``ImportWorkspace`` (resolves once, derives name, writes, registers);
 ``verify`` + ``bootstrap`` for ``AdoptWorkspace`` — the canonical-in
 fast path that would otherwise canonicalise three times per
-invocation. See ``packages/untaped-workspace/AGENTS.md``'s "`init`
-vs. `adopt` vs. `import` vs. `forget`" section for the long form.
+invocation. See ``AGENTS.md``'s "`init` vs. `adopt` vs. `import` vs.
+`forget`" section for the long form.
 """
 
 from __future__ import annotations

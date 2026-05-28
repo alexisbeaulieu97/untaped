@@ -97,19 +97,138 @@ def test_layers_do_not_import_forbidden_siblings(
 
 
 def test_infrastructure_does_not_read_global_settings() -> None:
-    forbidden_names = frozenset({"Settings", "get_settings"})
     violations: list[str] = []
 
     for py_file in sorted((SRC_ROOT / "infrastructure").rglob("*.py")):
-        rel = py_file.relative_to(SRC_ROOT)
-        tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        for imp in _runtime_imports(tree):
-            if isinstance(imp, ast.ImportFrom) and imp.module in {"untaped", "untaped.settings"}:
-                bad = sorted({alias.name for alias in imp.names if alias.name in forbidden_names})
-                if bad:
-                    violations.append(f"{rel}:{imp.lineno} imports {', '.join(bad)}")
+        violations.extend(_settings_violations_in_file(py_file, SRC_ROOT))
 
     assert not violations, (
         "Infrastructure adapters must receive narrowed settings from the CLI composition root, "
         "not read the global settings aggregate:\n  " + "\n  ".join(violations)
     )
+
+
+def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # noqa: C901
+    forbidden_names = frozenset({"Settings", "get_settings"})
+    rel = py_file.relative_to(src_dir)
+    tree = ast.parse(py_file.read_text(encoding="utf-8"))
+    typecheck_lines = _typecheck_block_lines(tree)
+    found: list[str] = []
+
+    top_aliases: set[str] = set()
+    sub_aliases: set[str] = set()
+
+    for imp in _runtime_imports(tree):
+        if isinstance(imp, ast.ImportFrom) and imp.module in {"untaped", "untaped.settings"}:
+            bad = sorted({alias.name for alias in imp.names if alias.name in forbidden_names})
+            if bad:
+                found.append(f"{rel}:{imp.lineno} imports {', '.join(bad)} from {imp.module}")
+            if imp.module == "untaped":
+                for alias in imp.names:
+                    if alias.name == "settings":
+                        sub_aliases.add(alias.asname or "settings")
+        elif isinstance(imp, ast.Import):
+            for alias in imp.names:
+                if alias.name == "untaped":
+                    top_aliases.add(alias.asname or "untaped")
+                elif alias.name == "untaped.settings":
+                    if alias.asname:
+                        sub_aliases.add(alias.asname)
+                    else:
+                        top_aliases.add("untaped")
+
+    if top_aliases or sub_aliases:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Attribute):
+                continue
+            if node.lineno in typecheck_lines:
+                continue
+            if node.attr not in forbidden_names:
+                continue
+            if isinstance(node.value, ast.Name):
+                name = node.value.id
+                if name in top_aliases or name in sub_aliases:
+                    found.append(f"{rel}:{node.lineno} reads {name}.{node.attr}")
+            elif isinstance(node.value, ast.Attribute) and node.value.attr == "settings":
+                inner = node.value.value
+                if isinstance(inner, ast.Name) and inner.id in top_aliases:
+                    found.append(f"{rel}:{node.lineno} reads {inner.id}.settings.{node.attr}")
+
+    return found
+
+
+_BYPASS_SOURCES: list[tuple[str, str]] = [
+    (
+        "import-alias-direct",
+        "import untaped as core\ndef f() -> None:\n    core.get_settings()\n",
+    ),
+    (
+        "import-alias-class",
+        "import untaped as core\ndef f() -> None:\n    core.Settings()\n",
+    ),
+    (
+        "from-import-submodule",
+        "from untaped import settings\ndef f() -> None:\n    settings.get_settings()\n",
+    ),
+    (
+        "from-import-submodule-aliased",
+        "from untaped import settings as cfg\ndef f() -> None:\n    cfg.get_settings()\n",
+    ),
+    (
+        "import-submodule-chained",
+        "import untaped.settings\ndef f() -> None:\n    untaped.settings.get_settings()\n",
+    ),
+    (
+        "import-submodule-aliased",
+        "import untaped.settings as s\ndef f() -> None:\n    s.Settings()\n",
+    ),
+    (
+        "direct-import",
+        "from untaped import get_settings\ndef f() -> None:\n    get_settings()\n",
+    ),
+    (
+        "type-checking-else-branch",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from untaped import HttpSettings\n"
+        "else:\n"
+        "    from untaped import get_settings\n"
+        "def f() -> None:\n"
+        "    get_settings()\n",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "source"),
+    _BYPASS_SOURCES,
+    ids=[lbl for lbl, _ in _BYPASS_SOURCES],
+)
+def test_settings_violation_helper_catches_alias_bypasses(
+    tmp_path: Path, label: str, source: str
+) -> None:
+    src_dir = tmp_path / "untaped_fake"
+    infra_dir = src_dir / "infrastructure"
+    infra_dir.mkdir(parents=True)
+    py_file = infra_dir / "client.py"
+    py_file.write_text(source, encoding="utf-8")
+
+    violations = _settings_violations_in_file(py_file, src_dir)
+
+    assert violations, f"expected {label} pattern to be flagged"
+
+
+def test_settings_violation_helper_ignores_legitimate_imports(tmp_path: Path) -> None:
+    src_dir = tmp_path / "untaped_fake"
+    infra_dir = src_dir / "infrastructure"
+    infra_dir.mkdir(parents=True)
+    py_file = infra_dir / "client.py"
+    py_file.write_text(
+        "from untaped import ConfigError, HttpClient, HttpSettings\n"
+        "import untaped\n"
+        "def f() -> None:\n"
+        "    untaped.HttpClient(base_url='x')\n",
+        encoding="utf-8",
+    )
+
+    assert _settings_violations_in_file(py_file, src_dir) == []
