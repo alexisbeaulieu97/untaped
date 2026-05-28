@@ -15,9 +15,9 @@ overrides layer beneath the active profile; when absent, the active profile
 is layered alone (and the Pydantic schema's defaults sit beneath both via
 the Settings class).
 
-Top-level keys outside ``profiles`` are ignored — splicing app-state like
-``workspace.workspaces`` back into the merged dict is
-``ProfilesSettingsSource``'s responsibility, not ours.
+Top-level keys outside ``profiles`` are ignored here — splicing registered
+plugin app-state back into the merged dict is ``ProfilesSettingsSource``'s
+responsibility, not ours.
 """
 
 from __future__ import annotations
@@ -85,23 +85,6 @@ def resolve_profiles(
         _layer(profiles[active_name], active_name, effective, provenance, ())
 
     return effective, provenance
-
-
-def splice_workspace_registry(raw: dict[str, Any], effective: dict[str, Any]) -> None:
-    """Hoist top-level ``workspace.workspaces`` (state) into the merged dict.
-
-    Profiles can still set ``workspace.cache_dir``; the registry merges in
-    without clobbering other workspace keys.
-    """
-    ws_state = raw.get("workspace")
-    if not isinstance(ws_state, dict):
-        return
-    registry = ws_state.get("workspaces")
-    if registry is None:
-        return
-    merged_ws = effective.setdefault("workspace", {})
-    if isinstance(merged_ws, dict):
-        merged_ws["workspaces"] = registry
 
 
 def _select_active(

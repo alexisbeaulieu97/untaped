@@ -1,10 +1,9 @@
 """End-to-end tests for the profile-aware ``Settings`` loader.
 
-These tests exercise ``Settings`` against the new YAML schema (profiles +
-top-level workspace registry). They cover the merge behaviour, the
-``UNTAPED_PROFILE`` env-override, and the registry-hoisting trick that
-keeps ``Settings.workspace.workspaces`` working when the registry lives
-outside any profile.
+These tests exercise ``Settings`` against the profile YAML schema and
+registered plugin sections. They cover merge behaviour, the
+``UNTAPED_PROFILE`` env-override, and generic top-level plugin state
+splicing.
 """
 
 from __future__ import annotations
@@ -13,8 +12,22 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, Field
 
-from untaped.settings import get_settings, get_settings_model
+from untaped.settings import (
+    get_settings,
+    get_settings_model,
+    register_profile_settings,
+    register_state_settings,
+)
+
+
+class DemoProfileSettings(BaseModel):
+    cache_dir: Path = Path("~/.demo/cache")
+
+
+class DemoStateSettings(BaseModel):
+    entries: list[str] = Field(default_factory=list)
 
 
 @pytest.fixture(autouse=True)
@@ -117,95 +130,96 @@ def test_untaped_field_env_still_beats_profile(
     assert s.awx.token.get_secret_value() == "from-env"
 
 
-def test_workspace_registry_lives_at_top_level(
+def test_registered_state_lives_at_top_level(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    register_profile_settings("demo", DemoProfileSettings)
+    register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
         profiles:
           default: {}
-        workspace:
-          workspaces:
-            - name: prod
-              path: /tmp/prod
-            - name: stage
-              path: /tmp/stage
+        demo:
+          entries:
+            - prod
+            - stage
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    names = [w.name for w in s.workspace.workspaces]
-    assert names == ["prod", "stage"]
+    assert s.demo.entries == ["prod", "stage"]
 
 
-def test_workspace_cache_dir_can_live_in_profile(
+def test_plugin_settings_can_live_in_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    register_profile_settings("demo", DemoProfileSettings)
+    register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
         profiles:
           default:
-            workspace:
+            demo:
               cache_dir: /default/cache
           prod:
-            workspace:
+            demo:
               cache_dir: /prod/cache
         active: prod
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.workspace.cache_dir == Path("/prod/cache")
+    assert s.demo.cache_dir == Path("/prod/cache")
 
 
-def test_top_level_workspace_registry_does_not_clobber_profile_cache_dir(
+def test_top_level_state_does_not_clobber_profile_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The registry hoist must merge with (not overwrite) the workspace block."""
+    """The state splice must merge with (not overwrite) the profile block."""
+    register_profile_settings("demo", DemoProfileSettings)
+    register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
         profiles:
           default:
-            workspace:
+            demo:
               cache_dir: /from/profile
-        workspace:
-          workspaces:
-            - name: prod
-              path: /tmp/prod
+        demo:
+          entries:
+            - prod
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.workspace.cache_dir == Path("/from/profile")
-    assert len(s.workspace.workspaces) == 1
-    assert s.workspace.workspaces[0].name == "prod"
+    assert s.demo.cache_dir == Path("/from/profile")
+    assert s.demo.entries == ["prod"]
 
 
-def test_top_level_workspace_state_cannot_override_profile_settings(
+def test_top_level_state_cannot_override_profile_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    register_profile_settings("demo", DemoProfileSettings)
+    register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
         profiles:
           default:
-            workspace:
+            demo:
               cache_dir: /from/profile
-        workspace:
+        demo:
           cache_dir: /from/state
-          workspaces:
-            - name: prod
-              path: /tmp/prod
+          entries:
+            - prod
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
-    assert s.workspace.cache_dir == Path("/from/profile")
-    assert len(s.workspace.workspaces) == 1
-    assert s.workspace.workspaces[0].name == "prod"
+    assert s.demo.cache_dir == Path("/from/profile")
+    assert s.demo.entries == ["prod"]
 
 
 def test_empty_config_file_yields_schema_defaults(
@@ -215,7 +229,6 @@ def test_empty_config_file_yields_schema_defaults(
     s = get_settings()
     assert s.log_level == "INFO"
     assert s.awx.token is None
-    assert s.workspace.workspaces == []
 
 
 def test_missing_default_profile_no_active_uses_schema(

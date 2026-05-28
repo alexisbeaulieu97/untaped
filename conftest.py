@@ -11,7 +11,6 @@ from untaped.plugins import PluginRegistry, set_current_registry
 from untaped.settings import (
     get_settings,
     register_profile_settings,
-    register_state_settings,
     reset_config_registry_for_tests,
 )
 
@@ -22,14 +21,10 @@ def _register_legacy_plugin_settings_for_tests() -> Iterator[None]:
     # Bridge-step only: these dynamic imports preserve legacy tests while plugin
     # packages still live in the monorepo. Delete this fixture when they move out.
     awx_config = import_module("untaped_awx.infrastructure").AwxConfig
-    workspace_settings = import_module("untaped_workspace.settings").WorkspaceSettings
-    workspace_state = import_module("untaped_workspace.settings").WorkspaceState
 
     reset_config_registry_for_tests()
     set_current_registry(PluginRegistry())
     register_profile_settings("awx", awx_config)
-    register_profile_settings("workspace", workspace_settings)
-    register_state_settings("workspace", workspace_state)
     get_settings.cache_clear()
     yield
     reset_config_registry_for_tests()

@@ -1,7 +1,7 @@
 # `untaped` — documentation
 
 `untaped` is a personal DevOps CLI suite. One binary loads core
-commands and installed domain plugins (workspaces, AWX/AAP, GitHub,
+commands and installed domain plugins (AWX/AAP, workspaces, GitHub,
 profile, ...), so daily DevOps work composes — commands that emit data
 are designed to be piped into `fzf`, `jq`, `awk`, or each other.
 
@@ -9,9 +9,9 @@ are designed to be piped into `fzf`, `jq`, `awk`, or each other.
 
 - [Configuration](./configuration.md) — `~/.untaped/config.yml`,
   profiles, secrets, TLS, env-var overrides. Start here.
-- [Workspaces](./workspace.md) — manage local git workspaces (collections
-  of repos): manifests, the registry, `sync` / `status` / `foreach`,
-  the `uwcd` shell helper.
+- [Workspaces](./workspace.md) — install the optional workspace plugin
+  for local git workspace manifests, registry state, `sync` / `status` /
+  `foreach`, and the `uwcd` shell helper.
 - [AWX / AAP](./awx.md) — talk to Ansible Automation Platform:
   list / save / apply resources, launch jobs, run declarative test
   suites.
@@ -31,7 +31,8 @@ untaped awx job-templates list --format raw --columns name \
   | fzf \
   | untaped awx job-templates get --stdin --format json
 
-# Morning routine: sync every workspace, flag anything behind upstream.
+# With the optional workspace plugin installed, sync every workspace
+# and flag anything behind upstream.
 untaped workspace sync --all
 untaped workspace status --all --format raw \
     --columns workspace --columns repo --columns behind \

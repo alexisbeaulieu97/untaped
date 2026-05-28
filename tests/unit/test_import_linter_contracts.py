@@ -14,9 +14,12 @@ mode this whole quality gate exists to prevent.
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,6 +51,11 @@ def _run_lint_imports() -> subprocess.CompletedProcess[str]:
 
 
 def test_independence_contract_catches_cross_plugin_import() -> None:
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+    plugin_modules = pyproject["tool"]["untaped"]["plugin_modules"]
+    if len(plugin_modules) < 2:
+        pytest.skip("sibling independence contract is vacuous with fewer than two in-repo plugins")
+
     fixture = REPO_ROOT / "packages/untaped-awx/src/untaped_awx/_contract_self_test_violation.py"
     with _injected_violation(
         fixture,

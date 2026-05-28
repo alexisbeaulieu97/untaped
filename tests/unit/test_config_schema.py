@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from untaped import (
     find_descriptor,
@@ -12,6 +12,15 @@ from untaped import (
     secret_field_paths,
     walk_settings,
 )
+from untaped.settings import register_profile_settings, register_state_settings
+
+
+class DemoProfileSettings(BaseModel):
+    directory: Path = Path("~/.demo")
+
+
+class DemoStateSettings(BaseModel):
+    entries: list[str] = Field(default_factory=list)
 
 
 def test_walks_nested_models() -> None:
@@ -28,13 +37,15 @@ def test_walks_nested_models() -> None:
 
 
 def test_skips_collection_fields() -> None:
+    register_profile_settings("demo", DemoProfileSettings)
+    register_state_settings("demo", DemoStateSettings)
+
     descriptors = walk_settings(get_settings_model())
     keys = {d.key for d in descriptors}
-    # ``workspace.workspaces`` is a list — should not appear. The sibling
-    # scalar ``workspace.workspaces_dir`` must still appear, so a prefix
-    # check would be too broad.
-    assert "workspace.workspaces" not in keys
-    assert "workspace.workspaces_dir" in keys
+    # ``demo.entries`` is a list — should not appear. The sibling scalar
+    # ``demo.directory`` must still appear, so a prefix check would be too broad.
+    assert "demo.entries" not in keys
+    assert "demo.directory" in keys
 
 
 def test_secrets_are_marked() -> None:
