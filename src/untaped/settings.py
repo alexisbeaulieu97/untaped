@@ -73,6 +73,9 @@ class _ConfigRegistry:
         existing = self.profile_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate profile settings section: {section}")
+        state_model = self.state_sections.get(section)
+        if state_model is not None:
+            validate_disjoint_settings_sections(section, model, state_model)
         self.profile_sections[section] = model
         get_settings.cache_clear()
         get_settings_model.cache_clear()
@@ -82,6 +85,9 @@ class _ConfigRegistry:
         existing = self.state_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate state settings section: {section}")
+        profile_model = self.profile_sections.get(section)
+        if profile_model is not None:
+            validate_disjoint_settings_sections(section, profile_model, model)
         self.state_sections[section] = model
         get_settings.cache_clear()
         get_settings_model.cache_clear()
@@ -129,6 +135,18 @@ def register_profile_settings(section: str, model: type[BaseModel]) -> None:
 def register_state_settings(section: str, model: type[BaseModel]) -> None:
     """Register top-level plugin state spliced into the effective config."""
     _CONFIG_REGISTRY.register_state_settings(section, model)
+
+
+def validate_disjoint_settings_sections(
+    section: str,
+    profile_model: type[BaseModel],
+    state_model: type[BaseModel],
+) -> None:
+    """Reject profile/state models whose fields would compete for precedence."""
+    overlap = sorted(profile_model.model_fields.keys() & state_model.model_fields.keys())
+    if overlap:
+        joined = ", ".join(overlap)
+        raise ConfigError(f"overlapping profile/state settings for section {section!r}: {joined}")
 
 
 def reset_config_registry_for_tests() -> None:

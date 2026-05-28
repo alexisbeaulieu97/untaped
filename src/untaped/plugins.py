@@ -20,6 +20,7 @@ from untaped.settings import (
     PluginToolSpec,
     register_profile_settings,
     register_state_settings,
+    validate_disjoint_settings_sections,
 )
 
 ENTRY_POINT_GROUP = "untaped.plugins"
@@ -77,11 +78,17 @@ class PluginRegistry:
     def add_profile_settings(self, section: str, model: type[BaseModel]) -> None:
         if section in self.profile_sections:
             raise ConfigError(f"duplicate profile settings section: {section}")
+        state_model = self.state_sections.get(section)
+        if state_model is not None:
+            validate_disjoint_settings_sections(section, model, state_model)
         self.profile_sections[section] = model
 
     def add_state_settings(self, section: str, model: type[BaseModel]) -> None:
         if section in self.state_sections:
             raise ConfigError(f"duplicate state settings section: {section}")
+        profile_model = self.profile_sections.get(section)
+        if profile_model is not None:
+            validate_disjoint_settings_sections(section, profile_model, model)
         self.state_sections[section] = model
 
     def add_diagnostic(self, name: str, check: Callable[[], DiagnosticResult]) -> None:

@@ -16,6 +16,10 @@ class DemoState(BaseModel):
     entries: list[str] = []
 
 
+class OverlappingDemoState(BaseModel):
+    token: str | None = None
+
+
 def test_registry_rejects_duplicate_plugin_ids() -> None:
     registry = PluginRegistry()
     registry.add_plugin_id("demo")
@@ -79,6 +83,14 @@ def test_registry_rejects_duplicate_state_setting_sections() -> None:
 
     with pytest.raises(ConfigError, match="duplicate state settings section"):
         registry.add_state_settings("demo", DemoState)
+
+
+def test_registry_rejects_overlapping_profile_and_state_setting_fields() -> None:
+    registry = PluginRegistry()
+    registry.add_profile_settings("demo", DemoSettings)
+
+    with pytest.raises(ConfigError, match="overlapping profile/state settings"):
+        registry.add_state_settings("demo", OverlappingDemoState)
 
 
 def test_registry_stores_diagnostics() -> None:

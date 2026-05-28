@@ -8,6 +8,7 @@ import pytest
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped.config_schema import secret_field_paths, walk_settings
+from untaped.errors import ConfigError
 from untaped.settings import (
     get_config_section,
     get_settings,
@@ -25,6 +26,10 @@ class DemoSettings(BaseModel):
 
 class DemoState(BaseModel):
     entries: list[str] = Field(default_factory=list)
+
+
+class OverlappingDemoState(BaseModel):
+    endpoint: str = "https://state.example"
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +97,20 @@ def test_state_sections_are_spliced_from_top_level(_isolated_config: Path) -> No
 
     assert settings.demo.endpoint == "https://profile.example"
     assert settings.demo.entries == ["alpha"]
+
+
+def test_state_settings_cannot_overlap_profile_settings() -> None:
+    register_profile_settings("demo", DemoSettings)
+
+    with pytest.raises(ConfigError, match="overlapping profile/state settings"):
+        register_state_settings("demo", OverlappingDemoState)
+
+
+def test_profile_settings_cannot_overlap_state_settings() -> None:
+    register_state_settings("demo", OverlappingDemoState)
+
+    with pytest.raises(ConfigError, match="overlapping profile/state settings"):
+        register_profile_settings("demo", DemoSettings)
 
 
 def test_state_splice_only_uses_registered_state_fields(_isolated_config: Path) -> None:
