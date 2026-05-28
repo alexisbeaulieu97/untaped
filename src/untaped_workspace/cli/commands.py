@@ -25,6 +25,7 @@ from untaped import (
 from untaped_workspace.application import (
     AddRepo,
     AdoptWorkspace,
+    ApplyWorkspaceBranch,
     EditWorkspace,
     Foreach,
     ForgetWorkspace,
@@ -44,7 +45,7 @@ from untaped_workspace.application import (
     WorkspaceStatus,
 )
 from untaped_workspace.cli.completions import complete_workspace_name
-from untaped_workspace.domain import SyncOutcome, Workspace
+from untaped_workspace.domain import BranchApplyOutcome, SyncOutcome, Workspace
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -158,6 +159,11 @@ def branch_set_command(
         "--repo",
         help="Repo name or URL to set; omit for the workspace default.",
     ),
+    apply_checkout: bool = typer.Option(
+        False,
+        "--apply",
+        help="After writing the manifest, checkout matching existing clones to the new branch.",
+    ),
     name: str | None = typer.Option(
         None,
         "--name",
@@ -166,6 +172,8 @@ def branch_set_command(
         autocompletion=complete_workspace_name,
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Set the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
@@ -173,11 +181,18 @@ def branch_set_command(
         change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
         if change.repo is None:
             typer.echo(f"set default branch for {change.workspace!r} to {change.branch}", err=True)
-            return
-        typer.echo(
-            f"set branch for repo {change.repo!r} in {change.workspace!r} to {change.branch}",
-            err=True,
-        )
+        else:
+            typer.echo(
+                f"set branch for repo {change.repo!r} in {change.workspace!r} to {change.branch}",
+                err=True,
+            )
+        if apply_checkout:
+            outcomes = ApplyWorkspaceBranch(
+                ManifestRepository(),
+                GitRunner(),
+                fs=LocalFilesystem(),
+            )(ws, repo=change.repo)
+            _print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
 
 
 @branch_app.command("unset")
@@ -207,6 +222,45 @@ def branch_unset_command(
             f"unset branch for repo {change.repo!r} in {change.workspace!r}",
             err=True,
         )
+
+
+@branch_app.command("apply")
+def branch_apply_command(
+    repo: str | None = typer.Option(
+        None,
+        "--repo",
+        help="Repo name or URL to apply; omit for every repo in the workspace.",
+    ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Workspace name.",
+        autocompletion=complete_workspace_name,
+    ),
+    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Checkout existing repos to the branch declared in ``untaped.yml``."""
+    with report_errors():
+        ws = _resolve(name, path)
+        outcomes = ApplyWorkspaceBranch(
+            ManifestRepository(),
+            GitRunner(),
+            fs=LocalFilesystem(),
+        )(ws, repo=repo)
+        _print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
+
+
+def _print_branch_apply_outcomes(
+    outcomes: list[BranchApplyOutcome],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+) -> None:
+    rows = [row.model_dump() for row in outcomes]
+    typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
 
 # init -----------------------------------------------------------------------

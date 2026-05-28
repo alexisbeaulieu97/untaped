@@ -92,6 +92,9 @@ class GitRunner:
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
         self._run(["merge", "--ff-only", f"origin/{branch}"], cwd=repo_path)
 
+    def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
+        self._run(["checkout", branch], cwd=repo_path)
+
     def default_branch(self, bare_path: Path) -> str | None:
         """Return the branch the bare's HEAD points at, or ``None``."""
         try:

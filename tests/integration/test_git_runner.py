@@ -106,6 +106,62 @@ def test_clone_with_reference_specific_branch(tmp_path: Path, upstream: Path) ->
     assert head == "develop"
 
 
+def test_checkout_branch_checks_out_remote_branch_after_fetch(
+    tmp_path: Path,
+    upstream: Path,
+) -> None:
+    runner = GitRunner()
+    cache = tmp_path / "cache"
+    seed = tmp_path / "_seed_checkout"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "checkout", "-b", "develop"], check=True, capture_output=True
+    )
+    (seed / "develop.txt").write_text("develop")
+    subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", "develop"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(seed), "push", "origin", "develop"],
+        check=True,
+        capture_output=True,
+    )
+
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
+    workspace_repo = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
+
+    runner.fetch(workspace_repo)
+    runner.checkout_branch(workspace_repo, branch="develop")
+
+    head = subprocess.run(
+        ["git", "-C", str(workspace_repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head == "develop"
+
+
+def test_checkout_branch_raises_git_error_for_missing_branch(
+    tmp_path: Path,
+    upstream: Path,
+) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    workspace_repo = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
+
+    with pytest.raises(GitError):
+        runner.checkout_branch(workspace_repo, branch="ghost")
+
+
 def test_status_clean_repo(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
     bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")

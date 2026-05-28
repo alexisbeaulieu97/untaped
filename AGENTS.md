@@ -119,7 +119,8 @@ disambiguation hints. No application-layer code mutates
 
 Lookup-precedence applies only to commands that act on an existing
 workspace by name or path — `add`, `remove`, `sync`, `status`,
-`foreach`, `show`, `branch set`, and `branch unset`. For those commands:
+`foreach`, `show`, `branch set`, `branch unset`, and `branch apply`.
+For those commands:
 
 1. Explicit `--name` → registry lookup
 2. Explicit `--path` → manifest lookup
@@ -171,7 +172,7 @@ Every cross-use-case `Protocol` and Callable alias lives in
 this package's concrete chains are
 `ManifestReader ⊂ ManifestRepository`, `RegistryReader ⊂
 WorkspaceRegistry`, and `StatusInspector ⊂ GitInspector ⊂
-GitOperations`. The concrete `ManifestRepository` /
+BranchOperations ⊂ GitOperations`. The concrete `ManifestRepository` /
 `WorkspaceRegistryRepository` / `GitRunner` / `LocalFilesystem` /
 `LocalRepoDiscoverer` adapters satisfy every variant structurally
 with no explicit base class. When you add a new shared port, put it
@@ -270,17 +271,23 @@ cap.
 
 ## Branch cascade is clone-time only
 
-Per-repo `branch` > workspace `defaults.branch` > the remote's HEAD —
-honoured **only at clone time**. Subsequent `sync`s do *not* auto-switch
-branches: they skip-with-warning when the on-disk branch doesn't match the
-manifest's target. This stops a stale `defaults.branch` from kidnapping a
-user mid-`feature/x`. State machine: `application.SyncWorkspace._sync_repo`.
+Per-repo `branch` > workspace `defaults.branch` > the remote's HEAD.
+`SyncWorkspace` honours the cascade for clone-time branch selection,
+but subsequent syncs do *not* auto-switch branches: they skip-with-warning
+when the on-disk branch doesn't match the manifest's target. This stops a
+stale `defaults.branch` from kidnapping a user mid-`feature/x`. State
+machine: `application.SyncWorkspace._sync_repo`.
 
 `workspace branch set` and `workspace branch unset` are manifest-editing
 commands only: they update `defaults.branch` or a repo override in
-`untaped.yml`, then stop. They never invoke `GitRunner`, never checkout,
-and never inspect the clone. `workspace show` is also manifest-only; it
-formats the effective branch cascade without reading live git state.
+`untaped.yml`, then stop unless `branch set --apply` is passed.
+`workspace branch apply` is the explicit checkout command for existing
+clones. It fetches, reads status, refuses dirty/diverged repos, and calls
+`GitRunner.checkout_branch` only when a clean clone is on a different
+branch from the manifest target. Missing clones, repos without a target
+branch, fetch failures, status failures, and checkout failures are row-level
+`skip`s. `workspace show` is manifest-only; it formats the effective branch
+cascade without reading live git state.
 
 ## `sync --all -j N` parallelism
 

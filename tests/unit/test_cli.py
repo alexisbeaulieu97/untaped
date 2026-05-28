@@ -271,6 +271,82 @@ def test_branch_set_unknown_repo_errors(tmp_path: Path) -> None:
     assert "repo 'ghost' not declared in workspace 'prod'" in result.output
 
 
+def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+
+    result = runner.invoke(app, ["branch", "apply", "--name", "prod", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "repo": "api",
+            "workspace": "prod",
+            "target_branch": "develop",
+            "action": "skip",
+            "detail": "not cloned",
+        }
+    ]
+
+
+def test_branch_apply_filters_by_repo_name(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--name", "prod"])
+
+    result = runner.invoke(
+        app,
+        ["branch", "apply", "--repo", "api", "--name", "prod", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert [row["repo"] for row in rows] == ["api"]
+
+
+def test_branch_apply_raw_defaults_to_repo_names(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--name", "prod"])
+
+    result = runner.invoke(app, ["branch", "apply", "--name", "prod", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["api", "ui"]
+
+
+def test_branch_set_apply_writes_manifest_and_applies(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+
+    result = runner.invoke(
+        app,
+        ["branch", "set", "develop", "--apply", "--name", "prod", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "set default branch for 'prod' to develop" in result.output
+    assert json.loads(result.stdout) == [
+        {
+            "repo": "api",
+            "workspace": "prod",
+            "target_branch": "develop",
+            "action": "skip",
+            "detail": "not cloned",
+        }
+    ]
+    raw = yaml.safe_load((target / "untaped.yml").read_text())
+    assert raw["defaults"]["branch"] == "develop"
+
+
 # ── adopt ───────────────────────────────────────────────────────────────────
 
 

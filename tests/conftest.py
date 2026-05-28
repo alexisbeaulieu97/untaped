@@ -66,6 +66,7 @@ class StubGit:
         local_fetch_fail: Set[str] = frozenset(),
         status_fail: Set[str] = frozenset(),
         pull_fail: Set[str] = frozenset(),
+        checkout_fail: Set[str] = frozenset(),
     ) -> None:
         self.events: list[tuple[Any, ...]] = []
         self._on_disk = set(on_disk)
@@ -75,6 +76,7 @@ class StubGit:
         self._local_fetch_fail = local_fetch_fail
         self._status_fail = status_fail
         self._pull_fail = pull_fail
+        self._checkout_fail = checkout_fail
 
     def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
         self.events.append(("ensure_bare", url))
@@ -109,6 +111,13 @@ class StubGit:
         self.events.append(("pull", repo_path.name, branch))
         if repo_path.name in self._pull_fail:
             raise GitError("non-fast-forward pull")
+
+    def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
+        self.events.append(("checkout", repo_path.name, branch))
+        if repo_path.name in self._checkout_fail:
+            raise GitError("checkout failed")
+        current = self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        self._statuses[repo_path.name] = current.model_copy(update={"branch": branch})
 
 
 class StubRegistry:

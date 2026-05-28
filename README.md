@@ -45,6 +45,7 @@ untaped workspace add <url>...
 untaped workspace remove <repo>...
 untaped workspace branch set <branch> [--repo <repo>]
 untaped workspace branch unset [--repo <repo>]
+untaped workspace branch apply [--repo <repo>]
 untaped workspace sync
 untaped workspace status
 untaped workspace foreach <cmd>

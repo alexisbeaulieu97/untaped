@@ -8,6 +8,7 @@ Mirrors :mod:`untaped_awx.domain.payloads`. Putting these in ``domain/``
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -69,3 +70,19 @@ class BranchChange(BaseModel):
     workspace: str
     repo: str | None
     branch: str | None
+
+
+BranchApplyAction = Literal["checkout", "up-to-date", "skip", "unmatched"]
+"""What ``workspace branch apply`` did or refused to do for one repo."""
+
+
+class BranchApplyOutcome(BaseModel):
+    """One row of ``workspace branch apply`` output."""
+
+    model_config = ConfigDict(frozen=True)
+
+    repo: str
+    workspace: str
+    target_branch: str | None
+    action: BranchApplyAction
+    detail: str = ""

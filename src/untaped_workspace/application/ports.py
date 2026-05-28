@@ -89,13 +89,17 @@ class GitInspector(StatusInspector, Protocol):
     def read_current_branch(self, repo_path: Path) -> str | None: ...
 
 
-class GitOperations(GitInspector, Protocol):
+class BranchOperations(GitInspector, Protocol):
+    def fetch(self, repo_path: Path) -> None: ...
+    def checkout_branch(self, repo_path: Path, *, branch: str) -> None: ...
+
+
+class GitOperations(BranchOperations, Protocol):
     def ensure_bare(self, url: str, *, cache_dir: Path) -> Path: ...
     def bare_fetch(self, bare_path: Path) -> None: ...
     def clone_with_reference(
         self, *, url: str, dest: Path, bare: Path, branch: str | None = None
     ) -> None: ...
-    def fetch(self, repo_path: Path) -> None: ...
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None: ...
 
 
@@ -146,6 +150,7 @@ EditorRunner = Callable[[Sequence[str]], int]
 
 
 __all__ = [
+    "BranchOperations",
     "CompletedCommand",
     "EditorRunner",
     "ExternalManifestReader",

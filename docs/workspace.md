@@ -51,11 +51,13 @@ repos:
 ```
 
 Branch resolution at clone time follows a cascade: per-repo `branch` >
-`defaults.branch` > the remote's HEAD. **The cascade is honoured at
-clone time only.** Subsequent `sync`s will not check out a different
-branch for you — if the on-disk branch diverges from the manifest's
-target, `sync` skips that repo with a warning, so a stale
-`defaults.branch` can't kidnap a repo you've moved to a feature branch.
+`defaults.branch` > the remote's HEAD. `workspace branch apply` only
+uses explicit manifest branch targets (`repos[].branch` or
+`defaults.branch`) and skips repos with no target. Subsequent `sync`s
+will not check out a different branch for you — if the on-disk branch
+diverges from the manifest's target, `sync` skips that repo with a
+warning, so a stale `defaults.branch` can't kidnap a repo you've moved
+to a feature branch.
 
 `repos[].name` is what shows up on disk under the workspace directory
 and what you pass to `--only` / `remove`. Names and URLs must both be
@@ -197,17 +199,34 @@ untaped workspace status --name prod --format raw --columns repo \
 ### `branch`
 
 ```bash
-untaped workspace branch set <branch> [--repo <repo>]
+untaped workspace branch set <branch> [--repo <repo>] [--apply]
 untaped workspace branch unset [--repo <repo>]
+untaped workspace branch apply [--repo <repo>]
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
 command updates `defaults.branch`; with `--repo`, it updates the
 matching repo override by alias or URL.
 
-These commands never run `git checkout` and never mutate on-disk
-clones. They only change the target branch used for future clones and
-for `sync` branch-mismatch checks.
+`branch set` and `branch unset` never run `git checkout` by default.
+They only change the target branch used for future clones, `branch
+apply`, and `sync` branch-mismatch checks.
+
+Use `branch apply` to checkout existing local clones to the manifest's
+target branch:
+
+```bash
+untaped workspace branch set main --name prod
+untaped workspace branch apply --name prod
+
+# or do both steps in one command
+untaped workspace branch set main --name prod --apply
+```
+
+`branch apply` fetches first, refuses dirty or diverged repos, and emits
+one row per repo with `checkout`, `up-to-date`, or `skip`. Missing
+clones and repos without a target branch are skipped. It does not create
+branches explicitly; checkout failures are reported as `skip` rows.
 
 ### `sync`
 

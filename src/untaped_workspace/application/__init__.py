@@ -1,5 +1,6 @@
 from untaped_workspace.application.add_repo import AddRepo
 from untaped_workspace.application.adopt_workspace import AdoptResult, AdoptWorkspace
+from untaped_workspace.application.apply_workspace_branch import ApplyWorkspaceBranch
 from untaped_workspace.application.branch_workspace import SetWorkspaceBranch, UnsetWorkspaceBranch
 from untaped_workspace.application.edit_workspace import EditWorkspace
 from untaped_workspace.application.foreach import Foreach
@@ -21,6 +22,7 @@ __all__ = [
     "AddRepo",
     "AdoptResult",
     "AdoptWorkspace",
+    "ApplyWorkspaceBranch",
     "BareFetchTracker",
     "EditWorkspace",
     "Foreach",
