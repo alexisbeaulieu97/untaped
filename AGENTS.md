@@ -171,7 +171,13 @@ canonically as `untaped-profile @ git+https://...`. Removal and replacement
 must work by that normalized name, including for legacy bare URL state.
 `untaped plugins list` is a data-emitting command and follows the shared
 `--format` / `--columns` contract; its first row key is `name` so
-`--format raw` is pipe-friendly for `untaped plugins remove`.
+implicit `--format raw` is pipe-friendly for `untaped plugins remove`.
+Implicit raw output emits only removable recorded packages; loaded-only rows
+remain visible in table/json/yaml output or when explicitly selecting columns.
+The default view is one row per plugin package/name, not separate rows for
+"loaded" and "desired" state. A desired package such as `untaped-awx` is
+coalesced with a loaded plugin id such as `awx` when the normalized suffix
+matches; the row status is `installed`, `recorded`, or `loaded`.
 
 ## Cross-Cutting helpers (`untaped`)
 
