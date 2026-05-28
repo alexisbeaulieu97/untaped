@@ -24,7 +24,6 @@ def test_list_outputs_keys(_isolate_settings: Path) -> None:
     keys = result.stdout.splitlines()
     assert "log_level" in keys
     assert "awx.token" in keys
-    assert "github.token" in keys
     assert "http.ca_bundle" in keys
     assert "http.verify_ssl" in keys
 

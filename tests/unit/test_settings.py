@@ -21,7 +21,6 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
     assert s.log_level == "INFO"
     assert s.awx.base_url is None
     assert s.awx.token is None
-    assert s.github.token is None
     assert s.workspace.workspaces == []
     assert s.http.verify_ssl is True
     assert s.http.ca_bundle is None
@@ -40,8 +39,6 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
             awx:
               base_url: https://aap.example.com
               token: secret
-            github:
-              token: ghp_xxx
             workspace:
               cache_dir: /custom/cache
               workspaces_dir: /custom/workspaces
@@ -58,8 +55,6 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert s.awx.base_url == "https://aap.example.com"
     assert s.awx.token is not None
     assert s.awx.token.get_secret_value() == "secret"
-    assert s.github.token is not None
-    assert s.github.token.get_secret_value() == "ghp_xxx"
     assert s.workspace.cache_dir == Path("/custom/cache")
     assert s.workspace.workspaces_dir == Path("/custom/workspaces")
     assert len(s.workspace.workspaces) == 1
