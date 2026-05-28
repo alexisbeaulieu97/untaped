@@ -16,19 +16,20 @@ uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
   --force
 ```
 
-To let `untaped plugins` remember the desired plugin state, record the
-plugin without syncing, then rebuild the tool from the same source spec:
+To let `untaped plugins` remember the desired plugin state, give `plugins add`
+the same source spec for the core tool:
 
 ```bash
-untaped plugins add "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git" --no-sync
-untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-github.git \
+  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
 ```
 
 For local editable core development, point sync at the local checkout:
 
 ```bash
-untaped plugins add "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git" --no-sync
-untaped plugins sync --tool-spec /path/to/untaped --editable-tool
+untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-github.git \
+  --tool-spec /path/to/untaped \
+  --editable-tool
 ```
 
 After syncing, run a fresh `untaped` invocation so the newly installed

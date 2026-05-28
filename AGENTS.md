@@ -164,6 +164,15 @@ sections fail with `ConfigError`. Plugin load failures are recorded and
 reported by `untaped plugins doctor`; they must not break built-in core
 commands such as `untaped config`.
 
+Plugin install specs are keyed by normalized package/plugin name. Direct
+URL convenience input (`git+https://.../untaped-profile.git`) is accepted
+only when the name can be inferred from the final path segment, then stored
+canonically as `untaped-profile @ git+https://...`. Removal and replacement
+must work by that normalized name, including for legacy bare URL state.
+`untaped plugins list` is a data-emitting command and follows the shared
+`--format` / `--columns` contract; its first row key is `name` so
+`--format raw` is pipe-friendly for `untaped plugins remove`.
+
 ## Cross-Cutting helpers (`untaped`)
 
 | Need                                       | Use                                                              |
