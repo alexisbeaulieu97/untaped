@@ -3,11 +3,12 @@
 from pathlib import Path
 
 import pytest
-from conftest import empty_manifest
 from untaped_workspace.application import AddRepo
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import ManifestRepository
+
+from conftest import empty_manifest
 
 
 def test_add_repo_appends_and_dedups(tmp_path: Path) -> None:

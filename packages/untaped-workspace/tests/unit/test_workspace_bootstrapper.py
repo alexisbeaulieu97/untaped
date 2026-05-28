@@ -16,11 +16,12 @@ collision on the real adapter use ``StubManifests`` to seed it.
 from pathlib import Path
 
 import pytest
-from conftest import StubManifests, StubRegistry
 from untaped_workspace.application import WorkspaceBootstrapper
 from untaped_workspace.domain import ManifestDefaults, Workspace, WorkspaceManifest
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import ManifestRepository
+
+from conftest import StubManifests, StubRegistry
 
 
 def _manifest(name: str = "ws") -> WorkspaceManifest:

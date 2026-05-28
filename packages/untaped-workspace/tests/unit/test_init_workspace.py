@@ -8,9 +8,10 @@ defaults.
 
 from pathlib import Path
 
-from conftest import StubRegistry
 from untaped_workspace.application import InitWorkspace, WorkspaceBootstrapper
 from untaped_workspace.infrastructure import ManifestRepository
+
+from conftest import StubRegistry
 
 
 def _init(repo: ManifestRepository, reg: StubRegistry) -> InitWorkspace:
