@@ -1,8 +1,7 @@
 """Transport DTOs that cross the application/infrastructure boundary.
 
-Mirrors :mod:`untaped_awx.domain.payloads`. Putting these in ``domain/``
-(rather than ``application/ports.py``) keeps the import direction
-``infrastructure → domain`` clean.
+Putting these in ``domain/`` (rather than ``application/ports.py``) keeps
+the import direction ``infrastructure → domain`` clean.
 """
 
 from __future__ import annotations

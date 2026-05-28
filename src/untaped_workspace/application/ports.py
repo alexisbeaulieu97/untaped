@@ -1,7 +1,6 @@
 """Cross-use-case port Protocols and adapter Callable aliases.
 
-Mirrors :mod:`untaped_awx.application.ports`. Transport DTOs live in
-:mod:`untaped_workspace.domain.payloads`.
+Transport DTOs live in :mod:`untaped_workspace.domain.payloads`.
 """
 
 from __future__ import annotations
