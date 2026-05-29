@@ -25,16 +25,25 @@ def test_shell_init_zsh() -> None:
     out = ShellInit()("zsh")
     assert "uwcd()" in out
     assert "cd " in out
+    assert "_uwcd_complete()" in out
+    assert "compdef _uwcd_complete uwcd" in out
+    assert "untaped workspace list --format raw --columns name 2>/dev/null" in out
 
 
 def test_shell_init_bash() -> None:
     out = ShellInit()("bash")
     assert "uwcd()" in out
+    assert "_uwcd_complete()" in out
+    assert "complete -F _uwcd_complete uwcd" in out
+    assert "untaped workspace list --format raw --columns name 2>/dev/null" in out
 
 
 def test_shell_init_fish() -> None:
     out = ShellInit()("fish")
     assert "function uwcd" in out
+    assert "function __uwcd_workspaces" in out
+    assert "complete -c uwcd" in out
+    assert "untaped workspace list --format raw --columns name 2>/dev/null" in out
 
 
 def test_shell_init_unknown_shell() -> None:

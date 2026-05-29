@@ -380,14 +380,15 @@ untaped workspace list --format raw \
 untaped workspace shell-init zsh                # or: bash, fish
 ```
 
-Emits a shell snippet defining `uwcd <workspace>` so you can jump to a
-workspace by name. Add it to your shell rc:
+Emits a shell snippet defining `uwcd <workspace>` and shell completion
+for registered workspace names. Add it to your shell rc:
 
 ```bash
 # in ~/.zshrc
 eval "$(untaped workspace shell-init zsh)"
 
 # then, anywhere:
+uwcd <TAB>        # completes workspace names
 uwcd prod          # cd ~/work/prod
 ```
 
