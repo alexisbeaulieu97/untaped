@@ -174,6 +174,9 @@ must work by that normalized name, including for legacy bare URL state.
 implicit `--format raw` is pipe-friendly for `untaped plugins remove`.
 Implicit raw output emits only removable recorded packages; loaded-only rows
 remain visible in table/json/yaml output or when explicitly selecting columns.
+`untaped plugins add` and `untaped plugins remove` accept package specs from
+multiple positionals or `--stdin`; when syncing, each command mutates the full
+batch first and rebuilds the uv tool environment once.
 The default view is one row per plugin package/name, not separate rows for
 "loaded" and "desired" state. A desired package such as `untaped-awx` is
 coalesced with a loaded plugin id such as `awx` when the normalized suffix
