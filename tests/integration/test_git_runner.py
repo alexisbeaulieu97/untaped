@@ -248,6 +248,43 @@ def test_checkout_branch_creates_local_branch_when_remote_branch_is_missing(
     assert tracking_remote.returncode != 0
 
 
+def test_checkout_branch_creates_local_branch_when_remote_ref_is_not_a_commit(
+    tmp_path: Path,
+    upstream: Path,
+) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    workspace_repo = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
+    tree = subprocess.run(
+        ["git", "-C", str(workspace_repo), "rev-parse", "HEAD^{tree}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-C", str(workspace_repo), "update-ref", "refs/remotes/origin/ticket-123", tree],
+        check=True,
+    )
+
+    runner.checkout_branch(workspace_repo, branch="ticket-123")
+
+    head = subprocess.run(
+        ["git", "-C", str(workspace_repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tracking_remote = subprocess.run(
+        ["git", "-C", str(workspace_repo), "config", "--get", "branch.ticket-123.remote"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert head == "ticket-123"
+    assert tracking_remote.returncode != 0
+
+
 def test_checkout_branch_checks_out_existing_local_branch(
     tmp_path: Path,
     upstream: Path,
