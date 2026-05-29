@@ -117,7 +117,7 @@ class SettingsFileRepository:
     def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
         """Remove ``key`` from the resolved profile.
 
-        Returns ``(removed, target)``. An explicit ``--profile`` that names a
+        Returns ``(removed, target)``. An explicit ``--target-profile`` that names a
         profile which doesn't exist raises ``ConfigError``. Removing a key
         that simply isn't set in the resolved profile is a no-op
         (``removed=False``).
@@ -163,7 +163,7 @@ class SettingsFileRepository:
         that the resolved profile exists.
 
         ``default`` is exempt from the check — it's the auto-created floor
-        when nothing else is named (no ``--profile``, no ``active:``, no
+        when nothing else is named (no explicit target, no ``active:``, no
         ``UNTAPED_PROFILE``).
         """
         if profile is not None:

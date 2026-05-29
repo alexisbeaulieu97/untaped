@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from typing import Annotated
@@ -10,6 +11,7 @@ import typer
 
 from untaped.errors import UntapedError
 from untaped.output import OutputFormat
+from untaped.settings import get_settings
 
 FormatOption = Annotated[
     OutputFormat,
@@ -22,6 +24,36 @@ ColumnsOption = Annotated[
     typer.Option("--columns", "-c", help="Columns to include (repeatable)."),
 ]
 """Shared ``--columns / -c`` option for any command that prints rows."""
+
+ProfileOverrideOption = Annotated[
+    str | None,
+    typer.Option(
+        "--profile",
+        help="Override the active profile for this command only.",
+    ),
+]
+"""Command-local read-time profile override for plugin/read commands."""
+
+
+@contextmanager
+def profile_override(name: str | None) -> Iterator[None]:
+    """Temporarily override ``UNTAPED_PROFILE`` for a command body."""
+    if name is None:
+        yield
+        return
+
+    previous = os.environ.get("UNTAPED_PROFILE")
+    had_previous = "UNTAPED_PROFILE" in os.environ
+    os.environ["UNTAPED_PROFILE"] = name
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        if had_previous and previous is not None:
+            os.environ["UNTAPED_PROFILE"] = previous
+        else:
+            os.environ.pop("UNTAPED_PROFILE", None)
+        get_settings.cache_clear()
 
 
 def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]:

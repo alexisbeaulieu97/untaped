@@ -9,7 +9,7 @@ class UnsetSetting:
     """Remove ``key`` from the named profile (default = active).
 
     Returns ``(removed, target_profile)`` where ``removed`` is ``True`` if a
-    value was actually removed. An explicit ``--profile`` that names a
+    value was actually removed. An explicit ``--target-profile`` that names a
     non-existent profile raises ``ConfigError`` — same contract as ``set``.
     """
 
