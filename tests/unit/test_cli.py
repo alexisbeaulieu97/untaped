@@ -128,7 +128,7 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
     runner.invoke(
         app,
         [
@@ -138,12 +138,12 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
             "ui",
             "--branch",
             "develop",
-            "--name",
+            "--workspace",
             "prod",
         ],
     )
 
-    result = runner.invoke(app, ["show", "--name", "prod", "--format", "json"])
+    result = runner.invoke(app, ["show", "--workspace", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -170,12 +170,46 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
     ]
 
 
+def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+
+    result = runner.invoke(app, ["show", "--path", str(target), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "workspace": "prod",
+            "path": str(target.resolve()),
+            "default_branch": "main",
+            "repo_count": 1,
+            "repo": "api",
+            "url": "https://x/api.git",
+            "repo_branch": None,
+            "target_branch": "main",
+        }
+    ]
+
+
+def test_show_rejects_workspace_and_path_together(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+
+    result = runner.invoke(app, ["show", "--workspace", "prod", "--path", str(target)])
+
+    assert result.exit_code != 0
+    assert "--workspace and --path are mutually exclusive" in result.output
+
+
 def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "empty"
     runner.invoke(app, ["init", "empty", "--path", str(target)])
 
-    result = runner.invoke(app, ["show", "--name", "empty", "--format", "json"])
+    result = runner.invoke(app, ["show", "--workspace", "empty", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -196,12 +230,25 @@ def test_show_raw_columns_emit_repo_names(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
-    result = runner.invoke(app, ["show", "--name", "prod", "--format", "raw", "--columns", "repo"])
+    result = runner.invoke(
+        app, ["show", "--workspace", "prod", "--format", "raw", "--columns", "repo"]
+    )
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["api"]
+
+
+def test_show_accepts_workspace_short_option(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+
+    result = runner.invoke(app, ["show", "-w", "prod", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["workspace"] == "prod"
 
 
 def test_branch_set_and_unset_default_branch(tmp_path: Path) -> None:
@@ -209,8 +256,8 @@ def test_branch_set_and_unset_default_branch(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    set_result = runner.invoke(app, ["branch", "set", "main", "--name", "prod"])
-    unset_result = runner.invoke(app, ["branch", "unset", "--name", "prod"])
+    set_result = runner.invoke(app, ["branch", "set", "main", "--workspace", "prod"])
+    unset_result = runner.invoke(app, ["branch", "unset", "--workspace", "prod"])
 
     assert set_result.exit_code == 0, set_result.output
     assert "set default branch for 'prod' to main" in set_result.output
@@ -224,14 +271,14 @@ def test_branch_set_and_unset_repo_branch(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
     set_result = runner.invoke(
         app,
-        ["branch", "set", "develop", "--repo", "api", "--name", "prod"],
+        ["branch", "set", "develop", "--repo", "api", "--workspace", "prod"],
     )
     manifest_after_set = yaml.safe_load((target / "untaped.yml").read_text())
-    unset_result = runner.invoke(app, ["branch", "unset", "--repo", "api", "--name", "prod"])
+    unset_result = runner.invoke(app, ["branch", "unset", "--repo", "api", "--workspace", "prod"])
     manifest_after_unset = yaml.safe_load((target / "untaped.yml").read_text())
 
     assert set_result.exit_code == 0, set_result.output
@@ -265,7 +312,7 @@ def test_branch_set_unknown_repo_errors(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["branch", "set", "main", "--repo", "ghost", "--name", "prod"])
+    result = runner.invoke(app, ["branch", "set", "main", "--repo", "ghost", "--workspace", "prod"])
 
     assert result.exit_code == 1
     assert "repo 'ghost' not declared in workspace 'prod'" in result.output
@@ -275,9 +322,9 @@ def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
-    result = runner.invoke(app, ["branch", "apply", "--name", "prod", "--format", "json"])
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -295,12 +342,12 @@ def test_branch_apply_filters_by_repo_name(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
-    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
 
     result = runner.invoke(
         app,
-        ["branch", "apply", "--repo", "api", "--name", "prod", "--format", "json"],
+        ["branch", "apply", "--repo", "api", "--workspace", "prod", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -312,10 +359,10 @@ def test_branch_apply_raw_defaults_to_repo_names(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
-    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
 
-    result = runner.invoke(app, ["branch", "apply", "--name", "prod", "--format", "raw"])
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["api", "ui"]
@@ -325,11 +372,11 @@ def test_branch_set_apply_writes_manifest_and_applies(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--name", "prod"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
     result = runner.invoke(
         app,
-        ["branch", "set", "develop", "--apply", "--name", "prod", "--format", "json"],
+        ["branch", "set", "develop", "--apply", "--workspace", "prod", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -514,7 +561,7 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.Mon
         capture_output=True,
     )
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--repo-name", "svc-a", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--repo-name", "svc-a", "--workspace", "lab"])
     (repo / "f.txt").write_text("dirty")  # uncommitted
 
     forget = runner.invoke(app, ["forget", "lab", "--prune", "--yes"])
@@ -532,15 +579,15 @@ def test_add_then_remove(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
 
-    a = runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    a = runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
     assert a.exit_code == 0, a.output
 
-    rm = runner.invoke(app, ["remove", "svc-a", "--name", "lab"])
+    rm = runner.invoke(app, ["remove", "svc-a", "--workspace", "lab"])
     assert rm.exit_code == 0, rm.output
 
 
 def test_add_unknown_workspace_errors(tmp_path: Path) -> None:
-    result = CliRunner().invoke(app, ["add", "https://x/a.git", "--name", "ghost"])
+    result = CliRunner().invoke(app, ["add", "https://x/a.git", "--workspace", "ghost"])
     assert result.exit_code == 1
 
 
@@ -550,10 +597,10 @@ def test_remove_accepts_multiple_repos(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
-    runner.invoke(app, ["add", "https://x/svc-b.git", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-b.git", "--workspace", "lab"])
 
-    rm = runner.invoke(app, ["remove", "svc-a", "svc-b", "--name", "lab"])
+    rm = runner.invoke(app, ["remove", "svc-a", "svc-b", "--workspace", "lab"])
     assert rm.exit_code == 0, rm.output
 
 
@@ -562,10 +609,10 @@ def test_remove_reads_repos_from_stdin(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
-    runner.invoke(app, ["add", "https://x/svc-b.git", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-b.git", "--workspace", "lab"])
 
-    rm = runner.invoke(app, ["remove", "--stdin", "--name", "lab"], input="svc-a\nsvc-b\n")
+    rm = runner.invoke(app, ["remove", "--stdin", "--workspace", "lab"], input="svc-a\nsvc-b\n")
     assert rm.exit_code == 0, rm.output
 
 
@@ -576,13 +623,13 @@ def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
 
-    rm = runner.invoke(app, ["remove", "ghost", "svc-a", "--name", "lab"])
+    rm = runner.invoke(app, ["remove", "ghost", "svc-a", "--workspace", "lab"])
     assert rm.exit_code != 0
     # svc-a was removed despite ghost failing — confirmed by being able to
     # re-add it without "duplicate" errors.
-    re_add = runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    re_add = runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
     assert re_add.exit_code == 0, re_add.output
 
 
@@ -700,11 +747,21 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
 
     result = runner.invoke(
         app,
-        ["sync", "--name", "smoke", "--format", "raw", "--columns", "repo", "--columns", "action"],
+        [
+            "sync",
+            "--workspace",
+            "smoke",
+            "--format",
+            "raw",
+            "--columns",
+            "repo",
+            "--columns",
+            "action",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "clone" in result.stdout
@@ -720,14 +777,14 @@ def test_branch_set_apply_creates_tracking_branch_for_remote_target(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
     repo = target / "upstream"
     subprocess.run(["git", "-C", str(repo), "config", "checkout.guess", "false"], check=True)
 
     result = runner.invoke(
         app,
-        ["branch", "set", "develop", "--name", "smoke", "--apply", "--format", "json"],
+        ["branch", "set", "develop", "--workspace", "smoke", "--apply", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
@@ -765,7 +822,7 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target), "--branch", "develop"])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
     repo = target / "upstream"
     subprocess.run(
         [
@@ -781,7 +838,7 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
         capture_output=True,
     )
 
-    result = runner.invoke(app, ["branch", "apply", "--name", "smoke", "--format", "json"])
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -817,12 +874,12 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
-    runner.invoke(app, ["branch", "set", "ticket-123", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    runner.invoke(app, ["branch", "set", "ticket-123", "--workspace", "smoke"])
     repo = target / "upstream"
 
-    result = runner.invoke(app, ["branch", "apply", "--name", "smoke", "--format", "json"])
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -864,7 +921,7 @@ def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
     # Workspace alpha: has the upstream repo.
     ws_alpha = tmp_path / "ws-alpha"
     runner.invoke(app, ["init", "alpha", "--path", str(ws_alpha)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "alpha"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "alpha"])
 
     # Workspace beta: empty manifest — does NOT have upstream.
     ws_beta = tmp_path / "ws-beta"
@@ -907,10 +964,24 @@ def test_sync_parallel_without_all_is_rejected() -> None:
     `typer.BadParameter` exit. Checked before any registry lookup so a
     nonexistent workspace name doesn't change the error."""
     runner = CliRunner()
-    result = runner.invoke(app, ["sync", "--name", "nope", "-j", "4"])
+    result = runner.invoke(app, ["sync", "--workspace", "nope", "-j", "4"])
     assert result.exit_code != 0
     combined = (result.stderr or "") + result.output
     assert "--all" in combined
+
+
+def test_sync_all_rejects_workspace_target() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["sync", "--all", "--workspace", "smoke"])
+    assert result.exit_code != 0
+    assert "--all cannot be combined with --workspace or --path" in result.output
+
+
+def test_sync_all_rejects_path_target(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["sync", "--all", "--path", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "--all cannot be combined with --workspace or --path" in result.output
 
 
 def test_sync_parallel_warns_when_clamped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -941,7 +1012,7 @@ def test_sync_all_parallel_covers_every_workspace(
     for name in names:
         ws_path = tmp_path / f"ws-{name}"
         runner.invoke(app, ["init", name, "--path", str(ws_path)])
-        runner.invoke(app, ["add", f"file://{upstream}", "--name", name])
+        runner.invoke(app, ["add", f"file://{upstream}", "--workspace", name])
 
     result = runner.invoke(
         app,
@@ -976,7 +1047,7 @@ def test_sync_all_parallel_ordering_is_stable(
     for name in names:
         ws_path = tmp_path / f"ws-{name}"
         runner.invoke(app, ["init", name, "--path", str(ws_path)])
-        runner.invoke(app, ["add", f"file://{upstream}", "--name", name])
+        runner.invoke(app, ["add", f"file://{upstream}", "--workspace", name])
 
     def workspace_rows() -> list[str]:
         result = runner.invoke(
@@ -996,14 +1067,14 @@ def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path)
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
     result = runner.invoke(
         app,
         [
             "status",
-            "--name",
+            "--workspace",
             "smoke",
             "--format",
             "raw",
@@ -1017,16 +1088,32 @@ def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path)
     assert "upstream\tmain" in result.stdout
 
 
+def test_status_all_rejects_workspace_target() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["status", "--all", "--workspace", "smoke"])
+    assert result.exit_code != 0
+    assert "--all cannot be combined with --workspace or --path" in result.output
+
+
+def test_status_all_rejects_path_target(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["status", "--all", "--path", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "--all cannot be combined with --workspace or --path" in result.output
+
+
 def test_foreach_runs_command_in_each_repo(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "git rev-parse --abbrev-ref HEAD", "--name", "smoke"])
+    result = runner.invoke(
+        app, ["foreach", "git rev-parse --abbrev-ref HEAD", "--workspace", "smoke"]
+    )
     assert result.exit_code == 0, result.output
     # Output is prefixed `[upstream] main`
     assert "[upstream] main" in result.stdout
@@ -1040,15 +1127,15 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
     result = runner.invoke(
         app,
         [
             "foreach",
             "git rev-parse --abbrev-ref HEAD",
-            "--name",
+            "--workspace",
             "smoke",
             "--format",
             "json",
@@ -1078,15 +1165,15 @@ def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cac
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
     result = runner.invoke(
         app,
         [
             "foreach",
             "git rev-parse --abbrev-ref HEAD",
-            "--name",
+            "--workspace",
             "smoke",
             "--format",
             "raw",
@@ -1108,10 +1195,10 @@ def test_foreach_default_emits_summary_on_failure(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "false", "--name", "smoke"])
+    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke"])
     assert result.exit_code == 1
     assert "failed in: upstream" in (result.stderr or result.output)
 
@@ -1124,10 +1211,10 @@ def test_foreach_continue_on_error_still_exits_one(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "false", "--name", "smoke", "--continue-on-error"])
+    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke", "--continue-on-error"])
     assert result.exit_code == 1
     assert "failed in: upstream" in (result.stderr or result.output)
 
@@ -1140,10 +1227,10 @@ def test_foreach_ignore_errors_exits_zero_with_summary(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "false", "--name", "smoke", "--ignore-errors"])
+    result = runner.invoke(app, ["foreach", "false", "--workspace", "smoke", "--ignore-errors"])
     assert result.exit_code == 0, result.output
     assert "failed in: upstream" in (result.stderr or result.output)
 
@@ -1158,12 +1245,12 @@ def test_foreach_summary_suppressed_in_structured_format(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
     result = runner.invoke(
         app,
-        ["foreach", "false", "--name", "smoke", "--ignore-errors", "--format", "json"],
+        ["foreach", "false", "--workspace", "smoke", "--ignore-errors", "--format", "json"],
     )
     assert result.exit_code == 0, result.output
     parsed = _json.loads(result.stdout)
@@ -1190,10 +1277,10 @@ def test_foreach_parallel_zero_coerces_to_serial(
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
 
-    result = runner.invoke(app, ["foreach", "true", "--name", "smoke", "-j", "0"])
+    result = runner.invoke(app, ["foreach", "true", "--workspace", "smoke", "-j", "0"])
     assert result.exit_code == 0, result.output
     assert "clamped" not in result.output
 
@@ -1202,11 +1289,11 @@ def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: P
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
-    runner.invoke(app, ["add", f"file://{upstream}", "--name", "smoke"])
-    runner.invoke(app, ["sync", "--name", "smoke"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
     assert (target / "upstream").is_dir()
 
-    rm = runner.invoke(app, ["remove", "upstream", "--name", "smoke", "--prune", "--yes"])
+    rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune", "--yes"])
     assert rm.exit_code == 0, rm.output
     assert not (target / "upstream").exists()
 
@@ -1298,7 +1385,7 @@ def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
         app,
-        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--name", "lab"],
+        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--workspace", "lab"],
     )
     assert result.exit_code == 0, result.output
     assert "added svc-a" in (result.stderr or "")
@@ -1313,7 +1400,7 @@ def test_add_reads_urls_from_stdin(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
         app,
-        ["add", "--stdin", "--name", "lab"],
+        ["add", "--stdin", "--workspace", "lab"],
         input="https://x/svc-a.git\nhttps://x/svc-b.git\n",
     )
     assert result.exit_code == 0, result.output
@@ -1328,12 +1415,12 @@ def test_add_continues_when_one_url_fails(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
-    runner.invoke(app, ["add", "https://x/svc-a.git", "--name", "lab"])
+    runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
 
     # svc-a is duplicate; svc-b is novel.
     result = runner.invoke(
         app,
-        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--name", "lab"],
+        ["add", "https://x/svc-a.git", "https://x/svc-b.git", "--workspace", "lab"],
     )
     assert result.exit_code != 0
     # The novel URL still landed; both the success line and the per-id
@@ -1351,7 +1438,7 @@ def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
         app,
-        ["add", "https://x/svc-a.git", "--stdin", "--name", "lab"],
+        ["add", "https://x/svc-a.git", "--stdin", "--workspace", "lab"],
         input="https://x/svc-b.git\n",
     )
     assert result.exit_code != 0
@@ -1374,7 +1461,7 @@ def test_add_repo_name_rejected_with_multiple_urls(tmp_path: Path) -> None:
             "https://x/svc-b.git",
             "--repo-name",
             "shared",
-            "--name",
+            "--workspace",
             "lab",
         ],
     )

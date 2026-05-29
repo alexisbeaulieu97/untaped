@@ -93,11 +93,26 @@ app.add_typer(branch_app, name="branch")
 # helpers --------------------------------------------------------------------
 
 
-def _resolve(name: str | None, path: Path | None, *, cwd: Path | None = None) -> Workspace:
+def _resolve(workspace: str | None, path: Path | None, *, cwd: Path | None = None) -> Workspace:
+    if workspace is not None and path is not None:
+        raise typer.BadParameter("--workspace and --path are mutually exclusive")
     return WorkspaceResolver(
         registry=WorkspaceRegistryRepository(),
         manifests=ManifestRepository(),
-    ).resolve(name=name, path=path, cwd=cwd)
+    ).resolve(name=workspace, path=path, cwd=cwd)
+
+
+def _target_workspaces(
+    workspace: str | None,
+    path: Path | None,
+    *,
+    all_workspaces: bool,
+) -> list[Workspace]:
+    if all_workspaces:
+        if workspace is not None or path is not None:
+            raise typer.BadParameter("--all cannot be combined with --workspace or --path")
+        return _all_workspaces()
+    return [_resolve(workspace, path)]
 
 
 def _all_workspaces() -> list[Workspace]:
@@ -130,10 +145,10 @@ def list_command(
 
 @app.command("show")
 def show_command(
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -143,7 +158,7 @@ def show_command(
 ) -> None:
     """Show manifest details for one workspace."""
     with report_errors():
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
         rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
@@ -164,10 +179,10 @@ def branch_set_command(
         "--apply",
         help="After writing the manifest, checkout matching existing clones to the new branch.",
     ),
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -177,7 +192,7 @@ def branch_set_command(
 ) -> None:
     """Set the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
         change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
         if change.repo is None:
             typer.echo(f"set default branch for {change.workspace!r} to {change.branch}", err=True)
@@ -202,10 +217,10 @@ def branch_unset_command(
         "--repo",
         help="Repo name or URL to unset; omit for the workspace default.",
     ),
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -213,7 +228,7 @@ def branch_unset_command(
 ) -> None:
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
         change = UnsetWorkspaceBranch(ManifestRepository())(ws, repo=repo)
         if change.repo is None:
             typer.echo(f"unset default branch for {change.workspace!r}", err=True)
@@ -231,10 +246,10 @@ def branch_apply_command(
         "--repo",
         help="Repo name or URL to apply; omit for every repo in the workspace.",
     ),
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -244,7 +259,7 @@ def branch_apply_command(
 ) -> None:
     """Checkout existing repos to the branch declared in ``untaped.yml``."""
     with report_errors():
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
         outcomes = ApplyWorkspaceBranch(
             ManifestRepository(),
             GitRunner(),
@@ -359,10 +374,10 @@ def forget_command(
 def add_command(
     urls: list[str] | None = typer.Argument(None, help="Repo URL(s) to add."),
     stdin: bool = typer.Option(False, "--stdin", help="Read repo URLs from stdin (one per line)."),
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -403,7 +418,7 @@ def add_command(
             raise typer.BadParameter(
                 "--repo-name applies to a single URL; drop --repo-name or pass URLs one at a time."
             )
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
 
         def _add_one(url: str) -> str:
             repo = add_repo(ws, url=url, repo_name=repo_name, branch=branch)
@@ -432,10 +447,10 @@ def remove_command(
     stdin: bool = typer.Option(
         False, "--stdin", help="Read repo identifiers from stdin (one per line)."
     ),
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -448,7 +463,7 @@ def remove_command(
     """Remove one or more repos from a workspace's manifest."""
     with report_errors():
         idents = read_identifiers(list(repos or []), stdin=stdin)
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
         remove_repo = RemoveRepo(ManifestRepository(), fs=LocalFilesystem(), status=GitRunner())
 
         def _remove_one(ident: str) -> None:
@@ -479,10 +494,10 @@ def _parallel_cap() -> int:
 
 @app.command("sync")
 def sync_command(
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -526,7 +541,7 @@ def sync_command(
         raise typer.BadParameter("--parallel >1 requires --all")
     workers = clamp_parallel(parallel, cap=_parallel_cap(), policy="2 * os.cpu_count()")
     with report_errors():
-        targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
+        targets = _target_workspaces(workspace, path, all_workspaces=all_workspaces)
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
         )
@@ -568,10 +583,10 @@ def _print_sync_outcomes(
 
 @app.command("status")
 def status_command(
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -582,7 +597,7 @@ def status_command(
 ) -> None:
     """Per-repo `git status` snapshot."""
     with report_errors():
-        targets = _all_workspaces() if all_workspaces else [_resolve(name, path)]
+        targets = _target_workspaces(workspace, path, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
         for ws in targets:
@@ -597,10 +612,10 @@ def status_command(
 @app.command("foreach", no_args_is_help=True)
 def foreach_command(
     cmd: str = typer.Argument(..., help='Shell command (e.g. "git pull --rebase").'),
-    name: str | None = typer.Option(
+    workspace: str | None = typer.Option(
         None,
-        "--name",
-        "-n",
+        "--workspace",
+        "-w",
         help="Workspace name.",
         autocompletion=complete_workspace_name,
     ),
@@ -644,7 +659,7 @@ def foreach_command(
     / ``awk`` / another ``untaped`` command.
     """
     with report_errors():
-        ws = _resolve(name, path)
+        ws = _resolve(workspace, path)
         # Foreach silently coerces ``< 1`` to serial (issue spec) rather than
         # the BadParameter that ``sync`` and ``awx apply`` raise — different
         # commands, different UX calls on the lower bound.
