@@ -54,6 +54,15 @@ untaped workspace shell-init zsh
 untaped workspace edit <name>
 ```
 
+Workspace commands that read registry or profile settings accept
+command-local `--profile <name>`, so the selector can stay with the
+workspace command:
+
+```bash
+untaped workspace init prod --profile work
+untaped workspace status --workspace prod --profile work
+```
+
 See [docs/workspace.md](./docs/workspace.md) for manifest shape, command
 details, registry behavior, and shell helper examples.
 

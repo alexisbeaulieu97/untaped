@@ -30,6 +30,19 @@ untaped workspace sync --workspace prod              # clone everything in the m
 untaped workspace status --workspace prod            # per-repo git status
 ```
 
+Workspace commands that read the registry or workspace profile settings
+also accept command-local `--profile <name>`, so profile selection can
+sit next to the command being run:
+
+```bash
+untaped workspace init prod --profile work
+untaped workspace sync --workspace prod --profile work
+untaped workspace status --workspace prod --profile work
+```
+
+The root form still works too, for example
+`untaped --profile work workspace status --workspace prod`.
+
 If you `cd` into a workspace directory, the `--workspace` flag becomes
 optional — most commands walk up from the current directory looking
 for an `untaped.yml`.
@@ -71,8 +84,8 @@ unique within a manifest.
 ### `list`
 
 ```bash
-untaped workspace list                          # tabular
-untaped workspace list --format raw --columns name
+untaped workspace list                                      # tabular
+untaped workspace list --profile work --format raw --columns name
 ```
 
 Lists the central registry — every workspace `untaped` knows about by
@@ -109,7 +122,7 @@ remote state; use `workspace status` for live checkout data.
 > profile-overridable). Update any shell aliases or scripts.
 
 ```bash
-untaped workspace init <name> [--path <dir>] [--branch <default>]
+untaped workspace init <name> [--path <dir>] [--branch <default>] [--profile <name>]
 ```
 
 Creates a new workspace named `<name>` and registers it. The default

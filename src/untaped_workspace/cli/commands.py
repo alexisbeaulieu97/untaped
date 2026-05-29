@@ -14,9 +14,11 @@ from untaped import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
+    ProfileOverrideOption,
     clamp_parallel,
     format_output,
     get_config_section,
+    profile_override,
     read_identifiers,
     report_errors,
     resolve_each,
@@ -132,9 +134,10 @@ def _confirm(prompt: str, *, yes: bool) -> bool:
 def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """List registered workspaces."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
@@ -155,9 +158,10 @@ def show_command(
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Show manifest details for one workspace."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         ws = _resolve(workspace, path)
         rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
@@ -189,9 +193,10 @@ def branch_set_command(
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Set the default branch or a repo branch override in ``untaped.yml``."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         ws = _resolve(workspace, path)
         change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
         if change.repo is None:
@@ -225,9 +230,10 @@ def branch_unset_command(
         autocompletion=complete_workspace_name,
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         ws = _resolve(workspace, path)
         change = UnsetWorkspaceBranch(ManifestRepository())(ws, repo=repo)
         if change.repo is None:
@@ -256,9 +262,10 @@ def branch_apply_command(
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Checkout existing repos to the branch declared in ``untaped.yml``."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         ws = _resolve(workspace, path)
         outcomes = ApplyWorkspaceBranch(
             ManifestRepository(),
@@ -293,13 +300,14 @@ def init_command(
     branch: str | None = typer.Option(
         None, "--branch", "-b", help="Default branch for newly cloned repos."
     ),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Initialise a new workspace named `name`.
 
     Default location is `<workspace.workspaces_dir>/<name>` (the
     `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
     """
-    with report_errors():
+    with report_errors(), profile_override(profile):
         target = path or (_workspace_settings().workspaces_dir.expanduser() / name)
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
@@ -313,13 +321,14 @@ def init_command(
 def adopt_command(
     path: Path = typer.Argument(..., help="Existing directory containing already-cloned repos."),
     name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Initialise a workspace from already-cloned repos under `path`.
 
     Each immediate subdirectory containing `.git` is recorded in the new
     `untaped.yml` with its current `origin` URL and checked-out branch.
     """
-    with report_errors():
+    with report_errors(), profile_override(profile):
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         result = AdoptWorkspace(
             bootstrapper,
@@ -346,6 +355,7 @@ def forget_command(
         False, "--prune", help="Also delete the workspace directory (refuses if dirty)."
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Remove a workspace from the registry.
 
@@ -353,7 +363,7 @@ def forget_command(
     `--prune` to also remove the workspace directory (refused if any
     repo has uncommitted changes).
     """
-    with report_errors():
+    with report_errors(), profile_override(profile):
         if prune and not _confirm(f"prune workspace directory for {name!r}?", yes=yes):
             typer.echo("aborted", err=True)
             raise typer.Exit(code=1)
@@ -398,6 +408,7 @@ def add_command(
         "--sync",
         help="Clone the newly added repos immediately (only the ones this command actually added).",
     ),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Add one or more repos to a workspace's manifest.
 
@@ -408,7 +419,7 @@ def add_command(
     add_repo = AddRepo(ManifestRepository())
     # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
     any_failed = False
-    with report_errors():
+    with report_errors(), profile_override(profile):
         idents = read_identifiers(list(urls or []), stdin=stdin)
         # ``--repo-name`` is single-valued — refuse upfront when applying
         # it to multiple URLs would produce a guaranteed ``DuplicateRepoName``
@@ -459,9 +470,10 @@ def remove_command(
         False, "--prune", help="Also delete the local clone (refuses if dirty)."
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Remove one or more repos from a workspace's manifest."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = _resolve(workspace, path)
         remove_repo = RemoveRepo(ManifestRepository(), fs=LocalFilesystem(), status=GitRunner())
@@ -531,6 +543,7 @@ def sync_command(
     ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
@@ -540,7 +553,7 @@ def sync_command(
     if parallel > 1 and not all_workspaces:
         raise typer.BadParameter("--parallel >1 requires --all")
     workers = clamp_parallel(parallel, cap=_parallel_cap(), policy="2 * os.cpu_count()")
-    with report_errors():
+    with report_errors(), profile_override(profile):
         targets = _target_workspaces(workspace, path, all_workspaces=all_workspaces)
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
@@ -594,9 +607,10 @@ def status_command(
     all_workspaces: bool = typer.Option(False, "--all", help="Status across all workspaces."),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Per-repo `git status` snapshot."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         targets = _target_workspaces(workspace, path, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
@@ -646,6 +660,7 @@ def foreach_command(
     ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
@@ -658,7 +673,7 @@ def foreach_command(
     rows after every repo finishes — suitable for piping into ``jq``
     / ``awk`` / another ``untaped`` command.
     """
-    with report_errors():
+    with report_errors(), profile_override(profile):
         ws = _resolve(workspace, path)
         # Foreach silently coerces ``< 1`` to serial (issue spec) rather than
         # the BadParameter that ``sync`` and ``awx apply`` raise — different
@@ -704,9 +719,10 @@ def import_command(
         "--sync",
         help="Clone the imported repos immediately (only the repos in <source>).",
     ),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         manifests = ManifestRepository()
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
         result = ImportWorkspace(manifests, bootstrapper)(source, path=dest, name=name)
@@ -733,12 +749,13 @@ def path_command(
     stdin: bool = typer.Option(
         False, "--stdin", help="Read workspace names from stdin (one per line)."
     ),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Print the absolute path of one or more workspaces (one per line)."""
     get_path = WorkspacePath(WorkspaceRegistryRepository())
     # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
     any_failed = False
-    with report_errors():
+    with report_errors(), profile_override(profile):
         idents = read_identifiers(list(names or []), stdin=stdin)
 
         def _echo_path(workspace_name: str) -> None:
@@ -769,9 +786,10 @@ def shell_init_command(
 def edit_command(
     name: str = typer.Argument(..., help="Workspace name.", autocompletion=complete_workspace_name),
     editor: str | None = typer.Option(None, "--editor", "-e", help="Override $VISUAL/$EDITOR."),
+    profile: ProfileOverrideOption = None,
 ) -> None:
     """Open the workspace directory in your editor."""
-    with report_errors():
+    with report_errors(), profile_override(profile):
         argv = resolve_editor_argv(editor)
         rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, argv=argv)
         if rc != 0:
