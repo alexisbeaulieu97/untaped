@@ -183,8 +183,9 @@ to clone).
 ### `remove`
 
 ```bash
-untaped workspace remove <repo>... [--workspace <ws>] [--prune] [--yes]
-untaped workspace remove --stdin --workspace <ws>
+untaped workspace remove <repo>... [--workspace <ws> | --path <dir>]
+                                  [--prune] [--yes]
+untaped workspace remove --stdin [--workspace <ws> | --path <dir>]
 ```
 
 Remove one or more repos from the manifest, identified by URL or
@@ -294,7 +295,7 @@ untaped workspace status --all --format raw \
 ### `foreach`
 
 ```bash
-untaped workspace foreach <cmd> [--workspace <ws>]
+untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
                                 [--format json|yaml|table|raw]
@@ -401,13 +402,12 @@ that's behind upstream or has uncommitted changes.
 ### Pick a repo with `fzf` and run a command in just that one
 
 ```bash
-untaped workspace status --workspace prod --format raw --columns repo \
-  | fzf \
-  | xargs -I{} untaped workspace foreach 'git log --oneline -10' --workspace prod
+repo="$(untaped workspace status --workspace prod --format raw --columns repo | fzf)"
+git -C "$(untaped workspace path prod)/$repo" log --oneline -10
 ```
 
-(`foreach` doesn't take a `--only` filter today; pipe through `xargs`
-or use `--only` on `sync` instead.)
+(`foreach` doesn't take a `--only` filter today; use the selected repo's
+path directly, or use `--only` on `sync` instead.)
 
 ### Adopt a colleague's workspace
 
