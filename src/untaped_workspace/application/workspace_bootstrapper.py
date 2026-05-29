@@ -59,6 +59,40 @@ class WorkspaceBootstrapper:
         """
         return self._resolve_and_check(path, name)
 
+    def verify_adopt_target(self, path: Path) -> Path:
+        """Resolve ``path`` and reject already-registered paths.
+
+        Unlike :meth:`verify`, this deliberately allows an existing
+        manifest because ``workspace adopt`` can claim an already
+        initialised but unregistered workspace.
+        """
+        canonical = path.expanduser().resolve()
+        if self._registry.find_by_path(canonical) is not None:
+            raise WorkspaceError(f"path already registered: {canonical}")
+        return canonical
+
+    def has_manifest(self, canonical: Path) -> bool:
+        return self._manifests.exists(canonical)
+
+    def register_existing_manifest(
+        self,
+        canonical: Path,
+        *,
+        name: str | None = None,
+    ) -> tuple[Workspace, WorkspaceManifest]:
+        """Read an existing manifest and register its workspace path.
+
+        ``name`` is a registry-name override only. The manifest is read
+        for validation and repo count/details, but is not rewritten.
+        """
+        if self._registry.find_by_path(canonical) is not None:
+            raise WorkspaceError(f"path already registered: {canonical}")
+        manifest = self._manifests.read(canonical)
+        ws_name = name or manifest.name or canonical.name
+        if not ws_name:
+            raise WorkspaceError(f"unable to derive workspace name from {canonical}")
+        return self._registry.register(name=ws_name, path=canonical), manifest
+
     def bootstrap(
         self,
         canonical: Path,

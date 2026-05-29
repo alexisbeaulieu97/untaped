@@ -331,10 +331,12 @@ def adopt_command(
     name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
     profile: ProfileOverrideOption = None,
 ) -> None:
-    """Initialise a workspace from already-cloned repos under `path`.
+    """Adopt existing workspace state under `path`.
 
-    Each immediate subdirectory containing `.git` is recorded in the new
-    `untaped.yml` with its current `origin` URL and checked-out branch.
+    If `path` already has `untaped.yml`, validate it and register the
+    workspace without rewriting the manifest. Otherwise, each immediate
+    subdirectory containing `.git` is recorded in a new manifest with
+    its current `origin` URL and checked-out branch.
     """
     with report_errors(), profile_override(profile):
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
@@ -346,7 +348,11 @@ def adopt_command(
         )(path, name=name)
         ws = result.workspace
         n = len(result.repos)
-        suffix = " — nothing matched (use 'workspace add' to declare repos)" if n == 0 else ""
+        suffix = (
+            " — nothing matched (use 'workspace add' to declare repos)"
+            if result.discovered and n == 0
+            else ""
+        )
         typer.echo(
             f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''}){suffix}",
             err=True,

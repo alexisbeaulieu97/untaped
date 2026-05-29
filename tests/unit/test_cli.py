@@ -483,11 +483,74 @@ def test_adopt_skips_dirs_without_git(tmp_path: Path, existing_clones: Path) -> 
     assert "notes" not in manifest_text
 
 
-def test_adopt_refuses_when_manifest_exists(tmp_path: Path, existing_clones: Path) -> None:
-    (existing_clones / "untaped.yml").write_text("name: prior\nrepos: []\n")
-    result = CliRunner().invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
+def test_adopt_existing_manifest_registers_without_rewriting(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    manifest_text = (
+        "# existing shared manifest\n"
+        "name: prod\n"
+        "repos:\n"
+        "  - url: https://x/api.git\n"
+        "    name: api\n"
+    )
+    (ws_path / "untaped.yml").write_text(manifest_text)
+
+    result = CliRunner().invoke(app, ["adopt", str(ws_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "adopted workspace 'prod'" in result.output
+    assert "(1 repo)" in result.output
+    assert (ws_path / "untaped.yml").read_text() == manifest_text
+
+    listed = CliRunner().invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert listed.stdout.splitlines() == ["prod"]
+
+
+def test_adopt_existing_manifest_name_override_is_registry_only(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    manifest_text = "name: prod\nrepos: []\n"
+    (ws_path / "untaped.yml").write_text(manifest_text)
+
+    result = CliRunner().invoke(app, ["adopt", str(ws_path), "--name", "alias"])
+
+    assert result.exit_code == 0, result.output
+    assert "adopted workspace 'alias'" in result.output
+    assert (ws_path / "untaped.yml").read_text() == manifest_text
+
+
+def test_adopt_existing_empty_manifest_does_not_show_discovery_hint(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    (ws_path / "untaped.yml").write_text("name: prod\nrepos: []\n")
+
+    result = CliRunner().invoke(app, ["adopt", str(ws_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "(0 repos)" in result.output
+    assert "nothing matched" not in result.output
+
+
+def test_adopt_existing_manifest_duplicate_name_errors(tmp_path: Path) -> None:
+    runner = CliRunner()
+    other = tmp_path / "other"
+    runner.invoke(app, ["init", "prod", "--path", str(other)])
+
+    ws_path = tmp_path / "unregistered"
+    ws_path.mkdir()
+    (ws_path / "untaped.yml").write_text("name: prod\nrepos: []\n")
+
+    result = runner.invoke(app, ["adopt", str(ws_path)])
+
     assert result.exit_code == 1
-    assert "already initialised" in (result.output or result.stderr)
+    assert "workspace name already registered" in (result.output or result.stderr)
+
+
+def test_adopt_help_mentions_existing_workspace_state() -> None:
+    result = CliRunner().invoke(app, ["adopt", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "existing workspace state" in result.output
 
 
 def test_adopt_missing_path_errors(tmp_path: Path) -> None:
