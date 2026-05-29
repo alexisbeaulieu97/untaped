@@ -144,9 +144,12 @@ because they read/write the central registry or consume
 only current command that intentionally stays profile-neutral.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
-`forget <name>`, `import <source> <dest>`, `path <name>`, `edit <name>`)
-take positional arguments and skip the precedence walk. `list` and
-`shell-init` operate without a workspace target.
+`forget <name>`, `import <source> <dest>`, `path <name>`) take
+positional arguments and skip the precedence walk. `edit` is the
+exception among ergonomic lifecycle-adjacent commands: it uses the
+standard workspace resolver (`--workspace`, `--path`, then cwd) and
+opens the resolved workspace root. `list` and `shell-init` operate
+without a workspace target.
 
 ## Git is a subprocess, not a library
 

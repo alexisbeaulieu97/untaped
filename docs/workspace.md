@@ -395,11 +395,13 @@ uwcd prod          # cd ~/work/prod
 ### `edit`
 
 ```bash
-untaped workspace edit <name> [--editor <cmd>]
+untaped workspace edit [--workspace <ws> | --path <dir>] [--editor <cmd>]
 ```
 
-Opens the workspace directory in your editor. Honours `$VISUAL` then
-`$EDITOR`, overrideable with `--editor`.
+Opens the resolved workspace root in your editor. With no explicit
+target, `edit` walks up from the current directory until it finds
+`untaped.yml`, matching `show`, `sync`, `status`, and `foreach`.
+Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`.
 
 ### Debugging silent completions
 

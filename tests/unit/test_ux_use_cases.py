@@ -52,20 +52,21 @@ def test_shell_init_unknown_shell() -> None:
 
 
 def test_edit_appends_workspace_path_to_argv(tmp_path: Path) -> None:
-    """``EditWorkspace`` is now a thin "look up path, append, dispatch"
+    """``EditWorkspace`` is now a thin "append path, dispatch"
     use case — no env reading, no shlex parsing, no platform branching.
     Editor resolution lives in
     :func:`untaped_workspace.infrastructure.system_adapters.resolve_editor_argv`
     and is tested there. This test pins the use case's narrow contract:
-    given an argv tuple, append the workspace path and call the runner."""
+    given a resolved workspace and argv tuple, append the workspace path
+    and call the runner."""
     captured: list[list[str]] = []
 
     def _runner(cmd):  # type: ignore[no-untyped-def]
         captured.append(list(cmd))
         return 0
 
-    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
-    rc = EditWorkspace(registry, runner=_runner)("prod", argv=("code", "--reuse-window"))
+    workspace = Workspace(name="prod", path=tmp_path / "prod")
+    rc = EditWorkspace(runner=_runner)(workspace, argv=("code", "--reuse-window"))
     assert rc == 0
     assert captured[-1] == ["code", "--reuse-window", str(tmp_path / "prod")]
 
@@ -79,6 +80,8 @@ def test_edit_missing_editor_raises(tmp_path: Path) -> None:
     def _runner(_cmd):  # type: ignore[no-untyped-def]
         raise FileNotFoundError("no such file")
 
-    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "prod")])
     with pytest.raises(WorkspaceError, match=r"editor not found: code$"):
-        EditWorkspace(registry, runner=_runner)("prod", argv=("code", "--reuse-window"))
+        EditWorkspace(runner=_runner)(
+            Workspace(name="prod", path=tmp_path / "prod"),
+            argv=("code", "--reuse-window"),
+        )
