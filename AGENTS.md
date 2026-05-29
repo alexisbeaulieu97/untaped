@@ -41,6 +41,9 @@ errors.
 11. **Plugin code reads typed settings through `get_config_section`.** Use
     `get_config_section("workspace", WorkspaceSettings)`, not a global
     aggregate `settings.workspace` attribute.
+    Commands that read registry or profile settings expose the core
+    command-local `ProfileOverrideOption` as `--profile` and wrap the command
+    body in `profile_override(profile)`.
 12. **All git subprocess calls live behind infrastructure ports.** New git
     operations go in `GitRunner`; application code depends on Protocols.
 13. **Finish with verification.** Run `uv run ruff check --fix`,
@@ -131,6 +134,14 @@ Implemented in `application.WorkspaceResolver` — takes a `RegistryReader`
 unit-tested with stubs (no real registry or on-disk manifest required).
 The CLI composition root wires `WorkspaceRegistryRepository` and
 `ManifestRepository`.
+
+All workspace commands that read registry state or workspace profile
+settings expose command-local `--profile <name>` and use
+`profile_override(profile)` around those reads. That includes lifecycle
+commands such as `init`, `adopt`, `import`, `forget`, `path`, and `edit`
+because they read/write the central registry or consume
+`workspace.workspaces_dir` / `workspace.cache_dir`. `shell-init` is the
+only current command that intentionally stays profile-neutral.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
 `forget <name>`, `import <source> <dest>`, `path <name>`, `edit <name>`)

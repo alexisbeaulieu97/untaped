@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Iterator
 from importlib.metadata import entry_points
@@ -89,3 +90,210 @@ def test_top_level_workspace_state_is_loaded_without_clobbering_profile_settings
     assert "workspace.workspaces" not in {row.split("\t", maxsplit=1)[0] for row in rows}
     assert settings.workspace.cache_dir == Path("/from/profile")
     assert [w.name for w in settings.workspace.workspaces] == ["prod"]
+
+
+def test_command_local_profile_flag_controls_workspace_init_settings(
+    _isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    default_root = tmp_path / "default-workspaces"
+    stage_root = tmp_path / "stage-workspaces"
+    _isolate_config.write_text(
+        f"""
+        profiles:
+          default:
+            workspace:
+              workspaces_dir: {default_root}
+          stage:
+            workspace:
+              workspaces_dir: {stage_root}
+        """
+    )
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(app, ["workspace", "init", "prod", "--profile", "stage"])
+
+    assert result.exit_code == 0, result.output
+    assert (stage_root / "prod" / "untaped.yml").is_file()
+    assert not (default_root / "prod").exists()
+
+
+def test_command_local_profile_flag_is_accepted_by_workspace_list(
+    _isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "prod"
+    _isolate_config.write_text(
+        f"""
+        profiles:
+          default: {{}}
+          stage: {{}}
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(
+        app,
+        ["workspace", "list", "--format", "raw", "--columns", "name", "--profile", "stage"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["prod"]
+
+
+def test_command_local_profile_flag_is_accepted_by_workspace_show(
+    _isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "prod"
+    target.mkdir()
+    (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
+    _isolate_config.write_text(
+        f"""
+        profiles:
+          default: {{}}
+          stage: {{}}
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(
+        app, ["workspace", "show", "--workspace", "prod", "--profile", "stage", "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload[0]["workspace"] == "prod"
+    assert payload[0]["path"] == str(target.resolve())
+
+
+def test_command_local_profile_flag_is_accepted_by_workspace_status(
+    _isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "prod"
+    target.mkdir()
+    (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
+    _isolate_config.write_text(
+        f"""
+        profiles:
+          default: {{}}
+          stage: {{}}
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(
+        app,
+        ["workspace", "status", "--workspace", "prod", "--profile", "stage", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == []
+
+
+def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
+    _isolate_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "prod"
+    target.mkdir()
+    (target / "untaped.yml").write_text(
+        "name: prod\nrepos:\n  - url: https://github.com/example/api.git\n"
+    )
+    stage_cache = tmp_path / "stage-cache"
+    _isolate_config.write_text(
+        f"""
+        profiles:
+          default:
+            workspace:
+              cache_dir: {tmp_path / "default-cache"}
+          stage:
+            workspace:
+              cache_dir: {stage_cache}
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+    captured: dict[str, object] = {}
+
+    class _SyncStub:
+        def __init__(
+            self,
+            manifests: object,
+            git: object,
+            *,
+            fs: object,
+            cache_dir: Path,
+        ) -> None:
+            captured["cache_dir"] = cache_dir
+
+        def __call__(self, workspace: object, **kwargs: object) -> list[object]:
+            return []
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.SyncWorkspace", _SyncStub)
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(
+        app,
+        ["workspace", "sync", "--workspace", "prod", "--profile", "stage", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["cache_dir"] == stage_cache
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["workspace", "list"],
+        ["workspace", "show"],
+        ["workspace", "branch", "set"],
+        ["workspace", "branch", "unset"],
+        ["workspace", "branch", "apply"],
+        ["workspace", "init"],
+        ["workspace", "adopt"],
+        ["workspace", "forget"],
+        ["workspace", "add"],
+        ["workspace", "remove"],
+        ["workspace", "sync"],
+        ["workspace", "status"],
+        ["workspace", "foreach"],
+        ["workspace", "import"],
+        ["workspace", "path"],
+        ["workspace", "edit"],
+    ],
+)
+def test_registry_or_settings_commands_expose_command_local_profile(
+    args: list[str],
+) -> None:
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(app, [*args, "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--profile" in result.output
+
+
+def test_shell_init_does_not_expose_command_local_profile() -> None:
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(app, ["workspace", "shell-init", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--profile" not in result.output
