@@ -101,7 +101,7 @@ class GitRunner:
             self._run(["checkout", branch], cwd=repo_path)
             return
         remote_ref = f"refs/remotes/origin/{branch}"
-        if self._ref_exists(repo_path, remote_ref):
+        if self._ref_commit_exists(repo_path, remote_ref):
             self._run(["checkout", "-b", branch, remote_ref], cwd=repo_path)
             self._run(["config", f"branch.{branch}.remote", "origin"], cwd=repo_path)
             self._run(["config", f"branch.{branch}.merge", f"refs/heads/{branch}"], cwd=repo_path)
@@ -146,6 +146,13 @@ class GitRunner:
     def _ref_exists(self, repo_path: Path, ref: str) -> bool:
         try:
             self._run(["show-ref", "--verify", "--quiet", ref], cwd=repo_path)
+        except GitError:
+            return False
+        return True
+
+    def _ref_commit_exists(self, repo_path: Path, ref: str) -> bool:
+        try:
+            self._run(["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], cwd=repo_path)
         except GitError:
             return False
         return True

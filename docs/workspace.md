@@ -68,8 +68,9 @@ Branch resolution at clone time follows a cascade: per-repo `branch` >
 uses explicit manifest branch targets (`repos[].branch` or
 `defaults.branch`) and skips repos with no target. It checks out an
 existing local branch when present, or creates a local tracking branch
-when `origin/<branch>` exists. If the branch is missing locally and on
-`origin`, it creates a local branch from the current clean HEAD.
+when `origin/<branch>` resolves to a commit. If the branch is missing
+locally and no usable `origin/<branch>` exists, it creates a local
+branch from the current clean HEAD.
 Subsequent `sync`s will not check out a different branch for you — if the
 on-disk branch diverges from the manifest's target, `sync` skips that
 repo with a warning, so a stale `defaults.branch` can't kidnap a repo
@@ -255,9 +256,10 @@ untaped workspace branch set main --workspace prod --apply
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
 one row per repo with `checkout`, `up-to-date`, or `skip`. Missing
 clones and repos without a target branch are skipped. If the target
-branch exists on `origin` but not locally, `branch apply` creates a
-local tracking branch. If the target branch is missing locally and on
-`origin`, it creates a local branch from the current clean HEAD.
+branch resolves to a commit on `origin` but not locally, `branch apply`
+creates a local tracking branch. If the target branch is missing locally
+and no usable `origin` ref exists, it creates a local branch from the
+current clean HEAD.
 
 ### `sync`
 

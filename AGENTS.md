@@ -307,10 +307,11 @@ clones. It fetches, reads status, refuses dirty/diverged repos, and calls
 `GitRunner.checkout_branch` only when a clean clone is on a different
 branch from the manifest target. `GitRunner.checkout_branch` checks out an
 existing local branch when present; if the local branch is missing but
-`origin/<branch>` exists, it creates a local tracking branch from that
-remote ref and sets the upstream config explicitly so narrow single-branch
-clones work too. If neither local nor `origin/<branch>` exists, it creates
-a local branch from the current clean HEAD. Missing clones, repos without
+`origin/<branch>` resolves to a commit, it creates a local tracking branch
+from that remote ref and sets the upstream config explicitly so narrow
+single-branch clones work too. If neither local nor a usable
+`origin/<branch>` exists, it creates a local branch from the current clean
+HEAD. Missing clones, repos without
 a target branch, fetch failures, status failures, and checkout failures are
 row-level `skip`s. `workspace show` is manifest-only; it formats the
 effective branch cascade without reading live git state.
