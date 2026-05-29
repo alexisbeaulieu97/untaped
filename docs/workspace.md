@@ -137,19 +137,30 @@ that lives elsewhere. Writes a starter `untaped.yml` in the directory.
 untaped workspace adopt <path> [--name <name>]
 ```
 
-Initialise a workspace from a directory that already contains git
-clones. Each immediate subdirectory containing `.git` is recorded in
-the new manifest with its current `origin` URL and checked-out branch
-(a detached HEAD becomes `branch: null`; clones missing an `origin`
-emit a stderr warning and are skipped). The on-disk clones stay where
-they are — `adopt` does **not** rewire them to share objects with the
-bare cache; the cascade only links *new* clones via `git clone
---reference`.
+Adopt existing workspace state at a path.
+
+If `<path>/untaped.yml` already exists, `adopt` validates that manifest
+and registers the path without rewriting the file. The manifest's
+`name` is used as the registry name by default; `--name` can register
+the same on-disk workspace under a different registry name without
+mutating `untaped.yml`.
+
+If no manifest exists, `adopt` initialises a workspace from a directory
+that already contains git clones. Each immediate subdirectory
+containing `.git` is recorded in the new manifest with its current
+`origin` URL and checked-out branch (a detached HEAD becomes `branch:
+null`; clones missing an `origin` emit a stderr warning and are
+skipped). The on-disk clones stay where they are — `adopt` does
+**not** rewire them to share objects with the bare cache; the cascade
+only links *new* clones via `git clone --reference`.
 
 ```bash
 git clone git@github.com:acme/api  ~/work/prod/api
 git clone git@github.com:acme/web  ~/work/prod/web
 untaped workspace adopt ~/work/prod --name prod
+
+# Later, on another machine or after removing the registry entry:
+untaped workspace adopt ~/work/prod
 ```
 
 ### `forget`

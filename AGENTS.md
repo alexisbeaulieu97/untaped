@@ -360,9 +360,9 @@ case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
 
 ## `init` vs. `adopt` vs. `import` vs. `forget`
 
-The shared opening for every bootstrap-style entry point
-(`init` / `adopt` / `import`) — canonicalise the target path,
-derive `ws_name`, raise on manifest/registry collision, write the
+The shared opening for bootstrap-style entry points
+(`init` / clone-discovery `adopt` / `import`) — canonicalise the target
+path, derive `ws_name`, raise on manifest/registry collision, write the
 manifest, register — lives on `application.WorkspaceBootstrapper`.
 The workspace directory itself is created as a side effect of
 `ManifestRepository.write` (see "Manifest + registry split" above),
@@ -372,9 +372,12 @@ case constructs the bootstrapper with the same
 CLI composition root, then delegates by passing a
 `build_manifest(ws_name) -> WorkspaceManifest` closure that owns the
 caller-specific variation (e.g. `init` plugs in the `--branch` flag;
-`adopt` plugs in the discovered repos; `import` plugs in the
-external-manifest contents). `ForgetWorkspace` is *teardown* and does
-not flow through the bootstrapper.
+clone-discovery `adopt` plugs in the discovered repos; `import` plugs
+in the external-manifest contents). Existing-manifest `adopt` uses the
+same bootstrapper for path canonicalisation and registry writes, but
+deliberately bypasses manifest writes so the file stays byte-for-byte
+unchanged. `ForgetWorkspace` is *teardown* and does not flow through
+the bootstrapper.
 
 The bootstrapper exposes two entry points:
 
@@ -384,17 +387,22 @@ The bootstrapper exposes two entry points:
   manifest, write, register.
 - **`verify(path, name) -> (canonical, ws_name)`** +
   **`bootstrap(canonical, ws_name, manifest)`** — the canonical-in fast
-  path used by `AdoptWorkspace`, which would otherwise canonicalise
-  three times per invocation (locally for `fs.exists`/`fs.is_dir`,
-  inside `verify`, and inside `__call__`). `verify` does the resolve +
+  path used by clone-discovery `AdoptWorkspace`, which would otherwise
+  canonicalise repeatedly. `verify` does the resolve + new-manifest
   collision check once and returns the inputs; `bootstrap` writes +
   registers without re-running the collision check. The TOCTOU window
   between the two is acceptable for the single-user CLI.
+- **`verify_adopt_target(path)`** +
+  **`register_existing_manifest(canonical, name)`** — the
+  existing-manifest adopt path. It rejects already-registered paths but
+  allows `<path>/untaped.yml`, validates that manifest, and registers
+  the workspace without rewriting the file. `--name` is registry-only
+  here; the manifest's `name` is otherwise the default registry name.
 
-  `AdoptWorkspace` runs `verify` *before* its `fs.exists`/`fs.is_dir`
-  checks, so a path that's both missing on disk and already registered
-  surfaces the "already registered" error rather than "does not
-  exist" — pinned by
+  `AdoptWorkspace` runs the adopt-target registry check *before* its
+  `fs.exists`/`fs.is_dir` checks, so a path that's both missing on disk
+  and already registered surfaces the "already registered" error rather
+  than "does not exist" — pinned by
   `test_adopt_collision_check_runs_before_fs_existence_check` in
   `tests/unit/test_adopt_workspace.py`.
 
@@ -406,17 +414,20 @@ Four workspace lifecycle commands with deliberately distinct shapes:
   `~/.untaped/workspaces`). Pass `-p / --path` to override the location
   for a one-off workspace that lives elsewhere. Implementation:
   `application.InitWorkspace`.
-- **`workspace adopt <path>`** — initialises a workspace from
-  already-cloned repos. Each immediate subdirectory containing `.git` is
-  recorded in the new manifest with its current `origin` URL and
-  checked-out branch (`infrastructure.LocalRepoDiscoverer` walks the
-  directory and reads both via `GitRunner.read_remote_url` /
-  `read_current_branch`; a detached HEAD becomes `branch: null`;
-  missing-`origin` clones surface via a stderr `warn` hook). Adopted
-  clones do not share objects with the bare cache — the cascade only
-  links new clones via `git clone --reference`. `<path>` stays
-  positional because adopt fundamentally targets an already-populated
-  directory. Implementation: `application.AdoptWorkspace`.
+- **`workspace adopt <path>`** — claims existing workspace state. If
+  `<path>/untaped.yml` exists, it validates and registers that manifest
+  without rewriting it. If no manifest exists, it initialises a
+  workspace from already-cloned repos: each immediate subdirectory
+  containing `.git` is recorded in a new manifest with its current
+  `origin` URL and checked-out branch
+  (`infrastructure.LocalRepoDiscoverer` walks the directory and reads
+  both via `GitRunner.read_remote_url` / `read_current_branch`; a
+  detached HEAD becomes `branch: null`; missing-`origin` clones surface
+  via a stderr `warn` hook). Adopted clones do not share objects with
+  the bare cache — the cascade only links new clones via `git clone
+  --reference`. `<path>` stays positional because adopt fundamentally
+  targets an already-populated directory. Implementation:
+  `application.AdoptWorkspace`.
 - **`workspace import <source> <dest>`** — bootstraps a workspace
   from a local YAML manifest file (e.g. one cloned from a shared repo).
   Reads the external manifest via `ManifestRepository.read_external`

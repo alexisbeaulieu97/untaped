@@ -25,6 +25,7 @@ from untaped_workspace.errors import WorkspaceError
 class AdoptResult:
     workspace: Workspace
     repos: list[DiscoveredRepo]
+    discovered: bool = True
 
 
 def _noop(_: str) -> None:
@@ -53,12 +54,27 @@ class AdoptWorkspace:
     ) -> AdoptResult:
         # Fail fast before discovery — `discoverer.discover()` does an
         # iterdir + 2 git subprocess spawns per child directory.
-        canonical, ws_name = self._bootstrap.verify(path, name=name)
+        canonical = self._bootstrap.verify_adopt_target(path)
 
         if not self._fs.exists(canonical):
             raise WorkspaceError(f"path does not exist: {canonical}")
         if not self._fs.is_dir(canonical):
             raise WorkspaceError(f"not a directory: {canonical}")
+
+        if self._bootstrap.has_manifest(canonical):
+            workspace, manifest = self._bootstrap.register_existing_manifest(
+                canonical,
+                name=name,
+            )
+            manifest_repos = [
+                DiscoveredRepo(name=repo.name, url=repo.url, branch=repo.branch)
+                for repo in manifest.repos
+            ]
+            return AdoptResult(workspace=workspace, repos=manifest_repos, discovered=False)
+
+        ws_name = name or canonical.name
+        if not ws_name:
+            raise WorkspaceError(f"unable to derive workspace name from {path}")
 
         result = self._discoverer.discover(canonical)
         for reason in result.skipped:

@@ -14,7 +14,7 @@ import pytest
 from conftest import StubRegistry
 
 from untaped_workspace.application import AdoptWorkspace, WorkspaceBootstrapper
-from untaped_workspace.domain import DiscoveredRepo
+from untaped_workspace.domain import DiscoveredRepo, Repo, Workspace, WorkspaceManifest
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
@@ -80,9 +80,10 @@ def test_adopt_with_empty_discovery_succeeds(tmp_path: Path) -> None:
     ws_path = tmp_path / "empty"
     ws_path.mkdir()
     reg = StubRegistry()
-    _adopt(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
+    result = _adopt(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
     assert ManifestRepository().read(ws_path).repos == ()
     assert reg.registered[0].path == ws_path.resolve()
+    assert result.discovered is True
 
 
 def test_adopt_refuses_when_path_missing(tmp_path: Path) -> None:
@@ -97,23 +98,69 @@ def test_adopt_refuses_when_path_is_a_file(tmp_path: Path) -> None:
         _adopt(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(f)
 
 
-def test_adopt_short_circuits_on_collision_without_invoking_discoverer(
+def test_adopt_existing_manifest_registers_manifest_name_without_discovery(
     tmp_path: Path,
 ) -> None:
-    """`AdoptWorkspace` calls `bootstrapper.verify()` *before* the
-    discoverer runs. Re-running `adopt` on an already-initialised
-    workspace should raise without N x 2 `git` subprocess spawns.
+    """An existing manifest means "register this workspace", not
+    "discover clones and regenerate the manifest".
     """
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    from untaped_workspace.domain import WorkspaceManifest
-
     repo = ManifestRepository()
-    repo.write(ws_path, WorkspaceManifest())  # seed collision
+    repo.write(
+        ws_path,
+        WorkspaceManifest(
+            name="prod",
+            repos=[Repo(url="https://x/api.git", name="api")],
+        ),
+    )
+    discoverer = _StubDiscoverer([])
+    reg = StubRegistry()
+
+    result = _adopt(repo, reg, discoverer)(ws_path)
+
+    assert result.workspace.name == "prod"
+    assert [r.name for r in result.repos] == ["api"]
+    assert result.discovered is False
+    assert reg.registered[0].name == "prod"
+    assert discoverer.calls == []
+
+
+def test_adopt_existing_manifest_name_override_is_registry_only(
+    tmp_path: Path,
+) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    manifest_text = (
+        "# keep this file byte-for-byte\n"
+        "name: prod\n"
+        "repos:\n"
+        "  - url: https://x/api.git\n"
+        "    name: api\n"
+    )
+    (ws_path / "untaped.yml").write_text(manifest_text)
+    discoverer = _StubDiscoverer([])
+    reg = StubRegistry()
+
+    result = _adopt(ManifestRepository(), reg, discoverer)(ws_path, name="alias")
+
+    assert result.workspace.name == "alias"
+    assert reg.registered[0].name == "alias"
+    assert (ws_path / "untaped.yml").read_text() == manifest_text
+    assert discoverer.calls == []
+
+
+def test_adopt_existing_manifest_refuses_already_registered_path(
+    tmp_path: Path,
+) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    ManifestRepository().write(ws_path, WorkspaceManifest(name="prod"))
+    reg = StubRegistry([Workspace(name="prod", path=ws_path.resolve())])
     discoverer = _StubDiscoverer([])
 
-    with pytest.raises(WorkspaceError, match="already initialised"):
-        _adopt(repo, StubRegistry(), discoverer)(ws_path, name="prod")
+    with pytest.raises(WorkspaceError, match="already registered"):
+        _adopt(ManifestRepository(), reg, discoverer)(ws_path)
 
     assert discoverer.calls == []  # the expensive walk never happened
 
@@ -135,8 +182,6 @@ def test_adopt_collision_check_runs_before_fs_existence_check(tmp_path: Path) ->
 
     ws_path = tmp_path / "deleted-but-registered"
     # Note: NOT calling ws_path.mkdir() — the path is missing on disk.
-    from untaped_workspace.domain import Workspace
-
     reg = _StubRegistry()
     reg.registered.append(Workspace(name="ghost", path=ws_path.resolve()))
 
