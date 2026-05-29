@@ -16,22 +16,9 @@ uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
   --force
 ```
 
-To let `untaped plugins` remember that desired plugin state, give `plugins add`
-the same source spec for the core tool:
-
-```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-workspace.git \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
-```
-
-For local editable core development, point sync at the local `untaped`
-checkout:
-
-```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-workspace.git \
-  --tool-spec /path/to/untaped \
-  --editable-tool
-```
+For managed plugin state, editable source installs, and multi-plugin sync
+examples, see the core
+[`untaped` plugin docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).
 
 ## Commands
 
