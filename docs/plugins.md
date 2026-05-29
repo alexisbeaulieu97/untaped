@@ -30,18 +30,28 @@ untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-awx.git \
   --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
 ```
 
-For multiple plugins, record them first, then sync once:
+For multiple plugins, pass every spec to one `add` command so `untaped`
+records them and syncs once:
 
 ```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-awx.git --no-sync
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-github.git --no-sync
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-workspace.git --no-sync
-untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+untaped plugins add \
+  git+https://github.com/alexisbeaulieu97/untaped-awx.git \
+  git+https://github.com/alexisbeaulieu97/untaped-github.git \
+  git+https://github.com/alexisbeaulieu97/untaped-workspace.git \
+  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
 ```
 
 Direct git URLs are accepted when the plugin name can be inferred from the
 repository basename. `untaped` stores the canonical `name @ url` form and
 lets `plugins remove` target the normalized name.
+
+Batch commands also accept newline-separated package specs from stdin:
+
+```bash
+untaped plugins add --stdin --no-sync < plugins.txt
+untaped plugins list --format raw | untaped plugins remove --stdin --no-sync
+untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+```
 
 For editable core development, point sync at the local checkout:
 

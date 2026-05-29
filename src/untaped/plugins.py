@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from importlib.metadata import entry_points
 from pathlib import PurePosixPath
-from typing import Protocol
+from typing import Annotated, Protocol
 from urllib.parse import unquote, urlparse
 
 import typer
@@ -27,6 +27,7 @@ from untaped.settings import (
     register_state_settings,
     validate_disjoint_settings_sections,
 )
+from untaped.stdin import read_identifiers
 
 ENTRY_POINT_GROUP = "untaped.plugins"
 _PACKAGE_NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"
@@ -184,7 +185,11 @@ def _callback() -> None:
 
 @app.command("add", no_args_is_help=True)
 def add_command(
-    package_spec: str = typer.Argument(..., help="uv-compatible plugin package spec."),
+    package_specs: Annotated[
+        list[str] | None,
+        typer.Argument(help="uv-compatible plugin package spec(s)."),
+    ] = None,
+    stdin: bool = typer.Option(False, "--stdin", help="Read package specs from stdin."),
     editable: bool = typer.Option(False, "--editable", help="Install with uv --with-editable."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Record only; do not run uv."),
     tool_spec: str | None = typer.Option(
@@ -194,17 +199,23 @@ def add_command(
     ),
     editable_tool: bool = typer.Option(False, "--editable-tool", help="Install tool editable."),
 ) -> None:
-    """Record a desired plugin package and optionally rebuild the uv tool env."""
+    """Record desired plugin packages and optionally rebuild the uv tool env."""
     with report_errors():
-        spec = PluginInstallSpec(
-            spec=_canonical_plugin_spec(package_spec, reject_uninferable_direct=True),
-            editable=editable,
-        )
+        requested_specs = read_identifiers(list(package_specs or []), stdin=stdin)
+        specs = [
+            PluginInstallSpec(
+                spec=_canonical_plugin_spec(package_spec, reject_uninferable_direct=True),
+                editable=editable,
+            )
+            for package_spec in requested_specs
+        ]
         tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
             state = _plugin_state_from_config(data)
-            updated = _upsert_plugin_spec(state, spec)
+            updated = state
+            for spec in specs:
+                updated = _upsert_plugin_spec(updated, spec)
             if tool is not None:
                 updated = _set_tool_spec(updated, tool)
             if not no_sync:
@@ -212,14 +223,19 @@ def add_command(
             data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
-        typer.echo(f"added plugin package: {spec.spec}", err=True)
+        for spec in specs:
+            typer.echo(f"added plugin package: {spec.spec}", err=True)
         if not no_sync:
             typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
 
 @app.command("remove", no_args_is_help=True)
 def remove_command(
-    package_spec: str = typer.Argument(..., help="Plugin package spec to remove."),
+    package_specs: Annotated[
+        list[str] | None,
+        typer.Argument(help="Plugin package spec(s) to remove."),
+    ] = None,
+    stdin: bool = typer.Option(False, "--stdin", help="Read package specs from stdin."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Record only; do not run uv."),
     tool_spec: str | None = typer.Option(
         None,
@@ -228,15 +244,25 @@ def remove_command(
     ),
     editable_tool: bool = typer.Option(False, "--editable-tool", help="Install tool editable."),
 ) -> None:
-    """Remove a desired plugin package and optionally rebuild the uv tool env."""
+    """Remove desired plugin packages and optionally rebuild the uv tool env."""
     with report_errors():
+        requested_specs = _unique_plugin_specs(
+            read_identifiers(list(package_specs or []), stdin=stdin)
+        )
         tool = _tool_override(tool_spec, editable_tool)
 
         def _apply(data: dict[str, object]) -> None:
             state = _plugin_state_from_config(data)
-            updated, removed = _remove_plugin_spec(state, package_spec)
-            if not removed:
-                raise ConfigError(f"plugin package is not recorded: {package_spec}")
+            updated = state
+            missing: list[str] = []
+            for package_spec in requested_specs:
+                updated, removed = _remove_plugin_spec(updated, package_spec)
+                if not removed:
+                    missing.append(package_spec)
+            if missing:
+                if len(missing) == 1:
+                    raise ConfigError(f"plugin package is not recorded: {missing[0]}")
+                raise ConfigError(f"plugin packages are not recorded: {', '.join(missing)}")
             if tool is not None:
                 updated = _set_tool_spec(updated, tool)
             if not no_sync:
@@ -245,7 +271,8 @@ def remove_command(
             data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
-        typer.echo(f"removed plugin package: {package_spec}", err=True)
+        for package_spec in requested_specs:
+            typer.echo(f"removed plugin package: {package_spec}", err=True)
         if not no_sync:
             typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
 
@@ -347,6 +374,18 @@ def _remove_plugin_spec(state: PluginsState, package_spec: str) -> tuple[Plugins
         if p.spec != package_spec and _plugin_spec_key(p.spec, reject_bare_direct=False) != key
     ]
     return state.model_copy(update={"packages": kept}), len(kept) != len(state.packages)
+
+
+def _unique_plugin_specs(package_specs: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for package_spec in package_specs:
+        key = _plugin_spec_key(package_spec, reject_bare_direct=False)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(package_spec)
+    return unique
 
 
 def _set_tool_spec(state: PluginsState, tool: PluginToolSpec) -> PluginsState:
