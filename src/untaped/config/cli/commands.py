@@ -7,7 +7,9 @@ import typer
 from untaped import (
     ColumnsOption,
     FormatOption,
+    ProfileOverrideOption,
     format_output,
+    profile_override,
     report_errors,
     resolve_config_path,
 )
@@ -36,6 +38,7 @@ def _callback() -> None:
 def list_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    profile: ProfileOverrideOption = None,
     show_secrets: bool = typer.Option(
         False, "--show-secrets", help="Reveal secret values instead of `***`."
     ),
@@ -52,11 +55,14 @@ def list_command(
     inspect what every profile has set, regardless of which is active.
     """
     with report_errors():
-        repo = SettingsFileRepository()
-        if all_profiles:
-            entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
-        else:
-            entries = ListSettings(repo)(reveal_secrets=show_secrets)
+        if all_profiles and profile is not None:
+            raise typer.BadParameter("Cannot combine --profile with --all-profiles.")
+        with profile_override(profile):
+            repo = SettingsFileRepository()
+            if all_profiles:
+                entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
+            else:
+                entries = ListSettings(repo)(reveal_secrets=show_secrets)
         rows = [_entry_to_row(e) for e in entries]
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
@@ -65,30 +71,30 @@ def list_command(
 def set_command(
     key: str = typer.Argument(..., help="Dotted setting key, e.g. `http.verify_ssl`."),
     value: str = typer.Argument(..., help="New value (parsed as a YAML scalar)."),
-    profile: str | None = typer.Option(
+    target_profile: str | None = typer.Option(
         None,
-        "--profile",
+        "--target-profile",
         help="Target profile to write to (defaults to the active profile).",
     ),
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
     with report_errors():
-        target = SetSetting(SettingsFileRepository())(key, value, profile=profile)
+        target = SetSetting(SettingsFileRepository())(key, value, profile=target_profile)
         typer.echo(f"set {key} in profile {target} (config: {resolve_config_path()})", err=True)
 
 
 @app.command("unset", no_args_is_help=True)
 def unset_command(
     key: str = typer.Argument(..., help="Dotted setting key to remove."),
-    profile: str | None = typer.Option(
+    target_profile: str | None = typer.Option(
         None,
-        "--profile",
+        "--target-profile",
         help="Target profile to remove from (defaults to the active profile).",
     ),
 ) -> None:
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
     with report_errors():
-        removed, target = UnsetSetting(SettingsFileRepository())(key, profile=profile)
+        removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
         if removed:
             msg = f"unset {key} in profile {target}"
         else:

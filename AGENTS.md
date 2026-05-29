@@ -177,6 +177,13 @@ remain visible in table/json/yaml output or when explicitly selecting columns.
 `untaped plugins add` and `untaped plugins remove` accept package specs from
 multiple positionals or `--stdin`; when syncing, each command mutates the full
 batch first and rebuilds the uv tool environment once.
+
+Profile selection has two distinct CLI meanings. Read-time overrides use
+`ProfileOverrideOption` plus `profile_override(...)` and expose `--profile`
+on the command that reads settings; the helper restores `UNTAPED_PROFILE`
+and clears the `get_settings()` cache after the command body. Config mutation
+commands use `--target-profile` when choosing which profile to write to.
+
 The default view is one row per plugin package/name, not separate rows for
 "loaded" and "desired" state. A desired package such as `untaped-awx` is
 coalesced with a loaded plugin id such as `awx` when the normalized suffix
@@ -188,6 +195,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | ------------------------------------------ | ---------------------------------------------------------------- |
 | Read typed plugin config                   | `from untaped import get_config_section`                    |
 | Read core settings only                    | `from untaped import get_core_settings`                     |
+| Add a command-local read-time profile override | `from untaped import ProfileOverrideOption, profile_override` |
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
 | Format output for stdout                   | `from untaped import format_output, OutputFormat`           |
