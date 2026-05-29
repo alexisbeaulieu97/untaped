@@ -147,7 +147,8 @@ untaped profile show <name> --show-secrets    # reveal token values
 untaped profile use <name>                    # persist `active: <name>`
 untaped profile create <name>                 # empty profile
 untaped profile create <name> --copy-from default
-untaped profile delete <name>                 # refused for the active profile
+untaped profile delete <name>                 # confirm before deleting
+untaped profile delete <name> --yes           # non-interactive delete
 untaped profile rename <old> <new>            # also updates `active:` if it pointed there
 ```
 
@@ -156,6 +157,10 @@ in an envelope (`{name, active, raw, data}`) so downstream tools can
 address metadata fields with `jq '.data.awx.base_url'`. `show default`
 looks the same with or without `--raw` — `default` has no parent layer
 to merge under itself.
+
+`profile delete` asks for confirmation in an interactive terminal and refuses
+non-interactive deletes unless `--yes` is passed. It still refuses to delete
+the persisted active profile.
 
 `profile current` prints just the name to stdout (with the source —
 `env` / `config` / `fallback` — going to stderr), so you can use it in
