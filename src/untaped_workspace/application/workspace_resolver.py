@@ -57,7 +57,7 @@ class WorkspaceResolver:
                 # `_resolve_by_path` re-check + re-resolve.
                 return self._workspace_for(parent)
         raise ConfigError(
-            "not inside a workspace — pass --name or --path, or `cd` into a "
+            "not inside a workspace — pass --workspace or --path, or `cd` into a "
             "workspace directory containing untaped.yml"
         )
 

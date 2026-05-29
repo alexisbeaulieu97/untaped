@@ -13,7 +13,7 @@ The two homes of workspace state:
   source of truth for what belongs in a workspace.
 - **Central registry** — a `workspace.workspaces` list in
   `~/.untaped/config.yml` mapping `name → path`. Just enough state to
-  power `list`, `path <name>`, `--name X` lookups, and shell
+  power `list`, `path <name>`, `--workspace X` lookups, and shell
   completions.
 
 Manifests are checked into a shared directory or a git repo if you
@@ -23,14 +23,14 @@ want; the registry is local-only.
 
 ```bash
 untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
-untaped workspace add git@github.com:acme/api --name prod  # add a repo
-untaped workspace show --name prod                         # inspect manifest details
-untaped workspace branch set main --name prod              # update manifest default branch
-untaped workspace sync --name prod              # clone everything in the manifest
-untaped workspace status --name prod            # per-repo git status
+untaped workspace add git@github.com:acme/api --workspace prod  # add a repo
+untaped workspace show --workspace prod                         # inspect manifest details
+untaped workspace branch set main --workspace prod              # update manifest default branch
+untaped workspace sync --workspace prod              # clone everything in the manifest
+untaped workspace status --workspace prod            # per-repo git status
 ```
 
-If you `cd` into a workspace directory, the `--name` flag becomes
+If you `cd` into a workspace directory, the `--workspace` flag becomes
 optional — most commands walk up from the current directory looking
 for an `untaped.yml`.
 
@@ -81,7 +81,7 @@ name and path.
 ### `show`
 
 ```bash
-untaped workspace show [--name <ws> | --path <dir>]
+untaped workspace show [--workspace <ws> | --path <dir>]
                        [--format json|yaml|table|raw] [--columns ...]
 ```
 
@@ -167,10 +167,10 @@ the imported manifest — same scope as `add --sync`).
 ### `add`
 
 ```bash
-untaped workspace add <url>... [--name <ws>] [--path <ws-dir>]
+untaped workspace add <url>... [--workspace <ws>] [--path <ws-dir>]
                                [--branch <b>] [--repo-name <alias>]
                                [--sync]
-untaped workspace add --stdin --name <ws>
+untaped workspace add --stdin --workspace <ws>
 ```
 
 Add one or more repo URLs to the workspace's manifest. Multiple URLs
@@ -183,8 +183,9 @@ to clone).
 ### `remove`
 
 ```bash
-untaped workspace remove <repo>... [--name <ws>] [--prune] [--yes]
-untaped workspace remove --stdin --name <ws>
+untaped workspace remove <repo>... [--workspace <ws> | --path <dir>]
+                                  [--prune] [--yes]
+untaped workspace remove --stdin [--workspace <ws> | --path <dir>]
 ```
 
 Remove one or more repos from the manifest, identified by URL or
@@ -194,17 +195,18 @@ prune. With `--stdin`, reads repo identifiers one per line — works
 nicely with `fzf`:
 
 ```bash
-untaped workspace status --name prod --format raw --columns repo \
+untaped workspace status --workspace prod --format raw --columns repo \
   | fzf -m \
-  | untaped workspace remove --stdin --name prod
+  | untaped workspace remove --stdin --workspace prod
 ```
 
 ### `branch`
 
 ```bash
-untaped workspace branch set <branch> [--repo <repo>] [--apply]
-untaped workspace branch unset [--repo <repo>]
-untaped workspace branch apply [--repo <repo>]
+untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
+                                [--repo <repo>] [--apply]
+untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
+untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
@@ -219,11 +221,11 @@ Use `branch apply` to checkout existing local clones to the manifest's
 target branch:
 
 ```bash
-untaped workspace branch set main --name prod
-untaped workspace branch apply --name prod
+untaped workspace branch set main --workspace prod
+untaped workspace branch apply --workspace prod
 
 # or do both steps in one command
-untaped workspace branch set main --name prod --apply
+untaped workspace branch set main --workspace prod --apply
 ```
 
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
@@ -236,7 +238,7 @@ local tracking branch. If the target branch is missing locally and on
 ### `sync`
 
 ```bash
-untaped workspace sync [--name <ws> | --path <dir>]
+untaped workspace sync [--workspace <ws> | --path <dir>]
                        [--only <repo>]... [--prune]
                        [--timeout <seconds>] [--all]
 ```
@@ -276,7 +278,7 @@ and abort the command.
 ### `status`
 
 ```bash
-untaped workspace status [--name <ws> | --path <dir>] [--all]
+untaped workspace status [--workspace <ws> | --path <dir>] [--all]
                          [--format json|yaml|table|raw] [--columns ...]
 ```
 
@@ -293,7 +295,7 @@ untaped workspace status --all --format raw \
 ### `foreach`
 
 ```bash
-untaped workspace foreach <cmd> [--name <ws>]
+untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
                                 [--format json|yaml|table|raw]
@@ -308,8 +310,8 @@ anything until each repo exits. `--format json|yaml|raw` emits one
 piping into `jq` / `awk`.
 
 ```bash
-untaped workspace foreach 'git status -s' --name prod
-untaped workspace foreach 'git pull --ff-only' --name prod --parallel 4
+untaped workspace foreach 'git status -s' --workspace prod
+untaped workspace foreach 'git pull --ff-only' --workspace prod --parallel 4
 ```
 
 Three error-handling modes:
@@ -400,13 +402,12 @@ that's behind upstream or has uncommitted changes.
 ### Pick a repo with `fzf` and run a command in just that one
 
 ```bash
-untaped workspace status --name prod --format raw --columns repo \
-  | fzf \
-  | xargs -I{} untaped workspace foreach 'git log --oneline -10' --name prod
+repo="$(untaped workspace status --workspace prod --format raw --columns repo | fzf)"
+git -C "$(untaped workspace path prod)/$repo" log --oneline -10
 ```
 
-(`foreach` doesn't take a `--only` filter today; pipe through `xargs`
-or use `--only` on `sync` instead.)
+(`foreach` doesn't take a `--only` filter today; use the selected repo's
+path directly, or use `--only` on `sync` instead.)
 
 ### Adopt a colleague's workspace
 
@@ -422,7 +423,7 @@ mkdir -p ~/work/prod && cd ~/work/prod
 git clone git@github.com:acme/api
 git clone git@github.com:acme/web
 untaped workspace adopt . --name prod
-untaped workspace status --name prod        # already populated
+untaped workspace status --workspace prod        # already populated
 ```
 
 ## Storage

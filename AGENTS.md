@@ -72,7 +72,7 @@ A workspace has two homes:
   branch?}`). Read/written by `infrastructure.ManifestRepository`.
 - **Registry** (central): a `name → path` list under `workspace.workspaces`
   in `~/.untaped/config.yml`. Just enough to power `list`, `path <name>`,
-  `--name X` lookups, and tab completion. Read/written by
+  `--workspace X` lookups, and tab completion. Read/written by
   `infrastructure.WorkspaceRegistryRepository`.
 
 `ManifestRepository.write` owns workspace-dir creation — it mkdirs the
@@ -122,7 +122,7 @@ workspace by name or path — `add`, `remove`, `sync`, `status`,
 `foreach`, `show`, `branch set`, `branch unset`, and `branch apply`.
 For those commands:
 
-1. Explicit `--name` → registry lookup
+1. Explicit `--workspace` / `-w` → registry lookup
 2. Explicit `--path` → manifest lookup
 3. Otherwise: walk up from cwd looking for `untaped.yml`
 
@@ -133,8 +133,8 @@ The CLI composition root wires `WorkspaceRegistryRepository` and
 `ManifestRepository`.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
-`forget <name>`, `import <source>`, `path <name>`, `edit <name>`) take
-positional arguments and skip the precedence walk. `list` and
+`forget <name>`, `import <source> <dest>`, `path <name>`, `edit <name>`)
+take positional arguments and skip the precedence walk. `list` and
 `shell-init` operate without a workspace target.
 
 ## Git is a subprocess, not a library
@@ -449,7 +449,7 @@ untaped workspace import <src> <dest> && untaped workspace sync -p <dest>
 `SyncWorkspace.__call__` takes `strict_only: bool = True`. The CLI passes
 `strict_only=not all_workspaces`, so:
 
-- **Single-workspace mode** (`sync --name x --only typo`): strict. The
+- **Single-workspace mode** (`sync --workspace x --only typo`): strict. The
   use case raises `UnmatchedOnlyFilter(WorkspaceError)`, a typed
   exception carrying `unmatched: tuple[str, ...]`. Callers can `except`
   precisely without parsing the error message.

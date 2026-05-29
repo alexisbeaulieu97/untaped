@@ -172,7 +172,7 @@ def test_sync_timeout_zero_is_rejected(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
     get_settings.cache_clear()
     runner = CliRunner()
-    result = runner.invoke(app, ["sync", "--name", "anything", "--timeout", "0"])
+    result = runner.invoke(app, ["sync", "--workspace", "anything", "--timeout", "0"])
     get_settings.cache_clear()
     assert result.exit_code == 2
     assert "must be positive" in result.output

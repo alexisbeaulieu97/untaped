@@ -102,7 +102,7 @@ class SyncWorkspace:
 
         - ``True`` (default, single-workspace mode) — raise
           :class:`UnmatchedOnlyFilter` so a typo on
-          ``sync --name x --only typo`` is loud.
+          ``sync --workspace x --only typo`` is loud.
         - ``False`` (CLI's ``--all`` path) — synthesise a per-identifier
           ``SyncOutcome(action="unmatched", repo=<identifier>, ...)``
           row for each unmatched value and continue with the matched

@@ -37,18 +37,18 @@ untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-workspace.gi
 
 ```text
 untaped workspace list
-untaped workspace show [--name <ws> | --path <dir>]
+untaped workspace show [--workspace <ws> | --path <dir>]
 untaped workspace init <name>
 untaped workspace adopt <path>
 untaped workspace import <source.yml> <dest>
-untaped workspace add <url>...
-untaped workspace remove <repo>...
-untaped workspace branch set <branch> [--repo <repo>]
-untaped workspace branch unset [--repo <repo>]
-untaped workspace branch apply [--repo <repo>]
-untaped workspace sync
-untaped workspace status
-untaped workspace foreach <cmd>
+untaped workspace add <url>... [--workspace <ws> | --path <dir>]
+untaped workspace remove <repo>... [--workspace <ws> | --path <dir>]
+untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
+untaped workspace branch unset [--workspace <ws> | --path <dir>]
+untaped workspace branch apply [--workspace <ws> | --path <dir>]
+untaped workspace sync [--workspace <ws> | --path <dir>]
+untaped workspace status [--workspace <ws> | --path <dir>]
+untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
 untaped workspace path <name>...
 untaped workspace shell-init zsh
 untaped workspace edit <name>
