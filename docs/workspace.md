@@ -76,7 +76,7 @@ repo with a warning, so a stale `defaults.branch` can't kidnap a repo
 you've moved to a feature branch.
 
 `repos[].name` is what shows up on disk under the workspace directory
-and what you pass to `--only` / `remove`. Names and URLs must both be
+and what you pass to `--repo` / `remove`. Names and URLs must both be
 unique within a manifest.
 
 ## Commands
@@ -219,7 +219,7 @@ untaped workspace status --workspace prod --format raw --columns repo \
 untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
                                 [--repo <repo>] [--apply]
 untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
-untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]
+untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
@@ -252,7 +252,7 @@ local tracking branch. If the target branch is missing locally and on
 
 ```bash
 untaped workspace sync [--workspace <ws> | --path <dir>]
-                       [--only <repo>]... [--prune]
+                       [--repo <repo>]... [--prune]
                        [--timeout <seconds>] [--all]
 ```
 
@@ -266,9 +266,9 @@ Reconcile each repo on disk with the manifest:
 | `skip`       | Repo exists but on a different branch (with a reason).    |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
 | `ignored`    | Local directory isn't a git repo.                         |
-| `unmatched`  | `--all --only <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
+| `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 
-`--only <repo>` limits sync to specific repos (repeatable);
+`--repo <repo>` / `-r <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
 a morning routine.
 
@@ -277,21 +277,22 @@ hung remote can't strand a `--all` sweep. Defaults are 60s for
 read-only ops and 600s for clone/fetch; passing `--timeout 30` caps
 both at 30s (CI-friendly fail-fast).
 
-**`--all --only` semantics.** Under `--all`, `--only` is a per-workspace
+**`--all --repo` semantics.** Under `--all`, `--repo` is a per-workspace
 filter: workspaces whose manifests don't contain the requested
 identifier emit one `unmatched` row per identifier and continue (so
-`sync --all --only deploy-config` traverses every workspace, syncing
+`sync --all --repo deploy-config` traverses every workspace, syncing
 the ones that have `deploy-config` and surfacing the rest as
 `unmatched`). A typo is therefore visible across the run — e.g.
-`sync --all --only deploy-confg` produces an `unmatched` row in every
+`sync --all --repo deploy-confg` produces an `unmatched` row in every
 workspace, which is the discoverable signal. **Single-workspace
-`--only`** (no `--all`) keeps strict semantics — typos raise loudly
+`--repo`** (no `--all`) keeps strict semantics — typos raise loudly
 and abort the command.
 
 ### `status`
 
 ```bash
 untaped workspace status [--workspace <ws> | --path <dir>] [--all]
+                         [--repo <repo>]...
                          [--format json|yaml|table|raw] [--columns ...]
 ```
 
@@ -309,6 +310,7 @@ untaped workspace status --all --format raw \
 
 ```bash
 untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
+                                [--repo <repo>]...
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
                                 [--format json|yaml|table|raw]
@@ -324,6 +326,7 @@ piping into `jq` / `awk`.
 
 ```bash
 untaped workspace foreach 'git status -s' --workspace prod
+untaped workspace foreach 'git status -s' --workspace prod --repo api --repo ui
 untaped workspace foreach 'git pull --ff-only' --workspace prod --parallel 4
 ```
 
@@ -416,11 +419,8 @@ that's behind upstream or has uncommitted changes.
 
 ```bash
 repo="$(untaped workspace status --workspace prod --format raw --columns repo | fzf)"
-git -C "$(untaped workspace path prod)/$repo" log --oneline -10
+untaped workspace foreach 'git log --oneline -10' --workspace prod --repo "$repo"
 ```
-
-(`foreach` doesn't take a `--only` filter today; use the selected repo's
-path directly, or use `--only` on `sync` instead.)
 
 ### Adopt a colleague's workspace
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from conftest import StubGit
 
 from untaped_workspace.application import WorkspaceStatus
@@ -9,6 +10,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
+from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -54,3 +56,25 @@ def test_git_error_marks_not_cloned(tmp_path: Path) -> None:
     git = StubGit(status_fail={"a"})
     entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False
+
+
+def test_filters_by_repo_name(tmp_path: Path) -> None:
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]),
+    )
+    git = StubGit()
+
+    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace, only=["b"])
+
+    assert [entry.repo for entry in entries] == ["b"]
+
+
+def test_unknown_repo_filter_raises_before_git_status(tmp_path: Path) -> None:
+    workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
+    git = StubGit()
+
+    with pytest.raises(WorkspaceError, match="ghost"):
+        WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace, only=["ghost"])
+
+    assert git.events == []

@@ -16,7 +16,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.errors import UnmatchedRepoFilter, WorkspaceError
 
 
 def test_show_workspace_returns_repo_detail_rows(tmp_path: Path) -> None:
@@ -296,12 +296,49 @@ def test_apply_workspace_branch_filters_by_repo_url(tmp_path: Path) -> None:
     assert ("checkout", "ui", "develop") not in git.events
 
 
+def test_apply_workspace_branch_filters_by_multiple_repos(tmp_path: Path) -> None:
+    workspace = Workspace(name="prod", path=tmp_path / "prod")
+    api = workspace.path / "api"
+    ui = workspace.path / "ui"
+    docs = workspace.path / "docs"
+    manifests = StubManifests(
+        {
+            workspace.path: WorkspaceManifest(
+                defaults=ManifestDefaults(branch="develop"),
+                repos=[
+                    Repo(url="https://x/api.git", name="api"),
+                    Repo(url="https://x/ui.git", name="ui"),
+                    Repo(url="https://x/docs.git", name="docs"),
+                ],
+            )
+        }
+    )
+    git = StubGit(
+        statuses={
+            "api": RepoStatus(branch="main"),
+            "ui": RepoStatus(branch="main"),
+            "docs": RepoStatus(branch="main"),
+        }
+    )
+
+    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([api, ui, docs]))(
+        workspace,
+        repo=["api", "ui"],
+    )
+
+    assert [row.repo for row in outcomes] == ["api", "ui"]
+    assert ("checkout", "api", "develop") in git.events
+    assert ("checkout", "ui", "develop") in git.events
+    assert ("checkout", "docs", "develop") not in git.events
+
+
 def test_apply_workspace_branch_errors_on_unknown_repo(tmp_path: Path) -> None:
     workspace = Workspace(name="prod", path=tmp_path / "prod")
     manifests = StubManifests({workspace.path: WorkspaceManifest()})
 
-    with pytest.raises(WorkspaceError, match="repo 'ghost' not declared in workspace 'prod'"):
+    with pytest.raises(UnmatchedRepoFilter, match="ghost") as excinfo:
         ApplyWorkspaceBranch(manifests, StubGit(), fs=StubFilesystem())(workspace, repo="ghost")
+    assert excinfo.value.unmatched == ("ghost",)
 
 
 def test_apply_workspace_branch_checkout_failure_returns_skip(tmp_path: Path) -> None:

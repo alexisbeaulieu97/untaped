@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from untaped import (
@@ -77,6 +78,15 @@ branch_app = typer.Typer(
     help="Manage workspace branch metadata.",
     no_args_is_help=True,
 )
+
+RepoSelectorOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--repo",
+        "-r",
+        help="Limit to these repos (repeatable; name or URL).",
+    ),
+]
 
 
 @app.callback()
@@ -176,6 +186,7 @@ def branch_set_command(
     repo: str | None = typer.Option(
         None,
         "--repo",
+        "-r",
         help="Repo name or URL to set; omit for the workspace default.",
     ),
     apply_checkout: bool = typer.Option(
@@ -220,6 +231,7 @@ def branch_unset_command(
     repo: str | None = typer.Option(
         None,
         "--repo",
+        "-r",
         help="Repo name or URL to unset; omit for the workspace default.",
     ),
     workspace: str | None = typer.Option(
@@ -247,11 +259,7 @@ def branch_unset_command(
 
 @branch_app.command("apply")
 def branch_apply_command(
-    repo: str | None = typer.Option(
-        None,
-        "--repo",
-        help="Repo name or URL to apply; omit for every repo in the workspace.",
-    ),
+    repo: RepoSelectorOption = None,
     workspace: str | None = typer.Option(
         None,
         "--workspace",
@@ -514,9 +522,7 @@ def sync_command(
         autocompletion=complete_workspace_name,
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
-    only: list[str] | None = typer.Option(
-        None, "--only", help="Limit sync to these repos (repeatable)."
-    ),
+    repo: RepoSelectorOption = None,
     prune: bool = typer.Option(False, "--prune", help="Remove local clones not in the manifest."),
     timeout: float | None = typer.Option(
         None,
@@ -564,16 +570,16 @@ def sync_command(
             fs=LocalFilesystem(),
             cache_dir=_workspace_settings().cache_dir,
         )
-        if all_workspaces and only:
+        if all_workspaces and repo:
             typer.echo(
-                "warning: --all --only filters per-workspace; workspaces without "
+                "warning: --all --repo filters per-workspace; workspaces without "
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
         sweep = SyncWorkspaces(sync, notify=lambda m: typer.echo(m, err=True))
         outcomes = sweep(
             targets,
-            only=only,
+            only=repo,
             prune=prune,
             strict_only=not all_workspaces,
             parallel=workers,
@@ -605,6 +611,7 @@ def status_command(
     ),
     path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
     all_workspaces: bool = typer.Option(False, "--all", help="Status across all workspaces."),
+    repo: RepoSelectorOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     profile: ProfileOverrideOption = None,
@@ -615,7 +622,7 @@ def status_command(
         use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
         for ws in targets:
-            for entry in use_case(ws):
+            for entry in use_case(ws, only=repo):
                 rows.append(entry.model_dump())
         typer.echo(format_output(rows, fmt=fmt, columns=columns))
 
@@ -660,6 +667,7 @@ def foreach_command(
     ),
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
+    repo: RepoSelectorOption = None,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Run a shell command in each repo of the workspace.
@@ -685,6 +693,7 @@ def foreach_command(
             command=cmd,
             parallel=workers,
             continue_on_error=keep_going,
+            only=repo,
         )
         failed = [o.repo for o in outcomes if o.returncode != 0]
         if fmt == "table":

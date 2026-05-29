@@ -13,7 +13,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError, UnmatchedOnlyFilter, WorkspaceError
+from untaped_workspace.errors import GitError, UnmatchedRepoFilter, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -162,7 +162,7 @@ def test_only_filters_repos(tmp_path: Path) -> None:
 
 
 def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
-    """Strict mode (default) raises :class:`UnmatchedOnlyFilter` carrying
+    """Strict mode (default) raises :class:`UnmatchedRepoFilter` carrying
     the unmatched identifiers as a typed field — not a bare
     :class:`WorkspaceError` with stringly-typed contents. Lets future
     callers ``except`` precisely without parsing the error message."""
@@ -176,7 +176,7 @@ def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
         ),
     )
     git = StubGit()
-    with pytest.raises(UnmatchedOnlyFilter) as excinfo:
+    with pytest.raises(UnmatchedRepoFilter) as excinfo:
         SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
             workspace, only=["svc-b", "typo", "also-typo"]
         )
@@ -196,7 +196,7 @@ def test_only_rejects_unknown_identifier(tmp_path: Path) -> None:
 def test_only_unmatched_under_strict_false_yields_per_identifier_rows(
     tmp_path: Path,
 ) -> None:
-    """Under ``strict_only=False``, every unmatched ``--only`` identifier
+    """Under ``strict_only=False``, every unmatched repo identifier
     becomes its own ``unmatched`` outcome row — not a single synthetic
     ``repo="<all>"`` sentinel. The discriminator lives in the type-safe
     ``action`` Literal and the typo lives in ``repo`` where downstream
@@ -225,7 +225,7 @@ def test_only_partial_match_under_strict_false_emits_unmatched_rows(
     tmp_path: Path,
 ) -> None:
     """Partial-miss must surface unmatched identifiers — typos shouldn't
-    be silent just because a sibling ``--only`` value happened to
+    be silent just because a sibling repo selector value happened to
     match. Previous behaviour silently swallowed the typo whenever any
     other identifier matched, which masked typos under ``--all``."""
     workspace = _seed_workspace(
@@ -247,7 +247,7 @@ def test_only_partial_match_under_strict_false_emits_unmatched_rows(
 
 def test_only_unknown_default_strict_raises_typed_exception(tmp_path: Path) -> None:
     """``strict_only=True`` is the default and preserves single-workspace
-    strictness; raises :class:`UnmatchedOnlyFilter` (not bare
+    strictness; raises :class:`UnmatchedRepoFilter` (not bare
     :class:`WorkspaceError`) so callers can react precisely on the
     typed field rather than parsing the error message."""
     workspace = _seed_workspace(
@@ -255,7 +255,7 @@ def test_only_unknown_default_strict_raises_typed_exception(tmp_path: Path) -> N
         WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
     )
     git = StubGit()
-    with pytest.raises(UnmatchedOnlyFilter) as excinfo:
+    with pytest.raises(UnmatchedRepoFilter) as excinfo:
         SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
             workspace, only=["typo"]
         )

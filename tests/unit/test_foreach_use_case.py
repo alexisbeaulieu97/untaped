@@ -1,8 +1,11 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from untaped_workspace.application import Foreach
 from untaped_workspace.domain import Repo, Workspace, WorkspaceManifest
+from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -175,3 +178,37 @@ def test_file_not_found_yields_runner_error_outcome(tmp_path: Path) -> None:
     assert outcomes[0].returncode == -1
     assert outcomes[0].stdout == ""
     assert outcomes[0].stderr == "/bin/missing-shell: not found"
+
+
+def test_filters_by_repo_name(tmp_path: Path) -> None:
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]),
+    )
+    runner = _runner_factory()
+
+    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
+        workspace,
+        command="echo hi",
+        only=["b"],
+    )
+
+    assert [outcome.repo for outcome in outcomes] == ["b"]
+
+
+def test_unknown_repo_filter_raises_before_running_command(tmp_path: Path) -> None:
+    workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
+    calls: list[Path] = []
+
+    def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(cwd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    with pytest.raises(WorkspaceError, match="ghost"):
+        Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+            workspace,
+            command="echo hi",
+            only=["ghost"],
+        )
+
+    assert calls == []

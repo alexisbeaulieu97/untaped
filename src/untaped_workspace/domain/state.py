@@ -43,7 +43,7 @@ class RepoStatus(BaseModel):
 SyncAction = Literal["clone", "pull", "skip", "remove", "up-to-date", "ignored", "unmatched"]
 """What ``sync`` did (or refused to do) for one repo.
 
-``unmatched`` is the synthetic action emitted under ``--all --only
+``unmatched`` is the synthetic action emitted under ``sync --all --repo
 <identifier>`` when ``<identifier>`` is not in this workspace's
 manifest. The ``repo`` field on those outcomes carries the unmatched
 identifier itself, so downstream consumers can filter on

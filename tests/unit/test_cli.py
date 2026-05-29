@@ -338,21 +338,33 @@ def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
     ]
 
 
-def test_branch_apply_filters_by_repo_name(tmp_path: Path) -> None:
+def test_branch_apply_filters_by_multiple_repo_names(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
     runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
+    runner.invoke(app, ["add", "https://x/docs.git", "--repo-name", "docs", "--workspace", "prod"])
 
     result = runner.invoke(
         app,
-        ["branch", "apply", "--repo", "api", "--workspace", "prod", "--format", "json"],
+        [
+            "branch",
+            "apply",
+            "--repo",
+            "api",
+            "--repo",
+            "ui",
+            "--workspace",
+            "prod",
+            "--format",
+            "json",
+        ],
     )
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert [row["repo"] for row in rows] == ["api"]
+    assert [row["repo"] for row in rows] == ["api", "ui"]
 
 
 def test_branch_apply_raw_defaults_to_repo_names(tmp_path: Path) -> None:
@@ -768,6 +780,43 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
     assert (target / "upstream").is_dir()
 
 
+def test_sync_repo_filter_limits_cloned_repos(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    other_upstream = tmp_path / "other.git"
+    shutil.copytree(upstream, other_upstream)
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(
+        app,
+        ["add", f"file://{other_upstream}", "--repo-name", "ui", "--workspace", "smoke"],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "sync",
+            "--workspace",
+            "smoke",
+            "--repo",
+            "upstream",
+            "--format",
+            "raw",
+            "--columns",
+            "repo",
+            "--columns",
+            "action",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["upstream\tclone"]
+    assert (target / "upstream").is_dir()
+    assert not (target / "ui").exists()
+
+
 def test_branch_set_apply_creates_tracking_branch_for_remote_target(
     tmp_path: Path,
     upstream: Path,
@@ -907,13 +956,13 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     assert tracking_remote.returncode != 0
 
 
-def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
+def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
-    """``sync --all --only`` filters per-workspace: workspaces with the
+    """``sync --all --repo`` filters per-workspace: workspaces with the
     requested repo sync it; workspaces without emit ``unmatched`` rows.
     A stderr warning notifies the user that relaxed semantics are
-    active. Single-workspace ``--only`` still raises (covered by the
+    active. Single-workspace ``--repo`` still raises (covered by the
     use-case unit tests); this test covers the CLI wiring.
     """
     runner = CliRunner()
@@ -932,7 +981,7 @@ def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
         [
             "sync",
             "--all",
-            "--only",
+            "--repo",
             "upstream",
             "--format",
             "raw",
@@ -950,13 +999,39 @@ def test_sync_all_only_emits_warning_and_per_workspace_outcomes(
     # mixes stderr into ``output`` by default, so inspect the combined
     # surface.
     assert "warning" in result.output.lower()
-    assert "--all --only" in result.output
+    assert "--all --repo" in result.output
 
     # Stdout rows: alpha synced upstream (clone), beta produced
     # an unmatched row for upstream.
     rows = [r for r in result.output.strip().splitlines() if "\t" in r]
     assert "alpha\tupstream\tclone" in rows, rows
     assert "beta\tupstream\tunmatched" in rows, rows
+
+
+def test_sync_help_exposes_repo_filter_not_only() -> None:
+    result = CliRunner().invoke(app, ["sync", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--repo" in result.output
+    assert "-r" in result.output
+    assert "--only" not in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["status"],
+        ["foreach"],
+        ["branch", "apply"],
+    ],
+)
+def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
+    result = CliRunner().invoke(app, [*args, "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--repo" in result.output
+    assert "-r" in result.output
+    assert "--only" not in result.output
 
 
 def test_sync_parallel_without_all_is_rejected() -> None:
@@ -1088,6 +1163,32 @@ def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path)
     assert "upstream\tmain" in result.stdout
 
 
+def test_status_repo_filter_outputs_only_selected_repo(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
+
+    result = runner.invoke(
+        app,
+        [
+            "status",
+            "--workspace",
+            "prod",
+            "--repo",
+            "api",
+            "--format",
+            "raw",
+            "--columns",
+            "repo",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["api"]
+
+
 def test_status_all_rejects_workspace_target() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["status", "--all", "--workspace", "smoke"])
@@ -1117,6 +1218,59 @@ def test_foreach_runs_command_in_each_repo(
     assert result.exit_code == 0, result.output
     # Output is prefixed `[upstream] main`
     assert "[upstream] main" in result.stdout
+
+
+def test_foreach_repo_filter_runs_command_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(cwd.name)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.shell_runner", _runner)
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    runner.invoke(app, ["add", "https://x/ui.git", "--repo-name", "ui", "--workspace", "prod"])
+    (target / "api").mkdir()
+    (target / "ui").mkdir()
+
+    result = runner.invoke(
+        app,
+        ["foreach", "echo ok", "--workspace", "prod", "--repo", "api", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == ["api"]
+    assert json.loads(result.stdout)[0]["repo"] == "api"
+
+
+def test_foreach_unknown_repo_filter_exits_before_running_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(cwd.name)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.shell_runner", _runner)
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+    (target / "api").mkdir()
+
+    result = runner.invoke(app, ["foreach", "echo ok", "--workspace", "prod", "--repo", "ghost"])
+
+    assert result.exit_code != 0
+    assert "ghost" in result.output
+    assert calls == []
 
 
 def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:

@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from untaped_workspace.application.ports import (
     Filesystem,
     GitInspector,
     ManifestReader,
 )
+from untaped_workspace.application.repo_selector import select_repos
 from untaped_workspace.domain import (
     Repo,
     StatusEntry,
     Workspace,
 )
-from untaped_workspace.errors import GitError
+from untaped_workspace.errors import GitError, UnmatchedRepoFilter
 
 
 class WorkspaceStatus:
@@ -27,9 +30,17 @@ class WorkspaceStatus:
         self._git = git
         self._fs = fs
 
-    def __call__(self, workspace: Workspace) -> list[StatusEntry]:
+    def __call__(
+        self,
+        workspace: Workspace,
+        *,
+        only: Sequence[str] | None = None,
+    ) -> list[StatusEntry]:
         manifest = self._manifests.read(workspace.path)
-        return [self._row_for(workspace, repo) for repo in manifest.repos]
+        repos, unmatched = select_repos(manifest, only)
+        if unmatched:
+            raise UnmatchedRepoFilter(unmatched)
+        return [self._row_for(workspace, repo) for repo in repos]
 
     def _row_for(self, workspace: Workspace, repo: Repo) -> StatusEntry:
         local = workspace.path / repo.name

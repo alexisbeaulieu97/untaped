@@ -455,16 +455,24 @@ untaped workspace import <src> <dest> && untaped workspace sync -p <dest>
 
 — the lifecycle command stays focused on its own deltas.
 
-## `sync --only` strict vs. relaxed semantics
+## Repo selector strict vs. relaxed semantics
+
+Repo-operating commands expose repeatable `--repo` / `-r` selectors. Values
+match either manifest repo names or URLs. The shared application selector
+lives in `application.repo_selector.select_repos` so `sync`, `status`,
+`foreach`, and `branch apply` agree on matching and manifest-order output.
+`SyncWorkspace.__call__` still names its internal parameter `only` because
+`add --sync` and `import --sync` pass just-touched repo names through the
+same use-case path.
 
 `SyncWorkspace.__call__` takes `strict_only: bool = True`. The CLI passes
 `strict_only=not all_workspaces`, so:
 
-- **Single-workspace mode** (`sync --workspace x --only typo`): strict. The
-  use case raises `UnmatchedOnlyFilter(WorkspaceError)`, a typed
+- **Single-workspace mode** (`sync --workspace x --repo typo`): strict. The
+  use case raises `UnmatchedRepoFilter(WorkspaceError)`, a typed
   exception carrying `unmatched: tuple[str, ...]`. Callers can `except`
   precisely without parsing the error message.
-- **`--all` mode** (`sync --all --only repo-x`): relaxed. Workspaces
+- **`--all` mode** (`sync --all --repo repo-x`): relaxed. Workspaces
   whose manifests don't contain `repo-x` emit one
   `SyncOutcome(action="unmatched", repo=<identifier>, detail="not in
   this workspace's manifest")` row per requested identifier and
@@ -473,7 +481,7 @@ untaped workspace import <src> <dest> && untaped workspace sync -p <dest>
   pattern-match cleanly without overloading the `repo` data column with
   a sentinel like `<all>`.
 
-Partial-miss is also visible: `--only repo-x,typo` against
+Partial-miss is also visible: `--repo repo-x --repo typo` against
 `[repo-x, repo-y]` emits a sync row for `repo-x` AND an `unmatched`
 row for `typo` — the typo doesn't get silently swallowed because a
 sibling identifier matched.

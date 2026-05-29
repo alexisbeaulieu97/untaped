@@ -13,6 +13,7 @@ from untaped_workspace.application.ports import (
     GitOperations,
     ManifestReader,
 )
+from untaped_workspace.application.repo_selector import select_repos
 from untaped_workspace.domain import (
     Repo,
     SyncAction,
@@ -20,7 +21,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError, UnmatchedOnlyFilter
+from untaped_workspace.errors import GitError, UnmatchedRepoFilter
 
 
 class _Skip(Exception):
@@ -97,16 +98,16 @@ class SyncWorkspace:
     ) -> list[SyncOutcome]:
         """Reconcile ``workspace`` with its manifest.
 
-        ``strict_only`` controls how unmatched ``--only`` identifiers
+        ``strict_only`` controls how unmatched repo identifiers
         surface:
 
         - ``True`` (default, single-workspace mode) — raise
-          :class:`UnmatchedOnlyFilter` so a typo on
-          ``sync --workspace x --only typo`` is loud.
+          :class:`UnmatchedRepoFilter` so a typo on
+          ``sync --workspace x --repo typo`` is loud.
         - ``False`` (CLI's ``--all`` path) — synthesise a per-identifier
           ``SyncOutcome(action="unmatched", repo=<identifier>, ...)``
           row for each unmatched value and continue with the matched
-          repos. Lets ``sync --all --only repo-x`` traverse every
+          repos. Lets ``sync --all --repo repo-x`` traverse every
           workspace, syncing ones that have ``repo-x`` and emitting
           visible rows for any typo.
 
@@ -121,9 +122,9 @@ class SyncWorkspace:
         """
         tracker = bare_tracker if bare_tracker is not None else BareFetchTracker()
         manifest = self._manifests.read(workspace.path)
-        repos, unmatched = self._select_repos(manifest, only)
+        repos, unmatched = select_repos(manifest, only)
         if unmatched and strict_only:
-            raise UnmatchedOnlyFilter(unmatched)
+            raise UnmatchedRepoFilter(unmatched)
         # Order: unmatched rows first (so a missing identifier is
         # visible at the top of per-workspace output), then sync rows,
         # then prune.
@@ -142,25 +143,6 @@ class SyncWorkspace:
         return outcomes
 
     # internal -----------------------------------------------------------
-
-    def _select_repos(
-        self, manifest: WorkspaceManifest, only: Sequence[str] | None
-    ) -> tuple[list[Repo], tuple[str, ...]]:
-        """Partition ``manifest.repos`` against ``--only``.
-
-        Returns ``(matched, unmatched)``. ``unmatched`` is non-empty
-        only when ``only`` was passed and contains identifiers that
-        don't appear in this manifest. The caller decides how to react
-        — strict mode raises :class:`UnmatchedOnlyFilter`; non-strict
-        mode synthesises per-identifier ``unmatched`` outcome rows.
-        """
-        if not only:
-            return list(manifest.repos), ()
-        wanted = set(only)
-        known = {r.name for r in manifest.repos} | {r.url for r in manifest.repos}
-        matched = [r for r in manifest.repos if (r.name in wanted) or (r.url in wanted)]
-        unmatched = tuple(sorted(wanted - known))
-        return matched, unmatched
 
     def _ensure_bare_fresh(self, url: str, tracker: BareFetchTracker) -> Path:
         # Per-URL lock so concurrent same-URL syncs do exactly one
