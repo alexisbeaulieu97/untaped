@@ -32,8 +32,8 @@ class RegistryError(WorkspaceError):
     """Raised for registry mismatches (unknown name, duplicate path, …)."""
 
 
-class UnmatchedOnlyFilter(WorkspaceError):
-    """Raised when ``--only`` contains identifiers no repo matches.
+class UnmatchedRepoFilter(WorkspaceError):
+    """Raised when a repo selector contains identifiers no repo matches.
 
     Carries the unmatched identifiers so callers can react precisely
     (e.g. format a ``BadParameter`` message, or aggregate across
@@ -41,5 +41,5 @@ class UnmatchedOnlyFilter(WorkspaceError):
     """
 
     def __init__(self, unmatched: tuple[str, ...]) -> None:
-        super().__init__(f"unknown repo identifier(s) for --only: {', '.join(unmatched)}")
+        super().__init__(f"unknown repo identifier(s) for --repo: {', '.join(unmatched)}")
         self.unmatched = unmatched

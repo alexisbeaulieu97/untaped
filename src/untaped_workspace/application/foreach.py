@@ -7,7 +7,9 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from untaped_workspace.application.ports import Filesystem, ManifestReader, ShellRunner
+from untaped_workspace.application.repo_selector import select_repos
 from untaped_workspace.domain import ForeachOutcome, Repo, Workspace
+from untaped_workspace.errors import UnmatchedRepoFilter
 
 
 class Foreach:
@@ -29,9 +31,12 @@ class Foreach:
         command: str,
         parallel: int = 1,
         continue_on_error: bool = False,
+        only: Sequence[str] | None = None,
     ) -> list[ForeachOutcome]:
         manifest = self._manifests.read(workspace.path)
-        repos = manifest.repos
+        repos, unmatched = select_repos(manifest, only)
+        if unmatched:
+            raise UnmatchedRepoFilter(unmatched)
 
         if parallel <= 1:
             return self._run_serial(workspace, repos, command, continue_on_error)

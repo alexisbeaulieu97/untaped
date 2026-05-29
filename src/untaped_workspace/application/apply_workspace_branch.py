@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Sequence
 from pathlib import Path
 
 from untaped_workspace.application.ports import BranchOperations, Filesystem, ManifestReader
+from untaped_workspace.application.repo_selector import select_repos
 from untaped_workspace.domain import (
     BranchApplyAction,
     BranchApplyOutcome,
@@ -13,7 +14,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import GitError, WorkspaceError
+from untaped_workspace.errors import GitError, UnmatchedRepoFilter
 
 
 class ApplyWorkspaceBranch:
@@ -32,25 +33,23 @@ class ApplyWorkspaceBranch:
         self,
         workspace: Workspace,
         *,
-        repo: str | None = None,
+        repo: Sequence[str] | str | None = None,
     ) -> list[BranchApplyOutcome]:
         manifest = self._manifests.read(workspace.path)
-        repos = self._select_repos(manifest, repo=repo, workspace=workspace)
+        repos = self._select_repos(manifest, repo=repo)
         return [self._apply_repo(workspace, manifest, target) for target in repos]
 
     def _select_repos(
         self,
         manifest: WorkspaceManifest,
         *,
-        repo: str | None,
-        workspace: Workspace,
-    ) -> Iterable[Repo]:
-        if repo is None:
-            return manifest.repos
-        found = manifest.find_repo(repo)
-        if found is None:
-            raise WorkspaceError(f"repo {repo!r} not declared in workspace {workspace.name!r}")
-        return (found,)
+        repo: Sequence[str] | str | None,
+    ) -> Sequence[Repo]:
+        identifiers = (repo,) if isinstance(repo, str) else repo
+        repos, unmatched = select_repos(manifest, identifiers)
+        if unmatched:
+            raise UnmatchedRepoFilter(unmatched)
+        return repos
 
     def _apply_repo(
         self,
