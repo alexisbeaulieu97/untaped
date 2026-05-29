@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+from typing import cast
+
 import typer
 
 from untaped import (
     ColumnsOption,
+    ConfigError,
     FormatOption,
     ProfileOverrideOption,
     format_output,
@@ -70,17 +74,69 @@ def list_command(
 @app.command("set", no_args_is_help=True)
 def set_command(
     key: str = typer.Argument(..., help="Dotted setting key, e.g. `http.verify_ssl`."),
-    value: str = typer.Argument(..., help="New value (parsed as a YAML scalar)."),
+    value: str | None = typer.Argument(None, help="New value (parsed as a YAML scalar)."),
     target_profile: str | None = typer.Option(
         None,
         "--target-profile",
         help="Target profile to write to (defaults to the active profile).",
     ),
+    stdin: bool = typer.Option(False, "--stdin", help="Read the new value from stdin."),
+    prompt: bool = typer.Option(
+        False, "--prompt", help="Prompt for the new value without echoing input."
+    ),
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
     with report_errors():
-        target = SetSetting(SettingsFileRepository())(key, value, profile=target_profile)
+        resolved_value = _resolve_set_value(value, stdin=stdin, prompt=prompt)
+        target = SetSetting(SettingsFileRepository())(key, resolved_value, profile=target_profile)
         typer.echo(f"set {key} in profile {target} (config: {resolve_config_path()})", err=True)
+
+
+def _resolve_set_value(value: str | None, *, stdin: bool, prompt: bool) -> str:
+    choices = (
+        ("VALUE", value is not None),
+        ("--stdin", stdin),
+        ("--prompt", prompt),
+    )
+    sources = [name for name, selected in choices if selected]
+    if not sources:
+        raise typer.BadParameter("provide VALUE, --stdin, or --prompt")
+    if len(sources) > 1:
+        raise typer.BadParameter("provide only one of VALUE, --stdin, or --prompt")
+    if stdin:
+        return _read_stdin_value()
+    if prompt:
+        return _prompt_value()
+    assert value is not None
+    return value
+
+
+def _read_stdin_value() -> str:
+    if sys.stdin.isatty():
+        raise ConfigError("no value received on stdin")
+    raw = sys.stdin.read()
+    value = raw.rstrip("\r\n")
+    if "\n" in value or "\r" in value:
+        raise ConfigError("--stdin expects exactly one value")
+    if not value.strip():
+        raise ConfigError("no value received on stdin")
+    return value
+
+
+def _prompt_value() -> str:
+    value = cast(
+        str,
+        typer.prompt(
+            "Value",
+            hide_input=True,
+            confirmation_prompt=False,
+            default="",
+            show_default=False,
+        ),
+    )
+    if not value.strip():
+        raise ConfigError("no value received from prompt")
+    return value
 
 
 @app.command("unset", no_args_is_help=True)
