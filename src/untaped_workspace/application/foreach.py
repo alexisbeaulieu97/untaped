@@ -72,13 +72,16 @@ class Foreach:
         outcomes: list[ForeachOutcome] = []
         with ThreadPoolExecutor(max_workers=parallel) as pool:
             futures = {pool.submit(self._run_one, workspace, repo, command): repo for repo in repos}
+            stopping = False
             for fut in as_completed(futures):
+                if fut.cancelled():
+                    continue
                 outcome = fut.result()
                 outcomes.append(outcome)
-                if outcome.returncode != 0 and not continue_on_error:
+                if outcome.returncode != 0 and not continue_on_error and not stopping:
+                    stopping = True
                     for other in futures:
                         other.cancel()
-                    break
         order = {repo.name: i for i, repo in enumerate(repos)}
         outcomes.sort(key=lambda o: order.get(o.repo, len(order)))
         return outcomes

@@ -1,4 +1,6 @@
 import subprocess
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -140,11 +142,9 @@ def test_outcome_records_command_when_uncloned(tmp_path: Path) -> None:
     assert outcomes[0].duration_s == 0.0
 
 
-def test_parallel_cancels_remaining_work_on_first_failure(tmp_path: Path) -> None:
-    """``parallel > 1`` + ``continue_on_error=False`` is fail-fast: the first
-    non-zero outcome stops further work and the run returns immediately."""
-    # repos > parallel guarantees there are *queued* futures when the first
-    # failure trips the break — the cancel branch only matters then.
+def test_parallel_fail_fast_reports_in_flight_outcomes(tmp_path: Path) -> None:
+    """Fail-fast may cancel queued futures, but in-flight commands still
+    finish under ``ThreadPoolExecutor`` and must be reported."""
     workspace = _seed(
         tmp_path,
         WorkspaceManifest(
@@ -156,12 +156,29 @@ def test_parallel_cancels_remaining_work_on_first_failure(tmp_path: Path) -> Non
             ]
         ),
     )
-    runner = _runner_factory(returncode={"a": 1, "b": 1, "c": 1, "d": 1})
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
+    started_b = threading.Event()
+    calls: list[str] = []
+
+    def _runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        calls.append(cwd.name)
+        if cwd.name == "a":
+            assert started_b.wait(timeout=1)
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="a", stderr="boom")
+        if cwd.name == "b":
+            started_b.set()
+            time.sleep(0.05)
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="b", stderr="")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=cwd.name, stderr="")
+
+    outcomes = Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
         workspace, command="x", parallel=2
     )
-    assert len(outcomes) == 1
-    assert outcomes[0].returncode == 1
+
+    by_repo = {outcome.repo: outcome for outcome in outcomes}
+    assert by_repo["a"].returncode == 1
+    assert by_repo["b"].returncode == 0
+    assert by_repo["b"].stdout == "b"
+    assert set(by_repo).issubset(set(calls))
 
 
 def test_file_not_found_yields_runner_error_outcome(tmp_path: Path) -> None:
