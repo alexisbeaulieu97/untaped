@@ -4,21 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from untaped_workspace.application.ports import EditorRunner, RegistryReader
+from untaped_workspace.application.ports import EditorRunner
+from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import WorkspaceError
 
 
 class EditWorkspace:
     def __init__(
         self,
-        registry: RegistryReader,
         *,
         runner: EditorRunner,
     ) -> None:
-        self._registry = registry
         self._runner = runner
 
-    def __call__(self, name: str, *, argv: Sequence[str]) -> int:
+    def __call__(self, workspace: Workspace, *, argv: Sequence[str]) -> int:
         """Append the workspace path to ``argv`` and dispatch to the runner.
 
         Editor selection (``--editor`` / ``$VISUAL`` / ``$EDITOR`` /
@@ -33,8 +32,7 @@ class EditWorkspace:
         an empty tuple. A programmatic caller bypassing the helper must
         supply at least the executable name.
         """
-        path = self._registry.get(name).path
         try:
-            return self._runner([*argv, str(path)])
+            return self._runner([*argv, str(workspace.path)])
         except FileNotFoundError as exc:
             raise WorkspaceError(f"editor not found: {argv[0]}") from exc

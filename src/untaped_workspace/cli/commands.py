@@ -797,16 +797,24 @@ def shell_init_command(
 # edit -----------------------------------------------------------------------
 
 
-@app.command("edit", no_args_is_help=True)
+@app.command("edit")
 def edit_command(
-    name: str = typer.Argument(..., help="Workspace name.", autocompletion=complete_workspace_name),
+    workspace: str | None = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help="Workspace name.",
+        autocompletion=complete_workspace_name,
+    ),
+    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
     editor: str | None = typer.Option(None, "--editor", "-e", help="Override $VISUAL/$EDITOR."),
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Open the workspace directory in your editor."""
     with report_errors(), profile_override(profile):
+        ws = _resolve(workspace, path)
         argv = resolve_editor_argv(editor)
-        rc = EditWorkspace(WorkspaceRegistryRepository(), runner=editor_runner)(name, argv=argv)
+        rc = EditWorkspace(runner=editor_runner)(ws, argv=argv)
         if rc != 0:
             raise typer.Exit(code=rc)
 

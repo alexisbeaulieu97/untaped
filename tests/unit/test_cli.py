@@ -61,7 +61,6 @@ def test_help_lists_all_commands() -> None:
         "import",
         "path",
         "shell-init",
-        "edit",
         "branch",
     ],
 )
@@ -742,13 +741,93 @@ def test_shell_init_unknown() -> None:
     assert result.exit_code == 1
 
 
-def test_edit_uses_explicit_editor(tmp_path: Path) -> None:
+def test_edit_from_cwd_opens_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[list[str]] = []
+
+    def _runner(argv: list[str]) -> int:
+        captured.append(argv)
+        return 0
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.editor_runner", _runner)
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
-    # `true` is a real binary that exits 0 — perfect smoke test
-    result = runner.invoke(app, ["edit", "prod", "--editor", "true"])
+    nested = target / "api"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+
+    result = runner.invoke(app, ["edit", "--editor", "code --reuse-window"])
+
+    assert result.exit_code == 0, result.output
+    assert captured == [["code", "--reuse-window", str(target.resolve())]]
+
+
+def test_edit_path_opens_unregistered_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "untaped_workspace.cli.commands.editor_runner",
+        lambda argv: captured.append(argv) or 0,
+    )
+    target = tmp_path / "ws"
+    target.mkdir()
+    (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
+
+    result = CliRunner().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
+
+    assert result.exit_code == 0, result.output
+    assert captured == [["code", str(target.resolve())]]
+
+
+def test_edit_workspace_opens_registered_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "untaped_workspace.cli.commands.editor_runner",
+        lambda argv: captured.append(argv) or 0,
+    )
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+
+    result = runner.invoke(app, ["edit", "--workspace", "prod", "--editor", "code"])
+
     assert result.exit_code == 0
+    assert captured == [["code", str(target.resolve())]]
+
+
+def test_edit_missing_context_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(app, ["edit", "--editor", "true"])
+
+    assert result.exit_code == 1
+    assert "not inside a workspace" in result.output
+
+
+def test_edit_editor_not_found_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _missing(_argv: list[str]) -> int:
+        raise FileNotFoundError("no such file")
+
+    monkeypatch.setattr("untaped_workspace.cli.commands.editor_runner", _missing)
+    target = tmp_path / "ws"
+    target.mkdir()
+    (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
+
+    result = CliRunner().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
+
+    assert result.exit_code == 1
+    assert "editor not found: code" in result.output
 
 
 # ── sync / status / foreach (real git) ──────────────────────────────────────
