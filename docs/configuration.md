@@ -87,15 +87,18 @@ schema default                      (lowest)
 
 The active profile is selected by, in order:
 
-1. `UNTAPED_PROFILE` environment variable.
+1. A command-local `--profile <name>` flag on commands that expose it.
 2. The root `--profile <name>` flag (sugar that sets the env var for one
    invocation).
-3. The `active:` key in the YAML.
-4. Fallback to `default` if it exists, otherwise no overlay layer
+3. `UNTAPED_PROFILE` environment variable.
+4. The `active:` key in the YAML.
+5. Fallback to `default` if it exists, otherwise no overlay layer
    applies.
 
-`untaped --profile stage awx job-templates list` runs that one command
-against `stage` without touching your persisted `active:`.
+For example, `untaped config list --profile stage` reads that one
+command against `stage` without touching your persisted `active:`.
+The root form still works for every command:
+`untaped --profile stage config list`.
 
 ## Managing profiles — `untaped profile`
 
@@ -166,16 +169,20 @@ echo "[$(untaped profile current 2>/dev/null)] $ "
 
 ```text
 untaped config list                          # effective values from the active profile
+untaped config list --profile <name>         # one-off read against a named profile
 untaped config list --all-profiles           # one row per (profile, key)
 untaped config list --show-secrets           # reveal redacted values
 untaped config list --format json|yaml|table|raw
 untaped config list --format raw --columns key --columns value
                                              # available columns: key, value, default, source, profile
 untaped config set <key> <value>             # write to the active profile
-untaped config set <key> <value> --profile <name>
+untaped config set <key> <value> --target-profile <name>
 untaped config unset <key>                   # remove from the active profile
-untaped config unset <key> --profile <name>
+untaped config unset <key> --target-profile <name>
 ```
+
+`--profile` and `--all-profiles` are mutually exclusive: one reads a
+single effective profile, the other inspects the raw per-profile config.
 
 Keys are dotted paths into the active schema, e.g. `http.ca_bundle` and
 `http.verify_ssl`. Installed plugins add their own sections, such as
@@ -192,7 +199,7 @@ or by editing the YAML directly. The one exception is `default`, which is
 auto-bootstrapped on the first write so a fresh install doesn't need a
 setup step. So `untaped config set awx.token <tok>` on a brand-new system
 writes to `default` when the AWX plugin is installed; `untaped config set
-awx.token <tok> --profile prod` requires `prod` to already exist.
+awx.token <tok> --target-profile prod` requires `prod` to already exist.
 
 ## Secrets
 
@@ -260,10 +267,10 @@ untaped config set awx.token    <dev-token>
 untaped config set github.token ghp_xxx  # optional GitHub plugin
 
 # Branch a prod profile from default and override what differs.
-# `prod` must exist before any --profile prod write; create it first.
+# `prod` must exist before any --target-profile prod write; create it first.
 untaped profile create prod --copy-from default
-untaped config set awx.base_url https://aap.prod.example.com --profile prod
-untaped config set awx.token    <prod-token>                  --profile prod
+untaped config set awx.base_url https://aap.prod.example.com --target-profile prod
+untaped config set awx.token    <prod-token>                  --target-profile prod
 
 # Day-to-day: do nothing — with no `active:` set, `default` is the
 # implicit fallback. (Only run `untaped profile use default` if you

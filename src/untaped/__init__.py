@@ -3,8 +3,10 @@
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
+    ProfileOverrideOption,
     clamp_parallel,
     parse_kv_pairs,
+    profile_override,
     report_errors,
     resolve_each,
 )
@@ -55,6 +57,7 @@ __all__ = [
     "OutputFormat",
     "PluginInstallSpec",
     "PluginsState",
+    "ProfileOverrideOption",
     "ProfileSource",
     "Settings",
     "UntapedError",
@@ -70,6 +73,7 @@ __all__ = [
     "get_settings",
     "get_settings_model",
     "parse_kv_pairs",
+    "profile_override",
     "read_identifiers",
     "read_stdin",
     "redact_secrets",

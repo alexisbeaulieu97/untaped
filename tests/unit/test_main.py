@@ -7,7 +7,7 @@ import typer
 import yaml
 from typer.testing import CliRunner
 
-from untaped import get_settings
+from untaped import ProfileOverrideOption, get_settings, profile_override
 from untaped.main import build_app
 from untaped.plugins import PluginRegistry
 
@@ -21,6 +21,20 @@ class _ProfileEnvProbePlugin:
         @probe_app.command("current")
         def current() -> None:
             typer.echo(os.environ.get("UNTAPED_PROFILE", ""))
+
+        registry.add_cli("probe", probe_app)
+
+
+class _ProfileSettingsProbePlugin:
+    id = "profile-settings-probe"
+
+    def register(self, registry: PluginRegistry) -> None:
+        probe_app = typer.Typer(no_args_is_help=True)
+
+        @probe_app.command("log-level")
+        def log_level(profile: ProfileOverrideOption = None) -> None:
+            with profile_override(profile):
+                typer.echo(get_settings().log_level)
 
         registry.add_cli("probe", probe_app)
 
@@ -106,4 +120,20 @@ def test_root_profile_flag_overrides_active(app: object, _isolate_config: Path) 
     )
     assert "log_level\tDEBUG" in result.stdout
     # Persisted active is unchanged
+    assert yaml.safe_load(_isolate_config.read_text())["active"] == "prod"
+
+
+def test_command_local_profile_flag_overrides_plugin_read_command(
+    _isolate_config: Path,
+) -> None:
+    """Plugin commands can opt into order-flexible profile selection."""
+    _isolate_config.write_text(
+        "profiles:\n  prod:\n    log_level: WARNING\n  stage:\n    log_level: DEBUG\nactive: prod\n"
+    )
+    app = build_app(plugins=[_ProfileSettingsProbePlugin()])
+
+    result = CliRunner().invoke(app, ["probe", "log-level", "--profile", "stage"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["DEBUG"]
     assert yaml.safe_load(_isolate_config.read_text())["active"] == "prod"

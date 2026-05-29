@@ -101,6 +101,44 @@ def test_set_then_list_shows_profile_default_source(_isolate_settings: Path) -> 
     assert "log_level\tDEBUG\tprofile:default" in list_result.stdout
 
 
+def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n"
+        "  default:\n    log_level: INFO\n"
+        "  prod:\n    log_level: WARNING\n"
+        "  stage:\n    log_level: DEBUG\n"
+        "active: prod\n"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "list",
+            "--profile",
+            "stage",
+            "--format",
+            "raw",
+            "--columns",
+            "key",
+            "--columns",
+            "value",
+            "--columns",
+            "source",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "log_level\tDEBUG\tprofile:stage" in result.stdout
+    assert yaml.safe_load(_isolate_settings.read_text())["active"] == "prod"
+
+
+def test_list_rejects_profile_with_all_profiles(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["list", "--all-profiles", "--profile", "stage"])
+
+    assert result.exit_code == 2
+    assert "Cannot combine --profile with --all-profiles" in result.output
+
+
 def test_set_with_no_args_shows_help(_isolate_settings: Path) -> None:
     result = CliRunner().invoke(app, ["set"])
     assert result.exit_code == 2
@@ -139,19 +177,43 @@ def test_unset_after_set(_isolate_settings: Path) -> None:
     assert "log_level\tdefault" in list_result.stdout
 
 
-def test_set_with_profile_flag_targets_named_profile(_isolate_settings: Path) -> None:
+def test_set_with_target_profile_flag_targets_named_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
     runner = CliRunner()
-    result = runner.invoke(app, ["set", "log_level", "DEBUG", "--profile", "prod"])
+    result = runner.invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["prod"]["log_level"] == "DEBUG"
     assert data["profiles"]["default"] == {}
 
 
+def test_set_rejects_old_profile_flag(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--profile", "prod"])
+
+    assert result.exit_code == 2
+    assert "No such option: --profile" in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "profiles": {"default": {}, "prod": {}}
+    }
+
+
+def test_unset_rejects_old_profile_flag(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+
+    result = CliRunner().invoke(app, ["unset", "log_level", "--profile", "default"])
+
+    assert result.exit_code == 2
+    assert "No such option: --profile" in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "profiles": {"default": {"log_level": "DEBUG"}}
+    }
+
+
 def test_set_with_unknown_profile_errors(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--profile", "ghost"])
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "ghost"])
     assert result.exit_code != 0
 
 
@@ -164,7 +226,7 @@ def test_set_message_names_resolved_default_profile(_isolate_settings: Path) -> 
 
 def test_set_message_names_explicit_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--profile", "prod"])
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
     assert result.exit_code == 0, result.output
     assert "in profile prod" in result.output
 
@@ -190,9 +252,22 @@ def test_unset_message_names_resolved_profile(_isolate_settings: Path) -> None:
 
 def test_unset_with_missing_explicit_profile_errors(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    result = CliRunner().invoke(app, ["unset", "log_level", "--profile", "ghost"])
+    result = CliRunner().invoke(app, ["unset", "log_level", "--target-profile", "ghost"])
     assert result.exit_code != 0
     assert "ghost" in result.output
+
+
+def test_unset_with_target_profile_flag_targets_named_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: DEBUG\nactive: prod\n"
+    )
+
+    result = CliRunner().invoke(app, ["unset", "log_level", "--target-profile", "default"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"] == {}
+    assert data["profiles"]["prod"]["log_level"] == "DEBUG"
 
 
 def test_unset_noop_message_names_resolved_profile(_isolate_settings: Path) -> None:
