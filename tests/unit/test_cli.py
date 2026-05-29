@@ -187,6 +187,102 @@ def test_set_with_target_profile_flag_targets_named_profile(_isolate_settings: P
     assert data["profiles"]["default"] == {}
 
 
+def test_set_with_stdin_reads_single_value(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "demo.token", "--stdin"], input="secret-token\n")
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["demo"]["token"] == "secret-token"
+
+
+def test_set_with_stdin_preserves_yaml_scalar_parsing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "http.verify_ssl", "--stdin"], input="false\n")
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["http"]["verify_ssl"] is False
+
+
+def test_set_with_prompt_reads_hidden_value(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    def _prompt(*args: object, **kwargs: object) -> str:
+        seen["hide_input"] = kwargs.get("hide_input")
+        return "prompt-token"
+
+    monkeypatch.setattr("untaped.config.cli.commands.typer.prompt", _prompt)
+
+    result = CliRunner().invoke(app, ["set", "demo.token", "--prompt"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["hide_input"] is True
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["demo"]["token"] == "prompt-token"
+
+
+def test_set_rejects_value_with_stdin_before_writing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(
+        app, ["set", "demo.token", "literal-token", "--stdin"], input="stdin-token\n"
+    )
+
+    assert result.exit_code != 0
+    assert not _isolate_settings.exists()
+
+
+def test_set_rejects_value_with_prompt_before_writing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "demo.token", "literal-token", "--prompt"])
+
+    assert result.exit_code != 0
+    assert not _isolate_settings.exists()
+
+
+def test_set_rejects_stdin_with_prompt_before_writing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(
+        app, ["set", "demo.token", "--stdin", "--prompt"], input="stdin-token\n"
+    )
+
+    assert result.exit_code != 0
+    assert not _isolate_settings.exists()
+
+
+def test_set_rejects_empty_stdin_before_writing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "demo.token", "--stdin"], input="\n")
+
+    assert result.exit_code != 0
+    assert "stdin" in result.output
+    assert not _isolate_settings.exists()
+
+
+def test_set_rejects_multiple_stdin_values_before_writing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "demo.token", "--stdin"], input="one\ntwo\n")
+
+    assert result.exit_code != 0
+    assert "exactly one value" in result.output
+    assert not _isolate_settings.exists()
+
+
+def test_set_rejects_empty_prompt_before_writing(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("untaped.config.cli.commands.typer.prompt", lambda *_, **__: "")
+
+    result = CliRunner().invoke(app, ["set", "demo.token", "--prompt"])
+
+    assert result.exit_code != 0
+    assert "prompt" in result.output
+    assert not _isolate_settings.exists()
+
+
+def test_set_rejects_missing_value_source_before_writing(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "demo.token"])
+
+    assert result.exit_code != 0
+    assert "provide VALUE" in result.output
+    assert not _isolate_settings.exists()
+
+
 def test_set_rejects_old_profile_flag(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
 

@@ -176,6 +176,8 @@ untaped config list --format json|yaml|table|raw
 untaped config list --format raw --columns key --columns value
                                              # available columns: key, value, default, source, profile
 untaped config set <key> <value>             # write to the active profile
+untaped config set <key> --stdin             # read one value from stdin
+untaped config set <key> --prompt            # prompt without echoing input
 untaped config set <key> <value> --target-profile <name>
 untaped config unset <key>                   # remove from the active profile
 untaped config unset <key> --target-profile <name>
@@ -191,15 +193,21 @@ Keys are dotted paths into the active schema, e.g. `http.ca_bundle` and
 `workspace.cache_dir` when the optional workspace plugin is installed.
 Values are parsed as YAML scalars, so
 `untaped config set http.verify_ssl false` writes a real `false`, not
-the string `"false"`.
+the string `"false"`. For secrets, prefer `--stdin` or `--prompt` so the
+value does not land in shell history or process listings:
+
+```bash
+printf '%s\n' "$AWX_TOKEN" | untaped config set awx.token --stdin
+untaped config set github.token --prompt
+```
 
 Writing to a profile that doesn't exist is rejected — create it first
 with `untaped profile create <name>` if the profile plugin is installed,
 or by editing the YAML directly. The one exception is `default`, which is
 auto-bootstrapped on the first write so a fresh install doesn't need a
-setup step. So `untaped config set awx.token <tok>` on a brand-new system
+setup step. So `untaped config set awx.token --stdin` on a brand-new system
 writes to `default` when the AWX plugin is installed; `untaped config set
-awx.token <tok> --target-profile prod` requires `prod` to already exist.
+awx.token --stdin --target-profile prod` requires `prod` to already exist.
 
 ## Secrets
 
@@ -263,14 +271,14 @@ plugin.
 ```bash
 # Start with a shared base.
 untaped config set awx.base_url https://aap.example.com
-untaped config set awx.token    <dev-token>
-untaped config set github.token ghp_xxx  # optional GitHub plugin
+printf '%s\n' "$AWX_DEV_TOKEN" | untaped config set awx.token --stdin
+untaped config set github.token --prompt  # optional GitHub plugin
 
 # Branch a prod profile from default and override what differs.
 # `prod` must exist before any --target-profile prod write; create it first.
 untaped profile create prod --copy-from default
 untaped config set awx.base_url https://aap.prod.example.com --target-profile prod
-untaped config set awx.token    <prod-token>                  --target-profile prod
+printf '%s\n' "$AWX_PROD_TOKEN" | untaped config set awx.token --stdin --target-profile prod
 
 # Day-to-day: do nothing — with no `active:` set, `default` is the
 # implicit fallback. (Only run `untaped profile use default` if you
