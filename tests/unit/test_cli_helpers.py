@@ -48,6 +48,7 @@ def test_report_errors_includes_http_response_body() -> None:
     assert result.exit_code == 1
     output = result.output or result.stderr
     assert "error: HTTP 403 for https://api.github.com/repos/acme/private" in output
+    assert "response:" in output
     assert "Resource not accessible by personal access token" in output
 
 
@@ -221,6 +222,7 @@ def test_resolve_each_includes_http_response_body(
     assert results == []
     assert any_failed is True
     assert "error: secure: HTTP 403 for https://api.example.test/secure" in err
+    assert "response:" in err
     assert "missing permission" in err
 
 
