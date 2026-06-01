@@ -104,39 +104,12 @@ The root form still works for every command:
 
 `untaped profile` is provided by the standalone
 [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
-plugin. Install both `untaped` and the profile plugin from git with:
-
-```bash
-uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
-  --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git" \
-  --no-sources \
-  --force
-```
-
-To let `untaped plugins` remember that desired plugin state, give `plugins add`
-the same source spec for the core tool:
-
-```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
-```
-
-For editable source checkouts, use the checkout path and mark the tool editable:
-
-```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
-  --tool-spec /path/to/untaped \
-  --editable-tool
-```
-
-For direct URLs, `untaped plugins add` infers the plugin name from the
-repository basename and stores the canonical `name @ url` form. You can also
-provide that form explicitly, for example
-`untaped-profile @ git+https://github.com/...`. The normalized name is the
-stable key used when replacing or removing a recorded plugin, so
-`untaped plugins remove untaped-profile` works.
-Without `--tool-spec`, `plugins add` syncs the recorded/default tool spec,
-which is `untaped` for the future published package.
+plugin. Install it with the generic workflows in
+[Plugins](./plugins.md); its git package spec is
+`git+https://github.com/alexisbeaulieu97/untaped-profile.git`.
+The plugin repo owns the profile command reference; this page only documents
+the profile commands that matter when explaining core configuration
+resolution.
 
 ```text
 untaped profile list                          # list profiles, ✓ marks active
@@ -192,7 +165,7 @@ untaped config unset <key> --target-profile <name>
 single effective profile, the other inspects the raw per-profile config.
 
 Keys are dotted paths into the active schema, e.g. `http.ca_bundle` and
-`http.verify_ssl`. Installed plugins add their own sections, such as
+`http.verify_ssl`. Plugin packages contribute their own sections, such as
 `awx.token` / `awx.base_url` when the optional AWX plugin is installed,
 `github.token` when the optional GitHub plugin is installed, or
 `workspace.cache_dir` when the optional workspace plugin is installed.

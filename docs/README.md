@@ -2,8 +2,9 @@
 
 `untaped` is a personal DevOps CLI suite. One binary loads core
 commands and installed domain plugins (AWX/AAP, workspaces, GitHub,
-profile, ...), so daily DevOps work composes — commands that emit data
-are designed to be piped into `fzf`, `jq`, `awk`, or each other.
+profile, ...), so daily DevOps work composes — row-oriented
+`list`/`get`/`status`-style commands are designed to be piped into
+`fzf`, `jq`, `awk`, or each other.
 
 ## Pages
 

@@ -12,8 +12,9 @@ the binary, plugin discovery, configuration/profile resolution, output,
 stdin, HTTP/TLS, and shared errors. Domain functionality (workspace, awx,
 github, profile, …) is delivered by plugins exposing Typer sub-apps
 through the `untaped.plugins` entry point group. Daily DevOps work
-composes — data-emitting commands are pipe-friendly. We build *on top of*
-existing CLIs (`gh`, `awx-cli`) where that is the right abstraction.
+composes — row-oriented `list`/`get`/`status`-style commands are
+pipe-friendly. We build *on top of* existing CLIs (`gh`, `awx-cli`) where
+that is the right abstraction.
 
 ## Repository Map
 
@@ -169,7 +170,7 @@ URL convenience input (`git+https://.../untaped-profile.git`) is accepted
 only when the name can be inferred from the final path segment, then stored
 canonically as `untaped-profile @ git+https://...`. Removal and replacement
 must work by that normalized name, including for legacy bare URL state.
-`untaped plugins list` is a data-emitting command and follows the shared
+`untaped plugins list` is a row-oriented data command and follows the shared
 `--format` / `--columns` contract; its first row key is `name` so
 implicit `--format raw` is pipe-friendly for `untaped plugins remove`.
 Implicit raw output emits only removable recorded packages; loaded-only rows
@@ -407,8 +408,10 @@ Then:
 - Add a package-local `AGENTS.md` for domain-specific internals
   (resource framework, side-effect adapters, polling cadence, …) plus a
   short `CLAUDE.md` stub pointing back to that file and the core repo.
-- Add install docs showing both direct `uv tool install ... --with ...`
-  and managed `untaped plugins add ... --no-sync` flows.
+- Add plugin docs with the package-specific install spec and command usage.
+  Link to `untaped` core's `docs/plugins.md` for generic direct install,
+  managed state, editable source, and multi-plugin sync workflows; do not
+  duplicate those full flows in every plugin repo.
 - Run `uv sync && uv run pytest && uv run untaped <x> --help`.
 
 ## Recipe: Add a new command to an existing plugin
