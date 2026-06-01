@@ -9,7 +9,7 @@ from typing import Annotated
 
 import typer
 
-from untaped.errors import UntapedError
+from untaped.errors import HttpError, UntapedError
 from untaped.output import OutputFormat
 from untaped.settings import get_settings
 
@@ -138,5 +138,12 @@ def report_errors() -> Iterator[None]:
     try:
         yield
     except UntapedError as exc:
-        typer.echo(f"error: {exc}", err=True)
+        typer.echo(f"error: {_format_error(exc)}", err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _format_error(exc: UntapedError) -> str:
+    message = str(exc)
+    if isinstance(exc, HttpError) and exc.body:
+        return f"{message}\nresponse: {exc.body}"
+    return message

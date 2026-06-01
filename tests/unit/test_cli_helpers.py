@@ -6,6 +6,7 @@ import typer
 from typer.testing import CliRunner
 
 from untaped import (
+    HttpError,
     UntapedError,
     clamp_parallel,
     get_settings,
@@ -27,6 +28,27 @@ def test_clean_message_for_untaped_error() -> None:
     result = CliRunner().invoke(app, [])
     assert result.exit_code == 1
     assert "error: something went wrong" in (result.output or result.stderr)
+
+
+def test_report_errors_includes_http_response_body() -> None:
+    app = typer.Typer()
+
+    @app.command()
+    def boom() -> None:
+        with report_errors():
+            raise HttpError(
+                "HTTP 403 for https://api.github.com/repos/acme/private",
+                status_code=403,
+                url="https://api.github.com/repos/acme/private",
+                body='{"message":"Resource not accessible by personal access token"}',
+            )
+
+    result = CliRunner().invoke(app, [])
+
+    assert result.exit_code == 1
+    output = result.output or result.stderr
+    assert "error: HTTP 403 for https://api.github.com/repos/acme/private" in output
+    assert "Resource not accessible by personal access token" in output
 
 
 def test_passes_through_non_untaped_exception() -> None:
