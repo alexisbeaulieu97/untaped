@@ -204,6 +204,26 @@ def test_resolve_each_collects_successes_and_echoes_per_id_untaped_errors(
     assert "error: bad: not found" in capsys.readouterr().err
 
 
+def test_resolve_each_includes_http_response_body(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fn(_id: str) -> str:
+        raise HttpError(
+            "HTTP 403 for https://api.example.test/secure",
+            status_code=403,
+            url="https://api.example.test/secure",
+            body='{"detail":"missing permission"}',
+        )
+
+    results, any_failed = resolve_each(["secure"], fn)
+
+    err = capsys.readouterr().err
+    assert results == []
+    assert any_failed is True
+    assert "error: secure: HTTP 403 for https://api.example.test/secure" in err
+    assert "missing permission" in err
+
+
 def test_resolve_each_propagates_non_untaped_exceptions() -> None:
     """Non-UntapedError exceptions are bugs and must surface, not be swallowed."""
 

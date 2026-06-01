@@ -93,7 +93,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
         try:
             results.append(fn(id_))
         except UntapedError as exc:
-            typer.echo(f"error: {id_}: {exc}", err=True)
+            typer.echo(f"error: {id_}: {_format_error(exc)}", err=True)
             any_failed = True
     return results, any_failed
 
