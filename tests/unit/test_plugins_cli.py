@@ -113,7 +113,7 @@ def test_plugins_add_sync_invokes_uv_tool_install(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
 
@@ -134,7 +134,7 @@ def test_plugins_add_sync_batches_uv_tool_install_once(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "untaped-profile"])
 
@@ -170,7 +170,7 @@ def test_plugins_add_sync_accepts_tool_spec_override(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(
         plugins_app,
@@ -210,7 +210,7 @@ def test_plugins_add_sync_rolls_back_state_when_uv_fails(
     def _run(_: list[str], **__: Any) -> Any:
         return type("Result", (), {"returncode": 2})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(
         plugins_app,
@@ -246,7 +246,7 @@ def test_plugins_add_sync_keeps_concurrent_plugin_state_change(
         concurrent_done.wait(timeout=0.2)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
 
@@ -270,7 +270,7 @@ def test_plugins_add_editable_maps_to_uv_with_editable(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["add", "../untaped-awx", "--editable"])
 
@@ -590,7 +590,7 @@ def test_plugins_remove_sync_accepts_tool_spec_override(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(
         plugins_app,
@@ -641,7 +641,7 @@ def test_plugins_remove_sync_batches_uv_tool_install_once(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "untaped-profile"])
 
@@ -672,7 +672,7 @@ def test_plugins_sync_tool_spec_rolls_back_when_uv_fails(
     def _run(_: list[str], **__: Any) -> Any:
         return type("Result", (), {"returncode": 2})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(
         plugins_app,
@@ -700,7 +700,7 @@ def test_plugins_sync_canonicalizes_recorded_bare_direct_url_after_uv_success(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["sync"])
 
@@ -740,7 +740,7 @@ def test_plugins_sync_does_not_canonicalize_recorded_bare_direct_url_when_uv_fai
     def _run(_: list[str], **__: Any) -> Any:
         return type("Result", (), {"returncode": 2})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["sync"])
 
@@ -764,7 +764,7 @@ def test_plugins_sync_rejects_recorded_uninferable_bare_direct_url_before_uv(
         calls.append(cmd)
         return type("Result", (), {"returncode": 0})()
 
-    monkeypatch.setattr("untaped.plugins.subprocess.run", _run)
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
     result = CliRunner().invoke(plugins_app, ["sync"])
 
