@@ -751,7 +751,7 @@ def test_edit_from_cwd_opens_workspace_root(
         captured.append(argv)
         return 0
 
-    monkeypatch.setattr("untaped_workspace.cli.commands.editor_runner", _runner)
+    monkeypatch.setattr("untaped_workspace.cli.ux_commands.editor_runner", _runner)
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -771,7 +771,7 @@ def test_edit_path_opens_unregistered_workspace(
 ) -> None:
     captured: list[list[str]] = []
     monkeypatch.setattr(
-        "untaped_workspace.cli.commands.editor_runner",
+        "untaped_workspace.cli.ux_commands.editor_runner",
         lambda argv: captured.append(argv) or 0,
     )
     target = tmp_path / "ws"
@@ -790,7 +790,7 @@ def test_edit_workspace_opens_registered_workspace(
 ) -> None:
     captured: list[list[str]] = []
     monkeypatch.setattr(
-        "untaped_workspace.cli.commands.editor_runner",
+        "untaped_workspace.cli.ux_commands.editor_runner",
         lambda argv: captured.append(argv) or 0,
     )
     runner = CliRunner()
@@ -819,7 +819,7 @@ def test_edit_editor_not_found_errors(
     def _missing(_argv: list[str]) -> int:
         raise FileNotFoundError("no such file")
 
-    monkeypatch.setattr("untaped_workspace.cli.commands.editor_runner", _missing)
+    monkeypatch.setattr("untaped_workspace.cli.ux_commands.editor_runner", _missing)
     target = tmp_path / "ws"
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
@@ -1372,7 +1372,7 @@ def test_foreach_repo_filter_runs_command_once(
         calls.append(cwd.name)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr("untaped_workspace.cli.commands.shell_runner", _runner)
+    monkeypatch.setattr("untaped_workspace.cli.ops_commands.shell_runner", _runner)
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -1401,7 +1401,7 @@ def test_foreach_unknown_repo_filter_exits_before_running_command(
         calls.append(cwd.name)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("untaped_workspace.cli.commands.shell_runner", _runner)
+    monkeypatch.setattr("untaped_workspace.cli.ops_commands.shell_runner", _runner)
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -1653,7 +1653,7 @@ def test_import_sync_scopes_to_imported_repos(
             captured["only"] = only
             return []
 
-    monkeypatch.setattr("untaped_workspace.cli.commands.SyncWorkspace", _StubSync)
+    monkeypatch.setattr("untaped_workspace.cli.lifecycle_commands.SyncWorkspace", _StubSync)
 
     src = tmp_path / "m.yml"
     src.write_text(

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from untaped_workspace.cli.commands import _workspace_row
+from untaped_workspace.cli.ux_commands import _workspace_row
 from untaped_workspace.domain import Workspace
 from untaped_workspace.domain.state import ForeachOutcome, StatusEntry, SyncOutcome
 
@@ -28,7 +28,7 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
 
 HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] = [
     (
-        "untaped_workspace.cli.commands._workspace_row",
+        "untaped_workspace.cli.ux_commands._workspace_row",
         lambda: _workspace_row(Workspace(name="alpha", path=Path("/tmp/alpha"))),
         "name",
     ),
@@ -117,7 +117,7 @@ def test_every_basemodel_in_row_module_is_catalogued_or_exempt(module_path: str)
 
 _LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
     (
-        _REPO_ROOT / "src/untaped_workspace/cli/commands.py",
+        _REPO_ROOT / "src/untaped_workspace/cli/ux_commands.py",
         "list_command",
         "_workspace_row",
     ),

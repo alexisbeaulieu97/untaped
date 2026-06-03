@@ -132,8 +132,11 @@ For those commands:
 Implemented in `application.WorkspaceResolver` — takes a `RegistryReader`
 + `ManifestReader` via constructor injection, so precedence can be
 unit-tested with stubs (no real registry or on-disk manifest required).
-The CLI composition root wires `WorkspaceRegistryRepository` and
-`ManifestRepository`.
+The CLI composition root (`cli/commands.py`) mounts the branch sub-app and
+registers the concern modules under `cli/`: display/UX commands in
+`ux_commands.py`, lifecycle/import commands in `lifecycle_commands.py`, repo
+mutation commands in `repo_commands.py`, and sync/status/foreach operations in
+`ops_commands.py`. Shared CLI-only helpers live in `cli/common.py`.
 
 All workspace commands that read registry state or workspace profile
 settings expose command-local `--profile <name>` and use
@@ -323,15 +326,15 @@ plural `application.SyncWorkspaces` use case. The plural wraps the
 singular `SyncWorkspace` (constructor dep, typed via the
 `SyncWorkspaceCallable` Protocol in `application/ports.py`) with
 serial/parallel dispatch, outcome sort, and a `notify` stderr-hook
-seam. The CLI builds the singular, wraps it, and invokes the plural
+seam. `cli/ops_commands.py` builds the singular, wraps it, and invokes the plural
 via `SyncWorkspaces.__call__(targets, parallel=workers, ...)` — no
-executor lives in `cli/commands.py` any more. The singular is still
+executor lives in the CLI layer any more. The singular is still
 the right primitive for `add --sync` / `import --sync`, which sync a
 single workspace and don't need the plural's dispatch.
 
 When `parallel > 1` *and* `len(workspaces) > 1`, the plural emits
 `"syncing N workspaces with up to M workers"` via `notify`
-(`cli/commands.py` wires `notify=lambda m: typer.echo(m, err=True)`),
+(`cli/ops_commands.py` wires `notify=lambda m: typer.echo(m, err=True)`),
 dispatches via `ThreadPoolExecutor`, drains via `as_completed`, and
 re-sorts outcomes by `(workspace_input_order, repo)` so JSON/table
 consumers see stable rows regardless of completion timing. Below that
@@ -544,8 +547,9 @@ coverage gate.
    workspace semantics.
 4. Add infrastructure adapter methods behind existing ports for git,
    filesystem, manifest, or registry side effects.
-5. Wire the Typer command in `cli/commands.py`; keep stdout data-only and
-   expose `--format`/`--columns` for data output.
+5. Wire the Typer command in the matching `cli/*_commands.py` concern module
+   and register it from `cli/commands.py`; keep stdout data-only and expose
+   `--format`/`--columns` for data output.
 6. If the command emits rows, update `tests/unit/test_format_raw_first_key.py`.
 7. Run `uv run untaped workspace <command> --help` plus the full verification
    commands above.

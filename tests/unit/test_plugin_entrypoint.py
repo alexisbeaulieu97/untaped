@@ -246,7 +246,7 @@ def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
         def __call__(self, workspace: object, **kwargs: object) -> list[object]:
             return []
 
-    monkeypatch.setattr("untaped_workspace.cli.commands.SyncWorkspace", _SyncStub)
+    monkeypatch.setattr("untaped_workspace.cli.ops_commands.SyncWorkspace", _SyncStub)
     app = build_app(plugins=[workspace_plugin])
 
     result = CliRunner().invoke(
