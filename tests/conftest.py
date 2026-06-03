@@ -46,6 +46,8 @@ from untaped_workspace.domain import (
 )
 from untaped_workspace.errors import GitError, ManifestError, RegistryError
 
+pytest_plugins = ("cli_fixtures",)
+
 
 def empty_manifest() -> WorkspaceManifest:
     """Default-constructed manifest for tests that only need an empty file on disk."""
