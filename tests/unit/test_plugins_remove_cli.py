@@ -1,0 +1,260 @@
+"""Plugin CLI tests for `plugins remove` behavior."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+from typer.testing import CliRunner
+
+from untaped.plugins import app as plugins_app
+
+pytestmark = pytest.mark.usefixtures("_isolated_config")
+
+
+def test_plugins_remove_accepts_package_name_for_named_direct_reference(
+    _isolated_config: Path,
+) -> None:
+    spec = "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git"
+    _isolated_config.write_text(
+        f"plugins:\n  packages:\n    - spec: {spec!r}\n      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == []
+
+
+def test_plugins_remove_no_sync_removes_multiple_package_specs(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+        "    - spec: untaped-workspace\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(
+        plugins_app,
+        ["remove", "untaped-awx", "untaped-profile", "--no-sync"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "removed plugin package: untaped-awx" in result.output
+    assert "removed plugin package: untaped-profile" in result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [{"spec": "untaped-workspace", "editable": False}]
+
+
+def test_plugins_remove_no_sync_ignores_duplicate_package_specs(
+    _isolated_config: Path,
+) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(
+        plugins_app,
+        ["remove", "untaped-awx", "untaped-awx", "--no-sync"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("removed plugin package: untaped-awx") == 1
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [{"spec": "untaped-profile", "editable": False}]
+
+
+def test_plugins_remove_no_sync_reads_package_specs_from_stdin(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(
+        plugins_app,
+        ["remove", "--stdin", "--no-sync"],
+        input="untaped-awx\nuntaped-profile\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == []
+
+
+def test_plugins_remove_rejects_positional_and_stdin(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
+    )
+
+    result = CliRunner().invoke(
+        plugins_app,
+        ["remove", "untaped-awx", "--stdin", "--no-sync"],
+        input="untaped-awx\n",
+    )
+
+    assert result.exit_code == 1
+    assert "provide identifiers as positional args or via --stdin, not both" in result.output
+
+
+def test_plugins_remove_missing_package_fails_without_changing_config(
+    _isolated_config: Path,
+) -> None:
+    original = "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
+    _isolated_config.write_text(original)
+
+    result = CliRunner().invoke(
+        plugins_app,
+        ["remove", "untaped-awx", "untaped-missing", "--no-sync"],
+    )
+
+    assert result.exit_code == 1
+    assert "plugin package is not recorded: untaped-missing" in result.output
+    assert _isolated_config.read_text() == original
+
+
+def test_plugins_remove_with_no_args_shows_help_without_writing_config(
+    _isolated_config: Path,
+) -> None:
+    result = CliRunner().invoke(plugins_app, ["remove"])
+
+    assert result.exit_code == 2
+    assert "Usage: plugins remove" in result.output
+    assert "PACKAGE_SPECS" in result.output
+    assert not _isolated_config.exists()
+
+
+def test_plugins_remove_accepts_package_name_for_legacy_bare_direct_url(
+    _isolated_config: Path,
+) -> None:
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: git+https://github.com/alexisbeaulieu97/untaped-profile.git\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-profile", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == []
+
+
+def test_plugins_remove_no_sync_does_not_canonicalize_unrelated_legacy_direct_url(
+    _isolated_config: Path,
+) -> None:
+    legacy = "git+https://github.com/alexisbeaulieu97/untaped-profile.git"
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+        f"    - spec: {legacy!r}\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [{"spec": legacy, "editable": False}]
+
+
+def test_plugins_remove_sync_accepts_tool_spec_override(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    _isolated_config.write_text(
+        "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
+    )
+
+    def _run(cmd: list[str], **_: Any) -> Any:
+        calls.append(cmd)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
+
+    result = CliRunner().invoke(
+        plugins_app,
+        [
+            "remove",
+            "untaped-awx",
+            "--tool-spec",
+            "/home/alexis/tools/untaped",
+            "--editable-tool",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        [
+            "uv",
+            "tool",
+            "install",
+            "/home/alexis/tools/untaped",
+            "--editable",
+            "--no-sources",
+            "--force",
+        ]
+    ]
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"] == {
+        "tool": {"spec": "/home/alexis/tools/untaped", "editable": True},
+        "packages": [],
+    }
+
+
+def test_plugins_remove_sync_batches_uv_tool_install_once(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    _isolated_config.write_text(
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+        "    - spec: untaped-workspace\n"
+        "      editable: false\n"
+    )
+
+    def _run(cmd: list[str], **_: Any) -> Any:
+        calls.append(cmd)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "untaped-profile"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        [
+            "uv",
+            "tool",
+            "install",
+            "untaped",
+            "--no-sources",
+            "--with",
+            "untaped-workspace",
+            "--force",
+        ]
+    ]
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [{"spec": "untaped-workspace", "editable": False}]
