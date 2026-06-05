@@ -28,16 +28,24 @@ trying things out without touching your real config.
 
 ## Profiles
 
-Every configurable value lives under `profiles.<name>`. Two keys live
-*outside* the `profiles` block:
+Profile-scoped configuration lives under `profiles.<name>`. A few keys
+live *outside* the `profiles` block:
 
 - `active: <name>` — selects which profile is on top. Optional.
+- `ui:` — global terminal presentation preferences. These are user
+  interface preferences, not profile overlays.
 - Plugin-owned top-level app state, such as `workspace.workspaces` when
   `untaped-workspace` is installed. App state is not user-tunable scalar
   config; it is managed by the owning plugin's commands.
 
 ```yaml
 active: prod                       # optional; selects the overlay profile
+
+ui:                                # optional global terminal presentation
+  theme: default                   # built-ins: default, plain, compact
+  border: rounded                  # rounded, square, ascii, none
+  collection_view: table           # table or list for human output
+  detail_view: list                # list or table for single-object views
 
 profiles:
   default:                         # the shared base layer (optional but conventional)
@@ -69,6 +77,11 @@ workspace:                         # optional Workspace plugin state
 `default` is conventional but not required. When it exists, every other
 profile inherits its values; when it doesn't, the active profile is
 layered alone and the schema's built-in defaults sit beneath everything.
+
+`ui:` is intentionally global. It affects human terminal rendering for
+semantic collections, details, and status messages. It does not change
+`--format json`, `--format yaml`, or `--format raw`; those structured
+formats still work if a configured theme preset is unavailable.
 
 ## Resolution order
 
@@ -187,6 +200,10 @@ setup step. So `untaped config set awx.token --stdin` on a brand-new system
 writes to `default` when the AWX plugin is installed; `untaped config set
 awx.token --stdin --target-profile prod` requires `prod` to already exist.
 
+`untaped config set` edits profile keys. Top-level app state such as
+`ui:` and `plugins:` is loaded from the same file but is not written
+through `config set`.
+
 ## Secrets
 
 Tokens, passwords, and API keys are typed as `SecretStr` in the schema.
@@ -228,6 +245,8 @@ named after its dotted path:
 ```text
 awx.token                  → UNTAPED_AWX__TOKEN       # optional AWX plugin
 awx.base_url               → UNTAPED_AWX__BASE_URL    # optional AWX plugin
+ui.theme                   → UNTAPED_UI__THEME
+ui.collection_view         → UNTAPED_UI__COLLECTION_VIEW
 http.verify_ssl            → UNTAPED_HTTP__VERIFY_SSL
 github.token               → UNTAPED_GITHUB__TOKEN  # optional GitHub plugin
 workspace.workspaces_dir   → UNTAPED_WORKSPACE__WORKSPACES_DIR

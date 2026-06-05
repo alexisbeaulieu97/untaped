@@ -24,6 +24,19 @@ def test_plugins_add_no_sync_records_package_spec(_isolated_config: Path) -> Non
     assert data["plugins"]["packages"] == [{"spec": "untaped-awx", "editable": False}]
 
 
+def test_plugins_add_success_message_falls_back_when_global_ui_theme_unknown(
+    _isolated_config: Path,
+) -> None:
+    _isolated_config.write_text("ui:\n  theme: missing\n")
+
+    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "added plugin package: untaped-awx" in result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == [{"spec": "untaped-awx", "editable": False}]
+
+
 def test_plugins_add_no_sync_records_multiple_package_specs(_isolated_config: Path) -> None:
     result = CliRunner().invoke(
         plugins_app,

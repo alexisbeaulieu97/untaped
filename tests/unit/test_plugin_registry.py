@@ -6,6 +6,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
 from untaped.plugins import DiagnosticResult, PluginRegistry, register_plugins
+from untaped.ui import ThemeSpec
 
 
 class DemoSettings(BaseModel):
@@ -85,6 +86,20 @@ def test_registry_rejects_duplicate_state_setting_sections() -> None:
         registry.add_state_settings("demo", DemoState)
 
 
+def test_registry_rejects_reserved_builtin_state_sections() -> None:
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match="reserved state settings section"):
+        registry.add_state_settings("ui", DemoState)
+
+
+def test_registry_rejects_reserved_builtin_profile_sections() -> None:
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match="reserved profile settings section"):
+        registry.add_profile_settings("ui", DemoSettings)
+
+
 def test_registry_rejects_overlapping_profile_and_state_setting_fields() -> None:
     registry = PluginRegistry()
     registry.add_profile_settings("demo", DemoSettings)
@@ -98,3 +113,34 @@ def test_registry_stores_diagnostics() -> None:
     registry.add_diagnostic("demo", lambda: DiagnosticResult(name="demo", status="ok"))
 
     assert registry.run_diagnostics() == [DiagnosticResult(name="demo", status="ok")]
+
+
+def test_registry_rejects_duplicate_theme_names() -> None:
+    registry = PluginRegistry()
+    registry.add_theme("demo", ThemeSpec(border="square"))
+
+    with pytest.raises(ConfigError, match="duplicate theme"):
+        registry.add_theme("demo", ThemeSpec(border="rounded"))
+
+
+def test_registry_rejects_builtin_theme_names() -> None:
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match="reserved theme"):
+        registry.add_theme("default", ThemeSpec(border="square"))
+
+
+def test_register_plugins_restores_themes_after_failure() -> None:
+    class BrokenThemePlugin:
+        id = "broken"
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_theme("broken", ThemeSpec(border="square"))
+            raise ConfigError("boom")
+
+    registry = PluginRegistry()
+
+    register_plugins(registry, [BrokenThemePlugin()])
+
+    assert registry.themes == {}
+    assert [error.name for error in registry.load_errors] == ["broken"]

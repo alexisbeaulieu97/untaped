@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from untaped.plugins import PluginRegistry, set_current_registry
 from untaped.plugins import app as plugins_app
+from untaped.ui import ThemeSpec
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -41,6 +42,61 @@ def test_plugins_list_defaults_to_table_output(_isolated_config: Path) -> None:
     assert "status" in result.output
     assert "untaped-profile" in result.output
     assert "recorded" in result.output
+
+
+def test_plugins_list_honours_global_ui_collection_view(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "ui:\n"
+        "  collection_view: list\n"
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert "name: untaped-profile" in result.output
+    assert "status: recorded" in result.output
+    assert "╭" not in result.output
+
+
+def test_plugins_list_uses_theme_registered_by_plugin(_isolated_config: Path) -> None:
+    registry = PluginRegistry()
+    registry.add_theme("lines", ThemeSpec(collection_view="list"))
+    set_current_registry(registry)
+    _isolated_config.write_text(
+        "ui:\n"
+        "  theme: lines\n"
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert "name: untaped-profile" in result.output
+    assert "status: recorded" in result.output
+    assert "╭" not in result.output
+
+
+def test_plugins_list_raw_ignores_unknown_global_ui_theme(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "ui:\n"
+        "  theme: missing\n"
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-profile\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["list", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == ["untaped-profile"]
 
 
 def test_plugins_list_json_includes_combined_loaded_and_desired_rows(

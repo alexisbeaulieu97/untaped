@@ -78,6 +78,34 @@ def test_plugins_sync_canonicalizes_recorded_bare_direct_url_after_uv_success(
     ]
 
 
+def test_plugins_sync_success_message_falls_back_when_global_ui_theme_unknown(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    _isolated_config.write_text(
+        "ui:\n"
+        "  theme: missing\n"
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+    )
+
+    def _run(cmd: list[str], **_: Any) -> Any:
+        calls.append(cmd)
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
+
+    result = CliRunner().invoke(plugins_app, ["sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "plugin environment synced" in result.output
+    assert calls == [
+        ["uv", "tool", "install", "untaped", "--no-sources", "--with", "untaped-awx", "--force"]
+    ]
+
+
 def test_plugins_sync_does_not_canonicalize_recorded_bare_direct_url_when_uv_fails(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -12,10 +12,12 @@ from pydantic import BaseModel
 
 from untaped.errors import ConfigError
 from untaped.settings import (
+    BUILTIN_STATE_SECTIONS,
     register_profile_settings,
     register_state_settings,
     validate_disjoint_settings_sections,
 )
+from untaped.ui import BUILTIN_THEMES, ThemeSpec
 
 ENTRY_POINT_GROUP = "untaped.plugins"
 
@@ -54,6 +56,7 @@ class PluginRegistry:
         self.clis: dict[str, typer.Typer] = {}
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
+        self.themes: dict[str, ThemeSpec] = {}
         self.diagnostics: dict[str, Callable[[], DiagnosticResult]] = {}
         self.load_errors: list[PluginLoadError] = []
 
@@ -70,6 +73,8 @@ class PluginRegistry:
         self.clis[name] = app
 
     def add_profile_settings(self, section: str, model: type[BaseModel]) -> None:
+        if section in BUILTIN_STATE_SECTIONS:
+            raise ConfigError(f"reserved profile settings section: {section}")
         if section in self.profile_sections:
             raise ConfigError(f"duplicate profile settings section: {section}")
         state_model = self.state_sections.get(section)
@@ -78,12 +83,21 @@ class PluginRegistry:
         self.profile_sections[section] = model
 
     def add_state_settings(self, section: str, model: type[BaseModel]) -> None:
+        if section in BUILTIN_STATE_SECTIONS:
+            raise ConfigError(f"reserved state settings section: {section}")
         if section in self.state_sections:
             raise ConfigError(f"duplicate state settings section: {section}")
         profile_model = self.profile_sections.get(section)
         if profile_model is not None:
             validate_disjoint_settings_sections(section, profile_model, model)
         self.state_sections[section] = model
+
+    def add_theme(self, name: str, spec: ThemeSpec) -> None:
+        if name in BUILTIN_THEMES:
+            raise ConfigError(f"reserved theme: {name}")
+        if name in self.themes:
+            raise ConfigError(f"duplicate theme: {name}")
+        self.themes[name] = spec
 
     def add_diagnostic(self, name: str, check: Callable[[], DiagnosticResult]) -> None:
         if name in self.diagnostics:
@@ -139,6 +153,7 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
         plugin_ids = set(registry.plugin_ids)
         profile_sections = dict(registry.profile_sections)
         state_sections = dict(registry.state_sections)
+        themes = dict(registry.themes)
         diagnostics = dict(registry.diagnostics)
         try:
             registry.add_plugin_id(plugin_id)
@@ -148,6 +163,7 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
             registry.plugin_ids = plugin_ids
             registry.profile_sections = profile_sections
             registry.state_sections = state_sections
+            registry.themes = themes
             registry.diagnostics = diagnostics
             registry.record_load_error(plugin_id, exc)
     registry.apply_config_sections()

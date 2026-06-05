@@ -53,6 +53,26 @@ def test_plugins_remove_no_sync_removes_multiple_package_specs(_isolated_config:
     assert data["plugins"]["packages"] == [{"spec": "untaped-workspace", "editable": False}]
 
 
+def test_plugins_remove_success_message_falls_back_when_global_ui_theme_unknown(
+    _isolated_config: Path,
+) -> None:
+    _isolated_config.write_text(
+        "ui:\n"
+        "  theme: missing\n"
+        "plugins:\n"
+        "  packages:\n"
+        "    - spec: untaped-awx\n"
+        "      editable: false\n"
+    )
+
+    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "removed plugin package: untaped-awx" in result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"]["packages"] == []
+
+
 def test_plugins_remove_no_sync_ignores_duplicate_package_specs(
     _isolated_config: Path,
 ) -> None:

@@ -41,6 +41,80 @@ def test_list_outputs_keys(_isolate_settings: Path) -> None:
     assert "http.verify_ssl" in keys
 
 
+def test_list_does_not_expose_global_ui_state_as_profile_keys(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text("ui:\n  theme: compact\n")
+
+    result = CliRunner().invoke(app, ["list", "--format", "raw", "--columns", "key"])
+
+    assert result.exit_code == 0, result.output
+    keys = result.stdout.splitlines()
+    assert "ui.theme" not in keys
+    assert "ui.collection_view" not in keys
+
+
+def test_list_honours_global_ui_collection_view(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        """
+        ui:
+          collection_view: list
+        profiles:
+          default:
+            log_level: DEBUG
+        """
+    )
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(app, ["list", "--columns", "key", "--columns", "value"])
+
+    assert result.exit_code == 0, result.output
+    assert "key: log_level" in result.stdout
+    assert "value: DEBUG" in result.stdout
+    assert "╭" not in result.stdout
+
+
+def test_list_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        """
+        ui:
+          theme: missing
+        profiles:
+          default:
+            log_level: DEBUG
+        """
+    )
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(
+        app, ["list", "--format", "raw", "--columns", "key", "--columns", "value"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "log_level\tDEBUG" in result.stdout
+
+
+def test_list_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        """
+        ui:
+          theme: missing
+        profiles:
+          default:
+            log_level: DEBUG
+        """
+    )
+    get_settings.cache_clear()
+
+    result = CliRunner().invoke(
+        app, ["list", "--format", "json", "--columns", "key", "--columns", "value"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert '"key": "log_level"' in result.stdout
+    assert '"value": "DEBUG"' in result.stdout
+
+
 def test_list_redacts_secrets_by_default(
     _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -99,6 +173,19 @@ def test_set_then_list_shows_profile_default_source(_isolate_settings: Path) -> 
     )
     assert list_result.exit_code == 0
     assert "log_level\tDEBUG\tprofile:default" in list_result.stdout
+
+
+def test_set_success_message_falls_back_when_global_ui_theme_unknown(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text("ui:\n  theme: missing\n")
+
+    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG"])
+
+    assert result.exit_code == 0, result.output
+    assert "set log_level in profile default" in result.output
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["log_level"] == "DEBUG"
 
 
 def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> None:

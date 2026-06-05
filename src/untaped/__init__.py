@@ -44,8 +44,17 @@ from untaped.settings import (
     validate_settings_isolated,
 )
 from untaped.stdin import read_identifiers, read_stdin
+from untaped.ui import (
+    BUILTIN_THEMES,
+    ThemeSpec,
+    UiContext,
+    UiSettings,
+    resolve_theme,
+    ui_context,
+)
 
 __all__ = [
+    "BUILTIN_THEMES",
     "DEFAULT_PROFILE",
     "ColumnsOption",
     "ConfigError",
@@ -60,6 +69,9 @@ __all__ = [
     "ProfileOverrideOption",
     "ProfileSource",
     "Settings",
+    "ThemeSpec",
+    "UiContext",
+    "UiSettings",
     "UntapedError",
     "clamp_parallel",
     "classify_active_profile",
@@ -83,9 +95,11 @@ __all__ = [
     "resolve_config_path",
     "resolve_each",
     "resolve_profiles",
+    "resolve_theme",
     "resolve_verify",
     "secret_field_paths",
     "splice_registered_state",
+    "ui_context",
     "validate_settings_isolated",
     "walk_settings",
 ]
