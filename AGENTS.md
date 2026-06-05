@@ -157,13 +157,17 @@ Available registry hooks:
   settings section.
 - `add_state_settings(section, model)` contributes top-level app state
   spliced into the effective settings model.
+- `add_theme(name, spec)` contributes a named `ThemeSpec` preset for
+  terminal rendering. Theme plugins register presets only; core owns the
+  renderer and still keeps `json`, `yaml`, and `raw` pipe-friendly.
 - `add_diagnostic(name, check)` contributes `untaped plugins doctor`
   checks.
 
-Duplicate plugin ids, CLI command names, profile sections, or state
-sections fail with `ConfigError`. Plugin load failures are recorded and
-reported by `untaped plugins doctor`; they must not break built-in core
-commands such as `untaped config`.
+Duplicate plugin ids, CLI command names, profile sections, state sections,
+diagnostics, or theme names fail with `ConfigError`. Built-in theme names
+are reserved and cannot be shadowed by plugins. Plugin load failures are
+recorded and reported by `untaped plugins doctor`; they must not break
+built-in core commands such as `untaped config`.
 
 Plugin install specs are keyed by normalized package/plugin name. Direct
 URL convenience input (`git+https://.../untaped-profile.git`) is accepted
@@ -199,7 +203,8 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Add a command-local read-time profile override | `from untaped import ProfileOverrideOption, profile_override` |
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
-| Format output for stdout                   | `from untaped import format_output, OutputFormat`           |
+| Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
+| Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Typer command | `from untaped import FormatOption, ColumnsOption`      |
 | Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
 | Read piped values from stdin               | `from untaped import read_stdin`                            |
@@ -207,7 +212,8 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped import resolve_each`         |
 | Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
 | Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
-| Print a one-line message to stderr         | `typer.echo(msg, err=True)` — keep it boring; no helper          |
+| Print a semantic status/warning/info message to stderr | `ui_context(strict=False).message(kind, msg)` |
+| Print raw logs, command passthrough, or low-level fallback errors | `typer.echo(msg, err=True)` |
 | Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` |
 | Raise a typed error                        | subclass `untaped.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped import walk_settings`                         |

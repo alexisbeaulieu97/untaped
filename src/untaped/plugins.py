@@ -9,7 +9,6 @@ import typer
 from untaped.cli import ColumnsOption, FormatOption, report_errors
 from untaped.config_file import mutate_config
 from untaped.errors import ConfigError
-from untaped.output import format_output
 from untaped.plugin_registry import (
     ENTRY_POINT_GROUP,
     DiagnosticResult,
@@ -34,6 +33,7 @@ from untaped.plugin_state import (
 from untaped.plugin_sync import sync_state
 from untaped.settings import PluginInstallSpec, PluginToolSpec
 from untaped.stdin import read_identifiers
+from untaped.ui import OutputFormat, UiContext, ui_context
 
 __all__ = [
     "ENTRY_POINT_GROUP",
@@ -103,10 +103,11 @@ def add_command(
             data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
+        ui = ui_context(strict=False)
         for spec in specs:
-            typer.echo(f"added plugin package: {spec.spec}", err=True)
+            ui.message("success", f"added plugin package: {spec.spec}")
         if not no_sync:
-            typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
+            ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
 @app.command("remove", no_args_is_help=True)
@@ -151,10 +152,11 @@ def remove_command(
             data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
+        ui = ui_context(strict=False)
         for package_spec in requested_specs:
-            typer.echo(f"removed plugin package: {package_spec}", err=True)
+            ui.message("success", f"removed plugin package: {package_spec}")
         if not no_sync:
-            typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
+            ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
 @app.command("sync")
@@ -177,7 +179,8 @@ def sync_command(
             data["plugins"] = updated.model_dump()
 
         mutate_config(_apply)
-        typer.echo("plugin environment synced; run a fresh untaped invocation", err=True)
+        ui = ui_context(strict=False)
+        ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
 @app.command("list")
@@ -192,7 +195,7 @@ def list_command(
         rows = plugin_rows(state, loaded_ids=set(registry.plugin_ids))
         if fmt == "raw" and columns is None:
             rows = [row for row in rows if row["spec"]]
-        rendered = format_output(rows, fmt=fmt, columns=columns)
+        rendered = _render_collection(rows, fmt=fmt, columns=columns)
         if rendered:
             typer.echo(rendered)
 
@@ -223,3 +226,14 @@ def _tool_override(tool_spec: str | None, editable_tool: bool) -> PluginToolSpec
             raise ConfigError("--editable-tool requires --tool-spec")
         return None
     return PluginToolSpec(spec=tool_spec, editable=editable_tool)
+
+
+def _render_collection(
+    rows: list[dict[str, object]],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+) -> str:
+    if fmt == "table":
+        return ui_context().collection(rows, fmt=fmt, columns=columns)
+    return UiContext().collection(rows, fmt=fmt, columns=columns)

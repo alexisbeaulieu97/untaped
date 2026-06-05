@@ -114,6 +114,42 @@ def test_plugin_defaults_are_available(tmp_path: Path, monkeypatch: pytest.Monke
     assert s.demo.page_size == 200
 
 
+def test_ui_settings_default_to_global_default_theme(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    s = get_settings()
+    assert s.ui.theme == "default"
+    assert s.ui.border is None
+    assert s.ui.collection_view is None
+
+
+def test_ui_settings_load_from_top_level_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        ui:
+          theme: compact
+          border: square
+          collection_view: list
+          symbols:
+            warning: "!"
+        profiles:
+          default:
+            log_level: DEBUG
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    s = get_settings()
+    assert s.log_level == "DEBUG"
+    assert s.ui.theme == "compact"
+    assert s.ui.border == "square"
+    assert s.ui.collection_view == "list"
+    assert s.ui.symbols == {"warning": "!"}
+
+
 def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
