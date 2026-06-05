@@ -64,6 +64,10 @@ untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git 
 Use `untaped plugins list` to inspect loaded and recorded plugins, and
 `untaped plugins doctor` to see plugin load failures.
 
+Plugin sync does not install agent skills. After installing plugins, use
+[`untaped skills list/install`](./skills.md) when you want Codex, Claude, or
+another compatible agent to learn the plugin-specific workflows.
+
 ## Plugin docs
 
 - [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) —

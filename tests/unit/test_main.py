@@ -67,6 +67,20 @@ def test_help_lists_core_commands_only_without_plugins(app: object) -> None:
     assert "Manage configuration profiles" not in output
 
 
+def test_help_lists_skills_core_command(app: object) -> None:
+    result = CliRunner().invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "skills" in result.stdout
+
+
+def test_skills_list_includes_builtin_untaped_skill(app: object) -> None:
+    result = CliRunner().invoke(app, ["skills", "list", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert "untaped" in result.stdout.splitlines()
+
+
 def test_config_subcommand_help(app: object) -> None:
     result = CliRunner().invoke(app, ["config", "--help"])
     assert result.exit_code == 0

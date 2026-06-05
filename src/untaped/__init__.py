@@ -20,6 +20,7 @@ from untaped.config_schema import (
 from untaped.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped.http import HttpClient, resolve_verify
 from untaped.output import OutputFormat, format_output
+from untaped.plugin_registry import SkillSpec
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     ProfileSource,
@@ -69,6 +70,7 @@ __all__ = [
     "ProfileOverrideOption",
     "ProfileSource",
     "Settings",
+    "SkillSpec",
     "ThemeSpec",
     "UiContext",
     "UiSettings",

@@ -160,14 +160,18 @@ Available registry hooks:
 - `add_theme(name, spec)` contributes a named `ThemeSpec` preset for
   terminal rendering. Theme plugins register presets only; core owns the
   renderer and still keeps `json`, `yaml`, and `raw` pipe-friendly.
+- `add_skill(spec)` contributes a packaged agent skill directory. Skill
+  names must be `untaped` or start with `untaped-`; the source directory
+  must contain a valid `SKILL.md`. Core owns `untaped skills list/install`
+  and plugins only register static skill assets.
 - `add_diagnostic(name, check)` contributes `untaped plugins doctor`
   checks.
 
 Duplicate plugin ids, CLI command names, profile sections, state sections,
-diagnostics, or theme names fail with `ConfigError`. Built-in theme names
-are reserved and cannot be shadowed by plugins. Plugin load failures are
-recorded and reported by `untaped plugins doctor`; they must not break
-built-in core commands such as `untaped config`.
+diagnostics, theme names, or skill names fail with `ConfigError`. Built-in
+theme and skill names are reserved and cannot be shadowed by plugins.
+Plugin load failures are recorded and reported by `untaped plugins doctor`;
+they must not break built-in core commands such as `untaped config`.
 
 Plugin install specs are keyed by normalized package/plugin name. Direct
 URL convenience input (`git+https://.../untaped-profile.git`) is accepted
@@ -204,6 +208,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
 | Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
+| Register an agent skill from a plugin | `from untaped.plugins import SkillSpec`; call `registry.add_skill(...)` |
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Typer command | `from untaped import FormatOption, ColumnsOption`      |
 | Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |

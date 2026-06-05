@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from importlib.metadata import entry_points
+from pathlib import Path
 from typing import Protocol
 
 import typer
+import yaml
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
@@ -47,6 +49,15 @@ class PluginLoadError:
     error: str
 
 
+@dataclass(frozen=True)
+class SkillSpec:
+    """A packaged agent skill contributed by core or a plugin."""
+
+    name: str
+    source: Path
+    description: str
+
+
 class PluginRegistry:
     """In-process registry populated by installed plugins."""
 
@@ -57,6 +68,7 @@ class PluginRegistry:
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
         self.themes: dict[str, ThemeSpec] = {}
+        self.skills: dict[str, SkillSpec] = {}
         self.diagnostics: dict[str, Callable[[], DiagnosticResult]] = {}
         self.load_errors: list[PluginLoadError] = []
 
@@ -98,6 +110,33 @@ class PluginRegistry:
         if name in self.themes:
             raise ConfigError(f"duplicate theme: {name}")
         self.themes[name] = spec
+
+    def add_skill(self, spec: SkillSpec) -> None:
+        name = spec.name.strip()
+        if name != "untaped" and not name.startswith("untaped-"):
+            raise ConfigError("skill name must be 'untaped' or start with 'untaped-'")
+        if name in self.skills:
+            raise ConfigError(f"duplicate skill: {name}")
+        source = Path(spec.source)
+        if not source.is_dir():
+            raise ConfigError(f"skill source directory does not exist: {source}")
+        skill_md = source / "SKILL.md"
+        if not skill_md.is_file():
+            raise ConfigError(f"skill source must contain SKILL.md: {source}")
+        frontmatter = _read_skill_frontmatter(skill_md)
+        if frontmatter.get("name") != name:
+            raise ConfigError(f"SKILL.md name must match skill name: {name}")
+        description = frontmatter.get("description")
+        if not isinstance(description, str) or not description.strip():
+            raise ConfigError(f"SKILL.md description is required: {skill_md}")
+        declared_description = spec.description.strip()
+        if not declared_description:
+            raise ConfigError(f"skill description is required: {name}")
+        self.skills[name] = SkillSpec(
+            name=name,
+            source=source,
+            description=declared_description,
+        )
 
     def add_diagnostic(self, name: str, check: Callable[[], DiagnosticResult]) -> None:
         if name in self.diagnostics:
@@ -154,6 +193,7 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
         profile_sections = dict(registry.profile_sections)
         state_sections = dict(registry.state_sections)
         themes = dict(registry.themes)
+        skills = dict(registry.skills)
         diagnostics = dict(registry.diagnostics)
         try:
             registry.add_plugin_id(plugin_id)
@@ -164,7 +204,26 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
             registry.profile_sections = profile_sections
             registry.state_sections = state_sections
             registry.themes = themes
+            registry.skills = skills
             registry.diagnostics = diagnostics
             registry.record_load_error(plugin_id, exc)
     registry.apply_config_sections()
     return registry
+
+
+def _read_skill_frontmatter(path: Path) -> dict[str, object]:
+    text = path.read_text()
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
+        raise ConfigError(f"SKILL.md must start with YAML frontmatter: {path}")
+    close_index = next(
+        (index for index, line in enumerate(lines[1:], start=1) if line == "---"),
+        None,
+    )
+    if close_index is None:
+        raise ConfigError(f"SKILL.md frontmatter is not closed: {path}")
+    raw_frontmatter = "\n".join(lines[1:close_index])
+    loaded = yaml.safe_load(raw_frontmatter)
+    if not isinstance(loaded, dict):
+        raise ConfigError(f"SKILL.md frontmatter must be a mapping: {path}")
+    return loaded
