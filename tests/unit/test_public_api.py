@@ -1,5 +1,5 @@
 import untaped
-from untaped import cli, profile_resolver
+from untaped import cli, profile_resolver, ui
 
 
 def test_profile_resolver_helpers_are_re_exported() -> None:
@@ -18,3 +18,11 @@ def test_logging_helpers_are_no_longer_exposed() -> None:
     assert not hasattr(untaped, "configure_logging")
     assert "get_logger" not in untaped.__all__
     assert "configure_logging" not in untaped.__all__
+
+
+def test_ui_helpers_are_re_exported() -> None:
+    assert untaped.UiContext is ui.UiContext
+    assert untaped.ThemeSpec is ui.ThemeSpec
+    assert untaped.UiSettings is ui.UiSettings
+    assert untaped.ui_context is ui.ui_context
+    assert untaped.resolve_theme is ui.resolve_theme

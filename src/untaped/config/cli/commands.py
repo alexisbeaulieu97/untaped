@@ -11,11 +11,13 @@ from untaped import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    OutputFormat,
     ProfileOverrideOption,
-    format_output,
+    UiContext,
     profile_override,
     report_errors,
     resolve_config_path,
+    ui_context,
 )
 from untaped.config.application import (
     ListAllProfilesSettings,
@@ -68,7 +70,7 @@ def list_command(
             else:
                 entries = ListSettings(repo)(reveal_secrets=show_secrets)
         rows = [_entry_to_row(e) for e in entries]
-        typer.echo(format_output(rows, fmt=fmt, columns=columns))
+        typer.echo(_render_collection(rows, fmt=fmt, columns=columns))
 
 
 @app.command("set", no_args_is_help=True)
@@ -89,7 +91,10 @@ def set_command(
     with report_errors():
         resolved_value = _resolve_set_value(value, stdin=stdin, prompt=prompt)
         target = SetSetting(SettingsFileRepository())(key, resolved_value, profile=target_profile)
-        typer.echo(f"set {key} in profile {target} (config: {resolve_config_path()})", err=True)
+        ui_context(strict=False).message(
+            "success",
+            f"set {key} in profile {target} (config: {resolve_config_path()})",
+        )
 
 
 def _resolve_set_value(value: str | None, *, stdin: bool, prompt: bool) -> str:
@@ -152,10 +157,9 @@ def unset_command(
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
         if removed:
-            msg = f"unset {key} in profile {target}"
+            ui_context(strict=False).message("success", f"unset {key} in profile {target}")
         else:
-            msg = f"{key} was not set in profile {target}"
-        typer.echo(msg, err=True)
+            ui_context(strict=False).message("info", f"{key} was not set in profile {target}")
 
 
 def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
@@ -167,3 +171,14 @@ def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
         "source": entry.source.label,
         "profile": entry.profile or "",
     }
+
+
+def _render_collection(
+    rows: list[dict[str, object]],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None,
+) -> str:
+    if fmt == "table":
+        return ui_context().collection(rows, fmt=fmt, columns=columns)
+    return UiContext().collection(rows, fmt=fmt, columns=columns)

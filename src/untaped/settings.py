@@ -23,6 +23,7 @@ from pydantic_settings.sources import InitSettingsSource
 
 from untaped.errors import ConfigError, first_validation_error
 from untaped.profile_resolver import effective_active_profile_name, resolve_profiles
+from untaped.ui import UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 
@@ -55,6 +56,12 @@ class PluginsState(BaseModel):
     packages: list[PluginInstallSpec] = Field(default_factory=list)
 
 
+BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {
+    "plugins": PluginsState,
+    "ui": UiSettings,
+}
+
+
 class _ConfigRegistry:
     """Mutable in-process registry of config sections contributed by plugins."""
 
@@ -64,7 +71,7 @@ class _ConfigRegistry:
 
     def reset(self) -> None:
         self.profile_sections = {}
-        self.state_sections = {"plugins": PluginsState}
+        self.state_sections = dict(BUILTIN_STATE_SECTIONS)
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
