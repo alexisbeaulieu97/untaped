@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import typer
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError
-from untaped.plugins import DiagnosticResult, PluginRegistry, register_plugins
+from untaped.plugins import DiagnosticResult, PluginRegistry, SkillSpec, register_plugins
 from untaped.ui import ThemeSpec
 
 
@@ -143,4 +145,136 @@ def test_register_plugins_restores_themes_after_failure() -> None:
     register_plugins(registry, [BrokenThemePlugin()])
 
     assert registry.themes == {}
+    assert [error.name for error in registry.load_errors] == ["broken"]
+
+
+def _skill_dir(tmp_path: Path, name: str = "untaped-demo") -> Path:
+    source = tmp_path / name
+    source.mkdir()
+    source.joinpath("SKILL.md").write_text(
+        "---\n"
+        f"name: {name}\n"
+        "description: Teach agents how to use demo untaped commands.\n"
+        "---\n"
+        "\n"
+        "# Demo\n",
+    )
+    return source
+
+
+def test_registry_stores_skill_specs(tmp_path: Path) -> None:
+    source = _skill_dir(tmp_path)
+    registry = PluginRegistry()
+
+    registry.add_skill(
+        SkillSpec(
+            name="untaped-demo",
+            source=source,
+            description="Teach agents how to use demo untaped commands.",
+        )
+    )
+
+    assert registry.skills["untaped-demo"].source == source
+
+
+def test_registry_rejects_unprefixed_skill_names(tmp_path: Path) -> None:
+    source = _skill_dir(tmp_path, name="demo")
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match="skill name must be 'untaped' or start with 'untaped-'"):
+        registry.add_skill(
+            SkillSpec(
+                name="demo",
+                source=source,
+                description="Teach agents how to use demo commands.",
+            )
+        )
+
+
+def test_registry_rejects_duplicate_skill_names(tmp_path: Path) -> None:
+    source = _skill_dir(tmp_path)
+    registry = PluginRegistry()
+    spec = SkillSpec(
+        name="untaped-demo",
+        source=source,
+        description="Teach agents how to use demo commands.",
+    )
+    registry.add_skill(spec)
+
+    with pytest.raises(ConfigError, match="duplicate skill"):
+        registry.add_skill(spec)
+
+
+def test_registry_rejects_skill_directory_without_skill_md(tmp_path: Path) -> None:
+    source = tmp_path / "untaped-demo"
+    source.mkdir()
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match=r"skill source must contain SKILL\.md"):
+        registry.add_skill(
+            SkillSpec(
+                name="untaped-demo",
+                source=source,
+                description="Teach agents how to use demo commands.",
+            )
+        )
+
+
+def test_registry_rejects_skill_with_mismatched_frontmatter_name(tmp_path: Path) -> None:
+    source = _skill_dir(tmp_path, name="untaped-other")
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match=r"SKILL\.md name must match skill name"):
+        registry.add_skill(
+            SkillSpec(
+                name="untaped-demo",
+                source=source,
+                description="Teach agents how to use demo commands.",
+            )
+        )
+
+
+def test_registry_rejects_skill_with_unclosed_frontmatter(tmp_path: Path) -> None:
+    source = tmp_path / "untaped-demo"
+    source.mkdir()
+    source.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: untaped-demo\n"
+        "description: Teach agents how to use demo untaped commands.\n"
+        "\n"
+        "# Demo\n",
+    )
+    registry = PluginRegistry()
+
+    with pytest.raises(ConfigError, match=r"SKILL\.md frontmatter is not closed"):
+        registry.add_skill(
+            SkillSpec(
+                name="untaped-demo",
+                source=source,
+                description="Teach agents how to use demo commands.",
+            )
+        )
+
+
+def test_register_plugins_restores_skills_after_failure(tmp_path: Path) -> None:
+    source = _skill_dir(tmp_path)
+
+    class BrokenSkillPlugin:
+        id = "broken"
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_skill(
+                SkillSpec(
+                    name="untaped-demo",
+                    source=source,
+                    description="Teach agents how to use demo commands.",
+                )
+            )
+            raise ConfigError("boom")
+
+    registry = PluginRegistry()
+
+    register_plugins(registry, [BrokenSkillPlugin()])
+
+    assert registry.skills == {}
     assert [error.name for error in registry.load_errors] == ["broken"]

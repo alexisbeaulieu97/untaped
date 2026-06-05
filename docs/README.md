@@ -12,6 +12,8 @@ profile, ...), so daily DevOps work composes — row-oriented
   profiles, secrets, TLS, env-var overrides. Start here.
 - [Plugins](./plugins.md) — install, sync, list, and diagnose optional
   plugin packages.
+- [Agent Skills](./skills.md) — list and install Codex/Claude skills
+  contributed by core and installed plugins.
 
 Plugin command references live in their plugin repos:
 

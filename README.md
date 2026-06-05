@@ -58,6 +58,8 @@ User-facing docs live in [`docs/`](./docs/README.md):
 - [Configuration](./docs/configuration.md) — profiles, secrets, TLS.
 - [Plugins](./docs/plugins.md) — installing, syncing, listing, and
   diagnosing optional plugins.
+- [Agent Skills](./docs/skills.md) — installing Codex/Claude skills
+  contributed by core and plugins.
 
 Plugin command references live in their plugin repos:
 
