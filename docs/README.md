@@ -15,7 +15,7 @@ GitHub, profile, themes, ...), so daily DevOps work composes — row-oriented
 - [Agent Skills](./skills.md) — list and install Codex/Claude skills
   contributed by core and installed plugins.
 
-Plugin command references live in their plugin repos:
+Plugin docs and command references live in their plugin repos:
 
 - [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
 - [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)

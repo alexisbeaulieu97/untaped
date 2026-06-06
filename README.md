@@ -64,7 +64,7 @@ User-facing docs live in [`docs/`](./docs/README.md):
 - [Agent Skills](./docs/skills.md) — installing Codex/Claude skills
   contributed by core and plugins.
 
-Plugin command references live in their plugin repos:
+Plugin docs and command references live in their plugin repos:
 
 - [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
 - [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
