@@ -89,12 +89,15 @@ def set_command(
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
     with report_errors():
+        if _is_global_ui_key(key) and target_profile is not None:
+            raise ConfigError("ui settings are global; --target-profile cannot be used")
         resolved_value = _resolve_set_value(value, stdin=stdin, prompt=prompt)
         target = SetSetting(SettingsFileRepository())(key, resolved_value, profile=target_profile)
-        ui_context(strict=False).message(
-            "success",
-            f"set {key} in profile {target} (config: {resolve_config_path()})",
-        )
+        if _is_global_ui_key(key):
+            message = f"set {key} globally (config: {resolve_config_path()})"
+        else:
+            message = f"set {key} in profile {target} (config: {resolve_config_path()})"
+        ui_context(strict=False).message("success", message)
 
 
 def _resolve_set_value(value: str | None, *, stdin: bool, prompt: bool) -> str:
@@ -156,7 +159,10 @@ def unset_command(
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
-        if removed:
+        if _is_global_ui_key(key):
+            message = f"unset {key} globally" if removed else f"{key} was not set globally"
+            ui_context(strict=False).message("success" if removed else "info", message)
+        elif removed:
             ui_context(strict=False).message("success", f"unset {key} in profile {target}")
         else:
             ui_context(strict=False).message("info", f"{key} was not set in profile {target}")
@@ -182,3 +188,7 @@ def _render_collection(
     if fmt == "table":
         return ui_context().collection(rows, fmt=fmt, columns=columns)
     return UiContext().collection(rows, fmt=fmt, columns=columns)
+
+
+def _is_global_ui_key(key: str) -> bool:
+    return key.startswith("ui.")
