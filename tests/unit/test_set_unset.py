@@ -154,6 +154,53 @@ def test_set_preserves_other_profiles_and_state(_isolate_settings: Path) -> None
     assert data["workspace"]["workspaces"][0]["name"] == "ws1"
 
 
+def test_set_ui_theme_writes_top_level_ui_without_creating_profile(
+    _isolate_settings: Path,
+) -> None:
+    target = SetSetting(SettingsFileRepository())("ui.theme", "classic")
+
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert target == "global"
+    assert data == {"ui": {"theme": "classic"}}
+
+
+def test_set_ui_collection_view_accepts_valid_literal(_isolate_settings: Path) -> None:
+    SetSetting(SettingsFileRepository())("ui.collection_view", "list")
+
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data == {"ui": {"collection_view": "list"}}
+
+
+def test_set_ui_collection_view_rejects_invalid_literal_atomically(
+    _isolate_settings: Path,
+) -> None:
+    original = "ui:\n  theme: classic\n"
+    _isolate_settings.write_text(original)
+
+    with pytest.raises(ConfigError, match="invalid value"):
+        SetSetting(SettingsFileRepository())("ui.collection_view", "nope")
+
+    assert _isolate_settings.read_text() == original
+
+
+def test_set_rejects_target_profile_for_global_ui(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+
+    with pytest.raises(ConfigError, match="global"):
+        SetSetting(SettingsFileRepository())("ui.theme", "classic", profile="prod")
+
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "profiles": {"default": {}, "prod": {}}
+    }
+
+
+def test_set_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
+    with pytest.raises(ConfigError, match="unknown setting"):
+        SetSetting(SettingsFileRepository())("plugins.tool.spec", "untaped")
+
+    assert not _isolate_settings.exists()
+
+
 # ── unset ────────────────────────────────────────────────────────────────────
 
 
@@ -197,6 +244,30 @@ def test_unset_keeps_other_keys_in_parent(_isolate_settings: Path) -> None:
 def test_unset_returns_false_when_not_set(_isolate_settings: Path) -> None:
     removed, _ = UnsetSetting(SettingsFileRepository())("log_level")
     assert removed is False
+
+
+def test_unset_ui_theme_removes_top_level_key_and_cleans_empty_ui(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  default: {}\n")
+
+    removed, target = UnsetSetting(SettingsFileRepository())("ui.theme")
+
+    assert removed is True
+    assert target == "global"
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"profiles": {"default": {}}}
+
+
+def test_unset_rejects_target_profile_for_global_ui(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  default: {}\n  prod: {}\n")
+
+    with pytest.raises(ConfigError, match="global"):
+        UnsetSetting(SettingsFileRepository())("ui.theme", profile="prod")
+
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "ui": {"theme": "classic"},
+        "profiles": {"default": {}, "prod": {}},
+    }
 
 
 def test_unset_raises_when_named_profile_missing(_isolate_settings: Path) -> None:

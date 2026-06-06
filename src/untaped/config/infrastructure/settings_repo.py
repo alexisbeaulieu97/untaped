@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from typing import Any, Literal
 
 import yaml
@@ -13,6 +14,7 @@ from untaped import (
     ConfigError,
     FieldDescriptor,
     Settings,
+    UiSettings,
     effective_active_profile_name,
     find_descriptor,
     first_validation_error,
@@ -31,6 +33,9 @@ from untaped.config_file import (
     unset_at_path,
 )
 
+GLOBAL_SETTINGS_TARGET = "global"
+_GLOBAL_UI_PREFIX = "ui."
+
 
 class SettingsFileRepository:
     """Single concrete adapter for everything ``untaped config`` needs."""
@@ -38,6 +43,7 @@ class SettingsFileRepository:
     def __init__(self, settings_cls: type[Settings] | None = None) -> None:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
+        self._ui_descriptors: list[FieldDescriptor] | None = None
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -50,6 +56,22 @@ class SettingsFileRepository:
         if descriptor is None:
             valid = ", ".join(d.key for d in descriptors)
             raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}")
+        return descriptor
+
+    def ui_descriptors(self) -> list[FieldDescriptor]:
+        if self._ui_descriptors is None:
+            self._ui_descriptors = [
+                replace(descriptor, path=("ui", *descriptor.path))
+                for descriptor in walk_settings(UiSettings)
+            ]
+        return self._ui_descriptors
+
+    def ui_descriptor(self, key: str) -> FieldDescriptor:
+        descriptors = self.ui_descriptors()
+        descriptor = find_descriptor(descriptors, key)
+        if descriptor is None:
+            valid = ", ".join(d.key for d in descriptors)
+            raise ConfigError(f"unknown UI setting: {key!r}. Valid keys: {valid}")
         return descriptor
 
     def current_settings(self) -> Settings:
@@ -87,8 +109,11 @@ class SettingsFileRepository:
     def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
         """Coerce ``raw_value``, validate against the schema, then persist.
 
-        Returns the resolved target profile name so callers can report it.
+        Returns the resolved target profile name, or ``"global"`` for
+        top-level UI settings, so callers can report where the write landed.
         """
+        if _is_global_ui_key(key):
+            return self._set_ui_value(key, raw_value, profile=profile)
         descriptor = self.descriptor(key)
         coerced = _coerce_scalar(raw_value)
         resolved: str = ""
@@ -114,6 +139,19 @@ class SettingsFileRepository:
         mutate_config(_apply)
         return resolved
 
+    def _set_ui_value(self, key: str, raw_value: str, *, profile: str | None) -> str:
+        if profile is not None:
+            raise ConfigError("ui settings are global; --target-profile cannot be used")
+        descriptor = self.ui_descriptor(key)
+        coerced = _coerce_scalar(raw_value)
+
+        def _apply(data: dict[str, Any]) -> None:
+            set_at_path(data, descriptor.path, coerced)
+            _validate_ui_state(data, key)
+
+        mutate_config(_apply)
+        return GLOBAL_SETTINGS_TARGET
+
     def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
         """Remove ``key`` from the resolved profile.
 
@@ -122,6 +160,8 @@ class SettingsFileRepository:
         that simply isn't set in the resolved profile is a no-op
         (``removed=False``).
         """
+        if _is_global_ui_key(key):
+            return self._unset_ui_value(key, profile=profile)
         descriptor = self.descriptor(key)
         removed = False
         resolved: str = ""
@@ -157,6 +197,21 @@ class SettingsFileRepository:
 
         mutate_config(_apply)
         return removed, resolved
+
+    def _unset_ui_value(self, key: str, *, profile: str | None) -> tuple[bool, str]:
+        if profile is not None:
+            raise ConfigError("ui settings are global; --target-profile cannot be used")
+        descriptor = self.ui_descriptor(key)
+        removed = False
+
+        def _apply(data: dict[str, Any]) -> None:
+            nonlocal removed
+            removed = unset_at_path(data, descriptor.path)
+            if removed:
+                _validate_ui_state(data, key)
+
+        mutate_config(_apply)
+        return removed, GLOBAL_SETTINGS_TARGET
 
     def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
         """Resolve the target profile for a ``set`` or ``unset``, validating
@@ -208,6 +263,20 @@ def _ensure_profiles_dict(data: dict[str, Any]) -> dict[str, Any]:
         profiles = {}
         data["profiles"] = profiles
     return profiles
+
+
+def _is_global_ui_key(key: str) -> bool:
+    return key.startswith(_GLOBAL_UI_PREFIX)
+
+
+def _validate_ui_state(data: dict[str, Any], key: str) -> None:
+    raw = data.get("ui") or {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"invalid value for {key!r}: Input should be a valid dictionary")
+    try:
+        UiSettings.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
 
 
 def _merge_for_validation(data: dict[str, Any], *, active: str) -> dict[str, Any]:
