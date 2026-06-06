@@ -147,8 +147,16 @@ Plugins expose one object through the `untaped.plugins` entry point group:
 ```python
 class UntapedPlugin(Protocol):
     id: str
+    untaped_api_version: int
     def register(self, registry: PluginRegistry) -> None: ...
 ```
+
+The plugin object must declare a literal `untaped_api_version = 1`. Do not
+import a core constant for this value; future cores use the literal to reject
+plugins built for an incompatible plugin API before running registration hooks.
+Package dependency bounds still matter for import-time failures, while the
+runtime API version catches registration-contract mismatches and reports them
+through `untaped plugins doctor`.
 
 Available registry hooks:
 
@@ -410,6 +418,8 @@ Then:
 
   class XPlugin:
       id = "<x>"
+      untaped_api_version = 1
+
       def register(self, registry: PluginRegistry) -> None:
           registry.add_cli("<x>", app)
 

@@ -22,12 +22,14 @@ from untaped.settings import (
 from untaped.ui import BUILTIN_THEMES, ThemeSpec
 
 ENTRY_POINT_GROUP = "untaped.plugins"
+_SUPPORTED_PLUGIN_API_VERSION = 1
 
 
 class UntapedPlugin(Protocol):
     """Object exposed by plugin packages through the ``untaped.plugins`` entry point."""
 
     id: str
+    untaped_api_version: int
 
     def register(self, registry: PluginRegistry) -> None: ...
 
@@ -196,6 +198,7 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
         skills = dict(registry.skills)
         diagnostics = dict(registry.diagnostics)
         try:
+            _validate_plugin_api_version(plugin, plugin_id)
             registry.add_plugin_id(plugin_id)
             plugin.register(registry)
         except Exception as exc:
@@ -209,6 +212,26 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
             registry.record_load_error(plugin_id, exc)
     registry.apply_config_sections()
     return registry
+
+
+def _validate_plugin_api_version(plugin: UntapedPlugin, plugin_id: str) -> None:
+    sentinel = object()
+    api_version = getattr(plugin, "untaped_api_version", sentinel)
+    if api_version is sentinel:
+        raise ConfigError(
+            f"plugin {plugin_id!r} is missing required untaped_api_version; "
+            f"supported version is {_SUPPORTED_PLUGIN_API_VERSION}"
+        )
+    if type(api_version) is not int:
+        raise ConfigError(
+            f"plugin {plugin_id!r} has invalid untaped_api_version: expected int "
+            f"{_SUPPORTED_PLUGIN_API_VERSION}, got {api_version!r}"
+        )
+    if api_version != _SUPPORTED_PLUGIN_API_VERSION:
+        raise ConfigError(
+            f"plugin {plugin_id!r} declares unsupported untaped_api_version "
+            f"{api_version}; supported version is {_SUPPORTED_PLUGIN_API_VERSION}"
+        )
 
 
 def _read_skill_frontmatter(path: Path) -> dict[str, object]:
