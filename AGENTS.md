@@ -160,6 +160,10 @@ Available registry hooks:
 - `add_theme(name, spec)` contributes a named `ThemeSpec` preset for
   terminal rendering. Theme plugins register presets only; core owns the
   renderer and still keeps `json`, `yaml`, and `raw` pipe-friendly.
+  `ThemeSpec.color_roles` accepts Rich style strings for `header`,
+  `border`, `key`, `value`, `success`, `info`, `warning`, and `error`.
+  Core emits those styles only for interactive terminal output; redirected
+  output remains plain text.
 - `add_skill(spec)` contributes a packaged agent skill directory. Skill
   names must be `untaped` or start with `untaped-`; the source directory
   must contain a valid `SKILL.md`. Core owns `untaped skills list/install`

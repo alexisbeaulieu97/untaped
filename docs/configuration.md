@@ -46,6 +46,15 @@ ui:                                # optional global terminal presentation
   border: rounded                  # rounded, square, ascii, none
   collection_view: table           # table or list for human output
   detail_view: list                # list or table for single-object views
+  color_roles:                     # optional Rich style strings for TTY output
+    header: bold cyan
+    border: green
+    key: cyan
+    value: white
+    success: green
+    info: blue
+    warning: yellow
+    error: red
 
 profiles:
   default:                         # the shared base layer (optional but conventional)
@@ -82,6 +91,12 @@ layered alone and the schema's built-in defaults sit beneath everything.
 semantic collections, details, and status messages. It does not change
 `--format json`, `--format yaml`, or `--format raw`; those structured
 formats still work if a configured theme preset is unavailable.
+
+`ui.color_roles` values are Rich style strings, such as `bold cyan`,
+`green`, or `red`. Supported role names are `header`, `border`, `key`,
+`value`, `success`, `info`, `warning`, and `error`. Color roles are
+emitted only for interactive terminal output; redirected output stays
+plain text.
 
 ## Resolution order
 
