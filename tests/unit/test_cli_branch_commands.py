@@ -145,6 +145,60 @@ def test_branch_apply_raw_defaults_to_repo_names(tmp_path: Path) -> None:
     assert result.stdout.splitlines() == ["api", "ui"]
 
 
+def test_branch_apply_honors_global_ui_collection_view_for_table_output(
+    isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "ws"
+    target.mkdir()
+    (target / "untaped.yml").write_text(
+        "name: prod\n"
+        "defaults:\n"
+        "  branch: develop\n"
+        "repos:\n"
+        "  - url: https://x/api.git\n"
+        "    name: api\n"
+    )
+    isolate_config.write_text(
+        f"""
+        ui:
+          collection_view: list
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "branch",
+            "apply",
+            "--workspace",
+            "prod",
+            "--format",
+            "table",
+            "--columns",
+            "workspace",
+            "--columns",
+            "repo",
+            "--columns",
+            "target_branch",
+            "--columns",
+            "action",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "workspace: prod" in result.stdout
+    assert "repo: api" in result.stdout
+    assert "target_branch: develop" in result.stdout
+    assert "action: skip" in result.stdout
+    assert "╭" not in result.stdout
+    assert "┌" not in result.stdout
+
+
 def test_branch_set_apply_writes_manifest_and_applies(tmp_path: Path) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"

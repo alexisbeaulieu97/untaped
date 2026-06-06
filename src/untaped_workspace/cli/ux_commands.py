@@ -9,7 +9,6 @@ from untaped import (
     ColumnsOption,
     FormatOption,
     ProfileOverrideOption,
-    format_output,
     profile_override,
     read_identifiers,
     report_errors,
@@ -25,6 +24,7 @@ from untaped_workspace.application import (
 )
 from untaped_workspace.cli.common import resolve_workspace
 from untaped_workspace.cli.completions import complete_workspace_name
+from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import Workspace
 from untaped_workspace.infrastructure import (
     ManifestRepository,
@@ -54,7 +54,7 @@ def list_command(
     with report_errors(), profile_override(profile):
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
-        typer.echo(format_output(rows, fmt=fmt, columns=columns))
+        typer.echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def show_command(
@@ -74,7 +74,7 @@ def show_command(
     with report_errors(), profile_override(profile):
         ws = resolve_workspace(workspace, path)
         rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
-        typer.echo(format_output(rows, fmt=fmt, columns=columns))
+        typer.echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def path_command(

@@ -10,7 +10,6 @@ from untaped import (
     FormatOption,
     OutputFormat,
     ProfileOverrideOption,
-    format_output,
     profile_override,
     report_errors,
 )
@@ -22,6 +21,7 @@ from untaped_workspace.application import (
 )
 from untaped_workspace.cli.common import RepoSelectorOption, resolve_workspace
 from untaped_workspace.cli.completions import complete_workspace_name
+from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import BranchApplyOutcome
 from untaped_workspace.infrastructure import GitRunner, LocalFilesystem, ManifestRepository
 
@@ -147,4 +147,4 @@ def print_branch_apply_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows = [row.model_dump() for row in outcomes]
-    typer.echo(format_output(rows, fmt=fmt, columns=columns))
+    typer.echo(render_rows(rows, fmt=fmt, columns=columns))

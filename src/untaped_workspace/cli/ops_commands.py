@@ -11,7 +11,6 @@ from untaped import (
     OutputFormat,
     ProfileOverrideOption,
     clamp_parallel,
-    format_output,
     profile_override,
     report_errors,
 )
@@ -25,6 +24,7 @@ from untaped_workspace.cli.common import (
     workspace_settings,
 )
 from untaped_workspace.cli.completions import complete_workspace_name
+from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import SyncOutcome
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
@@ -123,7 +123,7 @@ def print_sync_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows: list[dict[str, object]] = [o.model_dump() for o in outcomes]
-    typer.echo(format_output(rows, fmt=fmt, columns=columns))
+    typer.echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def status_command(
@@ -149,7 +149,7 @@ def status_command(
         for ws in targets:
             for entry in use_case(ws, only=repo):
                 rows.append(entry.model_dump())
-        typer.echo(format_output(rows, fmt=fmt, columns=columns))
+        typer.echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def foreach_command(
@@ -226,6 +226,6 @@ def foreach_command(
                 typer.echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
-            typer.echo(format_output(rows, fmt=fmt, columns=columns))
+            typer.echo(render_rows(rows, fmt=fmt, columns=columns))
         if failed and not ignore_errors:
             raise typer.Exit(code=1)

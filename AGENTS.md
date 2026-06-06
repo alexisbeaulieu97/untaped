@@ -39,15 +39,20 @@ errors.
 10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
     registry rows start with `name`; sync/status/foreach rows start with
     `workspace`.
-11. **Plugin code reads typed settings through `get_config_section`.** Use
+11. **Row-oriented CLI output uses `cli.rendering.render_rows`.** Human
+    `--format table` output goes through core `ui_context()` so global
+    `ui:` settings and plugin themes apply. Structured `json`, `yaml`, and
+    `raw` output goes through a plain `UiContext()` so missing or bad themes
+    do not break pipe-friendly output.
+12. **Plugin code reads typed settings through `get_config_section`.** Use
     `get_config_section("workspace", WorkspaceSettings)`, not a global
     aggregate `settings.workspace` attribute.
     Commands that read registry or profile settings expose the core
     command-local `ProfileOverrideOption` as `--profile` and wrap the command
     body in `profile_override(profile)`.
-12. **All git subprocess calls live behind infrastructure ports.** New git
+13. **All git subprocess calls live behind infrastructure ports.** New git
     operations go in `GitRunner`; application code depends on Protocols.
-13. **Finish with verification.** Run `uv run ruff check --fix`,
+14. **Finish with verification.** Run `uv run ruff check --fix`,
     `uv run ruff format`, `uv run mypy`, and `uv run pytest`.
 
 ## Architecture

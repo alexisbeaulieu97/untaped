@@ -160,6 +160,71 @@ def test_command_local_profile_flag_is_accepted_by_workspace_list(
     assert result.stdout.splitlines() == ["prod"]
 
 
+def test_workspace_list_honors_global_ui_collection_view_for_table_output(
+    _isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "prod"
+    _isolate_config.write_text(
+        f"""
+        ui:
+          collection_view: list
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "workspace",
+            "list",
+            "--format",
+            "table",
+            "--columns",
+            "name",
+            "--columns",
+            "path",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "name: prod" in result.stdout
+    assert f"path: {target.resolve()}" in result.stdout
+    assert "╭" not in result.stdout
+    assert "┌" not in result.stdout
+
+
+def test_workspace_list_raw_ignores_unknown_global_ui_theme(
+    _isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "prod"
+    _isolate_config.write_text(
+        f"""
+        ui:
+          theme: missing
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+    app = build_app(plugins=[workspace_plugin])
+
+    result = CliRunner().invoke(
+        app,
+        ["workspace", "list", "--format", "raw", "--columns", "name"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["prod"]
+    assert "\x1b[" not in result.stdout
+
+
 def test_command_local_profile_flag_is_accepted_by_workspace_show(
     _isolate_config: Path,
     tmp_path: Path,

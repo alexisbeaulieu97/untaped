@@ -310,6 +310,51 @@ def test_status_repo_filter_outputs_only_selected_repo(tmp_path: Path) -> None:
     assert result.stdout.splitlines() == ["api"]
 
 
+def test_status_honors_global_ui_collection_view_for_table_output(
+    isolate_config: Path,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "ws"
+    target.mkdir()
+    (target / "untaped.yml").write_text(
+        "name: prod\nrepos:\n  - url: https://x/api.git\n    name: api\n"
+    )
+    isolate_config.write_text(
+        f"""
+        ui:
+          collection_view: list
+        workspace:
+          workspaces:
+            - name: prod
+              path: {target}
+        """
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "status",
+            "--workspace",
+            "prod",
+            "--format",
+            "table",
+            "--columns",
+            "workspace",
+            "--columns",
+            "repo",
+            "--columns",
+            "cloned",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "workspace: prod" in result.stdout
+    assert "repo: api" in result.stdout
+    assert "cloned: False" in result.stdout
+    assert "╭" not in result.stdout
+    assert "┌" not in result.stdout
+
+
 def test_status_all_rejects_workspace_target() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["status", "--all", "--workspace", "smoke"])
