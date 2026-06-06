@@ -188,6 +188,61 @@ def test_set_success_message_falls_back_when_global_ui_theme_unknown(
     assert data["profiles"]["default"]["log_level"] == "DEBUG"
 
 
+def test_set_ui_theme_writes_global_ui_state(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["set", "ui.theme", "classic"])
+
+    assert result.exit_code == 0, result.output
+    assert "set ui.theme globally" in result.output
+    assert "in profile" not in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"theme": "classic"}}
+
+
+def test_unset_ui_theme_removes_global_ui_state(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  default: {}\n")
+
+    result = CliRunner().invoke(app, ["unset", "ui.theme"])
+
+    assert result.exit_code == 0, result.output
+    assert "unset ui.theme globally" in result.output
+    assert "in profile" not in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"profiles": {"default": {}}}
+
+
+def test_set_ui_theme_rejects_target_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+
+    result = CliRunner().invoke(app, ["set", "ui.theme", "classic", "--target-profile", "prod"])
+
+    assert result.exit_code != 0
+    assert "global" in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "profiles": {"default": {}, "prod": {}}
+    }
+
+
+def test_set_ui_theme_rejects_target_profile_before_prompt(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+    prompted = False
+
+    def _prompt(*args: object, **kwargs: object) -> str:
+        nonlocal prompted
+        prompted = True
+        return "classic"
+
+    monkeypatch.setattr("untaped.config.cli.commands.typer.prompt", _prompt)
+
+    result = CliRunner().invoke(app, ["set", "ui.theme", "--prompt", "--target-profile", "prod"])
+
+    assert result.exit_code != 0
+    assert "global" in result.output
+    assert prompted is False
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "profiles": {"default": {}, "prod": {}}
+    }
+
+
 def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"

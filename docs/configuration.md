@@ -195,6 +195,8 @@ untaped config set <key> --prompt            # prompt without echoing input
 untaped config set <key> <value> --target-profile <name>
 untaped config unset <key>                   # remove from the active profile
 untaped config unset <key> --target-profile <name>
+untaped config set ui.theme classic          # write a global UI preference
+untaped config unset ui.theme                # remove a global UI preference
 ```
 
 `--profile` and `--all-profiles` are mutually exclusive: one reads a
@@ -223,9 +225,15 @@ setup step. So `untaped config set awx.token --stdin` on a brand-new system
 writes to `default` when the AWX plugin is installed; `untaped config set
 awx.token --stdin --target-profile prod` requires `prod` to already exist.
 
-`untaped config set` edits profile keys. Top-level app state such as
-`ui:` and `plugins:` is loaded from the same file but is not written
-through `config set`.
+`untaped config set` also supports scalar `ui.*` preferences such as
+`ui.theme`, `ui.border`, `ui.density`, `ui.collection_view`, and
+`ui.detail_view`. These write to the top-level `ui:` block because UI
+preferences are global, not profile overlays. Do not pass
+`--target-profile` with `ui.*` keys.
+
+Structured top-level app state is still owned by domain commands or direct
+YAML editing. `plugins.*`, `workspace.*`, `ui.symbols`, and
+`ui.color_roles` are not written through `config set`.
 
 ## Secrets
 

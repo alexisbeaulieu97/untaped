@@ -251,6 +251,11 @@ Cross-cutting subsystems with their own internals doc:
 
 - **Configuration, profiles, plugin installs, and TLS** live in `src/untaped/`.
   User-facing reference: [`docs/configuration.md`](docs/configuration.md).
+  `untaped config set/unset` writes profile-scoped scalar settings by default,
+  but scalar `ui.*` keys are the deliberate exception: they write the top-level
+  global `ui:` block. Structured app state such as `plugins.*`,
+  `workspace.*`, `ui.symbols`, and `ui.color_roles` stays outside
+  `config set`.
 - **Workspace management** lives in the extracted
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
   plugin. Core plugin install guidance lives in
