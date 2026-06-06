@@ -1,4 +1,4 @@
-"""Typer commands: ``untaped config list / set / unset``."""
+"""Typer commands: ``untaped config list / get / set / unset``."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from untaped import (
     ui_context,
 )
 from untaped.config.application import (
+    GetSetting,
     ListAllProfilesSettings,
     ListSettings,
     SetSetting,
@@ -71,6 +72,24 @@ def list_command(
                 entries = ListSettings(repo)(reveal_secrets=show_secrets)
         rows = [_entry_to_row(e) for e in entries]
         typer.echo(_render_collection(rows, fmt=fmt, columns=columns))
+
+
+@app.command("get", no_args_is_help=True)
+def get_command(
+    key: str = typer.Argument(..., help="Dotted setting key, e.g. `http.verify_ssl`."),
+    fmt: OutputFormat = typer.Option("raw", "--format", "-f", help="Output format."),
+    profile: ProfileOverrideOption = None,
+    show_secrets: bool = typer.Option(
+        False, "--show-secrets", help="Reveal secret values instead of `***`."
+    ),
+) -> None:
+    """Print one effective scalar setting value."""
+    with report_errors():
+        if _is_global_ui_key(key) and profile is not None:
+            raise ConfigError("ui settings are global; --profile cannot be used")
+        with profile_override(profile):
+            entry = GetSetting(SettingsFileRepository())(key, reveal_secrets=show_secrets)
+        typer.echo(_render_detail(_entry_to_row(entry), fmt=fmt))
 
 
 @app.command("set", no_args_is_help=True)
@@ -188,6 +207,13 @@ def _render_collection(
     if fmt == "table":
         return ui_context().collection(rows, fmt=fmt, columns=columns)
     return UiContext().collection(rows, fmt=fmt, columns=columns)
+
+
+def _render_detail(record: dict[str, object], *, fmt: OutputFormat) -> str:
+    columns = ["value"] if fmt == "raw" else None
+    if fmt == "table":
+        return ui_context().detail(record, fmt=fmt, columns=columns)
+    return UiContext().detail(record, fmt=fmt, columns=columns)
 
 
 def _is_global_ui_key(key: str) -> bool:

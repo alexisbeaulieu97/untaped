@@ -18,20 +18,16 @@ class ListSettings:
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
         settings = self._repo.current_settings()
         provenance = self._repo.provenance()
-        entries: list[SettingEntry] = []
-        for descriptor in self._repo.descriptors():
-            current = _walk_attr(settings, descriptor.path)
-            in_env = self._repo.env_value_for(descriptor) is not None
-            source = _resolve_source(in_env, provenance.get(descriptor.path), descriptor, current)
-            entries.append(
-                SettingEntry(
-                    key=descriptor.key,
-                    value=display_value(descriptor, current, reveal_secrets=reveal_secrets),
-                    default=display_default(descriptor),
-                    source=source,
-                )
+        return [
+            setting_entry_for_descriptor(
+                self._repo,
+                descriptor,
+                settings=settings,
+                provenance=provenance,
+                reveal_secrets=reveal_secrets,
             )
-        return entries
+            for descriptor in self._repo.descriptors()
+        ]
 
 
 class ListAllProfilesSettings:
@@ -66,6 +62,37 @@ class ListAllProfilesSettings:
         return entries
 
 
+def setting_entry_for_descriptor(
+    repo: SettingsReader,
+    descriptor: FieldDescriptor,
+    *,
+    settings: Any | None = None,
+    provenance: dict[tuple[str, ...], str] | None = None,
+    reveal_secrets: bool = False,
+    global_configured: bool = False,
+    include_profile: bool = False,
+) -> SettingEntry:
+    """Build a display-ready entry for one effective scalar setting."""
+    resolved_settings = repo.current_settings() if settings is None else settings
+    resolved_provenance = repo.provenance() if provenance is None else provenance
+    current = _walk_attr(resolved_settings, descriptor.path)
+    in_env = repo.env_value_for(descriptor) is not None
+    source = _resolve_source(
+        in_env,
+        resolved_provenance.get(descriptor.path),
+        descriptor,
+        current,
+        global_configured=global_configured,
+    )
+    return SettingEntry(
+        key=descriptor.key,
+        value=display_value(descriptor, current, reveal_secrets=reveal_secrets),
+        default=display_default(descriptor),
+        source=source,
+        profile=source.profile if include_profile else None,
+    )
+
+
 def _walk_attr(obj: Any, path: tuple[str, ...]) -> Any:
     cur = obj
     for key in path:
@@ -94,9 +121,13 @@ def _resolve_source(
     profile_name: str | None,
     descriptor: FieldDescriptor,
     current: Any,
+    *,
+    global_configured: bool = False,
 ) -> Source:
     if in_env:
         return Source(kind="env")
+    if global_configured:
+        return Source(kind="global")
     if profile_name is not None:
         return Source(kind="profile", profile=profile_name)
     if current is None and not (descriptor.has_default and descriptor.default is not None):

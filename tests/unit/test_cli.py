@@ -243,6 +243,136 @@ def test_set_ui_theme_rejects_target_profile_before_prompt(
     }
 
 
+def test_get_ui_theme_defaults_to_raw_value(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("ui:\n  theme: classic\n")
+
+    result = CliRunner().invoke(app, ["get", "ui.theme"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "classic\n"
+
+
+def test_get_profile_setting_json_includes_metadata(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+
+    result = CliRunner().invoke(app, ["get", "log_level", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert '"key": "log_level"' in result.stdout
+    assert '"value": "DEBUG"' in result.stdout
+    assert '"default": "INFO"' in result.stdout
+    assert '"source": "profile:default"' in result.stdout
+    assert '"profile": "default"' in result.stdout
+
+
+def test_get_profile_setting_yaml_includes_metadata(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+
+    result = CliRunner().invoke(app, ["get", "log_level", "--format", "yaml"])
+
+    assert result.exit_code == 0, result.output
+    assert "key: log_level" in result.stdout
+    assert "value: DEBUG" in result.stdout
+    assert "source: profile:default" in result.stdout
+
+
+def test_get_profile_setting_table_uses_ui_detail_settings(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text(
+        "ui:\n  detail_view: table\n  border: square\nprofiles:\n  default:\n    log_level: DEBUG\n"
+    )
+
+    result = CliRunner().invoke(app, ["get", "log_level", "--format", "table"])
+
+    assert result.exit_code == 0, result.output
+    assert "┌" in result.stdout
+    assert "log_level" in result.stdout
+    assert "DEBUG" in result.stdout
+
+
+def test_get_secret_redacts_by_default(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
+
+    result = CliRunner().invoke(app, ["get", "demo.token"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "***\n"
+    assert "secret-token" not in result.stdout
+
+
+def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
+
+    result = CliRunner().invoke(app, ["get", "demo.token", "--show-secrets"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "secret-token\n"
+
+
+def test_get_profile_flag_reads_named_profile_without_changing_active(
+    _isolate_settings: Path,
+) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n"
+        "  default:\n    log_level: INFO\n"
+        "  prod:\n    log_level: WARNING\n"
+        "  stage:\n    log_level: DEBUG\n"
+        "active: prod\n"
+    )
+
+    result = CliRunner().invoke(app, ["get", "log_level", "--profile", "stage"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "DEBUG\n"
+    assert yaml.safe_load(_isolate_settings.read_text())["active"] == "prod"
+
+
+def test_get_rejects_profile_flag_for_global_ui(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  stage: {}\n")
+
+    result = CliRunner().invoke(app, ["get", "ui.theme", "--profile", "stage"])
+
+    assert result.exit_code != 0
+    assert "global" in result.output
+
+
+def test_get_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["get", "plugins.tool.spec"])
+
+    assert result.exit_code != 0
+    assert "unknown setting" in result.output
+
+
+def test_get_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        "ui:\n  theme: missing\nprofiles:\n  default:\n    log_level: DEBUG\n"
+    )
+
+    result = CliRunner().invoke(app, ["get", "log_level", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "DEBUG\n"
+
+
+def test_get_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        "ui:\n  theme: missing\nprofiles:\n  default:\n    log_level: DEBUG\n"
+    )
+
+    result = CliRunner().invoke(app, ["get", "log_level", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert '"value": "DEBUG"' in result.stdout
+
+
+def test_get_with_no_args_shows_help(_isolate_settings: Path) -> None:
+    result = CliRunner().invoke(app, ["get"])
+
+    assert result.exit_code == 2
+    assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
+
+
 def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
         "profiles:\n"

@@ -189,6 +189,10 @@ untaped config list --show-secrets           # reveal redacted values
 untaped config list --format json|yaml|table|raw
 untaped config list --format raw --columns key --columns value
                                              # available columns: key, value, default, source, profile
+untaped config get <key>                     # print one effective scalar value
+untaped config get <key> --profile <name>    # one-off read against a named profile
+untaped config get <key> --show-secrets      # reveal a secret value
+untaped config get <key> --format json|yaml|table|raw
 untaped config set <key> <value>             # write to the active profile
 untaped config set <key> --stdin             # read one value from stdin
 untaped config set <key> --prompt            # prompt without echoing input
@@ -201,6 +205,10 @@ untaped config unset ui.theme                # remove a global UI preference
 
 `--profile` and `--all-profiles` are mutually exclusive: one reads a
 single effective profile, the other inspects the raw per-profile config.
+`config get` defaults to `--format raw` and prints only the selected value,
+so `untaped config get ui.theme` is safe to use in shell scripts. Its
+structured and table formats include `key`, `value`, `default`, `source`,
+and `profile` metadata.
 
 Keys are dotted paths into the active schema, e.g. `http.ca_bundle` and
 `http.verify_ssl`. Plugin packages contribute their own sections, such as
@@ -225,15 +233,15 @@ setup step. So `untaped config set awx.token --stdin` on a brand-new system
 writes to `default` when the AWX plugin is installed; `untaped config set
 awx.token --stdin --target-profile prod` requires `prod` to already exist.
 
-`untaped config set` also supports scalar `ui.*` preferences such as
-`ui.theme`, `ui.border`, `ui.density`, `ui.collection_view`, and
-`ui.detail_view`. These write to the top-level `ui:` block because UI
-preferences are global, not profile overlays. Do not pass
-`--target-profile` with `ui.*` keys.
+`untaped config get/set/unset` also supports scalar `ui.*` preferences such
+as `ui.theme`, `ui.border`, `ui.density`, `ui.collection_view`, and
+`ui.detail_view`. These read and write the top-level `ui:` block because UI
+preferences are global, not profile overlays. Do not pass `--profile` to
+`config get ui.*`, or `--target-profile` to `config set/unset ui.*`.
 
 Structured top-level app state is still owned by domain commands or direct
 YAML editing. `plugins.*`, `workspace.*`, `ui.symbols`, and
-`ui.color_roles` are not written through `config set`.
+`ui.color_roles` are not managed through `config get/set/unset`.
 
 ## Secrets
 
