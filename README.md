@@ -10,8 +10,8 @@ per-workspace `untaped.yml` manifests and a local registry.
 Install both `untaped` and this plugin from git:
 
 ```bash
-uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
-  --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git" \
+uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.0" \
+  --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0" \
   --no-sources \
   --force
 ```
