@@ -14,6 +14,7 @@ from untaped.plugins import PluginRegistry
 
 class _ProfileEnvProbePlugin:
     id = "profile-env-probe"
+    untaped_api_version = 1
 
     def register(self, registry: PluginRegistry) -> None:
         probe_app = typer.Typer(no_args_is_help=True)
@@ -27,6 +28,7 @@ class _ProfileEnvProbePlugin:
 
 class _ProfileSettingsProbePlugin:
     id = "profile-settings-probe"
+    untaped_api_version = 1
 
     def register(self, registry: PluginRegistry) -> None:
         probe_app = typer.Typer(no_args_is_help=True)

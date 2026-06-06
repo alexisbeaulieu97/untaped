@@ -49,6 +49,7 @@ def test_registry_rejects_reserved_cli_names() -> None:
 def test_register_plugins_restores_plugin_ids_after_duplicate_failure() -> None:
     class DemoPlugin:
         id = "demo"
+        untaped_api_version = 1
 
         def __init__(self, command: str) -> None:
             self.command = command
@@ -70,6 +71,79 @@ def test_register_plugins_restores_plugin_ids_after_duplicate_failure() -> None:
     assert registry.plugin_ids == {"demo"}
     assert sorted(registry.clis) == ["first"]
     assert [error.name for error in registry.load_errors] == ["demo", "demo"]
+
+
+def test_register_plugins_accepts_supported_plugin_api_version() -> None:
+    class DemoPlugin:
+        id = "demo"
+        untaped_api_version = 1
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_cli("demo", typer.Typer())
+
+    registry = PluginRegistry()
+
+    register_plugins(registry, [DemoPlugin()])
+
+    assert registry.plugin_ids == {"demo"}
+    assert sorted(registry.clis) == ["demo"]
+    assert registry.load_errors == []
+
+
+def test_register_plugins_records_load_error_for_missing_plugin_api_version() -> None:
+    class MissingApiVersionPlugin:
+        id = "demo"
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_cli("demo", typer.Typer())
+
+    registry = PluginRegistry()
+
+    register_plugins(registry, [MissingApiVersionPlugin()])
+
+    assert registry.plugin_ids == set()
+    assert registry.clis == {}
+    assert [error.name for error in registry.load_errors] == ["demo"]
+    assert "missing required untaped_api_version" in registry.load_errors[0].error
+
+
+@pytest.mark.parametrize("version", ["1", True])
+def test_register_plugins_records_load_error_for_invalid_plugin_api_version(
+    version: object,
+) -> None:
+    class InvalidApiVersionPlugin:
+        id = "demo"
+        untaped_api_version = version
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_cli("demo", typer.Typer())
+
+    registry = PluginRegistry()
+
+    register_plugins(registry, [InvalidApiVersionPlugin()])
+
+    assert registry.plugin_ids == set()
+    assert registry.clis == {}
+    assert [error.name for error in registry.load_errors] == ["demo"]
+    assert "invalid untaped_api_version" in registry.load_errors[0].error
+
+
+def test_register_plugins_records_load_error_for_unsupported_plugin_api_version() -> None:
+    class FutureApiVersionPlugin:
+        id = "demo"
+        untaped_api_version = 2
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry.add_cli("demo", typer.Typer())
+
+    registry = PluginRegistry()
+
+    register_plugins(registry, [FutureApiVersionPlugin()])
+
+    assert registry.plugin_ids == set()
+    assert registry.clis == {}
+    assert [error.name for error in registry.load_errors] == ["demo"]
+    assert "unsupported untaped_api_version" in registry.load_errors[0].error
 
 
 def test_registry_rejects_duplicate_profile_setting_sections() -> None:
@@ -135,6 +209,7 @@ def test_registry_rejects_builtin_theme_names() -> None:
 def test_register_plugins_restores_themes_after_failure() -> None:
     class BrokenThemePlugin:
         id = "broken"
+        untaped_api_version = 1
 
         def register(self, registry: PluginRegistry) -> None:
             registry.add_theme("broken", ThemeSpec(border="square"))
@@ -261,6 +336,7 @@ def test_register_plugins_restores_skills_after_failure(tmp_path: Path) -> None:
 
     class BrokenSkillPlugin:
         id = "broken"
+        untaped_api_version = 1
 
         def register(self, registry: PluginRegistry) -> None:
             registry.add_skill(
