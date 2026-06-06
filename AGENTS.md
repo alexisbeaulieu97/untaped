@@ -505,6 +505,7 @@ Credentials must be `SecretStr`; HTTP clients must still consume
   [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx),
   [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
+  [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes),
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
 - **User-facing docs**: [`docs/`](docs/README.md) — core configuration and
   plugin install/sync UX. Plugin command references live in the plugin repos.
