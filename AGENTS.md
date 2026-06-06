@@ -48,6 +48,8 @@ plugin API. Current plugins:
   — the `profile` command for managing the profile inventory.
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
   — the `github` command for authenticated user and search workflows.
+- [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes)
+  — terminal theme presets for semantic UI rendering.
 - [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
   — the `workspace` command for local git workspace manifests and registry state.
 
