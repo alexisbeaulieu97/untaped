@@ -44,10 +44,14 @@ plugin API. Current plugins:
 
 - [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx)
   — the `awx` command for Ansible Automation Platform / AWX workflows.
-- [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
-  — the `profile` command for managing the profile inventory.
+- [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible)
+  — the `ansible` command for Ansible dependency graph workflows.
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
   — the `github` command for authenticated user and search workflows.
+- [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira)
+  — the `jira` command for Jira Data Center workflows.
+- [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
+  — the `profile` command for managing the profile inventory.
 - [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes)
   — terminal theme presets for semantic UI rendering.
 - [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
@@ -508,8 +512,10 @@ Credentials must be `SecretStr`; HTTP clients must still consume
 
 - **Plugins**:
   [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx),
-  [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
+  [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible),
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
+  [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira),
+  [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
   [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes),
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
 - **User-facing docs**: [`docs/`](docs/README.md) — core configuration and

@@ -141,8 +141,8 @@ The root form still works for every command:
 `untaped profile` is provided by the standalone
 [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
 plugin. Install it with the generic workflows in
-[Plugins](./plugins.md); its git package spec is
-`git+https://github.com/alexisbeaulieu97/untaped-profile.git`.
+[Plugins](./plugins.md); its release package spec is
+`untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0`.
 The plugin repo owns the profile command reference; this page only documents
 the profile commands that matter when explaining core configuration
 resolution.
@@ -324,7 +324,15 @@ untaped --profile prod awx ping
   — workspace plugin command reference.
 - [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) —
   AWX plugin command reference.
+- [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible)
+  — Ansible dependency graph command reference.
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github) —
   GitHub plugin command reference.
+- [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira) —
+  Jira plugin command reference.
+- [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile) —
+  profile plugin command reference.
+- [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes) —
+  theme preset plugin reference.
 - [AGENTS.md](../AGENTS.md) — the architecture and contribution rules
   (read this if you're extending `untaped`).
