@@ -255,11 +255,11 @@ Cross-cutting subsystems with their own internals doc:
 
 - **Configuration, profiles, plugin installs, and TLS** live in `src/untaped/`.
   User-facing reference: [`docs/configuration.md`](docs/configuration.md).
-  `untaped config set/unset` writes profile-scoped scalar settings by default,
-  but scalar `ui.*` keys are the deliberate exception: they write the top-level
-  global `ui:` block. Structured app state such as `plugins.*`,
-  `workspace.*`, `ui.symbols`, and `ui.color_roles` stays outside
-  `config set`.
+  `untaped config get/set/unset` manages scalar settings. Profile keys resolve
+  through the active or requested profile; scalar `ui.*` keys are the deliberate
+  exception because they read/write the top-level global `ui:` block.
+  Structured app state such as `plugins.*`, `workspace.*`, `ui.symbols`, and
+  `ui.color_roles` stays outside `config get/set/unset`.
 - **Workspace management** lives in the extracted
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
   plugin. Core plugin install guidance lives in
@@ -314,13 +314,17 @@ Cross-cutting subsystems with their own internals doc:
   stdout.
 - **stderr = everything else.** Logs, progress, prompts. Use
   `typer.echo(msg, err=True)`.
-- **Row-oriented data commands** (`list`, `get`, `status`, …) expose:
+- **Row-oriented data commands** (`list`, `status`, row-producing `get`,
+  …) expose:
   - `--format / -f` (`json | yaml | table | raw`); default `table` for
     `list`, `yaml` for `get`.
   - `--columns / -c` (repeatable). Dotted paths supported
     (`summary_fields.project.name`).
   - `--stdin` to consume newline-separated identifiers when the command
     takes a list.
+- **Scalar detail commands** may deliberately omit `--columns` and choose a
+  command-specific format default. `untaped config get <key>` defaults to raw
+  value output so it can be used directly in shell scripts.
 - **Side-effect-only commands** (`use`, `delete`, `rename`,
   `apply --yes`, …) and interactive flows are exempt — no `--format`
   knob.
