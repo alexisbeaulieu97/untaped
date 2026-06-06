@@ -1,8 +1,8 @@
 # `untaped` — documentation
 
 `untaped` is a personal DevOps CLI suite. One binary loads core
-commands and installed domain plugins (AWX/AAP, workspaces, GitHub,
-profile, ...), so daily DevOps work composes — row-oriented
+commands and installed domain plugins (AWX/AAP, Ansible, Jira, workspaces,
+GitHub, profile, themes, ...), so daily DevOps work composes — row-oriented
 `list`/`get`/`status`-style commands are designed to be piped into
 `fzf`, `jq`, `awk`, or each other.
 
@@ -19,8 +19,11 @@ Plugin command references live in their plugin repos:
 
 - [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
 - [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
+- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
 - [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
+- [Jira](https://github.com/alexisbeaulieu97/untaped-jira)
 - [Profile](https://github.com/alexisbeaulieu97/untaped-profile)
+- [Themes](https://github.com/alexisbeaulieu97/untaped-themes)
 
 For installation, see the repo's [README](../README.md).
 

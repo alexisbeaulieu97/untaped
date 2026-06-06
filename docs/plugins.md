@@ -6,13 +6,14 @@ repos own their command references and domain-specific docs.
 
 ## Install from git
 
-Install `untaped` with one or more plugins by passing `--with` specs to
-`uv tool install`:
+Install `untaped` with one or more plugins by passing tag-qualified `--with`
+specs to `uv tool install`. These packages are distributed through GitHub
+tags and releases for now, not PyPI.
 
 ```bash
-uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git" \
-  --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git" \
-  --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git" \
+uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.0" \
+  --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+  --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0" \
   --no-sources \
   --force
 ```
@@ -26,8 +27,8 @@ Use `untaped plugins add` when you want `untaped` to remember the desired
 plugin set in `~/.untaped/config.yml`:
 
 ```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-awx.git \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.0"
 ```
 
 For multiple plugins, pass every spec to one `add` command so `untaped`
@@ -35,10 +36,24 @@ records them and syncs once:
 
 ```bash
 untaped plugins add \
-  git+https://github.com/alexisbeaulieu97/untaped-awx.git \
-  git+https://github.com/alexisbeaulieu97/untaped-github.git \
-  git+https://github.com/alexisbeaulieu97/untaped-workspace.git \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+  "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+  "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
+  "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
+  "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
+  "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0" \
+  "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0" \
+  "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0" \
+  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.0"
+```
+
+`untaped-ansible` depends on `untaped-github>=0.2.0`, so install both
+together when using GitHub tags:
+
+```bash
+untaped plugins add \
+  "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
+  "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
+  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.0"
 ```
 
 Direct git URLs are accepted when the plugin name can be inferred from the
@@ -50,13 +65,13 @@ Batch commands also accept newline-separated package specs from stdin:
 ```bash
 untaped plugins add --stdin --no-sync < plugins.txt
 untaped plugins list --format raw | untaped plugins remove --stdin --no-sync
-untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git"
+untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.0"
 ```
 
 For editable core development, point sync at the local checkout:
 
 ```bash
-untaped plugins add git+https://github.com/alexisbeaulieu97/untaped-profile.git \
+untaped plugins add /path/to/untaped-profile \
   --tool-spec /path/to/untaped \
   --editable-tool
 ```
@@ -92,8 +107,12 @@ another compatible agent to learn the plugin-specific workflows.
 
 - [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) —
   Ansible Automation Platform / AWX workflows.
+- [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible) —
+  Ansible dependency graph and impact-analysis workflows.
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github) —
   authenticated user and GitHub search commands.
+- [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira) —
+  Jira Data Center ticket workflows.
 - [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile) —
   configuration profile management.
 - [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes) —
