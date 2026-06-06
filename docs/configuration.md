@@ -3,11 +3,13 @@
 `untaped` reads its settings from `~/.untaped/config.yml`. Core includes
 `untaped config` for editing keys. Profile inventory commands are
 provided by the optional `untaped-profile` plugin. Workspace registry
-commands are provided by the optional `untaped-workspace` plugin. AWX
-settings are available when the optional `untaped-awx` plugin is installed.
+commands are provided by the optional `untaped-workspace` plugin.
+Profile-scoped settings are contributed by optional plugins such as
+Ansible, AWX, GitHub, Jira, and Workspace when those plugins are installed.
 
 - `untaped config` — read and write the *keys* inside a profile
-  (`http.ca_bundle`, plus plugin keys like `awx.token`).
+  (`http.ca_bundle`, plus plugin keys like `awx.token` and
+  `jira.base_url` or `ansible.index_path`).
 - `untaped profile` — manage the *profiles* (named overlays such as
   `dev`, `prod`, `homelab`) when the `untaped-profile` plugin is
   installed.
@@ -34,9 +36,9 @@ live *outside* the `profiles` block:
 - `active: <name>` — selects which profile is on top. Optional.
 - `ui:` — global terminal presentation preferences. These are user
   interface preferences, not profile overlays.
-- Plugin-owned top-level app state, such as `workspace.workspaces` when
-  `untaped-workspace` is installed. App state is not user-tunable scalar
-  config; it is managed by the owning plugin's commands.
+- Plugin-owned top-level app state, such as `workspace.workspaces` or
+  `ansible.sources` when those plugins are installed. App state is not
+  user-tunable scalar config; it is managed by the owning plugin's commands.
 
 ```yaml
 active: prod                       # optional; selects the overlay profile
@@ -59,6 +61,10 @@ ui:                                # optional global terminal presentation
 profiles:
   default:                         # the shared base layer (optional but conventional)
     log_level: INFO
+    ansible:                          # optional Ansible plugin
+      index_path: ~/.untaped/ansible-index.sqlite3
+      repo_cache_path: ~/.untaped/ansible-repositories
+      ref_scan_default: all
     awx:                              # optional AWX plugin
       base_url: https://aap.example.com
       token: <token>
@@ -66,6 +72,11 @@ profiles:
       # users should override it to /api/v2/ here.
     github:
       token: ghp_xxx                 # optional GitHub plugin
+    jira:                            # optional Jira plugin
+      base_url: https://jira.example.com
+      token: <token>
+      default_project: OPS
+      default_board_id: 42
     workspace:
       cache_dir: ~/.untaped/repositories       # optional Workspace plugin
       workspaces_dir: ~/.untaped/workspaces
@@ -240,8 +251,9 @@ preferences are global, not profile overlays. Do not pass `--profile` to
 `config get ui.*`, or `--target-profile` to `config set/unset ui.*`.
 
 Structured top-level app state is still owned by domain commands or direct
-YAML editing. `plugins.*`, `workspace.*`, `ui.symbols`, and
-`ui.color_roles` are not managed through `config get/set/unset`.
+YAML editing. `plugins.*`, `workspace.*`, `ansible.sources`,
+`ansible.aliases`, `ui.symbols`, and `ui.color_roles` are not managed
+through `config get/set/unset`.
 
 ## Secrets
 
@@ -284,6 +296,12 @@ named after its dotted path:
 ```text
 awx.token                  → UNTAPED_AWX__TOKEN       # optional AWX plugin
 awx.base_url               → UNTAPED_AWX__BASE_URL    # optional AWX plugin
+ansible.index_path         → UNTAPED_ANSIBLE__INDEX_PATH
+                                                    # optional Ansible plugin
+ansible.ref_scan_default   → UNTAPED_ANSIBLE__REF_SCAN_DEFAULT
+                                                    # optional Ansible plugin
+jira.token                 → UNTAPED_JIRA__TOKEN      # optional Jira plugin
+jira.base_url              → UNTAPED_JIRA__BASE_URL   # optional Jira plugin
 ui.theme                   → UNTAPED_UI__THEME
 ui.collection_view         → UNTAPED_UI__COLLECTION_VIEW
 http.verify_ssl            → UNTAPED_HTTP__VERIFY_SSL
@@ -300,15 +318,17 @@ than the file.
 ## Worked example: dev / prod profiles
 
 A common setup: one profile per environment, sharing a base layer for
-everything that doesn't change. The `awx.*` commands require the optional
-AWX plugin; the `untaped profile` commands require the optional profile
-plugin.
+everything that doesn't change. Plugin settings require their optional
+plugins to be installed; the `untaped profile` commands require the
+optional profile plugin.
 
 ```bash
 # Start with a shared base.
 untaped config set awx.base_url https://aap.example.com
 printf '%s\n' "$AWX_DEV_TOKEN" | untaped config set awx.token --stdin
 untaped config set github.token --prompt  # optional GitHub plugin
+untaped config set jira.base_url https://jira.example.com  # optional Jira plugin
+untaped config set jira.token --prompt
 
 # Branch a prod profile from default and override what differs.
 # `prod` must exist before any --target-profile prod write; create it first.
