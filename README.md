@@ -20,6 +20,11 @@ For managed plugin state, editable source installs, and multi-plugin sync
 examples, see the core
 [`untaped` plugin docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md).
 
+This plugin also contributes the `untaped-workspace` agent skill. After the
+plugin is installed, use the core
+[`untaped` agent skill docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/skills.md)
+to install it for Codex or Claude.
+
 ## Commands
 
 ```text

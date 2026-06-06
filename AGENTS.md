@@ -21,7 +21,8 @@ errors.
    `uv add --group dev`; hand-edit tool config only.
 3. **Expose the plugin through the `untaped.plugins` entry point.**
    `workspace = "untaped_workspace.plugin:plugin"` is the public integration
-   point.
+   point. The plugin object must expose `id = "workspace"`, literal
+   `untaped_api_version = 1`, and `register(registry)`.
 4. **Use the 4-layer DDD layout.** `cli -> application -> domain`, with
    `infrastructure -> domain`; `application` and `infrastructure` must not
    import each other at runtime.
@@ -64,7 +65,9 @@ src/untaped_workspace/
 
 The plugin object registers `WorkspaceSettings` as the `workspace` profile
 settings section, `WorkspaceState` as the top-level `workspace` app-state
-section, and mounts the Typer app as the root `workspace` command.
+section, mounts the Typer app as the root `workspace` command, and registers
+the packaged `untaped-workspace` agent skill. Keep that static skill asset
+current with major workspace workflow changes.
 
 ## Manifest + registry split
 
