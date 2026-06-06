@@ -90,6 +90,7 @@ class Renderer(Protocol):
         fmt: OutputFormat,
         columns: list[str] | None,
         theme: ThemeSpec,
+        colorize: bool,
     ) -> str: ...
 
     def render_detail(
@@ -99,9 +100,17 @@ class Renderer(Protocol):
         fmt: OutputFormat,
         columns: list[str] | None,
         theme: ThemeSpec,
+        colorize: bool,
     ) -> str: ...
 
-    def render_message(self, kind: MessageKind, text: str, *, theme: ThemeSpec) -> str: ...
+    def render_message(
+        self,
+        kind: MessageKind,
+        text: str,
+        *,
+        theme: ThemeSpec,
+        colorize: bool,
+    ) -> str: ...
 
 
 class RichTerminalRenderer:
@@ -114,6 +123,7 @@ class RichTerminalRenderer:
         fmt: OutputFormat,
         columns: list[str] | None,
         theme: ThemeSpec,
+        colorize: bool,
     ) -> str:
         parsed = _parse_columns(columns)
         if fmt == "raw":
@@ -126,8 +136,8 @@ class RichTerminalRenderer:
             return yaml.safe_dump(selected, sort_keys=False, default_flow_style=False).rstrip()
         if fmt == "table":
             if theme.collection_view == "list":
-                return _format_records_as_lines(selected)
-            return _format_table(selected, theme)
+                return _format_records_as_lines(selected, theme=theme, colorize=colorize)
+            return _format_table(selected, theme, colorize=colorize)
 
         raise ValueError(f"unknown format: {fmt!r}")
 
@@ -138,6 +148,7 @@ class RichTerminalRenderer:
         fmt: OutputFormat,
         columns: list[str] | None,
         theme: ThemeSpec,
+        colorize: bool,
     ) -> str:
         parsed = _parse_columns(columns)
         selected = _select_record(record, parsed)
@@ -153,16 +164,27 @@ class RichTerminalRenderer:
         if fmt == "table":
             if theme.detail_view == "table":
                 rows = [{"field": key, "value": value} for key, value in selected.items()]
-                return _format_table(rows, theme)
-            return _format_record_as_lines(selected)
+                return _format_table(rows, theme, colorize=colorize)
+            return _format_record_as_lines(selected, theme=theme, colorize=colorize)
 
         raise ValueError(f"unknown format: {fmt!r}")
 
-    def render_message(self, kind: MessageKind, text: str, *, theme: ThemeSpec) -> str:
+    def render_message(
+        self,
+        kind: MessageKind,
+        text: str,
+        *,
+        theme: ThemeSpec,
+        colorize: bool,
+    ) -> str:
         symbol = theme.symbols.get(kind, DEFAULT_SYMBOLS[kind])
         prefix = f"{symbol} " if symbol else ""
         label = f"{kind}: " if kind in {"warning", "error"} else ""
-        return f"{prefix}{label}{text}"
+        rendered = f"{prefix}{label}{text}"
+        style = _role_style(theme, kind, colorize=colorize)
+        if style is None:
+            return rendered
+        return _render_text(Text(rendered, style=style), colorize=colorize)
 
 
 class UiContext:
@@ -188,7 +210,13 @@ class UiContext:
         fmt: OutputFormat,
         columns: list[str] | None = None,
     ) -> str:
-        return self.renderer.render_collection(rows, fmt=fmt, columns=columns, theme=self.theme)
+        return self.renderer.render_collection(
+            rows,
+            fmt=fmt,
+            columns=columns,
+            theme=self.theme,
+            colorize=_stream_is_tty(self.stdout),
+        )
 
     def detail(
         self,
@@ -197,10 +225,21 @@ class UiContext:
         fmt: OutputFormat,
         columns: list[str] | None = None,
     ) -> str:
-        return self.renderer.render_detail(record, fmt=fmt, columns=columns, theme=self.theme)
+        return self.renderer.render_detail(
+            record,
+            fmt=fmt,
+            columns=columns,
+            theme=self.theme,
+            colorize=_stream_is_tty(self.stdout),
+        )
 
     def message(self, kind: MessageKind, text: str) -> None:
-        rendered = self.renderer.render_message(kind, text, theme=self.theme)
+        rendered = self.renderer.render_message(
+            kind,
+            text,
+            theme=self.theme,
+            colorize=_stream_is_tty(self.stderr),
+        )
         print(rendered, file=self.stderr)
 
 
@@ -267,33 +306,52 @@ def _format_raw(rows: Sequence[Row], parsed: list[tuple[str, list[str]]] | None)
     )
 
 
-def _format_table(rows: Sequence[Row], theme: ThemeSpec) -> str:
+def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> str:
     if not rows:
         return ""
     table = Table(
         show_header=True,
-        header_style=theme.color_roles.get("header", "bold"),
-        border_style=theme.color_roles.get("border"),
+        header_style=_role_style(theme, "header", colorize=colorize) or "",
+        border_style=_role_style(theme, "border", colorize=colorize),
         box=_resolve_box(theme.border),
         padding=(0, 0) if theme.density == "compact" else (0, 1),
     )
     columns = list(rows[0].keys())
     for col in columns:
         table.add_column(col)
+    value_style = _role_style(theme, "value", colorize=colorize)
     for row in rows:
-        table.add_row(*[Text(_render_cell(row.get(c, ""))) for c in columns])
-    buf = io.StringIO()
-    width = shutil.get_terminal_size(fallback=(80, 24)).columns
-    Console(file=buf, force_terminal=False, width=width).print(table)
-    return buf.getvalue().rstrip()
+        table.add_row(*[_styled_text(_render_cell(row.get(c, "")), value_style) for c in columns])
+    return _render_rich(table, colorize=colorize)
 
 
-def _format_records_as_lines(rows: Sequence[Row]) -> str:
-    return "\n\n".join(_format_record_as_lines(row) for row in rows)
+def _format_records_as_lines(
+    rows: Sequence[Row],
+    *,
+    theme: ThemeSpec,
+    colorize: bool,
+) -> str:
+    return "\n\n".join(_format_record_as_lines(row, theme=theme, colorize=colorize) for row in rows)
 
 
-def _format_record_as_lines(record: Row) -> str:
-    return "\n".join(f"{key}: {_render_cell(value)}" for key, value in record.items())
+def _format_record_as_lines(record: Row, *, theme: ThemeSpec, colorize: bool) -> str:
+    return "\n".join(
+        _format_record_line(key, value, theme=theme, colorize=colorize)
+        for key, value in record.items()
+    )
+
+
+def _format_record_line(key: str, value: object, *, theme: ThemeSpec, colorize: bool) -> str:
+    key_style = _role_style(theme, "key", colorize=colorize)
+    value_style = _role_style(theme, "value", colorize=colorize)
+    rendered_value = _render_cell(value)
+    if key_style is None and value_style is None:
+        return f"{key}: {rendered_value}"
+    line = Text()
+    line.append(key, style=key_style)
+    line.append(": ")
+    line.append(rendered_value, style=value_style)
+    return _render_text(line, colorize=colorize)
 
 
 def _resolve_box(border: BorderStyle) -> box.Box | None:
@@ -325,3 +383,42 @@ def _render_cell(value: Any) -> str:
 
 def _is_scalar(value: Any) -> bool:
     return value is None or isinstance(value, str | int | float | bool)
+
+
+def _role_style(theme: ThemeSpec, role: str, *, colorize: bool) -> str | None:
+    if not colorize:
+        return None
+    return theme.color_roles.get(role)
+
+
+def _stream_is_tty(stream: TextIO) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    if not callable(isatty):
+        return False
+    try:
+        return bool(isatty())
+    except OSError:
+        return False
+
+
+def _render_text(text: Text, *, colorize: bool) -> str:
+    return _render_rich(text, colorize=colorize)
+
+
+def _styled_text(value: str, style: str | None) -> Text:
+    if style is None:
+        return Text(value)
+    return Text(value, style=style)
+
+
+def _render_rich(renderable: Table | Text, *, colorize: bool) -> str:
+    buf = io.StringIO()
+    width = shutil.get_terminal_size(fallback=(80, 24)).columns
+    Console(
+        file=buf,
+        force_terminal=colorize,
+        color_system="standard" if colorize else None,
+        no_color=not colorize,
+        width=width,
+    ).print(renderable)
+    return buf.getvalue().rstrip()
