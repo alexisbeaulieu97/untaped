@@ -13,6 +13,7 @@ from untaped.settings import get_settings, reset_config_registry_for_tests
 
 class _Plugin:
     id = "demo"
+    untaped_api_version = 1
 
     def register(self, registry: PluginRegistry) -> None:
         app = typer.Typer(no_args_is_help=True)
@@ -26,6 +27,7 @@ class _Plugin:
 
 class _FailingPlugin:
     id = "broken"
+    untaped_api_version = 1
 
     def register(self, registry: PluginRegistry) -> None:
         raise RuntimeError("boom")
@@ -33,6 +35,7 @@ class _FailingPlugin:
 
 class _CoreCommandShadowPlugin:
     id = "shadow"
+    untaped_api_version = 1
 
     def register(self, registry: PluginRegistry) -> None:
         app = typer.Typer(help="Fake config command.", no_args_is_help=True)
