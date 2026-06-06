@@ -83,6 +83,14 @@ workspace:                         # optional Workspace plugin state
       path: ~/work/stage
 ```
 
+Theme plugins can contribute additional `ui.theme` presets. For example,
+installing `untaped-themes` adds `high-contrast`, `quiet`, and `classic`:
+
+```yaml
+ui:
+  theme: quiet
+```
+
 `default` is conventional but not required. When it exists, every other
 profile inherits its values; when it doesn't, the active profile is
 layered alone and the schema's built-in defaults sit beneath everything.

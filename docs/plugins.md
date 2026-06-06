@@ -96,5 +96,7 @@ another compatible agent to learn the plugin-specific workflows.
   authenticated user and GitHub search commands.
 - [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile) —
   configuration profile management.
+- [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes) —
+  terminal theme presets.
 - [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace) —
   local git workspace manifests and registry state.
