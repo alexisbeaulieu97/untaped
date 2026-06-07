@@ -126,12 +126,27 @@ def test_optional_text_prompts_allow_empty_values() -> None:
     assert ui.secret("value", required=False) == ""
 
 
+@pytest.mark.parametrize("method_name", ["confirm", "text", "secret", "select", "multiselect"])
 @pytest.mark.parametrize("exc", [EOFError(), KeyboardInterrupt()])
-def test_prompt_cancellation_maps_to_config_error(exc: BaseException) -> None:
+def test_prompt_cancellation_maps_to_config_error(
+    method_name: str,
+    exc: BaseException,
+) -> None:
     ui = UiContext(stdin=TtyStringIO(), prompt_backend=FakePromptBackend(exc=exc))
+    choices = [PromptChoice(value="one", label="One")]
 
     with pytest.raises(ConfigError, match="prompt cancelled"):
-        ui.text("value")
+        match method_name:
+            case "confirm":
+                ui.confirm("continue?")
+            case "text":
+                ui.text("value")
+            case "secret":
+                ui.secret("value")
+            case "select":
+                ui.select("value", choices)
+            case "multiselect":
+                ui.multiselect("value", choices)
 
 
 def test_non_interactive_stdin_fails_before_invoking_backend() -> None:
