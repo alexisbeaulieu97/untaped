@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-smoke.yml"
+WORKFLOWS = [CI_WORKFLOW, WORKFLOW]
+FULL_SHA_ACTION_RE = re.compile(r"@[0-9a-f]{40}$")
 
 EXPECTED_PLUGIN_NAMES = [
     "ansible",
@@ -41,9 +45,20 @@ EXPECTED_PLUGIN_SPECS = [
 ]
 
 
-def _load_workflow() -> tuple[str, dict[str, Any]]:
-    text = WORKFLOW.read_text(encoding="utf-8")
+def _load_yaml(path: Path) -> tuple[str, dict[str, Any]]:
+    text = path.read_text(encoding="utf-8")
     return text, yaml.safe_load(text)
+
+
+def _load_workflow() -> tuple[str, dict[str, Any]]:
+    return _load_yaml(WORKFLOW)
+
+
+def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = []
+    for job in workflow["jobs"].values():
+        steps.extend(job["steps"])
+    return steps
 
 
 def _step_run(workflow: dict[str, Any], name: str) -> str:
@@ -75,6 +90,33 @@ def test_release_smoke_workflow_exports_isolated_temp_paths() -> None:
     assert 'echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/uv-bin"' in run
     assert 'echo "UNTAPED_CONFIG=$RUNNER_TEMP/untaped-config.yml"' in run
     assert 'echo "$RUNNER_TEMP/uv-bin" >> "$GITHUB_PATH"' in run
+
+
+def test_workflow_actions_are_pinned_to_commit_shas() -> None:
+    offenders: list[str] = []
+    for path in WORKFLOWS:
+        _, workflow = _load_yaml(path)
+        for step in _steps(workflow):
+            uses = step.get("uses")
+            if uses and not FULL_SHA_ACTION_RE.search(uses):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {uses}")
+
+    assert not offenders, "GitHub Action refs must be pinned to full SHAs:\n" + "\n".join(offenders)
+
+
+def test_checkout_steps_do_not_persist_credentials() -> None:
+    offenders: list[str] = []
+    for path in WORKFLOWS:
+        _, workflow = _load_yaml(path)
+        for step in _steps(workflow):
+            uses = step.get("uses", "")
+            if (
+                uses.startswith("actions/checkout@")
+                and step.get("with", {}).get("persist-credentials") is not False
+            ):
+                offenders.append(str(path.relative_to(REPO_ROOT)))
+
+    assert not offenders, "checkout steps must set persist-credentials: false"
 
 
 def test_release_smoke_workflow_installs_current_core_with_released_plugins() -> None:
