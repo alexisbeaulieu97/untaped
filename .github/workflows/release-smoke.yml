@@ -1,0 +1,103 @@
+name: Release Smoke
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  release-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Configure temp paths
+        run: |
+          mkdir -p "$RUNNER_TEMP/uv-tools" "$RUNNER_TEMP/uv-bin"
+          {
+            echo "UV_TOOL_DIR=$RUNNER_TEMP/uv-tools"
+            echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/uv-bin"
+            echo "UNTAPED_CONFIG=$RUNNER_TEMP/untaped-config.yml"
+          } >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/uv-bin" >> "$GITHUB_PATH"
+
+      - name: Install current core with released plugins
+        run: |
+          uv tool install . \
+            --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+            --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0" \
+            --with "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
+            --with "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
+            --with "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
+            --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0" \
+            --with "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0" \
+            --no-sources \
+            --force
+          test -x "$UV_TOOL_BIN_DIR/untaped"
+
+      - name: Verify plugin discovery
+        run: |
+          expected="$(mktemp)"
+          actual="$(mktemp)"
+          cat > "$expected" <<'EOF'
+          ansible
+          awx
+          github
+          jira
+          profile
+          themes
+          workspace
+          EOF
+          untaped plugins list --format raw --columns name > "$actual"
+          diff -u "$expected" "$actual"
+
+      - name: Verify skill discovery
+        run: |
+          expected="$(mktemp)"
+          actual="$(mktemp)"
+          cat > "$expected" <<'EOF'
+          untaped
+          untaped-ansible
+          untaped-awx
+          untaped-github
+          untaped-jira
+          untaped-profile
+          untaped-workspace
+          EOF
+          untaped skills list --format raw --columns name > "$actual"
+          diff -u "$expected" "$actual"
+
+      - name: Verify local agent skill installation
+        run: |
+          project_dir="$RUNNER_TEMP/project"
+          mkdir -p "$project_dir"
+          untaped skills install --all --target all --scope local --project-dir "$project_dir"
+          for skill in \
+            untaped \
+            untaped-ansible \
+            untaped-awx \
+            untaped-github \
+            untaped-jira \
+            untaped-profile \
+            untaped-workspace
+          do
+            test -f "$project_dir/.agents/skills/$skill/SKILL.md"
+            test -f "$project_dir/.agents/skills/$skill/.untaped-skill.json"
+            test -f "$project_dir/.claude/skills/$skill/SKILL.md"
+            test -f "$project_dir/.claude/skills/$skill/.untaped-skill.json"
+          done
