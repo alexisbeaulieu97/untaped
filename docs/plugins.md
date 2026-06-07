@@ -103,6 +103,12 @@ Plugin sync does not install agent skills. After installing plugins, use
 [`untaped skills list/install`](./skills.md) when you want Codex, Claude, or
 another compatible agent to learn the plugin-specific workflows.
 
+Plugins that need interactive input should use the core prompt primitives
+through `ui_context(strict=False).confirm/text/secret/select/multiselect(...)`.
+Those prompts require TTY stdin and render on stderr, keeping stdout available
+for data streams. Plugins should not import `typer.prompt`, `typer.confirm`,
+or `prompt_toolkit` directly, and there is no prompt-backend plugin hook yet.
+
 ## Plugin docs
 
 - [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) —
