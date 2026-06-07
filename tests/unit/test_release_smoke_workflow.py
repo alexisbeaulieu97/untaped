@@ -1,0 +1,111 @@
+"""Contract tests for the release smoke GitHub Actions workflow."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-smoke.yml"
+
+EXPECTED_PLUGIN_NAMES = [
+    "ansible",
+    "awx",
+    "github",
+    "jira",
+    "profile",
+    "themes",
+    "workspace",
+]
+
+EXPECTED_SKILL_NAMES = [
+    "untaped",
+    "untaped-ansible",
+    "untaped-awx",
+    "untaped-github",
+    "untaped-jira",
+    "untaped-profile",
+    "untaped-workspace",
+]
+
+EXPECTED_PLUGIN_SPECS = [
+    "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0",
+    "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0",
+    "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0",
+    "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0",
+    "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0",
+    "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0",
+    "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0",
+]
+
+
+def _load_workflow() -> tuple[str, dict[str, Any]]:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    return text, yaml.safe_load(text)
+
+
+def _step_run(workflow: dict[str, Any], name: str) -> str:
+    for step in workflow["jobs"]["release-smoke"]["steps"]:
+        if step["name"] == name:
+            return str(step["run"])
+    raise AssertionError(f"workflow step not found: {name}")
+
+
+def test_release_smoke_workflow_runs_on_pr_main_push_and_manual_dispatch() -> None:
+    _, workflow = _load_workflow()
+
+    assert workflow["on"] == {
+        "pull_request": None,
+        "push": {"branches": ["main"]},
+        "workflow_dispatch": None,
+    }
+    assert workflow["permissions"] == {"contents": "read"}
+
+    job = workflow["jobs"]["release-smoke"]
+    assert job["runs-on"] == "ubuntu-latest"
+
+
+def test_release_smoke_workflow_exports_isolated_temp_paths() -> None:
+    _, workflow = _load_workflow()
+    run = _step_run(workflow, "Configure temp paths")
+
+    assert 'echo "UV_TOOL_DIR=$RUNNER_TEMP/uv-tools"' in run
+    assert 'echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/uv-bin"' in run
+    assert 'echo "UNTAPED_CONFIG=$RUNNER_TEMP/untaped-config.yml"' in run
+    assert 'echo "$RUNNER_TEMP/uv-bin" >> "$GITHUB_PATH"' in run
+
+
+def test_release_smoke_workflow_installs_current_core_with_released_plugins() -> None:
+    text, _ = _load_workflow()
+
+    assert "uv tool install ." in text
+    assert "--no-sources" in text
+    assert "--force" in text
+    for spec in EXPECTED_PLUGIN_SPECS:
+        assert spec in text
+
+
+def test_release_smoke_workflow_pins_plugin_and_skill_discovery_contracts() -> None:
+    _, workflow = _load_workflow()
+    plugin_run = _step_run(workflow, "Verify plugin discovery")
+    skill_run = _step_run(workflow, "Verify skill discovery")
+
+    assert "untaped plugins list --format raw --columns name" in plugin_run
+    assert "untaped skills list --format raw --columns name" in skill_run
+    assert "\n".join(EXPECTED_PLUGIN_NAMES) in plugin_run
+    assert "\n".join(EXPECTED_SKILL_NAMES) in skill_run
+
+
+def test_release_smoke_workflow_verifies_local_agent_skill_installation() -> None:
+    _, workflow = _load_workflow()
+    run = _step_run(workflow, "Verify local agent skill installation")
+
+    assert (
+        'untaped skills install --all --target all --scope local --project-dir "$project_dir"'
+        in run
+    )
+    for agent_dir in [".agents", ".claude"]:
+        assert f'"$project_dir/{agent_dir}/skills/$skill/SKILL.md"' in run
+        assert f'"$project_dir/{agent_dir}/skills/$skill/.untaped-skill.json"' in run
