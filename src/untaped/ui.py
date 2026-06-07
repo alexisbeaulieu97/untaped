@@ -17,6 +17,13 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.errors import ConfigError
+from untaped.prompts import (
+    PromptBackend,
+    PromptChoice,
+    PromptToolkitPromptBackend,
+    handle_prompt_exception,
+    prompt_style_from_roles,
+)
 
 OutputFormat = Literal["json", "yaml", "table", "raw"]
 BorderStyle = Literal["rounded", "square", "ascii", "none"]
@@ -195,13 +202,21 @@ class UiContext:
         *,
         theme: ThemeSpec | None = None,
         renderer: Renderer | None = None,
+        prompt_backend: PromptBackend | None = None,
+        stdin: TextIO | None = None,
         stdout: TextIO | None = None,
         stderr: TextIO | None = None,
     ) -> None:
         self.theme = theme or BUILTIN_THEMES["default"]
         self.renderer = renderer or RichTerminalRenderer()
+        self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
+        self.prompt_backend = prompt_backend or PromptToolkitPromptBackend(
+            stdin=self.stdin,
+            stderr=self.stderr,
+            style=prompt_style_from_roles(self.theme.color_roles),
+        )
 
     def collection(
         self,
@@ -242,9 +257,106 @@ class UiContext:
         )
         print(rendered, file=self.stderr)
 
+    def confirm(self, message: str, *, default: bool = False) -> bool:
+        """Prompt for a yes/no response."""
+        self._ensure_promptable()
+        try:
+            return self.prompt_backend.confirm(message, default=default)
+        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+            raise handle_prompt_exception(exc) from exc
+
+    def text(
+        self,
+        message: str,
+        *,
+        default: str | None = None,
+        required: bool = True,
+    ) -> str:
+        """Prompt for visible text."""
+        self._ensure_promptable()
+        try:
+            value = self.prompt_backend.text(message, default=default)
+        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+            raise handle_prompt_exception(exc) from exc
+        return self._validate_prompt_text(value, required=required)
+
+    def secret(
+        self,
+        message: str,
+        *,
+        confirmation: bool = False,
+        required: bool = True,
+    ) -> str:
+        """Prompt for hidden text."""
+        self._ensure_promptable()
+        try:
+            value = self.prompt_backend.secret(message, confirmation=confirmation)
+        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+            raise handle_prompt_exception(exc) from exc
+        return self._validate_prompt_text(value, required=required)
+
+    def select[T](
+        self,
+        message: str,
+        choices: Sequence[PromptChoice[T]],
+        *,
+        default: T | None = None,
+        search: bool = False,
+    ) -> T:
+        """Prompt for one typed choice."""
+        self._ensure_promptable()
+        self._validate_choices(choices)
+        try:
+            return self.prompt_backend.select(message, choices, default=default, search=search)
+        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+            raise handle_prompt_exception(exc) from exc
+
+    def multiselect[T](
+        self,
+        message: str,
+        choices: Sequence[PromptChoice[T]],
+        *,
+        defaults: Sequence[T] | None = None,
+        min_count: int = 0,
+    ) -> list[T]:
+        """Prompt for multiple typed choices."""
+        self._ensure_promptable()
+        self._validate_choices(choices)
+        selected_defaults = list(defaults or ())
+        try:
+            values = self.prompt_backend.multiselect(
+                message,
+                choices,
+                defaults=selected_defaults,
+            )
+        except (ConfigError, EOFError, KeyboardInterrupt) as exc:
+            raise handle_prompt_exception(exc) from exc
+        if len(values) < min_count:
+            raise ConfigError(f"select at least {min_count} value(s)")
+        return values
+
+    def _ensure_promptable(self) -> None:
+        if not _stream_is_tty(self.stdin):
+            raise ConfigError("interactive prompt requires a TTY on stdin")
+
+    @staticmethod
+    def _validate_prompt_text(value: str, *, required: bool) -> str:
+        if required and not value.strip():
+            raise ConfigError("no value received from prompt")
+        return value
+
+    @staticmethod
+    def _validate_choices[T](choices: Sequence[PromptChoice[T]]) -> None:
+        if not choices:
+            raise ConfigError("prompt requires at least one choice")
+        labels = [choice.label for choice in choices]
+        if len(set(labels)) != len(labels):
+            raise ConfigError("prompt choices must have unique labels")
+
 
 def ui_context(
     *,
+    stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     strict: bool = True,
@@ -260,7 +372,7 @@ def ui_context(
         if strict:
             raise
         theme = BUILTIN_THEMES["default"]
-    return UiContext(theme=theme, stdout=stdout, stderr=stderr)
+    return UiContext(theme=theme, stdin=stdin, stdout=stdout, stderr=stderr)
 
 
 def resolve_theme(
