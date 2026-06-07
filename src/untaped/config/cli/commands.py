@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from typing import cast
 
 import typer
 
@@ -151,19 +150,7 @@ def _read_stdin_value() -> str:
 
 
 def _prompt_value() -> str:
-    value = cast(
-        str,
-        typer.prompt(
-            "Value",
-            hide_input=True,
-            confirmation_prompt=False,
-            default="",
-            show_default=False,
-        ),
-    )
-    if not value.strip():
-        raise ConfigError("no value received from prompt")
-    return value
+    return ui_context(strict=False).secret("Value")
 
 
 @app.command("unset", no_args_is_help=True)
