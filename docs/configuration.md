@@ -206,7 +206,7 @@ untaped config get <key> --show-secrets      # reveal a secret value
 untaped config get <key> --format json|yaml|table|raw
 untaped config set <key> <value>             # write to the active profile
 untaped config set <key> --stdin             # read one value from stdin
-untaped config set <key> --prompt            # prompt without echoing input
+untaped config set <key> --prompt            # prompt securely on stderr
 untaped config set <key> <value> --target-profile <name>
 untaped config unset <key>                   # remove from the active profile
 untaped config unset <key> --target-profile <name>
@@ -235,6 +235,10 @@ value does not land in shell history or process listings:
 printf '%s\n' "$AWX_TOKEN" | untaped config set awx.token --stdin
 untaped config set github.token --prompt
 ```
+
+Interactive prompts require a TTY on stdin and render prompt UI on stderr, so
+stdout stays data-only for commands that participate in shell pipelines. In
+non-interactive runs, use `VALUE` or `--stdin` instead of `--prompt`.
 
 Writing to a profile that doesn't exist is rejected — create it first
 with `untaped profile create <name>` if the profile plugin is installed,

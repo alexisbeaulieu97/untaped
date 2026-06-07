@@ -185,6 +185,11 @@ Available registry hooks:
 - `add_diagnostic(name, check)` contributes `untaped plugins doctor`
   checks.
 
+There is intentionally no prompt-backend registry hook yet. Core owns prompt
+primitives and backs them with `prompt_toolkit`; plugins should call the core
+prompt helpers instead of importing `typer.prompt`, `typer.confirm`, or
+`prompt_toolkit` directly.
+
 Duplicate plugin ids, CLI command names, profile sections, state sections,
 diagnostics, theme names, or skill names fail with `ConfigError`. Built-in
 theme and skill names are reserved and cannot be shadowed by plugins.
@@ -226,6 +231,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
 | Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
+| Prompt for typed interactive input         | `from untaped import ui_context, PromptChoice`; use `ui_context(strict=False).confirm/text/secret/select/multiselect(...)` |
 | Register an agent skill from a plugin | `from untaped.plugins import SkillSpec`; call `registry.add_skill(...)` |
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Typer command | `from untaped import FormatOption, ColumnsOption`      |
@@ -236,6 +242,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
 | Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
 | Print a semantic status/warning/info message to stderr | `ui_context(strict=False).message(kind, msg)` |
+| Prompt users interactively                 | `ui_context(strict=False).confirm/text/secret/select/multiselect(...)`; prompts require TTY stdin and render on stderr |
 | Print raw logs, command passthrough, or low-level fallback errors | `typer.echo(msg, err=True)` |
 | Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` |
 | Raise a typed error                        | subclass `untaped.UntapedError`                             |
