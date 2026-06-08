@@ -31,27 +31,26 @@ jobs:
 
       - name: Configure temp paths
         run: |
-          mkdir -p "$RUNNER_TEMP/uv-tools" "$RUNNER_TEMP/uv-bin"
+          mkdir -p "$RUNNER_TEMP/home/.local/bin" "$RUNNER_TEMP/data"
           {
-            echo "UV_TOOL_DIR=$RUNNER_TEMP/uv-tools"
-            echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/uv-bin"
+            echo "HOME=$RUNNER_TEMP/home"
+            echo "XDG_DATA_HOME=$RUNNER_TEMP/data"
             echo "UNTAPED_CONFIG=$RUNNER_TEMP/untaped-config.yml"
           } >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/uv-bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/home/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install current core with released plugins
         run: |
-          uv tool install . \
-            --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
-            --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
-            --with "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
-            --with "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
-            --with "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
-            --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1" \
-            --with "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0" \
-            --no-sources \
-            --force
-          test -x "$UV_TOOL_BIN_DIR/untaped"
+          scripts/install.sh --editable .
+          untaped plugins add \
+            "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
+            "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
+            "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
+            "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
+            "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
+            "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1" \
+            "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0"
+          test -x "$HOME/.local/bin/untaped"
 
       - name: Verify plugin discovery
         run: |
@@ -66,7 +65,7 @@ jobs:
           themes
           workspace
           EOF
-          untaped plugins list --format raw --columns name > "$actual"
+          untaped plugins list --format raw --columns plugin_id > "$actual"
           diff -u "$expected" "$actual"
 
       - name: Verify skill discovery

@@ -80,6 +80,10 @@ def normalize_package_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def is_package_name(name: str) -> bool:
+    return re.fullmatch(_PACKAGE_NAME, name) is not None
+
+
 def looks_like_direct_reference(spec: str) -> bool:
     return "://" in spec or spec.startswith(_DIRECT_REFERENCE_PREFIXES)
 
@@ -100,7 +104,7 @@ def infer_direct_reference_name(spec: str) -> str | None:
         lowered = basename.lower()
     if lowered.endswith(".git"):
         basename = basename[:-4]
-    if not basename or re.fullmatch(_PACKAGE_NAME, basename) is None:
+    if not basename or not is_package_name(basename):
         return None
     return normalize_package_name(basename)
 

@@ -208,7 +208,16 @@ Implicit raw output emits only removable recorded packages; loaded-only rows
 remain visible in table/json/yaml output or when explicitly selecting columns.
 `untaped plugins add` and `untaped plugins remove` accept package specs from
 multiple positionals or `--stdin`; when syncing, each command mutates the full
-batch first and rebuilds the uv tool environment once.
+batch first and exact-syncs the managed untaped virtual environment once.
+Core and plugins are installed into
+`${XDG_DATA_HOME:-~/.local/share}/untaped/venv`, with `~/.local/bin/untaped`
+as the user-facing shim. Synced plugin commands require the core install spec
+recorded by the managed installer; do not fall back to an implicit core spec.
+Keep long-running `uv` resolution/install work outside the config file lock and
+serialize managed venv writes with the plugin environment lock. Do not
+reintroduce `uv tool install --with` as the plugin lifecycle; plugin
+dependencies belong in normal package metadata and `uv pip sync` owns
+resolution.
 
 Profile selection has two distinct CLI meanings. Read-time overrides use
 `ProfileOverrideOption` plus `profile_override(...)` and expose `--profile`
@@ -370,7 +379,7 @@ uv run pytest                                   # tests with coverage (gate: 80%
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
 uv run untaped --help                           # run the CLI from source
-uv tool install --editable .                    # install the `untaped` binary globally
+scripts/install.sh --editable .                 # install the managed `untaped` shim
 ```
 
 User-facing config, profile resolution, and the optional profile plugin

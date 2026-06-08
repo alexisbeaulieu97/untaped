@@ -39,10 +39,11 @@ uv sync
 uv run untaped --help
 ```
 
-Or install an editable `untaped` binary on your `PATH`:
+Or install an editable `untaped` binary into the managed environment on your
+`PATH`:
 
 ```bash
-uv tool install --editable .
+scripts/install.sh --editable .
 ```
 
 `uv` resolves the core package in place, so local edits are picked up

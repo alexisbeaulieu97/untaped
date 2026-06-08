@@ -7,8 +7,8 @@ surface without mixing that state into plugin installation.
 
 Plugin sync and skill install are intentionally separate:
 
-- `untaped plugins add/remove/sync` manages Python packages in the `uv` tool
-  environment.
+- `untaped plugins add/remove/sync` manages Python packages in the managed
+  untaped virtual environment.
 - `untaped skills list/install` manages files in agent skill directories.
 
 ## List Available Skills

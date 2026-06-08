@@ -35,7 +35,7 @@ def validate_unique_plugin_specs(state: PluginsState) -> None:
     """Reject duplicate recorded plugin package identities."""
     seen: set[str] = set()
     for package in state.packages:
-        key = plugin_spec_key(package.spec, reject_bare_direct=False)
+        key = plugin_package_key(package)
         if key in seen:
             raise ConfigError(f"duplicate plugin package spec: {key}")
         seen.add(key)
@@ -43,25 +43,31 @@ def validate_unique_plugin_specs(state: PluginsState) -> None:
 
 def upsert_plugin_spec(state: PluginsState, spec: PluginInstallSpec) -> PluginsState:
     """Return state with ``spec`` inserted or replacing the matching package."""
-    key = plugin_spec_key(spec.spec, reject_bare_direct=True)
-    kept = [p for p in state.packages if plugin_spec_key(p.spec, reject_bare_direct=False) != key]
+    key = plugin_package_key(spec, reject_bare_direct=True)
+    kept = [p for p in state.packages if plugin_package_key(p) != key]
     return state.model_copy(update={"packages": [*kept, spec]})
 
 
 def remove_plugin_spec(state: PluginsState, package_spec: str) -> tuple[PluginsState, bool]:
     """Return state with ``package_spec`` removed plus whether anything changed."""
     key = plugin_spec_key(package_spec, reject_bare_direct=False)
-    kept = [
-        p
-        for p in state.packages
-        if p.spec != package_spec and plugin_spec_key(p.spec, reject_bare_direct=False) != key
-    ]
+    kept = [p for p in state.packages if p.spec != package_spec and plugin_package_key(p) != key]
     return state.model_copy(update={"packages": kept}), len(kept) != len(state.packages)
 
 
 def set_tool_spec(state: PluginsState, tool: PluginToolSpec) -> PluginsState:
-    """Return state with an updated uv tool spec."""
+    """Return state with an updated core install spec."""
     return state.model_copy(update={"tool": tool})
+
+
+def dump_plugin_state(state: PluginsState) -> dict[str, object]:
+    """Serialize plugin state without writing an unrecorded core spec."""
+    data: dict[str, object] = {}
+    if state.packages:
+        data["packages"] = [package.model_dump(exclude_none=True) for package in state.packages]
+    if state.tool.spec is not None:
+        data["tool"] = state.tool.model_dump()
+    return data
 
 
 def canonical_plugin_state(state: PluginsState) -> PluginsState:
@@ -86,7 +92,7 @@ def plugin_rows(state: PluginsState, loaded_ids: set[str]) -> list[Row]:
     rows: dict[str, Row] = {}
 
     for package in state.packages:
-        package_name = plugin_spec_key(package.spec, reject_bare_direct=False)
+        package_name = plugin_package_key(package)
         plugin_id = matched_loaded_plugin_id(package_name, loaded_ids)
         if plugin_id is not None:
             matched_loaded_ids.add(plugin_id)
@@ -120,3 +126,14 @@ def matched_loaded_plugin_id(package_name: str, loaded_ids: set[str]) -> str | N
     if package_name.startswith("untaped-"):
         return normalized_loaded_ids.get(package_name.removeprefix("untaped-"))
     return None
+
+
+def plugin_package_key(
+    package: PluginInstallSpec,
+    *,
+    reject_bare_direct: bool = False,
+) -> str:
+    """Return the stable package identity for a recorded install spec."""
+    if package.name:
+        return normalize_package_name(package.name)
+    return plugin_spec_key(package.spec, reject_bare_direct=reject_bare_direct)
