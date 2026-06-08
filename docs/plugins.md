@@ -12,7 +12,7 @@ tags and releases for now, not PyPI.
 
 ```bash
 uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.2" \
-  --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+  --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
   --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
   --no-sources \
   --force
@@ -27,7 +27,7 @@ Use `untaped plugins add` when you want `untaped` to remember the desired
 plugin set in `~/.untaped/config.yml`:
 
 ```bash
-untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
   --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.2"
 ```
 
@@ -36,7 +36,7 @@ records them and syncs once:
 
 ```bash
 untaped plugins add \
-  "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
+  "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
   "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
   "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
   "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
