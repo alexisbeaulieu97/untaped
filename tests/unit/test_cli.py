@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 import yaml
@@ -8,15 +9,18 @@ from typer.testing import CliRunner
 
 from untaped.config import app
 from untaped.errors import ConfigError
+from untaped.plugin_registry import PluginRegistry, current_registry, set_current_registry
 from untaped.settings import (
     get_settings,
     register_profile_settings,
     reset_config_registry_for_tests,
 )
+from untaped.ui import ThemeSpec
 
 
 class DemoPluginSettings(BaseModel):
     base_url: str | None = None
+    mode: Literal["on", "off"] | None = None
     token: SecretStr | None = None
 
 
@@ -259,6 +263,12 @@ def test_set_with_prompt_reads_hidden_value_from_ui_context(
             seen["confirmation"] = confirmation
             return "prompt-token"
 
+        def text(self, *_: object, **__: object) -> str:
+            raise AssertionError("secret settings must not use visible text prompts")
+
+        def select(self, *_: object, **__: object) -> str:
+            raise AssertionError("secret settings must not use selection prompts")
+
         def message(self, kind: str, text: str) -> None:
             seen["status_kind"] = kind
             seen["status_text"] = text
@@ -272,11 +282,342 @@ def test_set_with_prompt_reads_hidden_value_from_ui_context(
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
-    assert seen["message"] == "Value"
+    assert seen["message"] == "Value for demo.token"
     assert seen["confirmation"] is False
     assert seen["status_kind"] == "success"
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["default"]["demo"]["token"] == "prompt-token"
+
+
+def test_set_with_prompt_uses_text_for_plain_string(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    class _PromptUi:
+        def text(
+            self,
+            message: str,
+            *,
+            default: str | None = None,
+            required: bool = True,
+        ) -> str:
+            seen["message"] = message
+            seen["default"] = default
+            seen["required"] = required
+            return "https://example.test"
+
+        def secret(self, *_: object, **__: object) -> str:
+            raise AssertionError("plain string settings must not use secret prompts")
+
+        def select(self, *_: object, **__: object) -> str:
+            raise AssertionError("plain string settings must not use selection prompts")
+
+        def message(self, kind: str, text: str) -> None:
+            seen["status_kind"] = kind
+            seen["status_text"] = text
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    result = CliRunner().invoke(app, ["set", "demo.base_url", "--prompt"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert seen == {
+        "message": "Value for demo.base_url",
+        "default": None,
+        "required": True,
+        "status_kind": "success",
+        "status_text": f"set demo.base_url in profile default (config: {_isolate_settings})",
+    }
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["demo"]["base_url"] == "https://example.test"
+
+
+def test_set_with_prompt_uses_select_for_bool(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    class _PromptUi:
+        def select(
+            self,
+            message: str,
+            choices: list[Any],
+            *,
+            default: str | None = None,
+            search: bool = False,
+        ) -> str:
+            seen["message"] = message
+            seen["choices"] = [(choice.value, choice.label) for choice in choices]
+            seen["default"] = default
+            seen["search"] = search
+            return "false"
+
+        def secret(self, *_: object, **__: object) -> str:
+            raise AssertionError("bool settings must not use secret prompts")
+
+        def text(self, *_: object, **__: object) -> str:
+            raise AssertionError("bool settings must not use text prompts")
+
+        def message(self, kind: str, text: str) -> None:
+            seen["status_kind"] = kind
+            seen["status_text"] = text
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    result = CliRunner().invoke(app, ["set", "http.verify_ssl", "--prompt"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["message"] == "Value for http.verify_ssl"
+    assert seen["choices"] == [("true", "true"), ("false", "false")]
+    assert seen["default"] == "true"
+    assert seen["search"] is False
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["http"]["verify_ssl"] is False
+
+
+def test_set_with_prompt_prefills_from_target_profile(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_settings.write_text(
+        "active: default\n"
+        "profiles:\n"
+        "  default:\n"
+        "    http:\n"
+        "      verify_ssl: false\n"
+        "  prod:\n"
+        "    http:\n"
+        "      verify_ssl: true\n"
+    )
+    seen: dict[str, object] = {}
+
+    class _PromptUi:
+        def select(
+            self,
+            message: str,
+            choices: list[Any],
+            *,
+            default: str | None = None,
+            search: bool = False,
+        ) -> str:
+            seen["message"] = message
+            seen["choices"] = [(choice.value, choice.label) for choice in choices]
+            seen["default"] = default
+            seen["search"] = search
+            assert default is not None
+            return default
+
+        def secret(self, *_: object, **__: object) -> str:
+            raise AssertionError("bool settings must not use secret prompts")
+
+        def text(self, *_: object, **__: object) -> str:
+            raise AssertionError("bool settings must not use text prompts")
+
+        def message(self, kind: str, text: str) -> None:
+            seen["status_kind"] = kind
+            seen["status_text"] = text
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    result = CliRunner().invoke(
+        app, ["set", "http.verify_ssl", "--prompt", "--target-profile", "prod"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen["default"] == "true"
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["http"]["verify_ssl"] is False
+    assert data["profiles"]["prod"]["http"]["verify_ssl"] is True
+
+
+def test_set_with_prompt_preserves_string_literal_choices(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    class _PromptUi:
+        def select(
+            self,
+            message: str,
+            choices: list[Any],
+            *,
+            default: str | None = None,
+            search: bool = False,
+        ) -> str:
+            seen["message"] = message
+            seen["choices"] = [(choice.value, choice.label) for choice in choices]
+            seen["default"] = default
+            seen["search"] = search
+            return "on"
+
+        def secret(self, *_: object, **__: object) -> str:
+            raise AssertionError("literal settings must not use secret prompts")
+
+        def text(self, *_: object, **__: object) -> str:
+            raise AssertionError("literal settings must not use text prompts")
+
+        def message(self, kind: str, text: str) -> None:
+            seen["status_kind"] = kind
+            seen["status_text"] = text
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    result = CliRunner().invoke(app, ["set", "demo.mode", "--prompt"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["message"] == "Value for demo.mode"
+    assert seen["choices"] == [("on", "on"), ("off", "off")]
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["default"]["demo"]["mode"] == "on"
+
+
+def test_set_with_prompt_uses_select_for_literal_ui_setting(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    class _PromptUi:
+        def select(
+            self,
+            message: str,
+            choices: list[Any],
+            *,
+            default: str | None = None,
+            search: bool = False,
+        ) -> str:
+            seen["message"] = message
+            seen["choices"] = [(choice.value, choice.label) for choice in choices]
+            seen["default"] = default
+            seen["search"] = search
+            return "list"
+
+        def secret(self, *_: object, **__: object) -> str:
+            raise AssertionError("literal settings must not use secret prompts")
+
+        def text(self, *_: object, **__: object) -> str:
+            raise AssertionError("literal settings must not use text prompts")
+
+        def message(self, kind: str, text: str) -> None:
+            seen["status_kind"] = kind
+            seen["status_text"] = text
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    result = CliRunner().invoke(app, ["set", "ui.collection_view", "--prompt"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["message"] == "Value for ui.collection_view"
+    assert seen["choices"] == [("table", "table"), ("list", "list")]
+    assert seen["default"] is None
+    assert seen["search"] is False
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"collection_view": "list"}}
+
+
+def test_set_ui_theme_prompt_uses_registered_theme_choices(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+    original_registry = current_registry()
+    registry = PluginRegistry()
+    registry.add_theme("classic", ThemeSpec(border="rounded"))
+    set_current_registry(registry)
+
+    class _PromptUi:
+        def select(
+            self,
+            message: str,
+            choices: list[Any],
+            *,
+            default: str | None = None,
+            search: bool = False,
+        ) -> str:
+            seen["message"] = message
+            seen["choices"] = [(choice.value, choice.label) for choice in choices]
+            seen["default"] = default
+            seen["search"] = search
+            return "classic"
+
+        def secret(self, *_: object, **__: object) -> str:
+            raise AssertionError("ui.theme must not use secret prompts")
+
+        def text(self, *_: object, **__: object) -> str:
+            raise AssertionError("ui.theme must not use text prompts")
+
+        def message(self, kind: str, text: str) -> None:
+            seen["status_kind"] = kind
+            seen["status_text"] = text
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    try:
+        result = CliRunner().invoke(app, ["set", "ui.theme", "--prompt"])
+    finally:
+        set_current_registry(original_registry)
+
+    assert result.exit_code == 0, result.output
+    assert seen["message"] == "Value for ui.theme"
+    assert seen["choices"] == [
+        ("classic", "classic"),
+        ("compact", "compact"),
+        ("default", "default"),
+        ("plain", "plain"),
+    ]
+    assert seen["default"] == "default"
+    assert seen["search"] is True
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"theme": "classic"}}
+
+
+def test_set_with_prompt_rejects_unknown_key_before_prompt(
+    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prompted = False
+
+    class _PromptUi:
+        def secret(self, *_: object, **__: object) -> str:
+            nonlocal prompted
+            prompted = True
+            return "value"
+
+        def text(self, *_: object, **__: object) -> str:
+            nonlocal prompted
+            prompted = True
+            return "value"
+
+        def select(self, *_: object, **__: object) -> str:
+            nonlocal prompted
+            prompted = True
+            return "value"
+
+    def _ui_context(*_: object, **__: object) -> _PromptUi:
+        return _PromptUi()
+
+    monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
+
+    result = CliRunner().invoke(app, ["set", "demo.missing", "--prompt"])
+
+    assert result.exit_code != 0
+    assert "unknown setting" in result.output
+    assert prompted is False
+    assert not _isolate_settings.exists()
 
 
 def test_set_rejects_empty_prompt_before_writing(

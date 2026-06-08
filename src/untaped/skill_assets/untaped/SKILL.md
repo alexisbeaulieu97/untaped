@@ -20,7 +20,7 @@ Use this skill when working in an `untaped` repo or when the user asks an agent 
 - User config lives in `~/.untaped/config.yml` unless `UNTAPED_CONFIG` is set.
 - Profile-scoped settings live under `profiles.<name>`. Top-level plugin state such as `plugins`, `ui`, or workspace registries is loaded from the same file.
 - Use `untaped config list` to inspect effective settings. Secret fields are redacted unless the owning command exposes an explicit reveal option.
-- Prefer `untaped config set KEY --prompt` or `--stdin` for secret values so they do not appear in shell history.
+- Prefer `untaped config set KEY --prompt` or `--stdin` for secret values so they do not appear in shell history; `--prompt` uses the setting schema to choose hidden input, visible text, or a select menu.
 
 ## Output And Automation
 
