@@ -17,7 +17,6 @@ from untaped.plugin_state import (
     set_tool_spec,
 )
 from untaped.plugin_sync import (
-    explicit_package_names,
     managed_env_lock,
     render_requirements,
     uv_pip_compile_command,
@@ -75,7 +74,6 @@ def bootstrap_core_install(
                 python,
                 requirements,
                 resolved,
-                no_sources_packages=explicit_package_names(state),
             ),
             "core dependency resolution failed",
         )

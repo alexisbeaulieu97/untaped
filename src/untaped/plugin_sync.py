@@ -6,7 +6,7 @@ import os
 import shlex
 import subprocess
 import tempfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -14,8 +14,7 @@ from filelock import FileLock, Timeout
 
 from untaped.errors import ConfigError
 from untaped.install_paths import default_managed_venv_path
-from untaped.plugin_specs import is_package_name, plugin_spec_key
-from untaped.plugin_state import plugin_package_key
+from untaped.plugin_specs import plugin_spec_key
 from untaped.settings import PluginInstallSpec, PluginsState, PluginToolSpec
 
 _DEFAULT_ENV_LOCK_TIMEOUT = 300.0
@@ -44,7 +43,6 @@ def sync_state_unlocked(state: PluginsState) -> None:
                 python,
                 input_path,
                 output_path,
-                no_sources_packages=explicit_package_names(state),
             ),
             "plugin dependency resolution failed",
         )
@@ -96,11 +94,9 @@ def uv_pip_compile_command(
     python: Path,
     source: Path,
     output: Path,
-    *,
-    no_sources_packages: Iterable[str] = ("untaped",),
 ) -> list[str]:
     """Build the command that resolves top-level specs into exact requirements."""
-    command = [
+    return [
         "uv",
         "pip",
         "compile",
@@ -109,32 +105,9 @@ def uv_pip_compile_command(
         str(output),
         "--python",
         str(python),
+        "--no-sources",
+        "--quiet",
     ]
-    for package in unique_packages(no_sources_packages):
-        command.extend(["--no-sources-package", package])
-    command.append("--quiet")
-    return command
-
-
-def explicit_package_names(state: PluginsState) -> list[str]:
-    """Return package names whose explicit top-level specs must win over uv sources."""
-    names = ["untaped"]
-    names.extend(
-        name
-        for package in state.packages
-        if is_package_name(name := plugin_package_key(package, reject_bare_direct=True))
-    )
-    return unique_packages(names)
-
-
-def unique_packages(packages: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    unique: list[str] = []
-    for package in packages:
-        if package not in seen:
-            unique.append(package)
-            seen.add(package)
-    return unique
 
 
 def venv_python(venv: Path) -> Path:
