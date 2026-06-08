@@ -203,17 +203,45 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
     assert not target.exists()
 
 
-def test_forget_prune_aborts_on_no_at_prompt(tmp_path: Path) -> None:
+def test_forget_prune_aborts_on_no_at_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runner = CliRunner()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
+    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: True)
 
-    forget = runner.invoke(app, ["forget", "scratch", "--prune"], input="n\n")
+    class _PromptUi:
+        def confirm(self, message: str, *, default: bool = False) -> bool:
+            assert "prune workspace directory" in message
+            assert default is False
+            return False
+
+    monkeypatch.setattr("untaped_workspace.cli.common.ui_context", lambda **_: _PromptUi())
+
+    forget = runner.invoke(app, ["forget", "scratch", "--prune"])
     assert forget.exit_code == 1
     assert "aborted" in forget.output
     assert target.is_dir()  # files preserved
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert "scratch" in listed.stdout.splitlines()  # registry untouched
+
+
+def test_forget_prune_requires_yes_when_non_interactive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "scratch", "--path", str(target)])
+    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: False)
+
+    forget = runner.invoke(app, ["forget", "scratch", "--prune"])
+
+    assert forget.exit_code == 1
+    assert "--yes" in forget.output
+    assert target.is_dir()
+    listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert "scratch" in listed.stdout.splitlines()
 
 
 def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -44,15 +44,18 @@ errors.
     `ui:` settings and plugin themes apply. Structured `json`, `yaml`, and
     `raw` output goes through a plain `UiContext()` so missing or bad themes
     do not break pipe-friendly output.
-12. **Plugin code reads typed settings through `get_config_section`.** Use
+12. **Interactive prompts use core prompt primitives.** Destructive
+    confirmations go through `ui_context(strict=False).confirm(...)`, render
+    on stderr, require TTY stdin, and keep `--yes` for automation.
+13. **Plugin code reads typed settings through `get_config_section`.** Use
     `get_config_section("workspace", WorkspaceSettings)`, not a global
     aggregate `settings.workspace` attribute.
     Commands that read registry or profile settings expose the core
     command-local `ProfileOverrideOption` as `--profile` and wrap the command
     body in `profile_override(profile)`.
-13. **All git subprocess calls live behind infrastructure ports.** New git
+14. **All git subprocess calls live behind infrastructure ports.** New git
     operations go in `GitRunner`; application code depends on Protocols.
-14. **Finish with verification.** Run `uv run ruff check --fix`,
+15. **Finish with verification.** Run `uv run ruff check --fix`,
     `uv run ruff format`, `uv run mypy`, and `uv run pytest`.
 
 ## Architecture

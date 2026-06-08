@@ -84,6 +84,59 @@ def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: P
     assert not (target / "upstream").exists()
 
 
+def test_remove_prune_aborts_on_no_at_prompt(
+    tmp_path: Path,
+    upstream: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    assert (target / "upstream").is_dir()
+    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: True)
+
+    class _PromptUi:
+        def confirm(self, message: str, *, default: bool = False) -> bool:
+            assert "prune local clone" in message
+            assert default is False
+            return False
+
+    monkeypatch.setattr("untaped_workspace.cli.common.ui_context", lambda **_: _PromptUi())
+
+    rm = runner.invoke(
+        app,
+        ["remove", "upstream", "--workspace", "smoke", "--prune"],
+    )
+
+    assert rm.exit_code == 1
+    assert "aborted" in rm.output
+    assert (target / "upstream").is_dir()
+
+
+def test_remove_prune_requires_yes_when_non_interactive(
+    tmp_path: Path,
+    upstream: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    assert (target / "upstream").is_dir()
+    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: False)
+
+    rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune"])
+
+    assert rm.exit_code == 1
+    assert "--yes" in rm.output
+    assert (target / "upstream").is_dir()
+
+
 def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
     """``workspace add url-a url-b`` records both repos in one shot."""
     runner = CliRunner()

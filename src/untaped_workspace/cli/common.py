@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from untaped import get_config_section
+from untaped import ConfigError, get_config_section, ui_context
 
 from untaped_workspace.application import WorkspaceResolver
 from untaped_workspace.domain import Workspace
@@ -62,7 +63,13 @@ def all_workspaces_from_registry() -> list[Workspace]:
 def confirm(prompt: str, *, yes: bool) -> bool:
     if yes:
         return True
-    return typer.confirm(prompt, default=False)
+    if not _stdin_is_interactive():
+        raise ConfigError("prune confirmation requires --yes when stdin is not interactive")
+    return ui_context(strict=False).confirm(prompt)
+
+
+def _stdin_is_interactive() -> bool:
+    return sys.stdin.isatty()
 
 
 def parallel_cap() -> int:
