@@ -36,21 +36,22 @@ class HttpSettings(BaseModel):
 
 
 class PluginInstallSpec(BaseModel):
-    """One uv-installable plugin package spec."""
+    """One uv-installable plugin package spec recorded for the managed venv."""
 
     spec: str
     editable: bool = False
+    name: str | None = None
 
 
 class PluginToolSpec(BaseModel):
-    """The uv tool package spec used when rebuilding the tool environment."""
+    """The core package spec used when rebuilding the managed venv."""
 
-    spec: str = "untaped"
+    spec: str | None = None
     editable: bool = False
 
 
 class PluginsState(BaseModel):
-    """Top-level app state for desired plugin installations."""
+    """Top-level app state for desired managed venv installations."""
 
     tool: PluginToolSpec = Field(default_factory=PluginToolSpec)
     packages: list[PluginInstallSpec] = Field(default_factory=list)

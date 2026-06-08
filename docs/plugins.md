@@ -1,25 +1,27 @@
 # Plugins
 
 `untaped` core owns plugin discovery, desired plugin state, and the `uv`
-tool-install command it uses to sync plugins into the installed CLI. Plugin
-repos own their command references and domain-specific docs.
+managed virtual environment it uses to install plugins into the same Python
+environment as the CLI. Plugin repos own their command references and
+domain-specific docs.
 
-## Install from git
+## Install untaped
 
-Install `untaped` with one or more plugins by passing tag-qualified `--with`
-specs to `uv tool install`. These packages are distributed through GitHub
-tags and releases for now, not PyPI.
+Install `untaped` into its managed environment first. From an `untaped`
+checkout containing `scripts/install.sh`, the install script creates
+`${XDG_DATA_HOME:-~/.local/share}/untaped/venv`, writes `~/.local/bin/untaped`,
+and records the core package spec so later plugin syncs keep core and plugins
+in one environment.
 
 ```bash
-uv tool install "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3" \
-  --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
-  --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
-  --no-sources \
-  --force
+scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3"
 ```
 
-Run a fresh `untaped` invocation after syncing so newly installed entry
-points are discovered.
+For local development, install core editable:
+
+```bash
+scripts/install.sh --editable /path/to/untaped
+```
 
 ## Managed plugin state
 
@@ -27,12 +29,14 @@ Use `untaped plugins add` when you want `untaped` to remember the desired
 plugin set in `~/.untaped/config.yml`:
 
 ```bash
-untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3"
+untaped plugins add "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1"
 ```
 
+Plugin sync requires the core package spec recorded by the managed installer;
+run `scripts/install.sh` before using synced plugin commands.
+
 For multiple plugins, pass every spec to one `add` command so `untaped`
-records them and syncs once:
+records them and exact-syncs the managed venv once:
 
 ```bash
 untaped plugins add \
@@ -42,19 +46,13 @@ untaped plugins add \
   "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
   "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1" \
   "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0" \
-  "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3"
+  "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1"
 ```
 
-`untaped-ansible` depends on `untaped-github>=0.2.0`, so install both
-together when using GitHub tags:
-
-```bash
-untaped plugins add \
-  "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
-  "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
-  --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3"
-```
+`uv` resolves package dependencies for the managed venv. Plugin authors should
+declare required plugin dependencies in normal package metadata; those
+dependencies may come from PyPI, another package index, Git, URL, or local path
+sources supported by `uv`.
 
 Direct git URLs are accepted when the plugin name can be inferred from the
 repository basename. `untaped` stores the canonical `name @ url` form and
@@ -65,15 +63,13 @@ Batch commands also accept newline-separated package specs from stdin:
 ```bash
 untaped plugins add --stdin --no-sync < plugins.txt
 untaped plugins list --format raw | untaped plugins remove --stdin --no-sync
-untaped plugins sync --tool-spec "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3"
+untaped plugins sync
 ```
 
-For editable core development, point sync at the local checkout:
+For editable plugin development, install the plugin checkout editable:
 
 ```bash
-untaped plugins add /path/to/untaped-profile \
-  --tool-spec /path/to/untaped \
-  --editable-tool
+untaped plugins add --editable /path/to/untaped-profile
 ```
 
 Use `untaped plugins list` to inspect loaded and recorded plugins, and
