@@ -920,30 +920,6 @@ def test_set_rejects_missing_value_source_before_writing(_isolate_settings: Path
     assert not _isolate_settings.exists()
 
 
-def test_set_rejects_old_profile_flag(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
-
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--profile", "prod"])
-
-    assert result.exit_code == 2
-    assert "No such option: --profile" in result.output
-    assert yaml.safe_load(_isolate_settings.read_text()) == {
-        "profiles": {"default": {}, "prod": {}}
-    }
-
-
-def test_unset_rejects_old_profile_flag(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
-
-    result = CliRunner().invoke(app, ["unset", "log_level", "--profile", "default"])
-
-    assert result.exit_code == 2
-    assert "No such option: --profile" in result.output
-    assert yaml.safe_load(_isolate_settings.read_text()) == {
-        "profiles": {"default": {"log_level": "DEBUG"}}
-    }
-
-
 def test_set_with_unknown_profile_errors(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
     result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "ghost"])

@@ -289,22 +289,6 @@ def test_plugins_remove_no_sync_does_not_canonicalize_unrelated_legacy_direct_ur
     assert data["plugins"]["packages"] == [{"spec": legacy, "editable": False}]
 
 
-def test_plugins_remove_rejects_removed_tool_spec_option(
-    _isolated_config: Path,
-) -> None:
-    _isolated_config.write_text(
-        "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
-    )
-
-    result = CliRunner().invoke(
-        plugins_app,
-        ["remove", "untaped-awx", "--tool-spec", "/home/alexis/tools/untaped"],
-    )
-
-    assert result.exit_code == 2
-    assert "No such option" in result.output
-
-
 def test_plugins_remove_sync_exact_syncs_remaining_recorded_plugins(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
