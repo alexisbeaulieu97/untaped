@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
+from typing import Literal, get_args, get_origin
 
 import typer
 
 from untaped import (
+    BUILTIN_THEMES,
     ColumnsOption,
     ConfigError,
+    FieldDescriptor,
     FormatOption,
     OutputFormat,
     ProfileOverrideOption,
+    PromptChoice,
     UiContext,
     profile_override,
     report_errors,
@@ -27,6 +32,7 @@ from untaped.config.application import (
 )
 from untaped.config.domain import SettingEntry
 from untaped.config.infrastructure import SettingsFileRepository
+from untaped.plugin_registry import current_registry
 
 app = typer.Typer(
     name="config",
@@ -102,15 +108,23 @@ def set_command(
     ),
     stdin: bool = typer.Option(False, "--stdin", help="Read the new value from stdin."),
     prompt: bool = typer.Option(
-        False, "--prompt", help="Prompt for the new value without echoing input."
+        False, "--prompt", help="Prompt for the new value using the setting type."
     ),
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
     with report_errors():
         if _is_global_ui_key(key) and target_profile is not None:
             raise ConfigError("ui settings are global; --target-profile cannot be used")
-        resolved_value = _resolve_set_value(value, stdin=stdin, prompt=prompt)
-        target = SetSetting(SettingsFileRepository())(key, resolved_value, profile=target_profile)
+        repo = SettingsFileRepository()
+        resolved_value = _resolve_set_value(
+            key,
+            value,
+            stdin=stdin,
+            prompt=prompt,
+            repo=repo,
+            target_profile=target_profile,
+        )
+        target = SetSetting(repo)(key, resolved_value, profile=target_profile)
         if _is_global_ui_key(key):
             message = f"set {key} globally (config: {resolve_config_path()})"
         else:
@@ -118,7 +132,15 @@ def set_command(
         ui_context(strict=False).message("success", message)
 
 
-def _resolve_set_value(value: str | None, *, stdin: bool, prompt: bool) -> str:
+def _resolve_set_value(
+    key: str,
+    value: str | None,
+    *,
+    stdin: bool,
+    prompt: bool,
+    repo: SettingsFileRepository,
+    target_profile: str | None,
+) -> str:
     choices = (
         ("VALUE", value is not None),
         ("--stdin", stdin),
@@ -132,7 +154,7 @@ def _resolve_set_value(value: str | None, *, stdin: bool, prompt: bool) -> str:
     if stdin:
         return _read_stdin_value()
     if prompt:
-        return _prompt_value()
+        return _prompt_value(key, repo, target_profile=target_profile)
     assert value is not None
     return value
 
@@ -149,8 +171,89 @@ def _read_stdin_value() -> str:
     return value
 
 
-def _prompt_value() -> str:
-    return ui_context(strict=False).secret("Value")
+def _prompt_value(
+    key: str,
+    repo: SettingsFileRepository,
+    *,
+    target_profile: str | None,
+) -> str:
+    descriptor = _descriptor_for_key(key, repo)
+    message = f"Value for {key}"
+    ui = ui_context(strict=False)
+    if descriptor.is_secret:
+        return ui.secret(message)
+    default = _prompt_default(key, descriptor, repo, target_profile=target_profile)
+    if key == "ui.theme":
+        selected_theme = ui.select(message, _theme_choices(), default=default, search=True)
+        return _raw_prompt_scalar(selected_theme)
+    literal_values = _literal_values(descriptor)
+    if literal_values:
+        selected_literal = ui.select(
+            message,
+            [PromptChoice(value=item, label=str(item)) for item in literal_values],
+            default=_default_choice(default, literal_values),
+        )
+        return _raw_prompt_scalar(selected_literal)
+    if descriptor.annotation is bool:
+        bool_values = ["true", "false"]
+        return ui.select(
+            message,
+            [PromptChoice(value=item, label=item) for item in bool_values],
+            default=default if default in bool_values else None,
+        )
+    return ui.text(message, default=default)
+
+
+def _descriptor_for_key(key: str, repo: SettingsFileRepository) -> FieldDescriptor:
+    if _is_global_ui_key(key):
+        return repo.ui_descriptor(key)
+    return repo.descriptor(key)
+
+
+def _prompt_default(
+    key: str,
+    descriptor: FieldDescriptor,
+    repo: SettingsFileRepository,
+    *,
+    target_profile: str | None,
+) -> str | None:
+    with profile_override(target_profile):
+        entry = GetSetting(repo)(key)
+    if entry.value in {"", "—", "***"}:
+        return None
+    value = str(entry.value)
+    if descriptor.annotation is bool:
+        return value.lower()
+    return value
+
+
+def _literal_values(descriptor: FieldDescriptor) -> list[object]:
+    if get_origin(descriptor.annotation) is Literal:
+        return list(get_args(descriptor.annotation))
+    return []
+
+
+def _theme_choices() -> list[PromptChoice[str]]:
+    names = sorted({*BUILTIN_THEMES, *current_registry().themes})
+    return [PromptChoice(value=name, label=name) for name in names]
+
+
+def _default_choice(default: str | None, choices: Sequence[object]) -> object | None:
+    if default is None:
+        return None
+    return next((choice for choice in choices if str(choice) == default), None)
+
+
+def _raw_prompt_scalar(value: object) -> str:
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if value is None:
+        return "null"
+    return str(value)
 
 
 @app.command("unset", no_args_is_help=True)

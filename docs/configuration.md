@@ -206,7 +206,7 @@ untaped config get <key> --show-secrets      # reveal a secret value
 untaped config get <key> --format json|yaml|table|raw
 untaped config set <key> <value>             # write to the active profile
 untaped config set <key> --stdin             # read one value from stdin
-untaped config set <key> --prompt            # prompt securely on stderr
+untaped config set <key> --prompt            # prompt on stderr using the setting type
 untaped config set <key> <value> --target-profile <name>
 untaped config unset <key>                   # remove from the active profile
 untaped config unset <key> --target-profile <name>
@@ -228,8 +228,11 @@ Keys are dotted paths into the active schema, e.g. `http.ca_bundle` and
 `workspace.cache_dir` when the optional workspace plugin is installed.
 Values are parsed as YAML scalars, so
 `untaped config set http.verify_ssl false` writes a real `false`, not
-the string `"false"`. For secrets, prefer `--stdin` or `--prompt` so the
-value does not land in shell history or process listings:
+the string `"false"`. `--prompt` chooses the prompt shape from the schema:
+secret fields use hidden input, booleans and constrained choices use a select
+menu, and ordinary scalar values use visible text input. For secrets, prefer
+`--stdin` or `--prompt` so the value does not land in shell history or process
+listings:
 
 ```bash
 printf '%s\n' "$AWX_TOKEN" | untaped config set awx.token --stdin
