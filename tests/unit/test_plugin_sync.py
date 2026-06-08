@@ -82,6 +82,46 @@ def test_uv_compile_ignores_editable_plugin_uv_sources_for_explicit_core(
     assert "example.invalid" not in resolved_text
 
 
+def test_uv_compile_does_not_resolve_dependencies_from_plugin_uv_sources(
+    tmp_path: Path,
+) -> None:
+    core = _write_local_project(tmp_path, name="untaped", version="0.1.0")
+    helper = _write_local_project(
+        tmp_path,
+        name="untaped-helper-fixture",
+        version="0.1.0",
+    )
+    plugin = _write_local_project(
+        tmp_path,
+        name="untaped-local-plugin",
+        version="0.1.0",
+        dependencies=[
+            "untaped>=0.1.0",
+            "untaped-helper-fixture>=0.1.0",
+        ],
+        uv_sources={
+            "untaped-helper-fixture": f'{{ path = "{helper.as_posix()}" }}',
+        },
+    )
+    requirements = tmp_path / "requirements.in"
+    resolved = tmp_path / "requirements.txt"
+    requirements.write_text(f"-e {core}\n-e {plugin}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            *uv_pip_compile_command(Path(sys.executable), requirements, resolved),
+            "--no-index",
+        ],
+        check=False,
+        capture_output=True,
+        env={**os.environ, "UV_CACHE_DIR": str(tmp_path / "uv-cache")},
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "untaped-helper-fixture" in f"{result.stdout}\n{result.stderr}"
+
+
 def _write_local_project(
     root: Path,
     *,

@@ -55,7 +55,8 @@ in `~/.untaped/config.yml`. Managed sync ignores package-local
 override the recorded core or plugin specs. Plugin authors should declare
 required plugin dependencies in normal package metadata; dependencies that are
 not available from an index should be expressed as direct package metadata or
-recorded explicitly as plugin specs.
+recorded explicitly as plugin specs. Dependencies that exist only in a plugin
+checkout's `[tool.uv.sources]` table are not installed by managed sync.
 
 Direct git URLs are accepted when the plugin name can be inferred from the
 repository basename. `untaped` stores the canonical `name @ url` form and
