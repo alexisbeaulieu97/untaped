@@ -14,7 +14,7 @@ and records the core package spec so later plugin syncs keep core and plugins
 in one environment.
 
 ```bash
-scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.3"
+scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.4"
 ```
 
 For local development, install core editable:
