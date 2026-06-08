@@ -153,7 +153,7 @@ The root form still works for every command:
 [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
 plugin. Install it with the generic workflows in
 [Plugins](./plugins.md); its release package spec is
-`untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0`.
+`untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1`.
 The plugin repo owns the profile command reference; this page only documents
 the profile commands that matter when explaining core configuration
 resolution.

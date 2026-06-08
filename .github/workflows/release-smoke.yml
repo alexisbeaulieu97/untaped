@@ -42,11 +42,11 @@ jobs:
         run: |
           uv tool install . \
             --with "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0" \
-            --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0" \
+            --with "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
             --with "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
             --with "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
             --with "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
-            --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0" \
+            --with "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1" \
             --with "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0" \
             --no-sources \
             --force

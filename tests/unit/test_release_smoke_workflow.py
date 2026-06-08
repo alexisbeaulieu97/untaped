@@ -36,11 +36,11 @@ EXPECTED_SKILL_NAMES = [
 
 EXPECTED_PLUGIN_SPECS = [
     "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.0",
-    "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.0",
+    "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1",
     "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0",
     "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0",
     "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0",
-    "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.0",
+    "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1",
     "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0",
 ]
 
