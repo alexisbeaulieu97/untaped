@@ -87,10 +87,10 @@ def test_release_smoke_workflow_exports_isolated_temp_paths() -> None:
     _, workflow = _load_workflow()
     run = _step_run(workflow, "Configure temp paths")
 
-    assert 'echo "UV_TOOL_DIR=$RUNNER_TEMP/uv-tools"' in run
-    assert 'echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/uv-bin"' in run
+    assert 'echo "HOME=$RUNNER_TEMP/home"' in run
+    assert 'echo "XDG_DATA_HOME=$RUNNER_TEMP/data"' in run
     assert 'echo "UNTAPED_CONFIG=$RUNNER_TEMP/untaped-config.yml"' in run
-    assert 'echo "$RUNNER_TEMP/uv-bin" >> "$GITHUB_PATH"' in run
+    assert 'echo "$RUNNER_TEMP/home/.local/bin" >> "$GITHUB_PATH"' in run
 
 
 def test_workflow_actions_are_pinned_to_commit_shas() -> None:
@@ -140,9 +140,9 @@ def test_setup_uv_steps_pin_uv_version() -> None:
 def test_release_smoke_workflow_installs_current_core_with_released_plugins() -> None:
     text, _ = _load_workflow()
 
-    assert "uv tool install ." in text
-    assert "--no-sources" in text
-    assert "--force" in text
+    assert "scripts/install.sh --editable ." in text
+    assert "uv tool install" not in text
+    assert "--no-sources" not in text
     for spec in EXPECTED_PLUGIN_SPECS:
         assert spec in text
 
@@ -152,7 +152,7 @@ def test_release_smoke_workflow_pins_plugin_and_skill_discovery_contracts() -> N
     plugin_run = _step_run(workflow, "Verify plugin discovery")
     skill_run = _step_run(workflow, "Verify skill discovery")
 
-    assert "untaped plugins list --format raw --columns name" in plugin_run
+    assert "untaped plugins list --format raw --columns plugin_id" in plugin_run
     assert "untaped skills list --format raw --columns name" in skill_run
     assert "\n".join(EXPECTED_PLUGIN_NAMES) in plugin_run
     assert "\n".join(EXPECTED_SKILL_NAMES) in skill_run
