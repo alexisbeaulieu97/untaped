@@ -13,6 +13,7 @@ CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-smoke.yml"
 WORKFLOWS = [CI_WORKFLOW, WORKFLOW]
 FULL_SHA_ACTION_RE = re.compile(r"@[0-9a-f]{40}$")
+EXPECTED_UV_VERSION = "0.11.19"
 
 EXPECTED_PLUGIN_NAMES = [
     "ansible",
@@ -117,6 +118,23 @@ def test_checkout_steps_do_not_persist_credentials() -> None:
                 offenders.append(str(path.relative_to(REPO_ROOT)))
 
     assert not offenders, "checkout steps must set persist-credentials: false"
+
+
+def test_setup_uv_steps_pin_uv_version() -> None:
+    offenders: list[str] = []
+    for path in WORKFLOWS:
+        _, workflow = _load_yaml(path)
+        for step in _steps(workflow):
+            uses = step.get("uses", "")
+            if (
+                uses.startswith("astral-sh/setup-uv@")
+                and step.get("with", {}).get("version") != EXPECTED_UV_VERSION
+            ):
+                offenders.append(str(path.relative_to(REPO_ROOT)))
+
+    assert not offenders, f"setup-uv steps must pin uv {EXPECTED_UV_VERSION}:\n" + "\n".join(
+        offenders
+    )
 
 
 def test_release_smoke_workflow_installs_current_core_with_released_plugins() -> None:
