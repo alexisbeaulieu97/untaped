@@ -219,9 +219,11 @@ reintroduce `uv tool install --with` as the plugin lifecycle; plugin
 dependencies belong in normal package metadata and `uv pip sync` owns
 resolution. Managed sync uses the recorded core/plugin specs as the runtime
 source of truth and invokes `uv pip compile --no-sources`, so plugin
-repo-local `[tool.uv.sources]` tables remain development metadata only. For
-editable multi-plugin development, record every local plugin checkout that
-should be installed into the managed environment.
+repo-local `[tool.uv.sources]` tables remain development metadata only.
+Dependencies that exist only in a plugin checkout's `[tool.uv.sources]` table
+are not installed by managed sync. For editable multi-plugin development,
+record every local plugin checkout that should be installed into the managed
+environment.
 
 Profile selection has two distinct CLI meanings. Read-time overrides use
 `ProfileOverrideOption` plus `profile_override(...)` and expose `--profile`
