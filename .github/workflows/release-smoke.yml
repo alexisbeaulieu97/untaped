@@ -26,6 +26,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
+          version: "0.11.19"
           enable-cache: true
 
       - name: Configure temp paths
