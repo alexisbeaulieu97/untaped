@@ -1,6 +1,6 @@
 [project]
 name = "untaped"
-version = "0.1.2"
+version = "0.1.3"
 description = "A personal DevOps CLI suite."
 readme = "README.md"
 authors = [
