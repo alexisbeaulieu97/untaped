@@ -46,18 +46,13 @@ def _write_plugin_project(path: Path, name: str) -> None:
 def _assert_managed_sync(
     calls: list[list[str]],
     venv: Path,
-    *,
-    no_sources_packages: list[str],
 ) -> None:
     python = str(venv / "bin" / "python")
-    no_sources_args = [
-        arg for package in no_sources_packages for arg in ("--no-sources-package", package)
-    ]
     assert len(calls) == 3
     assert calls[0] == ["uv", "venv", str(venv)]
     assert calls[1][:3] == ["uv", "pip", "compile"]
     assert calls[1][4:6] == ["--output-file", calls[1][5]]
-    assert calls[1][6:] == ["--python", python, *no_sources_args, "--quiet"]
+    assert calls[1][6:] == ["--python", python, "--no-sources", "--quiet"]
     assert calls[2] == ["uv", "pip", "sync", "--python", python, "--strict", calls[1][5]]
 
 
@@ -165,7 +160,7 @@ def test_plugins_add_sync_exact_syncs_managed_venv(
     result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
 
     assert result.exit_code == 0, result.output
-    _assert_managed_sync(calls, venv, no_sources_packages=["untaped", "untaped-awx"])
+    _assert_managed_sync(calls, venv)
     assert requirements == ["untaped\nuntaped-awx\n"]
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == [{"spec": "untaped-awx", "editable": False}]
@@ -208,11 +203,7 @@ def test_plugins_add_sync_batches_managed_venv_sync_once(
     result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "untaped-profile"])
 
     assert result.exit_code == 0, result.output
-    _assert_managed_sync(
-        calls,
-        venv,
-        no_sources_packages=["untaped", "untaped-awx", "untaped-profile"],
-    )
+    _assert_managed_sync(calls, venv)
     assert requirements == ["untaped\nuntaped-awx\nuntaped-profile\n"]
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == [
@@ -238,7 +229,7 @@ def test_plugins_add_git_spec_records_only_requested_plugin_and_lets_uv_resolve_
     result = CliRunner().invoke(plugins_app, ["add", spec])
 
     assert result.exit_code == 0, result.output
-    _assert_managed_sync(calls, venv, no_sources_packages=["untaped", "untaped-ansible"])
+    _assert_managed_sync(calls, venv)
     assert requirements == [f"untaped\n{spec}\n"]
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == [{"spec": spec, "editable": False}]
@@ -343,7 +334,7 @@ def test_plugins_add_editable_maps_to_uv_with_editable(
     result = CliRunner().invoke(plugins_app, ["add", "plugins/profile", "--editable"])
 
     assert result.exit_code == 0, result.output
-    _assert_managed_sync(calls, venv, no_sources_packages=["untaped", "untaped-profile"])
+    _assert_managed_sync(calls, venv)
     assert requirements == [f"untaped\n-e {plugin}\n"]
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == [
@@ -370,7 +361,7 @@ def test_plugins_add_local_path_maps_to_uv_with_stable_name(
     result = CliRunner().invoke(plugins_app, ["add", "plugins/profile"])
 
     assert result.exit_code == 0, result.output
-    _assert_managed_sync(calls, venv, no_sources_packages=["untaped", "untaped-profile"])
+    _assert_managed_sync(calls, venv)
     assert requirements == [f"untaped\n{plugin}\n"]
     data = yaml.safe_load(_isolated_config.read_text())
     assert data["plugins"]["packages"] == [
