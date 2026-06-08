@@ -49,10 +49,13 @@ untaped plugins add \
   "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1"
 ```
 
-`uv` resolves package dependencies for the managed venv. Plugin authors should
-declare required plugin dependencies in normal package metadata; those
-dependencies may come from PyPI, another package index, Git, URL, or local path
-sources supported by `uv`.
+`uv` resolves package dependencies for the managed venv from the specs recorded
+in `~/.untaped/config.yml`. Managed sync ignores package-local
+`[tool.uv.sources]` tables so a plugin checkout's development sources cannot
+override the recorded core or plugin specs. Plugin authors should declare
+required plugin dependencies in normal package metadata; dependencies that are
+not available from an index should be expressed as direct package metadata or
+recorded explicitly as plugin specs.
 
 Direct git URLs are accepted when the plugin name can be inferred from the
 repository basename. `untaped` stores the canonical `name @ url` form and
@@ -71,6 +74,10 @@ For editable plugin development, install the plugin checkout editable:
 ```bash
 untaped plugins add --editable /path/to/untaped-profile
 ```
+
+For editable multi-plugin development, record each local checkout that should be
+present in the managed runtime. Repo-local `[tool.uv.sources]` entries remain
+useful for that repo's own `uv sync`, but managed plugin sync does not use them.
 
 Use `untaped plugins list` to inspect loaded and recorded plugins, and
 `untaped plugins doctor` to see plugin load failures.
