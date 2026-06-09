@@ -326,9 +326,10 @@ Cross-cutting subsystems with their own internals doc:
   need an `errors.py`.
 - **Lazy imports on CLI startup paths.** Heavy transitive imports that
   would pay on every `untaped --help` are deferred into subcommand
-  bodies and annotated `# noqa: PLC0415`. Scope: any module reached
-  on the import graph from `src/untaped/main.py` at startup. Enforced
-  by ruff (`extend-select = ["PLC0415"]`); tests are exempted.
+  bodies. Add `# noqa: PLC0415` only when Ruff currently flags that
+  specific import. Scope: any module reached on the import graph from
+  `src/untaped/main.py` at startup. Enforced by ruff
+  (`extend-select = ["PLC0415"]`); tests are exempted.
 
 ## Output & Piping Conventions
 

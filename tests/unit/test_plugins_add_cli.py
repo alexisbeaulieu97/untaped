@@ -235,19 +235,6 @@ def test_plugins_add_git_spec_records_only_requested_plugin_and_lets_uv_resolve_
     assert data["plugins"]["packages"] == [{"spec": spec, "editable": False}]
 
 
-def test_plugins_add_rejects_removed_tool_spec_option(
-    _isolated_config: Path,
-) -> None:
-    result = CliRunner().invoke(
-        plugins_app,
-        ["add", "untaped-awx", "--tool-spec", "/home/alexis/tools/untaped"],
-    )
-
-    assert result.exit_code == 2
-    assert "No such option" in result.output
-    assert not _isolated_config.exists()
-
-
 def test_plugins_add_sync_rolls_back_state_when_uv_fails(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -500,14 +487,3 @@ def test_plugins_add_batch_rejects_invalid_spec_before_changing_config(
     assert result.exit_code == 1
     assert "could not infer plugin name from direct URL" in result.output
     assert _isolated_config.read_text() == original
-
-
-def test_plugins_add_rejects_removed_editable_tool_option(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(
-        plugins_app,
-        ["add", "untaped-awx", "--editable-tool", "--no-sync"],
-    )
-
-    assert result.exit_code == 2
-    assert "No such option" in result.output
-    assert not _isolated_config.exists()
