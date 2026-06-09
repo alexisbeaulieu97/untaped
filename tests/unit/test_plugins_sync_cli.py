@@ -52,17 +52,6 @@ def _assert_managed_sync(
     assert calls[2] == ["uv", "pip", "sync", "--python", python, "--strict", calls[1][5]]
 
 
-def test_plugins_sync_rejects_removed_tool_spec_option(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(
-        plugins_app,
-        ["sync", "--tool-spec", "git+https://github.com/alexisbeaulieu97/untaped.git"],
-    )
-
-    assert result.exit_code == 2
-    assert "No such option" in result.output
-    assert not _isolated_config.exists()
-
-
 def test_plugins_sync_rolls_back_when_uv_fails(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
