@@ -643,8 +643,3 @@ def test_sync_workspace_propagates_non_git_errors(tmp_path: Path) -> None:
     use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
     with pytest.raises(WorkspaceError):
         use_case(Workspace(name="broken", path=ws_path))
-
-
-@pytest.fixture
-def _ensure_iterable() -> None:  # placeholder to keep import order tidy
-    pass

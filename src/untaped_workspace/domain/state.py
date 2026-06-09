@@ -40,7 +40,7 @@ class RepoStatus(BaseModel):
         return self.ahead > 0 and self.behind > 0
 
 
-SyncAction = Literal["clone", "pull", "skip", "remove", "up-to-date", "ignored", "unmatched"]
+SyncAction = Literal["clone", "pull", "skip", "remove", "up-to-date", "unmatched"]
 """What ``sync`` did (or refused to do) for one repo.
 
 ``unmatched`` is the synthetic action emitted under ``sync --all --repo

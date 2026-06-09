@@ -109,19 +109,6 @@ remote state; use `workspace status` for live checkout data.
 
 ### `init`
 
-> **Breaking change.** `init` previously took a path positional
-> (`init <path> --name <name>`). It now takes the workspace **name**
-> positionally with an optional `--path` override:
->
-> ```bash
-> # before:  untaped workspace init ~/work/prod --name prod
-> # after:   untaped workspace init prod --path ~/work/prod
-> ```
->
-> The default location is `<workspace.workspaces_dir>/<name>`
-> (`workspaces_dir` defaults to `~/.untaped/workspaces` and is
-> profile-overridable). Update any shell aliases or scripts.
-
 ```bash
 untaped workspace init <name> [--path <dir>] [--branch <default>] [--profile <name>]
 ```
@@ -278,7 +265,6 @@ Reconcile each repo on disk with the manifest:
 | `up-to-date` | Repo exists; nothing to do.                               |
 | `skip`       | Repo exists but on a different branch (with a reason).    |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
-| `ignored`    | Local directory isn't a git repo.                         |
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 
 `--repo <repo>` / `-r <repo>` limits sync to specific repos (repeatable);
