@@ -5,7 +5,6 @@ from typing import Any, Literal
 import pytest
 import yaml
 from pydantic import BaseModel, SecretStr
-from typer.testing import CliRunner
 
 from untaped.config import app
 from untaped.errors import ConfigError
@@ -15,6 +14,7 @@ from untaped.settings import (
     register_profile_settings,
     reset_config_registry_for_tests,
 )
+from untaped.testing import CliInvoker
 from untaped.ui import ThemeSpec
 
 
@@ -37,7 +37,7 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
 
 
 def test_list_outputs_keys(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["list", "--format", "raw", "--columns", "key"])
+    result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "key"])
     assert result.exit_code == 0, result.output
     keys = result.stdout.splitlines()
     assert "log_level" in keys
@@ -51,7 +51,7 @@ def test_list_does_not_expose_global_ui_state_as_profile_keys(
 ) -> None:
     _isolate_settings.write_text("ui:\n  theme: compact\n")
 
-    result = CliRunner().invoke(app, ["list", "--format", "raw", "--columns", "key"])
+    result = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "key"])
 
     assert result.exit_code == 0, result.output
     keys = result.stdout.splitlines()
@@ -71,7 +71,7 @@ def test_list_honours_global_ui_collection_view(_isolate_settings: Path) -> None
     )
     get_settings.cache_clear()
 
-    result = CliRunner().invoke(app, ["list", "--columns", "key", "--columns", "value"])
+    result = CliInvoker().invoke(app, ["list", "--columns", "key", "--columns", "value"])
 
     assert result.exit_code == 0, result.output
     assert "key: log_level" in result.stdout
@@ -91,7 +91,7 @@ def test_list_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> No
     )
     get_settings.cache_clear()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["list", "--format", "raw", "--columns", "key", "--columns", "value"]
     )
 
@@ -111,7 +111,7 @@ def test_list_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> N
     )
     get_settings.cache_clear()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["list", "--format", "json", "--columns", "key", "--columns", "value"]
     )
 
@@ -126,7 +126,7 @@ def test_list_redacts_secrets_by_default(
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "abcdef-secret")
     get_settings.cache_clear()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["list", "--format", "raw", "--columns", "key", "--columns", "value"]
     )
     assert result.exit_code == 0
@@ -140,7 +140,7 @@ def test_list_show_secrets_reveals(
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "abcdef-secret")
     get_settings.cache_clear()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         [
             "list",
@@ -158,7 +158,7 @@ def test_list_show_secrets_reveals(
 
 
 def test_set_then_list_shows_profile_default_source(_isolate_settings: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     set_result = runner.invoke(app, ["set", "log_level", "DEBUG"])
     assert set_result.exit_code == 0, set_result.output
 
@@ -185,7 +185,7 @@ def test_set_success_message_falls_back_when_global_ui_theme_unknown(
 ) -> None:
     _isolate_settings.write_text("ui:\n  theme: missing\n")
 
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG"])
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
 
     assert result.exit_code == 0, result.output
     assert "set log_level in profile default" in result.output
@@ -194,7 +194,7 @@ def test_set_success_message_falls_back_when_global_ui_theme_unknown(
 
 
 def test_set_ui_theme_writes_global_ui_state(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "ui.theme", "classic"])
+    result = CliInvoker().invoke(app, ["set", "ui.theme", "classic"])
 
     assert result.exit_code == 0, result.output
     assert "set ui.theme globally" in result.output
@@ -205,7 +205,7 @@ def test_set_ui_theme_writes_global_ui_state(_isolate_settings: Path) -> None:
 def test_unset_ui_theme_removes_global_ui_state(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  default: {}\n")
 
-    result = CliRunner().invoke(app, ["unset", "ui.theme"])
+    result = CliInvoker().invoke(app, ["unset", "ui.theme"])
 
     assert result.exit_code == 0, result.output
     assert "unset ui.theme globally" in result.output
@@ -216,7 +216,7 @@ def test_unset_ui_theme_removes_global_ui_state(_isolate_settings: Path) -> None
 def test_set_ui_theme_rejects_target_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
 
-    result = CliRunner().invoke(app, ["set", "ui.theme", "classic", "--target-profile", "prod"])
+    result = CliInvoker().invoke(app, ["set", "ui.theme", "classic", "--target-profile", "prod"])
 
     assert result.exit_code != 0
     assert "global" in result.output
@@ -242,7 +242,7 @@ def test_set_ui_theme_rejects_target_profile_before_prompt(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "ui.theme", "--prompt", "--target-profile", "prod"])
+    result = CliInvoker().invoke(app, ["set", "ui.theme", "--prompt", "--target-profile", "prod"])
 
     assert result.exit_code != 0
     assert "global" in result.output
@@ -278,7 +278,7 @@ def test_set_with_prompt_reads_hidden_value_from_ui_context(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "demo.token", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "demo.token", "--prompt"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -322,7 +322,7 @@ def test_set_with_prompt_uses_text_for_plain_string(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "demo.base_url", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "demo.base_url", "--prompt"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -372,7 +372,7 @@ def test_set_with_prompt_uses_select_for_bool(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "http.verify_ssl", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "--prompt"])
 
     assert result.exit_code == 0, result.output
     assert seen["message"] == "Value for http.verify_ssl"
@@ -429,7 +429,7 @@ def test_set_with_prompt_prefills_from_target_profile(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["set", "http.verify_ssl", "--prompt", "--target-profile", "prod"]
     )
 
@@ -475,7 +475,7 @@ def test_set_with_prompt_preserves_string_literal_choices(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "demo.mode", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "demo.mode", "--prompt"])
 
     assert result.exit_code == 0, result.output
     assert seen["message"] == "Value for demo.mode"
@@ -519,7 +519,7 @@ def test_set_with_prompt_uses_select_for_literal_ui_setting(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "ui.collection_view", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "ui.collection_view", "--prompt"])
 
     assert result.exit_code == 0, result.output
     assert seen["message"] == "Value for ui.collection_view"
@@ -569,7 +569,7 @@ def test_set_ui_theme_prompt_uses_registered_theme_choices(
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
     try:
-        result = CliRunner().invoke(app, ["set", "ui.theme", "--prompt"])
+        result = CliInvoker().invoke(app, ["set", "ui.theme", "--prompt"])
     finally:
         set_current_registry(original_registry)
 
@@ -612,7 +612,7 @@ def test_set_with_prompt_rejects_unknown_key_before_prompt(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "demo.missing", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "demo.missing", "--prompt"])
 
     assert result.exit_code != 0
     assert "unknown setting" in result.output
@@ -632,7 +632,7 @@ def test_set_rejects_empty_prompt_before_writing(
 
     monkeypatch.setattr("untaped.config.cli.commands.ui_context", _ui_context)
 
-    result = CliRunner().invoke(app, ["set", "demo.token", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "demo.token", "--prompt"])
 
     assert result.exit_code != 0
     assert "prompt" in result.output
@@ -642,7 +642,7 @@ def test_set_rejects_empty_prompt_before_writing(
 def test_get_ui_theme_defaults_to_raw_value(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("ui:\n  theme: classic\n")
 
-    result = CliRunner().invoke(app, ["get", "ui.theme"])
+    result = CliInvoker().invoke(app, ["get", "ui.theme"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == "classic\n"
@@ -651,7 +651,7 @@ def test_get_ui_theme_defaults_to_raw_value(_isolate_settings: Path) -> None:
 def test_get_profile_setting_json_includes_metadata(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
 
-    result = CliRunner().invoke(app, ["get", "log_level", "--format", "json"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert '"key": "log_level"' in result.stdout
@@ -664,7 +664,7 @@ def test_get_profile_setting_json_includes_metadata(_isolate_settings: Path) -> 
 def test_get_profile_setting_yaml_includes_metadata(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
 
-    result = CliRunner().invoke(app, ["get", "log_level", "--format", "yaml"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "yaml"])
 
     assert result.exit_code == 0, result.output
     assert "key: log_level" in result.stdout
@@ -679,7 +679,7 @@ def test_get_profile_setting_table_uses_ui_detail_settings(
         "ui:\n  detail_view: table\n  border: square\nprofiles:\n  default:\n    log_level: DEBUG\n"
     )
 
-    result = CliRunner().invoke(app, ["get", "log_level", "--format", "table"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "table"])
 
     assert result.exit_code == 0, result.output
     assert "┌" in result.stdout
@@ -690,7 +690,7 @@ def test_get_profile_setting_table_uses_ui_detail_settings(
 def test_get_secret_redacts_by_default(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
 
-    result = CliRunner().invoke(app, ["get", "demo.token"])
+    result = CliInvoker().invoke(app, ["get", "demo.token"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == "***\n"
@@ -700,7 +700,7 @@ def test_get_secret_redacts_by_default(_isolate_settings: Path) -> None:
 def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
 
-    result = CliRunner().invoke(app, ["get", "demo.token", "--show-secrets"])
+    result = CliInvoker().invoke(app, ["get", "demo.token", "--show-secrets"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == "secret-token\n"
@@ -717,7 +717,7 @@ def test_get_profile_flag_reads_named_profile_without_changing_active(
         "active: prod\n"
     )
 
-    result = CliRunner().invoke(app, ["get", "log_level", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--profile", "stage"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == "DEBUG\n"
@@ -727,14 +727,14 @@ def test_get_profile_flag_reads_named_profile_without_changing_active(
 def test_get_rejects_profile_flag_for_global_ui(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  stage: {}\n")
 
-    result = CliRunner().invoke(app, ["get", "ui.theme", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["get", "ui.theme", "--profile", "stage"])
 
     assert result.exit_code != 0
     assert "global" in result.output
 
 
 def test_get_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["get", "plugins.tool.spec"])
+    result = CliInvoker().invoke(app, ["get", "plugins.tool.spec"])
 
     assert result.exit_code != 0
     assert "unknown setting" in result.output
@@ -745,7 +745,7 @@ def test_get_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> Non
         "ui:\n  theme: missing\nprofiles:\n  default:\n    log_level: DEBUG\n"
     )
 
-    result = CliRunner().invoke(app, ["get", "log_level", "--format", "raw"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == "DEBUG\n"
@@ -756,14 +756,14 @@ def test_get_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> No
         "ui:\n  theme: missing\nprofiles:\n  default:\n    log_level: DEBUG\n"
     )
 
-    result = CliRunner().invoke(app, ["get", "log_level", "--format", "json"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert '"value": "DEBUG"' in result.stdout
 
 
 def test_get_with_no_args_shows_help(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["get"])
+    result = CliInvoker().invoke(app, ["get"])
 
     assert result.exit_code == 2
     assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
@@ -778,7 +778,7 @@ def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> 
         "active: prod\n"
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         [
             "list",
@@ -801,41 +801,41 @@ def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> 
 
 
 def test_list_rejects_profile_with_all_profiles(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["list", "--all-profiles", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["list", "--all-profiles", "--profile", "stage"])
 
     assert result.exit_code == 2
     assert "Cannot combine --profile with --all-profiles" in result.output
 
 
 def test_set_with_no_args_shows_help(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set"])
+    result = CliInvoker().invoke(app, ["set"])
     assert result.exit_code == 2
     assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
 
 
 def test_unset_with_no_args_shows_help(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["unset"])
+    result = CliInvoker().invoke(app, ["unset"])
     assert result.exit_code == 2
     assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
 
 
 def test_set_rejects_invalid_value(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "http.verify_ssl", "not-a-bool"])
+    result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "not-a-bool"])
     assert result.exit_code != 0
 
 
 def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "bogus.key", "x"])
+    result = CliInvoker().invoke(app, ["set", "bogus.key", "x"])
     assert result.exit_code != 0
 
 
 def test_unset_returns_clean_when_not_set(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["unset", "log_level"])
+    result = CliInvoker().invoke(app, ["unset", "log_level"])
     assert result.exit_code == 0
 
 
 def test_unset_after_set(_isolate_settings: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     runner.invoke(app, ["set", "log_level", "DEBUG"])
     result = runner.invoke(app, ["unset", "log_level"])
     assert result.exit_code == 0
@@ -847,7 +847,7 @@ def test_unset_after_set(_isolate_settings: Path) -> None:
 
 def test_set_with_target_profile_flag_targets_named_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
@@ -856,7 +856,7 @@ def test_set_with_target_profile_flag_targets_named_profile(_isolate_settings: P
 
 
 def test_set_with_stdin_reads_single_value(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "demo.token", "--stdin"], input="secret-token\n")
+    result = CliInvoker().invoke(app, ["set", "demo.token", "--stdin"], input="secret-token\n")
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
@@ -864,7 +864,7 @@ def test_set_with_stdin_reads_single_value(_isolate_settings: Path) -> None:
 
 
 def test_set_with_stdin_preserves_yaml_scalar_parsing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "http.verify_ssl", "--stdin"], input="false\n")
+    result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "--stdin"], input="false\n")
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
@@ -872,7 +872,7 @@ def test_set_with_stdin_preserves_yaml_scalar_parsing(_isolate_settings: Path) -
 
 
 def test_set_rejects_value_with_stdin_before_writing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["set", "demo.token", "literal-token", "--stdin"], input="stdin-token\n"
     )
 
@@ -881,14 +881,14 @@ def test_set_rejects_value_with_stdin_before_writing(_isolate_settings: Path) ->
 
 
 def test_set_rejects_value_with_prompt_before_writing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "demo.token", "literal-token", "--prompt"])
+    result = CliInvoker().invoke(app, ["set", "demo.token", "literal-token", "--prompt"])
 
     assert result.exit_code != 0
     assert not _isolate_settings.exists()
 
 
 def test_set_rejects_stdin_with_prompt_before_writing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["set", "demo.token", "--stdin", "--prompt"], input="stdin-token\n"
     )
 
@@ -897,7 +897,7 @@ def test_set_rejects_stdin_with_prompt_before_writing(_isolate_settings: Path) -
 
 
 def test_set_rejects_empty_stdin_before_writing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "demo.token", "--stdin"], input="\n")
+    result = CliInvoker().invoke(app, ["set", "demo.token", "--stdin"], input="\n")
 
     assert result.exit_code != 0
     assert "stdin" in result.output
@@ -905,7 +905,7 @@ def test_set_rejects_empty_stdin_before_writing(_isolate_settings: Path) -> None
 
 
 def test_set_rejects_multiple_stdin_values_before_writing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "demo.token", "--stdin"], input="one\ntwo\n")
+    result = CliInvoker().invoke(app, ["set", "demo.token", "--stdin"], input="one\ntwo\n")
 
     assert result.exit_code != 0
     assert "exactly one value" in result.output
@@ -913,7 +913,7 @@ def test_set_rejects_multiple_stdin_values_before_writing(_isolate_settings: Pat
 
 
 def test_set_rejects_missing_value_source_before_writing(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "demo.token"])
+    result = CliInvoker().invoke(app, ["set", "demo.token"])
 
     assert result.exit_code != 0
     assert "provide VALUE" in result.output
@@ -922,12 +922,12 @@ def test_set_rejects_missing_value_source_before_writing(_isolate_settings: Path
 
 def test_set_with_unknown_profile_errors(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "ghost"])
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "ghost"])
     assert result.exit_code != 0
 
 
 def test_set_message_names_resolved_default_profile(_isolate_settings: Path) -> None:
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG"])
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
     assert result.exit_code == 0, result.output
     assert "in profile default" in result.output
     assert "<active>" not in result.output
@@ -935,7 +935,7 @@ def test_set_message_names_resolved_default_profile(_isolate_settings: Path) -> 
 
 def test_set_message_names_explicit_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
     assert result.exit_code == 0, result.output
     assert "in profile prod" in result.output
 
@@ -946,14 +946,14 @@ def test_set_message_resolves_env_override(
     _isolate_settings.write_text("profiles:\n  default: {}\n  stage: {}\n")
     monkeypatch.setenv("UNTAPED_PROFILE", "stage")
     get_settings.cache_clear()
-    result = CliRunner().invoke(app, ["set", "log_level", "DEBUG"])
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
     assert result.exit_code == 0, result.output
     assert "in profile stage" in result.output
 
 
 def test_unset_message_names_resolved_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
-    result = CliRunner().invoke(app, ["unset", "log_level"])
+    result = CliInvoker().invoke(app, ["unset", "log_level"])
     assert result.exit_code == 0, result.output
     assert "in profile default" in result.output
     assert "<active>" not in result.output
@@ -961,7 +961,7 @@ def test_unset_message_names_resolved_profile(_isolate_settings: Path) -> None:
 
 def test_unset_with_missing_explicit_profile_errors(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    result = CliRunner().invoke(app, ["unset", "log_level", "--target-profile", "ghost"])
+    result = CliInvoker().invoke(app, ["unset", "log_level", "--target-profile", "ghost"])
     assert result.exit_code != 0
     assert "ghost" in result.output
 
@@ -971,7 +971,7 @@ def test_unset_with_target_profile_flag_targets_named_profile(_isolate_settings:
         "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: DEBUG\nactive: prod\n"
     )
 
-    result = CliRunner().invoke(app, ["unset", "log_level", "--target-profile", "default"])
+    result = CliInvoker().invoke(app, ["unset", "log_level", "--target-profile", "default"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
@@ -981,7 +981,7 @@ def test_unset_with_target_profile_flag_targets_named_profile(_isolate_settings:
 
 def test_unset_noop_message_names_resolved_profile(_isolate_settings: Path) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
-    result = CliRunner().invoke(app, ["unset", "log_level"])
+    result = CliInvoker().invoke(app, ["unset", "log_level"])
     assert result.exit_code == 0, result.output
     assert "was not set in profile default" in result.output
     assert "<active>" not in result.output
@@ -994,7 +994,7 @@ def test_list_all_profiles_shows_per_profile_rows(_isolate_settings: Path) -> No
         "  prod:\n    log_level: DEBUG\n    demo:\n      base_url: https://p\n"
         "active: prod\n"
     )
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         [
             "list",

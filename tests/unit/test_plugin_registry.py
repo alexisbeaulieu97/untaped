@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import typer
 from pydantic import BaseModel, SecretStr
 
+from untaped import create_app
 from untaped.errors import ConfigError
 from untaped.plugins import DiagnosticResult, PluginRegistry, SkillSpec, register_plugins
 from untaped.ui import ThemeSpec
@@ -33,29 +33,29 @@ def test_registry_rejects_duplicate_plugin_ids() -> None:
 
 def test_registry_rejects_duplicate_cli_names() -> None:
     registry = PluginRegistry()
-    registry.add_cli("demo", typer.Typer())
+    registry.add_cli("demo", create_app(name="demo"))
 
     with pytest.raises(ConfigError, match="duplicate CLI command"):
-        registry.add_cli("demo", typer.Typer())
+        registry.add_cli("demo", create_app(name="demo"))
 
 
 def test_registry_rejects_reserved_cli_names() -> None:
     registry = PluginRegistry(reserved_cli_names={"config"})
 
     with pytest.raises(ConfigError, match="reserved CLI command"):
-        registry.add_cli("config", typer.Typer())
+        registry.add_cli("config", create_app(name="config"))
 
 
 def test_register_plugins_restores_plugin_ids_after_duplicate_failure() -> None:
     class DemoPlugin:
         id = "demo"
-        untaped_api_version = 1
+        untaped_api_version = 2
 
         def __init__(self, command: str) -> None:
             self.command = command
 
         def register(self, registry: PluginRegistry) -> None:
-            registry.add_cli(self.command, typer.Typer())
+            registry.add_cli(self.command, create_app(name=self.command))
 
     registry = PluginRegistry()
 
@@ -76,10 +76,10 @@ def test_register_plugins_restores_plugin_ids_after_duplicate_failure() -> None:
 def test_register_plugins_accepts_supported_plugin_api_version() -> None:
     class DemoPlugin:
         id = "demo"
-        untaped_api_version = 1
+        untaped_api_version = 2
 
         def register(self, registry: PluginRegistry) -> None:
-            registry.add_cli("demo", typer.Typer())
+            registry.add_cli("demo", create_app(name="demo"))
 
     registry = PluginRegistry()
 
@@ -95,7 +95,7 @@ def test_register_plugins_records_load_error_for_missing_plugin_api_version() ->
         id = "demo"
 
         def register(self, registry: PluginRegistry) -> None:
-            registry.add_cli("demo", typer.Typer())
+            registry.add_cli("demo", create_app(name="demo"))
 
     registry = PluginRegistry()
 
@@ -116,7 +116,7 @@ def test_register_plugins_records_load_error_for_invalid_plugin_api_version(
         untaped_api_version = version
 
         def register(self, registry: PluginRegistry) -> None:
-            registry.add_cli("demo", typer.Typer())
+            registry.add_cli("demo", create_app(name="demo"))
 
     registry = PluginRegistry()
 
@@ -131,10 +131,10 @@ def test_register_plugins_records_load_error_for_invalid_plugin_api_version(
 def test_register_plugins_records_load_error_for_unsupported_plugin_api_version() -> None:
     class FutureApiVersionPlugin:
         id = "demo"
-        untaped_api_version = 2
+        untaped_api_version = 3
 
         def register(self, registry: PluginRegistry) -> None:
-            registry.add_cli("demo", typer.Typer())
+            registry.add_cli("demo", create_app(name="demo"))
 
     registry = PluginRegistry()
 

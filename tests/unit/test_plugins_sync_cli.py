@@ -9,10 +9,10 @@ from typing import Any
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from untaped.config_file import mutate_config
 from untaped.plugins import app as plugins_app
+from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -68,7 +68,7 @@ def test_plugins_sync_rolls_back_when_uv_fails(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 1
     assert "plugin sync failed with exit 2" in result.output
@@ -96,7 +96,7 @@ def test_plugins_sync_requires_recorded_core_spec_before_uv(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 1
     assert "managed untaped core install spec is not recorded" in result.output
@@ -122,7 +122,7 @@ def test_plugins_sync_canonicalizes_recorded_bare_direct_url_after_uv_success(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -159,7 +159,7 @@ def test_plugins_sync_success_message_falls_back_when_global_ui_theme_unknown(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 0, result.output
     assert "plugin environment synced" in result.output
@@ -185,7 +185,7 @@ def test_plugins_sync_reuses_existing_managed_venv(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 0, result.output
     assert len(calls) == 2
@@ -233,7 +233,7 @@ def test_plugins_sync_replays_editable_local_path_from_different_cwd(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -261,7 +261,7 @@ def test_plugins_sync_does_not_emit_legacy_raw_path_as_no_sources_package(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -296,7 +296,7 @@ def test_plugins_sync_reads_state_after_acquiring_env_lock(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 0, result.output
     assert requirements == ["untaped\nuntaped-awx\nuntaped-profile\n"]
@@ -324,7 +324,7 @@ def test_plugins_sync_does_not_canonicalize_recorded_bare_direct_url_when_uv_fai
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 1
     assert "plugin sync failed with exit 2" in result.output
@@ -350,7 +350,7 @@ def test_plugins_sync_rejects_recorded_uninferable_bare_direct_url_before_uv(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["sync"])
+    result = CliInvoker().invoke(plugins_app, ["sync"])
 
     assert result.exit_code == 1
     assert "could not infer plugin name from direct URL" in result.output

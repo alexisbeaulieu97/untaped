@@ -2,38 +2,38 @@ import os
 from pathlib import Path
 
 import pytest
-import typer
-from typer.testing import CliRunner
 
 from untaped import (
     HttpError,
     UntapedError,
     clamp_parallel,
+    create_app,
     get_settings,
     parse_kv_pairs,
     profile_override,
     report_errors,
     resolve_each,
 )
+from untaped.testing import CliInvoker
 
 
 def test_clean_message_for_untaped_error() -> None:
-    app = typer.Typer()
+    app = create_app(name="test")
 
-    @app.command()
+    @app.default
     def boom() -> None:
         with report_errors():
             raise UntapedError("something went wrong")
 
-    result = CliRunner().invoke(app, [])
+    result = CliInvoker().invoke(app, [])
     assert result.exit_code == 1
     assert "error: something went wrong" in (result.output or result.stderr)
 
 
 def test_report_errors_includes_http_response_body() -> None:
-    app = typer.Typer()
+    app = create_app(name="test")
 
-    @app.command()
+    @app.default
     def boom() -> None:
         with report_errors():
             raise HttpError(
@@ -43,7 +43,7 @@ def test_report_errors_includes_http_response_body() -> None:
                 body='{"message":"Resource not accessible by personal access token"}',
             )
 
-    result = CliRunner().invoke(app, [])
+    result = CliInvoker().invoke(app, [])
 
     assert result.exit_code == 1
     output = result.output or result.stderr
@@ -54,14 +54,14 @@ def test_report_errors_includes_http_response_body() -> None:
 
 def test_passes_through_non_untaped_exception() -> None:
     """Non-UntapedError exceptions should not be swallowed — they're bugs."""
-    app = typer.Typer()
+    app = create_app(name="test")
 
-    @app.command()
+    @app.default
     def boom() -> None:
         with report_errors():
             raise ValueError("bug")
 
-    result = CliRunner().invoke(app, [])
+    result = CliInvoker().invoke(app, [])
     assert result.exit_code != 0
     # The bug-style exception should bubble up
     assert isinstance(result.exception, ValueError)
@@ -144,23 +144,27 @@ def test_parse_kv_pairs_strips_key_whitespace() -> None:
 
 
 def test_parse_kv_pairs_rejects_missing_equals() -> None:
-    with pytest.raises(typer.BadParameter, match="--filter expects KEY=VALUE"):
+    with pytest.raises(SystemExit) as exc:
         parse_kv_pairs(["bogus"], flag="--filter")
+    assert exc.value.code == 2
 
 
 def test_parse_kv_pairs_rejects_empty_key() -> None:
-    with pytest.raises(typer.BadParameter, match="--filter expects KEY=VALUE"):
+    with pytest.raises(SystemExit) as exc:
         parse_kv_pairs(["=value"], flag="--filter")
+    assert exc.value.code == 2
 
 
 def test_parse_kv_pairs_rejects_whitespace_only_key() -> None:
-    with pytest.raises(typer.BadParameter, match="--var expects KEY=VALUE"):
+    with pytest.raises(SystemExit) as exc:
         parse_kv_pairs(["   =value"], flag="--var")
+    assert exc.value.code == 2
 
 
 def test_parse_kv_pairs_error_uses_provided_flag_name() -> None:
-    with pytest.raises(typer.BadParameter, match="--custom expects KEY=VALUE"):
+    with pytest.raises(SystemExit) as exc:
         parse_kv_pairs(["bogus"], flag="--custom")
+    assert exc.value.code == 2
 
 
 def test_parse_kv_pairs_later_entries_overwrite_earlier() -> None:

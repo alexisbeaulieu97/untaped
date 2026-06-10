@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from untaped.plugins import PluginRegistry, set_current_registry
 from untaped.plugins import app as plugins_app
+from untaped.testing import CliInvoker
 from untaped.ui import ThemeSpec
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -20,7 +20,7 @@ def test_plugins_list_reports_invalid_plugin_state_without_traceback(
 ) -> None:
     _isolated_config.write_text("plugins:\n  packages:\n    - spec: 123\n")
 
-    result = CliRunner().invoke(plugins_app, ["list"])
+    result = CliInvoker().invoke(plugins_app, ["list"])
 
     assert result.exit_code == 1
     assert "invalid plugins config" in result.output
@@ -35,7 +35,7 @@ def test_plugins_list_defaults_to_table_output(_isolated_config: Path) -> None:
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list"])
+    result = CliInvoker().invoke(plugins_app, ["list"])
 
     assert result.exit_code == 0, result.output
     assert "name" in result.output
@@ -54,7 +54,7 @@ def test_plugins_list_honours_global_ui_collection_view(_isolated_config: Path) 
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list"])
+    result = CliInvoker().invoke(plugins_app, ["list"])
 
     assert result.exit_code == 0, result.output
     assert "name: untaped-profile" in result.output
@@ -75,7 +75,7 @@ def test_plugins_list_uses_theme_registered_by_plugin(_isolated_config: Path) ->
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list"])
+    result = CliInvoker().invoke(plugins_app, ["list"])
 
     assert result.exit_code == 0, result.output
     assert "name: untaped-profile" in result.output
@@ -93,7 +93,7 @@ def test_plugins_list_raw_ignores_unknown_global_ui_theme(_isolated_config: Path
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list", "--format", "raw"])
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == ["untaped-profile"]
@@ -115,7 +115,7 @@ def test_plugins_list_json_includes_combined_loaded_and_desired_rows(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list", "--format", "json"])
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == [
@@ -149,7 +149,7 @@ def test_plugins_list_json_coalesces_legacy_bare_direct_url_state(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list", "--format", "json"])
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == [
@@ -176,7 +176,7 @@ def test_plugins_list_json_includes_unmatched_loaded_and_recorded_rows(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list", "--format", "json"])
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == [
@@ -209,7 +209,7 @@ def test_plugins_list_raw_omits_loaded_only_plugins(_isolated_config: Path) -> N
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list", "--format", "raw"])
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == ["untaped-profile"]
@@ -226,7 +226,7 @@ def test_plugins_list_raw_defaults_to_plugin_names(_isolated_config: Path) -> No
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list", "--format", "raw"])
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == ["untaped-profile"]
@@ -240,7 +240,7 @@ def test_plugins_list_columns_select_output_fields(_isolated_config: Path) -> No
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["list", "--format", "raw", "--columns", "name", "--columns", "spec"],
     )
@@ -264,7 +264,7 @@ def test_plugins_list_rejects_duplicate_recorded_plugin_names(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["list"])
+    result = CliInvoker().invoke(plugins_app, ["list"])
 
     assert result.exit_code == 1
     assert "duplicate plugin package spec: untaped-profile" in result.output

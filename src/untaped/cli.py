@@ -1,13 +1,15 @@
-"""CLI helpers shared by every Typer command in the suite."""
+"""CLI helpers shared by every Cyclopts command in the suite."""
 
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Annotated
 
-import typer
+from cyclopts import App, Parameter, validators
 
 from untaped.errors import HttpError, UntapedError
 from untaped.output import OutputFormat
@@ -15,24 +17,68 @@ from untaped.settings import get_settings
 
 FormatOption = Annotated[
     OutputFormat,
-    typer.Option("--format", "-f", help="Output format."),
+    Parameter(name=["--format", "-f"], help="Output format."),
 ]
 """Shared ``--format / -f`` option for any command that prints rows."""
 
 ColumnsOption = Annotated[
     list[str] | None,
-    typer.Option("--columns", "-c", help="Columns to include (repeatable)."),
+    Parameter(
+        name=["--columns", "-c"],
+        help="Columns to include (repeatable).",
+        consume_multiple=False,
+    ),
 ]
 """Shared ``--columns / -c`` option for any command that prints rows."""
 
 ProfileOverrideOption = Annotated[
     str | None,
-    typer.Option(
-        "--profile",
+    Parameter(
+        name="--profile",
         help="Override the active profile for this command only.",
     ),
 ]
 """Command-local read-time profile override for plugin/read commands."""
+
+
+def create_app(*, name: str, help: str = "") -> App:
+    """Create a Cyclopts app with the suite's default command-group settings."""
+    return App(name=name, help=help)
+
+
+def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
+    """Print a CLI message to stdout or stderr."""
+    end = "\n" if nl else ""
+    print(message, file=sys.stderr if err else sys.stdout, end=end)
+
+
+def raise_usage(message: str) -> None:
+    """Raise a command-usage error with the suite's stable exit code."""
+    echo(f"error: {message}", err=True)
+    raise SystemExit(2)
+
+
+def existing_directory(type_: object, value: Path | None) -> None:
+    """Cyclopts validator for an existing directory path."""
+    if value is None:
+        return
+    if not value.exists():
+        raise ValueError(f"path does not exist: {value}")
+    if not value.is_dir():
+        raise ValueError(f"path is not a directory: {value}")
+
+
+def existing_file(type_: object, value: Path | None) -> None:
+    """Cyclopts validator for an existing file path."""
+    if value is None:
+        return
+    if not value.exists():
+        raise ValueError(f"path does not exist: {value}")
+    if not value.is_file():
+        raise ValueError(f"path is not a file: {value}")
+
+
+PositiveInt = Annotated[int, Parameter(validator=validators.Number(gte=1))]
 
 
 @contextmanager
@@ -69,7 +115,7 @@ def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]
         key, sep, value = entry.partition("=")
         key = key.strip()
         if not sep or not key:
-            raise typer.BadParameter(f"{flag} expects KEY=VALUE (got {entry!r})", param_hint=flag)
+            raise_usage(f"{flag} expects KEY=VALUE (got {entry!r})")
         out[key] = value
     return out
 
@@ -83,7 +129,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
     list commands across domains.
 
     Only :class:`UntapedError` is caught: non-:class:`UntapedError` exceptions
-    (including :class:`typer.Exit` raised by interactive prompts) propagate
+    (including :class:`SystemExit` raised by interactive prompts) propagate
     immediately, aborting the loop. This is intentional — bugs and explicit
     user aborts must not be swallowed alongside per-id resolution failures.
     """
@@ -93,7 +139,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
         try:
             results.append(fn(id_))
         except UntapedError as exc:
-            typer.echo(f"error: {id_}: {_format_error(exc)}", err=True)
+            echo(f"error: {id_}: {_format_error(exc)}", err=True)
             any_failed = True
     return results, any_failed
 
@@ -101,7 +147,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
 def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
     """Cap ``--parallel`` at ``cap`` with a uniform stderr warning.
 
-    Shared by every Typer command that exposes ``-j / --parallel``
+    Shared by every Cyclopts command that exposes ``-j / --parallel``
     (workspace sync, workspace foreach, awx apply, ...) so the
     cap-with-warning shape is one helper, not one per call site.
     Friendly clamp rather than ``BadParameter`` so shell idioms like
@@ -109,9 +155,8 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
     exceeds the cap.
 
     Only handles the upper bound. ``< 1`` policy stays per-caller
-    (workspace foreach silently coerces; sync and awx apply reject
-    via ``BadParameter``) — the lower bound isn't a typo-vs-typo
-    judgement, it's per-command UX.
+    (workspace foreach silently coerces; sync and awx apply reject) — the lower
+    bound isn't a typo-vs-typo judgement, it's per-command UX.
 
     ``policy`` is a short human-readable rationale (e.g.
     ``"2 * os.cpu_count()"`` or ``"HTTP connection pool default"``)
@@ -120,7 +165,7 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
     """
     if requested <= cap:
         return requested
-    typer.echo(
+    echo(
         f"warning: --parallel {requested} clamped to {cap} ({policy})",
         err=True,
     )
@@ -131,15 +176,15 @@ def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
 def report_errors() -> Iterator[None]:
     """Convert :class:`UntapedError` into a clean stderr message + exit code 1.
 
-    Wrap every Typer command body in this so users see ``error: ...`` instead
-    of a Python traceback. Non-:class:`UntapedError` exceptions are left to
-    Typer/Click's default handling — those represent bugs we want to see.
+    Wrap every Cyclopts command body in this so users see ``error: ...``
+    instead of a Python traceback. Non-:class:`UntapedError` exceptions are
+    left to Cyclopts' default handling — those represent bugs we want to see.
     """
     try:
         yield
     except UntapedError as exc:
-        typer.echo(f"error: {_format_error(exc)}", err=True)
-        raise typer.Exit(code=1) from exc
+        echo(f"error: {_format_error(exc)}", err=True)
+        raise SystemExit(1) from exc
 
 
 def _format_error(exc: UntapedError) -> str:

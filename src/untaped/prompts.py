@@ -315,5 +315,5 @@ _STYLE_TOKENS = {
     "bright_blue": "ansibrightblue",
     "bright_magenta": "ansibrightmagenta",
     "bright_cyan": "ansibrightcyan",
-    "bright_white": "ansibrightwhite",
+    "bright_white": "ansiwhite",
 }

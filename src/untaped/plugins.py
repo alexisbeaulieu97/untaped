@@ -1,4 +1,4 @@
-"""Plugin Typer commands and public plugin runtime facade."""
+"""Plugin Cyclopts commands and public plugin runtime facade."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import tomllib
 from pathlib import Path
 from typing import Annotated
 
-import typer
+from cyclopts import Parameter
 
-from untaped.cli import ColumnsOption, FormatOption, report_errors
+from untaped.cli import ColumnsOption, FormatOption, create_app, echo, report_errors
 from untaped.config_file import mutate_config
 from untaped.errors import ConfigError
 from untaped.plugin_registry import (
@@ -60,29 +60,35 @@ __all__ = [
     "set_current_registry",
 ]
 
-app = typer.Typer(
+app = create_app(
     name="plugins",
     help="Manage untaped plugins installed into the managed virtual environment.",
-    no_args_is_help=True,
 )
 
 
-@app.callback()
-def _callback() -> None:
-    """Manage untaped plugins."""
-
-
-@app.command("add", no_args_is_help=True)
+@app.command(name="add")
 def add_command(
     package_specs: Annotated[
         list[str] | None,
-        typer.Argument(help="uv-compatible plugin package spec(s)."),
+        Parameter(help="uv-compatible plugin package spec(s)."),
     ] = None,
-    stdin: bool = typer.Option(False, "--stdin", help="Read package specs from stdin."),
-    editable: bool = typer.Option(False, "--editable", help="Install package spec editable."),
-    no_sync: bool = typer.Option(False, "--no-sync", help="Record only; do not run uv."),
+    *,
+    stdin: Annotated[
+        bool,
+        Parameter(name="--stdin", help="Read package specs from stdin."),
+    ] = False,
+    editable: Annotated[
+        bool,
+        Parameter(name="--editable", help="Install package spec editable."),
+    ] = False,
+    no_sync: Annotated[
+        bool,
+        Parameter(name="--no-sync", help="Record only; do not run uv."),
+    ] = False,
 ) -> None:
     """Record desired plugin packages and optionally sync the managed venv."""
+    if not package_specs and not stdin and not editable and not no_sync:
+        _show_command_help("add", code=2)
     with report_errors():
         requested_specs = read_identifiers(list(package_specs or []), stdin=stdin)
         specs = [
@@ -98,16 +104,25 @@ def add_command(
             ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
-@app.command("remove", no_args_is_help=True)
+@app.command(name="remove")
 def remove_command(
     package_specs: Annotated[
         list[str] | None,
-        typer.Argument(help="Plugin package spec(s) to remove."),
+        Parameter(help="Plugin package spec(s) to remove."),
     ] = None,
-    stdin: bool = typer.Option(False, "--stdin", help="Read package specs from stdin."),
-    no_sync: bool = typer.Option(False, "--no-sync", help="Record only; do not run uv."),
+    *,
+    stdin: Annotated[
+        bool,
+        Parameter(name="--stdin", help="Read package specs from stdin."),
+    ] = False,
+    no_sync: Annotated[
+        bool,
+        Parameter(name="--no-sync", help="Record only; do not run uv."),
+    ] = False,
 ) -> None:
     """Remove desired plugin packages and optionally sync the managed venv."""
+    if not package_specs and not stdin and not no_sync:
+        _show_command_help("remove", code=2)
     with report_errors():
         requested_specs = unique_plugin_specs(
             read_identifiers(list(package_specs or []), stdin=stdin)
@@ -121,7 +136,7 @@ def remove_command(
             ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
-@app.command("sync")
+@app.command(name="sync")
 def sync_command() -> None:
     """Rebuild the managed venv with every recorded plugin package."""
     with report_errors():
@@ -139,8 +154,9 @@ def sync_command() -> None:
         ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
-@app.command("list")
+@app.command(name="list")
 def list_command(
+    *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -153,10 +169,10 @@ def list_command(
             rows = [row for row in rows if row["spec"]]
         rendered = _render_collection(rows, fmt=fmt, columns=columns)
         if rendered:
-            typer.echo(rendered)
+            echo(rendered)
 
 
-@app.command("doctor")
+@app.command(name="doctor")
 def doctor_command() -> None:
     """Report plugin load failures and registered diagnostics."""
     with report_errors():
@@ -164,16 +180,21 @@ def doctor_command() -> None:
         registry = current_registry()
         for error in registry.load_errors:
             failed = True
-            typer.echo(f"load-error\t{error.name}\t{error.error}")
+            echo(f"load-error\t{error.name}\t{error.error}")
         for result in registry.run_diagnostics():
             if result.status != "ok":
                 failed = True
             parts = [result.status, result.name]
             if result.detail:
                 parts.append(result.detail)
-            typer.echo("\t".join(parts))
+            echo("\t".join(parts))
         if failed:
-            raise typer.Exit(1)
+            raise SystemExit(1)
+
+
+def _show_command_help(command: str, *, code: int) -> None:
+    app.help_print([command])
+    raise SystemExit(code)
 
 
 def _render_collection(

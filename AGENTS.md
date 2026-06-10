@@ -10,7 +10,7 @@ file in the same commit.
 `untaped` is a personal DevOps CLI hub. The root package owns plumbing:
 the binary, plugin discovery, configuration/profile resolution, output,
 stdin, HTTP/TLS, and shared errors. Domain functionality (workspace, awx,
-github, profile, …) is delivered by plugins exposing Typer sub-apps
+github, profile, …) is delivered by plugins exposing Cyclopts sub-apps
 through the `untaped.plugins` entry point group. Daily DevOps work
 composes — row-oriented `list`/`get`/`status`-style commands are
 pipe-friendly. We build *on top of* existing CLIs (`gh`, `awx-cli`) where
@@ -86,8 +86,10 @@ Non-negotiable. Every contribution must respect them.
 8. **Write tests that verify the result.** TDD: failing test first, then
    implementation. Test through public APIs — never suppress warnings to
    access private members.
-9. **Every Typer app and every command with required args sets
-   `no_args_is_help=True`.** No-args invocation must show help, not error.
+9. **Cyclopts command signatures are explicit.** Use
+   `Annotated[..., Parameter(...)]` for options/arguments, name public
+   commands/options explicitly, and add manual bare-command help only
+   when that behavior is part of the command contract.
 10. **Every plugin declares port `Protocol`s in `application/ports.py`.**
     Use cases import their ports from there; concrete adapters in
     `infrastructure/` satisfy the Protocols structurally (no
@@ -116,8 +118,8 @@ Every plugin package (`untaped-<X>`) has the same internal layout:
 
 ```
 src/untaped_<x>/
-├── __init__.py           # re-exports `app: typer.Typer`
-├── cli/                  # Typer commands (thin)
+├── __init__.py           # re-exports `app: cyclopts.App`
+├── cli/                  # Cyclopts commands (thin)
 ├── application/          # use cases (orchestration)
 ├── domain/               # entities, value objects (pure, no I/O)
 └── infrastructure/       # external adapters (httpx clients, fs, …)
@@ -140,7 +142,7 @@ cli  →  application  →  domain
   constructor (DI). Concrete adapters speak the port shapes
   structurally — they don't import from `application/`.
 - `infrastructure/` knows about httpx, the filesystem, the config file.
-- `cli/` is the thinnest layer: parse Typer args, build a use case
+- `cli/` is the thinnest layer: parse Cyclopts args, build a use case
   (passing in concrete adapters), call it, format the result.
 
 A use case in `application/` is unit-testable with a stub satisfying its
@@ -157,7 +159,7 @@ class UntapedPlugin(Protocol):
     def register(self, registry: PluginRegistry) -> None: ...
 ```
 
-The plugin object must declare a literal `untaped_api_version = 1`. Do not
+The plugin object must declare a literal `untaped_api_version = 2`. Do not
 import a core constant for this value; future cores use the literal to reject
 plugins built for an incompatible plugin API before running registration hooks.
 Package dependency bounds still matter for import-time failures, while the
@@ -187,7 +189,7 @@ Available registry hooks:
 
 There is intentionally no prompt-backend registry hook yet. Core owns prompt
 primitives and backs them with `prompt_toolkit`; plugins should call the core
-prompt helpers instead of importing `typer.prompt`, `typer.confirm`, or
+prompt helpers instead of importing CLI framework prompt helpers, or
 `prompt_toolkit` directly.
 
 Duplicate plugin ids, CLI command names, profile sections, state sections,
@@ -249,7 +251,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Prompt for typed interactive input         | `from untaped import ui_context, PromptChoice`; use `ui_context(strict=False).confirm/text/secret/select/multiselect(...)` |
 | Register an agent skill from a plugin | `from untaped.plugins import SkillSpec`; call `registry.add_skill(...)` |
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
-| Add `--format` / `--columns` to a Typer command | `from untaped import FormatOption, ColumnsOption`      |
+| Add `--format` / `--columns` to a Cyclopts command | `from untaped import FormatOption, ColumnsOption`      |
 | Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
 | Read piped values from stdin               | `from untaped import read_stdin`                            |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` |
@@ -258,8 +260,8 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
 | Print a semantic status/warning/info message to stderr | `ui_context(strict=False).message(kind, msg)` |
 | Prompt users interactively                 | `ui_context(strict=False).confirm/text/secret/select/multiselect(...)`; prompts require TTY stdin and render on stderr |
-| Print raw logs, command passthrough, or low-level fallback errors | `typer.echo(msg, err=True)` |
-| Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `typer.echo(f"warning: {msg}", err=True)` |
+| Print raw logs, command passthrough, or low-level fallback errors | `echo(msg, err=True)` |
+| Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `echo(f"warning: {msg}", err=True)` |
 | Raise a typed error                        | subclass `untaped.UntapedError`                             |
 | Walk the Settings schema (for tooling)     | `from untaped import walk_settings`                         |
 | Register profile settings                  | `from untaped import register_profile_settings`             |
@@ -308,16 +310,16 @@ Cross-cutting subsystems with their own internals doc:
   with nothing to describe.
 - **Re-export the public surface.**
   - **Plugin packages**: `<pkg>/__init__.py` re-exports `app:
-    typer.Typer`; `<pkg>/plugin.py` exposes the entry-point object that
+    cyclopts.App`; `<pkg>/plugin.py` exposes the entry-point object that
     registers the app and config sections. Public adapters live in
     `infrastructure/__init__.py` with explicit `__all__`.
   - **`untaped`**: re-exports its public plugin/core API from
     `src/untaped/__init__.py` with explicit `__all__`.
 - **Per-command flags vs shared option types.** Per-command flags in
   `cli/commands.py` use call-site defaults
-  (`field: Type = typer.Option(..., "--flag", help="…")`). Shared
+  (`field: Type = Parameter(..., "--flag", help="…")`). Shared
   option types reused across commands live in `untaped` as
-  `Annotated[…, typer.Option(…)]` aliases (e.g. `FormatOption`,
+  `Annotated[…, Parameter(…)]` aliases (e.g. `FormatOption`,
   `ColumnsOption`).
 - **`errors.py` placement.** Domain packages with their own exception
   subclasses keep them in a top-level `errors.py`; `untaped-awx`
@@ -336,7 +338,7 @@ Cross-cutting subsystems with their own internals doc:
 - **stdout = data only.** Never print logs, prompts, or progress to
   stdout.
 - **stderr = everything else.** Logs, progress, prompts. Use
-  `typer.echo(msg, err=True)`.
+  `echo(msg, err=True)`.
 - **Row-oriented data commands** (`list`, `status`, row-producing `get`,
   …) expose:
   - `--format / -f` (`json | yaml | table | raw`); default `table` for
@@ -417,7 +419,7 @@ behaviours worth knowing:
 - No `__init__.py` files inside `tests/` — pytest uses
   `--import-mode=importlib`.
 - Mock httpx with `respx` (already a dev dep).
-- For CLI tests, use `typer.testing.CliRunner`.
+- For CLI tests, use `untaped.testing.CliInvoker`.
 
 ## Decision Tree: Where does this code go?
 
@@ -438,7 +440,7 @@ behaviours worth knowing:
 # 1. Create the plugin repo/package
 uv init --package --lib untaped-<X>
 # 2. Add deps
-uv add typer untaped
+uv add 'cyclopts>=4.16.0,<5' 'untaped>=0.2.0'
 # 3. Build the 4 layers
 mkdir -p src/untaped_<x>/{cli,application,domain,infrastructure}
 mkdir -p tests/unit
@@ -446,17 +448,16 @@ mkdir -p tests/unit
 
 Then:
 - Implement `domain/models.py`, `infrastructure/<x>_client.py`,
-  `application/<use_case>.py`, `cli/commands.py`. Add `@app.callback()`
-  (single-command Typer apps collapse without it).
+  `application/<use_case>.py`, `cli/commands.py`.
 - Re-export `app` from `cli/__init__.py` and the package `__init__.py`.
-- Add `plugin.py` and register the Typer app/config sections:
+- Add `plugin.py` and register the Cyclopts app/config sections:
   ```python
   from untaped.plugins import PluginRegistry
   from untaped_<x> import app
 
   class XPlugin:
       id = "<x>"
-      untaped_api_version = 1
+      untaped_api_version = 2
 
       def register(self, registry: PluginRegistry) -> None:
           registry.add_cli("<x>", app)
@@ -485,9 +486,10 @@ Then:
    unless it's a different service.
 3. New domain logic → add an entity/method in `domain/`, a use case in
    `application/`.
-4. Add the Typer command in `cli/commands.py`:
-   - decorate with `@app.command(..., no_args_is_help=True)` if it has
-     required args
+4. Add the Cyclopts command in `cli/commands.py`:
+   - use `@app.command(name="documented-name")` for public commands
+   - express options/arguments as `Annotated[..., Parameter(...)]`
+   - add manual bare-command help only when the command contract requires it
    - log to stderr; print only data to stdout
    - if it emits data: accept `--format` and `--columns`; support
      `--stdin` if it takes a list
@@ -520,13 +522,15 @@ Credentials must be `SecretStr`; HTTP clients must still consume
 - **Forgetting the plugin entry point.** Test: does
   `uv run untaped --help` list the plugin command after the package is
   installed in the environment?
-- **Adding a single-command Typer app without `@app.callback()`.** Typer
-  collapses single-command apps into a flat command, breaking subcommand
-  dispatch from the root CLI.
+- **Relying on inferred Cyclopts public names.** Public command and option
+  paths should use explicit `name=...` metadata so documented CLI contracts
+  do not drift when Python identifiers change.
+- **Using an `Annotated[..., Parameter(...)]` alias as a default value.**
+  Put shared aliases in the annotation position (`value: Alias = default`);
+  otherwise Cyclopts/Pydantic may validate the alias object itself.
 - **Adding a new setting without thinking about secrets and TLS.**
   Credentials → `pydantic.SecretStr`. Hostnames for TLS services → the
   client must use `resolve_verify(get_core_settings().http)`.
-- **Forgetting `no_args_is_help=True` on commands with required args.**
 - **Naming a method `list` on a class whose annotations elsewhere include
   `list[X]`.** mypy resolves `list` to the method, not the builtin. Use
   `entries` instead, or `Iterator[X]` / `Iterable[X]` returns (no
