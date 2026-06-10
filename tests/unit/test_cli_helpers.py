@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from untaped import (
     get_settings,
     parse_kv_pairs,
     profile_override,
+    render_rows,
     report_errors,
     resolve_each,
 )
@@ -286,3 +288,24 @@ def test_clamp_parallel_does_not_handle_below_one(
     assert clamp_parallel(0, cap=8, policy="2 * os.cpu_count()") == 0
     assert clamp_parallel(-3, cap=8, policy="2 * os.cpu_count()") == -3
     assert capsys.readouterr().err == ""
+
+
+# ---- render_rows -----------------------------------------------------------
+
+
+def test_render_rows_table_contains_cells(_isolated_config: Path) -> None:
+    rendered = render_rows([{"name": "alpha", "value": "1"}], fmt="table")
+    assert "alpha" in rendered
+    assert "name" in rendered
+
+
+def test_render_rows_structured_formats_ignore_theme(_isolated_config: Path) -> None:
+    """json/raw output must stay byte-stable no matter the configured theme."""
+    _isolated_config.write_text("ui:\n  theme: dark\n")
+    get_settings.cache_clear()
+
+    rows: list[dict[str, object]] = [{"name": "alpha", "value": "1"}]
+    assert json.loads(render_rows(rows, fmt="json")) == [{"name": "alpha", "value": "1"}]
+    raw = render_rows(rows, fmt="raw", columns=["name"])
+    assert raw == "alpha"
+    assert "\x1b[" not in raw

@@ -183,15 +183,14 @@ def test_plugins_remove_missing_package_fails_without_changing_config(
     assert _isolated_config.read_text() == original
 
 
-def test_plugins_remove_with_no_args_shows_help_without_writing_config(
+def test_plugins_remove_with_no_args_is_usage_error_without_writing_config(
     _isolated_config: Path,
 ) -> None:
     result = CliInvoker().invoke(plugins_app, ["remove"])
 
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "Usage: plugins remove" in result.stderr
-    assert "Plugin package spec(s) to remove" in result.stderr
+    assert "error: provide package spec(s) or --stdin" in result.stderr
     assert not _isolated_config.exists()
 
 

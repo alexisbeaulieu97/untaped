@@ -22,9 +22,9 @@ from untaped import (
     echo,
     profile_override,
     raise_usage,
+    render_rows,
     report_errors,
     resolve_config_path,
-    show_help_and_exit,
     ui_context,
 )
 from untaped.config.application import (
@@ -78,15 +78,16 @@ def list_command(
             else:
                 entries = ListSettings(repo)(reveal_secrets=show_secrets)
         rows = [_entry_to_row(e) for e in entries]
-        echo(_render_collection(rows, fmt=fmt, columns=columns))
+        echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 @app.command(name="get")
 def get_command(
     key: Annotated[
-        str | None,
+        str,
         Parameter(help="Dotted setting key, e.g. `http.verify_ssl`."),
-    ] = None,
+    ],
+    /,
     *,
     fmt: FormatOption = "raw",
     profile: ProfileOverrideOption = None,
@@ -96,8 +97,6 @@ def get_command(
     ] = False,
 ) -> None:
     """Print one effective scalar setting value."""
-    if key is None:
-        show_help_and_exit(app, ["get"])
     with report_errors():
         if _is_global_ui_key(key) and profile is not None:
             raise ConfigError("ui settings are global; --profile cannot be used")
@@ -109,13 +108,14 @@ def get_command(
 @app.command(name="set")
 def set_command(
     key: Annotated[
-        str | None,
+        str,
         Parameter(help="Dotted setting key, e.g. `http.verify_ssl`."),
-    ] = None,
+    ],
     value: Annotated[
         str | None,
         Parameter(help="New value (parsed as a YAML scalar)."),
     ] = None,
+    /,
     *,
     target_profile: Annotated[
         str | None,
@@ -134,8 +134,6 @@ def set_command(
     ] = False,
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
-    if key is None:
-        show_help_and_exit(app, ["set"])
     with report_errors():
         if _is_global_ui_key(key) and target_profile is not None:
             raise ConfigError("ui settings are global; --target-profile cannot be used")
@@ -282,7 +280,8 @@ def _raw_prompt_scalar(value: object) -> str:
 
 @app.command(name="unset")
 def unset_command(
-    key: Annotated[str | None, Parameter(help="Dotted setting key to remove.")] = None,
+    key: Annotated[str, Parameter(help="Dotted setting key to remove.")],
+    /,
     *,
     target_profile: Annotated[
         str | None,
@@ -293,8 +292,6 @@ def unset_command(
     ] = None,
 ) -> None:
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
-    if key is None:
-        show_help_and_exit(app, ["unset"])
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
         if _is_global_ui_key(key):
@@ -315,17 +312,6 @@ def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
         "source": entry.source.label,
         "profile": entry.profile or "",
     }
-
-
-def _render_collection(
-    rows: list[dict[str, object]],
-    *,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> str:
-    if fmt == "table":
-        return ui_context().collection(rows, fmt=fmt, columns=columns)
-    return UiContext().collection(rows, fmt=fmt, columns=columns)
 
 
 def _render_detail(record: dict[str, object], *, fmt: OutputFormat) -> str:

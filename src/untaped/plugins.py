@@ -14,8 +14,9 @@ from untaped.cli import (
     FormatOption,
     create_app,
     echo,
+    raise_usage,
+    render_rows,
     report_errors,
-    show_help_and_exit,
 )
 from untaped.config_file import mutate_config
 from untaped.errors import ConfigError
@@ -51,7 +52,7 @@ from untaped.plugin_state import (
 from untaped.plugin_sync import managed_env_lock, sync_state_unlocked
 from untaped.settings import PluginInstallSpec, PluginsState
 from untaped.stdin import read_identifiers
-from untaped.ui import OutputFormat, UiContext, ui_context
+from untaped.ui import ui_context
 
 __all__ = [
     "ENTRY_POINT_GROUP",
@@ -94,8 +95,8 @@ def add_command(
     ] = False,
 ) -> None:
     """Record desired plugin packages and optionally sync the managed venv."""
-    if not package_specs and not stdin and not editable and not no_sync:
-        _show_command_help("add", code=2)
+    if not package_specs and not stdin:
+        raise_usage("provide package spec(s) or --stdin")
     with report_errors():
         requested_specs = read_identifiers(list(package_specs or []), stdin=stdin)
         specs = [
@@ -128,8 +129,8 @@ def remove_command(
     ] = False,
 ) -> None:
     """Remove desired plugin packages and optionally sync the managed venv."""
-    if not package_specs and not stdin and not no_sync:
-        _show_command_help("remove", code=2)
+    if not package_specs and not stdin:
+        raise_usage("provide package spec(s) or --stdin")
     with report_errors():
         requested_specs = unique_plugin_specs(
             read_identifiers(list(package_specs or []), stdin=stdin)
@@ -174,7 +175,7 @@ def list_command(
         rows = plugin_rows(state, loaded_ids=set(registry.plugin_ids))
         if fmt == "raw" and columns is None:
             rows = [row for row in rows if row["spec"]]
-        rendered = _render_collection(rows, fmt=fmt, columns=columns)
+        rendered = render_rows(rows, fmt=fmt, columns=columns)
         if rendered:
             echo(rendered)
 
@@ -197,21 +198,6 @@ def doctor_command() -> None:
             echo("\t".join(parts))
         if failed:
             raise SystemExit(1)
-
-
-def _show_command_help(command: str, *, code: int) -> None:
-    show_help_and_exit(app, [command], code=code)
-
-
-def _render_collection(
-    rows: list[dict[str, object]],
-    *,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> str:
-    if fmt == "table":
-        return ui_context().collection(rows, fmt=fmt, columns=columns)
-    return UiContext().collection(rows, fmt=fmt, columns=columns)
 
 
 def canonical_install_spec(package_spec: str, *, editable: bool) -> PluginInstallSpec:
