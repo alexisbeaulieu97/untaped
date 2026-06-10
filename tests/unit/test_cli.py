@@ -762,12 +762,12 @@ def test_get_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> No
     assert '"value": "DEBUG"' in result.stdout
 
 
-def test_get_with_no_args_shows_help(_isolate_settings: Path) -> None:
+def test_get_with_no_args_is_usage_error(_isolate_settings: Path) -> None:
     result = CliInvoker().invoke(app, ["get"])
 
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "key" in result.stderr.lower()
+    assert "KEY requires an argument" in result.stderr
 
 
 def test_get_parse_errors_exit_2_and_stderr(_isolate_settings: Path) -> None:
@@ -816,18 +816,18 @@ def test_list_rejects_profile_with_all_profiles(_isolate_settings: Path) -> None
     assert "Cannot combine --profile with --all-profiles" in result.output
 
 
-def test_set_with_no_args_shows_help(_isolate_settings: Path) -> None:
+def test_set_with_no_args_is_usage_error(_isolate_settings: Path) -> None:
     result = CliInvoker().invoke(app, ["set"])
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "key" in result.stderr.lower()
+    assert "KEY requires an argument" in result.stderr
 
 
-def test_unset_with_no_args_shows_help(_isolate_settings: Path) -> None:
+def test_unset_with_no_args_is_usage_error(_isolate_settings: Path) -> None:
     result = CliInvoker().invoke(app, ["unset"])
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "key" in result.stderr.lower()
+    assert "KEY requires an argument" in result.stderr
 
 
 def test_set_rejects_invalid_value(_isolate_settings: Path) -> None:

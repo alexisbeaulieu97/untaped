@@ -68,14 +68,14 @@ def test_skills_list_raw_defaults_to_skill_names(tmp_path: Path) -> None:
     assert result.output.splitlines() == ["untaped-demo"]
 
 
-def test_skills_install_no_args_shows_help(tmp_path: Path) -> None:
+def test_skills_install_no_args_is_usage_error(tmp_path: Path) -> None:
     _register_skill(_skill_dir(tmp_path))
 
     result = CliInvoker().invoke(skills_app, ["install"])
 
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "Usage: skills install" in result.stderr
+    assert "error: provide skill names, --stdin, or --all" in result.stderr
 
 
 def test_skills_install_rejects_multiple_selector_sources(tmp_path: Path) -> None:

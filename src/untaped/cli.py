@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn
@@ -16,6 +16,7 @@ from rich.console import Console
 from untaped.errors import HttpError, UntapedError
 from untaped.output import OutputFormat
 from untaped.settings import get_settings
+from untaped.ui import UiContext, ui_context
 
 FormatOption = Annotated[
     OutputFormat,
@@ -60,10 +61,20 @@ def raise_usage(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
-def show_help_and_exit(app: App, tokens: Iterable[str], *, code: int = 2) -> NoReturn:
-    """Print command help to stderr and exit with a usage-style status."""
-    app.help_print(list(tokens), console=_stderr_console())
-    raise SystemExit(code)
+def render_rows(
+    rows: Sequence[dict[str, object]],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None = None,
+) -> str:
+    """Render a row collection: themed table for humans, plain output for pipes.
+
+    Only ``table`` goes through the settings-resolved :func:`ui_context` —
+    structured formats (json, raw, ...) must stay byte-stable regardless of the
+    active theme, so they render through a bare :class:`UiContext`.
+    """
+    ui = ui_context() if fmt == "table" else UiContext()
+    return ui.collection(rows, fmt=fmt, columns=columns)
 
 
 def run_cyclopts_app(
@@ -238,12 +249,3 @@ def _format_error(exc: UntapedError) -> str:
     if isinstance(exc, HttpError) and exc.body:
         return f"{message}\nresponse: {exc.body}"
     return message
-
-
-def _stderr_console() -> Console:
-    return Console(
-        file=sys.stderr,
-        force_terminal=False,
-        color_system=None,
-        width=120,
-    )

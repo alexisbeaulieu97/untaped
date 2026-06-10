@@ -120,15 +120,14 @@ def test_plugins_add_rejects_positional_and_stdin(_isolated_config: Path) -> Non
     assert not _isolated_config.exists()
 
 
-def test_plugins_add_with_no_args_shows_help_without_writing_config(
+def test_plugins_add_with_no_args_is_usage_error_without_writing_config(
     _isolated_config: Path,
 ) -> None:
     result = CliInvoker().invoke(plugins_app, ["add"])
 
     assert result.exit_code == 2
     assert result.stdout == ""
-    assert "Usage: plugins add" in result.stderr
-    assert "uv-compatible plugin package spec(s)" in result.stderr
+    assert "error: provide package spec(s) or --stdin" in result.stderr
     assert not _isolated_config.exists()
 
 
