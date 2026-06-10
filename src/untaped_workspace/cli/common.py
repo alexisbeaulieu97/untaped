@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
-from untaped import ConfigError, get_config_section, raise_usage, ui_context
+from untaped.api import ConfigError, get_config_section, raise_usage, ui_context
 
 from untaped_workspace.application import WorkspaceResolver
 from untaped_workspace.domain import Workspace
@@ -34,6 +34,14 @@ WorkspacePathOption = Annotated[
 
 
 def workspace_settings() -> WorkspaceSettings:
+    """Typed workspace profile settings under the ambient profile override.
+
+    Stays on ``get_config_section`` rather than ``plugin_context().section``:
+    the CLI app is exercised directly in tests (without plugin registration),
+    where only ``get_config_section`` can build its one-off section model.
+    Both remain supported plugin API; the call sites already wrap reads in
+    ``profile_override(profile)``.
+    """
     return get_config_section("workspace", WorkspaceSettings)
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
-from untaped import ProfileOverrideOption, echo, profile_override, report_errors
+from untaped.api import ProfileOverrideOption, echo, profile_override, report_errors
 
 from untaped_workspace.application import (
     AdoptWorkspace,

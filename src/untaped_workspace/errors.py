@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.errors import UntapedError
+from untaped.api import UntapedError
 
 
 class WorkspaceError(UntapedError):

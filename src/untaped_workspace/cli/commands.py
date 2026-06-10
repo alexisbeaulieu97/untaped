@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped import create_app
+from untaped.api import create_app
 
 from untaped_workspace.cli.branch_commands import app as branch_app
 from untaped_workspace.cli.lifecycle_commands import (
