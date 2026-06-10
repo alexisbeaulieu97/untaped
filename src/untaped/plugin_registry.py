@@ -8,8 +8,8 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Protocol
 
-import typer
 import yaml
+from cyclopts import App
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
@@ -22,7 +22,7 @@ from untaped.settings import (
 from untaped.ui import BUILTIN_THEMES, ThemeSpec
 
 ENTRY_POINT_GROUP = "untaped.plugins"
-_SUPPORTED_PLUGIN_API_VERSION = 1
+_SUPPORTED_PLUGIN_API_VERSION = 2
 
 
 class UntapedPlugin(Protocol):
@@ -66,7 +66,7 @@ class PluginRegistry:
     def __init__(self, *, reserved_cli_names: Iterable[str] = ()) -> None:
         self.reserved_cli_names = set(reserved_cli_names)
         self.plugin_ids: set[str] = set()
-        self.clis: dict[str, typer.Typer] = {}
+        self.clis: dict[str, App] = {}
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
         self.themes: dict[str, ThemeSpec] = {}
@@ -79,7 +79,7 @@ class PluginRegistry:
             raise ConfigError(f"duplicate plugin id: {plugin_id}")
         self.plugin_ids.add(plugin_id)
 
-    def add_cli(self, name: str, app: typer.Typer) -> None:
+    def add_cli(self, name: str, app: App) -> None:
         if name in self.reserved_cli_names:
             raise ConfigError(f"reserved CLI command: {name}")
         if name in self.clis:

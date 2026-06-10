@@ -39,17 +39,17 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/home/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Install current core with released plugins
+      - name: Install current core with migration plugin stack
         run: |
           scripts/install.sh --editable .
           untaped plugins add \
-            "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1" \
-            "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1" \
-            "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0" \
-            "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0" \
-            "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0" \
-            "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1" \
-            "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0"
+            "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx@cyclopts-migration" \
+            "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace@cyclopts-migration" \
+            "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github@cyclopts-migration" \
+            "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible@cyclopts-migration" \
+            "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira@cyclopts-migration" \
+            "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile@cyclopts-migration" \
+            "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes@cyclopts-migration"
           test -x "$HOME/.local/bin/untaped"
 
       - name: Verify plugin discovery
@@ -65,7 +65,7 @@ jobs:
           themes
           workspace
           EOF
-          untaped plugins list --format raw --columns plugin_id > "$actual"
+          untaped plugins list --format raw --columns plugin_id | sort > "$actual"
           diff -u "$expected" "$actual"
 
       - name: Verify skill discovery

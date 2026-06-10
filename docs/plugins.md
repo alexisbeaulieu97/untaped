@@ -14,7 +14,7 @@ and records the core package spec so later plugin syncs keep core and plugins
 in one environment.
 
 ```bash
-scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.4"
+scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.2.0"
 ```
 
 For local development, install core editable:
@@ -86,15 +86,16 @@ Use `untaped plugins list` to inspect loaded and recorded plugins, and
 ## Plugin authoring contract
 
 Plugins expose one object through the `untaped.plugins` entry point group. The
-object must define `id`, literal `untaped_api_version = 1`, and
+object must define `id`, literal `untaped_api_version = 2`, and
 `register(registry)`.
 
 ```python
 class ExamplePlugin:
     id = "example"
-    untaped_api_version = 1
+    untaped_api_version = 2
 
     def register(self, registry: PluginRegistry) -> None:
+        # `app` is a cyclopts.App instance.
         registry.add_cli("example", app)
 ```
 
@@ -110,7 +111,7 @@ another compatible agent to learn the plugin-specific workflows.
 Plugins that need interactive input should use the core prompt primitives
 through `ui_context(strict=False).confirm/text/secret/select/multiselect(...)`.
 Those prompts require TTY stdin and render on stderr, keeping stdout available
-for data streams. Plugins should not import `typer.prompt`, `typer.confirm`,
+for data streams. Plugins should not import CLI framework prompt helpers,
 or `prompt_toolkit` directly, and there is no prompt-backend plugin hook yet.
 
 ## Plugin docs

@@ -10,7 +10,7 @@ Use this skill when working in an `untaped` repo or when the user asks an agent 
 ## CLI Model
 
 - `untaped` is the core binary. Domain commands such as `awx`, `workspace`, `github`, `profile`, `jira`, and `ansible` are plugins registered through the `untaped.plugins` Python entry point group.
-- Plugin entry point objects must expose `id`, literal `untaped_api_version = 1`, and `register(registry)`.
+- Plugin entry point objects must expose `id`, literal `untaped_api_version = 2`, and `register(registry)`.
 - Use `untaped plugins list` to inspect recorded and loaded plugins, and `untaped plugins doctor` to diagnose plugin load failures.
 - Install or update plugin packages with `untaped plugins add`, `untaped plugins remove`, and `untaped plugins sync`; these commands manage the untaped virtual environment, not agent skills.
 - Install agent-facing guidance with `untaped skills list` and `untaped skills install`; this is explicit and separate from plugin sync.

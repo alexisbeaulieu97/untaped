@@ -36,13 +36,13 @@ EXPECTED_SKILL_NAMES = [
 ]
 
 EXPECTED_PLUGIN_SPECS = [
-    "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git@v0.1.1",
-    "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace.git@v0.1.1",
-    "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.2.0",
-    "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible.git@v0.1.0",
-    "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira.git@v0.1.0",
-    "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile.git@v0.1.1",
-    "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes.git@v0.1.0",
+    "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx@cyclopts-migration",
+    "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace@cyclopts-migration",
+    "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github@cyclopts-migration",
+    "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible@cyclopts-migration",
+    "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira@cyclopts-migration",
+    "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile@cyclopts-migration",
+    "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes@cyclopts-migration",
 ]
 
 
@@ -137,9 +137,10 @@ def test_setup_uv_steps_pin_uv_version() -> None:
     )
 
 
-def test_release_smoke_workflow_installs_current_core_with_released_plugins() -> None:
+def test_release_smoke_workflow_installs_current_core_with_migration_plugin_stack() -> None:
     text, _ = _load_workflow()
 
+    assert "Install current core with migration plugin stack" in text
     assert "scripts/install.sh --editable ." in text
     assert "uv tool install" not in text
     assert "--no-sources" not in text
@@ -152,7 +153,7 @@ def test_release_smoke_workflow_pins_plugin_and_skill_discovery_contracts() -> N
     plugin_run = _step_run(workflow, "Verify plugin discovery")
     skill_run = _step_run(workflow, "Verify skill discovery")
 
-    assert "untaped plugins list --format raw --columns plugin_id" in plugin_run
+    assert "untaped plugins list --format raw --columns plugin_id | sort" in plugin_run
     assert "untaped skills list --format raw --columns name" in skill_run
     assert "\n".join(EXPECTED_PLUGIN_NAMES) in plugin_run
     assert "\n".join(EXPECTED_SKILL_NAMES) in skill_run

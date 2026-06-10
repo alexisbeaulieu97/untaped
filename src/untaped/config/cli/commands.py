@@ -1,12 +1,12 @@
-"""Typer commands: ``untaped config list / get / set / unset``."""
+"""Cyclopts commands: ``untaped config list / get / set / unset``."""
 
 from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
-from typing import Literal, get_args, get_origin
+from typing import Annotated, Literal, get_args, get_origin
 
-import typer
+from cyclopts import Parameter
 
 from untaped import (
     BUILTIN_THEMES,
@@ -18,9 +18,13 @@ from untaped import (
     ProfileOverrideOption,
     PromptChoice,
     UiContext,
+    create_app,
+    echo,
     profile_override,
+    raise_usage,
     report_errors,
     resolve_config_path,
+    show_help_and_exit,
     ui_context,
 )
 from untaped.config.application import (
@@ -34,31 +38,29 @@ from untaped.config.domain import SettingEntry
 from untaped.config.infrastructure import SettingsFileRepository
 from untaped.plugin_registry import current_registry
 
-app = typer.Typer(
+app = create_app(
     name="config",
     help="Inspect and modify ``~/.untaped/config.yml``.",
-    no_args_is_help=True,
 )
 
 
-@app.callback()
-def _callback() -> None:
-    """Inspect and modify ``~/.untaped/config.yml``."""
-
-
-@app.command("list")
+@app.command(name="list")
 def list_command(
+    *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     profile: ProfileOverrideOption = None,
-    show_secrets: bool = typer.Option(
-        False, "--show-secrets", help="Reveal secret values instead of `***`."
-    ),
-    all_profiles: bool = typer.Option(
-        False,
-        "--all-profiles",
-        help="Show one row per (profile, key) instead of the resolved view.",
-    ),
+    show_secrets: Annotated[
+        bool,
+        Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+    ] = False,
+    all_profiles: Annotated[
+        bool,
+        Parameter(
+            name="--all-profiles",
+            help="Show one row per (profile, key) instead of the resolved view.",
+        ),
+    ] = False,
 ) -> None:
     """List configurable settings.
 
@@ -68,7 +70,7 @@ def list_command(
     """
     with report_errors():
         if all_profiles and profile is not None:
-            raise typer.BadParameter("Cannot combine --profile with --all-profiles.")
+            raise_usage("Cannot combine --profile with --all-profiles.")
         with profile_override(profile):
             repo = SettingsFileRepository()
             if all_profiles:
@@ -76,42 +78,64 @@ def list_command(
             else:
                 entries = ListSettings(repo)(reveal_secrets=show_secrets)
         rows = [_entry_to_row(e) for e in entries]
-        typer.echo(_render_collection(rows, fmt=fmt, columns=columns))
+        echo(_render_collection(rows, fmt=fmt, columns=columns))
 
 
-@app.command("get", no_args_is_help=True)
+@app.command(name="get")
 def get_command(
-    key: str = typer.Argument(..., help="Dotted setting key, e.g. `http.verify_ssl`."),
-    fmt: OutputFormat = typer.Option("raw", "--format", "-f", help="Output format."),
+    key: Annotated[
+        str | None,
+        Parameter(help="Dotted setting key, e.g. `http.verify_ssl`."),
+    ] = None,
+    *,
+    fmt: FormatOption = "raw",
     profile: ProfileOverrideOption = None,
-    show_secrets: bool = typer.Option(
-        False, "--show-secrets", help="Reveal secret values instead of `***`."
-    ),
+    show_secrets: Annotated[
+        bool,
+        Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+    ] = False,
 ) -> None:
     """Print one effective scalar setting value."""
+    if key is None:
+        show_help_and_exit(app, ["get"])
     with report_errors():
         if _is_global_ui_key(key) and profile is not None:
             raise ConfigError("ui settings are global; --profile cannot be used")
         with profile_override(profile):
             entry = GetSetting(SettingsFileRepository())(key, reveal_secrets=show_secrets)
-        typer.echo(_render_detail(_entry_to_row(entry), fmt=fmt))
+        echo(_render_detail(_entry_to_row(entry), fmt=fmt))
 
 
-@app.command("set", no_args_is_help=True)
+@app.command(name="set")
 def set_command(
-    key: str = typer.Argument(..., help="Dotted setting key, e.g. `http.verify_ssl`."),
-    value: str | None = typer.Argument(None, help="New value (parsed as a YAML scalar)."),
-    target_profile: str | None = typer.Option(
-        None,
-        "--target-profile",
-        help="Target profile to write to (defaults to the active profile).",
-    ),
-    stdin: bool = typer.Option(False, "--stdin", help="Read the new value from stdin."),
-    prompt: bool = typer.Option(
-        False, "--prompt", help="Prompt for the new value using the setting type."
-    ),
+    key: Annotated[
+        str | None,
+        Parameter(help="Dotted setting key, e.g. `http.verify_ssl`."),
+    ] = None,
+    value: Annotated[
+        str | None,
+        Parameter(help="New value (parsed as a YAML scalar)."),
+    ] = None,
+    *,
+    target_profile: Annotated[
+        str | None,
+        Parameter(
+            name="--target-profile",
+            help="Target profile to write to (defaults to the active profile).",
+        ),
+    ] = None,
+    stdin: Annotated[
+        bool,
+        Parameter(name="--stdin", help="Read the new value from stdin."),
+    ] = False,
+    prompt: Annotated[
+        bool,
+        Parameter(name="--prompt", help="Prompt for the new value using the setting type."),
+    ] = False,
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
+    if key is None:
+        show_help_and_exit(app, ["set"])
     with report_errors():
         if _is_global_ui_key(key) and target_profile is not None:
             raise ConfigError("ui settings are global; --target-profile cannot be used")
@@ -148,9 +172,9 @@ def _resolve_set_value(
     )
     sources = [name for name, selected in choices if selected]
     if not sources:
-        raise typer.BadParameter("provide VALUE, --stdin, or --prompt")
+        raise_usage("provide VALUE, --stdin, or --prompt")
     if len(sources) > 1:
-        raise typer.BadParameter("provide only one of VALUE, --stdin, or --prompt")
+        raise_usage("provide only one of VALUE, --stdin, or --prompt")
     if stdin:
         return _read_stdin_value()
     if prompt:
@@ -256,16 +280,21 @@ def _raw_prompt_scalar(value: object) -> str:
     return str(value)
 
 
-@app.command("unset", no_args_is_help=True)
+@app.command(name="unset")
 def unset_command(
-    key: str = typer.Argument(..., help="Dotted setting key to remove."),
-    target_profile: str | None = typer.Option(
-        None,
-        "--target-profile",
-        help="Target profile to remove from (defaults to the active profile).",
-    ),
+    key: Annotated[str | None, Parameter(help="Dotted setting key to remove.")] = None,
+    *,
+    target_profile: Annotated[
+        str | None,
+        Parameter(
+            name="--target-profile",
+            help="Target profile to remove from (defaults to the active profile).",
+        ),
+    ] = None,
 ) -> None:
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
+    if key is None:
+        show_help_and_exit(app, ["unset"])
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
         if _is_global_ui_key(key):
