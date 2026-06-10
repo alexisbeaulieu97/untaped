@@ -3,40 +3,39 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import typer
 import yaml
-from typer.testing import CliRunner
 
-from untaped import ProfileOverrideOption, get_settings, profile_override
+from untaped import ProfileOverrideOption, create_app, echo, get_settings, profile_override
 from untaped.main import build_app
 from untaped.plugins import PluginRegistry
+from untaped.testing import CliInvoker
 
 
 class _ProfileEnvProbePlugin:
     id = "profile-env-probe"
-    untaped_api_version = 1
+    untaped_api_version = 2
 
     def register(self, registry: PluginRegistry) -> None:
-        probe_app = typer.Typer(no_args_is_help=True)
+        probe_app = create_app(name="probe")
 
-        @probe_app.command("current")
+        @probe_app.command(name="current")
         def current() -> None:
-            typer.echo(os.environ.get("UNTAPED_PROFILE", ""))
+            echo(os.environ.get("UNTAPED_PROFILE", ""))
 
         registry.add_cli("probe", probe_app)
 
 
 class _ProfileSettingsProbePlugin:
     id = "profile-settings-probe"
-    untaped_api_version = 1
+    untaped_api_version = 2
 
     def register(self, registry: PluginRegistry) -> None:
-        probe_app = typer.Typer(no_args_is_help=True)
+        probe_app = create_app(name="probe")
 
-        @probe_app.command("log-level")
+        @probe_app.command(name="log-level")
         def log_level(profile: ProfileOverrideOption = None) -> None:
             with profile_override(profile):
-                typer.echo(get_settings().log_level)
+                echo(get_settings().log_level)
 
         registry.add_cli("probe", probe_app)
 
@@ -59,7 +58,7 @@ def _isolate_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
 
 
 def test_help_lists_core_commands_only_without_plugins(app: object) -> None:
-    result = CliRunner().invoke(app, ["--help"])
+    result = CliInvoker().invoke(app, ["--help"])
     assert result.exit_code == 0
     output = result.stdout
     assert "config" in output
@@ -70,21 +69,21 @@ def test_help_lists_core_commands_only_without_plugins(app: object) -> None:
 
 
 def test_help_lists_skills_core_command(app: object) -> None:
-    result = CliRunner().invoke(app, ["--help"])
+    result = CliInvoker().invoke(app, ["--help"])
 
     assert result.exit_code == 0
     assert "skills" in result.stdout
 
 
 def test_skills_list_includes_builtin_untaped_skill(app: object) -> None:
-    result = CliRunner().invoke(app, ["skills", "list", "--format", "raw"])
+    result = CliInvoker().invoke(app, ["skills", "list", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert "untaped" in result.stdout.splitlines()
 
 
 def test_config_subcommand_help(app: object) -> None:
-    result = CliRunner().invoke(app, ["config", "--help"])
+    result = CliInvoker().invoke(app, ["config", "--help"])
     assert result.exit_code == 0
     assert "list" in result.stdout
     assert "set" in result.stdout
@@ -95,7 +94,7 @@ def test_root_profile_flag_is_visible_to_plugin_commands() -> None:
     """Root ``--profile`` remains core plumbing even when profile is external."""
     app = build_app(plugins=[_ProfileEnvProbePlugin()])
 
-    result = CliRunner().invoke(app, ["--profile", "stage", "probe", "current"])
+    result = CliInvoker().invoke(app, ["--profile", "stage", "probe", "current"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["stage"]
@@ -111,7 +110,7 @@ def test_root_profile_flag_overrides_active(app: object, _isolate_config: Path) 
         "  stage:\n    log_level: DEBUG\n"
         "active: prod\n"
     )
-    runner = CliRunner()
+    runner = CliInvoker()
     # Without --profile, log_level reads from prod (WARNING)
     result = runner.invoke(
         app,
@@ -148,7 +147,7 @@ def test_command_local_profile_flag_overrides_plugin_read_command(
     )
     app = build_app(plugins=[_ProfileSettingsProbePlugin()])
 
-    result = CliRunner().invoke(app, ["probe", "log-level", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["probe", "log-level", "--profile", "stage"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["DEBUG"]

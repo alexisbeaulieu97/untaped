@@ -7,10 +7,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from untaped.plugins import PluginRegistry, SkillSpec, set_current_registry
 from untaped.skills import app as skills_app
+from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -47,7 +47,7 @@ def test_skills_list_json_reports_registered_skills(tmp_path: Path) -> None:
     source = _skill_dir(tmp_path)
     _register_skill(source)
 
-    result = CliRunner().invoke(skills_app, ["list", "--format", "json"])
+    result = CliInvoker().invoke(skills_app, ["list", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.output) == [
@@ -62,7 +62,7 @@ def test_skills_list_json_reports_registered_skills(tmp_path: Path) -> None:
 def test_skills_list_raw_defaults_to_skill_names(tmp_path: Path) -> None:
     _register_skill(_skill_dir(tmp_path))
 
-    result = CliRunner().invoke(skills_app, ["list", "--format", "raw"])
+    result = CliInvoker().invoke(skills_app, ["list", "--format", "raw"])
 
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == ["untaped-demo"]
@@ -71,7 +71,7 @@ def test_skills_list_raw_defaults_to_skill_names(tmp_path: Path) -> None:
 def test_skills_install_no_args_shows_help(tmp_path: Path) -> None:
     _register_skill(_skill_dir(tmp_path))
 
-    result = CliRunner().invoke(skills_app, ["install"])
+    result = CliInvoker().invoke(skills_app, ["install"])
 
     assert result.exit_code == 0, result.output
     assert "Usage: skills install" in result.output
@@ -80,7 +80,7 @@ def test_skills_install_no_args_shows_help(tmp_path: Path) -> None:
 def test_skills_install_rejects_multiple_selector_sources(tmp_path: Path) -> None:
     _register_skill(_skill_dir(tmp_path))
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "untaped-demo", "--stdin"],
         input="untaped-other\n",
@@ -94,7 +94,7 @@ def test_skills_install_rejects_duplicate_selected_names_before_writing(tmp_path
     _register_skill(_skill_dir(tmp_path))
     target = tmp_path / "codex-skills"
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         [
             "install",
@@ -117,7 +117,7 @@ def test_skills_install_copies_skill_directory_and_marker(tmp_path: Path) -> Non
     _register_skill(source)
     target = tmp_path / "codex-skills"
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "untaped-demo", "--target", "codex", "--target-dir", str(target)],
     )
@@ -146,7 +146,7 @@ def test_skills_install_uses_user_agents_dir_for_codex_global_scope(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("CODEX_HOME", str(legacy_codex_home))
 
-    result = CliRunner().invoke(skills_app, ["install", "untaped-demo", "--target", "codex"])
+    result = CliInvoker().invoke(skills_app, ["install", "untaped-demo", "--target", "codex"])
 
     assert result.exit_code == 0, result.output
     assert home.joinpath(".agents", "skills", "untaped-demo", "SKILL.md").is_file()
@@ -161,7 +161,7 @@ def test_skills_install_uses_claude_skills_dir_for_global_scope(
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
 
-    result = CliRunner().invoke(skills_app, ["install", "untaped-demo", "--target", "claude"])
+    result = CliInvoker().invoke(skills_app, ["install", "untaped-demo", "--target", "claude"])
 
     assert result.exit_code == 0, result.output
     assert home.joinpath(".claude", "skills", "untaped-demo", "SKILL.md").is_file()
@@ -172,7 +172,7 @@ def test_skills_install_local_scope_installs_to_agent_project_dirs(tmp_path: Pat
     project = tmp_path / "project"
     project.mkdir()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         [
             "install",
@@ -202,7 +202,7 @@ def test_skills_install_local_scope_defaults_to_git_root(
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
     monkeypatch.chdir(nested)
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "untaped-demo", "--target", "codex", "--scope", "local"],
     )
@@ -221,7 +221,7 @@ def test_skills_install_local_scope_defaults_to_cwd_without_git_root(
     project.mkdir()
     monkeypatch.chdir(project)
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "untaped-demo", "--target", "claude", "--scope", "local"],
     )
@@ -236,7 +236,7 @@ def test_skills_install_marker_records_local_scope_and_install_root(tmp_path: Pa
     project = tmp_path / "project"
     project.mkdir()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         [
             "install",
@@ -267,7 +267,7 @@ def test_skills_install_project_dir_requires_local_scope(tmp_path: Path) -> None
     project = tmp_path / "project"
     project.mkdir()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "untaped-demo", "--target", "codex", "--project-dir", str(project)],
     )
@@ -279,7 +279,7 @@ def test_skills_install_project_dir_requires_local_scope(tmp_path: Path) -> None
 def test_skills_install_target_dir_requires_single_target(tmp_path: Path) -> None:
     _register_skill(_skill_dir(tmp_path))
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         [
             "install",
@@ -300,7 +300,7 @@ def test_skills_install_project_dir_cannot_combine_with_target_dir(tmp_path: Pat
     project = tmp_path / "project"
     project.mkdir()
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         [
             "install",
@@ -327,7 +327,7 @@ def test_skills_install_fails_when_target_exists_without_force(tmp_path: Path) -
     target.joinpath("untaped-demo").mkdir(parents=True)
     target.joinpath("untaped-demo", "SKILL.md").write_text("local edit\n")
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "untaped-demo", "--target", "codex", "--target-dir", str(target)],
     )
@@ -344,7 +344,7 @@ def test_skills_install_force_replaces_existing_target(tmp_path: Path) -> None:
     target.joinpath("untaped-demo").mkdir(parents=True)
     target.joinpath("untaped-demo", "SKILL.md").write_text("local edit\n")
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         [
             "install",
@@ -379,7 +379,7 @@ def test_skills_install_all_installs_every_registered_skill(tmp_path: Path) -> N
     set_current_registry(registry)
     target = tmp_path / "codex-skills"
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         skills_app,
         ["install", "--all", "--target", "codex", "--target-dir", str(target)],
     )

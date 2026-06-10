@@ -1,6 +1,6 @@
 [project]
 name = "untaped"
-version = "0.1.4"
+version = "0.2.0"
 description = "A personal DevOps CLI suite."
 readme = "README.md"
 authors = [
@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "cyclopts>=4.16.0,<5",
     "filelock>=3.29.0",
     "httpx>=0.28.1",
     "prompt-toolkit>=3.0.52",
@@ -16,11 +17,10 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "truststore>=0.10.4",
-    "typer>=0.25.1",
 ]
 
 [project.scripts]
-untaped = "untaped.main:app"
+untaped = "untaped.main:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
@@ -66,8 +66,6 @@ max-complexity = 12
 # Tests can use assert statements; in-function imports are routine and
 # idiomatic in tests (no startup-latency cost).
 "**/tests/**" = ["S101", "PLC0415"]
-# Typer's idiomatic API uses function-call defaults (typer.Option(...), typer.Argument(...)).
-"**/cli/*.py" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"

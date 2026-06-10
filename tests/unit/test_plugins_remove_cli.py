@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from untaped.plugins import app as plugins_app
+from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -57,7 +57,7 @@ def test_plugins_remove_accepts_package_name_for_named_direct_reference(
         f"plugins:\n  packages:\n    - spec: {spec!r}\n      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
@@ -76,7 +76,7 @@ def test_plugins_remove_no_sync_removes_multiple_package_specs(_isolated_config:
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["remove", "untaped-awx", "untaped-profile", "--no-sync"],
     )
@@ -100,7 +100,7 @@ def test_plugins_remove_success_message_falls_back_when_global_ui_theme_unknown(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     assert "removed plugin package: untaped-awx" in result.output
@@ -120,7 +120,7 @@ def test_plugins_remove_no_sync_ignores_duplicate_package_specs(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["remove", "untaped-awx", "untaped-awx", "--no-sync"],
     )
@@ -141,7 +141,7 @@ def test_plugins_remove_no_sync_reads_package_specs_from_stdin(_isolated_config:
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["remove", "--stdin", "--no-sync"],
         input="untaped-awx\nuntaped-profile\n",
@@ -157,7 +157,7 @@ def test_plugins_remove_rejects_positional_and_stdin(_isolated_config: Path) -> 
         "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["remove", "untaped-awx", "--stdin", "--no-sync"],
         input="untaped-awx\n",
@@ -173,7 +173,7 @@ def test_plugins_remove_missing_package_fails_without_changing_config(
     original = "plugins:\n  packages:\n    - spec: untaped-awx\n      editable: false\n"
     _isolated_config.write_text(original)
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["remove", "untaped-awx", "untaped-missing", "--no-sync"],
     )
@@ -186,11 +186,11 @@ def test_plugins_remove_missing_package_fails_without_changing_config(
 def test_plugins_remove_with_no_args_shows_help_without_writing_config(
     _isolated_config: Path,
 ) -> None:
-    result = CliRunner().invoke(plugins_app, ["remove"])
+    result = CliInvoker().invoke(plugins_app, ["remove"])
 
     assert result.exit_code == 2
     assert "Usage: plugins remove" in result.output
-    assert "PACKAGE_SPECS" in result.output
+    assert "Plugin package spec(s) to remove" in result.output
     assert not _isolated_config.exists()
 
 
@@ -204,7 +204,7 @@ def test_plugins_remove_accepts_package_name_for_legacy_bare_direct_url(
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["remove", "untaped-profile", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["remove", "untaped-profile", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
@@ -223,7 +223,7 @@ def test_plugins_remove_accepts_package_name_for_editable_local_path(
         "      name: untaped-profile\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["remove", "untaped-profile", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["remove", "untaped-profile", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
@@ -257,7 +257,7 @@ def test_plugins_remove_sync_failure_restores_editable_path_removed_by_spec(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["remove", str(plugin)])
+    result = CliInvoker().invoke(plugins_app, ["remove", str(plugin)])
 
     assert result.exit_code == 1
     assert "plugin sync failed with exit 2" in result.output
@@ -282,7 +282,7 @@ def test_plugins_remove_no_sync_does_not_canonicalize_unrelated_legacy_direct_ur
         "      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["remove", "untaped-awx", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
@@ -312,7 +312,7 @@ def test_plugins_remove_sync_exact_syncs_remaining_recorded_plugins(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["remove", "untaped-awx", "untaped-profile"])
+    result = CliInvoker().invoke(plugins_app, ["remove", "untaped-awx", "untaped-profile"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
