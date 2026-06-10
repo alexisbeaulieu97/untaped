@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from untaped.config_file import mutate_config
 from untaped.plugins import app as plugins_app
+from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -57,7 +57,7 @@ def _assert_managed_sync(
 
 
 def test_plugins_add_no_sync_records_package_spec(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
@@ -69,7 +69,7 @@ def test_plugins_add_success_message_falls_back_when_global_ui_theme_unknown(
 ) -> None:
     _isolated_config.write_text("ui:\n  theme: missing\n")
 
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     assert "added plugin package: untaped-awx" in result.output
@@ -78,7 +78,7 @@ def test_plugins_add_success_message_falls_back_when_global_ui_theme_unknown(
 
 
 def test_plugins_add_no_sync_records_multiple_package_specs(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", "untaped-awx", "untaped-profile", "--no-sync"],
     )
@@ -94,7 +94,7 @@ def test_plugins_add_no_sync_records_multiple_package_specs(_isolated_config: Pa
 
 
 def test_plugins_add_no_sync_reads_package_specs_from_stdin(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", "--stdin", "--no-sync"],
         input="untaped-awx\nuntaped-profile\n",
@@ -109,7 +109,7 @@ def test_plugins_add_no_sync_reads_package_specs_from_stdin(_isolated_config: Pa
 
 
 def test_plugins_add_rejects_positional_and_stdin(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", "untaped-awx", "--stdin", "--no-sync"],
         input="untaped-profile\n",
@@ -123,11 +123,12 @@ def test_plugins_add_rejects_positional_and_stdin(_isolated_config: Path) -> Non
 def test_plugins_add_with_no_args_shows_help_without_writing_config(
     _isolated_config: Path,
 ) -> None:
-    result = CliRunner().invoke(plugins_app, ["add"])
+    result = CliInvoker().invoke(plugins_app, ["add"])
 
     assert result.exit_code == 2
-    assert "Usage: plugins add" in result.output
-    assert "PACKAGE_SPECS" in result.output
+    assert result.stdout == ""
+    assert "Usage: plugins add" in result.stderr
+    assert "uv-compatible plugin package spec(s)" in result.stderr
     assert not _isolated_config.exists()
 
 
@@ -135,8 +136,8 @@ def test_plugins_add_replaces_existing_named_direct_reference(_isolated_config: 
     bad = "untaped-awx @ https://github.com/alexisbeaulieu97/untaped-awx.git"
     corrected = "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git"
 
-    first = CliRunner().invoke(plugins_app, ["add", bad, "--no-sync"])
-    second = CliRunner().invoke(plugins_app, ["add", corrected, "--no-sync"])
+    first = CliInvoker().invoke(plugins_app, ["add", bad, "--no-sync"])
+    second = CliInvoker().invoke(plugins_app, ["add", corrected, "--no-sync"])
 
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
@@ -157,7 +158,7 @@ def test_plugins_add_sync_exact_syncs_managed_venv(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -178,7 +179,7 @@ def test_plugins_add_sync_requires_recorded_core_spec(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx"])
 
     assert result.exit_code == 1
     assert "managed untaped core install spec is not recorded" in result.output
@@ -200,7 +201,7 @@ def test_plugins_add_sync_batches_managed_venv_sync_once(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "untaped-profile"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx", "untaped-profile"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -226,7 +227,7 @@ def test_plugins_add_git_spec_records_only_requested_plugin_and_lets_uv_resolve_
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["add", spec])
+    result = CliInvoker().invoke(plugins_app, ["add", spec])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -249,7 +250,7 @@ def test_plugins_add_sync_rolls_back_state_when_uv_fails(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git"],
     )
@@ -289,7 +290,7 @@ def test_plugins_add_sync_keeps_concurrent_plugin_state_change(
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx"])
 
     assert result.exit_code == 0, result.output
     assert worker is not None
@@ -318,7 +319,7 @@ def test_plugins_add_editable_maps_to_uv_with_editable(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["add", "plugins/profile", "--editable"])
+    result = CliInvoker().invoke(plugins_app, ["add", "plugins/profile", "--editable"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -345,7 +346,7 @@ def test_plugins_add_local_path_maps_to_uv_with_stable_name(
         _record_successful_uv_calls(calls, requirements),
     )
 
-    result = CliRunner().invoke(plugins_app, ["add", "plugins/profile"])
+    result = CliInvoker().invoke(plugins_app, ["add", "plugins/profile"])
 
     assert result.exit_code == 0, result.output
     _assert_managed_sync(calls, venv)
@@ -363,7 +364,7 @@ def test_plugins_add_editable_invalid_pyproject_reports_config_error(
     plugin.mkdir()
     (plugin / "pyproject.toml").write_text("[project\n")
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", str(plugin), "--editable", "--no-sync"],
     )
@@ -374,7 +375,7 @@ def test_plugins_add_editable_invalid_pyproject_reports_config_error(
 
 
 def test_plugins_add_infers_name_from_bare_direct_url(_isolated_config: Path) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", "git+https://github.com/alexisbeaulieu97/untaped-awx.git", "--no-sync"],
     )
@@ -396,7 +397,7 @@ def test_plugins_add_infers_name_from_bare_direct_url(_isolated_config: Path) ->
 def test_plugins_add_infers_name_from_bare_direct_url_with_git_ref(
     _isolated_config: Path,
 ) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         [
             "add",
@@ -422,8 +423,8 @@ def test_plugins_add_bare_direct_url_replaces_existing_named_reference(
     named = "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx.git"
     corrected = "git+https://github.com/example/untaped-awx.git"
 
-    first = CliRunner().invoke(plugins_app, ["add", named, "--no-sync"])
-    second = CliRunner().invoke(plugins_app, ["add", corrected, "--no-sync"])
+    first = CliInvoker().invoke(plugins_app, ["add", named, "--no-sync"])
+    second = CliInvoker().invoke(plugins_app, ["add", corrected, "--no-sync"])
 
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
@@ -444,7 +445,7 @@ def test_plugins_add_no_sync_does_not_canonicalize_unrelated_legacy_direct_url(
         f"plugins:\n  packages:\n    - spec: {legacy!r}\n      editable: false\n"
     )
 
-    result = CliRunner().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
+    result = CliInvoker().invoke(plugins_app, ["add", "untaped-awx", "--no-sync"])
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolated_config.read_text())
@@ -457,7 +458,7 @@ def test_plugins_add_no_sync_does_not_canonicalize_unrelated_legacy_direct_url(
 def test_plugins_add_rejects_bare_direct_url_when_name_cannot_be_inferred(
     _isolated_config: Path,
 ) -> None:
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         ["add", "git+https://github.com/alexisbeaulieu97/.git", "--no-sync"],
     )
@@ -474,7 +475,7 @@ def test_plugins_add_batch_rejects_invalid_spec_before_changing_config(
     original = "plugins:\n  packages:\n    - spec: untaped-profile\n      editable: false\n"
     _isolated_config.write_text(original)
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         plugins_app,
         [
             "add",

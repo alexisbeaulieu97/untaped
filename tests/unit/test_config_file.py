@@ -525,7 +525,7 @@ def test_read_config_dict_translates_yaml_error_to_config_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Broken YAML must surface as ``ConfigError`` (user-facing ``error: …``),
-    not bubble out as a PyYAML traceback to the Typer handler."""
+    not bubble out as a PyYAML traceback to the CLI handler."""
     cfg = tmp_path / "config.yml"
     cfg.write_text("active: [unterminated\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

@@ -11,9 +11,17 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Annotated
 
-import typer
+from cyclopts import Parameter
 
-from untaped.cli import ColumnsOption, FormatOption, report_errors
+from untaped.cli import (
+    ColumnsOption,
+    FormatOption,
+    create_app,
+    echo,
+    existing_directory,
+    report_errors,
+    show_help_and_exit,
+)
 from untaped.errors import ConfigError
 from untaped.plugin_registry import PluginRegistry, SkillSpec, current_registry
 from untaped.stdin import read_identifiers
@@ -49,73 +57,60 @@ class SkillInstallDestination:
 
 SkillNamesArgument = Annotated[
     list[str] | None,
-    typer.Argument(help="Skill name(s) to install."),
+    Parameter(help="Skill name(s) to install."),
 ]
 SkillStdinOption = Annotated[
     bool,
-    typer.Option("--stdin", help="Read skill names from stdin."),
+    Parameter(name="--stdin", help="Read skill names from stdin."),
 ]
 AllSkillsOption = Annotated[
     bool,
-    typer.Option("--all", help="Install every registered skill."),
+    Parameter(name="--all", help="Install every registered skill."),
 ]
 SkillTargetOption = Annotated[
     SkillInstallTarget,
-    typer.Option(
-        "--target",
+    Parameter(
+        name="--target",
         help="Agent target to install for.",
-        case_sensitive=False,
     ),
 ]
 SkillForceOption = Annotated[
     bool,
-    typer.Option("--force", help="Replace existing target skill dirs."),
+    Parameter(name="--force", help="Replace existing target skill dirs."),
 ]
 SkillScopeOption = Annotated[
     SkillInstallScope,
-    typer.Option(
-        "--scope",
+    Parameter(
+        name="--scope",
         help="Install scope.",
-        case_sensitive=False,
     ),
 ]
 SkillProjectDirOption = Annotated[
     Path | None,
-    typer.Option(
-        "--project-dir",
+    Parameter(
+        name="--project-dir",
         help="Project directory for local installs.",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=True,
+        validator=existing_directory,
     ),
 ]
 SkillTargetDirOption = Annotated[
     Path | None,
-    typer.Option(
-        "--target-dir",
+    Parameter(
+        name="--target-dir",
         help="Override the selected target's skills directory.",
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=True,
     ),
 ]
 
 
-app = typer.Typer(
+app = create_app(
     name="skills",
     help="List and install agent skills contributed by untaped plugins.",
-    no_args_is_help=True,
 )
 
 
-@app.callback()
-def _callback() -> None:
-    """List and install agent skills."""
-
-
-@app.command("list")
+@app.command(name="list")
 def list_command(
+    *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -124,13 +119,13 @@ def list_command(
         rows = skill_rows(current_registry())
         rendered = _render_collection(rows, fmt=fmt, columns=columns)
         if rendered:
-            typer.echo(rendered)
+            echo(rendered)
 
 
-@app.command("install")
+@app.command(name="install")
 def install_command(
-    ctx: typer.Context,
     skill_names: SkillNamesArgument = None,
+    *,
     stdin: SkillStdinOption = False,
     all_skills: AllSkillsOption = False,
     target: SkillTargetOption = SkillInstallTarget.codex,
@@ -150,8 +145,7 @@ def install_command(
         and project_dir is None
         and target_dir is None
     ):
-        typer.echo(ctx.get_help())
-        raise typer.Exit()
+        show_help_and_exit(app, ["install"])
     with report_errors():
         registry = current_registry()
         selected_names = _selected_skill_names(
@@ -245,7 +239,13 @@ def _install_targets(
     if project_dir is not None and target_dir is not None:
         raise ConfigError("--project-dir cannot be combined with --target-dir")
     if target_dir is not None:
-        return [SkillInstallDestination(target=target.value, scope=scope, root=target_dir)]
+        return [
+            SkillInstallDestination(
+                target=target.value,
+                scope=scope,
+                root=_target_skill_root(target_dir),
+            )
+        ]
 
     project_root = _local_project_root(project_dir) if scope == SkillInstallScope.local else None
     if target == SkillInstallTarget.codex:
@@ -256,6 +256,13 @@ def _install_targets(
         _codex_destination(scope, project_root=project_root),
         _claude_destination(scope, project_root=project_root),
     ]
+
+
+def _target_skill_root(target_dir: Path) -> Path:
+    root = target_dir.expanduser().resolve()
+    if root.exists() and not root.is_dir():
+        raise ConfigError(f"target skill directory is not a directory: {root}")
+    return root
 
 
 def _plan_install(

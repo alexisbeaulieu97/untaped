@@ -1,6 +1,6 @@
 """Pin load-bearing AGENTS.md Hard Rules by pytest.
 
-Three invariants documented in ``AGENTS.md`` are honoured by convention
+Two invariants documented in ``AGENTS.md`` are honoured by convention
 today and would silently bit-rot if core drifted. Plugin repos carry their
 own copies of plugin-specific invariants.
 
@@ -13,14 +13,8 @@ own copies of plugin-specific invariants.
   Every ``HttpClient(...)`` call under ``src/`` passes
   ``verify=resolve_verify(...)`` (so TLS defaults flow through OS trust +
   ``http.ca_bundle``, never a hard-coded ``True`` / ``False`` / path).
-- :func:`test_typer_apps_and_required_arg_commands_set_no_args_is_help` —
-  Hard Rule #9. Every ``typer.Typer`` app and every command with at
-  least one required argument sets ``no_args_is_help=True`` (so
-  no-args invocation shows help instead of erroring).
-
 Each detector is factored into a pure helper (``_credential_offenders``,
-``_verify_offenders``, ``_no_args_help_offenders``); the
-positive tests at the bottom feed the live workspace state through
+``_verify_offenders``); the positive tests at the bottom feed the live workspace state through
 those helpers, and parametrised negative self-tests feed synthetic
 known-bad inputs so each detector is provably wired (sibling pattern to
 ``test_layering.py::_BYPASS_SOURCES``). Without the negative tests, a
@@ -34,13 +28,10 @@ core guard tests.
 from __future__ import annotations
 
 import ast
-import inspect
 import re
 from pathlib import Path
-from typing import Any
 
 import pytest
-import typer
 from pydantic import BaseModel, SecretStr
 
 from untaped import get_settings_model, walk_settings
@@ -196,95 +187,6 @@ def test_httpclient_construction_passes_verify() -> None:
     assert not offenders, (
         "HttpClient(...) construction under src/ must pass "
         "verify=resolve_verify(...) (see AGENTS.md Hard Rule #12):\n  " + "\n  ".join(offenders)
-    )
-
-
-# ---- (c) typer apps and required-arg commands set no_args_is_help --------
-
-
-def _walk_typer(app: typer.Typer, prefix: str = "") -> list[tuple[str, Any]]:
-    """Return every ``(qualified_name, item)`` reachable from ``app``.
-
-    ``item`` is either a ``typer.Typer`` instance (sub-app) or a Typer
-    ``CommandInfo`` (leaf command); the caller dispatches on type. Names
-    are space-separated so a failure message reads like the actual
-    command path (``awx job-templates launch``).
-
-    Accesses ``app.registered_groups`` / ``registered_commands`` directly
-    (no defensive ``getattr``) — both attributes are set unconditionally
-    in ``typer.Typer.__init__``. A future Typer rename should fail loudly
-    here, not silently report "all good", which matches the issue body's
-    "fails loudly on Typer upgrade" intent.
-    """
-    out: list[tuple[str, Any]] = []
-    for group in app.registered_groups:
-        sub = group.typer_instance
-        out.append((f"{prefix}{group.name}", sub))
-        out.extend(_walk_typer(sub, prefix=f"{prefix}{group.name} "))
-    for cmd in app.registered_commands:
-        name = cmd.name or cmd.callback.__name__
-        out.append((f"{prefix}{name}", cmd))
-    return out
-
-
-def _has_required_arg(callback: Any) -> bool:
-    """Return True if ``callback`` has at least one user-required parameter.
-
-    Typer wraps every parameter's default in an ``ArgumentInfo`` /
-    ``OptionInfo`` whose ``.default`` carries the *real* default. A
-    bare ``...`` (Ellipsis) means "no default — user must supply",
-    which maps directly to "user-required argument".
-
-    Deliberately *doesn't* fall back on ``Parameter.empty`` for
-    unwrapped params: this helper only runs against commands
-    already registered on a ``typer.Typer`` app, where Typer
-    guarantees every param carries a wrapper. The ``Parameter.empty``
-    case would also false-positive on Typer-injected parameters like
-    ``ctx: typer.Context``, which the user never supplies on the
-    command line.
-    """
-    sig = inspect.signature(callback)
-    for p in sig.parameters.values():
-        info = p.default
-        if (
-            isinstance(info, (typer.models.ArgumentInfo, typer.models.OptionInfo))
-            and info.default is ...
-        ):
-            return True
-    return False
-
-
-def _no_args_help_offenders(root_app: typer.Typer) -> list[str]:
-    """Return ``"app: <path>"`` / ``"command: <path>"`` rows for every
-    Typer app or required-arg command reachable from ``root_app`` that
-    does not set ``no_args_is_help=True``.
-    """
-    offenders: list[str] = []
-    # Seed the walk with the root app so the loop handles every entry
-    # uniformly — no special-case for the root before the loop.
-    for name, item in [("<root>", root_app), *_walk_typer(root_app)]:
-        if isinstance(item, typer.Typer):
-            if not item.info.no_args_is_help:
-                offenders.append(f"app: {name}")
-            continue
-        if _has_required_arg(item.callback) and not item.no_args_is_help:
-            offenders.append(f"command: {name}")
-    return offenders
-
-
-def test_typer_apps_and_required_arg_commands_set_no_args_is_help() -> None:
-    """Every Typer app and every required-arg command sets ``no_args_is_help=True``.
-
-    Hard Rule #9. Imports the live root app (which pulls every domain
-    via :mod:`untaped.main`), walks its groups + commands, and reports
-    any offender with its qualified command path.
-    """
-    from untaped.main import app as root_app
-
-    offenders = _no_args_help_offenders(root_app)
-    assert not offenders, (
-        "Typer apps and required-arg commands must set no_args_is_help=True "
-        "(see AGENTS.md Hard Rule #9):\n  " + "\n  ".join(offenders)
     )
 
 
@@ -449,72 +351,3 @@ def test_verify_detector_ignores_resolve_verify(label: str, source: str) -> None
     """The canonical ``verify=resolve_verify(...)`` call shape must pass."""
     tree = ast.parse(source)
     assert _verify_offenders(tree, "<test>") == [], f"expected {label} to be accepted"
-
-
-# (c) Typer apps / commands missing ``no_args_is_help=True``. Synthetic
-# Typer apps; the detector must flag the offending app and/or command.
-
-
-def _required_arg_callback(name: str = typer.Argument(...)) -> None:
-    """Synthetic Typer command body — one required positional."""
-
-
-def _optional_arg_callback(name: str = typer.Option("default")) -> None:
-    """Synthetic Typer command body — no required arg."""
-
-
-def test_no_args_help_detector_flags_sub_app_missing_flag() -> None:
-    """A sub-app without ``no_args_is_help=True`` must be flagged."""
-    root = typer.Typer(no_args_is_help=True)
-    sub = typer.Typer()  # missing no_args_is_help
-    root.add_typer(sub, name="sub")
-    offenders = _no_args_help_offenders(root)
-    assert "app: sub" in offenders
-
-
-def test_no_args_help_detector_walks_nested_sub_apps() -> None:
-    """``_walk_typer`` must recurse — an offender at depth 2 is still flagged.
-
-    Pins the prefix-rendering ("sub subsub", space-separated) so a future
-    "optimise away the recursion" refactor fails loudly.
-    """
-    root = typer.Typer(no_args_is_help=True)
-    sub = typer.Typer(no_args_is_help=True)
-    subsub = typer.Typer()  # missing the flag at depth 2
-    sub.add_typer(subsub, name="subsub")
-    root.add_typer(sub, name="sub")
-    offenders = _no_args_help_offenders(root)
-    assert "app: sub subsub" in offenders
-
-
-def test_no_args_help_detector_flags_required_arg_command_missing_flag() -> None:
-    """A required-arg command without ``no_args_is_help=True`` must be flagged."""
-    root = typer.Typer(no_args_is_help=True)
-    root.command("hit")(_required_arg_callback)  # missing no_args_is_help
-    offenders = _no_args_help_offenders(root)
-    assert "command: hit" in offenders
-
-
-def test_no_args_help_detector_flags_root_missing_flag() -> None:
-    """The root app itself, if missing ``no_args_is_help=True``, must be flagged."""
-    root = typer.Typer()  # missing no_args_is_help
-    offenders = _no_args_help_offenders(root)
-    assert "app: <root>" in offenders
-
-
-def test_no_args_help_detector_ignores_optional_arg_command_without_flag() -> None:
-    """A command with only optional args is exempt — bare invocation runs it."""
-    root = typer.Typer(no_args_is_help=True)
-    root.command("ok")(_optional_arg_callback)  # no required arg → flag not needed
-    offenders = _no_args_help_offenders(root)
-    assert offenders == []
-
-
-def test_no_args_help_detector_accepts_canonical_shape() -> None:
-    """The canonical "every app + every required-arg command has the flag" shape passes."""
-    root = typer.Typer(no_args_is_help=True)
-    sub = typer.Typer(no_args_is_help=True)
-    root.add_typer(sub, name="sub")
-    sub.command("hit", no_args_is_help=True)(_required_arg_callback)
-    offenders = _no_args_help_offenders(root)
-    assert offenders == []
