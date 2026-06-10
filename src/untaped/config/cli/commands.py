@@ -24,6 +24,7 @@ from untaped import (
     raise_usage,
     report_errors,
     resolve_config_path,
+    show_help_and_exit,
     ui_context,
 )
 from untaped.config.application import (
@@ -96,8 +97,7 @@ def get_command(
 ) -> None:
     """Print one effective scalar setting value."""
     if key is None:
-        app.help_print(["get"])
-        raise SystemExit(2)
+        show_help_and_exit(app, ["get"])
     with report_errors():
         if _is_global_ui_key(key) and profile is not None:
             raise ConfigError("ui settings are global; --profile cannot be used")
@@ -135,8 +135,7 @@ def set_command(
 ) -> None:
     """Persist ``key = value`` into a profile (validated against the schema)."""
     if key is None:
-        app.help_print(["set"])
-        raise SystemExit(2)
+        show_help_and_exit(app, ["set"])
     with report_errors():
         if _is_global_ui_key(key) and target_profile is not None:
             raise ConfigError("ui settings are global; --target-profile cannot be used")
@@ -295,8 +294,7 @@ def unset_command(
 ) -> None:
     """Remove ``key`` from a profile (no-op if it wasn't set)."""
     if key is None:
-        app.help_print(["unset"])
-        raise SystemExit(2)
+        show_help_and_exit(app, ["unset"])
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
         if _is_global_ui_key(key):

@@ -189,8 +189,9 @@ def test_plugins_remove_with_no_args_shows_help_without_writing_config(
     result = CliInvoker().invoke(plugins_app, ["remove"])
 
     assert result.exit_code == 2
-    assert "Usage: plugins remove" in result.output
-    assert "Plugin package spec(s) to remove" in result.output
+    assert result.stdout == ""
+    assert "Usage: plugins remove" in result.stderr
+    assert "Plugin package spec(s) to remove" in result.stderr
     assert not _isolated_config.exists()
 
 

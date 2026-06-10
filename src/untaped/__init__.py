@@ -14,6 +14,7 @@ from untaped.cli import (
     raise_usage,
     report_errors,
     resolve_each,
+    show_help_and_exit,
 )
 from untaped.config_schema import (
     FieldDescriptor,
@@ -123,6 +124,7 @@ __all__ = [
     "secret",
     "secret_field_paths",
     "select",
+    "show_help_and_exit",
     "splice_registered_state",
     "text",
     "ui_context",

@@ -9,7 +9,7 @@ from typing import Annotated
 from cyclopts import App, Parameter
 from rich.console import Console
 
-from untaped.cli import create_app
+from untaped.cli import create_app, raise_usage, run_cyclopts_app
 from untaped.config import app as config_app
 from untaped.plugins import (
     PluginRegistry,
@@ -26,6 +26,10 @@ from untaped.skills import app as skills_app
 from untaped.skills import register_builtin_skills
 
 CORE_COMMAND_NAMES = frozenset({"config", "plugins", "skills"})
+PROFILE_HELP = (
+    "Override the active profile for this invocation only "
+    "(equivalent to setting the UNTAPED_PROFILE environment variable)."
+)
 
 
 def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
@@ -39,26 +43,27 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
     app = create_app(
         name="untaped",
         help="A personal DevOps CLI suite.",
+        help_epilogue=f"Global options:\n  --profile PROFILE  {PROFILE_HELP}",
     )
 
     @app.meta.default
     def _root_callback(
         *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
-        profile: Annotated[
+        _profile: Annotated[
             str | None,
             Parameter(
                 name="--profile",
-                help=(
-                    "Override the active profile for this invocation only "
-                    "(equivalent to UNTAPED_PROFILE=<name>)."
-                ),
+                help=PROFILE_HELP,
+                parse=False,
+                show=True,
             ),
         ] = None,
     ) -> object:
+        profile, command_tokens = _consume_leading_profile(list(tokens))
         if profile is not None:
             os.environ["UNTAPED_PROFILE"] = profile
             get_settings.cache_clear()
-        return app(tokens, result_action="return_value")
+        return run_cyclopts_app(app, command_tokens, result_action="return_value")
 
     app.command(config_app, name="config")
     app.command(plugins_app, name="plugins")
@@ -79,7 +84,28 @@ def main(
     error_console: Console | None = None,
 ) -> object:
     """Console-script entrypoint that runs the root meta app."""
-    return app.meta(tokens, console=console, error_console=error_console)
+    return run_cyclopts_app(
+        app.meta,
+        tokens,
+        console=console,
+        error_console=error_console,
+    )
+
+
+def _consume_leading_profile(tokens: list[str]) -> tuple[str | None, list[str]]:
+    if not tokens:
+        return None, tokens
+    first = tokens[0]
+    if first == "--profile":
+        if len(tokens) < 2 or tokens[1].startswith("-"):
+            raise_usage("--profile expects a profile name")
+        return tokens[1], tokens[2:]
+    if first.startswith("--profile="):
+        profile = first.partition("=")[2]
+        if not profile:
+            raise_usage("--profile expects a profile name")
+        return profile, tokens[1:]
+    return None, tokens
 
 
 if __name__ == "__main__":

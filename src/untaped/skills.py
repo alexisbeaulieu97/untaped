@@ -20,6 +20,7 @@ from untaped.cli import (
     echo,
     existing_directory,
     report_errors,
+    show_help_and_exit,
 )
 from untaped.errors import ConfigError
 from untaped.plugin_registry import PluginRegistry, SkillSpec, current_registry
@@ -144,8 +145,7 @@ def install_command(
         and project_dir is None
         and target_dir is None
     ):
-        app.help_print(["install"])
-        raise SystemExit()
+        show_help_and_exit(app, ["install"])
     with report_errors():
         registry = current_registry()
         selected_names = _selected_skill_names(

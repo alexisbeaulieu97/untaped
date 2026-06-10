@@ -12,6 +12,8 @@ from typing import Any
 from cyclopts import App
 from rich.console import Console
 
+from untaped.cli import run_cyclopts_app
+
 
 @dataclass(frozen=True)
 class CliResult:
@@ -96,7 +98,8 @@ def _call_command(
     error_console = _console(stderr)
     if isinstance(command, App):
         target = command.meta if command.meta.default_command is not None else command
-        target(
+        run_cyclopts_app(
+            target,
             args,
             console=console,
             error_console=error_console,
