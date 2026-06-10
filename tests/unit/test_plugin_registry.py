@@ -131,7 +131,7 @@ def test_register_plugins_records_load_error_for_invalid_plugin_api_version(
 def test_register_plugins_records_load_error_for_unsupported_plugin_api_version() -> None:
     class FutureApiVersionPlugin:
         id = "demo"
-        untaped_api_version = 3
+        untaped_api_version = 4
 
         def register(self, registry: PluginRegistry) -> None:
             registry.add_cli("demo", create_app(name="demo"))

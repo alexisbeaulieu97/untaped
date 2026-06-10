@@ -22,8 +22,10 @@ from untaped.config_file import mutate_config
 from untaped.errors import ConfigError
 from untaped.plugin_registry import (
     ENTRY_POINT_GROUP,
+    CliSpec,
     DiagnosticResult,
     PluginLoadError,
+    PluginManifest,
     PluginRegistry,
     SkillSpec,
     UntapedPlugin,
@@ -56,8 +58,10 @@ from untaped.ui import ui_context
 
 __all__ = [
     "ENTRY_POINT_GROUP",
+    "CliSpec",
     "DiagnosticResult",
     "PluginLoadError",
+    "PluginManifest",
     "PluginRegistry",
     "SkillSpec",
     "UntapedPlugin",
