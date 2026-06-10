@@ -14,6 +14,7 @@ from untaped import (
     echo,
     profile_override,
     raise_usage,
+    render_rows,
     report_errors,
 )
 
@@ -27,7 +28,6 @@ from untaped_workspace.cli.common import (
     target_workspaces,
     workspace_settings,
 )
-from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import SyncOutcome
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
@@ -159,6 +159,7 @@ def status_command(
 
 def foreach_command(
     cmd: Annotated[str, Parameter(help='Shell command (e.g. "git pull --rebase").')],
+    /,
     *,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,

@@ -12,6 +12,7 @@ from untaped import (
     echo,
     profile_override,
     read_identifiers,
+    render_rows,
     report_errors,
     resolve_each,
 )
@@ -24,7 +25,6 @@ from untaped_workspace.application import (
     WorkspacePath,
 )
 from untaped_workspace.cli.common import WorkspaceNameOption, WorkspacePathOption, resolve_workspace
-from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import Workspace
 from untaped_workspace.infrastructure import (
     ManifestRepository,
@@ -102,6 +102,7 @@ def path_command(
 
 def shell_init_command(
     shell: Annotated[str, Parameter(help='One of "zsh", "bash", "fish".')],
+    /,
 ) -> None:
     """Emit a shell snippet defining `uwcd <workspace>`."""
     with report_errors():

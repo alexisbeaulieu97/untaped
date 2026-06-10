@@ -53,18 +53,20 @@ def test_no_args_shows_help(cmd: str) -> None:
     assert result.exit_code in (0, 1, 2)
 
 
-def test_init_no_args_shows_help() -> None:
+def test_init_no_args_is_usage_error() -> None:
     result = CliInvoker().invoke(app, ["init"])
 
-    assert result.exit_code == 0, result.output
-    assert "Usage:" in result.output
-    assert "Workspace name" in result.output
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
+    assert "requires an argument" in result.stderr
 
 
-def test_branch_set_no_args_shows_help() -> None:
+def test_branch_set_no_args_is_usage_error() -> None:
     result = CliInvoker().invoke(app, ["branch", "set"])
-    assert result.exit_code in (0, 1, 2)
-    assert "Usage:" in result.output or "Error" in result.output
+
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
+    assert "BRANCH requires an argument" in result.stderr
 
 
 def test_stdin_flags_do_not_expose_negative_aliases() -> None:

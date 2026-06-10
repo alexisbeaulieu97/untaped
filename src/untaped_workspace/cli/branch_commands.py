@@ -13,6 +13,7 @@ from untaped import (
     create_app,
     echo,
     profile_override,
+    render_rows,
     report_errors,
 )
 
@@ -27,7 +28,6 @@ from untaped_workspace.cli.common import (
     WorkspacePathOption,
     resolve_workspace,
 )
-from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import BranchApplyOutcome
 from untaped_workspace.infrastructure import GitRunner, LocalFilesystem, ManifestRepository
 
@@ -40,6 +40,7 @@ app = create_app(
 @app.command(name="set")
 def branch_set_command(
     branch: Annotated[str, Parameter(help="Branch name to record in the manifest.")],
+    /,
     *,
     repo: Annotated[
         str | None,

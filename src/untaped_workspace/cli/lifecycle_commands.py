@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated
 
 from cyclopts import App, Parameter
 from untaped import ProfileOverrideOption, echo, profile_override, report_errors
@@ -26,12 +26,8 @@ from untaped_workspace.infrastructure import (
     WorkspaceRegistryRepository,
 )
 
-_lifecycle_parent_app: App | None = None
-
 
 def register_lifecycle_commands(app: App) -> None:
-    global _lifecycle_parent_app
-    _lifecycle_parent_app = app
     app.command(init_command, name="init")
     app.command(adopt_command, name="adopt")
     app.command(forget_command, name="forget")
@@ -42,7 +38,8 @@ def register_import_command(app: App) -> None:
 
 
 def init_command(
-    name: Annotated[str | None, Parameter(name="", help="Workspace name.")] = None,
+    name: Annotated[str, Parameter(help="Workspace name.")],
+    /,
     *,
     path: Annotated[
         Path | None,
@@ -62,8 +59,6 @@ def init_command(
     Default location is `<workspace.workspaces_dir>/<name>` (the
     `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
     """
-    if name is None:
-        _show_lifecycle_help("init")
     with report_errors(), profile_override(profile):
         target = path or (workspace_settings().workspaces_dir.expanduser() / name)
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
@@ -73,6 +68,7 @@ def init_command(
 
 def adopt_command(
     path: Annotated[Path, Parameter(help="Existing directory containing already-cloned repos.")],
+    /,
     *,
     name: Annotated[
         str | None,
@@ -110,6 +106,7 @@ def adopt_command(
 
 def forget_command(
     name: Annotated[str, Parameter(help="Workspace name.")],
+    /,
     *,
     prune: Annotated[
         bool,
@@ -145,15 +142,10 @@ def forget_command(
         echo(f"{action} workspace {ws.name!r}", err=True)
 
 
-def _show_lifecycle_help(command: str) -> NoReturn:
-    if _lifecycle_parent_app is not None:
-        _lifecycle_parent_app.help_print([command])
-    raise SystemExit()
-
-
 def import_command(
     source: Annotated[Path, Parameter(help="Path to a YAML manifest.")],
     dest: Annotated[Path, Parameter(help="Destination workspace directory.")],
+    /,
     *,
     name: Annotated[
         str | None,

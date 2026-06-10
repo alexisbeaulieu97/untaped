@@ -33,14 +33,17 @@ errors.
 7. **Every source module has a module docstring.** Re-export `__init__.py`
    files are exempt.
 8. **Cyclopts command signatures are explicit.** Use
-   `Annotated[..., Parameter(...)]`, name documented commands/options
-   explicitly, and add manual bare-command help only when required.
+   `Annotated[..., Parameter(...)]` and name documented commands/options
+   explicitly. Required inputs are required positional-only params
+   (`Parameter(help=...)` before `/`); a missing value renders
+   `error: ... requires an argument` (exit 2) automatically — never an
+   optional default plus a manual help dance.
 9. **stdout is data only.** Prompts, progress, and status messages go to
    stderr via `echo(..., err=True)`.
 10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
     registry rows start with `name`; sync/status/foreach rows start with
     `workspace`.
-11. **Row-oriented CLI output uses `cli.rendering.render_rows`.** Human
+11. **Row-oriented CLI output uses core `untaped.render_rows`.** Human
     `--format table` output goes through core `ui_context()` so global
     `ui:` settings and plugin themes apply. Structured `json`, `yaml`, and
     `raw` output goes through a plain `UiContext()` so missing or bad themes
@@ -87,7 +90,7 @@ A workspace has two homes:
   branch?}`). Read/written by `infrastructure.ManifestRepository`.
 - **Registry** (central): a `name → path` list under `workspace.workspaces`
   in `~/.untaped/config.yml`. Just enough to power `list`, `path <name>`,
-  `--workspace X` lookups, and tab completion. Read/written by
+  and `--workspace X` lookups. Read/written by
   `infrastructure.WorkspaceRegistryRepository`.
 
 `ManifestRepository.write` owns workspace-dir creation — it mkdirs the
