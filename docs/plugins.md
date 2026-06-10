@@ -14,7 +14,7 @@ and records the core package spec so later plugin syncs keep core and plugins
 in one environment.
 
 ```bash
-scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.1.4"
+scripts/install.sh "git+https://github.com/alexisbeaulieu97/untaped.git@v0.2.0"
 ```
 
 For local development, install core editable:
@@ -95,6 +95,7 @@ class ExamplePlugin:
     untaped_api_version = 2
 
     def register(self, registry: PluginRegistry) -> None:
+        # `app` is a cyclopts.App instance.
         registry.add_cli("example", app)
 ```
 

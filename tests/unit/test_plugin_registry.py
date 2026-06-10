@@ -209,7 +209,7 @@ def test_registry_rejects_builtin_theme_names() -> None:
 def test_register_plugins_restores_themes_after_failure() -> None:
     class BrokenThemePlugin:
         id = "broken"
-        untaped_api_version = 1
+        untaped_api_version = 2
 
         def register(self, registry: PluginRegistry) -> None:
             registry.add_theme("broken", ThemeSpec(border="square"))
@@ -221,6 +221,7 @@ def test_register_plugins_restores_themes_after_failure() -> None:
 
     assert registry.themes == {}
     assert [error.name for error in registry.load_errors] == ["broken"]
+    assert registry.load_errors[0].error == "boom"
 
 
 def _skill_dir(tmp_path: Path, name: str = "untaped-demo") -> Path:
@@ -336,7 +337,7 @@ def test_register_plugins_restores_skills_after_failure(tmp_path: Path) -> None:
 
     class BrokenSkillPlugin:
         id = "broken"
-        untaped_api_version = 1
+        untaped_api_version = 2
 
         def register(self, registry: PluginRegistry) -> None:
             registry.add_skill(
@@ -354,3 +355,4 @@ def test_register_plugins_restores_skills_after_failure(tmp_path: Path) -> None:
 
     assert registry.skills == {}
     assert [error.name for error in registry.load_errors] == ["broken"]
+    assert registry.load_errors[0].error == "boom"

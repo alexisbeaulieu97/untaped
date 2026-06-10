@@ -239,7 +239,13 @@ def _install_targets(
     if project_dir is not None and target_dir is not None:
         raise ConfigError("--project-dir cannot be combined with --target-dir")
     if target_dir is not None:
-        return [SkillInstallDestination(target=target.value, scope=scope, root=target_dir)]
+        return [
+            SkillInstallDestination(
+                target=target.value,
+                scope=scope,
+                root=_target_skill_root(target_dir),
+            )
+        ]
 
     project_root = _local_project_root(project_dir) if scope == SkillInstallScope.local else None
     if target == SkillInstallTarget.codex:
@@ -250,6 +256,13 @@ def _install_targets(
         _codex_destination(scope, project_root=project_root),
         _claude_destination(scope, project_root=project_root),
     ]
+
+
+def _target_skill_root(target_dir: Path) -> Path:
+    root = target_dir.expanduser().resolve()
+    if root.exists() and not root.is_dir():
+        raise ConfigError(f"target skill directory is not a directory: {root}")
+    return root
 
 
 def _plan_install(
