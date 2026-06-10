@@ -27,7 +27,7 @@ from untaped.skills import register_builtin_skills
 
 CORE_COMMAND_NAMES = frozenset({"config", "plugins", "skills"})
 PROFILE_HELP = (
-    "Override the active profile for this invocation only "
+    "Override the active profile for this invocation only; must precede the command "
     "(equivalent to setting the UNTAPED_PROFILE environment variable)."
 )
 
@@ -43,7 +43,6 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
     app = create_app(
         name="untaped",
         help="A personal DevOps CLI suite.",
-        help_epilogue=f"Global options:\n  --profile PROFILE  {PROFILE_HELP}",
     )
 
     @app.meta.default
@@ -54,6 +53,8 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
             Parameter(
                 name="--profile",
                 help=PROFILE_HELP,
+                # Document the root option in help; parsing stays manual so
+                # passthrough commands keep trailing --profile tokens.
                 parse=False,
                 show=True,
             ),

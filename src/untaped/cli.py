@@ -43,9 +43,9 @@ ProfileOverrideOption = Annotated[
 """Command-local read-time profile override for plugin/read commands."""
 
 
-def create_app(*, name: str, help: str = "", help_epilogue: str | None = None) -> App:
+def create_app(*, name: str, help: str = "") -> App:
     """Create a Cyclopts app with the suite's default command-group settings."""
-    return App(name=name, help=help, help_epilogue=help_epilogue)
+    return App(name=name, help=help)
 
 
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:

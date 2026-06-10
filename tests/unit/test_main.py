@@ -100,7 +100,18 @@ def test_help_describes_root_profile_without_rich_markup(app: object) -> None:
 
     assert result.exit_code == 0
     assert "UNTAPED_PROFILE environment variable" in result.stdout
+    assert "must precede the command" in result.stdout
     assert "UNTAPED_PROFILE=)" not in result.stdout
+    assert result.stdout.count("--profile") == 1
+    assert "Global options:" not in result.stdout
+
+
+def test_subcommand_help_does_not_repeat_root_profile_help(app: object) -> None:
+    result = CliInvoker().invoke(app, ["config", "--help"])
+
+    assert result.exit_code == 0
+    assert result.stdout.count("--profile") == 1
+    assert "Global options:" not in result.stdout
 
 
 def test_help_lists_skills_core_command(app: object) -> None:
