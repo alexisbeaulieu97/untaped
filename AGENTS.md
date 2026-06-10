@@ -316,9 +316,8 @@ Cross-cutting subsystems with their own internals doc:
   - **`untaped`**: re-exports its public plugin/core API from
     `src/untaped/__init__.py` with explicit `__all__`.
 - **Per-command flags vs shared option types.** Per-command flags in
-  `cli/commands.py` use call-site defaults
-  (`field: Type = Parameter(..., "--flag", help="…")`). Shared
-  option types reused across commands live in `untaped` as
+  `cli/commands.py` use `Annotated[..., Parameter(...)]` at the call
+  site. Shared option types reused across commands live in `untaped` as
   `Annotated[…, Parameter(…)]` aliases (e.g. `FormatOption`,
   `ColumnsOption`).
 - **`errors.py` placement.** Domain packages with their own exception

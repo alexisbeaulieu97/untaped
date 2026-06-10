@@ -126,8 +126,9 @@ def test_plugins_add_with_no_args_shows_help_without_writing_config(
     result = CliInvoker().invoke(plugins_app, ["add"])
 
     assert result.exit_code == 2
-    assert "Usage: plugins add" in result.output
-    assert "uv-compatible plugin package spec(s)" in result.output
+    assert result.stdout == ""
+    assert "Usage: plugins add" in result.stderr
+    assert "uv-compatible plugin package spec(s)" in result.stderr
     assert not _isolated_config.exists()
 
 

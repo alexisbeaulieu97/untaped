@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 import pytest
 
 from untaped.errors import ConfigError
-from untaped.prompts import PromptToolkitPromptBackend
+from untaped.prompts import PromptToolkitPromptBackend, prompt_style_from_roles
 from untaped.ui import PromptChoice, UiContext
 
 T = TypeVar("T")
@@ -225,6 +225,13 @@ def test_prompt_toolkit_select_uses_stderr_session_and_returns_typed_value(
         "default": 1,
         "style": None,
     }
+
+
+def test_prompt_style_preserves_white_and_bright_white_distinction() -> None:
+    style = prompt_style_from_roles({"key": "white", "value": "bright_white"})
+
+    assert style.get_attrs_for_style_str("class:prompt").color == "ansigray"
+    assert style.get_attrs_for_style_str("class:input-selection").color == "ansiwhite"
 
 
 def test_prompt_toolkit_multiselect_handles_cancelled_dialog(

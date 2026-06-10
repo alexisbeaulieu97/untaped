@@ -766,7 +766,16 @@ def test_get_with_no_args_shows_help(_isolate_settings: Path) -> None:
     result = CliInvoker().invoke(app, ["get"])
 
     assert result.exit_code == 2
-    assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
+    assert result.stdout == ""
+    assert "key" in result.stderr.lower()
+
+
+def test_get_parse_errors_exit_2_and_stderr(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["get", "--bogus"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "error: Unknown option" in result.stderr
 
 
 def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> None:
@@ -810,13 +819,15 @@ def test_list_rejects_profile_with_all_profiles(_isolate_settings: Path) -> None
 def test_set_with_no_args_shows_help(_isolate_settings: Path) -> None:
     result = CliInvoker().invoke(app, ["set"])
     assert result.exit_code == 2
-    assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
+    assert result.stdout == ""
+    assert "key" in result.stderr.lower()
 
 
 def test_unset_with_no_args_shows_help(_isolate_settings: Path) -> None:
     result = CliInvoker().invoke(app, ["unset"])
     assert result.exit_code == 2
-    assert "key" in result.stdout.lower() or "key" in (result.output or "").lower()
+    assert result.stdout == ""
+    assert "key" in result.stderr.lower()
 
 
 def test_set_rejects_invalid_value(_isolate_settings: Path) -> None:

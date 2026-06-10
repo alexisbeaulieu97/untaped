@@ -1,9 +1,12 @@
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Annotated
 
 import pytest
 import yaml
+from cyclopts import Parameter
 
 from untaped import ProfileOverrideOption, create_app, echo, get_settings, profile_override
 from untaped.main import build_app
@@ -40,6 +43,30 @@ class _ProfileSettingsProbePlugin:
         registry.add_cli("probe", probe_app)
 
 
+class _PassthroughProbePlugin:
+    id = "passthrough-probe"
+    untaped_api_version = 2
+
+    def register(self, registry: PluginRegistry) -> None:
+        probe_app = create_app(name="probe")
+
+        @probe_app.command(name="run")
+        def run(
+            *args: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
+        ) -> None:
+            echo(
+                json.dumps(
+                    {
+                        "args": list(args),
+                        "profile": os.environ.get("UNTAPED_PROFILE"),
+                    },
+                    sort_keys=True,
+                )
+            )
+
+        registry.add_cli("probe", probe_app)
+
+
 @pytest.fixture
 def app() -> object:
     return build_app(plugins=[])
@@ -66,6 +93,14 @@ def test_help_lists_core_commands_only_without_plugins(app: object) -> None:
     assert "workspace" not in output
     assert "github" not in output
     assert "Manage configuration profiles" not in output
+
+
+def test_help_describes_root_profile_without_rich_markup(app: object) -> None:
+    result = CliInvoker().invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "UNTAPED_PROFILE environment variable" in result.stdout
+    assert "UNTAPED_PROFILE=)" not in result.stdout
 
 
 def test_help_lists_skills_core_command(app: object) -> None:
@@ -97,6 +132,14 @@ def test_config_subcommand_help(app: object) -> None:
     assert "unset" in result.stdout
 
 
+def test_root_parse_errors_exit_2_and_stderr(app: object) -> None:
+    result = CliInvoker().invoke(app, ["--bad"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "error: Unknown command" in result.stderr
+
+
 def test_root_profile_flag_is_visible_to_plugin_commands() -> None:
     """Root ``--profile`` remains core plumbing even when profile is external."""
     app = build_app(plugins=[_ProfileEnvProbePlugin()])
@@ -105,6 +148,18 @@ def test_root_profile_flag_is_visible_to_plugin_commands() -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["stage"]
+
+
+def test_trailing_profile_flag_is_not_stolen_from_passthrough_command() -> None:
+    app = build_app(plugins=[_PassthroughProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "run", "git", "log", "--profile", "stage"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        "args": ["git", "log", "--profile", "stage"],
+        "profile": None,
+    }
 
 
 def test_root_profile_flag_overrides_active(app: object, _isolate_config: Path) -> None:

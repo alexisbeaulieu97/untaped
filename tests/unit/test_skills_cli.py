@@ -73,8 +73,9 @@ def test_skills_install_no_args_shows_help(tmp_path: Path) -> None:
 
     result = CliInvoker().invoke(skills_app, ["install"])
 
-    assert result.exit_code == 0, result.output
-    assert "Usage: skills install" in result.output
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage: skills install" in result.stderr
 
 
 def test_skills_install_rejects_multiple_selector_sources(tmp_path: Path) -> None:

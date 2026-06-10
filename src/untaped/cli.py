@@ -7,9 +7,11 @@ import sys
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Literal, NoReturn
 
-from cyclopts import App, Parameter, validators
+from cyclopts import App, Parameter
+from cyclopts.exceptions import CycloptsError
+from rich.console import Console
 
 from untaped.errors import HttpError, UntapedError
 from untaped.output import OutputFormat
@@ -41,9 +43,9 @@ ProfileOverrideOption = Annotated[
 """Command-local read-time profile override for plugin/read commands."""
 
 
-def create_app(*, name: str, help: str = "") -> App:
+def create_app(*, name: str, help: str = "", help_epilogue: str | None = None) -> App:
     """Create a Cyclopts app with the suite's default command-group settings."""
-    return App(name=name, help=help)
+    return App(name=name, help=help, help_epilogue=help_epilogue)
 
 
 def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
@@ -52,10 +54,57 @@ def echo(message: object = "", *, err: bool = False, nl: bool = True) -> None:
     print(message, file=sys.stderr if err else sys.stdout, end=end)
 
 
-def raise_usage(message: str) -> None:
+def raise_usage(message: str) -> NoReturn:
     """Raise a command-usage error with the suite's stable exit code."""
     echo(f"error: {message}", err=True)
     raise SystemExit(2)
+
+
+def show_help_and_exit(app: App, tokens: Iterable[str], *, code: int = 2) -> NoReturn:
+    """Print command help to stderr and exit with a usage-style status."""
+    app.help_print(list(tokens), console=_stderr_console())
+    raise SystemExit(code)
+
+
+def run_cyclopts_app(
+    app: App,
+    tokens: Iterable[str] | None,
+    *,
+    console: Console | None = None,
+    error_console: Console | None = None,
+    result_action: Literal[
+        "return_value",
+        "call_if_callable",
+        "print_non_int_return_int_as_exit_code",
+        "print_str_return_int_as_exit_code",
+        "print_str_return_zero",
+        "print_non_none_return_int_as_exit_code",
+        "print_non_none_return_zero",
+        "return_int_as_exit_code_else_zero",
+        "print_non_int_sys_exit",
+        "sys_exit",
+        "return_none",
+        "return_zero",
+        "print_return_zero",
+        "sys_exit_zero",
+        "print_sys_exit_zero",
+    ]
+    | Callable[[Any], Any]
+    | None = None,
+) -> object:
+    """Run a Cyclopts app while preserving untaped's usage-error contract."""
+    try:
+        return app(
+            tokens,
+            console=console,
+            error_console=error_console,
+            exit_on_error=False,
+            print_error=False,
+            result_action=result_action,
+        )
+    except CycloptsError as exc:
+        echo(f"error: {exc}", err=True)
+        raise SystemExit(2) from exc
 
 
 def existing_directory(type_: object, value: Path | None) -> None:
@@ -76,9 +125,6 @@ def existing_file(type_: object, value: Path | None) -> None:
         raise ValueError(f"path does not exist: {value}")
     if not value.is_file():
         raise ValueError(f"path is not a file: {value}")
-
-
-PositiveInt = Annotated[int, Parameter(validator=validators.Number(gte=1))]
 
 
 @contextmanager
@@ -192,3 +238,12 @@ def _format_error(exc: UntapedError) -> str:
     if isinstance(exc, HttpError) and exc.body:
         return f"{message}\nresponse: {exc.body}"
     return message
+
+
+def _stderr_console() -> Console:
+    return Console(
+        file=sys.stderr,
+        force_terminal=False,
+        color_system=None,
+        width=120,
+    )

@@ -9,7 +9,14 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.cli import ColumnsOption, FormatOption, create_app, echo, report_errors
+from untaped.cli import (
+    ColumnsOption,
+    FormatOption,
+    create_app,
+    echo,
+    report_errors,
+    show_help_and_exit,
+)
 from untaped.config_file import mutate_config
 from untaped.errors import ConfigError
 from untaped.plugin_registry import (
@@ -193,8 +200,7 @@ def doctor_command() -> None:
 
 
 def _show_command_help(command: str, *, code: int) -> None:
-    app.help_print([command])
-    raise SystemExit(code)
+    show_help_and_exit(app, [command], code=code)
 
 
 def _render_collection(
