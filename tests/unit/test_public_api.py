@@ -13,6 +13,11 @@ def test_profile_override_helpers_are_re_exported() -> None:
     assert untaped.profile_override is cli.profile_override
 
 
+def test_render_rows_is_re_exported() -> None:
+    assert untaped.render_rows is cli.render_rows
+    assert "render_rows" in untaped.__all__
+
+
 def test_logging_helpers_are_no_longer_exposed() -> None:
     assert not hasattr(untaped, "get_logger")
     assert not hasattr(untaped, "configure_logging")

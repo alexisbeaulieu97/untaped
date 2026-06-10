@@ -104,6 +104,14 @@ breaking plugin API changes will increment the supported major version, and
 `untaped plugins doctor` reports missing, invalid, or unsupported plugin API
 versions as load errors.
 
+Plugin CLIs follow the suite's shared command conventions and helpers from
+`untaped`: render `--format`/`--columns` row output with `render_rows`, wrap
+command bodies in `report_errors`, and reject bad usage with `raise_usage`
+(exit 2). Required inputs are required positional-only parameters
+(`Parameter(help=...)` declared before `/`) — a missing value renders
+`error: ... requires an argument` on stderr with exit 2 automatically; never
+emulate this with an optional default plus a manual help dance.
+
 Plugin sync does not install agent skills. After installing plugins, use
 [`untaped skills list/install`](./skills.md) when you want Codex, Claude, or
 another compatible agent to learn the plugin-specific workflows.
