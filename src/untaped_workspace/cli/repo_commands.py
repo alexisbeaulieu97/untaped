@@ -37,7 +37,7 @@ def add_command(
     *,
     stdin: Annotated[
         bool,
-        Parameter(name="--stdin", help="Read repo URLs from stdin (one per line)."),
+        Parameter(name="--stdin", negative="", help="Read repo URLs from stdin (one per line)."),
     ] = False,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
@@ -110,7 +110,11 @@ def remove_command(
     *,
     stdin: Annotated[
         bool,
-        Parameter(name="--stdin", help="Read repo identifiers from stdin (one per line)."),
+        Parameter(
+            name="--stdin",
+            negative="",
+            help="Read repo identifiers from stdin (one per line).",
+        ),
     ] = False,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,

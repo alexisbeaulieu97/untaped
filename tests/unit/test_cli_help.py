@@ -53,7 +53,24 @@ def test_no_args_shows_help(cmd: str) -> None:
     assert result.exit_code in (0, 1, 2)
 
 
+def test_init_no_args_shows_help() -> None:
+    result = CliInvoker().invoke(app, ["init"])
+
+    assert result.exit_code == 0, result.output
+    assert "Usage:" in result.output
+    assert "Workspace name" in result.output
+
+
 def test_branch_set_no_args_shows_help() -> None:
     result = CliInvoker().invoke(app, ["branch", "set"])
     assert result.exit_code in (0, 1, 2)
     assert "Usage:" in result.output or "Error" in result.output
+
+
+def test_stdin_flags_do_not_expose_negative_aliases() -> None:
+    for args in (["add", "--help"], ["remove", "--help"], ["path", "--help"]):
+        result = CliInvoker().invoke(app, args)
+
+        assert result.exit_code == 0, result.output
+        assert "--stdin" in result.output
+        assert "--no-stdin" not in result.output

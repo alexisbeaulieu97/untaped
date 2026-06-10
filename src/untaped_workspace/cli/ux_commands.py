@@ -78,7 +78,11 @@ def path_command(
     *,
     stdin: Annotated[
         bool,
-        Parameter(name="--stdin", help="Read workspace names from stdin (one per line)."),
+        Parameter(
+            name="--stdin",
+            negative="",
+            help="Read workspace names from stdin (one per line).",
+        ),
     ] = False,
     profile: ProfileOverrideOption = None,
 ) -> None:
