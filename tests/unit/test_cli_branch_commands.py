@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 from cli_fixtures import push_branch
-from typer.testing import CliRunner
+from untaped.testing import CliInvoker
 
 from untaped_workspace import app
 
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
 def test_branch_set_and_unset_default_branch(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
@@ -33,7 +33,7 @@ def test_branch_set_and_unset_default_branch(tmp_path: Path) -> None:
 
 
 def test_branch_set_and_unset_repo_branch(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -57,7 +57,7 @@ def test_branch_set_and_unset_repo_branch(tmp_path: Path) -> None:
 def test_branch_commands_resolve_workspace_from_cwd(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     child = target / "src"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -73,7 +73,7 @@ def test_branch_commands_resolve_workspace_from_cwd(
 
 
 def test_branch_set_unknown_repo_errors(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
@@ -84,7 +84,7 @@ def test_branch_set_unknown_repo_errors(tmp_path: Path) -> None:
 
 
 def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -104,7 +104,7 @@ def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
 
 
 def test_branch_apply_filters_by_multiple_repo_names(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -133,7 +133,7 @@ def test_branch_apply_filters_by_multiple_repo_names(tmp_path: Path) -> None:
 
 
 def test_branch_apply_raw_defaults_to_repo_names(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -170,7 +170,7 @@ def test_branch_apply_honors_global_ui_collection_view_for_table_output(
         """
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         [
             "branch",
@@ -200,7 +200,7 @@ def test_branch_apply_honors_global_ui_collection_view_for_table_output(
 
 
 def test_branch_set_apply_writes_manifest_and_applies(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -231,7 +231,7 @@ def test_branch_set_apply_creates_tracking_branch_for_remote_target(
     isolated_cache: Path,
 ) -> None:
     push_branch(upstream, tmp_path, branch="develop")
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -276,7 +276,7 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
     isolated_cache: Path,
 ) -> None:
     push_branch(upstream, tmp_path, branch="develop")
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target), "--branch", "develop"])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -328,7 +328,7 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     upstream: Path,
     isolated_cache: Path,
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])

@@ -51,4 +51,4 @@ def test_workspace_cli_commands_are_split_by_concern() -> None:
         assert expected_functions <= _function_names(source)
 
     root_functions = _function_names(_CLI_DIR / "commands.py")
-    assert root_functions == {"_callback"}
+    assert root_functions == set()

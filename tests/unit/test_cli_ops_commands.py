@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from untaped.testing import CliInvoker
 
 from untaped_workspace import app
 
@@ -16,7 +16,7 @@ pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
 def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -43,7 +43,7 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
 def test_sync_repo_filter_limits_cloned_repos(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     other_upstream = tmp_path / "other.git"
     shutil.copytree(upstream, other_upstream)
@@ -86,7 +86,7 @@ def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     active. Single-workspace ``--repo`` still raises (covered by the
     use-case unit tests); this test covers the CLI wiring.
     """
-    runner = CliRunner()
+    runner = CliInvoker()
 
     # Workspace alpha: has the upstream repo.
     ws_alpha = tmp_path / "ws-alpha"
@@ -116,7 +116,7 @@ def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     )
     assert result.exit_code == 0, result.output
 
-    # Stderr warning should mention relaxed semantics. ``CliRunner``
+    # Stderr warning should mention relaxed semantics. ``CliInvoker``
     # mixes stderr into ``output`` by default, so inspect the combined
     # surface.
     assert "warning" in result.output.lower()
@@ -130,7 +130,7 @@ def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
 
 
 def test_sync_help_exposes_repo_filter_not_only() -> None:
-    result = CliRunner().invoke(app, ["sync", "--help"])
+    result = CliInvoker().invoke(app, ["sync", "--help"])
 
     assert result.exit_code == 0, result.output
     assert "--repo" in result.output
@@ -147,7 +147,7 @@ def test_sync_help_exposes_repo_filter_not_only() -> None:
     ],
 )
 def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
-    result = CliRunner().invoke(app, [*args, "--help"])
+    result = CliInvoker().invoke(app, [*args, "--help"])
 
     assert result.exit_code == 0, result.output
     assert "--repo" in result.output
@@ -157,9 +157,9 @@ def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
 
 def test_sync_parallel_without_all_is_rejected() -> None:
     """``--parallel >1`` only makes sense with ``--all``. Anything else is a
-    `typer.BadParameter` exit. Checked before any registry lookup so a
+    usage error exit. Checked before any registry lookup so a
     nonexistent workspace name doesn't change the error."""
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["sync", "--workspace", "nope", "-j", "4"])
     assert result.exit_code != 0
     combined = (result.stderr or "") + result.output
@@ -167,14 +167,14 @@ def test_sync_parallel_without_all_is_rejected() -> None:
 
 
 def test_sync_all_rejects_workspace_target() -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["sync", "--all", "--workspace", "smoke"])
     assert result.exit_code != 0
     assert "--all cannot be combined with --workspace or --path" in result.output
 
 
 def test_sync_all_rejects_path_target(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["sync", "--all", "--path", str(tmp_path)])
     assert result.exit_code != 0
     assert "--all cannot be combined with --workspace or --path" in result.output
@@ -189,7 +189,7 @@ def test_sync_parallel_warns_when_clamped(monkeypatch: pytest.MonkeyPatch) -> No
     we pin ``cpu_count`` so the assertion isn't CI-hardware dependent.
     """
     monkeypatch.setattr("os.cpu_count", lambda: 4)
-    runner = CliRunner()
+    runner = CliInvoker()
     # No targets registered → the pool runs over an empty list, which is
     # fine for asserting the warning fires before the sweep starts.
     result = runner.invoke(app, ["sync", "--all", "-j", "100"])
@@ -203,7 +203,7 @@ def test_sync_all_parallel_covers_every_workspace(
 ) -> None:
     """``sync --all -j 4`` syncs every registered workspace and emits a
     stderr header that names the worker count."""
-    runner = CliRunner()
+    runner = CliInvoker()
     names = ("alpha", "beta", "gamma", "delta")
     for name in names:
         ws_path = tmp_path / f"ws-{name}"
@@ -226,7 +226,7 @@ def test_sync_all_parallel_covers_every_workspace(
         ],
     )
     assert result.exit_code == 0, result.output
-    # stderr header — CliRunner combines stderr into output by default.
+    # stderr header — CliInvoker combines stderr into output by default.
     assert "syncing 4 workspaces with up to 4 workers" in result.output
     rows = [r for r in result.stdout.strip().splitlines() if "\t" in r]
     assert sorted(rows) == sorted(f"{n}\tclone" for n in names), rows
@@ -238,7 +238,7 @@ def test_sync_all_parallel_ordering_is_stable(
     """Outcome rows from ``sync --all -j 4`` come back in registry-input
     order, not in non-deterministic ``as_completed`` order. Running the
     same command twice yields identical row sequences."""
-    runner = CliRunner()
+    runner = CliInvoker()
     names = ("alpha", "beta", "gamma", "delta")
     for name in names:
         ws_path = tmp_path / f"ws-{name}"
@@ -260,7 +260,7 @@ def test_sync_all_parallel_ordering_is_stable(
 
 
 def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -285,7 +285,7 @@ def test_status_after_sync(tmp_path: Path, upstream: Path, isolated_cache: Path)
 
 
 def test_status_repo_filter_outputs_only_selected_repo(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -330,7 +330,7 @@ def test_status_honors_global_ui_collection_view_for_table_output(
         """
     )
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         [
             "status",
@@ -356,14 +356,14 @@ def test_status_honors_global_ui_collection_view_for_table_output(
 
 
 def test_status_all_rejects_workspace_target() -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["status", "--all", "--workspace", "smoke"])
     assert result.exit_code != 0
     assert "--all cannot be combined with --workspace or --path" in result.output
 
 
 def test_status_all_rejects_path_target(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["status", "--all", "--path", str(tmp_path)])
     assert result.exit_code != 0
     assert "--all cannot be combined with --workspace or --path" in result.output
@@ -372,7 +372,7 @@ def test_status_all_rejects_path_target(tmp_path: Path) -> None:
 def test_foreach_runs_command_in_each_repo(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -397,7 +397,7 @@ def test_foreach_repo_filter_runs_command_once(
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
 
     monkeypatch.setattr("untaped_workspace.cli.ops_commands.shell_runner", _runner)
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -426,7 +426,7 @@ def test_foreach_unknown_repo_filter_exits_before_running_command(
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("untaped_workspace.cli.ops_commands.shell_runner", _runner)
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -444,7 +444,7 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
     passthrough is suppressed so downstream tools can parse stdout."""
     import json as _json
 
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -482,7 +482,7 @@ def test_foreach_structured_format(tmp_path: Path, upstream: Path, isolated_cach
 
 def test_foreach_format_raw_columns(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
     """`--format raw --columns repo,returncode` produces tab-separated rows."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -512,7 +512,7 @@ def test_foreach_default_emits_summary_on_failure(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
     """Even in default fail-fast mode, a failing repo surfaces in the summary line."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -528,7 +528,7 @@ def test_foreach_continue_on_error_still_exits_one(
 ) -> None:
     """`--continue-on-error` keeps going but still exits 1 on failures
     (pins the historical contract)."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -544,7 +544,7 @@ def test_foreach_ignore_errors_exits_zero_with_summary(
 ) -> None:
     """`--ignore-errors` keeps going AND exits 0; failures surface via the
     summary line so they aren't silent."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -562,7 +562,7 @@ def test_foreach_summary_suppressed_in_structured_format(
     on each row, not by the human summary line."""
     import json as _json
 
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -594,7 +594,7 @@ def test_foreach_parallel_zero_coerces_to_serial(
     """``foreach -j 0`` runs cleanly with exit 0 and no warning — the
     ``max(parallel, 1)`` upstream of ``clamp_parallel`` keeps the use
     case from seeing ``0`` and matches the issue spec."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])

@@ -22,7 +22,7 @@ errors.
 3. **Expose the plugin through the `untaped.plugins` entry point.**
    `workspace = "untaped_workspace.plugin:plugin"` is the public integration
    point. The plugin object must expose `id = "workspace"`, literal
-   `untaped_api_version = 1`, and `register(registry)`.
+   `untaped_api_version = 2`, and `register(registry)`.
 4. **Use the 4-layer DDD layout.** `cli -> application -> domain`, with
    `infrastructure -> domain`; `application` and `infrastructure` must not
    import each other at runtime.
@@ -32,14 +32,18 @@ errors.
    `from untaped...`, never relative imports.
 7. **Every source module has a module docstring.** Re-export `__init__.py`
    files are exempt.
-8. **Every Typer app and every command with required args sets
-   `no_args_is_help=True`.**
+8. **Cyclopts command signatures are explicit.** Use
+   `Annotated[..., Parameter(...)]` and name documented commands/options
+   explicitly. Required inputs are required positional-only params
+   (`Parameter(help=...)` before `/`); a missing value renders
+   `error: ... requires an argument` (exit 2) automatically — never an
+   optional default plus a manual help dance.
 9. **stdout is data only.** Prompts, progress, and status messages go to
-   stderr via `typer.echo(..., err=True)`.
+   stderr via `echo(..., err=True)`.
 10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
     registry rows start with `name`; sync/status/foreach rows start with
     `workspace`.
-11. **Row-oriented CLI output uses `cli.rendering.render_rows`.** Human
+11. **Row-oriented CLI output uses core `untaped.render_rows`.** Human
     `--format table` output goes through core `ui_context()` so global
     `ui:` settings and plugin themes apply. Structured `json`, `yaml`, and
     `raw` output goes through a plain `UiContext()` so missing or bad themes
@@ -65,7 +69,7 @@ src/untaped_workspace/
 ├── __init__.py           # re-exports app
 ├── plugin.py             # entry-point plugin object
 ├── settings.py           # plugin-owned profile settings and app state
-├── cli/                  # Typer commands; composition root
+├── cli/                  # Cyclopts commands; composition root
 ├── application/          # use cases and ports
 ├── domain/               # pure models and value objects
 └── infrastructure/       # git, manifest, registry, filesystem adapters
@@ -73,7 +77,7 @@ src/untaped_workspace/
 
 The plugin object registers `WorkspaceSettings` as the `workspace` profile
 settings section, `WorkspaceState` as the top-level `workspace` app-state
-section, mounts the Typer app as the root `workspace` command, and registers
+section, mounts the Cyclopts app as the root `workspace` command, and registers
 the packaged `untaped-workspace` agent skill. Keep that static skill asset
 current with major workspace workflow changes.
 
@@ -86,7 +90,7 @@ A workspace has two homes:
   branch?}`). Read/written by `infrastructure.ManifestRepository`.
 - **Registry** (central): a `name → path` list under `workspace.workspaces`
   in `~/.untaped/config.yml`. Just enough to power `list`, `path <name>`,
-  `--workspace X` lookups, and tab completion. Read/written by
+  and `--workspace X` lookups. Read/written by
   `infrastructure.WorkspaceRegistryRepository`.
 
 `ManifestRepository.write` owns workspace-dir creation — it mkdirs the
@@ -299,8 +303,8 @@ summary is suppressed in `--format json|yaml|raw` since each row's
 --all` and `awx apply`: caps at `2 * os.cpu_count()` and emits a stderr
 `warning: --parallel N clamped to M (2 * os.cpu_count()).` when the
 user asks for more. Foreach silently coerces `<= 0` to serial (issue
-spec) — `sync` and `awx apply` raise `BadParameter` for the same input.
-Friendly clamp at the upper bound rather than `BadParameter` so `-j
+spec) — `sync` and `awx apply` raise usage errors for the same input.
+Friendly clamp at the upper bound rather than usage errors so `-j
 $(nproc)` keeps composing on hosts where `nproc` already exceeds the
 cap.
 
@@ -345,14 +349,14 @@ single workspace and don't need the plural's dispatch.
 
 When `parallel > 1` *and* `len(workspaces) > 1`, the plural emits
 `"syncing N workspaces with up to M workers"` via `notify`
-(`cli/ops_commands.py` wires `notify=lambda m: typer.echo(m, err=True)`),
+(`cli/ops_commands.py` wires `notify=lambda m: echo(m, err=True)`),
 dispatches via `ThreadPoolExecutor`, drains via `as_completed`, and
 re-sorts outcomes by `(workspace_input_order, repo)` so JSON/table
 consumers see stable rows regardless of completion timing. Below that
 threshold the plural runs a serial loop and stays silent (no header,
 no pool). The CLI clamps `-j` through `untaped.clamp_parallel`
 (cap = `2 * os.cpu_count()`, shared with `foreach` and `awx apply`)
-and rejects `parallel > 1` outside `--all` with `typer.BadParameter` —
+and rejects `parallel > 1` outside `--all` with `raise_usage` —
 single-workspace parallelism would have to push inside `SyncWorkspace`
 and racing the bare-cache per-repo isn't worth the complexity.
 
@@ -558,7 +562,7 @@ coverage gate.
    workspace semantics.
 4. Add infrastructure adapter methods behind existing ports for git,
    filesystem, manifest, or registry side effects.
-5. Wire the Typer command in the matching `cli/*_commands.py` concern module
+5. Wire the Cyclopts command in the matching `cli/*_commands.py` concern module
    and register it from `cli/commands.py`; keep stdout data-only and expose
    `--format`/`--columns` for data output.
 6. If the command emits rows, update `tests/unit/test_format_raw_first_key.py`.

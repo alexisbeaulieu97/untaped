@@ -7,8 +7,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 from untaped.settings import get_settings
+from untaped.testing import CliInvoker
 
 from untaped_workspace import app
 
@@ -16,7 +16,7 @@ pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
 def test_init_then_list(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws-prod"
     init = runner.invoke(app, ["init", "prod", "--path", str(target)])
     assert init.exit_code == 0, init.output
@@ -28,7 +28,7 @@ def test_init_then_list(tmp_path: Path) -> None:
 
 
 def test_init_with_branch_default(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws-prod"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
     raw = (target / "untaped.yml").read_text()
@@ -36,7 +36,7 @@ def test_init_with_branch_default(tmp_path: Path) -> None:
 
 
 def test_init_duplicate_name_errors(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     a = tmp_path / "a"
     b = tmp_path / "b"
     runner.invoke(app, ["init", "prod", "--path", str(a)])
@@ -51,13 +51,13 @@ def test_init_default_path_uses_workspaces_dir(
     monkeypatch.setenv("UNTAPED_WORKSPACE__WORKSPACES_DIR", str(tmp_path / "ws-root"))
     get_settings.cache_clear()
 
-    result = CliRunner().invoke(app, ["init", "prod"])
+    result = CliInvoker().invoke(app, ["init", "prod"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "ws-root" / "prod" / "untaped.yml").is_file()
 
 
 def test_adopt_records_existing_clones(tmp_path: Path, existing_clones: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
     assert result.exit_code == 0, result.output
 
@@ -75,7 +75,7 @@ def test_adopt_skips_dirs_without_git(tmp_path: Path, existing_clones: Path) -> 
     (existing_clones / "notes").mkdir()
     (existing_clones / "notes" / "todo.md").write_text("hi")
 
-    result = CliRunner().invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
+    result = CliInvoker().invoke(app, ["adopt", str(existing_clones), "--name", "lab"])
     assert result.exit_code == 0, result.output
 
     manifest_text = (existing_clones / "untaped.yml").read_text()
@@ -94,14 +94,14 @@ def test_adopt_existing_manifest_registers_without_rewriting(tmp_path: Path) -> 
     )
     (ws_path / "untaped.yml").write_text(manifest_text)
 
-    result = CliRunner().invoke(app, ["adopt", str(ws_path)])
+    result = CliInvoker().invoke(app, ["adopt", str(ws_path)])
 
     assert result.exit_code == 0, result.output
     assert "adopted workspace 'prod'" in result.output
     assert "(1 repo)" in result.output
     assert (ws_path / "untaped.yml").read_text() == manifest_text
 
-    listed = CliRunner().invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    listed = CliInvoker().invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert listed.stdout.splitlines() == ["prod"]
 
 
@@ -111,7 +111,7 @@ def test_adopt_existing_manifest_name_override_is_registry_only(tmp_path: Path) 
     manifest_text = "name: prod\nrepos: []\n"
     (ws_path / "untaped.yml").write_text(manifest_text)
 
-    result = CliRunner().invoke(app, ["adopt", str(ws_path), "--name", "alias"])
+    result = CliInvoker().invoke(app, ["adopt", str(ws_path), "--name", "alias"])
 
     assert result.exit_code == 0, result.output
     assert "adopted workspace 'alias'" in result.output
@@ -123,7 +123,7 @@ def test_adopt_existing_empty_manifest_does_not_show_discovery_hint(tmp_path: Pa
     ws_path.mkdir()
     (ws_path / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliRunner().invoke(app, ["adopt", str(ws_path)])
+    result = CliInvoker().invoke(app, ["adopt", str(ws_path)])
 
     assert result.exit_code == 0, result.output
     assert "(0 repos)" in result.output
@@ -131,7 +131,7 @@ def test_adopt_existing_empty_manifest_does_not_show_discovery_hint(tmp_path: Pa
 
 
 def test_adopt_existing_manifest_duplicate_name_errors(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     other = tmp_path / "other"
     runner.invoke(app, ["init", "prod", "--path", str(other)])
 
@@ -146,14 +146,14 @@ def test_adopt_existing_manifest_duplicate_name_errors(tmp_path: Path) -> None:
 
 
 def test_adopt_help_mentions_existing_workspace_state() -> None:
-    result = CliRunner().invoke(app, ["adopt", "--help"])
+    result = CliInvoker().invoke(app, ["adopt", "--help"])
 
     assert result.exit_code == 0, result.output
     assert "existing workspace state" in result.output
 
 
 def test_adopt_missing_path_errors(tmp_path: Path) -> None:
-    result = CliRunner().invoke(app, ["adopt", str(tmp_path / "ghost"), "--name", "lab"])
+    result = CliInvoker().invoke(app, ["adopt", str(tmp_path / "ghost"), "--name", "lab"])
     assert result.exit_code == 1
     assert "does not exist" in (result.output or result.stderr)
 
@@ -165,7 +165,7 @@ def test_adopt_empty_directory_hints_nothing_matched(tmp_path: Path) -> None:
     """
     empty = tmp_path / "empty"
     empty.mkdir()
-    result = CliRunner().invoke(app, ["adopt", str(empty), "--name", "lab"])
+    result = CliInvoker().invoke(app, ["adopt", str(empty), "--name", "lab"])
     assert result.exit_code == 0, result.output
     assert "(0 repos)" in result.output
     assert "nothing matched" in result.output
@@ -175,7 +175,7 @@ def test_adopt_empty_directory_hints_nothing_matched(tmp_path: Path) -> None:
 
 
 def test_forget_removes_workspace_from_registry(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
 
@@ -189,12 +189,12 @@ def test_forget_removes_workspace_from_registry(tmp_path: Path) -> None:
 
 
 def test_forget_unknown_workspace_errors() -> None:
-    result = CliRunner().invoke(app, ["forget", "ghost"])
+    result = CliInvoker().invoke(app, ["forget", "ghost"])
     assert result.exit_code == 1
 
 
 def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
 
@@ -206,7 +206,7 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
 def test_forget_prune_aborts_on_no_at_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
     monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: True)
@@ -230,7 +230,7 @@ def test_forget_prune_aborts_on_no_at_prompt(
 def test_forget_prune_requires_yes_when_non_interactive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
     monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: False)
@@ -247,7 +247,7 @@ def test_forget_prune_requires_yes_when_non_interactive(
 def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     if shutil.which("git") is None:
         pytest.skip("git not on PATH")
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     target.mkdir()
     repo = target / "svc-a"
@@ -288,7 +288,7 @@ repos:
 """
     )
     dest = tmp_path / "ws-imported"
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["import", str(src), str(dest), "--name", "imported"])
     assert result.exit_code == 0, result.output
     assert (dest / "untaped.yml").is_file()
@@ -304,7 +304,7 @@ def test_import_rejects_old_path_option(tmp_path: Path) -> None:
     src = tmp_path / "m.yml"
     src.write_text("name: x\nrepos: []\n")
     dest = tmp_path / "ws"
-    result = CliRunner().invoke(app, ["import", str(src), "--path", str(dest)])
+    result = CliInvoker().invoke(app, ["import", str(src), "--path", str(dest)])
     assert result.exit_code != 0
 
 
@@ -345,7 +345,7 @@ repos:
 """
     )
     dest = tmp_path / "ws"
-    result = CliRunner().invoke(app, ["import", str(src), str(dest), "--sync"])
+    result = CliInvoker().invoke(app, ["import", str(src), str(dest), "--sync"])
     assert result.exit_code == 0, result.output
     assert tuple(captured["only"]) == ("svc-a", "beta")
 

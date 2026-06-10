@@ -2,29 +2,32 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import Annotated
 
-import typer
+from cyclopts import App, Parameter
 from untaped import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
     ProfileOverrideOption,
     clamp_parallel,
+    echo,
     profile_override,
+    raise_usage,
+    render_rows,
     report_errors,
 )
 
 from untaped_workspace.application import Foreach, SyncWorkspace, SyncWorkspaces, WorkspaceStatus
 from untaped_workspace.cli.common import (
     RepoSelectorOption,
+    WorkspaceNameOption,
+    WorkspacePathOption,
     parallel_cap,
     resolve_workspace,
     target_workspaces,
     workspace_settings,
 )
-from untaped_workspace.cli.completions import complete_workspace_name
-from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import SyncOutcome
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
@@ -36,57 +39,61 @@ from untaped_workspace.infrastructure import (
 )
 
 
-def register_operation_commands(app: typer.Typer) -> None:
-    app.command("sync")(sync_command)
-    app.command("status")(status_command)
-    app.command("foreach", no_args_is_help=True)(foreach_command)
+def register_operation_commands(app: App) -> None:
+    app.command(sync_command, name="sync")
+    app.command(status_command, name="status")
+    app.command(foreach_command, name="foreach")
 
 
 def sync_command(
-    workspace: str | None = typer.Option(
-        None,
-        "--workspace",
-        "-w",
-        help="Workspace name.",
-        autocompletion=complete_workspace_name,
-    ),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+    *,
+    workspace: WorkspaceNameOption = None,
+    path: WorkspacePathOption = None,
     repo: RepoSelectorOption = None,
-    prune: bool = typer.Option(False, "--prune", help="Remove local clones not in the manifest."),
-    timeout: float | None = typer.Option(
-        None,
-        "--timeout",
-        help=(
-            f"Per-call timeout ceiling (seconds) for every git invocation "
-            f"this sync makes (read-only ops AND network clone/fetch). "
-            f"Defaults: {DEFAULT_TIMEOUT:g}s for read-only ops, "
-            f"{DEFAULT_SLOW_TIMEOUT:g}s for clone/fetch. Pass a single value "
-            f"to cap both."
+    prune: Annotated[
+        bool,
+        Parameter(name="--prune", negative="", help="Remove local clones not in the manifest."),
+    ] = False,
+    timeout: Annotated[
+        float | None,
+        Parameter(
+            name="--timeout",
+            help=(
+                f"Per-call timeout ceiling (seconds) for every git invocation "
+                f"this sync makes (read-only ops AND network clone/fetch). "
+                f"Defaults: {DEFAULT_TIMEOUT:g}s for read-only ops, "
+                f"{DEFAULT_SLOW_TIMEOUT:g}s for clone/fetch. Pass a single value "
+                f"to cap both."
+            ),
         ),
-    ),
-    all_workspaces: bool = typer.Option(False, "--all", help="Sync every registered workspace."),
-    parallel: int = typer.Option(
-        1,
-        "--parallel",
-        "-j",
-        help=(
-            "Concurrent workspaces (only with --all). Per-workspace "
-            "outcomes are rows, not exceptions, so the pool drains "
-            "to completion. Capped at a CPU-relative ceiling; values "
-            "above are clamped with a stderr warning."
+    ] = None,
+    all_workspaces: Annotated[
+        bool,
+        Parameter(name="--all", negative="", help="Sync every registered workspace."),
+    ] = False,
+    parallel: Annotated[
+        int,
+        Parameter(
+            name=["--parallel", "-j"],
+            help=(
+                "Concurrent workspaces (only with --all). Per-workspace "
+                "outcomes are rows, not exceptions, so the pool drains "
+                "to completion. Capped at a CPU-relative ceiling; values "
+                "above are clamped with a stderr warning."
+            ),
         ),
-    ),
+    ] = 1,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
-        raise typer.BadParameter("--timeout must be positive")
+        raise_usage("--timeout must be positive")
     if parallel < 1:
-        raise typer.BadParameter("--parallel must be >= 1")
+        raise_usage("--parallel must be >= 1")
     if parallel > 1 and not all_workspaces:
-        raise typer.BadParameter("--parallel >1 requires --all")
+        raise_usage("--parallel >1 requires --all")
     workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
     with report_errors(), profile_override(profile):
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
@@ -100,12 +107,12 @@ def sync_command(
             cache_dir=workspace_settings().cache_dir,
         )
         if all_workspaces and repo:
-            typer.echo(
+            echo(
                 "warning: --all --repo filters per-workspace; workspaces without "
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
-        sweep = SyncWorkspaces(sync, notify=lambda m: typer.echo(m, err=True))
+        sweep = SyncWorkspaces(sync, notify=lambda m: echo(m, err=True))
         outcomes = sweep(
             targets,
             only=repo,
@@ -123,19 +130,17 @@ def print_sync_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows: list[dict[str, object]] = [o.model_dump() for o in outcomes]
-    typer.echo(render_rows(rows, fmt=fmt, columns=columns))
+    echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def status_command(
-    workspace: str | None = typer.Option(
-        None,
-        "--workspace",
-        "-w",
-        help="Workspace name.",
-        autocompletion=complete_workspace_name,
-    ),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
-    all_workspaces: bool = typer.Option(False, "--all", help="Status across all workspaces."),
+    *,
+    workspace: WorkspaceNameOption = None,
+    path: WorkspacePathOption = None,
+    all_workspaces: Annotated[
+        bool,
+        Parameter(name="--all", negative="", help="Status across all workspaces."),
+    ] = False,
     repo: RepoSelectorOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -149,43 +154,48 @@ def status_command(
         for ws in targets:
             for entry in use_case(ws, only=repo):
                 rows.append(entry.model_dump())
-        typer.echo(render_rows(rows, fmt=fmt, columns=columns))
+        echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def foreach_command(
-    cmd: str = typer.Argument(..., help='Shell command (e.g. "git pull --rebase").'),
-    workspace: str | None = typer.Option(
-        None,
-        "--workspace",
-        "-w",
-        help="Workspace name.",
-        autocompletion=complete_workspace_name,
-    ),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
-    parallel: int = typer.Option(
-        1,
-        "--parallel",
-        "-j",
-        help=(
-            "Concurrent workers. Capped at a CPU-relative ceiling; "
-            "values above are clamped with a stderr warning. Values "
-            "<= 0 run serially (1 worker). Fail-fast cancellation is "
-            "best-effort: in-flight commands run to completion; only "
-            "queued work stops."
+    cmd: Annotated[str, Parameter(help='Shell command (e.g. "git pull --rebase").')],
+    /,
+    *,
+    workspace: WorkspaceNameOption = None,
+    path: WorkspacePathOption = None,
+    parallel: Annotated[
+        int,
+        Parameter(
+            name=["--parallel", "-j"],
+            help=(
+                "Concurrent workers. Capped at a CPU-relative ceiling; "
+                "values above are clamped with a stderr warning. Values "
+                "<= 0 run serially (1 worker). Fail-fast cancellation is "
+                "best-effort: in-flight commands run to completion; only "
+                "queued work stops."
+            ),
         ),
-    ),
-    continue_on_error: bool = typer.Option(
-        False, "--continue-on-error", help="Don't stop after a non-zero exit."
-    ),
-    ignore_errors: bool = typer.Option(
-        False,
-        "--ignore-errors",
-        help=(
-            "Treat per-repo failures as non-fatal. Implies --continue-on-error "
-            "and exits 0 even when some repos failed. Wins on exit code if both "
-            "flags are passed. Failed repos are still listed in the summary."
+    ] = 1,
+    continue_on_error: Annotated[
+        bool,
+        Parameter(
+            name="--continue-on-error",
+            negative="",
+            help="Don't stop after a non-zero exit.",
         ),
-    ),
+    ] = False,
+    ignore_errors: Annotated[
+        bool,
+        Parameter(
+            name="--ignore-errors",
+            negative="",
+            help=(
+                "Treat per-repo failures as non-fatal. Implies --continue-on-error "
+                "and exits 0 even when some repos failed. Wins on exit code if both "
+                "flags are passed. Failed repos are still listed in the summary."
+            ),
+        ),
+    ] = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     repo: RepoSelectorOption = None,
@@ -217,15 +227,15 @@ def foreach_command(
         if fmt == "table":
             for o in outcomes:
                 for line in o.stdout.splitlines():
-                    typer.echo(f"[{o.repo}] {line}")
+                    echo(f"[{o.repo}] {line}")
                 for line in o.stderr.splitlines():
-                    typer.echo(f"[{o.repo}] {line}", err=True)
+                    echo(f"[{o.repo}] {line}", err=True)
                 if o.returncode != 0:
-                    typer.echo(f"[{o.repo}] exit {o.returncode}", err=True)
+                    echo(f"[{o.repo}] exit {o.returncode}", err=True)
             if failed:
-                typer.echo(f"failed in: {', '.join(failed)}", err=True)
+                echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
-            typer.echo(render_rows(rows, fmt=fmt, columns=columns))
+            echo(render_rows(rows, fmt=fmt, columns=columns))
         if failed and not ignore_errors:
-            raise typer.Exit(code=1)
+            raise SystemExit(1)

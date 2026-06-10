@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from untaped.testing import CliInvoker
 
 from untaped_workspace import app
 
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
 def test_show_workspace_json_details(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -60,7 +60,7 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
 
 
 def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -83,7 +83,7 @@ def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
 
 
 def test_show_rejects_workspace_and_path_together(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
@@ -94,7 +94,7 @@ def test_show_rejects_workspace_and_path_together(tmp_path: Path) -> None:
 
 
 def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "empty"
     runner.invoke(app, ["init", "empty", "--path", str(target)])
 
@@ -116,7 +116,7 @@ def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
 
 
 def test_show_raw_columns_emit_repo_names(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
@@ -130,7 +130,7 @@ def test_show_raw_columns_emit_repo_names(tmp_path: Path) -> None:
 
 
 def test_show_accepts_workspace_short_option(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
@@ -140,7 +140,7 @@ def test_show_accepts_workspace_short_option(tmp_path: Path) -> None:
 
 
 def test_path_prints_workspace_path(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws-prod"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     out = runner.invoke(app, ["path", "prod"])
@@ -149,24 +149,24 @@ def test_path_prints_workspace_path(tmp_path: Path) -> None:
 
 
 def test_path_unknown_workspace_errors() -> None:
-    result = CliRunner().invoke(app, ["path", "ghost"])
+    result = CliInvoker().invoke(app, ["path", "ghost"])
     assert result.exit_code == 1
 
 
 def test_shell_init_zsh() -> None:
-    result = CliRunner().invoke(app, ["shell-init", "zsh"])
+    result = CliInvoker().invoke(app, ["shell-init", "zsh"])
     assert result.exit_code == 0
     assert "uwcd()" in result.stdout
 
 
 def test_shell_init_fish() -> None:
-    result = CliRunner().invoke(app, ["shell-init", "fish"])
+    result = CliInvoker().invoke(app, ["shell-init", "fish"])
     assert result.exit_code == 0
     assert "function uwcd" in result.stdout
 
 
 def test_shell_init_unknown() -> None:
-    result = CliRunner().invoke(app, ["shell-init", "powershell"])
+    result = CliInvoker().invoke(app, ["shell-init", "powershell"])
     assert result.exit_code == 1
 
 
@@ -181,7 +181,7 @@ def test_edit_from_cwd_opens_workspace_root(
         return 0
 
     monkeypatch.setattr("untaped_workspace.cli.ux_commands.editor_runner", _runner)
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
     nested = target / "api"
@@ -207,7 +207,7 @@ def test_edit_path_opens_unregistered_workspace(
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliRunner().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
+    result = CliInvoker().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
 
     assert result.exit_code == 0, result.output
     assert captured == [["code", str(target.resolve())]]
@@ -222,7 +222,7 @@ def test_edit_workspace_opens_registered_workspace(
         "untaped_workspace.cli.ux_commands.editor_runner",
         lambda argv: captured.append(argv) or 0,
     )
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
@@ -235,7 +235,7 @@ def test_edit_workspace_opens_registered_workspace(
 def test_edit_missing_context_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(app, ["edit", "--editor", "true"])
+    result = CliInvoker().invoke(app, ["edit", "--editor", "true"])
 
     assert result.exit_code == 1
     assert "not inside a workspace" in result.output
@@ -253,7 +253,7 @@ def test_edit_editor_not_found_errors(
     target.mkdir()
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
 
-    result = CliRunner().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
+    result = CliInvoker().invoke(app, ["edit", "--path", str(target), "--editor", "code"])
 
     assert result.exit_code == 1
     assert "editor not found: code" in result.output
@@ -261,7 +261,7 @@ def test_edit_editor_not_found_errors(
 
 def test_path_accepts_multiple_positional_names(tmp_path: Path) -> None:
     """``workspace path a b`` echoes one path per name in input order."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target_a = tmp_path / "ws-a"
     target_b = tmp_path / "ws-b"
     runner.invoke(app, ["init", "alpha", "--path", str(target_a)])
@@ -275,7 +275,7 @@ def test_path_accepts_multiple_positional_names(tmp_path: Path) -> None:
 def test_path_reads_names_from_stdin(tmp_path: Path) -> None:
     """``workspace list --format raw | workspace path --stdin`` emits
     one absolute path per registered workspace."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target_a = tmp_path / "ws-a"
     target_b = tmp_path / "ws-b"
     runner.invoke(app, ["init", "alpha", "--path", str(target_a)])
@@ -287,7 +287,7 @@ def test_path_reads_names_from_stdin(tmp_path: Path) -> None:
 
 
 def test_path_continues_when_one_name_missing(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "alpha", "--path", str(target)])
     result = runner.invoke(app, ["path", "ghost", "alpha"])
@@ -300,7 +300,7 @@ def test_path_continues_when_one_name_missing(tmp_path: Path) -> None:
 
 
 def test_path_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "alpha", "--path", str(target)])
     result = runner.invoke(app, ["path", "alpha", "--stdin"], input="alpha\n")
