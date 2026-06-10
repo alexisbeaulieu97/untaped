@@ -75,6 +75,13 @@ def test_help_lists_skills_core_command(app: object) -> None:
     assert "skills" in result.stdout
 
 
+def test_install_completion_help_is_available(app: object) -> None:
+    result = CliInvoker().invoke(app, ["--install-completion", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Install shell completion" in result.stdout
+
+
 def test_skills_list_includes_builtin_untaped_skill(app: object) -> None:
     result = CliInvoker().invoke(app, ["skills", "list", "--format", "raw"])
 

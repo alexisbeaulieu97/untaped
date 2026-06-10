@@ -136,6 +136,42 @@ def test_skills_install_copies_skill_directory_and_marker(tmp_path: Path) -> Non
     assert "installed skill: untaped-demo" in result.output
 
 
+def test_skills_install_rejects_target_dir_that_is_file(tmp_path: Path) -> None:
+    _register_skill(_skill_dir(tmp_path))
+    target = tmp_path / "codex-skills"
+    target.write_text("not a directory\n")
+
+    result = CliInvoker().invoke(
+        skills_app,
+        ["install", "untaped-demo", "--target", "codex", "--target-dir", str(target)],
+    )
+
+    assert result.exit_code == 1
+    assert f"target skill directory is not a directory: {target}" in result.output
+
+
+def test_skills_install_resolves_target_dir_in_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _skill_dir(tmp_path)
+    _register_skill(source)
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    result = CliInvoker().invoke(
+        skills_app,
+        ["install", "untaped-demo", "--target", "codex", "--target-dir", "codex-skills"],
+    )
+
+    assert result.exit_code == 0, result.output
+    marker = json.loads(
+        project.joinpath("codex-skills", "untaped-demo", ".untaped-skill.json").read_text()
+    )
+    assert marker["install_root"] == str(project / "codex-skills")
+
+
 def test_skills_install_uses_user_agents_dir_for_codex_global_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
