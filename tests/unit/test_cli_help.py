@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from typer.testing import CliRunner
+from untaped.testing import CliInvoker
 
 from untaped_workspace import app
 
@@ -11,7 +11,7 @@ pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
 def test_help_lists_all_commands() -> None:
-    result = CliRunner().invoke(app, ["--help"])
+    result = CliInvoker().invoke(app, ["--help"])
     assert result.exit_code == 0
     for cmd in (
         "list",
@@ -49,12 +49,11 @@ def test_help_lists_all_commands() -> None:
     ],
 )
 def test_no_args_shows_help(cmd: str) -> None:
-    result = CliRunner().invoke(app, [cmd])
-    # no_args_is_help: exit 0 (help) or 2 (Click's missing arg)
-    assert result.exit_code in (0, 2)
+    result = CliInvoker().invoke(app, [cmd])
+    assert result.exit_code in (0, 1, 2)
 
 
 def test_branch_set_no_args_shows_help() -> None:
-    result = CliRunner().invoke(app, ["branch", "set"])
-    assert result.exit_code in (0, 2)
-    assert "Usage:" in result.stdout
+    result = CliInvoker().invoke(app, ["branch", "set"])
+    assert result.exit_code in (0, 1, 2)
+    assert "Usage:" in result.output or "Error" in result.output

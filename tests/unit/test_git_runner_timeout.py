@@ -164,14 +164,14 @@ def test_timeout_message_carries_no_returncode() -> None:
 
 def test_sync_timeout_zero_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`--timeout 0` and negative values are rejected up front."""
-    from typer.testing import CliRunner
     from untaped.settings import get_settings
+    from untaped.testing import CliInvoker
 
     from untaped_workspace import app
 
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
     get_settings.cache_clear()
-    runner = CliRunner()
+    runner = CliInvoker()
     result = runner.invoke(app, ["sync", "--workspace", "anything", "--timeout", "0"])
     get_settings.cache_clear()
     assert result.exit_code == 2
@@ -184,8 +184,8 @@ def test_sync_timeout_overrides_both_buckets(
     recorded_timeouts: list[float | None],
 ) -> None:
     """`--timeout N` caps every git invocation at N (fast and slow bucket alike)."""
-    from typer.testing import CliRunner
     from untaped.settings import get_settings
+    from untaped.testing import CliInvoker
 
     from untaped_workspace import app
 
@@ -193,7 +193,7 @@ def test_sync_timeout_overrides_both_buckets(
     # the test only verifies the GitRunner construction, not real git work.
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
     get_settings.cache_clear()
-    cli = CliRunner()
+    cli = CliInvoker()
     ws = tmp_path / "ws"
     cli.invoke(app, ["init", "anything", "--path", str(ws)])
     # We didn't call any real git ops yet; recorded_timeouts is empty.

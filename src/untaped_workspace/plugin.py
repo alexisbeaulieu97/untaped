@@ -13,7 +13,7 @@ from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
 class WorkspacePlugin:
     id = "workspace"
-    untaped_api_version = 1
+    untaped_api_version = 2
 
     def register(self, registry: PluginRegistry) -> None:
         registry.add_profile_settings("workspace", WorkspaceSettings)

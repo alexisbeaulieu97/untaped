@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import Annotated
 
-import typer
+from cyclopts import App, Parameter
 from untaped import (
     ColumnsOption,
     FormatOption,
     ProfileOverrideOption,
+    echo,
     profile_override,
     read_identifiers,
     report_errors,
@@ -22,8 +23,7 @@ from untaped_workspace.application import (
     ShowWorkspace,
     WorkspacePath,
 )
-from untaped_workspace.cli.common import resolve_workspace
-from untaped_workspace.cli.completions import complete_workspace_name
+from untaped_workspace.cli.common import WorkspaceNameOption, WorkspacePathOption, resolve_workspace
 from untaped_workspace.cli.rendering import render_rows
 from untaped_workspace.domain import Workspace
 from untaped_workspace.infrastructure import (
@@ -34,18 +34,19 @@ from untaped_workspace.infrastructure import (
 )
 
 
-def register_display_commands(app: typer.Typer) -> None:
-    app.command("list")(list_command)
-    app.command("show")(show_command)
+def register_display_commands(app: App) -> None:
+    app.command(list_command, name="list")
+    app.command(show_command, name="show")
 
 
-def register_ux_commands(app: typer.Typer) -> None:
-    app.command("path", no_args_is_help=True)(path_command)
-    app.command("shell-init", no_args_is_help=True)(shell_init_command)
-    app.command("edit")(edit_command)
+def register_ux_commands(app: App) -> None:
+    app.command(path_command, name="path")
+    app.command(shell_init_command, name="shell-init")
+    app.command(edit_command, name="edit")
 
 
 def list_command(
+    *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     profile: ProfileOverrideOption = None,
@@ -54,18 +55,13 @@ def list_command(
     with report_errors(), profile_override(profile):
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
-        typer.echo(render_rows(rows, fmt=fmt, columns=columns))
+        echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def show_command(
-    workspace: str | None = typer.Option(
-        None,
-        "--workspace",
-        "-w",
-        help="Workspace name.",
-        autocompletion=complete_workspace_name,
-    ),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
+    *,
+    workspace: WorkspaceNameOption = None,
+    path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     profile: ProfileOverrideOption = None,
@@ -74,16 +70,16 @@ def show_command(
     with report_errors(), profile_override(profile):
         ws = resolve_workspace(workspace, path)
         rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
-        typer.echo(render_rows(rows, fmt=fmt, columns=columns))
+        echo(render_rows(rows, fmt=fmt, columns=columns))
 
 
 def path_command(
-    names: list[str] | None = typer.Argument(
-        None, help="Workspace name(s).", autocompletion=complete_workspace_name
-    ),
-    stdin: bool = typer.Option(
-        False, "--stdin", help="Read workspace names from stdin (one per line)."
-    ),
+    names: Annotated[list[str] | None, Parameter(help="Workspace name(s).")] = None,
+    *,
+    stdin: Annotated[
+        bool,
+        Parameter(name="--stdin", help="Read workspace names from stdin (one per line)."),
+    ] = False,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Print the absolute path of one or more workspaces (one per line)."""
@@ -93,32 +89,30 @@ def path_command(
         idents = read_identifiers(list(names or []), stdin=stdin)
 
         def _echo_path(workspace_name: str) -> None:
-            typer.echo(str(get_path(workspace_name)))
+            echo(str(get_path(workspace_name)))
 
         _, any_failed = resolve_each(idents, _echo_path)
     if any_failed:
-        raise typer.Exit(code=1)
+        raise SystemExit(1)
 
 
 def shell_init_command(
-    shell: str = typer.Argument(..., help='One of "zsh", "bash", "fish".'),
+    shell: Annotated[str, Parameter(help='One of "zsh", "bash", "fish".')],
 ) -> None:
     """Emit a shell snippet defining `uwcd <workspace>`."""
     with report_errors():
         snippet = ShellInit()(shell)
-        typer.echo(snippet, nl=False)
+        echo(snippet, nl=False)
 
 
 def edit_command(
-    workspace: str | None = typer.Option(
-        None,
-        "--workspace",
-        "-w",
-        help="Workspace name.",
-        autocompletion=complete_workspace_name,
-    ),
-    path: Path | None = typer.Option(None, "--path", "-p", help="Workspace path."),
-    editor: str | None = typer.Option(None, "--editor", "-e", help="Override $VISUAL/$EDITOR."),
+    *,
+    workspace: WorkspaceNameOption = None,
+    path: WorkspacePathOption = None,
+    editor: Annotated[
+        str | None,
+        Parameter(name=["--editor", "-e"], help="Override $VISUAL/$EDITOR."),
+    ] = None,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Open the workspace directory in your editor."""
@@ -127,7 +121,7 @@ def edit_command(
         argv = resolve_editor_argv(editor)
         rc = EditWorkspace(runner=editor_runner)(ws, argv=argv)
         if rc != 0:
-            raise typer.Exit(code=rc)
+            raise SystemExit(rc)
 
 
 def _workspace_row(w: Workspace) -> dict[str, object]:

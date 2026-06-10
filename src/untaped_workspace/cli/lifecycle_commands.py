@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
-import typer
-from untaped import ProfileOverrideOption, profile_override, report_errors
+from cyclopts import App, Parameter
+from untaped import ProfileOverrideOption, echo, profile_override, report_errors
 
 from untaped_workspace.application import (
     AdoptWorkspace,
@@ -16,7 +17,6 @@ from untaped_workspace.application import (
     WorkspaceBootstrapper,
 )
 from untaped_workspace.cli.common import confirm, workspace_settings
-from untaped_workspace.cli.completions import complete_workspace_name
 from untaped_workspace.cli.ops_commands import print_sync_outcomes
 from untaped_workspace.infrastructure import (
     GitRunner,
@@ -27,27 +27,30 @@ from untaped_workspace.infrastructure import (
 )
 
 
-def register_lifecycle_commands(app: typer.Typer) -> None:
-    app.command("init", no_args_is_help=True)(init_command)
-    app.command("adopt", no_args_is_help=True)(adopt_command)
-    app.command("forget", no_args_is_help=True)(forget_command)
+def register_lifecycle_commands(app: App) -> None:
+    app.command(init_command, name="init")
+    app.command(adopt_command, name="adopt")
+    app.command(forget_command, name="forget")
 
 
-def register_import_command(app: typer.Typer) -> None:
-    app.command("import", no_args_is_help=True)(import_command)
+def register_import_command(app: App) -> None:
+    app.command(import_command, name="import")
 
 
 def init_command(
-    name: str = typer.Argument(..., help="Workspace name."),
-    path: Path | None = typer.Option(
-        None,
-        "--path",
-        "-p",
-        help="Override location (default: workspace.workspaces_dir / name).",
-    ),
-    branch: str | None = typer.Option(
-        None, "--branch", "-b", help="Default branch for newly cloned repos."
-    ),
+    name: Annotated[str, Parameter(help="Workspace name.")],
+    *,
+    path: Annotated[
+        Path | None,
+        Parameter(
+            name=["--path", "-p"],
+            help="Override location (default: workspace.workspaces_dir / name).",
+        ),
+    ] = None,
+    branch: Annotated[
+        str | None,
+        Parameter(name=["--branch", "-b"], help="Default branch for newly cloned repos."),
+    ] = None,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Initialise a new workspace named `name`.
@@ -59,12 +62,16 @@ def init_command(
         target = path or (workspace_settings().workspaces_dir.expanduser() / name)
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
-        typer.echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
+        echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
 
 
 def adopt_command(
-    path: Path = typer.Argument(..., help="Existing directory containing already-cloned repos."),
-    name: str | None = typer.Option(None, "--name", "-n", help="Registry name (default: dirname)."),
+    path: Annotated[Path, Parameter(help="Existing directory containing already-cloned repos.")],
+    *,
+    name: Annotated[
+        str | None,
+        Parameter(name=["--name", "-n"], help="Registry name (default: dirname)."),
+    ] = None,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Adopt existing workspace state under `path`.
@@ -80,7 +87,7 @@ def adopt_command(
             bootstrapper,
             LocalRepoDiscoverer(GitRunner()),
             fs=LocalFilesystem(),
-            warn=lambda m: typer.echo(f"warning: {m}", err=True),
+            warn=lambda m: echo(f"warning: {m}", err=True),
         )(path, name=name)
         ws = result.workspace
         n = len(result.repos)
@@ -89,18 +96,27 @@ def adopt_command(
             if result.discovered and n == 0
             else ""
         )
-        typer.echo(
+        echo(
             f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''}){suffix}",
             err=True,
         )
 
 
 def forget_command(
-    name: str = typer.Argument(..., help="Workspace name.", autocompletion=complete_workspace_name),
-    prune: bool = typer.Option(
-        False, "--prune", help="Also delete the workspace directory (refuses if dirty)."
-    ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the prune confirmation prompt."),
+    name: Annotated[str, Parameter(help="Workspace name.")],
+    *,
+    prune: Annotated[
+        bool,
+        Parameter(
+            name="--prune",
+            negative="",
+            help="Also delete the workspace directory (refuses if dirty).",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        Parameter(name=["--yes", "-y"], negative="", help="Skip the prune confirmation prompt."),
+    ] = False,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Remove a workspace from the registry.
@@ -111,8 +127,8 @@ def forget_command(
     """
     with report_errors(), profile_override(profile):
         if prune and not confirm(f"prune workspace directory for {name!r}?", yes=yes):
-            typer.echo("aborted", err=True)
-            raise typer.Exit(code=1)
+            echo("aborted", err=True)
+            raise SystemExit(1)
         ws = ForgetWorkspace(
             WorkspaceRegistryRepository(),
             ManifestRepository(),
@@ -120,20 +136,25 @@ def forget_command(
             status=GitRunner(),
         )(name, prune=prune)
         action = "forgot and pruned" if prune else "forgot"
-        typer.echo(f"{action} workspace {ws.name!r}", err=True)
+        echo(f"{action} workspace {ws.name!r}", err=True)
 
 
 def import_command(
-    source: Path = typer.Argument(
-        ..., help="Path to a YAML manifest (e.g. one cloned from a shared repo)."
-    ),
-    dest: Path = typer.Argument(..., help="Destination workspace directory."),
-    name: str | None = typer.Option(None, "--name", "-n", help="Registry name override."),
-    sync: bool = typer.Option(
-        False,
-        "--sync",
-        help="Clone the imported repos immediately (only the repos in <source>).",
-    ),
+    source: Annotated[Path, Parameter(help="Path to a YAML manifest.")],
+    dest: Annotated[Path, Parameter(help="Destination workspace directory.")],
+    *,
+    name: Annotated[
+        str | None,
+        Parameter(name=["--name", "-n"], help="Registry name override."),
+    ] = None,
+    sync: Annotated[
+        bool,
+        Parameter(
+            name="--sync",
+            negative="",
+            help="Clone the imported repos immediately (only the repos in <source>).",
+        ),
+    ] = False,
     profile: ProfileOverrideOption = None,
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
@@ -142,7 +163,7 @@ def import_command(
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
         result = ImportWorkspace(manifests, bootstrapper)(source, path=dest, name=name)
         ws = result.workspace
-        typer.echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
+        echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
             outcomes = SyncWorkspace(
                 ManifestRepository(),

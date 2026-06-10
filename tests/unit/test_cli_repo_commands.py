@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from untaped.testing import CliInvoker
 
 from untaped_workspace import app
 
@@ -13,7 +13,7 @@ pytestmark = pytest.mark.usefixtures("isolate_config")
 
 
 def test_add_then_remove(tmp_path: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
 
@@ -25,14 +25,14 @@ def test_add_then_remove(tmp_path: Path) -> None:
 
 
 def test_add_unknown_workspace_errors(tmp_path: Path) -> None:
-    result = CliRunner().invoke(app, ["add", "https://x/a.git", "--workspace", "ghost"])
+    result = CliInvoker().invoke(app, ["add", "https://x/a.git", "--workspace", "ghost"])
     assert result.exit_code == 1
 
 
 def test_remove_accepts_multiple_repos(tmp_path: Path) -> None:
     """Repeated positional repo identifiers — drop several manifests entries
     in one call."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
@@ -44,7 +44,7 @@ def test_remove_accepts_multiple_repos(tmp_path: Path) -> None:
 
 def test_remove_reads_repos_from_stdin(tmp_path: Path) -> None:
     """`workspace list ... | remove --stdin` is the documented pipeline shape."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
@@ -58,7 +58,7 @@ def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
     """A missing repo in a multi-repo `remove` batch must not suppress
     the removals that resolved successfully — same pipeline-resilience
     rule as ``awx <kind> get --stdin`` and ``launch --stdin``."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
@@ -72,7 +72,7 @@ def test_remove_continues_when_one_repo_missing(tmp_path: Path) -> None:
 
 
 def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -90,7 +90,7 @@ def test_remove_prune_aborts_on_no_at_prompt(
     isolated_cache: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -122,7 +122,7 @@ def test_remove_prune_requires_yes_when_non_interactive(
     isolated_cache: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
@@ -139,7 +139,7 @@ def test_remove_prune_requires_yes_when_non_interactive(
 
 def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
     """``workspace add url-a url-b`` records both repos in one shot."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
@@ -154,7 +154,7 @@ def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
 def test_add_reads_urls_from_stdin(tmp_path: Path) -> None:
     """``workspace list --format raw | workspace add --stdin`` is the
     documented pipeline shape."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
@@ -171,7 +171,7 @@ def test_add_continues_when_one_url_fails(tmp_path: Path) -> None:
     """A duplicate URL doesn't suppress the URLs that landed cleanly —
     same pipeline-resilience rule as ``workspace remove`` / ``awx get
     --stdin``."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     runner.invoke(app, ["add", "https://x/svc-a.git", "--workspace", "lab"])
@@ -192,7 +192,7 @@ def test_add_continues_when_one_url_fails(tmp_path: Path) -> None:
 def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
     """Per ``read_identifiers``: mixing positional and ``--stdin``
     is refused."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(
@@ -209,7 +209,7 @@ def test_add_repo_name_rejected_with_multiple_urls(tmp_path: Path) -> None:
     produce a guaranteed ``DuplicateRepoName`` cascade on URL #2. The
     CLI rejects upfront with a ``BadParameter`` rather than letting the
     batch half-land."""
-    runner = CliRunner()
+    runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "lab", "--path", str(target)])
     result = runner.invoke(

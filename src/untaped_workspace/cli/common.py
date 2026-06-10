@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
-import typer
-from untaped import ConfigError, get_config_section, ui_context
+from cyclopts import Parameter
+from untaped import ConfigError, get_config_section, raise_usage, ui_context
 
 from untaped_workspace.application import WorkspaceResolver
 from untaped_workspace.domain import Workspace
@@ -17,11 +17,19 @@ from untaped_workspace.settings import WorkspaceSettings
 
 RepoSelectorOption = Annotated[
     list[str] | None,
-    typer.Option(
-        "--repo",
-        "-r",
+    Parameter(
+        name=["--repo", "-r"],
         help="Limit to these repos (repeatable; name or URL).",
+        consume_multiple=False,
     ),
+]
+WorkspaceNameOption = Annotated[
+    str | None,
+    Parameter(name=["--workspace", "-w"], help="Workspace name."),
+]
+WorkspacePathOption = Annotated[
+    Path | None,
+    Parameter(name=["--path", "-p"], help="Workspace path."),
 ]
 
 
@@ -36,7 +44,7 @@ def resolve_workspace(
     cwd: Path | None = None,
 ) -> Workspace:
     if workspace is not None and path is not None:
-        raise typer.BadParameter("--workspace and --path are mutually exclusive")
+        raise_usage("--workspace and --path are mutually exclusive")
     return WorkspaceResolver(
         registry=WorkspaceRegistryRepository(),
         manifests=ManifestRepository(),
@@ -51,7 +59,7 @@ def target_workspaces(
 ) -> list[Workspace]:
     if all_workspaces:
         if workspace is not None or path is not None:
-            raise typer.BadParameter("--all cannot be combined with --workspace or --path")
+            raise_usage("--all cannot be combined with --workspace or --path")
         return all_workspaces_from_registry()
     return [resolve_workspace(workspace, path)]
 

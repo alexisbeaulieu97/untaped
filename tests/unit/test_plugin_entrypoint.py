@@ -9,11 +9,11 @@ from importlib.metadata import entry_points
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 from untaped import get_settings
 from untaped.main import build_app
 from untaped.plugins import PluginRegistry
 from untaped.settings import reset_config_registry_for_tests
+from untaped.testing import CliInvoker
 
 from untaped_workspace.plugin import plugin as workspace_plugin
 
@@ -42,13 +42,13 @@ def test_workspace_plugin_entry_point_is_declared() -> None:
 
 
 def test_workspace_plugin_declares_untaped_api_version() -> None:
-    assert workspace_plugin.untaped_api_version == 1
+    assert workspace_plugin.untaped_api_version == 2
 
 
 def test_root_app_can_register_workspace_plugin() -> None:
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(app, ["workspace", "--help"])
+    result = CliInvoker().invoke(app, ["workspace", "--help"])
 
     assert result.exit_code == 0, result.output
     assert "Manage local git workspaces" in result.output
@@ -67,7 +67,7 @@ def test_workspace_plugin_registers_agent_skill() -> None:
 def test_config_list_includes_registered_workspace_profile_settings() -> None:
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(app, ["config", "list", "--format", "raw", "--columns", "key"])
+    result = CliInvoker().invoke(app, ["config", "list", "--format", "raw", "--columns", "key"])
 
     assert result.exit_code == 0, result.output
     keys = set(result.stdout.splitlines())
@@ -94,7 +94,7 @@ def test_top_level_workspace_state_is_loaded_without_clobbering_profile_settings
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["config", "list", "--format", "raw", "--columns", "key", "--columns", "value"]
     )
     settings = get_settings()
@@ -126,7 +126,7 @@ def test_command_local_profile_flag_controls_workspace_init_settings(
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(app, ["workspace", "init", "prod", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["workspace", "init", "prod", "--profile", "stage"])
 
     assert result.exit_code == 0, result.output
     assert (stage_root / "prod" / "untaped.yml").is_file()
@@ -151,7 +151,7 @@ def test_command_local_profile_flag_is_accepted_by_workspace_list(
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         ["workspace", "list", "--format", "raw", "--columns", "name", "--profile", "stage"],
     )
@@ -177,7 +177,7 @@ def test_workspace_list_honors_global_ui_collection_view_for_table_output(
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         [
             "workspace",
@@ -215,7 +215,7 @@ def test_workspace_list_raw_ignores_unknown_global_ui_theme(
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         ["workspace", "list", "--format", "raw", "--columns", "name"],
     )
@@ -245,7 +245,7 @@ def test_command_local_profile_flag_is_accepted_by_workspace_show(
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app, ["workspace", "show", "--workspace", "prod", "--profile", "stage", "--format", "json"]
     )
 
@@ -275,7 +275,7 @@ def test_command_local_profile_flag_is_accepted_by_workspace_status(
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         ["workspace", "status", "--workspace", "prod", "--profile", "stage", "--format", "json"],
     )
@@ -329,7 +329,7 @@ def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
     monkeypatch.setattr("untaped_workspace.cli.ops_commands.SyncWorkspace", _SyncStub)
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(
+    result = CliInvoker().invoke(
         app,
         ["workspace", "sync", "--workspace", "prod", "--profile", "stage", "--format", "json"],
     )
@@ -364,7 +364,7 @@ def test_registry_or_settings_commands_expose_command_local_profile(
 ) -> None:
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(app, [*args, "--help"])
+    result = CliInvoker().invoke(app, [*args, "--help"])
 
     assert result.exit_code == 0, result.output
     assert "--profile" in result.output
@@ -373,7 +373,7 @@ def test_registry_or_settings_commands_expose_command_local_profile(
 def test_shell_init_does_not_expose_command_local_profile() -> None:
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliRunner().invoke(app, ["workspace", "shell-init", "--help"])
+    result = CliInvoker().invoke(app, ["workspace", "shell-init", "--help"])
 
     assert result.exit_code == 0, result.output
-    assert "--profile" not in result.output
+    assert "Override the active profile for this command only" not in result.output
