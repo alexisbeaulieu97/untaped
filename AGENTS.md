@@ -87,9 +87,12 @@ Non-negotiable. Every contribution must respect them.
    implementation. Test through public APIs — never suppress warnings to
    access private members.
 9. **Cyclopts command signatures are explicit.** Use
-   `Annotated[..., Parameter(...)]` for options/arguments, name public
-   commands/options explicitly, and add manual bare-command help only
-   when that behavior is part of the command contract.
+   `Annotated[..., Parameter(...)]` for options/arguments and name public
+   commands/options explicitly. Required inputs are required
+   positional-only parameters (`Parameter(help=...)`, no `name=`, declared
+   before `/`); a missing value renders `error: ... requires an argument`
+   on stderr with exit 2 via `run_cyclopts_app` — never emulate it with an
+   optional default plus a manual help dance.
 10. **Every plugin declares port `Protocol`s in `application/ports.py`.**
     Use cases import their ports from there; concrete adapters in
     `infrastructure/` satisfy the Protocols structurally (no
@@ -252,6 +255,8 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Register an agent skill from a plugin | `from untaped.plugins import SkillSpec`; call `registry.add_skill(...)` |
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Cyclopts command | `from untaped import FormatOption, ColumnsOption`      |
+| Render `--format`/`--columns` row collections | `from untaped import render_rows` (themed table for humans; theme-independent json/raw for pipes) |
+| Reject bad usage with `error: ...` + exit 2 | `from untaped import raise_usage`                          |
 | Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
 | Read piped values from stdin               | `from untaped import read_stdin`                            |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` |
@@ -488,7 +493,15 @@ Then:
 4. Add the Cyclopts command in `cli/commands.py`:
    - use `@app.command(name="documented-name")` for public commands
    - express options/arguments as `Annotated[..., Parameter(...)]`
-   - add manual bare-command help only when the command contract requires it
+   - required inputs are required positional-only params
+     (`Parameter(help=...)` before `/`); missing values become
+     `error: ... requires an argument` (exit 2) automatically
+   - stdin-fed list commands guard with
+     `raise_usage("provide <thing>(s) or --stdin")` when no input source
+     is given
+   - suppress the auto `--no-*` variant on action-like boolean flags with
+     `negative=""` (`--yes`, `--stdin`, `--clear-*`); keep it for genuine
+     persistent toggles
    - log to stderr; print only data to stdout
    - if it emits data: accept `--format` and `--columns`; support
      `--stdin` if it takes a list
@@ -523,7 +536,9 @@ Credentials must be `SecretStr`; HTTP clients must still consume
   installed in the environment?
 - **Relying on inferred Cyclopts public names.** Public command and option
   paths should use explicit `name=...` metadata so documented CLI contracts
-  do not drift when Python identifiers change.
+  do not drift when Python identifiers change. Positional-only parameters
+  are the exception: they take `Parameter(help=...)` with no `name=` —
+  `Parameter(name="")` renders broken help and error text.
 - **Using an `Annotated[..., Parameter(...)]` alias as a default value.**
   Put shared aliases in the annotation position (`value: Alias = default`);
   otherwise Cyclopts/Pydantic may validate the alias object itself.

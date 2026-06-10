@@ -19,13 +19,14 @@ from untaped.cli import (
     create_app,
     echo,
     existing_directory,
+    raise_usage,
+    render_rows,
     report_errors,
-    show_help_and_exit,
 )
 from untaped.errors import ConfigError
 from untaped.plugin_registry import PluginRegistry, SkillSpec, current_registry
 from untaped.stdin import read_identifiers
-from untaped.ui import OutputFormat, UiContext, ui_context
+from untaped.ui import ui_context
 
 CORE_SKILL_NAME = "untaped"
 CORE_SKILL_DESCRIPTION = "Use the untaped CLI, configuration model, and plugin system."
@@ -117,7 +118,7 @@ def list_command(
     """List registered agent skills."""
     with report_errors():
         rows = skill_rows(current_registry())
-        rendered = _render_collection(rows, fmt=fmt, columns=columns)
+        rendered = render_rows(rows, fmt=fmt, columns=columns)
         if rendered:
             echo(rendered)
 
@@ -135,17 +136,8 @@ def install_command(
     target_dir: SkillTargetDirOption = None,
 ) -> None:
     """Install registered skills into an agent skill directory."""
-    if (
-        not skill_names
-        and not stdin
-        and not all_skills
-        and target == SkillInstallTarget.codex
-        and not force
-        and scope == SkillInstallScope.global_
-        and project_dir is None
-        and target_dir is None
-    ):
-        show_help_and_exit(app, ["install"])
+    if not skill_names and not stdin and not all_skills:
+        raise_usage("provide skill names, --stdin, or --all")
     with report_errors():
         registry = current_registry()
         selected_names = _selected_skill_names(
@@ -362,14 +354,3 @@ def _git_root(path: Path) -> Path | None:
         return None
     root = result.stdout.strip()
     return Path(root).resolve() if root else None
-
-
-def _render_collection(
-    rows: list[dict[str, object]],
-    *,
-    fmt: OutputFormat,
-    columns: list[str] | None,
-) -> str:
-    if fmt == "table":
-        return ui_context().collection(rows, fmt=fmt, columns=columns)
-    return UiContext().collection(rows, fmt=fmt, columns=columns)
