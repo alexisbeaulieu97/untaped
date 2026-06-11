@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+import copy
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from importlib import import_module
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Protocol
@@ -22,16 +24,23 @@ from untaped.settings import (
 from untaped.ui import BUILTIN_THEMES, ThemeSpec
 
 ENTRY_POINT_GROUP = "untaped.plugins"
-_SUPPORTED_PLUGIN_API_VERSION = 2
+_LEGACY_PLUGIN_API_VERSION = 2
+_MANIFEST_PLUGIN_API_VERSION = 3
+_SUPPORTED_PLUGIN_API_VERSIONS = frozenset(
+    {_LEGACY_PLUGIN_API_VERSION, _MANIFEST_PLUGIN_API_VERSION}
+)
 
 
 class UntapedPlugin(Protocol):
-    """Object exposed by plugin packages through the ``untaped.plugins`` entry point."""
+    """Object exposed by plugin packages through the ``untaped.plugins`` entry point.
+
+    Version 3 plugins provide ``manifest() -> PluginManifest``; version 2
+    plugins provide ``register(registry) -> None``. Both shapes are accepted;
+    the declared ``untaped_api_version`` selects the contract.
+    """
 
     id: str
     untaped_api_version: int
-
-    def register(self, registry: PluginRegistry) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -60,6 +69,52 @@ class SkillSpec:
     description: str
 
 
+@dataclass(frozen=True)
+class CliSpec:
+    """One root CLI command contributed by a plugin manifest.
+
+    Exactly one of ``app`` (an already-built Cyclopts app) or ``import_path``
+    (``"module.path:attribute"``, resolved only when the command is actually
+    dispatched) must be set. ``import_path`` keeps plugin CLI modules off the
+    startup import path; ``help`` is the one-line summary shown in root
+    ``--help`` before the real app is imported.
+    """
+
+    name: str
+    app: App | None = None
+    import_path: str | None = None
+    help: str = ""
+
+    def __post_init__(self) -> None:
+        if (self.app is None) == (self.import_path is None):
+            raise ConfigError(f"CLI spec {self.name!r} must set exactly one of app or import_path")
+        if self.import_path is not None:
+            module, sep, attribute = self.import_path.partition(":")
+            if not sep or not module or not attribute:
+                raise ConfigError(
+                    f"CLI spec {self.name!r} import_path must be 'module:attribute', "
+                    f"got {self.import_path!r}"
+                )
+
+
+@dataclass(frozen=True)
+class PluginManifest:
+    """Everything a version-3 plugin contributes, as data.
+
+    Core validates the whole manifest against the registry and commits it
+    atomically: a manifest that conflicts with already-registered plugins (or
+    with itself) registers nothing and is reported through
+    ``untaped plugins doctor``.
+    """
+
+    clis: Sequence[CliSpec] = ()
+    profile_settings: Mapping[str, type[BaseModel]] = field(default_factory=dict)
+    state_settings: Mapping[str, type[BaseModel]] = field(default_factory=dict)
+    themes: Mapping[str, ThemeSpec] = field(default_factory=dict)
+    skills: Sequence[SkillSpec] = ()
+    diagnostics: Mapping[str, Callable[[], DiagnosticResult]] = field(default_factory=dict)
+
+
 class PluginRegistry:
     """In-process registry populated by installed plugins."""
 
@@ -67,6 +122,7 @@ class PluginRegistry:
         self.reserved_cli_names = set(reserved_cli_names)
         self.plugin_ids: set[str] = set()
         self.clis: dict[str, App] = {}
+        self.lazy_clis: dict[str, CliSpec] = {}
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
         self.themes: dict[str, ThemeSpec] = {}
@@ -80,11 +136,20 @@ class PluginRegistry:
         self.plugin_ids.add(plugin_id)
 
     def add_cli(self, name: str, app: App) -> None:
+        self._validate_cli_name(name)
+        self.clis[name] = app
+
+    def add_lazy_cli(self, spec: CliSpec) -> None:
+        if spec.import_path is None:
+            raise ConfigError(f"CLI spec {spec.name!r} has no import_path; use add_cli")
+        self._validate_cli_name(spec.name)
+        self.lazy_clis[spec.name] = spec
+
+    def _validate_cli_name(self, name: str) -> None:
         if name in self.reserved_cli_names:
             raise ConfigError(f"reserved CLI command: {name}")
-        if name in self.clis:
+        if name in self.clis or name in self.lazy_clis:
             raise ConfigError(f"duplicate CLI command: {name}")
-        self.clis[name] = app
 
     def add_profile_settings(self, section: str, model: type[BaseModel]) -> None:
         if section in BUILTIN_STATE_SECTIONS:
@@ -158,6 +223,36 @@ class PluginRegistry:
         for section, model in self.state_sections.items():
             register_state_settings(section, model)
 
+    # Every per-plugin registration collection; _staging_copy/_adopt operate on
+    # this list so a new collection cannot be forgotten in one of the two.
+    _STATE_FIELDS = (
+        "plugin_ids",
+        "clis",
+        "lazy_clis",
+        "profile_sections",
+        "state_sections",
+        "themes",
+        "skills",
+        "diagnostics",
+    )
+
+    def _staging_copy(self) -> PluginRegistry:
+        """Copy registration state so one plugin's contributions commit atomically.
+
+        ``load_errors`` is intentionally shared (same list object): error
+        recording must survive a discarded staging copy.
+        """
+        staged = PluginRegistry(reserved_cli_names=self.reserved_cli_names)
+        for field_name in self._STATE_FIELDS:
+            setattr(staged, field_name, copy.copy(getattr(self, field_name)))
+        staged.load_errors = self.load_errors
+        return staged
+
+    def _adopt(self, staged: PluginRegistry) -> None:
+        """Take over a staging copy's state after a successful registration."""
+        for field_name in self._STATE_FIELDS:
+            setattr(self, field_name, getattr(staged, field_name))
+
 
 _CURRENT_REGISTRY = PluginRegistry()
 
@@ -171,6 +266,28 @@ def set_current_registry(registry: PluginRegistry) -> None:
     """Set the registry used by ``untaped plugins`` commands."""
     global _CURRENT_REGISTRY
     _CURRENT_REGISTRY = registry
+
+
+def resolve_lazy_cli(spec: CliSpec) -> App:
+    """Import and return the Cyclopts app behind a CLI spec."""
+    if spec.app is not None:
+        return spec.app
+    import_path = spec.import_path
+    if import_path is None:  # pragma: no cover - CliSpec.__post_init__ forbids this
+        raise ConfigError(f"CLI spec {spec.name!r} has neither app nor import_path")
+    module_name, _, attribute = import_path.partition(":")
+    try:
+        module = import_module(module_name)
+    except Exception as exc:
+        raise ConfigError(
+            f"plugin command {spec.name!r} failed to import {module_name!r}: {exc}"
+        ) from exc
+    app = getattr(module, attribute, None)
+    if not isinstance(app, App):
+        raise ConfigError(
+            f"plugin command {spec.name!r}: {import_path!r} does not resolve to a cyclopts App"
+        )
+    return app
 
 
 def discover_plugins(registry: PluginRegistry | None = None) -> list[UntapedPlugin]:
@@ -187,51 +304,94 @@ def discover_plugins(registry: PluginRegistry | None = None) -> list[UntapedPlug
 
 
 def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin]) -> PluginRegistry:
-    """Register plugins, recording failures instead of poisoning the CLI."""
+    """Register plugins, recording failures instead of poisoning the CLI.
+
+    Each plugin registers against a staging copy of the registry; the copy is
+    adopted only when the whole registration succeeds, so a failing plugin
+    contributes nothing regardless of how far it got.
+    """
     for plugin in plugins:
         plugin_id = getattr(plugin, "id", plugin.__class__.__module__)
-        clis = dict(registry.clis)
-        plugin_ids = set(registry.plugin_ids)
-        profile_sections = dict(registry.profile_sections)
-        state_sections = dict(registry.state_sections)
-        themes = dict(registry.themes)
-        skills = dict(registry.skills)
-        diagnostics = dict(registry.diagnostics)
+        staged = registry._staging_copy()
         try:
-            _validate_plugin_api_version(plugin, plugin_id)
-            registry.add_plugin_id(plugin_id)
-            plugin.register(registry)
+            api_version = _validate_plugin_api_version(plugin, plugin_id)
+            staged.add_plugin_id(plugin_id)
+            if api_version == _MANIFEST_PLUGIN_API_VERSION:
+                _apply_manifest(staged, _plugin_manifest(plugin, plugin_id))
+            else:
+                _legacy_register(plugin, plugin_id, staged)
         except Exception as exc:
-            registry.clis = clis
-            registry.plugin_ids = plugin_ids
-            registry.profile_sections = profile_sections
-            registry.state_sections = state_sections
-            registry.themes = themes
-            registry.skills = skills
-            registry.diagnostics = diagnostics
             registry.record_load_error(plugin_id, exc)
+            continue
+        registry._adopt(staged)
     registry.apply_config_sections()
     return registry
 
 
-def _validate_plugin_api_version(plugin: UntapedPlugin, plugin_id: str) -> None:
+def _plugin_manifest(plugin: UntapedPlugin, plugin_id: str) -> PluginManifest:
+    manifest_method = getattr(plugin, "manifest", None)
+    if not callable(manifest_method):
+        raise ConfigError(
+            f"plugin {plugin_id!r} declares untaped_api_version "
+            f"{_MANIFEST_PLUGIN_API_VERSION} but does not provide a manifest() method"
+        )
+    manifest = manifest_method()
+    if not isinstance(manifest, PluginManifest):
+        raise ConfigError(
+            f"plugin {plugin_id!r} manifest() must return a PluginManifest, "
+            f"got {type(manifest).__name__}"
+        )
+    return manifest
+
+
+def _apply_manifest(staged: PluginRegistry, manifest: PluginManifest) -> None:
+    for spec in manifest.clis:
+        if spec.app is not None:
+            staged.add_cli(spec.name, spec.app)
+        else:
+            staged.add_lazy_cli(spec)
+    for section, model in manifest.profile_settings.items():
+        staged.add_profile_settings(section, model)
+    for section, model in manifest.state_settings.items():
+        staged.add_state_settings(section, model)
+    for name, theme in manifest.themes.items():
+        staged.add_theme(name, theme)
+    for skill in manifest.skills:
+        staged.add_skill(skill)
+    for name, check in manifest.diagnostics.items():
+        staged.add_diagnostic(name, check)
+
+
+def _legacy_register(plugin: UntapedPlugin, plugin_id: str, staged: PluginRegistry) -> None:
+    register = getattr(plugin, "register", None)
+    if not callable(register):
+        raise ConfigError(
+            f"plugin {plugin_id!r} declares untaped_api_version "
+            f"{_LEGACY_PLUGIN_API_VERSION} but does not provide a register() method"
+        )
+    register(staged)
+
+
+def _validate_plugin_api_version(plugin: UntapedPlugin, plugin_id: str) -> int:
+    supported = ", ".join(str(v) for v in sorted(_SUPPORTED_PLUGIN_API_VERSIONS))
     sentinel = object()
     api_version = getattr(plugin, "untaped_api_version", sentinel)
     if api_version is sentinel:
         raise ConfigError(
             f"plugin {plugin_id!r} is missing required untaped_api_version; "
-            f"supported version is {_SUPPORTED_PLUGIN_API_VERSION}"
+            f"supported versions are {supported}"
         )
     if type(api_version) is not int:
         raise ConfigError(
             f"plugin {plugin_id!r} has invalid untaped_api_version: expected int "
-            f"{_SUPPORTED_PLUGIN_API_VERSION}, got {api_version!r}"
+            f"({supported}), got {api_version!r}"
         )
-    if api_version != _SUPPORTED_PLUGIN_API_VERSION:
+    if api_version not in _SUPPORTED_PLUGIN_API_VERSIONS:
         raise ConfigError(
             f"plugin {plugin_id!r} declares unsupported untaped_api_version "
-            f"{api_version}; supported version is {_SUPPORTED_PLUGIN_API_VERSION}"
+            f"{api_version}; supported versions are {supported}"
         )
+    return api_version
 
 
 def _read_skill_frontmatter(path: Path) -> dict[str, object]:
