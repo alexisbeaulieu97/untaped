@@ -49,8 +49,8 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
     # before the root callback runs _mount_lazy_clis, which would render lazy
     # placeholders instead of the real plugin app for `untaped <cmd> --help`.
     # The inner app handles both flags after mounting.
-    app.meta.help_flags = []
-    app.meta.version_flags = []
+    app.meta.help_flags = ()
+    app.meta.version_flags = ()
 
     @app.meta.default
     def _root_callback(

@@ -26,10 +26,21 @@ class PluginContext:
     settings: Settings
 
     def section[T: BaseModel](self, name: str, model_cls: type[T]) -> T:
-        """Return one typed, registered settings section."""
+        """Return one typed, registered settings section.
+
+        Unlike :func:`untaped.settings.get_config_section`, this never builds
+        a one-off model for unregistered sections — the context is a frozen
+        snapshot, so it can only serve sections that were registered (via a
+        plugin manifest in production, or
+        :func:`untaped.testing.register_plugin_for_tests` in tests) before it
+        was created.
+        """
         value = getattr(self.settings, name, None)
         if value is None:
-            raise ConfigError(f"config section {name!r} is not registered")
+            raise ConfigError(
+                f"config section {name!r} is not registered; sections are declared "
+                f"in a plugin manifest (tests: untaped.testing.register_plugin_for_tests)"
+            )
         if isinstance(value, model_cls):
             return value
         if isinstance(value, BaseModel):

@@ -1,4 +1,4 @@
-"""Testing helpers for Cyclopts command apps."""
+"""Testing helpers for Cyclopts command apps and plugin test setup."""
 
 from __future__ import annotations
 
@@ -13,6 +13,23 @@ from cyclopts import App
 from rich.console import Console
 
 from untaped.cli import run_cyclopts_app
+from untaped.plugin_registry import PluginRegistry, UntapedPlugin, register_plugins
+
+
+def register_plugin_for_tests(plugin: UntapedPlugin) -> PluginRegistry:
+    """Register one plugin's contributions so its settings sections resolve.
+
+    Plugin test suites reset the config registry between tests; production
+    registration (which makes ``plugin_context().section(...)`` work) must
+    then be mirrored explicitly. This runs the real registration path and
+    fails loudly instead of recording a load error, so a broken manifest
+    fails the test instead of silently skipping registration.
+    """
+    registry = register_plugins(PluginRegistry(), [plugin])
+    if registry.load_errors:
+        details = "; ".join(f"{e.name}: {e.error}" for e in registry.load_errors)
+        raise AssertionError(f"plugin failed to register: {details}")
+    return registry
 
 
 @dataclass(frozen=True)

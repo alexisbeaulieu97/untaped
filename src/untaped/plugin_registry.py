@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib import import_module
@@ -222,6 +223,19 @@ class PluginRegistry:
         for section, model in self.state_sections.items():
             register_state_settings(section, model)
 
+    # Every per-plugin registration collection; _staging_copy/_adopt operate on
+    # this list so a new collection cannot be forgotten in one of the two.
+    _STATE_FIELDS = (
+        "plugin_ids",
+        "clis",
+        "lazy_clis",
+        "profile_sections",
+        "state_sections",
+        "themes",
+        "skills",
+        "diagnostics",
+    )
+
     def _staging_copy(self) -> PluginRegistry:
         """Copy registration state so one plugin's contributions commit atomically.
 
@@ -229,27 +243,15 @@ class PluginRegistry:
         recording must survive a discarded staging copy.
         """
         staged = PluginRegistry(reserved_cli_names=self.reserved_cli_names)
-        staged.plugin_ids = set(self.plugin_ids)
-        staged.clis = dict(self.clis)
-        staged.lazy_clis = dict(self.lazy_clis)
-        staged.profile_sections = dict(self.profile_sections)
-        staged.state_sections = dict(self.state_sections)
-        staged.themes = dict(self.themes)
-        staged.skills = dict(self.skills)
-        staged.diagnostics = dict(self.diagnostics)
+        for field_name in self._STATE_FIELDS:
+            setattr(staged, field_name, copy.copy(getattr(self, field_name)))
         staged.load_errors = self.load_errors
         return staged
 
     def _adopt(self, staged: PluginRegistry) -> None:
         """Take over a staging copy's state after a successful registration."""
-        self.plugin_ids = staged.plugin_ids
-        self.clis = staged.clis
-        self.lazy_clis = staged.lazy_clis
-        self.profile_sections = staged.profile_sections
-        self.state_sections = staged.state_sections
-        self.themes = staged.themes
-        self.skills = staged.skills
-        self.diagnostics = staged.diagnostics
+        for field_name in self._STATE_FIELDS:
+            setattr(self, field_name, getattr(staged, field_name))
 
 
 _CURRENT_REGISTRY = PluginRegistry()
