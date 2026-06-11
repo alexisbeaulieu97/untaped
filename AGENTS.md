@@ -153,23 +153,45 @@ A use case in `application/` is unit-testable with a stub satisfying its
 
 ## Plugin Contract
 
-Plugins expose one object through the `untaped.plugins` entry point group:
+Plugins expose one object through the `untaped.plugins` entry point group and
+import the SDK surface from `untaped.api` (the supported plugin API; core
+internals stay free to move as long as `untaped.api` keeps resolving).
+
+**Preferred (api version 3, declarative):** the object defines `id`, literal
+`untaped_api_version = 3`, and `manifest() -> PluginManifest`. The manifest is
+data (`clis`, `profile_settings`, `state_settings`, `themes`, `skills`,
+`diagnostics`); core validates it as a whole and commits it atomically, so a
+conflicting manifest contributes nothing. `CliSpec(name=..., import_path=
+"untaped_<x>.cli:app", help=...)` defers importing the CLI module until the
+command is dispatched — root `--help` lists the command from the spec's
+`help` text without paying the import.
 
 ```python
-class UntapedPlugin(Protocol):
-    id: str
-    untaped_api_version: int
-    def register(self, registry: PluginRegistry) -> None: ...
+from untaped.api import CliSpec, PluginManifest
+
+class XPlugin:
+    id = "<x>"
+    untaped_api_version = 3
+
+    def manifest(self) -> PluginManifest:
+        return PluginManifest(
+            clis=(CliSpec(name="<x>", import_path="untaped_<x>.cli:app", help="..."),),
+            profile_settings={"<x>": XSettings},
+        )
 ```
 
-The plugin object must declare a literal `untaped_api_version = 2`. Do not
-import a core constant for this value; future cores use the literal to reject
-plugins built for an incompatible plugin API before running registration hooks.
+**Legacy (api version 2, imperative):** `untaped_api_version = 2` plus
+`register(self, registry: PluginRegistry) -> None` calling the registry hooks
+below. Still accepted; new plugins use manifests.
+
+The plugin object must declare the API version as a literal. Do not import a
+core constant for this value; future cores use the literal to reject plugins
+built for an incompatible plugin API before running registration hooks.
 Package dependency bounds still matter for import-time failures, while the
 runtime API version catches registration-contract mismatches and reports them
 through `untaped plugins doctor`.
 
-Available registry hooks:
+Available registry hooks (manifest fields map 1:1 onto these):
 
 - `add_cli(name, app)` adds a root command.
 - `add_profile_settings(section, model)` contributes a typed profile
@@ -246,8 +268,12 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Need                                       | Use                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------- |
 | Read typed plugin config                   | `from untaped import get_config_section`                    |
+| Resolve settings once per command (profile-aware, no global state) | `from untaped.api import plugin_context`; read sections with `ctx.section(name, Model)` |
+| Build a validated plugin HTTP client (token check + bearer auth + TLS) | `from untaped.api import connected_client` |
+| Standard "setting not configured" error    | `from untaped.api import missing_setting_error`             |
+| Walk paginated API collections             | `from untaped.api import paginate_offset, paginate_pages`   |
 | Read core settings only                    | `from untaped import get_core_settings`                     |
-| Add a command-local read-time profile override | `from untaped import ProfileOverrideOption, profile_override` |
+| Add a command-local read-time profile override | `from untaped import ProfileOverrideOption, profile_override` (prefer `plugin_context(profile)` in new code) |
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
 | Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
@@ -315,8 +341,12 @@ Cross-cutting subsystems with their own internals doc:
   with nothing to describe.
 - **Re-export the public surface.**
   - **Plugin packages**: `<pkg>/__init__.py` re-exports `app:
-    cyclopts.App`; `<pkg>/plugin.py` exposes the entry-point object that
-    registers the app and config sections. Public adapters live in
+    cyclopts.App` *lazily* via a module-level `__getattr__` (PEP 562) —
+    an eager `from untaped_<x>.cli import app` would defeat the
+    manifest's `import_path` laziness, because loading
+    `untaped_<x>.plugin` from the entry point imports the package
+    `__init__` first. `<pkg>/plugin.py` exposes the entry-point object
+    that declares the manifest. Public adapters live in
     `infrastructure/__init__.py` with explicit `__all__`.
   - **`untaped`**: re-exports its public plugin/core API from
     `src/untaped/__init__.py` with explicit `__all__`.
@@ -454,17 +484,19 @@ Then:
 - Implement `domain/models.py`, `infrastructure/<x>_client.py`,
   `application/<use_case>.py`, `cli/commands.py`.
 - Re-export `app` from `cli/__init__.py` and the package `__init__.py`.
-- Add `plugin.py` and register the Cyclopts app/config sections:
+- Add `plugin.py` and declare the manifest (do not import the CLI module
+  here — the `import_path` keeps it off the startup path):
   ```python
-  from untaped.plugins import PluginRegistry
-  from untaped_<x> import app
+  from untaped.api import CliSpec, PluginManifest
 
   class XPlugin:
       id = "<x>"
-      untaped_api_version = 2
+      untaped_api_version = 3
 
-      def register(self, registry: PluginRegistry) -> None:
-          registry.add_cli("<x>", app)
+      def manifest(self) -> PluginManifest:
+          return PluginManifest(
+              clis=(CliSpec(name="<x>", import_path="untaped_<x>.cli:app", help="..."),),
+          )
 
   plugin = XPlugin()
   ```

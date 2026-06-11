@@ -85,19 +85,39 @@ Use `untaped plugins list` to inspect loaded and recorded plugins, and
 
 ## Plugin authoring contract
 
-Plugins expose one object through the `untaped.plugins` entry point group. The
-object must define `id`, literal `untaped_api_version = 2`, and
-`register(registry)`.
+Plugins expose one object through the `untaped.plugins` entry point group and
+import the SDK surface from `untaped.api`. The preferred contract (api
+version 3) is declarative: the object defines `id`, literal
+`untaped_api_version = 3`, and `manifest()` returning a `PluginManifest`.
 
 ```python
+from untaped.api import CliSpec, PluginManifest
+
+
 class ExamplePlugin:
     id = "example"
-    untaped_api_version = 2
+    untaped_api_version = 3
 
-    def register(self, registry: PluginRegistry) -> None:
-        # `app` is a cyclopts.App instance.
-        registry.add_cli("example", app)
+    def manifest(self) -> PluginManifest:
+        return PluginManifest(
+            clis=(
+                # import_path defers importing the CLI module until the
+                # `example` command is actually dispatched.
+                CliSpec(
+                    name="example",
+                    import_path="untaped_example.cli:app",
+                    help="Example workflows.",
+                ),
+            ),
+            profile_settings={"example": ExampleSettings},
+        )
 ```
+
+Core validates the whole manifest and commits it atomically: a manifest that
+conflicts with already-registered plugins (or itself) contributes nothing and
+is reported by `untaped plugins doctor`. The legacy imperative contract
+(`untaped_api_version = 2` with `register(registry)` calling the
+`registry.add_*` hooks) is still accepted; new plugins should use manifests.
 
 Keep the API version literal instead of importing a core constant. Future
 breaking plugin API changes will increment the supported major version, and
@@ -105,9 +125,14 @@ breaking plugin API changes will increment the supported major version, and
 versions as load errors.
 
 Plugin CLIs follow the suite's shared command conventions and helpers from
-`untaped`: render `--format`/`--columns` row output with `render_rows`, wrap
-command bodies in `report_errors`, and reject bad usage with `raise_usage`
-(exit 2). Required inputs are required positional-only parameters
+`untaped.api`: render `--format`/`--columns` row output with `render_rows`,
+wrap command bodies in `report_errors`, and reject bad usage with
+`raise_usage` (exit 2). Command bodies resolve settings once via
+`plugin_context(profile)` and read their section with
+`ctx.section("example", ExampleSettings)`; HTTP-backed plugins build their
+client with `connected_client(...)`, which validates required settings and
+raises the standard "set it via `untaped config set ...`" error for missing
+ones, and walk collections with `paginate_offset`/`paginate_pages`. Required inputs are required positional-only parameters
 (`Parameter(help=...)` declared before `/`) — a missing value renders
 `error: ... requires an argument` on stderr with exit 2 automatically; never
 emulate this with an optional default plus a manual help dance.
