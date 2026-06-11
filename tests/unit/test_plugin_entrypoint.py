@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from collections.abc import Iterator
 from importlib.metadata import entry_points
 from pathlib import Path
 
 import pytest
-from untaped import get_settings
+from untaped.api import CliSpec, PluginManifest
 from untaped.main import build_app
-from untaped.plugins import PluginRegistry
-from untaped.settings import reset_config_registry_for_tests
+from untaped.settings import get_settings, reset_config_registry_for_tests
 from untaped.testing import CliInvoker
 
 from untaped_workspace.plugin import plugin as workspace_plugin
+from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +44,62 @@ def test_workspace_plugin_entry_point_is_declared() -> None:
 
 
 def test_workspace_plugin_declares_untaped_api_version() -> None:
-    assert workspace_plugin.untaped_api_version == 2
+    assert workspace_plugin.untaped_api_version == 3
+
+
+def test_workspace_plugin_manifest_shape() -> None:
+    manifest = workspace_plugin.manifest()
+
+    assert isinstance(manifest, PluginManifest)
+    assert [type(spec) for spec in manifest.clis] == [CliSpec]
+    cli = manifest.clis[0]
+    assert cli.name == "workspace"
+    assert cli.app is None
+    assert cli.import_path == "untaped_workspace.cli:app"
+    assert cli.help
+    assert dict(manifest.profile_settings) == {"workspace": WorkspaceSettings}
+    assert dict(manifest.state_settings) == {"workspace": WorkspaceState}
+    assert not manifest.themes
+    assert not manifest.diagnostics
+
+
+def test_workspace_plugin_manifest_declares_agent_skill() -> None:
+    manifest = workspace_plugin.manifest()
+
+    specs = {spec.name: spec for spec in manifest.skills}
+    spec = specs["untaped-workspace"]
+    assert spec.description == "Use the untaped workspace plugin."
+    assert spec.source.joinpath("SKILL.md").is_file()
+
+
+def test_plugin_module_keeps_cli_import_lazy() -> None:
+    code = (
+        "import sys\n"
+        "from untaped_workspace.plugin import plugin\n"
+        "plugin.manifest()\n"
+        "assert 'untaped_workspace.cli' not in sys.modules, 'plugin.py imported the CLI'\n"
+        "import untaped_workspace\n"
+        "assert 'untaped_workspace.cli' not in sys.modules, '__init__ imported the CLI'\n"
+        "from cyclopts import App\n"
+        "assert isinstance(untaped_workspace.app, App)\n"
+        "assert 'untaped_workspace.cli' in sys.modules\n"
+    )
+
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_package_getattr_rejects_unknown_attribute() -> None:
+    import untaped_workspace
+
+    with pytest.raises(AttributeError, match="does_not_exist"):
+        _ = untaped_workspace.does_not_exist
 
 
 def test_root_app_can_register_workspace_plugin() -> None:
@@ -54,14 +111,27 @@ def test_root_app_can_register_workspace_plugin() -> None:
     assert "Manage local git workspaces" in result.output
 
 
-def test_workspace_plugin_registers_agent_skill() -> None:
-    registry = PluginRegistry()
+def test_root_help_lists_workspace_without_importing_cli() -> None:
+    code = (
+        "import sys\n"
+        "from untaped.main import build_app\n"
+        "from untaped.testing import CliInvoker\n"
+        "from untaped_workspace.plugin import plugin\n"
+        "app = build_app(plugins=[plugin])\n"
+        "result = CliInvoker().invoke(app, ['--help'])\n"
+        "assert result.exit_code == 0, result.output\n"
+        "assert 'workspace' in result.stdout\n"
+        "assert 'untaped_workspace.cli' not in sys.modules, 'root --help imported the CLI'\n"
+    )
 
-    workspace_plugin.register(registry)
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-    spec = registry.skills["untaped-workspace"]
-    assert spec.description == "Use the untaped workspace plugin."
-    assert spec.source.joinpath("SKILL.md").is_file()
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_config_list_includes_registered_workspace_profile_settings() -> None:

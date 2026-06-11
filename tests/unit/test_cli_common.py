@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from untaped import ConfigError
+from untaped.api import ConfigError
 
 from untaped_workspace.cli.common import confirm
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from conftest import empty_manifest
-from untaped import ConfigError
+from untaped.api import ConfigError
 from untaped.settings import get_settings
 
 from untaped_workspace.application import WorkspaceResolver

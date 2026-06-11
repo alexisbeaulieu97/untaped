@@ -22,14 +22,24 @@ errors.
 3. **Expose the plugin through the `untaped.plugins` entry point.**
    `workspace = "untaped_workspace.plugin:plugin"` is the public integration
    point. The plugin object must expose `id = "workspace"`, literal
-   `untaped_api_version = 2`, and `register(registry)`.
+   `untaped_api_version = 3`, and `manifest() -> PluginManifest`. `plugin.py`
+   must not import the CLI: the manifest's
+   `CliSpec(name="workspace", import_path="untaped_workspace.cli:app", ...)`
+   defers that import until the command is dispatched, and the package
+   `__init__.py` re-exports `app` lazily (PEP 562 `__getattr__`) so loading
+   `untaped_workspace.plugin` never drags the CLI tree onto the startup
+   import path.
 4. **Use the 4-layer DDD layout.** `cli -> application -> domain`, with
    `infrastructure -> domain`; `application` and `infrastructure` must not
    import each other at runtime.
 5. **Declare ports in `application/ports.py`.** Use cases depend on the
    narrowest `Protocol`; concrete adapters satisfy ports structurally.
 6. **Use absolute imports.** `from untaped_workspace...` and
-   `from untaped...`, never relative imports.
+   `from untaped.api ...` (the supported plugin SDK surface), never relative
+   imports. The only core imports outside `untaped.api` are
+   `untaped.config_file` (state read/write helpers; not part of the API
+   surface) in infrastructure, and test-only helpers (`untaped.testing`,
+   `untaped.main`, `untaped.settings`) in `tests/`.
 7. **Every source module has a module docstring.** Re-export `__init__.py`
    files are exempt.
 8. **Cyclopts command signatures are explicit.** Use
@@ -52,8 +62,12 @@ errors.
     confirmations go through `ui_context(strict=False).confirm(...)`, render
     on stderr, require TTY stdin, and keep `--yes` for automation.
 13. **Plugin code reads typed settings through `get_config_section`.** Use
-    `get_config_section("workspace", WorkspaceSettings)`, not a global
-    aggregate `settings.workspace` attribute.
+    `get_config_section("workspace", WorkspaceSettings)` (via
+    `cli/common.py`'s `workspace_settings()`), not a global aggregate
+    `settings.workspace` attribute. This package deliberately stays on
+    `get_config_section` instead of `plugin_context().section`: the CLI app
+    is exercised directly in tests without plugin registration, where only
+    `get_config_section` can build its one-off section model.
     Commands that read registry or profile settings expose the core
     command-local `ProfileOverrideOption` as `--profile` and wrap the command
     body in `profile_override(profile)`.
@@ -66,8 +80,8 @@ errors.
 
 ```text
 src/untaped_workspace/
-├── __init__.py           # re-exports app
-├── plugin.py             # entry-point plugin object
+├── __init__.py           # lazily re-exports app (PEP 562 __getattr__)
+├── plugin.py             # entry-point plugin object; declares the manifest
 ├── settings.py           # plugin-owned profile settings and app state
 ├── cli/                  # Cyclopts commands; composition root
 ├── application/          # use cases and ports
@@ -75,11 +89,13 @@ src/untaped_workspace/
 └── infrastructure/       # git, manifest, registry, filesystem adapters
 ```
 
-The plugin object registers `WorkspaceSettings` as the `workspace` profile
-settings section, `WorkspaceState` as the top-level `workspace` app-state
-section, mounts the Cyclopts app as the root `workspace` command, and registers
-the packaged `untaped-workspace` agent skill. Keep that static skill asset
-current with major workspace workflow changes.
+The plugin object's `manifest()` returns a `PluginManifest` declaring
+`WorkspaceSettings` as the `workspace` profile settings section,
+`WorkspaceState` as the top-level `workspace` app-state section, the Cyclopts
+app as the root `workspace` command (via a lazy `CliSpec` import path, so root
+`--help` never imports the CLI tree), and the packaged `untaped-workspace`
+agent skill. Keep that static skill asset current with major workspace
+workflow changes.
 
 ## Manifest + registry split
 
