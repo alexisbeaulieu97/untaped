@@ -7,11 +7,16 @@ import importlib
 EXPECTED_SURFACE = frozenset(
     {
         # Plugin contract
+        "CliSpec",
+        "PluginManifest",
         "PluginRegistry",
         "UntapedPlugin",
         "SkillSpec",
         "DiagnosticResult",
         "ThemeSpec",
+        # Plugin execution context
+        "PluginContext",
+        "plugin_context",
         # Errors
         "UntapedError",
         "ConfigError",
@@ -20,6 +25,10 @@ EXPECTED_SURFACE = frozenset(
         # HTTP
         "HttpClient",
         "HttpSettings",
+        "connected_client",
+        "missing_setting_error",
+        "paginate_offset",
+        "paginate_pages",
         "resolve_verify",
         # CLI and output helpers
         "ColumnsOption",
