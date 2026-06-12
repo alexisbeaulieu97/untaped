@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Annotated
 
 import pytest
-import yaml
 from cyclopts import Parameter
 
-from untaped import ProfileOverrideOption, create_app, echo, get_settings, profile_override
+from untaped import create_app, echo, get_settings
 from untaped.main import build_app
 from untaped.plugins import PluginRegistry
 from untaped.testing import CliInvoker
@@ -24,21 +23,6 @@ class _ProfileEnvProbePlugin:
         @probe_app.command(name="current")
         def current() -> None:
             echo(os.environ.get("UNTAPED_PROFILE", ""))
-
-        registry.add_cli("probe", probe_app)
-
-
-class _ProfileSettingsProbePlugin:
-    id = "profile-settings-probe"
-    untaped_api_version = 2
-
-    def register(self, registry: PluginRegistry) -> None:
-        probe_app = create_app(name="probe")
-
-        @probe_app.command(name="log-level")
-        def log_level(profile: ProfileOverrideOption = None) -> None:
-            with profile_override(profile):
-                echo(get_settings().log_level)
 
         registry.add_cli("probe", probe_app)
 
@@ -79,8 +63,6 @@ def _isolate_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
     monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
     get_settings.cache_clear()
     yield cfg
-    # `--profile` writes to os.environ directly, so monkeypatch can't roll it back.
-    os.environ.pop("UNTAPED_PROFILE", None)
     get_settings.cache_clear()
 
 
@@ -95,22 +77,21 @@ def test_help_lists_core_commands_only_without_plugins(app: object) -> None:
     assert "Manage configuration profiles" not in output
 
 
-def test_help_describes_root_profile_without_rich_markup(app: object) -> None:
+def test_root_help_has_no_profile_option_without_plugins(app: object) -> None:
+    """Core registers no root ``--profile``; the option is plugin-contributed."""
     result = CliInvoker().invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    assert "UNTAPED_PROFILE environment variable" in result.stdout
-    assert "must precede the command" in result.stdout
-    assert "UNTAPED_PROFILE=)" not in result.stdout
-    assert result.stdout.count("--profile") == 1
+    assert "--profile" not in result.stdout
+    assert "UNTAPED_PROFILE" not in result.stdout
     assert "Global options:" not in result.stdout
 
 
-def test_subcommand_help_does_not_repeat_root_profile_help(app: object) -> None:
+def test_subcommand_help_has_no_profile_option_without_plugins(app: object) -> None:
     result = CliInvoker().invoke(app, ["config", "--help"])
 
     assert result.exit_code == 0
-    assert result.stdout.count("--profile") == 1
+    assert "--profile" not in result.stdout
     assert "Global options:" not in result.stdout
 
 
@@ -151,17 +132,9 @@ def test_root_parse_errors_exit_2_and_stderr(app: object) -> None:
     assert "error: Unknown command" in result.stderr
 
 
-def test_root_profile_flag_is_visible_to_plugin_commands() -> None:
-    """Root ``--profile`` remains core plumbing even when profile is external."""
-    app = build_app(plugins=[_ProfileEnvProbePlugin()])
-
-    result = CliInvoker().invoke(app, ["--profile", "stage", "probe", "current"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["stage"]
-
-
 def test_trailing_profile_flag_is_not_stolen_from_passthrough_command() -> None:
+    """With no root ``--profile`` registered, a passthrough command's
+    ``--profile``-looking tokens must reach it verbatim."""
     app = build_app(plugins=[_PassthroughProbePlugin()])
 
     result = CliInvoker().invoke(app, ["probe", "run", "git", "log", "--profile", "stage"])
@@ -173,55 +146,219 @@ def test_trailing_profile_flag_is_not_stolen_from_passthrough_command() -> None:
     }
 
 
-def test_root_profile_flag_overrides_active(app: object, _isolate_config: Path) -> None:
-    """``untaped --profile <name> ...`` swaps the active profile for the
-    invocation without touching the persisted ``active:``."""
-    _isolate_config.write_text(
-        "profiles:\n"
-        "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: WARNING\n"
-        "  stage:\n    log_level: DEBUG\n"
-        "active: prod\n"
-    )
-    runner = CliInvoker()
-    # Without --profile, log_level reads from prod (WARNING)
-    result = runner.invoke(
-        app,
-        ["config", "list", "--format", "raw", "--columns", "key", "--columns", "value"],
-    )
-    assert "log_level\tWARNING" in result.stdout
-    # With --profile stage, log_level reads from stage (DEBUG)
-    result = runner.invoke(
-        app,
-        [
-            "--profile",
-            "stage",
-            "config",
-            "list",
-            "--format",
-            "raw",
-            "--columns",
-            "key",
-            "--columns",
-            "value",
-        ],
-    )
-    assert "log_level\tDEBUG" in result.stdout
-    # Persisted active is unchanged
-    assert yaml.safe_load(_isolate_config.read_text())["active"] == "prod"
+class _SettingsReaderProbePlugin:
+    """Probe plugin whose read command has NO command-local --profile."""
+
+    id = "settings-reader-probe"
+    untaped_api_version = 2
+
+    def register(self, registry: PluginRegistry) -> None:
+        probe_app = create_app(name="probe")
+
+        @probe_app.command(name="log-level")
+        def log_level() -> None:
+            echo(get_settings().log_level)
+
+        registry.add_cli("probe", probe_app)
 
 
-def test_command_local_profile_flag_overrides_plugin_read_command(
+def _tenant_handler_module(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    import sys
+    import types
+
+    applied: list[str] = []
+    module = types.ModuleType("fake_tenant_handler")
+    module.apply = applied.append  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_tenant_handler", module)
+    return applied
+
+
+def _tenant_plugin() -> object:
+    from untaped.plugins import PluginManifest, RootOptionSpec
+
+    class TenantPlugin:
+        id = "tenant"
+        untaped_api_version = 4
+
+        def manifest(self) -> PluginManifest:
+            return PluginManifest(
+                root_options=(
+                    RootOptionSpec(
+                        name="--tenant",
+                        help="Select the tenant for this invocation.",
+                        handler_import_path="fake_tenant_handler:apply",
+                    ),
+                ),
+            )
+
+    return TenantPlugin()
+
+
+def test_plugin_root_option_appears_in_root_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tenant_handler_module(monkeypatch)
+    app = build_app(plugins=[_tenant_plugin()])
+
+    result = CliInvoker().invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "--tenant" in result.stdout
+    assert "Select the tenant" in result.stdout
+
+
+def test_plugin_root_option_leading_position_runs_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    applied = _tenant_handler_module(monkeypatch)
+    app = build_app(plugins=[_tenant_plugin(), _ProfileEnvProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["--tenant", "acme", "probe", "current"])
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["acme"]
+
+
+def test_plugin_root_option_trailing_position_runs_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    applied = _tenant_handler_module(monkeypatch)
+    app = build_app(plugins=[_tenant_plugin(), _ProfileEnvProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "current", "--tenant", "acme"])
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["acme"]
+
+
+def test_root_option_missing_value_is_usage_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    applied = _tenant_handler_module(monkeypatch)
+    app = build_app(plugins=[_tenant_plugin(), _ProfileEnvProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "current", "--tenant"])
+
+    assert result.exit_code == 2
+    assert "expects a value" in result.stderr
+    assert applied == []
+
+
+def test_unknown_option_still_fails_after_root_option_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tenant_handler_module(monkeypatch)
+    app = build_app(plugins=[_tenant_plugin(), _ProfileEnvProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "current", "--nope", "x"])
+
+    assert result.exit_code == 2
+    assert "--nope" in result.stderr
+
+
+def test_plugin_settings_layout_drives_settings_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A v4 plugin layout makes flat top-level config keys effective."""
+    import sys
+    import types
+
+    from untaped.plugins import PluginManifest, SettingsLayoutSpec
+    from untaped.settings import reset_config_registry_for_tests
+    from untaped.settings_layout import FlatSettingsLayout
+
+    module = types.ModuleType("fake_layout_module")
+    module.LAYOUT = FlatSettingsLayout()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_layout_module", module)
+
+    class FlatLayoutPlugin:
+        id = "flat-layout"
+        untaped_api_version = 4
+
+        def manifest(self) -> PluginManifest:
+            return PluginManifest(
+                settings_layout=SettingsLayoutSpec(import_path="fake_layout_module:LAYOUT"),
+            )
+
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("log_level: DEBUG\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    reset_config_registry_for_tests()
+    try:
+        app = build_app(plugins=[FlatLayoutPlugin(), _SettingsReaderProbePlugin()])
+        result = CliInvoker().invoke(app, ["probe", "log-level"])
+
+        assert result.exit_code == 0, result.output
+        assert result.stdout.splitlines() == ["DEBUG"]
+    finally:
+        reset_config_registry_for_tests()
+
+
+def test_flat_top_level_settings_reach_plugin_commands(
     _isolate_config: Path,
 ) -> None:
-    """Plugin commands can opt into order-flexible profile selection."""
-    _isolate_config.write_text(
-        "profiles:\n  prod:\n    log_level: WARNING\n  stage:\n    log_level: DEBUG\nactive: prod\n"
-    )
-    app = build_app(plugins=[_ProfileSettingsProbePlugin()])
+    """Default flat layout: top-level config keys are the effective settings."""
+    _isolate_config.write_text("log_level: DEBUG\n")
+    app = build_app(plugins=[_SettingsReaderProbePlugin()])
 
-    result = CliInvoker().invoke(app, ["probe", "log-level", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["probe", "log-level"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["DEBUG"]
-    assert yaml.safe_load(_isolate_config.read_text())["active"] == "prod"
+
+
+def test_trailing_profile_token_is_unknown_option_without_plugins(
+    _isolate_config: Path,
+) -> None:
+    """With no root ``--profile`` registered there is no strip-on-retry
+    fallback for it — the token is a plain unknown option (exit 2)."""
+    app = build_app(plugins=[_SettingsReaderProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "log-level", "--profile", "stage"])
+
+    assert result.exit_code == 2
+    assert "--profile" in result.stderr
+
+
+def test_build_app_registers_environment_diagnostic() -> None:
+    registry_holder: list[PluginRegistry] = []
+
+    class _RegistryCapturePlugin:
+        id = "registry-capture"
+        untaped_api_version = 2
+
+        def register(self, registry: PluginRegistry) -> None:
+            registry_holder.append(registry)
+
+    build_app(plugins=[_RegistryCapturePlugin()])
+
+    # register() runs on a staging copy; the diagnostic must survive adoption.
+    assert "core-environment" in registry_holder[0].diagnostics
+
+
+def test_explicit_plugins_skip_environment_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def _fail(loaded_plugin_count: int) -> str | None:
+        raise AssertionError("warning must not be computed for explicit plugins")
+
+    monkeypatch.setattr("untaped.main.startup_mismatch_warning", _fail)
+    build_app(plugins=[])
+    assert capsys.readouterr().err == ""
+
+
+def test_discovery_emits_environment_warning_on_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("untaped.main.discover_plugins", lambda registry: [])
+    monkeypatch.setattr(
+        "untaped.main.startup_mismatch_warning",
+        lambda loaded_plugin_count: "warning: recorded plugins cannot load",
+    )
+    build_app(plugins=None)
+    captured = capsys.readouterr()
+    assert "warning: recorded plugins cannot load" in captured.err
+    assert captured.out == ""

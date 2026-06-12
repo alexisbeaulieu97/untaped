@@ -1,10 +1,9 @@
 """Per-invocation plugin execution context.
 
-``plugin_context()`` resolves settings exactly once (optionally under a
-read-time profile override) and hands plugins a frozen value object. Unlike
-``profile_override`` + ``get_config_section``, nothing about the resolution
-leaks into ambient process state: the override environment variable and the
-settings cache are restored before the context is returned.
+``plugin_context()`` resolves settings exactly once and hands plugins a
+frozen value object. Profile (or any other scope) selection happens before
+command dispatch via plugin-contributed root options, so nothing about the
+resolution leaks into ambient process state from here.
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from untaped.cli import profile_override
 from untaped.errors import ConfigError
 from untaped.settings import HttpSettings, Settings, get_settings
 from untaped.ui import UiContext, ui_context
@@ -57,8 +55,10 @@ class PluginContext:
         return ui_context(strict=strict)
 
 
-def plugin_context(profile: str | None = None) -> PluginContext:
-    """Resolve effective settings once and return a frozen :class:`PluginContext`."""
-    with profile_override(profile):
-        settings = get_settings()
-    return PluginContext(settings=settings)
+def plugin_context() -> PluginContext:
+    """Resolve effective settings once and return a frozen :class:`PluginContext`.
+
+    Profile selection happens before dispatch via the root ``--profile``
+    option (untaped-profile plugin), so no parameters are needed here.
+    """
+    return PluginContext(settings=get_settings())

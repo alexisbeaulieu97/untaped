@@ -1,13 +1,14 @@
 # Configuration
 
-`untaped` reads its settings from `~/.untaped/config.yml`. Core includes
-`untaped config` for editing keys. Profile inventory commands are
-provided by the optional `untaped-profile` plugin. Workspace registry
-commands are provided by the optional `untaped-workspace` plugin.
-Profile-scoped settings are contributed by optional plugins such as
-Ansible, AWX, GitHub, Jira, and Workspace when those plugins are installed.
+`untaped` reads its settings from `~/.untaped/config.yml`. With no
+plugins installed the file is a single flat document: top-level keys are
+the settings. The optional `untaped-profile` plugin upgrades it to named
+profile overlays and contributes the root `--profile` option plus the
+`untaped profile` command family. Settings sections are contributed by
+optional plugins such as Ansible, AWX, GitHub, Jira, and Workspace when
+those plugins are installed.
 
-- `untaped config` — read and write the *keys* inside a profile
+- `untaped config` — read and write the setting *keys*
   (`http.ca_bundle`, plus plugin keys like `awx.token` and
   `jira.base_url` or `ansible.index_path`).
 - `untaped profile` — manage the *profiles* (named overlays such as
@@ -28,10 +29,31 @@ $UNTAPED_CONFIG                   # override path for one process
 `UNTAPED_CONFIG=/tmp/scratch.yml untaped config list` is handy for
 trying things out without touching your real config.
 
-## Profiles
+## Flat layout (default, no profile plugin)
 
-Profile-scoped configuration lives under `profiles.<name>`. A few keys
-live *outside* the `profiles` block:
+Without the `untaped-profile` plugin, settings are plain top-level keys:
+
+```yaml
+log_level: INFO
+http:
+  verify_ssl: true
+awx:                               # plugin sections sit at the top level too
+  base_url: https://aap.example.com
+  token: <token>
+ui:                                # global terminal presentation (see below)
+  theme: default
+```
+
+If a flat-mode config still contains `profiles:` or `active:` keys (for
+example after uninstalling the profile plugin), those keys are ignored
+and a one-line warning is printed to stderr suggesting
+`untaped plugins add untaped-profile`.
+
+## Profiles (with the `untaped-profile` plugin)
+
+Installing `untaped-profile` switches the settings layout: profile-scoped
+configuration lives under `profiles.<name>`. A few keys live *outside*
+the `profiles` block:
 
 - `active: <name>` — selects which profile is on top. Optional.
 - `ui:` — global terminal presentation preferences. These are user
@@ -132,20 +154,23 @@ default profile (if it exists)
 schema default                      (lowest)
 ```
 
+(Flat layout has no profile layers: env var, then top-level YAML key,
+then schema default.)
+
 The active profile is selected by, in order:
 
-1. A command-local `--profile <name>` flag on commands that expose it.
-2. The root `--profile <name>` flag (sugar that sets the env var for one
-   invocation).
-3. `UNTAPED_PROFILE` environment variable.
-4. The `active:` key in the YAML.
-5. Fallback to `default` if it exists, otherwise no overlay layer
+1. The root `--profile <name>` option, contributed by the
+   `untaped-profile` plugin. It works in **any token position** —
+   `untaped --profile stage config list` and
+   `untaped config list --profile stage` are equivalent — and applies
+   for one invocation only (it sets the env var for the process).
+2. `UNTAPED_PROFILE` environment variable.
+3. The `active:` key in the YAML.
+4. Fallback to `default` if it exists, otherwise no overlay layer
    applies.
 
-For example, `untaped config list --profile stage` reads that one
-command against `stage` without touching your persisted `active:`.
-The root form still works for every command:
-`untaped --profile stage config list`.
+Commands do not declare their own `--profile`; the root option covers
+every command, including plugin subcommands.
 
 ## Managing profiles — `untaped profile`
 
@@ -193,29 +218,30 @@ echo "[$(untaped profile current 2>/dev/null)] $ "
 ## Managing keys — `untaped config`
 
 ```text
-untaped config list                          # effective values from the active profile
-untaped config list --profile <name>         # one-off read against a named profile
-untaped config list --all-profiles           # one row per (profile, key)
+untaped config list                          # effective values (flat, or active profile)
+untaped config list --profile <name>         # one-off read against a named profile (root option, any position)
+untaped config list --all-profiles           # one row per (profile, key); requires untaped-profile
 untaped config list --show-secrets           # reveal redacted values
 untaped config list --format json|yaml|table|raw
 untaped config list --format raw --columns key --columns value
                                              # available columns: key, value, default, source, profile
 untaped config get <key>                     # print one effective scalar value
-untaped config get <key> --profile <name>    # one-off read against a named profile
+untaped config get <key> --profile <name>    # one-off read against a named profile (root option)
 untaped config get <key> --show-secrets      # reveal a secret value
 untaped config get <key> --format json|yaml|table|raw
-untaped config set <key> <value>             # write to the active profile
+untaped config set <key> <value>             # write (top level, or the active profile)
 untaped config set <key> --stdin             # read one value from stdin
 untaped config set <key> --prompt            # prompt on stderr using the setting type
-untaped config set <key> <value> --target-profile <name>
-untaped config unset <key>                   # remove from the active profile
-untaped config unset <key> --target-profile <name>
+untaped config set <key> <value> --target-profile <name>   # requires untaped-profile
+untaped config unset <key>                   # remove (top level, or the active profile)
+untaped config unset <key> --target-profile <name>         # requires untaped-profile
 untaped config set ui.theme classic          # write a global UI preference
 untaped config unset ui.theme                # remove a global UI preference
 ```
 
-`--profile` and `--all-profiles` are mutually exclusive: one reads a
-single effective profile, the other inspects the raw per-profile config.
+`--profile` here is the root option (the profile plugin strips it from
+any position); `--all-profiles` and `--target-profile` error when the
+profile plugin is not installed.
 `config get` defaults to `--format raw` and prints only the selected value,
 so `untaped config get ui.theme` is safe to use in shell scripts. Its
 structured and table formats include `key`, `value`, `default`, `source`,
@@ -243,13 +269,13 @@ Interactive prompts require a TTY on stdin and render prompt UI on stderr, so
 stdout stays data-only for commands that participate in shell pipelines. In
 non-interactive runs, use `VALUE` or `--stdin` instead of `--prompt`.
 
-Writing to a profile that doesn't exist is rejected — create it first
-with `untaped profile create <name>` if the profile plugin is installed,
-or by editing the YAML directly. The one exception is `default`, which is
-auto-bootstrapped on the first write so a fresh install doesn't need a
-setup step. So `untaped config set awx.token --stdin` on a brand-new system
-writes to `default` when the AWX plugin is installed; `untaped config set
-awx.token --stdin --target-profile prod` requires `prod` to already exist.
+Without the profile plugin, writes land on top-level keys. With it,
+writing to a profile that doesn't exist is rejected — create it first
+with `untaped profile create <name>`. The one exception is `default`,
+which is auto-bootstrapped on the first write so a fresh install doesn't
+need a setup step. So `untaped config set awx.token --stdin` writes to
+`default` when profiles are enabled; `untaped config set awx.token
+--stdin --target-profile prod` requires `prod` to already exist.
 
 `untaped config get/set/unset` also supports scalar `ui.*` preferences such
 as `ui.theme`, `ui.border`, `ui.density`, `ui.collection_view`, and
