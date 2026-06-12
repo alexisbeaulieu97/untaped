@@ -83,6 +83,7 @@ def setting_entry_for_descriptor(
         descriptor,
         current,
         global_configured=global_configured,
+        scoped=repo.supports_profiles(),
     )
     return SettingEntry(
         key=descriptor.key,
@@ -118,18 +119,24 @@ def _iter_leaves(
 
 def _resolve_source(
     in_env: bool,
-    profile_name: str | None,
+    scope_name: str | None,
     descriptor: FieldDescriptor,
     current: Any,
     *,
     global_configured: bool = False,
+    scoped: bool = False,
 ) -> Source:
     if in_env:
         return Source(kind="env")
     if global_configured:
         return Source(kind="global")
-    if profile_name is not None:
-        return Source(kind="profile", profile=profile_name)
+    if scope_name is not None:
+        # A provenance hit names the supplying profile only when the active
+        # layout actually has scopes; the flat layout's provenance marker
+        # must not masquerade as a profile named "config".
+        if scoped:
+            return Source(kind="profile", profile=scope_name)
+        return Source(kind="config")
     if current is None and not (descriptor.has_default and descriptor.default is not None):
         return Source(kind="unset")
     return Source(kind="default")

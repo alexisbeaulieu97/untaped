@@ -12,14 +12,12 @@ from __future__ import annotations
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
-    ProfileOverrideOption,
     clamp_parallel,
     create_app,
     echo,
     existing_directory,
     existing_file,
     parse_kv_pairs,
-    profile_override,
     raise_usage,
     render_rows,
     report_errors,
@@ -40,6 +38,8 @@ from untaped.plugin_registry import (
     DiagnosticResult,
     PluginManifest,
     PluginRegistry,
+    RootOptionSpec,
+    SettingsLayoutSpec,
     SkillSpec,
     UntapedPlugin,
 )
@@ -48,9 +48,21 @@ from untaped.settings import (
     HttpSettings,
     get_config_section,
     get_core_settings,
+    get_settings,
 )
+from untaped.settings_layout import SettingsLayout
 from untaped.stdin import read_identifiers, read_stdin
 from untaped.ui import ThemeSpec, UiContext, ui_context
+
+
+def invalidate_settings_cache() -> None:
+    """Drop the cached settings instance so the next read re-resolves.
+
+    Root-option handlers (e.g. the profile plugin's ``--profile``) call this
+    after changing process state that feeds settings resolution.
+    """
+    get_settings.cache_clear()
+
 
 __all__ = [
     "CliSpec",
@@ -65,8 +77,10 @@ __all__ = [
     "PluginContext",
     "PluginManifest",
     "PluginRegistry",
-    "ProfileOverrideOption",
     "PromptChoice",
+    "RootOptionSpec",
+    "SettingsLayout",
+    "SettingsLayoutSpec",
     "SkillSpec",
     "ThemeSpec",
     "UiContext",
@@ -81,12 +95,12 @@ __all__ = [
     "first_validation_error",
     "get_config_section",
     "get_core_settings",
+    "invalidate_settings_cache",
     "missing_setting_error",
     "paginate_offset",
     "paginate_pages",
     "parse_kv_pairs",
     "plugin_context",
-    "profile_override",
     "raise_usage",
     "read_identifiers",
     "read_stdin",

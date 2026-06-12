@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,6 @@ from untaped import (
     create_app,
     get_settings,
     parse_kv_pairs,
-    profile_override,
     render_rows,
     report_errors,
     resolve_each,
@@ -67,50 +65,6 @@ def test_passes_through_non_untaped_exception() -> None:
     assert result.exit_code != 0
     # The bug-style exception should bubble up
     assert isinstance(result.exception, ValueError)
-
-
-# ---- profile_override ----------------------------------------------------
-
-
-def test_profile_override_sets_env_and_restores_previous_profile(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  prod:\n    log_level: WARNING\n  stage:\n    log_level: DEBUG\n")
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
-    get_settings.cache_clear()
-
-    assert get_settings().log_level == "WARNING"
-    with profile_override("stage"):
-        assert os.environ["UNTAPED_PROFILE"] == "stage"
-        assert get_settings().log_level == "DEBUG"
-
-    assert os.environ["UNTAPED_PROFILE"] == "prod"
-    assert get_settings().log_level == "WARNING"
-
-
-def test_profile_override_removes_temporary_env_when_previously_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
-    get_settings.cache_clear()
-
-    with profile_override("stage"):
-        assert os.environ["UNTAPED_PROFILE"] == "stage"
-
-    assert "UNTAPED_PROFILE" not in os.environ
-
-
-def test_profile_override_restores_env_after_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
-    get_settings.cache_clear()
-
-    with pytest.raises(RuntimeError, match="boom"), profile_override("stage"):
-        raise RuntimeError("boom")
-
-    assert os.environ["UNTAPED_PROFILE"] == "prod"
 
 
 # ---- parse_kv_pairs ------------------------------------------------------

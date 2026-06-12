@@ -54,9 +54,16 @@ in `~/.untaped/config.yml`. Managed sync ignores package-local
 `[tool.uv.sources]` tables so a plugin checkout's development sources cannot
 override the recorded core or plugin specs. Plugin authors should declare
 required plugin dependencies in normal package metadata; dependencies that are
-not available from an index should be expressed as direct package metadata or
-recorded explicitly as plugin specs. Dependencies that exist only in a plugin
-checkout's `[tool.uv.sources]` table are not installed by managed sync.
+not available from an index must exist as their own recorded plugin specs.
+
+When you `untaped plugins add` a **local plugin checkout**, dependencies on
+other untaped plugins that the checkout maps through `[tool.uv.sources]`
+(path or git entries) are auto-recorded as explicit plugin specs, recursively,
+so the managed sync resolves cleanly. Each auto-recorded spec is reported and
+visible in `untaped plugins list`; pass `--no-auto-deps` to opt out. Git and
+index specs are never inspected this way — their source tables describe the
+author's machine, not yours — so an unresolvable plugin dependency from such a
+spec still fails with a hint to record it explicitly.
 
 Direct git URLs are accepted when the plugin name can be inferred from the
 repository basename. `untaped` stores the canonical `name @ url` form and
@@ -82,6 +89,16 @@ useful for that repo's own `uv sync`, but managed plugin sync does not use them.
 
 Use `untaped plugins list` to inspect loaded and recorded plugins, and
 `untaped plugins doctor` to see plugin load failures.
+
+Plugin discovery only sees packages installed in the running interpreter's
+environment. If `untaped` is launched from a foreign environment — for
+example a leftover `uv tool install untaped` shim — recorded plugins exist
+but none of their commands appear. Core detects this: startup prints a
+one-line warning on stderr, and `untaped plugins doctor` runs a
+`core-environment` check that reports when the running interpreter is not
+the managed venv (or the `~/.local/bin/untaped` shim does not delegate to
+it) along with the fix: re-run `scripts/install.sh`, or remove the
+conflicting shim with `uv tool uninstall untaped`.
 
 ## Plugin authoring contract
 

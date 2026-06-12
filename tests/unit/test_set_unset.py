@@ -33,42 +33,26 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     get_settings.cache_clear()
 
 
-# ── set ──────────────────────────────────────────────────────────────────────
+# ── set (flat layout) ────────────────────────────────────────────────────────
 
 
-def test_set_writes_into_default_profile_when_no_active(_isolate_settings: Path) -> None:
-    SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+def test_set_writes_top_level_key(_isolate_settings: Path) -> None:
+    target = SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+    assert target is None
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"log_level": "DEBUG"}}}
-
-
-def test_set_writes_into_active_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\nactive: prod\n")
-    SetSetting(SettingsFileRepository())("log_level", "DEBUG")
-    data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["prod"] == {"log_level": "DEBUG"}
-    assert data["profiles"]["default"] == {}
-    assert data["active"] == "prod"
-
-
-def test_set_writes_into_named_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
-    SetSetting(SettingsFileRepository())("demo.token", "ghp_xxx", profile="prod")
-    data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["prod"] == {"demo": {"token": "ghp_xxx"}}
-    assert data["profiles"]["default"] == {}
+    assert data == {"log_level": "DEBUG"}
 
 
 def test_set_creates_nested_path(_isolate_settings: Path) -> None:
     SetSetting(SettingsFileRepository())("demo.token", "ghp_xxx")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"demo": {"token": "ghp_xxx"}}}}
+    assert data == {"demo": {"token": "ghp_xxx"}}
 
 
 def test_set_coerces_yaml_scalars(_isolate_settings: Path) -> None:
     SetSetting(SettingsFileRepository())("http.verify_ssl", "false")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"http": {"verify_ssl": False}}}}
+    assert data == {"http": {"verify_ssl": False}}
 
 
 def test_set_validates_via_pydantic(_isolate_settings: Path) -> None:
@@ -95,68 +79,45 @@ def test_set_validation_isolated_from_env_overlay(
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
 
-def test_set_validates_target_profile_not_ambient_active(_isolate_settings: Path) -> None:
-    """Validation must merge from the target profile's perspective.
-
-    Otherwise an invalid value lands in a non-active profile and only
-    explodes later when that profile becomes active — by which point the
-    user is already past the failed `set` and has lost the validation
-    feedback.
-    """
-    _isolate_settings.write_text(
-        "profiles:\n  default:\n    demo:\n      page_size: 50\n  stage: {}\nactive: default\n"
-    )
-    with pytest.raises(ConfigError, match="invalid value"):
-        SetSetting(SettingsFileRepository())("demo.page_size", "abc", profile="stage")
-
-
 def test_set_rejects_unknown_key(_isolate_settings: Path) -> None:
     with pytest.raises(ConfigError, match="unknown setting"):
         SetSetting(SettingsFileRepository())("bogus.key", "x")
 
 
-def test_set_rejects_unknown_profile(_isolate_settings: Path) -> None:
-    """Explicit target profile names the profile plugin remediation.
-
-    This stays distinct from the implicit-path message added for issue #22,
-    so a future refactor can't accidentally collapse the two phrasings (the
-    user typed a wrong flag here, while a stale persisted ``active:`` points
-    to ``profile use`` instead).
-    """
-    _isolate_settings.write_text("profiles:\n  default: {}\n")
-    with pytest.raises(ConfigError, match=r"untaped-profile") as excinfo:
-        SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="ghost")
-    assert "ghost" in str(excinfo.value)
-    assert "profile create" in str(excinfo.value)
+def test_set_target_profile_errors_without_profile_plugin(_isolate_settings: Path) -> None:
+    """Flat layout has no scopes; an explicit target names the remediation."""
+    with pytest.raises(ConfigError, match="profiles are not available") as excinfo:
+        SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="prod")
+    assert "prod" in str(excinfo.value)
+    assert "untaped-profile" in str(excinfo.value)
+    assert not _isolate_settings.exists()
 
 
-def test_set_default_profile_auto_creates_default_block(_isolate_settings: Path) -> None:
-    """Writing to `default` is always allowed; bootstraps the default profile."""
-    SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="default")
+def test_set_ignores_profile_shaped_yaml_and_writes_top_level(_isolate_settings: Path) -> None:
+    """A leftover ``profiles:`` block (plugin uninstalled) is inert: writes
+    land at the top level and the block survives untouched."""
+    _isolate_settings.write_text("profiles:\n  prod:\n    log_level: WARNING\n")
+    SetSetting(SettingsFileRepository())("log_level", "DEBUG")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"log_level": "DEBUG"}}}
+    assert data["log_level"] == "DEBUG"
+    assert data["profiles"] == {"prod": {"log_level": "WARNING"}}
 
 
-def test_set_preserves_other_profiles_and_state(_isolate_settings: Path) -> None:
+def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     _isolate_settings.write_text(
-        "profiles:\n"
-        "  default:\n    log_level: DEBUG\n"
-        "  prod:\n    demo:\n      base_url: https://prod\n"
-        "active: prod\n"
+        "log_level: DEBUG\n"
+        "demo:\n  base_url: https://prod\n"
         "workspace:\n  workspaces:\n    - name: ws1\n      path: /tmp/ws1\n"
     )
-    SetSetting(SettingsFileRepository())("demo.token", "tok", profile="default")
+    SetSetting(SettingsFileRepository())("demo.token", "tok")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["log_level"] == "DEBUG"
-    assert data["profiles"]["default"]["demo"]["token"] == "tok"
-    assert data["profiles"]["prod"]["demo"]["base_url"] == "https://prod"
-    assert data["active"] == "prod"
+    assert data["log_level"] == "DEBUG"
+    assert data["demo"]["token"] == "tok"
+    assert data["demo"]["base_url"] == "https://prod"
     assert data["workspace"]["workspaces"][0]["name"] == "ws1"
 
 
-def test_set_ui_theme_writes_top_level_ui_without_creating_profile(
-    _isolate_settings: Path,
-) -> None:
+def test_set_ui_theme_writes_top_level_ui(_isolate_settings: Path) -> None:
     target = SetSetting(SettingsFileRepository())("ui.theme", "classic")
 
     data = yaml.safe_load(_isolate_settings.read_text())
@@ -184,14 +145,13 @@ def test_set_ui_collection_view_rejects_invalid_literal_atomically(
 
 
 def test_set_rejects_target_profile_for_global_ui(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+    original = "log_level: INFO\n"
+    _isolate_settings.write_text(original)
 
     with pytest.raises(ConfigError, match="global"):
         SetSetting(SettingsFileRepository())("ui.theme", "classic", profile="prod")
 
-    assert yaml.safe_load(_isolate_settings.read_text()) == {
-        "profiles": {"default": {}, "prod": {}}
-    }
+    assert _isolate_settings.read_text() == original
 
 
 def test_set_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
@@ -201,92 +161,67 @@ def test_set_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
     assert not _isolate_settings.exists()
 
 
-# ── unset ────────────────────────────────────────────────────────────────────
+# ── unset (flat layout) ──────────────────────────────────────────────────────
 
 
-def test_unset_removes_key_from_active_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\nactive: default\n")
+def test_unset_removes_top_level_key(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("log_level: DEBUG\ndemo:\n  base_url: https://x\n")
     removed, target = UnsetSetting(SettingsFileRepository())("log_level")
     assert removed is True
-    assert target == "default"
+    assert target is None
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"] == {}
+    assert data == {"demo": {"base_url": "https://x"}}
 
 
-def test_unset_targets_named_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: DEBUG\nactive: prod\n"
-    )
-    removed, target = UnsetSetting(SettingsFileRepository())("log_level", profile="default")
-    assert removed is True
-    assert target == "default"
-    data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"] == {}
-    assert data["profiles"]["prod"]["log_level"] == "DEBUG"
-
-
-def test_unset_cleans_empty_parent_within_profile(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: x\n")
+def test_unset_cleans_empty_parent(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("log_level: DEBUG\ndemo:\n  token: x\n")
     UnsetSetting(SettingsFileRepository())("demo.token")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"] == {}
+    assert data == {"log_level": "DEBUG"}
 
 
 def test_unset_keeps_other_keys_in_parent(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        "profiles:\n  default:\n    demo:\n      token: x\n      base_url: https://y\n"
-    )
+    _isolate_settings.write_text("demo:\n  token: x\n  base_url: https://y\n")
     UnsetSetting(SettingsFileRepository())("demo.token")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["demo"] == {"base_url": "https://y"}
+    assert data["demo"] == {"base_url": "https://y"}
 
 
 def test_unset_returns_false_when_not_set(_isolate_settings: Path) -> None:
-    removed, _ = UnsetSetting(SettingsFileRepository())("log_level")
+    removed, target = UnsetSetting(SettingsFileRepository())("log_level")
     assert removed is False
+    assert target is None
+
+
+def test_unset_target_profile_errors_without_profile_plugin(_isolate_settings: Path) -> None:
+    """Explicit-profile ``unset`` must raise like ``set`` does in flat mode."""
+    original = "log_level: DEBUG\n"
+    _isolate_settings.write_text(original)
+    with pytest.raises(ConfigError, match="profiles are not available") as excinfo:
+        UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
+    assert "ghost" in str(excinfo.value)
+    assert _isolate_settings.read_text() == original
 
 
 def test_unset_ui_theme_removes_top_level_key_and_cleans_empty_ui(
     _isolate_settings: Path,
 ) -> None:
-    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  default: {}\n")
+    _isolate_settings.write_text("ui:\n  theme: classic\nlog_level: DEBUG\n")
 
     removed, target = UnsetSetting(SettingsFileRepository())("ui.theme")
 
     assert removed is True
     assert target == "global"
-    assert yaml.safe_load(_isolate_settings.read_text()) == {"profiles": {"default": {}}}
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"log_level": "DEBUG"}
 
 
 def test_unset_rejects_target_profile_for_global_ui(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  default: {}\n  prod: {}\n")
+    _isolate_settings.write_text("ui:\n  theme: classic\n")
 
     with pytest.raises(ConfigError, match="global"):
         UnsetSetting(SettingsFileRepository())("ui.theme", profile="prod")
 
-    assert yaml.safe_load(_isolate_settings.read_text()) == {
-        "ui": {"theme": "classic"},
-        "profiles": {"default": {}, "prod": {}},
-    }
-
-
-def test_unset_raises_when_named_profile_missing(_isolate_settings: Path) -> None:
-    """Explicit-profile ``unset`` must raise like ``set`` does."""
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
-    with pytest.raises(ConfigError, match=r"profile.*ghost"):
-        UnsetSetting(SettingsFileRepository())("log_level", profile="ghost")
-
-
-# ── issue #22: validate recorded `active:` on the implicit path ─────────────
-
-
-def test_unset_raises_when_recorded_active_missing(_isolate_settings: Path) -> None:
-    """Issue #22: ``unset`` with ``active: ghost`` (no ``profiles.ghost``)
-    used to silently no-op. Now raises with a message naming the missing
-    profile, matching the shape ``list`` already had."""
-    _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
-    with pytest.raises(ConfigError, match=r"active profile.*ghost"):
-        UnsetSetting(SettingsFileRepository())("log_level")
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"theme": "classic"}}
 
 
 # ── issue #136: post-unset schema validation ─────────────────────────────────
@@ -297,12 +232,12 @@ def test_unset_succeeds_when_schema_default_fills_the_gap(_isolate_settings: Pat
     the default takes over, the merged dict stays valid. This is the
     realistic happy path today (every field has a default), so a
     regression here would break every user's ``unset`` call."""
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      page_size: 50\n")
+    _isolate_settings.write_text("demo:\n  page_size: 50\n")
     removed, target = UnsetSetting(SettingsFileRepository())("demo.page_size")
     assert removed is True
-    assert target == "default"
+    assert target is None
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert "demo" not in data["profiles"]["default"]
+    assert data == {}
 
 
 def test_unset_raises_when_post_state_is_invalid(_isolate_settings: Path) -> None:
@@ -331,7 +266,7 @@ def test_unset_raises_when_post_state_is_invalid(_isolate_settings: Path) -> Non
         # base class's ``log_level: str = "INFO"`` default.
         log_level: str = Field(...)  # type: ignore[assignment]
 
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+    _isolate_settings.write_text("log_level: DEBUG\n")
     before = _isolate_settings.read_bytes()
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
     with pytest.raises(ConfigError, match=r"log_level"):
@@ -342,12 +277,13 @@ def test_unset_raises_when_post_state_is_invalid(_isolate_settings: Path) -> Non
     assert _isolate_settings.read_bytes() == before
 
 
-def test_unset_error_message_names_the_key_and_profile(_isolate_settings: Path) -> None:
+def test_unset_error_message_names_the_key_and_the_config(_isolate_settings: Path) -> None:
     """The error message must mention both the key the user tried to
-    unset and the profile so they can find the offending edit without
-    re-reading the YAML. Mirrors ``set_value``'s "invalid value for
-    {key!r}" shape — the two messages live on the same code path so
-    users see uniform diagnostics."""
+    unset and where the removal landed (``the config`` in flat mode) so
+    they can find the offending edit without re-reading the YAML.
+    Mirrors ``set_value``'s "invalid value for {key!r}" shape — the two
+    messages live on the same code path so users see uniform
+    diagnostics."""
     from typing import cast
 
     from pydantic import Field
@@ -364,43 +300,101 @@ def test_unset_error_message_names_the_key_and_profile(_isolate_settings: Path) 
         # Ellipsis makes the field required and overrides the base's default.
         log_level: str = Field(...)  # type: ignore[assignment]
 
-    # Stage has the only ``log_level``; no default-profile fallback. After
-    # unset, the merged view for ``active: stage`` is missing the
-    # required field, so validation fails and the error names the target
-    # profile ("stage"), not "default".
-    _isolate_settings.write_text(
-        "profiles:\n  default: {}\n  stage:\n    log_level: WARN\nactive: stage\n"
-    )
+    _isolate_settings.write_text("log_level: WARN\n")
     repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
     with pytest.raises(ConfigError) as exc_info:
         UnsetSetting(repo)("log_level")
     message = str(exc_info.value)
     assert "log_level" in message
-    assert "stage" in message
+    assert "the config" in message
 
 
-def test_set_raises_with_resolution_time_message_when_recorded_active_missing(
-    _isolate_settings: Path,
-) -> None:
-    """Issue #22: ``set`` raises at resolution time with the actionable
-    "Run `untaped profile use ...`" message — distinct from the
-    schema-validation pathway that also pre-existed (and which produces
-    `_select_active`'s tersere message). Also asserts the file is
-    untouched on failure (mutate_config's atomic-write contract holds)."""
-    _isolate_settings.write_text("active: ghost\nprofiles:\n  default:\n    log_level: INFO\n")
-    before = _isolate_settings.read_bytes()
-    with pytest.raises(ConfigError, match=r"profile use") as excinfo:
-        SetSetting(SettingsFileRepository())("log_level", "DEBUG")
-    assert "ghost" in str(excinfo.value)
-    assert _isolate_settings.read_bytes() == before
+# ── scoped layout pass-through (FakeScopedLayout) ────────────────────────────
 
 
-def test_set_raises_when_env_active_missing(
-    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``UNTAPED_PROFILE`` pointing at a missing profile also raises on
-    the implicit path (no ``--profile`` flag)."""
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: INFO\n")
-    monkeypatch.setenv("UNTAPED_PROFILE", "ghost")
-    with pytest.raises(ConfigError, match=r"active profile.*ghost"):
-        SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+class TestScopedLayoutWrites:
+    """Core's write plumbing against a registered scoped layout.
+
+    The real scoped layout (and its policy details) live in the
+    untaped-profile plugin; these tests only pin that core routes writes
+    through ``write_scope`` and reports the resolved scope name."""
+
+    @pytest.fixture(autouse=True)
+    def _scoped(self, _isolate_settings: Path, fake_scoped_layout: object) -> Iterator[None]:
+        yield
+
+    def test_set_writes_into_active_scope_and_returns_its_name(
+        self, _isolate_settings: Path
+    ) -> None:
+        _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\nactive: prod\n")
+        target = SetSetting(SettingsFileRepository())("log_level", "DEBUG")
+        assert target == "prod"
+        data = yaml.safe_load(_isolate_settings.read_text())
+        assert data["profiles"]["prod"] == {"log_level": "DEBUG"}
+        assert data["profiles"]["default"] == {}
+
+    def test_set_writes_into_named_scope(self, _isolate_settings: Path) -> None:
+        _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
+        target = SetSetting(SettingsFileRepository())("demo.token", "ghp_xxx", profile="prod")
+        assert target == "prod"
+        data = yaml.safe_load(_isolate_settings.read_text())
+        assert data["profiles"]["prod"] == {"demo": {"token": "ghp_xxx"}}
+        assert data["profiles"]["default"] == {}
+
+    def test_set_rejects_unknown_scope(self, _isolate_settings: Path) -> None:
+        _isolate_settings.write_text("profiles:\n  default: {}\n")
+        with pytest.raises(ConfigError, match="ghost"):
+            SetSetting(SettingsFileRepository())("log_level", "DEBUG", profile="ghost")
+
+    def test_set_validates_target_scope_not_ambient_active(self, _isolate_settings: Path) -> None:
+        """Validation must merge from the target scope's perspective.
+
+        Otherwise an invalid value lands in a non-active scope and only
+        explodes later when that scope becomes active — by which point
+        the user is already past the failed ``set`` and has lost the
+        validation feedback."""
+        _isolate_settings.write_text(
+            "profiles:\n  default:\n    demo:\n      page_size: 50\n  stage: {}\nactive: default\n"
+        )
+        with pytest.raises(ConfigError, match="invalid value"):
+            SetSetting(SettingsFileRepository())("demo.page_size", "abc", profile="stage")
+
+    def test_unset_removes_key_from_named_scope(self, _isolate_settings: Path) -> None:
+        _isolate_settings.write_text(
+            "profiles:\n"
+            "  default:\n    log_level: INFO\n"
+            "  prod:\n    log_level: DEBUG\n"
+            "active: prod\n"
+        )
+        removed, target = UnsetSetting(SettingsFileRepository())("log_level", profile="default")
+        assert removed is True
+        assert target == "default"
+        data = yaml.safe_load(_isolate_settings.read_text())
+        assert data["profiles"]["default"] == {}
+        assert data["profiles"]["prod"]["log_level"] == "DEBUG"
+
+    def test_unset_error_names_the_scope(self, _isolate_settings: Path) -> None:
+        from typing import cast
+
+        from pydantic import Field
+        from pydantic_settings import SettingsConfigDict
+
+        from untaped.settings import Settings
+
+        class StrictSettings(Settings):
+            model_config = SettingsConfigDict(
+                env_prefix="UNTAPED_",
+                env_nested_delimiter="__",
+                extra="ignore",
+            )
+            log_level: str = Field(...)  # type: ignore[assignment]
+
+        _isolate_settings.write_text(
+            "profiles:\n  default: {}\n  stage:\n    log_level: WARN\nactive: stage\n"
+        )
+        repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
+        with pytest.raises(ConfigError) as exc_info:
+            UnsetSetting(repo)("log_level")
+        message = str(exc_info.value)
+        assert "log_level" in message
+        assert "stage" in message

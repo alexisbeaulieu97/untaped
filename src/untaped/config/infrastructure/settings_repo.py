@@ -1,37 +1,39 @@
-"""Adapter wiring schema introspection + YAML I/O + env detection together."""
+"""Adapter wiring schema introspection + YAML I/O + env detection together.
+
+All scope (profile) awareness goes through the registered settings layout:
+with the flat default, writes land on top-level keys; with the
+untaped-profile plugin's layout, writes land in ``profiles.<target>``.
+"""
 
 from __future__ import annotations
 
 import os
 from dataclasses import replace
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
 from untaped import (
-    DEFAULT_PROFILE,
     ConfigError,
     FieldDescriptor,
     Settings,
     UiSettings,
-    effective_active_profile_name,
     find_descriptor,
     first_validation_error,
     get_profile_settings_model,
     get_settings,
-    resolve_profiles,
     splice_registered_state,
     validate_settings_isolated,
     walk_settings,
 )
 from untaped.config_file import (
-    list_profile_names,
     mutate_config,
     read_config_dict,
     set_at_path,
     unset_at_path,
 )
+from untaped.settings import active_settings_layout
 
 GLOBAL_SETTINGS_TARGET = "global"
 _GLOBAL_UI_PREFIX = "ui."
@@ -82,23 +84,36 @@ class SettingsFileRepository:
         return read_config_dict()
 
     def provenance(self) -> dict[tuple[str, ...], str]:
-        """Map every leaf path that came from YAML to its profile name."""
-        data = self.yaml_dict()
+        """Map every leaf path that came from YAML to its supplying scope."""
         try:
-            _, prov = resolve_profiles(data, active_override=effective_active_profile_name(data))
+            return active_settings_layout().provenance(self.yaml_dict())
         except ConfigError:
             return {}
-        return prov
+
+    def supports_profiles(self) -> bool:
+        """Whether the active settings layout has selectable scopes."""
+        return active_settings_layout().supports_scopes
 
     def profile_names(self) -> list[str]:
-        return list_profile_names()
+        return active_settings_layout().scope_names(self.yaml_dict())
 
     def profile_data(self, name: str) -> dict[str, Any] | None:
-        profiles = self.yaml_dict().get("profiles") or {}
-        if not isinstance(profiles, dict):
-            return None
-        profile = profiles.get(name)
-        return profile if isinstance(profile, dict) else None
+        return active_settings_layout().scope_data(self.yaml_dict(), name)
+
+    def scope_value_for(self, descriptor: FieldDescriptor, profile: str) -> Any:
+        """Raw value at ``descriptor.path`` in ``profile``'s effective view.
+
+        Resolves through the layout's layering (e.g. ``profiles.default``
+        beneath ``profiles.<profile>``); returns ``None`` when the scope's
+        view doesn't set the leaf.
+        """
+        effective = active_settings_layout().effective(self.yaml_dict(), scope=profile)
+        cursor: Any = effective
+        for segment in descriptor.path:
+            if not isinstance(cursor, dict) or segment not in cursor:
+                return None
+            cursor = cursor[segment]
+        return cursor
 
     def env_var_for(self, descriptor: FieldDescriptor) -> str:
         return "UNTAPED_" + "__".join(descriptor.path).upper()
@@ -106,29 +121,24 @@ class SettingsFileRepository:
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
         return os.environ.get(self.env_var_for(descriptor))
 
-    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
+    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str | None:
         """Coerce ``raw_value``, validate against the schema, then persist.
 
-        Returns the resolved target profile name, or ``"global"`` for
-        top-level UI settings, so callers can report where the write landed.
+        Returns the resolved target scope name (``None`` for scope-less
+        layouts, ``"global"`` for top-level UI settings) so callers can
+        report where the write landed.
         """
         if _is_global_ui_key(key):
             return self._set_ui_value(key, raw_value, profile=profile)
         descriptor = self.descriptor(key)
         coerced = _coerce_scalar(raw_value)
-        resolved: str = ""
+        resolved: str | None = None
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
-            target = self._resolve_target_profile(data, profile)
-            resolved = target
-            profiles = _ensure_profiles_dict(data)
-            profile_data = profiles.setdefault(target, {})
-            if not isinstance(profile_data, dict):
-                profile_data = {}
-                profiles[target] = profile_data
-            set_at_path(profile_data, descriptor.path, coerced)
-            merged = _merge_for_validation(data, active=target)
+            target_data, resolved = active_settings_layout().write_scope(data, profile)
+            set_at_path(target_data, descriptor.path, coerced)
+            merged = _merge_for_validation(data, scope=resolved)
             try:
                 validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
@@ -152,46 +162,36 @@ class SettingsFileRepository:
         mutate_config(_apply)
         return GLOBAL_SETTINGS_TARGET
 
-    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
-        """Remove ``key`` from the resolved profile.
+    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str | None]:
+        """Remove ``key`` from the resolved write scope.
 
-        Returns ``(removed, target)``. An explicit ``--target-profile`` that names a
-        profile which doesn't exist raises ``ConfigError``. Removing a key
-        that simply isn't set in the resolved profile is a no-op
+        Returns ``(removed, target)``. An explicit ``--target-profile`` the
+        layout cannot satisfy raises ``ConfigError``. Removing a key that
+        simply isn't set in the resolved scope is a no-op
         (``removed=False``).
         """
         if _is_global_ui_key(key):
             return self._unset_ui_value(key, profile=profile)
         descriptor = self.descriptor(key)
         removed = False
-        resolved: str = ""
+        resolved: str | None = None
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
-            target = self._resolve_target_profile(data, profile)
-            resolved = target
-            profiles = data.get("profiles")
-            if not isinstance(profiles, dict):
-                return
-            profile_data = profiles.get(target)
-            if not isinstance(profile_data, dict):
-                return
-            if not unset_at_path(profile_data, descriptor.path):
+            target_data, resolved = active_settings_layout().write_scope(data, profile)
+            if not unset_at_path(target_data, descriptor.path):
                 return
             removed = True
             # Symmetric with ``set_value``: re-merge and re-validate so a
-            # removal that would leave the profile in a state pydantic
-            # would reject surfaces here (with the offending key in the
-            # message), not at next-load with an opaque traceback. Almost
-            # every field today has a schema default that fills the gap,
-            # so this is preventive plumbing for future required-without-
-            # default fields.
-            merged = _merge_for_validation(data, active=target)
+            # removal that would leave the scope in a state pydantic would
+            # reject surfaces here (with the offending key in the message),
+            # not at next-load with an opaque traceback.
+            merged = _merge_for_validation(data, scope=resolved)
             try:
                 validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
                 raise ConfigError(
-                    f"unsetting {key!r} would leave profile {target!r} invalid: "
+                    f"unsetting {key!r} would leave {_scope_label(resolved)} invalid: "
                     f"{first_validation_error(exc)}"
                 ) from exc
 
@@ -213,56 +213,9 @@ class SettingsFileRepository:
         mutate_config(_apply)
         return removed, GLOBAL_SETTINGS_TARGET
 
-    def _resolve_target_profile(self, data: dict[str, Any], profile: str | None) -> str:
-        """Resolve the target profile for a ``set`` or ``unset``, validating
-        that the resolved profile exists.
 
-        ``default`` is exempt from the check — it's the auto-created floor
-        when nothing else is named (no explicit target, no ``active:``, no
-        ``UNTAPED_PROFILE``).
-        """
-        if profile is not None:
-            if profile == DEFAULT_PROFILE:
-                return profile
-            return self._require_existing(data, profile, source="explicit")
-        recorded = effective_active_profile_name(data)
-        if not recorded or recorded == DEFAULT_PROFILE:
-            return DEFAULT_PROFILE
-        return self._require_existing(data, recorded, source="active")
-
-    def _require_existing(
-        self,
-        data: dict[str, Any],
-        name: str,
-        *,
-        source: Literal["explicit", "active"],
-    ) -> str:
-        existing = data.get("profiles") or {}
-        if isinstance(existing, dict) and name in existing:
-            return name
-        known = ", ".join(sorted(existing)) if isinstance(existing, dict) else ""
-        known_str = known or "(none)"
-        if source == "active":
-            raise ConfigError(
-                f"active profile {name!r} does not exist; "
-                f"known profiles: {known_str}. "
-                "Install the `untaped-profile` plugin, then run "
-                "`untaped profile use <name>` or `untaped profile create` first."
-            )
-        raise ConfigError(
-            f"profile {name!r} does not exist; "
-            f"known profiles: {known_str}. "
-            "Install the `untaped-profile` plugin, then create it first with "
-            "`untaped profile create`."
-        )
-
-
-def _ensure_profiles_dict(data: dict[str, Any]) -> dict[str, Any]:
-    profiles = data.get("profiles")
-    if not isinstance(profiles, dict):
-        profiles = {}
-        data["profiles"] = profiles
-    return profiles
+def _scope_label(scope: str | None) -> str:
+    return f"profile {scope!r}" if scope else "the config"
 
 
 def _is_global_ui_key(key: str) -> bool:
@@ -279,15 +232,15 @@ def _validate_ui_state(data: dict[str, Any], key: str) -> None:
         raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
 
 
-def _merge_for_validation(data: dict[str, Any], *, active: str) -> dict[str, Any]:
-    """Run the resolver as if ``active`` were the live profile.
+def _merge_for_validation(data: dict[str, Any], *, scope: str | None) -> dict[str, Any]:
+    """Resolve the config as if ``scope`` were the live one.
 
-    Used when writing to a profile that isn't the ambient active one — the
-    schema check has to validate the target profile's view, otherwise the
-    invalid value silently lands on disk and only fails when the profile
-    is later activated.
+    Used when writing to a scope that isn't the ambient active one — the
+    schema check has to validate the target scope's view, otherwise the
+    invalid value silently lands on disk and only fails when the scope is
+    later activated.
     """
-    effective, _ = resolve_profiles(data, active_override=active)
+    effective = active_settings_layout().effective(data, scope=scope)
     splice_registered_state(data, effective)
     return effective
 

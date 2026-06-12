@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, Field, SecretStr
 
-from untaped.config.application import ListSettings
+from untaped import ConfigError
+from untaped.config.application import ListAllProfilesSettings, ListSettings
 from untaped.config.domain import Source
 from untaped.config.infrastructure import SettingsFileRepository
 from untaped.settings import (
@@ -53,41 +54,25 @@ def test_default_when_no_yaml_no_env() -> None:
     assert log_level.default == "INFO"
 
 
-def test_value_from_default_profile_is_attributed_to_default(
+def test_value_from_config_is_attributed_to_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+    cfg.write_text("log_level: DEBUG\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     log_level = entries["log_level"]
-    assert log_level.source == Source(kind="profile", profile="default")
+    assert log_level.source == Source(kind="config")
+    assert log_level.source.label == "config"
     assert log_level.value == "DEBUG"
+    assert log_level.profile is None
 
 
-def test_value_from_active_profile_is_attributed_to_active(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_env_overrides_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text(
-        "profiles:\n"
-        "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: WARNING\n"
-        "active: prod\n"
-    )
-    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    get_settings.cache_clear()
-
-    entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
-    assert entries["log_level"].source == Source(kind="profile", profile="prod")
-    assert entries["log_level"].value == "WARNING"
-
-
-def test_env_overrides_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+    cfg.write_text("log_level: DEBUG\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     monkeypatch.setenv("UNTAPED_LOG_LEVEL", "WARNING")
     get_settings.cache_clear()
@@ -99,7 +84,7 @@ def test_env_overrides_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 def test_secrets_redacted_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    demo:\n      token: super-secret-value\n")
+    cfg.write_text("demo:\n  token: super-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
@@ -109,7 +94,7 @@ def test_secrets_redacted_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    demo:\n      token: super-secret-value\n")
+    cfg.write_text("demo:\n  token: super-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
@@ -169,4 +154,68 @@ def test_source_label_renders_string() -> None:
     assert Source(kind="env").label == "env"
     assert Source(kind="default").label == "default"
     assert Source(kind="unset").label == "unset"
+    assert Source(kind="config").label == "config"
     assert Source(kind="profile", profile="prod").label == "profile:prod"
+
+
+def test_all_profiles_errors_without_scoped_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--all-profiles`` data needs scopes; flat repos report none."""
+    repo = SettingsFileRepository()
+    assert repo.supports_profiles() is False
+    assert repo.profile_names() == []
+    assert repo.profile_data("prod") is None
+
+
+def test_repo_rejects_write_scope_in_flat_mode() -> None:
+    with pytest.raises(ConfigError, match="profiles are not available"):
+        SettingsFileRepository().set_value("log_level", "DEBUG", profile="prod")
+
+
+class TestScopedLayoutListing:
+    """Listing against a registered scoped layout (FakeScopedLayout)."""
+
+    @pytest.fixture(autouse=True)
+    def _scoped(self, fake_scoped_layout: object) -> Iterator[None]:
+        yield
+
+    def test_value_from_active_scope_is_attributed_to_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "config.yml"
+        cfg.write_text(
+            "profiles:\n"
+            "  default:\n    log_level: INFO\n"
+            "  prod:\n    log_level: WARNING\n"
+            "active: prod\n"
+        )
+        monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+        get_settings.cache_clear()
+
+        entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
+        assert entries["log_level"].source == Source(kind="profile", profile="prod")
+        assert entries["log_level"].source.label == "profile:prod"
+        assert entries["log_level"].value == "WARNING"
+
+    def test_all_profiles_shows_one_row_per_scope_and_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "config.yml"
+        cfg.write_text(
+            "profiles:\n"
+            "  default:\n    log_level: INFO\n"
+            "  prod:\n    log_level: DEBUG\n    demo:\n      page_size: 50\n"
+            "active: prod\n"
+        )
+        monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+        get_settings.cache_clear()
+
+        entries = ListAllProfilesSettings(SettingsFileRepository())()
+        rows = {(e.profile, e.key, e.value) for e in entries}
+        assert rows == {
+            ("default", "log_level", "INFO"),
+            ("prod", "log_level", "DEBUG"),
+            ("prod", "demo.page_size", "50"),
+        }
+        assert all(e.source.kind == "profile" for e in entries)
