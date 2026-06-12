@@ -9,10 +9,8 @@ from untaped.api import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
-    ProfileOverrideOption,
     clamp_parallel,
     echo,
-    profile_override,
     raise_usage,
     render_rows,
     report_errors,
@@ -85,7 +83,6 @@ def sync_command(
     ] = 1,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
@@ -95,7 +92,7 @@ def sync_command(
     if parallel > 1 and not all_workspaces:
         raise_usage("--parallel >1 requires --all")
     workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
-    with report_errors(), profile_override(profile):
+    with report_errors():
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
@@ -144,10 +141,9 @@ def status_command(
     repo: RepoSelectorOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Per-repo `git status` snapshot."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
@@ -199,7 +195,6 @@ def foreach_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     repo: RepoSelectorOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
@@ -212,7 +207,7 @@ def foreach_command(
     rows after every repo finishes — suitable for piping into ``jq``
     / ``awk`` / another ``untaped`` command.
     """
-    with report_errors(), profile_override(profile):
+    with report_errors():
         ws = resolve_workspace(workspace, path)
         workers = clamp_parallel(max(parallel, 1), cap=parallel_cap(), policy="2 * os.cpu_count()")
         keep_going = continue_on_error or ignore_errors

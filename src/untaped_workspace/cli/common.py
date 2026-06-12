@@ -34,13 +34,13 @@ WorkspacePathOption = Annotated[
 
 
 def workspace_settings() -> WorkspaceSettings:
-    """Typed workspace profile settings under the ambient profile override.
+    """Typed workspace profile settings for the active profile.
 
     Stays on ``get_config_section`` rather than ``plugin_context().section``:
     the CLI app is exercised directly in tests (without plugin registration),
     where only ``get_config_section`` can build its one-off section model.
-    Both remain supported plugin API; the call sites already wrap reads in
-    ``profile_override(profile)``.
+    Profile selection is owned by the root ``--profile`` option (valid in any
+    token position); commands no longer take a command-local override.
     """
     return get_config_section("workspace", WorkspaceSettings)
 

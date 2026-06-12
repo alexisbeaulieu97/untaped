@@ -9,10 +9,8 @@ from untaped.api import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
-    ProfileOverrideOption,
     create_app,
     echo,
-    profile_override,
     render_rows,
     report_errors,
 )
@@ -61,10 +59,9 @@ def branch_set_command(
     path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Set the default branch or a repo branch override in ``untaped.yml``."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         ws = resolve_workspace(workspace, path)
         change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
         if change.repo is None:
@@ -95,10 +92,9 @@ def branch_unset_command(
     ] = None,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         ws = resolve_workspace(workspace, path)
         change = UnsetWorkspaceBranch(ManifestRepository())(ws, repo=repo)
         if change.repo is None:
@@ -118,10 +114,9 @@ def branch_apply_command(
     path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Checkout existing repos to the branch declared in ``untaped.yml``."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         ws = resolve_workspace(workspace, path)
         outcomes = ApplyWorkspaceBranch(
             ManifestRepository(),

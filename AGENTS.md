@@ -68,9 +68,10 @@ errors.
     `get_config_section` instead of `plugin_context().section`: the CLI app
     is exercised directly in tests without plugin registration, where only
     `get_config_section` can build its one-off section model.
-    Commands that read registry or profile settings expose the core
-    command-local `ProfileOverrideOption` as `--profile` and wrap the command
-    body in `profile_override(profile)`.
+    Profile selection is owned by the root `--profile` option, which works
+    in any token position (plugin API v4). Commands must not declare a
+    command-local `--profile`; they call `plugin_context()` /
+    `get_config_section` bare and read whatever profile the root selected.
 14. **All git subprocess calls live behind infrastructure ports.** New git
     operations go in `GitRunner`; application code depends on Protocols.
 15. **Finish with verification.** Run `uv run ruff check --fix`,
@@ -169,13 +170,15 @@ registers the concern modules under `cli/`: display/UX commands in
 mutation commands in `repo_commands.py`, and sync/status/foreach operations in
 `ops_commands.py`. Shared CLI-only helpers live in `cli/common.py`.
 
-All workspace commands that read registry state or workspace profile
-settings expose command-local `--profile <name>` and use
-`profile_override(profile)` around those reads. That includes lifecycle
-commands such as `init`, `adopt`, `import`, `forget`, `path`, and `edit`
-because they read/write the central registry or consume
-`workspace.workspaces_dir` / `workspace.cache_dir`. `shell-init` is the
-only current command that intentionally stays profile-neutral.
+Profile selection is the root `--profile` option's job: since plugin API
+v4 it works in any token position (`untaped workspace sync --profile work`
+behaves the same as `untaped --profile work workspace sync`). Workspace
+commands declare no command-local `--profile` and no `profile_override`
+wrapper — they read registry state and workspace profile settings (via
+bare `plugin_context()` / `get_config_section`) under whatever profile the
+root selected. This is pinned by
+`test_commands_do_not_expose_command_local_profile` in
+`tests/unit/test_plugin_entrypoint.py`.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
 `forget <name>`, `import <source> <dest>`, `path <name>`) take

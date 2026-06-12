@@ -146,17 +146,16 @@ def test_config_list_includes_registered_workspace_profile_settings() -> None:
     assert "workspace.workspaces" not in keys
 
 
-def test_top_level_workspace_state_is_loaded_without_clobbering_profile_settings(
+def test_top_level_workspace_state_is_loaded_without_clobbering_flat_settings(
     _isolate_config: Path,
 ) -> None:
+    """The ``workspace.workspaces`` app-state list shares the flat top-level
+    ``workspace:`` section with real settings; it must load into state without
+    leaking into ``config list`` or clobbering the settings keys."""
     _isolate_config.write_text(
         """
-        profiles:
-          default:
-            workspace:
-              cache_dir: /from/profile
         workspace:
-          cache_dir: /from/state
+          cache_dir: /from/config
           workspaces:
             - name: prod
               path: /tmp/prod
@@ -171,63 +170,29 @@ def test_top_level_workspace_state_is_loaded_without_clobbering_profile_settings
 
     assert result.exit_code == 0, result.output
     rows = set(result.stdout.splitlines())
-    assert "workspace.cache_dir\t/from/profile" in rows
+    assert "workspace.cache_dir\t/from/config" in rows
     assert "workspace.workspaces" not in {row.split("\t", maxsplit=1)[0] for row in rows}
-    assert settings.workspace.cache_dir == Path("/from/profile")
+    assert settings.workspace.cache_dir == Path("/from/config")
     assert [w.name for w in settings.workspace.workspaces] == ["prod"]
 
 
-def test_command_local_profile_flag_controls_workspace_init_settings(
+def test_workspace_init_uses_workspaces_dir_from_flat_config(
     _isolate_config: Path,
     tmp_path: Path,
 ) -> None:
-    default_root = tmp_path / "default-workspaces"
-    stage_root = tmp_path / "stage-workspaces"
+    workspaces_root = tmp_path / "workspaces"
     _isolate_config.write_text(
         f"""
-        profiles:
-          default:
-            workspace:
-              workspaces_dir: {default_root}
-          stage:
-            workspace:
-              workspaces_dir: {stage_root}
-        """
-    )
-    app = build_app(plugins=[workspace_plugin])
-
-    result = CliInvoker().invoke(app, ["workspace", "init", "prod", "--profile", "stage"])
-
-    assert result.exit_code == 0, result.output
-    assert (stage_root / "prod" / "untaped.yml").is_file()
-    assert not (default_root / "prod").exists()
-
-
-def test_command_local_profile_flag_is_accepted_by_workspace_list(
-    _isolate_config: Path,
-    tmp_path: Path,
-) -> None:
-    target = tmp_path / "prod"
-    _isolate_config.write_text(
-        f"""
-        profiles:
-          default: {{}}
-          stage: {{}}
         workspace:
-          workspaces:
-            - name: prod
-              path: {target}
+          workspaces_dir: {workspaces_root}
         """
     )
     app = build_app(plugins=[workspace_plugin])
 
-    result = CliInvoker().invoke(
-        app,
-        ["workspace", "list", "--format", "raw", "--columns", "name", "--profile", "stage"],
-    )
+    result = CliInvoker().invoke(app, ["workspace", "init", "prod"])
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["prod"]
+    assert (workspaces_root / "prod" / "untaped.yml").is_file()
 
 
 def test_workspace_list_honors_global_ui_collection_view_for_table_output(
@@ -295,7 +260,7 @@ def test_workspace_list_raw_ignores_unknown_global_ui_theme(
     assert "\x1b[" not in result.stdout
 
 
-def test_command_local_profile_flag_is_accepted_by_workspace_show(
+def test_workspace_show_reads_registry_from_flat_config(
     _isolate_config: Path,
     tmp_path: Path,
 ) -> None:
@@ -304,9 +269,6 @@ def test_command_local_profile_flag_is_accepted_by_workspace_show(
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
     _isolate_config.write_text(
         f"""
-        profiles:
-          default: {{}}
-          stage: {{}}
         workspace:
           workspaces:
             - name: prod
@@ -316,7 +278,7 @@ def test_command_local_profile_flag_is_accepted_by_workspace_show(
     app = build_app(plugins=[workspace_plugin])
 
     result = CliInvoker().invoke(
-        app, ["workspace", "show", "--workspace", "prod", "--profile", "stage", "--format", "json"]
+        app, ["workspace", "show", "--workspace", "prod", "--format", "json"]
     )
 
     assert result.exit_code == 0, result.output
@@ -325,7 +287,7 @@ def test_command_local_profile_flag_is_accepted_by_workspace_show(
     assert payload[0]["path"] == str(target.resolve())
 
 
-def test_command_local_profile_flag_is_accepted_by_workspace_status(
+def test_workspace_status_reads_registry_from_flat_config(
     _isolate_config: Path,
     tmp_path: Path,
 ) -> None:
@@ -334,9 +296,6 @@ def test_command_local_profile_flag_is_accepted_by_workspace_status(
     (target / "untaped.yml").write_text("name: prod\nrepos: []\n")
     _isolate_config.write_text(
         f"""
-        profiles:
-          default: {{}}
-          stage: {{}}
         workspace:
           workspaces:
             - name: prod
@@ -347,14 +306,14 @@ def test_command_local_profile_flag_is_accepted_by_workspace_status(
 
     result = CliInvoker().invoke(
         app,
-        ["workspace", "status", "--workspace", "prod", "--profile", "stage", "--format", "json"],
+        ["workspace", "status", "--workspace", "prod", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == []
 
 
-def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
+def test_workspace_sync_uses_cache_dir_from_flat_config(
     _isolate_config: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -364,17 +323,11 @@ def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
     (target / "untaped.yml").write_text(
         "name: prod\nrepos:\n  - url: https://github.com/example/api.git\n"
     )
-    stage_cache = tmp_path / "stage-cache"
+    configured_cache = tmp_path / "configured-cache"
     _isolate_config.write_text(
         f"""
-        profiles:
-          default:
-            workspace:
-              cache_dir: {tmp_path / "default-cache"}
-          stage:
-            workspace:
-              cache_dir: {stage_cache}
         workspace:
+          cache_dir: {configured_cache}
           workspaces:
             - name: prod
               path: {target}
@@ -401,11 +354,11 @@ def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
 
     result = CliInvoker().invoke(
         app,
-        ["workspace", "sync", "--workspace", "prod", "--profile", "stage", "--format", "json"],
+        ["workspace", "sync", "--workspace", "prod", "--format", "json"],
     )
 
     assert result.exit_code == 0, result.output
-    assert captured["cache_dir"] == stage_cache
+    assert captured["cache_dir"] == configured_cache
 
 
 @pytest.mark.parametrize(
@@ -427,23 +380,20 @@ def test_command_local_profile_flag_controls_workspace_sync_cache_dir(
         ["workspace", "import"],
         ["workspace", "path"],
         ["workspace", "edit"],
+        ["workspace", "shell-init"],
     ],
 )
-def test_registry_or_settings_commands_expose_command_local_profile(
+def test_commands_do_not_expose_command_local_profile(
     args: list[str],
 ) -> None:
+    """Profile selection belongs to the untaped-profile plugin (plugin API
+    v4); without it installed there is no root ``--profile`` option, and
+    commands must not expose a local copy either, so no ``--profile``
+    appears anywhere in command help.
+    """
     app = build_app(plugins=[workspace_plugin])
 
     result = CliInvoker().invoke(app, [*args, "--help"])
 
     assert result.exit_code == 0, result.output
-    assert "--profile" in result.output
-
-
-def test_shell_init_does_not_expose_command_local_profile() -> None:
-    app = build_app(plugins=[workspace_plugin])
-
-    result = CliInvoker().invoke(app, ["workspace", "shell-init", "--help"])
-
-    assert result.exit_code == 0, result.output
-    assert "Override the active profile for this command only" not in result.output
+    assert "--profile" not in result.output

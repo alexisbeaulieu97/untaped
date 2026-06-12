@@ -29,9 +29,8 @@ untaped workspace sync --workspace prod              # clone everything in the m
 untaped workspace status --workspace prod            # per-repo git status
 ```
 
-Workspace commands that read the registry or workspace profile settings
-also accept command-local `--profile <name>`, so profile selection can
-sit next to the command being run:
+Profile selection uses the root `--profile` option. It works in any
+token position, so it can sit next to the command being run:
 
 ```bash
 untaped workspace init prod --profile work
@@ -39,8 +38,9 @@ untaped workspace sync --workspace prod --profile work
 untaped workspace status --workspace prod --profile work
 ```
 
-The root form still works too, for example
-`untaped --profile work workspace status --workspace prod`.
+The leading form is equivalent, for example
+`untaped --profile work workspace status --workspace prod`. There is no
+command-local `--profile`; the root option is the only selector.
 
 If you `cd` into a workspace directory, the `--workspace` flag becomes
 optional — most commands walk up from the current directory looking
@@ -109,7 +109,7 @@ remote state; use `workspace status` for live checkout data.
 ### `init`
 
 ```bash
-untaped workspace init <name> [--path <dir>] [--branch <default>] [--profile <name>]
+untaped workspace init <name> [--path <dir>] [--branch <default>]
 ```
 
 Creates a new workspace named `<name>` and registers it. The default
