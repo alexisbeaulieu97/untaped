@@ -277,9 +277,12 @@ single document and `profiles:`/`active:` keys are ignored with a stderr
 warning. Commands read settings via bare `plugin_context()` — never declare
 a command-local `--profile`. `ProfileOverrideOption`, `profile_override`,
 `plugin_context(profile=...)`, `profile_resolver.py`, and the config-file
-profile helpers were removed with plugin API v4. Config mutation commands
-still accept `--target-profile`; it errors unless a scoped settings layout
-is registered.
+profile helpers are deprecated transitional v3 compat shims: released
+v2/v3-era plugins import them (the release-smoke stack at entry-point load
+time), so they stay importable — but core never uses them — until the
+plugin-API-v4 rollout finishes across the plugin repos, after which they are
+removed. Config mutation commands still accept `--target-profile`; it errors
+unless a scoped settings layout is registered.
 
 The default view is one row per plugin package/name, not separate rows for
 "loaded" and "desired" state. A desired package such as `untaped-awx` is

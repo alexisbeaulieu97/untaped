@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from untaped import (
     create_app,
     get_settings,
     parse_kv_pairs,
+    profile_override,
     render_rows,
     report_errors,
     resolve_each,
@@ -65,6 +67,61 @@ def test_passes_through_non_untaped_exception() -> None:
     assert result.exit_code != 0
     # The bug-style exception should bubble up
     assert isinstance(result.exception, ValueError)
+
+
+# ---- profile_override (deprecated v3 compat) -------------------------------
+#
+# Released v3-era plugins wrap command bodies in ``profile_override``; the
+# shim keeps its env-var semantics (and settings-cache invalidation) until
+# the plugin-API-v4 rollout completes across the plugin repos.
+
+
+def test_profile_override_sets_env_and_restores_previous_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
+    get_settings.cache_clear()
+
+    before = get_settings()
+    with profile_override("stage"):
+        assert os.environ["UNTAPED_PROFILE"] == "stage"
+        assert get_settings() is not before  # cache invalidated for the body
+
+    assert os.environ["UNTAPED_PROFILE"] == "prod"
+
+
+def test_profile_override_removes_temporary_env_when_previously_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    get_settings.cache_clear()
+
+    with profile_override("stage"):
+        assert os.environ["UNTAPED_PROFILE"] == "stage"
+
+    assert "UNTAPED_PROFILE" not in os.environ
+
+
+def test_profile_override_restores_env_after_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "prod")
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError, match="boom"), profile_override("stage"):
+        raise RuntimeError("boom")
+
+    assert os.environ["UNTAPED_PROFILE"] == "prod"
+
+
+def test_profile_override_none_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    get_settings.cache_clear()
+
+    before = get_settings()
+    with profile_override(None):
+        assert "UNTAPED_PROFILE" not in os.environ
+        assert get_settings() is before  # cache untouched
+
+    assert get_settings() is before
 
 
 # ---- parse_kv_pairs ------------------------------------------------------

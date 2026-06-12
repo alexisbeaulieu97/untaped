@@ -9,15 +9,22 @@ as long as this surface keeps resolving.
 
 from __future__ import annotations
 
+# ProfileOverrideOption and profile_override are deprecated transitional v3
+# compat (plugin API v4 moved profile selection to the untaped-profile
+# plugin's root --profile option): released v3-era plugins import them at
+# command dispatch, so they stay on this surface until the rollout completes
+# across the plugin repos.
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
+    ProfileOverrideOption,
     clamp_parallel,
     create_app,
     echo,
     existing_directory,
     existing_file,
     parse_kv_pairs,
+    profile_override,
     raise_usage,
     render_rows,
     report_errors,
@@ -77,6 +84,7 @@ __all__ = [
     "PluginContext",
     "PluginManifest",
     "PluginRegistry",
+    "ProfileOverrideOption",
     "PromptChoice",
     "RootOptionSpec",
     "SettingsLayout",
@@ -101,6 +109,7 @@ __all__ = [
     "paginate_pages",
     "parse_kv_pairs",
     "plugin_context",
+    "profile_override",
     "raise_usage",
     "read_identifiers",
     "read_stdin",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
@@ -14,6 +15,7 @@ from rich.console import Console
 
 from untaped.errors import HttpError, UntapedError
 from untaped.output import OutputFormat
+from untaped.settings import get_settings
 from untaped.ui import UiContext, ui_context
 
 FormatOption = Annotated[
@@ -31,6 +33,22 @@ ColumnsOption = Annotated[
     ),
 ]
 """Shared ``--columns / -c`` option for any command that prints rows."""
+
+ProfileOverrideOption = Annotated[
+    str | None,
+    Parameter(
+        name="--profile",
+        help="Override the active profile for this command only.",
+    ),
+]
+"""Deprecated (plugin API v4): command-local read-time profile override.
+
+Profile selection is plugin-owned now — new code should rely on the root
+``--profile`` option contributed by the untaped-profile plugin. This alias
+stays importable because released v3-era plugins annotate their command
+parameters with it; removal is gated on the plugin-API-v4 rollout finishing
+across the plugin repos.
+"""
 
 
 def create_app(*, name: str, help: str = "") -> App:
@@ -125,6 +143,35 @@ def existing_file(type_: object, value: Path | None) -> None:
         raise ValueError(f"path does not exist: {value}")
     if not value.is_file():
         raise ValueError(f"path is not a file: {value}")
+
+
+@contextmanager
+def profile_override(name: str | None) -> Iterator[None]:
+    """Temporarily override ``UNTAPED_PROFILE`` for a command body.
+
+    Deprecated (plugin API v4): profile selection is plugin-owned and happens
+    before dispatch via the root ``--profile`` option. This shim stays because
+    released v3-era plugins wrap command bodies in it; it composes with the
+    untaped-profile plugin's scoped settings layout (which honours
+    ``UNTAPED_PROFILE``) and is inert under the default flat layout. Removal
+    is gated on the plugin-API-v4 rollout finishing across the plugin repos.
+    """
+    if name is None:
+        yield
+        return
+
+    previous = os.environ.get("UNTAPED_PROFILE")
+    had_previous = "UNTAPED_PROFILE" in os.environ
+    os.environ["UNTAPED_PROFILE"] = name
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        if had_previous and previous is not None:
+            os.environ["UNTAPED_PROFILE"] = previous
+        else:
+            os.environ.pop("UNTAPED_PROFILE", None)
+        get_settings.cache_clear()
 
 
 def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]:

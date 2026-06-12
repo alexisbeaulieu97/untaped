@@ -51,6 +51,10 @@ EXPECTED_SURFACE = frozenset(
         "get_config_section",
         "get_core_settings",
         "invalidate_settings_cache",
+        # Deprecated transitional v3 compat (removal gated on the
+        # plugin-API-v4 rollout finishing across the plugin repos)
+        "ProfileOverrideOption",
+        "profile_override",
         # Interactive UI
         "PromptChoice",
         "UiContext",
@@ -80,12 +84,15 @@ def test_api_names_resolve() -> None:
     assert not unresolved, f"untaped.api.__all__ names that do not resolve: {unresolved}"
 
 
-def test_api_no_longer_exposes_profile_helpers() -> None:
-    """Profile selection moved to the untaped-profile plugin (API v4)."""
+def test_api_keeps_v3_profile_compat_shims() -> None:
+    """Profile selection moved to the untaped-profile plugin (API v4), but
+    released v3 plugins still import these names at command dispatch; they
+    stay as deprecated shims until the rollout completes (release-smoke
+    regression, PR #273)."""
     api = importlib.import_module("untaped.api")
     for name in ("ProfileOverrideOption", "profile_override"):
-        assert not hasattr(api, name), f"untaped.api.{name} should be gone"
-        assert name not in api.__all__
+        assert hasattr(api, name), f"untaped.api.{name} must stay importable"
+        assert name in api.__all__
 
 
 def test_api_exposes_get_settings_for_root_option_handlers() -> None:
