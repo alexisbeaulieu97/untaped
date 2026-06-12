@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -43,10 +44,19 @@ def test_plugin_context_exposes_registered_section(_isolated_config: Path) -> No
     assert ctx.section("demo", DemoSettings).endpoint == "https://configured.example"
 
 
-def test_plugin_context_takes_no_profile_parameter() -> None:
-    """Scope selection happens before dispatch via plugin root options."""
-    with pytest.raises(TypeError):
-        plugin_context(profile="stage")  # type: ignore[call-arg]
+def test_plugin_context_accepts_deprecated_profile_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scope selection happens before dispatch via plugin root options, but
+    released v3-era plugins still pass ``plugin_context(profile)``; the
+    deprecated override must resolve settings without leaking into ambient
+    process state (release-smoke regression, PR #273)."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+
+    ctx = plugin_context(profile="stage")
+
+    assert isinstance(ctx, PluginContext)
+    assert "UNTAPED_PROFILE" not in os.environ
 
 
 def test_plugin_context_section_rejects_unregistered_sections(

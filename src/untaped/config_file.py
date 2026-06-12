@@ -161,3 +161,98 @@ def _to_yaml_value(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     return value
+
+
+# ---------------------------- profile helpers ---------------------------- #
+#
+# Deprecated (plugin API v4): profile storage is owned by the
+# untaped-profile plugin. These dumb primitives stay importable because
+# released v3-era plugin builds import them; removal is gated on the
+# plugin-API-v4 rollout finishing across the plugin repos.
+#
+# All helpers below edit / read the `profiles.<name>` section without
+# enforcing policy. Use cases (in `untaped-profile`) are responsible for
+# "default cannot be deleted", "active must point at an existing profile",
+# etc.
+
+
+def list_profile_names(path: Path | None = None) -> list[str]:
+    """Return the names of every profile present in the config file."""
+    profiles = read_config_dict(path).get("profiles") or {}
+    if not isinstance(profiles, dict):
+        return []
+    return list(profiles.keys())
+
+
+def get_active_profile_name(path: Path | None = None) -> str | None:
+    """Return the persisted active profile, or ``None`` if unset / blank."""
+    name = read_config_dict(path).get("active")
+    return name if isinstance(name, str) and name else None
+
+
+def set_active_profile(name: str, path: Path | None = None) -> None:
+    """Persist ``active: <name>`` (no existence validation)."""
+
+    def _apply(data: dict[str, Any]) -> None:
+        data["active"] = name
+
+    mutate_config(_apply, path)
+
+
+def read_profile(name: str, path: Path | None = None) -> dict[str, Any] | None:
+    """Return the profile's raw dict, or ``None`` if it doesn't exist."""
+    profiles = read_config_dict(path).get("profiles") or {}
+    if not isinstance(profiles, dict):
+        return None
+    profile = profiles.get(name)
+    return profile if isinstance(profile, dict) else None
+
+
+def write_profile(name: str, profile_data: dict[str, Any], path: Path | None = None) -> None:
+    """Replace ``profiles.<name>`` with ``profile_data`` (creates the section)."""
+
+    def _apply(data: dict[str, Any]) -> None:
+        profiles = data.get("profiles")
+        if not isinstance(profiles, dict):
+            profiles = {}
+            data["profiles"] = profiles
+        profiles[name] = profile_data
+
+    mutate_config(_apply, path)
+
+
+def delete_profile(name: str, path: Path | None = None) -> bool:
+    """Remove ``profiles.<name>``. Returns ``True`` if it existed."""
+    removed = False
+
+    def _apply(data: dict[str, Any]) -> None:
+        nonlocal removed
+        profiles = data.get("profiles")
+        if not isinstance(profiles, dict) or name not in profiles:
+            return
+        del profiles[name]
+        removed = True
+
+    mutate_config(_apply, path)
+    return removed
+
+
+def rename_profile(old: str, new: str, path: Path | None = None) -> None:
+    """Rename ``profiles.<old>`` to ``profiles.<new>`` in one transaction.
+
+    Also updates ``active:`` if it pointed at ``old``. Raises ``KeyError``
+    if ``old`` is missing or ``ValueError`` if ``new`` already exists, both
+    *before* any mutation is written.
+    """
+
+    def _apply(data: dict[str, Any]) -> None:
+        profiles = data.get("profiles")
+        if not isinstance(profiles, dict) or old not in profiles:
+            raise KeyError(f"profile {old!r} does not exist")
+        if new in profiles:
+            raise ValueError(f"profile {new!r} already exists")
+        profiles[new] = profiles.pop(old)
+        if data.get("active") == old:
+            data["active"] = new
+
+    mutate_config(_apply, path)

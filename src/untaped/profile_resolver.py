@@ -1,0 +1,141 @@
+"""Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
+
+Deprecated (plugin API v4): core no longer resolves profiles — the
+untaped-profile plugin owns the resolver and the profiles settings layout.
+This module stays importable because released v3-era plugins import it (via
+the ``untaped`` re-exports); removal is gated on the plugin-API-v4 rollout
+finishing across the plugin repos.
+
+The resolver is layer-agnostic: callers hand it the parsed
+``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when
+``UNTAPED_PROFILE`` or the root ``--profile`` flag is used). It returns:
+
+- ``effective``: a deep-merged dict of values (active beats default per leaf).
+- ``provenance``: a flat ``leaf_path -> profile_name`` map naming the profile
+  that supplied each leaf in ``effective``. Missing entries mean the leaf
+  came from the schema default (i.e. neither profile set it).
+
+``profiles.default`` is optional. When present, it serves as a shared
+overrides layer beneath the active profile; when absent, the active profile
+is layered alone (and the Pydantic schema's defaults sit beneath both via
+the Settings class).
+
+Top-level keys outside ``profiles`` are ignored here — they are the
+caller's responsibility.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Literal
+
+from untaped.errors import ConfigError
+
+ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
+DEFAULT_PROFILE = "default"
+
+ProfileSource = Literal["env", "config", "fallback"]
+
+
+def classify_active_profile(
+    data: dict[str, Any],
+) -> tuple[str | None, ProfileSource]:
+    """Return the active profile name **and** which layer supplied it.
+
+    Same precedence as :func:`effective_active_profile_name` (env var >
+    ``data['active']`` > unset), but also tells the caller whether the
+    answer came from the env var, the persisted ``active:`` key, or
+    neither (fallback). Powers the profile plugin's ``current`` command
+    and any other code path that needs to classify the layer.
+    """
+    env_override = os.environ.get(ACTIVE_PROFILE_ENV)
+    if env_override:
+        return env_override, "env"
+    raw = data.get("active")
+    if isinstance(raw, str) and raw:
+        return raw, "config"
+    return None, "fallback"
+
+
+def effective_active_profile_name(data: dict[str, Any]) -> str | None:
+    """Return the active profile honouring ``UNTAPED_PROFILE``.
+
+    Precedence: env var > ``data['active']`` > ``None``. Callers fall back
+    to ``"default"`` themselves when they need a guaranteed name. Thin
+    wrapper over :func:`classify_active_profile`.
+    """
+    name, _ = classify_active_profile(data)
+    return name
+
+
+def resolve_profiles(
+    config_data: dict[str, Any],
+    *,
+    active_override: str | None = None,
+) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
+    """Return ``(effective, provenance)`` from the parsed config dict."""
+    profiles = config_data.get("profiles") or {}
+    if not profiles:
+        return {}, {}
+
+    active_name = _select_active(config_data, active_override, profiles)
+
+    effective: dict[str, Any] = {}
+    provenance: dict[tuple[str, ...], str] = {}
+
+    if DEFAULT_PROFILE in profiles:
+        _layer(profiles[DEFAULT_PROFILE], DEFAULT_PROFILE, effective, provenance, ())
+    if active_name is not None and active_name != DEFAULT_PROFILE:
+        _layer(profiles[active_name], active_name, effective, provenance, ())
+
+    return effective, provenance
+
+
+def _select_active(
+    config_data: dict[str, Any],
+    active_override: str | None,
+    profiles: dict[str, Any],
+) -> str | None:
+    """Pick the profile whose values overlay the optional ``default`` layer.
+
+    Returns ``None`` when nothing names an active profile and ``default``
+    is also missing — there's no layer to apply, so the caller resolves
+    to ``({}, {})`` and lets the schema defaults take over.
+
+    Raises ``ConfigError`` when an explicit override (env var, root
+    ``--profile`` flag, or the persisted ``active:`` key) names a
+    profile that isn't defined.
+    """
+    explicit = active_override if active_override else config_data.get("active")
+    if explicit:
+        if explicit not in profiles:
+            raise ConfigError(
+                f"active profile {explicit!r} is not defined in `profiles`. "
+                f"Known profiles: {', '.join(sorted(profiles))}"
+            )
+        return explicit
+    return DEFAULT_PROFILE if DEFAULT_PROFILE in profiles else None
+
+
+def _layer(
+    src: dict[str, Any],
+    profile: str,
+    dst: dict[str, Any],
+    provenance: dict[tuple[str, ...], str],
+    path: tuple[str, ...],
+) -> None:
+    """Deep-merge ``src`` into ``dst`` and record per-leaf provenance.
+
+    Lists and other non-dict values replace the corresponding key wholesale
+    (no list-element merging). Nested dicts recurse.
+    """
+    for key, value in src.items():
+        leaf_path = (*path, key)
+        if isinstance(value, dict):
+            existing = dst.get(key)
+            child = existing if isinstance(existing, dict) else {}
+            dst[key] = child
+            _layer(value, profile, child, provenance, leaf_path)
+        else:
+            dst[key] = value
+            provenance[leaf_path] = profile

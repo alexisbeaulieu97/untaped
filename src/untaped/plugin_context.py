@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
+from untaped.cli import profile_override
 from untaped.errors import ConfigError
 from untaped.settings import HttpSettings, Settings, get_settings
 from untaped.ui import UiContext, ui_context
@@ -55,10 +56,20 @@ class PluginContext:
         return ui_context(strict=strict)
 
 
-def plugin_context() -> PluginContext:
+def plugin_context(profile: str | None = None) -> PluginContext:
     """Resolve effective settings once and return a frozen :class:`PluginContext`.
 
     Profile selection happens before dispatch via the root ``--profile``
     option (untaped-profile plugin), so no parameters are needed here.
+
+    ``profile`` is deprecated transitional v3 compat: released v3-era plugins
+    pass their command-local ``--profile`` value. The override is applied only
+    while settings resolve — nothing leaks into ambient process state once the
+    context is returned. Removal is gated on the plugin-API-v4 rollout
+    finishing across the plugin repos.
     """
-    return PluginContext(settings=get_settings())
+    if profile is None:
+        return PluginContext(settings=get_settings())
+    with profile_override(profile):
+        settings = get_settings()
+    return PluginContext(settings=settings)

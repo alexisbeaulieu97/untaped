@@ -3,12 +3,14 @@
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
+    ProfileOverrideOption,
     clamp_parallel,
     create_app,
     echo,
     existing_directory,
     existing_file,
     parse_kv_pairs,
+    profile_override,
     raise_usage,
     render_rows,
     report_errors,
@@ -25,6 +27,17 @@ from untaped.errors import ConfigError, HttpError, UntapedError, first_validatio
 from untaped.http import HttpClient, resolve_verify
 from untaped.output import OutputFormat, format_output
 from untaped.plugin_registry import SkillSpec
+
+# Deprecated transitional v3 compat (plugin API v4 extracted profiles to the
+# untaped-profile plugin): released v3-era plugins import these names, so
+# they stay re-exported until the rollout completes across the plugin repos.
+from untaped.profile_resolver import (
+    DEFAULT_PROFILE,
+    ProfileSource,
+    classify_active_profile,
+    effective_active_profile_name,
+    resolve_profiles,
+)
 from untaped.prompts import (
     PromptChoice,
     confirm,
@@ -61,6 +74,7 @@ from untaped.ui import (
 
 __all__ = [
     "BUILTIN_THEMES",
+    "DEFAULT_PROFILE",
     "ColumnsOption",
     "ConfigError",
     "FieldDescriptor",
@@ -71,6 +85,8 @@ __all__ = [
     "OutputFormat",
     "PluginInstallSpec",
     "PluginsState",
+    "ProfileOverrideOption",
+    "ProfileSource",
     "PromptChoice",
     "Settings",
     "SkillSpec",
@@ -79,9 +95,11 @@ __all__ = [
     "UiSettings",
     "UntapedError",
     "clamp_parallel",
+    "classify_active_profile",
     "confirm",
     "create_app",
     "echo",
+    "effective_active_profile_name",
     "existing_directory",
     "existing_file",
     "find_descriptor",
@@ -94,6 +112,7 @@ __all__ = [
     "get_settings_model",
     "multiselect",
     "parse_kv_pairs",
+    "profile_override",
     "raise_usage",
     "read_identifiers",
     "read_stdin",
@@ -104,6 +123,7 @@ __all__ = [
     "report_errors",
     "resolve_config_path",
     "resolve_each",
+    "resolve_profiles",
     "resolve_theme",
     "resolve_verify",
     "secret",

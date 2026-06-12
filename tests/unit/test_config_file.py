@@ -8,13 +8,20 @@ import pytest
 from untaped import ConfigError
 from untaped.config_file import (
     MISSING,
+    delete_profile,
+    get_active_profile_name,
     get_at_path,
+    list_profile_names,
     mutate_config,
     parse_key,
     read_config_dict,
+    read_profile,
+    rename_profile,
+    set_active_profile,
     set_at_path,
     unset_at_path,
     write_config_dict,
+    write_profile,
 )
 
 
@@ -294,3 +301,245 @@ def test_mutate_config_translates_yaml_error_to_config_error(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     with pytest.raises(ConfigError, match=str(cfg)):
         mutate_config(lambda data: data.update({"x": 1}))
+
+
+# ---------------------------- profile helpers ---------------------------- #
+
+
+def test_list_profile_names_empty_when_file_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    assert list_profile_names() == []
+
+
+def test_list_profile_names_returns_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {}, "stage": {}}})
+    assert sorted(list_profile_names()) == ["default", "prod", "stage"]
+
+
+def test_get_active_profile_name_returns_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {}}, "active": "prod"})
+    assert get_active_profile_name() == "prod"
+
+
+def test_get_active_profile_name_returns_none_when_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    assert get_active_profile_name() is None
+
+
+def test_get_active_profile_name_returns_none_when_blank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}, "active": ""})
+    assert get_active_profile_name() is None
+
+
+def test_set_active_profile_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {}}})
+    set_active_profile("prod")
+    assert read_config_dict()["active"] == "prod"
+
+
+def test_set_active_profile_does_not_validate_existence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Low-level helper does not enforce policy; that is the use case's job."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    set_active_profile("not-a-real-profile")
+    assert read_config_dict()["active"] == "not-a-real-profile"
+
+
+def test_read_profile_returns_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"prod": {"awx": {"token": "x"}}}})
+    assert read_profile("prod") == {"awx": {"token": "x"}}
+
+
+def test_read_profile_returns_none_for_missing_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    assert read_profile("nope") is None
+
+
+def test_read_profile_returns_none_when_no_profiles_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    assert read_profile("default") is None
+
+
+def test_write_profile_creates_when_file_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_profile("prod", {"awx": {"token": "x"}})
+    assert read_config_dict() == {"profiles": {"prod": {"awx": {"token": "x"}}}}
+
+
+def test_write_profile_replaces_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"prod": {"awx": {"token": "old"}}}})
+    write_profile("prod", {"awx": {"token": "new"}})
+    assert read_config_dict()["profiles"]["prod"] == {"awx": {"token": "new"}}
+
+
+def test_write_profile_preserves_other_profiles_and_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict(
+        {
+            "profiles": {"default": {"a": 1}, "prod": {"b": 2}},
+            "active": "prod",
+            "workspace": {"workspaces": [{"name": "x", "path": "/p"}]},
+        }
+    )
+    write_profile("prod", {"b": 3})
+    data = read_config_dict()
+    assert data["profiles"]["default"] == {"a": 1}
+    assert data["profiles"]["prod"] == {"b": 3}
+    assert data["active"] == "prod"
+    assert data["workspace"] == {"workspaces": [{"name": "x", "path": "/p"}]}
+
+
+def test_delete_profile_removes_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {}}})
+    assert delete_profile("prod") is True
+    assert "prod" not in read_config_dict()["profiles"]
+    assert "default" in read_config_dict()["profiles"]
+
+
+def test_delete_profile_returns_false_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    assert delete_profile("nope") is False
+
+
+def test_delete_profile_returns_false_when_no_profiles_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
+    assert delete_profile("anything") is False
+
+
+def test_delete_profile_does_not_touch_file_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: deleting a profile that doesn't exist used to no-op
+    cleanly. After moving onto ``mutate_config`` it spuriously rewrote
+    the file. The helper must skip the write."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    before_mtime = cfg.stat().st_mtime_ns
+
+    assert delete_profile("ghost") is False
+    assert cfg.stat().st_mtime_ns == before_mtime
+
+
+# ---------------------------- rename_profile ---------------------------- #
+
+
+def test_rename_profile_moves_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "stage": {"awx": {"token": "x"}}}})
+    rename_profile("stage", "qa")
+    data = read_config_dict()
+    assert "stage" not in data["profiles"]
+    assert data["profiles"]["qa"] == {"awx": {"token": "x"}}
+
+
+def test_rename_profile_updates_active_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the persisted ``active:`` named the renamed profile, fix the
+    pointer in the same write so it never points at a missing profile."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {"a": 1}}, "active": "prod"})
+    rename_profile("prod", "production")
+    data = read_config_dict()
+    assert data["active"] == "production"
+    assert "prod" not in data["profiles"]
+
+
+def test_rename_profile_leaves_unrelated_active_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {}, "stage": {}}, "active": "prod"})
+    rename_profile("stage", "qa")
+    data = read_config_dict()
+    assert data["active"] == "prod"
+
+
+def test_rename_profile_raises_when_source_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}}})
+    with pytest.raises(KeyError):
+        rename_profile("ghost", "x")
+
+
+def test_rename_profile_raises_when_target_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {}, "qa": {}}})
+    with pytest.raises(ValueError, match="qa"):
+        rename_profile("prod", "qa")
+
+
+def test_rename_profile_is_a_single_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The whole rename must land in one ``mutate_config`` call so a crash
+    can't leave the config half-renamed (e.g. profile copied but old still
+    present, or active: pointing at a deleted profile)."""
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    write_config_dict({"profiles": {"default": {}, "prod": {"a": 1}}, "active": "prod"})
+
+    calls = 0
+    real_mutate = mutate_config
+
+    def _spy(fn: Any, path: Path | None = None) -> None:
+        nonlocal calls
+        calls += 1
+        real_mutate(fn, path)
+
+    monkeypatch.setattr("untaped.config_file.mutate_config", _spy)
+    rename_profile("prod", "production")
+    assert calls == 1

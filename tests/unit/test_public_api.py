@@ -2,8 +2,11 @@ import untaped
 from untaped import cli, prompts, ui
 
 
-def test_profile_helpers_are_no_longer_exposed() -> None:
-    """Profile support moved to the untaped-profile plugin (plugin API v4)."""
+def test_profile_helpers_stay_as_deprecated_v3_compat() -> None:
+    """Profile support moved to the untaped-profile plugin (plugin API v4),
+    but released v2/v3-era plugins import these names at entry-point load
+    time. They stay re-exported as deprecated shims until the rollout
+    completes (release-smoke regression, PR #273)."""
     for name in (
         "ProfileOverrideOption",
         "profile_override",
@@ -12,10 +15,9 @@ def test_profile_helpers_are_no_longer_exposed() -> None:
         "classify_active_profile",
         "effective_active_profile_name",
         "resolve_profiles",
-        "profile_resolver",
     ):
-        assert not hasattr(untaped, name), f"untaped.{name} should be gone"
-        assert name not in untaped.__all__
+        assert hasattr(untaped, name), f"untaped.{name} must stay importable"
+        assert name in untaped.__all__
 
 
 def test_render_rows_is_re_exported() -> None:
