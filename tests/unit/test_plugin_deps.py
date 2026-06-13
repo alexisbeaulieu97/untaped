@@ -92,6 +92,38 @@ class TestLocalPluginDependencies:
             kind="git", target="file:///dev/untaped-github", rev="c64967a"
         )
 
+    def test_git_source_with_branch(self, tmp_path: Path) -> None:
+        project = _write_plugin(
+            tmp_path / "plugin",
+            "untaped-ansible",
+            dependencies=["untaped-github>=0.3.0"],
+            sources={
+                "untaped-github": (
+                    '{ git = "https://github.com/example/untaped-github", branch = "next" }'
+                ),
+            },
+        )
+        deps = local_plugin_dependencies(project)
+        assert deps[0].source == PluginDepSource(
+            kind="git", target="https://github.com/example/untaped-github", branch="next"
+        )
+
+    def test_git_source_with_tag(self, tmp_path: Path) -> None:
+        project = _write_plugin(
+            tmp_path / "plugin",
+            "untaped-ansible",
+            dependencies=["untaped-github>=0.3.0"],
+            sources={
+                "untaped-github": (
+                    '{ git = "https://github.com/example/untaped-github", tag = "v0.3.0" }'
+                ),
+            },
+        )
+        deps = local_plugin_dependencies(project)
+        assert deps[0].source == PluginDepSource(
+            kind="git", target="https://github.com/example/untaped-github", tag="v0.3.0"
+        )
+
     def test_editable_path_source(self, tmp_path: Path) -> None:
         project = _write_plugin(
             tmp_path / "plugin",
@@ -182,6 +214,30 @@ class TestDependencyInstallSpec:
         spec = dependency_install_spec(dep, base_dir=tmp_path)
         assert spec is not None
         assert spec.spec == "untaped-github @ git+file:///dev/untaped-github"
+
+    def test_git_source_branch_builds_direct_reference(self, tmp_path: Path) -> None:
+        dep = PluginDependency(
+            name="untaped-github",
+            requirement="untaped-github>=0.3.0",
+            source=PluginDepSource(
+                kind="git", target="https://github.com/example/untaped-github", branch="next"
+            ),
+        )
+        spec = dependency_install_spec(dep, base_dir=tmp_path)
+        assert spec is not None
+        assert spec.spec == "untaped-github @ git+https://github.com/example/untaped-github@next"
+
+    def test_git_source_tag_builds_direct_reference(self, tmp_path: Path) -> None:
+        dep = PluginDependency(
+            name="untaped-github",
+            requirement="untaped-github>=0.3.0",
+            source=PluginDepSource(
+                kind="git", target="https://github.com/example/untaped-github", tag="v0.3.0"
+            ),
+        )
+        spec = dependency_install_spec(dep, base_dir=tmp_path)
+        assert spec is not None
+        assert spec.spec == "untaped-github @ git+https://github.com/example/untaped-github@v0.3.0"
 
     def test_no_source_resolves_to_none(self, tmp_path: Path) -> None:
         dep = PluginDependency(

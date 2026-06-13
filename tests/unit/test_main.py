@@ -256,6 +256,91 @@ def test_unknown_option_still_fails_after_root_option_retry(
     assert "--nope" in result.stderr
 
 
+def _root_option_plugin(name: str, handler_import_path: str) -> object:
+    from untaped.plugins import PluginManifest, RootOptionSpec
+
+    class _RootOptionPlugin:
+        id = "root-option-probe"
+        untaped_api_version = 4
+
+        def manifest(self) -> PluginManifest:
+            return PluginManifest(
+                root_options=(
+                    RootOptionSpec(
+                        name=name,
+                        help="Probe root option.",
+                        handler_import_path=handler_import_path,
+                    ),
+                ),
+            )
+
+    return _RootOptionPlugin()
+
+
+def test_root_option_handler_error_exits_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A handler raising UntapedError exits 1 with 'error: ...', not a traceback."""
+    import sys
+    import types
+
+    from untaped.errors import ConfigError
+
+    def _apply(value: str) -> None:
+        raise ConfigError(f"unknown tenant: {value}")
+
+    module = types.ModuleType("fake_failing_handler")
+    module.apply = _apply  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_failing_handler", module)
+
+    app = build_app(
+        plugins=[
+            _root_option_plugin("--tenant", "fake_failing_handler:apply"),
+            _ProfileEnvProbePlugin(),
+        ]
+    )
+
+    result = CliInvoker().invoke(app, ["--tenant", "ghost", "probe", "current"])
+
+    assert result.exit_code == 1
+    assert "error: unknown tenant: ghost" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert result.stdout == ""
+
+
+def test_root_option_env_side_effect_does_not_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A handler's env mutation is reverted after the invocation (in-process)."""
+    import sys
+    import types
+
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+
+    def _apply(value: str) -> None:
+        os.environ["UNTAPED_PROFILE"] = value
+
+    module = types.ModuleType("fake_env_handler")
+    module.apply = _apply  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_env_handler", module)
+
+    app = build_app(
+        plugins=[
+            _root_option_plugin("--profile", "fake_env_handler:apply"),
+            _ProfileEnvProbePlugin(),
+        ]
+    )
+
+    first = CliInvoker().invoke(app, ["--profile", "acme", "probe", "current"])
+    assert first.exit_code == 0, first.output
+    assert first.stdout.strip() == "acme"
+    assert "UNTAPED_PROFILE" not in os.environ
+
+    second = CliInvoker().invoke(app, ["probe", "current"])
+    assert second.exit_code == 0, second.output
+    assert second.stdout.strip() == ""
+
+
 def test_plugin_settings_layout_drives_settings_resolution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
