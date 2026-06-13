@@ -1,6 +1,6 @@
 [project]
 name = "untaped-workspace"
-version = "0.1.1"
+version = "0.2.0"
 description = "Workspace management plugin for untaped."
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }
