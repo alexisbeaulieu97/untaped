@@ -482,6 +482,40 @@ behaviours worth knowing:
 - Mock httpx with `respx` (already a dev dep).
 - For CLI tests, use `untaped.testing.CliInvoker`.
 
+## Releasing
+
+Every repo keeps `pyproject.toml` `version` equal to its **next** release, and
+the latest git tag equals the **released** version. So **bump `version` in the
+same PR as any user-facing change** — a new command/flag, a behaviour change, a
+dropped option, or a dependency-floor change. Do not leave the bump (or the
+release) as a separate follow-up; a merged PR that changed behaviour without a
+version bump leaves the repo in a half-released state. Pre-1.0, a breaking
+change bumps the **minor** (`0.3.0 → 0.4.0`); additive-only changes bump the
+patch.
+
+Releases go through PRs, not direct pushes — the environment blocks
+`git push` to `main` and tag pushes. The flow:
+
+1. Branch; bump `version`; `uv lock`; gate (`ruff check` + `ruff format` +
+   `mypy` + `pytest`); open a PR.
+2. `gh pr merge --merge` once CI is green.
+3. `gh release create vX.Y.Z --target main --title ... --notes ...` — this
+   creates the tag + release via the API (plain `git tag` + `git push <tag>`
+   is gated, `gh` is not).
+
+Cross-repo ordering for an ecosystem-wide change (e.g. a plugin-API bump):
+
+- **Core first.** Plugins resolve `untaped` from the git default branch
+  (`[tool.uv.sources]`), so `uv lock --upgrade-package untaped` only picks up
+  new core after it lands on `main`.
+- **untaped-profile releases with (or before) core** whenever core's profile
+  behaviour changes — without it installed, core's flat default layout ignores
+  `profiles:` config, so `--profile` vanishes for users mid-upgrade.
+- **Bump each plugin's `untaped>=` floor** to the new core release in the same
+  pass, relock, and **release the plugin too** (its own version bump + tag) —
+  the floor bump is a dependency change, which is itself a release-worthy
+  change per the rule above.
+
 ## Decision Tree: Where does this code go?
 
 1. **Shared across two or more plugins?** → `src/untaped/` if it is hub
