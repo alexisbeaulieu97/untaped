@@ -40,7 +40,9 @@ untaped workspace status --workspace prod --profile work
 
 The leading form is equivalent, for example
 `untaped --profile work workspace status --workspace prod`. There is no
-command-local `--profile`; the root option is the only selector.
+command-local `--profile`; the root option — contributed by the
+[`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
+plugin — is the only selector.
 
 If you `cd` into a workspace directory, the `--workspace` flag becomes
 optional — most commands walk up from the current directory looking
