@@ -10,7 +10,7 @@ dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
     "pyyaml>=6.0.3",
-    "untaped>=0.3.0",
+    "untaped>=0.4.0",
 ]
 
 [project.entry-points."untaped.plugins"]
