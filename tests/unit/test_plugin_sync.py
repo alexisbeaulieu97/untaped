@@ -8,7 +8,12 @@ import sys
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from untaped.plugin_sync import uv_pip_compile_command
+import pytest
+
+from untaped.errors import ConfigError
+from untaped.install_paths import default_managed_venv_path
+from untaped.plugin_sync import sync_state_unlocked, uv_pip_compile_command, venv_python
+from untaped.settings import PluginInstallSpec, PluginsState, PluginToolSpec
 
 
 def test_uv_compile_command_ignores_all_uv_sources(tmp_path: Path) -> None:
@@ -180,3 +185,28 @@ def _write_wheel(
         )
         archive.writestr(f"{dist_info}/RECORD", "")
     return wheel
+
+
+def test_compile_failure_hints_at_explicit_plugin_specs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    python = venv_python(default_managed_venv_path())
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.touch()
+
+    def _fail(cmd: list[str], **_: object) -> object:
+        return type("Result", (), {"returncode": 1})()
+
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _fail)
+    state = PluginsState(
+        tool=PluginToolSpec(spec="untaped"),
+        packages=[PluginInstallSpec(spec="untaped-ansible")],
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        sync_state_unlocked(state)
+
+    message = str(excinfo.value)
+    assert "plugin dependency resolution failed" in message
+    assert "hint:" in message
+    assert "untaped plugins add" in message

@@ -1,16 +1,23 @@
 import untaped
-from untaped import cli, profile_resolver, prompts, ui
+from untaped import cli, prompts, ui
 
 
-def test_profile_resolver_helpers_are_re_exported() -> None:
-    assert untaped.DEFAULT_PROFILE is profile_resolver.DEFAULT_PROFILE
-    assert untaped.effective_active_profile_name is profile_resolver.effective_active_profile_name
-    assert untaped.resolve_profiles is profile_resolver.resolve_profiles
-
-
-def test_profile_override_helpers_are_re_exported() -> None:
-    assert untaped.ProfileOverrideOption == cli.ProfileOverrideOption
-    assert untaped.profile_override is cli.profile_override
+def test_profile_helpers_stay_as_deprecated_v3_compat() -> None:
+    """Profile support moved to the untaped-profile plugin (plugin API v4),
+    but released v2/v3-era plugins import these names at entry-point load
+    time. They stay re-exported as deprecated shims until the rollout
+    completes (release-smoke regression, PR #273)."""
+    for name in (
+        "ProfileOverrideOption",
+        "profile_override",
+        "DEFAULT_PROFILE",
+        "ProfileSource",
+        "classify_active_profile",
+        "effective_active_profile_name",
+        "resolve_profiles",
+    ):
+        assert hasattr(untaped, name), f"untaped.{name} must stay importable"
+        assert name in untaped.__all__
 
 
 def test_render_rows_is_re_exported() -> None:

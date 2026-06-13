@@ -1,7 +1,12 @@
 """Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
 
-The resolver is layer-agnostic: callers (tests, ``ProfilesSettingsSource``,
-``untaped config list``, profile plugins) hand it the parsed
+Deprecated (plugin API v4): core no longer resolves profiles — the
+untaped-profile plugin owns the resolver and the profiles settings layout.
+This module stays importable because released v3-era plugins import it (via
+the ``untaped`` re-exports); removal is gated on the plugin-API-v4 rollout
+finishing across the plugin repos.
+
+The resolver is layer-agnostic: callers hand it the parsed
 ``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when
 ``UNTAPED_PROFILE`` or the root ``--profile`` flag is used). It returns:
 
@@ -15,9 +20,8 @@ overrides layer beneath the active profile; when absent, the active profile
 is layered alone (and the Pydantic schema's defaults sit beneath both via
 the Settings class).
 
-Top-level keys outside ``profiles`` are ignored here — splicing registered
-plugin app-state back into the merged dict is ``ProfilesSettingsSource``'s
-responsibility, not ours.
+Top-level keys outside ``profiles`` are ignored here — they are the
+caller's responsibility.
 """
 
 from __future__ import annotations

@@ -165,10 +165,15 @@ def _to_yaml_value(value: Any) -> Any:
 
 # ---------------------------- profile helpers ---------------------------- #
 #
-# All helpers below are dumb primitives: they edit / read the
-# `profiles.<name>` section without enforcing policy. Use cases (in
-# `untaped-profile`) are responsible for "default cannot be deleted",
-# "active must point at an existing profile", etc.
+# Deprecated (plugin API v4): profile storage is owned by the
+# untaped-profile plugin. These dumb primitives stay importable because
+# released v3-era plugin builds import them; removal is gated on the
+# plugin-API-v4 rollout finishing across the plugin repos.
+#
+# All helpers below edit / read the `profiles.<name>` section without
+# enforcing policy. Use cases (in `untaped-profile`) are responsible for
+# "default cannot be deleted", "active must point at an existing profile",
+# etc.
 
 
 def list_profile_names(path: Path | None = None) -> list[str]:

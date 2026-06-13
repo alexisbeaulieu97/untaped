@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from importlib import import_module
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import yaml
 from cyclopts import App
@@ -18,17 +18,30 @@ from untaped.errors import ConfigError
 from untaped.settings import (
     BUILTIN_STATE_SECTIONS,
     register_profile_settings,
+    register_settings_layout,
     register_state_settings,
     validate_disjoint_settings_sections,
 )
+from untaped.settings_layout import SettingsLayout
 from untaped.ui import BUILTIN_THEMES, ThemeSpec
 
 ENTRY_POINT_GROUP = "untaped.plugins"
 _LEGACY_PLUGIN_API_VERSION = 2
 _MANIFEST_PLUGIN_API_VERSION = 3
+_ROOT_OPTION_PLUGIN_API_VERSION = 4
 _SUPPORTED_PLUGIN_API_VERSIONS = frozenset(
-    {_LEGACY_PLUGIN_API_VERSION, _MANIFEST_PLUGIN_API_VERSION}
+    {
+        _LEGACY_PLUGIN_API_VERSION,
+        _MANIFEST_PLUGIN_API_VERSION,
+        _ROOT_OPTION_PLUGIN_API_VERSION,
+    }
 )
+
+
+def _validate_import_path(import_path: str, owner: str) -> None:
+    module, sep, attribute = import_path.partition(":")
+    if not sep or not module or not attribute:
+        raise ConfigError(f"{owner} import path must be 'module:attribute', got {import_path!r}")
 
 
 class UntapedPlugin(Protocol):
@@ -98,13 +111,47 @@ class CliSpec:
 
 
 @dataclass(frozen=True)
+class RootOptionSpec:
+    """A value-taking root-level option contributed by a plugin (e.g. ``--profile``).
+
+    The handler behind ``handler_import_path`` (``Callable[[str], None]``) is
+    imported only when the option is actually used, and runs before the
+    dispatched command body reads settings.
+    """
+
+    name: str
+    help: str
+    handler_import_path: str
+
+    def __post_init__(self) -> None:
+        if not self.name.startswith("--") or len(self.name) <= 2:
+            raise ConfigError(f"root option name must look like '--option', got {self.name!r}")
+        _validate_import_path(self.handler_import_path, f"root option {self.name!r} handler")
+
+
+@dataclass(frozen=True)
+class SettingsLayoutSpec:
+    """How raw config maps to effective settings; at most one across all plugins.
+
+    ``import_path`` resolves lazily to a ``untaped.settings_layout.SettingsLayout``
+    instance the first time settings are read.
+    """
+
+    import_path: str
+
+    def __post_init__(self) -> None:
+        _validate_import_path(self.import_path, "settings layout")
+
+
+@dataclass(frozen=True)
 class PluginManifest:
-    """Everything a version-3 plugin contributes, as data.
+    """Everything a version-3/4 plugin contributes, as data.
 
     Core validates the whole manifest against the registry and commits it
     atomically: a manifest that conflicts with already-registered plugins (or
     with itself) registers nothing and is reported through
-    ``untaped plugins doctor``.
+    ``untaped plugins doctor``. ``root_options`` and ``settings_layout``
+    require ``untaped_api_version`` 4.
     """
 
     clis: Sequence[CliSpec] = ()
@@ -113,6 +160,8 @@ class PluginManifest:
     themes: Mapping[str, ThemeSpec] = field(default_factory=dict)
     skills: Sequence[SkillSpec] = ()
     diagnostics: Mapping[str, Callable[[], DiagnosticResult]] = field(default_factory=dict)
+    root_options: Sequence[RootOptionSpec] = ()
+    settings_layout: SettingsLayoutSpec | None = None
 
 
 class PluginRegistry:
@@ -128,6 +177,8 @@ class PluginRegistry:
         self.themes: dict[str, ThemeSpec] = {}
         self.skills: dict[str, SkillSpec] = {}
         self.diagnostics: dict[str, Callable[[], DiagnosticResult]] = {}
+        self.root_options: dict[str, RootOptionSpec] = {}
+        self.settings_layout: SettingsLayoutSpec | None = None
         self.load_errors: list[PluginLoadError] = []
 
     def add_plugin_id(self, plugin_id: str) -> None:
@@ -210,6 +261,19 @@ class PluginRegistry:
             raise ConfigError(f"duplicate diagnostic: {name}")
         self.diagnostics[name] = check
 
+    def add_root_option(self, spec: RootOptionSpec) -> None:
+        if spec.name in self.root_options:
+            raise ConfigError(f"duplicate root option: {spec.name}")
+        self.root_options[spec.name] = spec
+
+    def set_settings_layout(self, spec: SettingsLayoutSpec) -> None:
+        if self.settings_layout is not None:
+            raise ConfigError(
+                f"a settings layout is already registered ({self.settings_layout.import_path}); "
+                f"only one plugin may contribute one"
+            )
+        self.settings_layout = spec
+
     def record_load_error(self, name: str, exc: BaseException) -> None:
         self.load_errors.append(PluginLoadError(name=name, error=str(exc)))
 
@@ -222,6 +286,12 @@ class PluginRegistry:
             register_profile_settings(section, model)
         for section, model in self.state_sections.items():
             register_state_settings(section, model)
+        if self.settings_layout is not None:
+            spec = self.settings_layout
+            register_settings_layout(
+                lambda: resolve_settings_layout(spec),
+                key=spec.import_path,
+            )
 
     # Every per-plugin registration collection; _staging_copy/_adopt operate on
     # this list so a new collection cannot be forgotten in one of the two.
@@ -234,6 +304,8 @@ class PluginRegistry:
         "themes",
         "skills",
         "diagnostics",
+        "root_options",
+        "settings_layout",
     )
 
     def _staging_copy(self) -> PluginRegistry:
@@ -268,6 +340,20 @@ def set_current_registry(registry: PluginRegistry) -> None:
     _CURRENT_REGISTRY = registry
 
 
+def _resolve_import_target(import_path: str, owner: str) -> object:
+    """Import the ``module:attribute`` target behind a spec.
+
+    Wraps import failures in a ``ConfigError`` labelled with ``owner`` and
+    returns the attribute (``None`` when absent) for the caller to type-check.
+    """
+    module_name, _, attribute = import_path.partition(":")
+    try:
+        module = import_module(module_name)
+    except Exception as exc:
+        raise ConfigError(f"{owner} failed to import {module_name!r}: {exc}") from exc
+    return getattr(module, attribute, None)
+
+
 def resolve_lazy_cli(spec: CliSpec) -> App:
     """Import and return the Cyclopts app behind a CLI spec."""
     if spec.app is not None:
@@ -275,19 +361,33 @@ def resolve_lazy_cli(spec: CliSpec) -> App:
     import_path = spec.import_path
     if import_path is None:  # pragma: no cover - CliSpec.__post_init__ forbids this
         raise ConfigError(f"CLI spec {spec.name!r} has neither app nor import_path")
-    module_name, _, attribute = import_path.partition(":")
-    try:
-        module = import_module(module_name)
-    except Exception as exc:
-        raise ConfigError(
-            f"plugin command {spec.name!r} failed to import {module_name!r}: {exc}"
-        ) from exc
-    app = getattr(module, attribute, None)
+    app = _resolve_import_target(import_path, f"plugin command {spec.name!r}")
     if not isinstance(app, App):
         raise ConfigError(
             f"plugin command {spec.name!r}: {import_path!r} does not resolve to a cyclopts App"
         )
     return app
+
+
+def resolve_settings_layout(spec: SettingsLayoutSpec) -> SettingsLayout:
+    """Import and return the layout instance behind a settings layout spec."""
+    layout = _resolve_import_target(spec.import_path, "settings layout")
+    if not isinstance(layout, SettingsLayout):
+        raise ConfigError(
+            f"settings layout {spec.import_path!r} does not resolve to a SettingsLayout"
+        )
+    return layout
+
+
+def resolve_root_option_handler(spec: RootOptionSpec) -> Callable[[str], None]:
+    """Import and return the handler behind a root option spec."""
+    handler = _resolve_import_target(spec.handler_import_path, f"root option {spec.name!r}")
+    if not callable(handler):
+        raise ConfigError(
+            f"root option {spec.name!r}: {spec.handler_import_path!r} "
+            f"does not resolve to a callable"
+        )
+    return cast("Callable[[str], None]", handler)
 
 
 def discover_plugins(registry: PluginRegistry | None = None) -> list[UntapedPlugin]:
@@ -316,8 +416,10 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
         try:
             api_version = _validate_plugin_api_version(plugin, plugin_id)
             staged.add_plugin_id(plugin_id)
-            if api_version == _MANIFEST_PLUGIN_API_VERSION:
-                _apply_manifest(staged, _plugin_manifest(plugin, plugin_id))
+            if api_version >= _MANIFEST_PLUGIN_API_VERSION:
+                manifest = _plugin_manifest(plugin, plugin_id)
+                _validate_manifest_version(manifest, plugin_id, api_version)
+                _apply_manifest(staged, manifest)
             else:
                 _legacy_register(plugin, plugin_id, staged)
         except Exception as exc:
@@ -328,12 +430,22 @@ def register_plugins(registry: PluginRegistry, plugins: Iterable[UntapedPlugin])
     return registry
 
 
+def _validate_manifest_version(manifest: PluginManifest, plugin_id: str, api_version: int) -> None:
+    if api_version >= _ROOT_OPTION_PLUGIN_API_VERSION:
+        return
+    if manifest.root_options or manifest.settings_layout is not None:
+        raise ConfigError(
+            f"plugin {plugin_id!r} declares root_options or settings_layout, "
+            f"which require untaped_api_version {_ROOT_OPTION_PLUGIN_API_VERSION}"
+        )
+
+
 def _plugin_manifest(plugin: UntapedPlugin, plugin_id: str) -> PluginManifest:
     manifest_method = getattr(plugin, "manifest", None)
     if not callable(manifest_method):
         raise ConfigError(
             f"plugin {plugin_id!r} declares untaped_api_version "
-            f"{_MANIFEST_PLUGIN_API_VERSION} but does not provide a manifest() method"
+            f"{_MANIFEST_PLUGIN_API_VERSION} or later but does not provide a manifest() method"
         )
     manifest = manifest_method()
     if not isinstance(manifest, PluginManifest):
@@ -360,6 +472,10 @@ def _apply_manifest(staged: PluginRegistry, manifest: PluginManifest) -> None:
         staged.add_skill(skill)
     for name, check in manifest.diagnostics.items():
         staged.add_diagnostic(name, check)
+    for option in manifest.root_options:
+        staged.add_root_option(option)
+    if manifest.settings_layout is not None:
+        staged.set_settings_layout(manifest.settings_layout)
 
 
 def _legacy_register(plugin: UntapedPlugin, plugin_id: str, staged: PluginRegistry) -> None:

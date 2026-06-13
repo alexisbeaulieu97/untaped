@@ -1,13 +1,14 @@
 """Registry-backed configuration loaded from ``~/.untaped/config.yml``.
 
-Core owns profile resolution, YAML/env loading, and the registry that plugins
-use to contribute typed settings sections. Plugins own their section models.
+Core owns YAML/env loading and the registry that plugins use to contribute
+typed settings sections and (at most one) settings layout. Plugins own their
+section models; the untaped-profile plugin owns profile resolution.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
@@ -22,7 +23,7 @@ from pydantic_settings import (
 from pydantic_settings.sources import InitSettingsSource
 
 from untaped.errors import ConfigError, first_validation_error
-from untaped.profile_resolver import effective_active_profile_name, resolve_profiles
+from untaped.settings_layout import FlatSettingsLayout, SettingsLayout
 from untaped.ui import UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -69,13 +70,43 @@ class _ConfigRegistry:
     def __init__(self) -> None:
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
+        self.settings_layout_provider: Callable[[], SettingsLayout] | None = None
+        self.settings_layout_key: str | None = None
+        self._resolved_layout: SettingsLayout | None = None
 
     def reset(self) -> None:
         self.profile_sections = {}
         self.state_sections = dict(BUILTIN_STATE_SECTIONS)
+        self.settings_layout_provider = None
+        self.settings_layout_key = None
+        self._resolved_layout = None
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
+
+    def register_settings_layout(
+        self,
+        provider: Callable[[], SettingsLayout],
+        *,
+        key: str | None = None,
+    ) -> None:
+        if self.settings_layout_provider is not None and (
+            key is None or key != self.settings_layout_key
+        ):
+            raise ConfigError("a settings layout is already registered")
+        # Falling through with an already-registered provider means the same
+        # plugin is re-registering (e.g. build_app called again): refresh the
+        # provider, keep the single-layout invariant.
+        self.settings_layout_provider = provider
+        self.settings_layout_key = key
+        self._resolved_layout = None
+        get_settings.cache_clear()
+
+    def active_layout(self) -> SettingsLayout:
+        if self._resolved_layout is None:
+            provider = self.settings_layout_provider
+            self._resolved_layout = provider() if provider is not None else FlatSettingsLayout()
+        return self._resolved_layout
 
     def register_profile_settings(self, section: str, model: type[BaseModel]) -> None:
         existing = self.profile_sections.get(section)
@@ -130,9 +161,29 @@ class Settings(BaseSettings):
         return (
             init_settings,
             env_settings,
-            ProfilesSettingsSource(settings_cls, yaml_file=path),
+            LayoutSettingsSource(settings_cls, yaml_file=path),
             file_secret_settings,
         )
+
+
+def register_settings_layout(
+    provider: Callable[[], SettingsLayout],
+    *,
+    key: str | None = None,
+) -> None:
+    """Register the (single) plugin-contributed settings layout provider.
+
+    The provider runs lazily on first settings access so plugin modules stay
+    off the startup import path. ``key`` identifies the contributor (the
+    spec's import path): re-registering the same key refreshes the provider,
+    a different key is rejected.
+    """
+    _CONFIG_REGISTRY.register_settings_layout(provider, key=key)
+
+
+def active_settings_layout() -> SettingsLayout:
+    """Return the layout mapping raw config to effective settings."""
+    return _CONFIG_REGISTRY.active_layout()
 
 
 def register_profile_settings(section: str, model: type[BaseModel]) -> None:
@@ -166,12 +217,12 @@ def reset_config_registry_for_tests() -> None:
     _CONFIG_REGISTRY.reset()
 
 
-class ProfilesSettingsSource(InitSettingsSource):
-    """Pydantic-settings source for profile YAML plus top-level app state."""
+class LayoutSettingsSource(InitSettingsSource):
+    """Pydantic-settings source reading YAML through the active settings layout."""
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
         raw = self._load_raw_yaml(yaml_file)
-        effective, _ = resolve_profiles(raw, active_override=effective_active_profile_name(raw))
+        effective = active_settings_layout().effective(raw)
         splice_registered_state(raw, effective)
         super().__init__(settings_cls, effective)
 

@@ -60,15 +60,7 @@ def test_list_does_not_expose_global_ui_state_as_profile_keys(
 
 
 def test_list_honours_global_ui_collection_view(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        """
-        ui:
-          collection_view: list
-        profiles:
-          default:
-            log_level: DEBUG
-        """
-    )
+    _isolate_settings.write_text("ui:\n  collection_view: list\nlog_level: DEBUG\n")
     get_settings.cache_clear()
 
     result = CliInvoker().invoke(app, ["list", "--columns", "key", "--columns", "value"])
@@ -80,15 +72,7 @@ def test_list_honours_global_ui_collection_view(_isolate_settings: Path) -> None
 
 
 def test_list_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        """
-        ui:
-          theme: missing
-        profiles:
-          default:
-            log_level: DEBUG
-        """
-    )
+    _isolate_settings.write_text("ui:\n  theme: missing\nlog_level: DEBUG\n")
     get_settings.cache_clear()
 
     result = CliInvoker().invoke(
@@ -100,15 +84,7 @@ def test_list_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> No
 
 
 def test_list_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        """
-        ui:
-          theme: missing
-        profiles:
-          default:
-            log_level: DEBUG
-        """
-    )
+    _isolate_settings.write_text("ui:\n  theme: missing\nlog_level: DEBUG\n")
     get_settings.cache_clear()
 
     result = CliInvoker().invoke(
@@ -157,7 +133,32 @@ def test_list_show_secrets_reveals(
     assert "abcdef-secret" in result.stdout
 
 
-def test_set_then_list_shows_profile_default_source(_isolate_settings: Path) -> None:
+def test_set_then_list_shows_config_source(_isolate_settings: Path) -> None:
+    runner = CliInvoker()
+    set_result = runner.invoke(app, ["set", "log_level", "DEBUG"])
+    assert set_result.exit_code == 0, set_result.output
+
+    list_result = runner.invoke(
+        app,
+        [
+            "list",
+            "--format",
+            "raw",
+            "--columns",
+            "key",
+            "--columns",
+            "value",
+            "--columns",
+            "source",
+        ],
+    )
+    assert list_result.exit_code == 0
+    assert "log_level\tDEBUG\tconfig" in list_result.stdout
+
+
+def test_set_then_list_shows_profile_default_source(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     runner = CliInvoker()
     set_result = runner.invoke(app, ["set", "log_level", "DEBUG"])
     assert set_result.exit_code == 0, set_result.output
@@ -188,9 +189,9 @@ def test_set_success_message_falls_back_when_global_ui_theme_unknown(
     result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
 
     assert result.exit_code == 0, result.output
-    assert "set log_level in profile default" in result.output
+    assert f"set log_level (config: {_isolate_settings})" in result.output
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["log_level"] == "DEBUG"
+    assert data == {"ui": {"theme": "missing"}, "log_level": "DEBUG"}
 
 
 def test_set_ui_theme_writes_global_ui_state(_isolate_settings: Path) -> None:
@@ -285,8 +286,9 @@ def test_set_with_prompt_reads_hidden_value_from_ui_context(
     assert seen["message"] == "Value for demo.token"
     assert seen["confirmation"] is False
     assert seen["status_kind"] == "success"
+    assert seen["status_text"] == f"set demo.token (config: {_isolate_settings})"
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["demo"]["token"] == "prompt-token"
+    assert data == {"demo": {"token": "prompt-token"}}
 
 
 def test_set_with_prompt_uses_text_for_plain_string(
@@ -331,10 +333,10 @@ def test_set_with_prompt_uses_text_for_plain_string(
         "default": None,
         "required": True,
         "status_kind": "success",
-        "status_text": f"set demo.base_url in profile default (config: {_isolate_settings})",
+        "status_text": f"set demo.base_url (config: {_isolate_settings})",
     }
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["demo"]["base_url"] == "https://example.test"
+    assert data == {"demo": {"base_url": "https://example.test"}}
 
 
 def test_set_with_prompt_uses_select_for_bool(
@@ -380,11 +382,13 @@ def test_set_with_prompt_uses_select_for_bool(
     assert seen["default"] == "true"
     assert seen["search"] is False
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["http"]["verify_ssl"] is False
+    assert data == {"http": {"verify_ssl": False}}
 
 
 def test_set_with_prompt_prefills_from_target_profile(
-    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+    _isolate_settings: Path,
+    fake_scoped_layout: object,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _isolate_settings.write_text(
         "active: default\n"
@@ -435,6 +439,9 @@ def test_set_with_prompt_prefills_from_target_profile(
 
     assert result.exit_code == 0, result.output
     assert seen["default"] == "true"
+    assert seen["status_text"] == (
+        f"set http.verify_ssl in profile prod (config: {_isolate_settings})"
+    )
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["default"]["http"]["verify_ssl"] is False
     assert data["profiles"]["prod"]["http"]["verify_ssl"] is True
@@ -481,7 +488,7 @@ def test_set_with_prompt_preserves_string_literal_choices(
     assert seen["message"] == "Value for demo.mode"
     assert seen["choices"] == [("on", "on"), ("off", "off")]
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["demo"]["mode"] == "on"
+    assert data == {"demo": {"mode": "on"}}
 
 
 def test_set_with_prompt_uses_select_for_literal_ui_setting(
@@ -648,7 +655,22 @@ def test_get_ui_theme_defaults_to_raw_value(_isolate_settings: Path) -> None:
     assert result.stdout == "classic\n"
 
 
-def test_get_profile_setting_json_includes_metadata(_isolate_settings: Path) -> None:
+def test_get_setting_json_includes_metadata(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("log_level: DEBUG\n")
+
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert '"key": "log_level"' in result.stdout
+    assert '"value": "DEBUG"' in result.stdout
+    assert '"default": "INFO"' in result.stdout
+    assert '"source": "config"' in result.stdout
+    assert '"profile": ""' in result.stdout
+
+
+def test_get_profile_setting_json_includes_metadata(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
 
     result = CliInvoker().invoke(app, ["get", "log_level", "--format", "json"])
@@ -661,23 +683,21 @@ def test_get_profile_setting_json_includes_metadata(_isolate_settings: Path) -> 
     assert '"profile": "default"' in result.stdout
 
 
-def test_get_profile_setting_yaml_includes_metadata(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
+def test_get_setting_yaml_includes_metadata(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("log_level: DEBUG\n")
 
     result = CliInvoker().invoke(app, ["get", "log_level", "--format", "yaml"])
 
     assert result.exit_code == 0, result.output
     assert "key: log_level" in result.stdout
     assert "value: DEBUG" in result.stdout
-    assert "source: profile:default" in result.stdout
+    assert "source: config" in result.stdout
 
 
-def test_get_profile_setting_table_uses_ui_detail_settings(
+def test_get_setting_table_uses_ui_detail_settings(
     _isolate_settings: Path,
 ) -> None:
-    _isolate_settings.write_text(
-        "ui:\n  detail_view: table\n  border: square\nprofiles:\n  default:\n    log_level: DEBUG\n"
-    )
+    _isolate_settings.write_text("ui:\n  detail_view: table\n  border: square\nlog_level: DEBUG\n")
 
     result = CliInvoker().invoke(app, ["get", "log_level", "--format", "table"])
 
@@ -688,7 +708,7 @@ def test_get_profile_setting_table_uses_ui_detail_settings(
 
 
 def test_get_secret_redacts_by_default(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
+    _isolate_settings.write_text("demo:\n  token: secret-token\n")
 
     result = CliInvoker().invoke(app, ["get", "demo.token"])
 
@@ -698,7 +718,7 @@ def test_get_secret_redacts_by_default(_isolate_settings: Path) -> None:
 
 
 def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
+    _isolate_settings.write_text("demo:\n  token: secret-token\n")
 
     result = CliInvoker().invoke(app, ["get", "demo.token", "--show-secrets"])
 
@@ -706,31 +726,30 @@ def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
     assert result.stdout == "secret-token\n"
 
 
-def test_get_profile_flag_reads_named_profile_without_changing_active(
-    _isolate_settings: Path,
+def test_get_rejects_profile_flag(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["get", "log_level", "--profile", "stage"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "error: Unknown option" in result.stderr
+
+
+def test_get_resolves_layered_profile_values(
+    _isolate_settings: Path, fake_scoped_layout: object
 ) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
         "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: WARNING\n"
         "  stage:\n    log_level: DEBUG\n"
-        "active: prod\n"
+        "active: stage\n"
     )
 
-    result = CliInvoker().invoke(app, ["get", "log_level", "--profile", "stage"])
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "json"])
 
     assert result.exit_code == 0, result.output
-    assert result.stdout == "DEBUG\n"
-    assert yaml.safe_load(_isolate_settings.read_text())["active"] == "prod"
-
-
-def test_get_rejects_profile_flag_for_global_ui(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("ui:\n  theme: classic\nprofiles:\n  stage: {}\n")
-
-    result = CliInvoker().invoke(app, ["get", "ui.theme", "--profile", "stage"])
-
-    assert result.exit_code != 0
-    assert "global" in result.output
+    assert '"value": "DEBUG"' in result.stdout
+    assert '"source": "profile:stage"' in result.stdout
+    assert '"profile": "stage"' in result.stdout
 
 
 def test_get_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
@@ -741,9 +760,7 @@ def test_get_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
 
 
 def test_get_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        "ui:\n  theme: missing\nprofiles:\n  default:\n    log_level: DEBUG\n"
-    )
+    _isolate_settings.write_text("ui:\n  theme: missing\nlog_level: DEBUG\n")
 
     result = CliInvoker().invoke(app, ["get", "log_level", "--format", "raw"])
 
@@ -752,9 +769,7 @@ def test_get_raw_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> Non
 
 
 def test_get_json_ignores_unknown_global_ui_theme(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text(
-        "ui:\n  theme: missing\nprofiles:\n  default:\n    log_level: DEBUG\n"
-    )
+    _isolate_settings.write_text("ui:\n  theme: missing\nlog_level: DEBUG\n")
 
     result = CliInvoker().invoke(app, ["get", "log_level", "--format", "json"])
 
@@ -778,21 +793,28 @@ def test_get_parse_errors_exit_2_and_stderr(_isolate_settings: Path) -> None:
     assert "error: Unknown option" in result.stderr
 
 
-def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> None:
+def test_list_rejects_profile_flag(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["list", "--profile", "stage"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "error: Unknown option" in result.stderr
+
+
+def test_list_resolves_layered_profile_values(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
         "  default:\n    log_level: INFO\n"
-        "  prod:\n    log_level: WARNING\n"
         "  stage:\n    log_level: DEBUG\n"
-        "active: prod\n"
+        "active: stage\n"
     )
 
     result = CliInvoker().invoke(
         app,
         [
             "list",
-            "--profile",
-            "stage",
             "--format",
             "raw",
             "--columns",
@@ -806,14 +828,13 @@ def test_list_with_profile_flag_reads_named_profile(_isolate_settings: Path) -> 
 
     assert result.exit_code == 0, result.output
     assert "log_level\tDEBUG\tprofile:stage" in result.stdout
-    assert yaml.safe_load(_isolate_settings.read_text())["active"] == "prod"
 
 
-def test_list_rejects_profile_with_all_profiles(_isolate_settings: Path) -> None:
-    result = CliInvoker().invoke(app, ["list", "--all-profiles", "--profile", "stage"])
+def test_list_all_profiles_requires_scoped_layout(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["list", "--all-profiles"])
 
-    assert result.exit_code == 2
-    assert "Cannot combine --profile with --all-profiles" in result.output
+    assert result.exit_code == 1
+    assert "--all-profiles requires profiles; install the untaped-profile plugin" in result.output
 
 
 def test_set_with_no_args_is_usage_error(_isolate_settings: Path) -> None:
@@ -856,14 +877,25 @@ def test_unset_after_set(_isolate_settings: Path) -> None:
     assert "log_level\tdefault" in list_result.stdout
 
 
-def test_set_with_target_profile_flag_targets_named_profile(_isolate_settings: Path) -> None:
+def test_set_with_target_profile_flag_targets_named_profile(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
     runner = CliInvoker()
     result = runner.invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
     assert result.exit_code == 0, result.output
+    assert f"set log_level in profile prod (config: {_isolate_settings})" in result.output
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["prod"]["log_level"] == "DEBUG"
     assert data["profiles"]["default"] == {}
+
+
+def test_set_rejects_target_profile_without_scoped_layout(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
+
+    assert result.exit_code == 1
+    assert "profiles are not available; install the untaped-profile plugin" in result.output
+    assert not _isolate_settings.exists()
 
 
 def test_set_with_stdin_reads_single_value(_isolate_settings: Path) -> None:
@@ -871,7 +903,7 @@ def test_set_with_stdin_reads_single_value(_isolate_settings: Path) -> None:
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["demo"]["token"] == "secret-token"
+    assert data == {"demo": {"token": "secret-token"}}
 
 
 def test_set_with_stdin_preserves_yaml_scalar_parsing(_isolate_settings: Path) -> None:
@@ -879,7 +911,7 @@ def test_set_with_stdin_preserves_yaml_scalar_parsing(_isolate_settings: Path) -
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data["profiles"]["default"]["http"]["verify_ssl"] is False
+    assert data == {"http": {"verify_ssl": False}}
 
 
 def test_set_rejects_value_with_stdin_before_writing(_isolate_settings: Path) -> None:
@@ -931,53 +963,93 @@ def test_set_rejects_missing_value_source_before_writing(_isolate_settings: Path
     assert not _isolate_settings.exists()
 
 
-def test_set_with_unknown_profile_errors(_isolate_settings: Path) -> None:
+def test_set_with_unknown_profile_errors(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
     result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "ghost"])
-    assert result.exit_code != 0
+    assert result.exit_code == 1
+    assert "does not exist" in result.output
+    assert "ghost" in result.output
 
 
-def test_set_message_names_resolved_default_profile(_isolate_settings: Path) -> None:
+def test_set_message_omits_profile_in_flat_mode(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
+    assert result.exit_code == 0, result.output
+    assert f"set log_level (config: {_isolate_settings})" in result.output
+    assert "in profile" not in result.output
+
+
+def test_set_message_names_resolved_default_profile(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
     assert result.exit_code == 0, result.output
     assert "in profile default" in result.output
     assert "<active>" not in result.output
 
 
-def test_set_message_names_explicit_profile(_isolate_settings: Path) -> None:
+def test_set_message_names_explicit_profile(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n  prod: {}\n")
     result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG", "--target-profile", "prod"])
     assert result.exit_code == 0, result.output
     assert "in profile prod" in result.output
 
 
-def test_set_message_resolves_env_override(
-    _isolate_settings: Path, monkeypatch: pytest.MonkeyPatch
+def test_set_message_names_active_scope_from_config(
+    _isolate_settings: Path, fake_scoped_layout: object
 ) -> None:
-    _isolate_settings.write_text("profiles:\n  default: {}\n  stage: {}\n")
-    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
-    get_settings.cache_clear()
+    _isolate_settings.write_text("profiles:\n  default: {}\n  stage: {}\nactive: stage\n")
     result = CliInvoker().invoke(app, ["set", "log_level", "DEBUG"])
     assert result.exit_code == 0, result.output
     assert "in profile stage" in result.output
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["stage"]["log_level"] == "DEBUG"
+    assert data["profiles"]["default"] == {}
 
 
-def test_unset_message_names_resolved_profile(_isolate_settings: Path) -> None:
+def test_unset_message_in_flat_mode(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("log_level: DEBUG\n")
+    result = CliInvoker().invoke(app, ["unset", "log_level"])
+    assert result.exit_code == 0, result.output
+    assert "unset log_level in config" in result.output
+    assert "in profile" not in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {}
+
+
+def test_unset_message_names_resolved_profile(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
     result = CliInvoker().invoke(app, ["unset", "log_level"])
     assert result.exit_code == 0, result.output
-    assert "in profile default" in result.output
+    assert "unset log_level in profile default" in result.output
     assert "<active>" not in result.output
 
 
-def test_unset_with_missing_explicit_profile_errors(_isolate_settings: Path) -> None:
+def test_unset_with_missing_explicit_profile_errors(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
     result = CliInvoker().invoke(app, ["unset", "log_level", "--target-profile", "ghost"])
-    assert result.exit_code != 0
+    assert result.exit_code == 1
+    assert "does not exist" in result.output
     assert "ghost" in result.output
 
 
-def test_unset_with_target_profile_flag_targets_named_profile(_isolate_settings: Path) -> None:
+def test_unset_rejects_target_profile_without_scoped_layout(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("log_level: DEBUG\n")
+    result = CliInvoker().invoke(app, ["unset", "log_level", "--target-profile", "prod"])
+    assert result.exit_code == 1
+    assert "profiles are not available; install the untaped-profile plugin" in result.output
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"log_level": "DEBUG"}
+
+
+def test_unset_with_target_profile_flag_targets_named_profile(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text(
         "profiles:\n  default:\n    log_level: INFO\n  prod:\n    log_level: DEBUG\nactive: prod\n"
     )
@@ -985,12 +1057,22 @@ def test_unset_with_target_profile_flag_targets_named_profile(_isolate_settings:
     result = CliInvoker().invoke(app, ["unset", "log_level", "--target-profile", "default"])
 
     assert result.exit_code == 0, result.output
+    assert "unset log_level in profile default" in result.output
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data["profiles"]["default"] == {}
     assert data["profiles"]["prod"]["log_level"] == "DEBUG"
 
 
-def test_unset_noop_message_names_resolved_profile(_isolate_settings: Path) -> None:
+def test_unset_noop_message_in_flat_mode(_isolate_settings: Path) -> None:
+    result = CliInvoker().invoke(app, ["unset", "log_level"])
+    assert result.exit_code == 0, result.output
+    assert "log_level was not set in config" in result.output
+    assert "in profile" not in result.output
+
+
+def test_unset_noop_message_names_resolved_profile(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text("profiles:\n  default: {}\n")
     result = CliInvoker().invoke(app, ["unset", "log_level"])
     assert result.exit_code == 0, result.output
@@ -998,7 +1080,9 @@ def test_unset_noop_message_names_resolved_profile(_isolate_settings: Path) -> N
     assert "<active>" not in result.output
 
 
-def test_list_all_profiles_shows_per_profile_rows(_isolate_settings: Path) -> None:
+def test_list_all_profiles_shows_per_profile_rows(
+    _isolate_settings: Path, fake_scoped_layout: object
+) -> None:
     _isolate_settings.write_text(
         "profiles:\n"
         "  default:\n    log_level: INFO\n"

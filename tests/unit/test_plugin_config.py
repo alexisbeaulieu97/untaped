@@ -57,25 +57,16 @@ def test_plugin_profile_settings_are_walked_and_redacted(_isolated_config: Path)
     assert ("demo", "token") in secret_field_paths(get_settings_model())
 
 
-def test_get_config_section_resolves_profiles_and_env(
+def test_get_config_section_resolves_config_and_env(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     register_profile_settings("demo", DemoSettings)
-    _isolated_config.write_text(
-        "profiles:\n"
-        "  default:\n"
-        "    demo:\n"
-        "      endpoint: https://default.example\n"
-        "  stage:\n"
-        "    demo:\n"
-        "      endpoint: https://stage.example\n"
-        "active: stage\n"
-    )
+    _isolated_config.write_text("demo:\n  endpoint: https://configured.example\n")
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
 
     section = get_config_section("demo", DemoSettings)
 
-    assert section.endpoint == "https://stage.example"
+    assert section.endpoint == "https://configured.example"
     assert section.token is not None
     assert section.token.get_secret_value() == "from-env"
 
@@ -84,18 +75,12 @@ def test_state_sections_are_spliced_from_top_level(_isolated_config: Path) -> No
     register_profile_settings("demo", DemoSettings)
     register_state_settings("demo", DemoState)
     _isolated_config.write_text(
-        "profiles:\n"
-        "  default:\n"
-        "    demo:\n"
-        "      endpoint: https://profile.example\n"
-        "demo:\n"
-        "  entries:\n"
-        "    - alpha\n"
+        "demo:\n  endpoint: https://configured.example\n  entries:\n    - alpha\n"
     )
 
     settings = get_settings()
 
-    assert settings.demo.endpoint == "https://profile.example"
+    assert settings.demo.endpoint == "https://configured.example"
     assert settings.demo.entries == ["alpha"]
 
 
@@ -113,21 +98,18 @@ def test_profile_settings_cannot_overlap_state_settings() -> None:
         register_profile_settings("demo", DemoSettings)
 
 
-def test_state_splice_only_uses_registered_state_fields(_isolated_config: Path) -> None:
+def test_state_splice_only_uses_registered_state_fields() -> None:
+    """The splice merges only the state model's set fields into the
+    effective dict — a non-state field in the raw top-level block must not
+    clobber the value the layout already resolved."""
+    from untaped.settings import splice_registered_state
+
     register_profile_settings("demo", DemoSettings)
     register_state_settings("demo", DemoState)
-    _isolated_config.write_text(
-        "profiles:\n"
-        "  default:\n"
-        "    demo:\n"
-        "      endpoint: https://profile.example\n"
-        "demo:\n"
-        "  endpoint: https://state.example\n"
-        "  entries:\n"
-        "    - alpha\n"
-    )
+    raw = {"demo": {"endpoint": "https://state.example", "entries": ["alpha"]}}
+    effective = {"demo": {"endpoint": "https://layout.example"}}
 
-    settings = get_settings()
+    splice_registered_state(raw, effective)
 
-    assert settings.demo.endpoint == "https://profile.example"
-    assert settings.demo.entries == ["alpha"]
+    assert effective["demo"]["endpoint"] == "https://layout.example"
+    assert effective["demo"]["entries"] == ["alpha"]
