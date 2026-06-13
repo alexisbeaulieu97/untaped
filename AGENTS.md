@@ -2,14 +2,15 @@
 
 Single source of truth for how `untaped` core is built. AI agents and
 humans both read this file. Plugin internals live in their own repos and
-own `AGENTS.md` files. If you change architecture, update the relevant
-file in the same commit.
+own `AGENTS.md` files. If you change architecture or agent-facing
+workflows, update the relevant instruction and packaged skill files in
+the same commit.
 
 ## Mission
 
 `untaped` is a personal DevOps CLI hub. The root package owns plumbing:
-the binary, plugin discovery, configuration/profile resolution, output,
-stdin, HTTP/TLS, and shared errors. Domain functionality (workspace, awx,
+the binary, plugin discovery, configuration loading, settings layout
+dispatch, output, stdin, HTTP/TLS, and shared errors. Domain functionality (workspace, awx,
 github, profile, …) is delivered by plugins exposing Cyclopts sub-apps
 through the `untaped.plugins` entry point group. Daily DevOps work
 composes — row-oriented `list`/`get`/`status`-style commands are
@@ -37,7 +38,7 @@ untaped/
 
 | Package             | Type | Owns                                                                  | Internals doc |
 | ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
-| `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, profile resolution, output/stdin/http/errors. | this file |
+| `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, root-option dispatch, output/stdin/http/errors. | this file |
 
 Plugins live in their own repositories and depend on the public `untaped`
 plugin API. Current plugins:
@@ -61,10 +62,12 @@ plugin API. Current plugins:
 
 Non-negotiable. Every contribution must respect them.
 
-1. **Keep all `AGENTS.md` files up to date.** Root for core and
-   cross-cutting rules; plugin repos for domain-specific architecture.
-   If you change the plugin contract, a DDD layout, or a cross-cutting
-   helper, edit the relevant file in the same commit.
+1. **Keep all `AGENTS.md` files and packaged `SKILL.md` assets up to
+   date.** Root for core and cross-cutting rules; plugin repos for
+   domain-specific architecture and agent skills. If you change the
+   plugin contract, a DDD layout, a command/settings workflow, or a
+   cross-cutting helper, edit the relevant instruction and skill files
+   in the same commit.
 2. **Prefer `uv` commands over manual `pyproject.toml` edits.** Use
    `uv add`, `uv add --package <name>`, `uv add --group dev`,
    `uv init --package --lib|--app`. Hand-editing is fine for tool config
@@ -306,7 +309,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
 | Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
 | Prompt for typed interactive input         | `from untaped import ui_context, PromptChoice`; use `ui_context(strict=False).confirm/text/secret/select/multiselect(...)` |
-| Register an agent skill from a plugin | `from untaped.plugins import SkillSpec`; call `registry.add_skill(...)` |
+| Register an agent skill from a plugin | `from untaped.api import SkillSpec`; include it in `PluginManifest(skills=(...))` |
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Cyclopts command | `from untaped import FormatOption, ColumnsOption`      |
 | Render `--format`/`--columns` row collections | `from untaped import render_rows` (themed table for humans; theme-independent json/raw for pipes) |
