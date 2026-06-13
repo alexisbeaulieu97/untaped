@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 from collections.abc import Iterable
 from typing import Annotated
 
@@ -10,7 +11,7 @@ from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 from rich.console import Console
 
-from untaped.cli import create_app, echo, raise_usage, run_cyclopts_app
+from untaped.cli import create_app, echo, raise_usage, report_errors, run_cyclopts_app
 from untaped.config import app as config_app
 from untaped.environment import environment_diagnostic, startup_mismatch_warning
 from untaped.plugin_registry import resolve_lazy_cli, resolve_root_option_handler
@@ -25,6 +26,7 @@ from untaped.plugins import (
 from untaped.plugins import (
     app as plugins_app,
 )
+from untaped.settings import get_settings
 from untaped.skills import app as skills_app
 from untaped.skills import register_builtin_skills
 
@@ -59,9 +61,24 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
     app.meta.version_flags = ()
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
-        command_tokens = _consume_leading_root_options(list(tokens), root_options)
-        _mount_lazy_clis(app, registry, command_tokens)
-        return _dispatch_with_root_options(app, command_tokens, root_options)
+        # Root-option handlers mutate ambient process state (env vars, the
+        # settings cache) so the dispatched command resolves under the selected
+        # scope. Snapshot os.environ and restore it after dispatch so those
+        # effects stay scoped to this invocation only — the contract handlers
+        # document — for in-process callers (the CLI process exits anyway).
+        # report_errors gives handler-raised UntapedErrors the same clean
+        # "error: ..." / exit-1 treatment as command bodies.
+        env_snapshot = dict(os.environ)
+        try:
+            with report_errors():
+                command_tokens = _consume_leading_root_options(list(tokens), root_options)
+                _mount_lazy_clis(app, registry, command_tokens)
+                return _dispatch_with_root_options(app, command_tokens, root_options)
+        finally:
+            if dict(os.environ) != env_snapshot:
+                os.environ.clear()
+                os.environ.update(env_snapshot)
+                get_settings.cache_clear()
 
     # Cyclopts renders root-option help from the signature; the options are
     # parse=False because consumption stays manual (leading fast path plus

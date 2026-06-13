@@ -31,6 +31,8 @@ class PluginDepSource:
     kind: Literal["path", "git"]
     target: str
     rev: str | None = None
+    branch: str | None = None
+    tag: str | None = None
     editable: bool = False
 
 
@@ -103,8 +105,9 @@ def dependency_install_spec(
             name=dependency.name,
         )
     reference = f"{dependency.name} @ git+{source.target}"
-    if source.rev:
-        reference += f"@{source.rev}"
+    ref = source.rev or source.tag or source.branch
+    if ref:
+        reference += f"@{ref}"
     return PluginInstallSpec(spec=reference, editable=False, name=dependency.name)
 
 
@@ -178,6 +181,10 @@ def _uv_sources(data: dict[str, object]) -> dict[str, PluginDepSource]:
     return sources
 
 
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
 def _parse_source(entry: dict[str, object]) -> PluginDepSource | None:
     path = entry.get("path")
     if isinstance(path, str):
@@ -188,11 +195,12 @@ def _parse_source(entry: dict[str, object]) -> PluginDepSource | None:
         )
     git = entry.get("git")
     if isinstance(git, str):
-        rev = entry.get("rev")
         return PluginDepSource(
             kind="git",
             target=git,
-            rev=rev if isinstance(rev, str) else None,
+            rev=_optional_str(entry.get("rev")),
+            branch=_optional_str(entry.get("branch")),
+            tag=_optional_str(entry.get("tag")),
         )
     # workspace/index/url sources have no managed-spec translation; the
     # dependency falls back to index resolution under --no-sources.
