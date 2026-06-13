@@ -340,6 +340,20 @@ def set_current_registry(registry: PluginRegistry) -> None:
     _CURRENT_REGISTRY = registry
 
 
+def _resolve_import_target(import_path: str, owner: str) -> object:
+    """Import the ``module:attribute`` target behind a spec.
+
+    Wraps import failures in a ``ConfigError`` labelled with ``owner`` and
+    returns the attribute (``None`` when absent) for the caller to type-check.
+    """
+    module_name, _, attribute = import_path.partition(":")
+    try:
+        module = import_module(module_name)
+    except Exception as exc:
+        raise ConfigError(f"{owner} failed to import {module_name!r}: {exc}") from exc
+    return getattr(module, attribute, None)
+
+
 def resolve_lazy_cli(spec: CliSpec) -> App:
     """Import and return the Cyclopts app behind a CLI spec."""
     if spec.app is not None:
@@ -347,14 +361,7 @@ def resolve_lazy_cli(spec: CliSpec) -> App:
     import_path = spec.import_path
     if import_path is None:  # pragma: no cover - CliSpec.__post_init__ forbids this
         raise ConfigError(f"CLI spec {spec.name!r} has neither app nor import_path")
-    module_name, _, attribute = import_path.partition(":")
-    try:
-        module = import_module(module_name)
-    except Exception as exc:
-        raise ConfigError(
-            f"plugin command {spec.name!r} failed to import {module_name!r}: {exc}"
-        ) from exc
-    app = getattr(module, attribute, None)
+    app = _resolve_import_target(import_path, f"plugin command {spec.name!r}")
     if not isinstance(app, App):
         raise ConfigError(
             f"plugin command {spec.name!r}: {import_path!r} does not resolve to a cyclopts App"
@@ -364,12 +371,7 @@ def resolve_lazy_cli(spec: CliSpec) -> App:
 
 def resolve_settings_layout(spec: SettingsLayoutSpec) -> SettingsLayout:
     """Import and return the layout instance behind a settings layout spec."""
-    module_name, _, attribute = spec.import_path.partition(":")
-    try:
-        module = import_module(module_name)
-    except Exception as exc:
-        raise ConfigError(f"settings layout failed to import {module_name!r}: {exc}") from exc
-    layout = getattr(module, attribute, None)
+    layout = _resolve_import_target(spec.import_path, "settings layout")
     if not isinstance(layout, SettingsLayout):
         raise ConfigError(
             f"settings layout {spec.import_path!r} does not resolve to a SettingsLayout"
@@ -379,14 +381,7 @@ def resolve_settings_layout(spec: SettingsLayoutSpec) -> SettingsLayout:
 
 def resolve_root_option_handler(spec: RootOptionSpec) -> Callable[[str], None]:
     """Import and return the handler behind a root option spec."""
-    module_name, _, attribute = spec.handler_import_path.partition(":")
-    try:
-        module = import_module(module_name)
-    except Exception as exc:
-        raise ConfigError(
-            f"root option {spec.name!r} failed to import {module_name!r}: {exc}"
-        ) from exc
-    handler = getattr(module, attribute, None)
+    handler = _resolve_import_target(spec.handler_import_path, f"root option {spec.name!r}")
     if not callable(handler):
         raise ConfigError(
             f"root option {spec.name!r}: {spec.handler_import_path!r} "
