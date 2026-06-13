@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
-from untaped.api import ProfileOverrideOption, echo, profile_override, report_errors
+from untaped.api import echo, report_errors
 
 from untaped_workspace.application import (
     AdoptWorkspace,
@@ -52,14 +52,13 @@ def init_command(
         str | None,
         Parameter(name=["--branch", "-b"], help="Default branch for newly cloned repos."),
     ] = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Initialise a new workspace named `name`.
 
     Default location is `<workspace.workspaces_dir>/<name>` (the
     `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
     """
-    with report_errors(), profile_override(profile):
+    with report_errors():
         target = path or (workspace_settings().workspaces_dir.expanduser() / name)
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
@@ -74,7 +73,6 @@ def adopt_command(
         str | None,
         Parameter(name=["--name", "-n"], help="Registry name (default: dirname)."),
     ] = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Adopt existing workspace state under `path`.
 
@@ -83,7 +81,7 @@ def adopt_command(
     subdirectory containing `.git` is recorded in a new manifest with
     its current `origin` URL and checked-out branch.
     """
-    with report_errors(), profile_override(profile):
+    with report_errors():
         bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
         result = AdoptWorkspace(
             bootstrapper,
@@ -120,7 +118,6 @@ def forget_command(
         bool,
         Parameter(name=["--yes", "-y"], negative="", help="Skip the prune confirmation prompt."),
     ] = False,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Remove a workspace from the registry.
 
@@ -128,7 +125,7 @@ def forget_command(
     `--prune` to also remove the workspace directory (refused if any
     repo has uncommitted changes).
     """
-    with report_errors(), profile_override(profile):
+    with report_errors():
         if prune and not confirm(f"prune workspace directory for {name!r}?", yes=yes):
             echo("aborted", err=True)
             raise SystemExit(1)
@@ -159,10 +156,9 @@ def import_command(
             help="Clone the imported repos immediately (only the repos in <source>).",
         ),
     ] = False,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         manifests = ManifestRepository()
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
         result = ImportWorkspace(manifests, bootstrapper)(source, path=dest, name=name)

@@ -6,9 +6,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 from untaped.api import (
-    ProfileOverrideOption,
     echo,
-    profile_override,
     raise_usage,
     read_identifiers,
     report_errors,
@@ -66,7 +64,6 @@ def add_command(
             ),
         ),
     ] = False,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Add one or more repos to a workspace's manifest.
 
@@ -76,7 +73,7 @@ def add_command(
     """
     add_repo = AddRepo(ManifestRepository())
     any_failed = False
-    with report_errors(), profile_override(profile):
+    with report_errors():
         idents = read_identifiers(list(urls or []), stdin=stdin)
         if repo_name is not None and len(idents) > 1:
             raise_usage(
@@ -130,10 +127,9 @@ def remove_command(
         bool,
         Parameter(name=["--yes", "-y"], negative="", help="Skip the prune confirmation prompt."),
     ] = False,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Remove one or more repos from a workspace's manifest."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = resolve_workspace(workspace, path)
         remove_repo = RemoveRepo(ManifestRepository(), fs=LocalFilesystem(), status=GitRunner())

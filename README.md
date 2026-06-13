@@ -46,9 +46,10 @@ untaped workspace shell-init zsh
 untaped workspace edit [--workspace <ws> | --path <dir>]
 ```
 
-Workspace commands that read registry or profile settings accept
-command-local `--profile <name>`, so the selector can stay with the
-workspace command:
+Profile selection uses the root `--profile` option — contributed by the
+[`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
+plugin — which works in any token position, so the selector can stay with
+the workspace command:
 
 ```bash
 untaped workspace init prod --profile work

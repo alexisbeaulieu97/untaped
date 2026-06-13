@@ -8,9 +8,7 @@ from cyclopts import App, Parameter
 from untaped.api import (
     ColumnsOption,
     FormatOption,
-    ProfileOverrideOption,
     echo,
-    profile_override,
     read_identifiers,
     render_rows,
     report_errors,
@@ -49,10 +47,9 @@ def list_command(
     *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """List registered workspaces."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
         echo(render_rows(rows, fmt=fmt, columns=columns))
@@ -64,10 +61,9 @@ def show_command(
     path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Show manifest details for one workspace."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         ws = resolve_workspace(workspace, path)
         rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
         echo(render_rows(rows, fmt=fmt, columns=columns))
@@ -84,12 +80,11 @@ def path_command(
             help="Read workspace names from stdin (one per line).",
         ),
     ] = False,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Print the absolute path of one or more workspaces (one per line)."""
     get_path = WorkspacePath(WorkspaceRegistryRepository())
     any_failed = False
-    with report_errors(), profile_override(profile):
+    with report_errors():
         idents = read_identifiers(list(names or []), stdin=stdin)
 
         def _echo_path(workspace_name: str) -> None:
@@ -118,10 +113,9 @@ def edit_command(
         str | None,
         Parameter(name=["--editor", "-e"], help="Override $VISUAL/$EDITOR."),
     ] = None,
-    profile: ProfileOverrideOption = None,
 ) -> None:
     """Open the workspace directory in your editor."""
-    with report_errors(), profile_override(profile):
+    with report_errors():
         ws = resolve_workspace(workspace, path)
         argv = resolve_editor_argv(editor)
         rc = EditWorkspace(runner=editor_runner)(ws, argv=argv)
