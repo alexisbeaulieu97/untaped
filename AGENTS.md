@@ -9,14 +9,16 @@ workflow, update this file in the same commit.
 `untaped-workspace` is an `untaped` plugin. It owns the `untaped workspace`
 command group for local git workspaces: per-workspace `untaped.yml`
 manifests, central registry state, git sync/status operations, and shell
-helpers. `untaped` core owns the binary, plugin discovery, config/profile
-resolution, output helpers, stdin helpers, HTTP/TLS primitives, and shared
-errors.
+helpers. `untaped` core owns the binary, plugin discovery, config loading,
+output helpers, stdin helpers, HTTP/TLS primitives, and shared errors.
+Profile selection is contributed by `untaped-profile`.
 
 ## Hard Rules
 
-1. **Keep `AGENTS.md` up to date.** Architecture changes and new command
-   patterns must be documented here.
+1. **Keep `AGENTS.md` and the packaged skill up to date.** Architecture
+   changes, new command patterns, settings changes, and major workspace
+   workflow changes must be documented here and in
+   `src/untaped_workspace/skills/untaped-workspace/SKILL.md`.
 2. **Prefer `uv` commands over manual dependency edits.** Use `uv add` and
    `uv add --group dev`; hand-edit tool config only.
 3. **Expose the plugin through the `untaped.plugins` entry point.**
