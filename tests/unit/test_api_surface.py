@@ -10,6 +10,9 @@ EXPECTED_SURFACE = frozenset(
         "CliSpec",
         "PluginManifest",
         "PluginRegistry",
+        "RootOptionSpec",
+        "SettingsLayout",
+        "SettingsLayoutSpec",
         "UntapedPlugin",
         "SkillSpec",
         "DiagnosticResult",
@@ -34,7 +37,6 @@ EXPECTED_SURFACE = frozenset(
         "ColumnsOption",
         "FormatOption",
         "OutputFormat",
-        "ProfileOverrideOption",
         "clamp_parallel",
         "create_app",
         "echo",
@@ -48,6 +50,10 @@ EXPECTED_SURFACE = frozenset(
         # Settings access
         "get_config_section",
         "get_core_settings",
+        "invalidate_settings_cache",
+        # Deprecated transitional v3 compat (removal gated on the
+        # plugin-API-v4 rollout finishing across the plugin repos)
+        "ProfileOverrideOption",
         "profile_override",
         # Interactive UI
         "PromptChoice",
@@ -76,3 +82,21 @@ def test_api_names_resolve() -> None:
     api = importlib.import_module("untaped.api")
     unresolved = [name for name in api.__all__ if not hasattr(api, name)]
     assert not unresolved, f"untaped.api.__all__ names that do not resolve: {unresolved}"
+
+
+def test_api_keeps_v3_profile_compat_shims() -> None:
+    """Profile selection moved to the untaped-profile plugin (API v4), but
+    released v3 plugins still import these names at command dispatch; they
+    stay as deprecated shims until the rollout completes (release-smoke
+    regression, PR #273)."""
+    api = importlib.import_module("untaped.api")
+    for name in ("ProfileOverrideOption", "profile_override"):
+        assert hasattr(api, name), f"untaped.api.{name} must stay importable"
+        assert name in api.__all__
+
+
+def test_api_exposes_get_settings_for_root_option_handlers() -> None:
+    """Root-option handlers re-read settings after invalidating the cache."""
+    api = importlib.import_module("untaped.api")
+    assert callable(api.get_settings)
+    assert callable(api.invalidate_settings_cache)

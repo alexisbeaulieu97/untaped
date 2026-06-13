@@ -15,12 +15,10 @@ from untaped import (
     FieldDescriptor,
     FormatOption,
     OutputFormat,
-    ProfileOverrideOption,
     PromptChoice,
     UiContext,
     create_app,
     echo,
-    profile_override,
     raise_usage,
     render_rows,
     report_errors,
@@ -34,7 +32,7 @@ from untaped.config.application import (
     SetSetting,
     UnsetSetting,
 )
-from untaped.config.domain import SettingEntry
+from untaped.config.domain import SettingEntry, display_default, display_value
 from untaped.config.infrastructure import SettingsFileRepository
 from untaped.plugin_registry import current_registry
 
@@ -49,7 +47,6 @@ def list_command(
     *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    profile: ProfileOverrideOption = None,
     show_secrets: Annotated[
         bool,
         Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
@@ -64,19 +61,17 @@ def list_command(
 ) -> None:
     """List configurable settings.
 
-    Default view: the effective values resolved from the active profile (with
-    fallback to ``default`` and schema defaults). Use ``--all-profiles`` to
-    inspect what every profile has set, regardless of which is active.
+    Default view: the effective values (resolved through the active settings
+    layout, schema defaults beneath). With the untaped-profile plugin
+    installed, ``--all-profiles`` shows one row per (profile, key) instead.
     """
     with report_errors():
-        if all_profiles and profile is not None:
-            raise_usage("Cannot combine --profile with --all-profiles.")
-        with profile_override(profile):
-            repo = SettingsFileRepository()
-            if all_profiles:
-                entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
-            else:
-                entries = ListSettings(repo)(reveal_secrets=show_secrets)
+        repo = SettingsFileRepository()
+        if all_profiles:
+            _require_profiles(repo, flag="--all-profiles")
+            entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
+        else:
+            entries = ListSettings(repo)(reveal_secrets=show_secrets)
         rows = [_entry_to_row(e) for e in entries]
         echo(render_rows(rows, fmt=fmt, columns=columns))
 
@@ -90,7 +85,6 @@ def get_command(
     /,
     *,
     fmt: FormatOption = "raw",
-    profile: ProfileOverrideOption = None,
     show_secrets: Annotated[
         bool,
         Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
@@ -98,10 +92,7 @@ def get_command(
 ) -> None:
     """Print one effective scalar setting value."""
     with report_errors():
-        if _is_global_ui_key(key) and profile is not None:
-            raise ConfigError("ui settings are global; --profile cannot be used")
-        with profile_override(profile):
-            entry = GetSetting(SettingsFileRepository())(key, reveal_secrets=show_secrets)
+        entry = GetSetting(SettingsFileRepository())(key, reveal_secrets=show_secrets)
         echo(_render_detail(_entry_to_row(entry), fmt=fmt))
 
 
@@ -149,6 +140,8 @@ def set_command(
         target = SetSetting(repo)(key, resolved_value, profile=target_profile)
         if _is_global_ui_key(key):
             message = f"set {key} globally (config: {resolve_config_path()})"
+        elif target is None:
+            message = f"set {key} (config: {resolve_config_path()})"
         else:
             message = f"set {key} in profile {target} (config: {resolve_config_path()})"
         ui_context(strict=False).message("success", message)
@@ -239,11 +232,20 @@ def _prompt_default(
     *,
     target_profile: str | None,
 ) -> str | None:
-    with profile_override(target_profile):
-        entry = GetSetting(repo)(key)
-    if entry.value in {"", "—", "***"}:
-        return None
+    entry = GetSetting(repo)(key)
     value = str(entry.value)
+    if target_profile is not None and entry.source.kind != "env":
+        # The prompt edits the target scope, so the prefill must reflect
+        # that scope's view rather than the ambient active one. Env
+        # overrides apply to every scope and keep precedence.
+        scoped = repo.scope_value_for(descriptor, target_profile)
+        value = (
+            display_default(descriptor)
+            if scoped is None
+            else display_value(descriptor, scoped, reveal_secrets=False)
+        )
+    if value in {"", "—", "***"}:
+        return None
     if descriptor.annotation is bool:
         return value.lower()
     return value
@@ -291,16 +293,18 @@ def unset_command(
         ),
     ] = None,
 ) -> None:
-    """Remove ``key`` from a profile (no-op if it wasn't set)."""
+    """Remove ``key`` from the resolved write scope (no-op if it wasn't set)."""
     with report_errors():
         removed, target = UnsetSetting(SettingsFileRepository())(key, profile=target_profile)
         if _is_global_ui_key(key):
             message = f"unset {key} globally" if removed else f"{key} was not set globally"
             ui_context(strict=False).message("success" if removed else "info", message)
-        elif removed:
-            ui_context(strict=False).message("success", f"unset {key} in profile {target}")
+            return
+        where = f"in profile {target}" if target else "in config"
+        if removed:
+            ui_context(strict=False).message("success", f"unset {key} {where}")
         else:
-            ui_context(strict=False).message("info", f"{key} was not set in profile {target}")
+            ui_context(strict=False).message("info", f"{key} was not set {where}")
 
 
 def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
@@ -323,3 +327,11 @@ def _render_detail(record: dict[str, object], *, fmt: OutputFormat) -> str:
 
 def _is_global_ui_key(key: str) -> bool:
     return key.startswith("ui.")
+
+
+def _require_profiles(repo: SettingsFileRepository, *, flag: str) -> None:
+    if not repo.supports_profiles():
+        raise ConfigError(
+            f"{flag} requires profiles; install the untaped-profile plugin "
+            "(untaped plugins add untaped-profile)"
+        )

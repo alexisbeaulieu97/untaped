@@ -487,3 +487,113 @@ def test_plugins_add_batch_rejects_invalid_spec_before_changing_config(
     assert result.exit_code == 1
     assert "could not infer plugin name from direct URL" in result.output
     assert _isolated_config.read_text() == original
+
+
+def _write_plugin_with_dep(
+    tmp_path: Path,
+    name: str,
+    *,
+    dep_name: str | None = None,
+    dep_source: str | None = None,
+) -> Path:
+    path = tmp_path / name
+    path.mkdir(parents=True)
+    body = f'[project]\nname = "{name}"\nversion = "0.1.0"\n'
+    if dep_name is not None:
+        body += f'dependencies = ["{dep_name}>=0.1.0"]\n'
+    if dep_name is not None and dep_source is not None:
+        body += f"\n[tool.uv.sources]\n{dep_name} = {dep_source}\n"
+    (path / "pyproject.toml").write_text(body)
+    return path
+
+
+def test_plugins_add_auto_records_local_plugin_dependency(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    _write_plugin_with_dep(tmp_path, "untaped-github")
+    ansible = _write_plugin_with_dep(
+        tmp_path,
+        "untaped-ansible",
+        dep_name="untaped-github",
+        dep_source='{ path = "../untaped-github" }',
+    )
+
+    result = CliInvoker().invoke(plugins_app, ["add", str(ansible), "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "auto-recorded plugin dependency" in result.output
+    assert "required by untaped-ansible" in result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    specs = {pkg["name"]: pkg for pkg in data["plugins"]["packages"]}
+    assert set(specs) == {"untaped-ansible", "untaped-github"}
+    assert specs["untaped-github"]["spec"] == str(tmp_path / "untaped-github")
+
+
+def test_plugins_add_no_auto_deps_records_only_requested_plugin(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    _write_plugin_with_dep(tmp_path, "untaped-github")
+    ansible = _write_plugin_with_dep(
+        tmp_path,
+        "untaped-ansible",
+        dep_name="untaped-github",
+        dep_source='{ path = "../untaped-github" }',
+    )
+
+    result = CliInvoker().invoke(plugins_app, ["add", str(ansible), "--no-auto-deps", "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "auto-recorded" not in result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert [pkg["name"] for pkg in data["plugins"]["packages"]] == ["untaped-ansible"]
+
+
+def test_plugins_add_does_not_auto_record_already_recorded_dependency(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    github = _write_plugin_with_dep(tmp_path, "untaped-github")
+    ansible = _write_plugin_with_dep(
+        tmp_path,
+        "untaped-ansible",
+        dep_name="untaped-github",
+        dep_source='{ path = "../untaped-github" }',
+    )
+    _isolated_config.write_text(
+        "plugins:\n  packages:\n"
+        f"    - spec: {str(github)!r}\n      editable: false\n      name: untaped-github\n"
+    )
+
+    result = CliInvoker().invoke(plugins_app, ["add", str(ansible), "--no-sync"])
+
+    assert result.exit_code == 0, result.output
+    assert "auto-recorded" not in result.output
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert [pkg["name"] for pkg in data["plugins"]["packages"]] == [
+        "untaped-github",
+        "untaped-ansible",
+    ]
+
+
+def test_plugins_add_sync_failure_rolls_back_auto_recorded_dependencies(
+    _isolated_config: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _managed_venv(tmp_path, monkeypatch)
+    _record_core(_isolated_config)
+    _write_plugin_with_dep(tmp_path, "untaped-github")
+    ansible = _write_plugin_with_dep(
+        tmp_path,
+        "untaped-ansible",
+        dep_name="untaped-github",
+        dep_source='{ path = "../untaped-github" }',
+    )
+
+    def _run(_: list[str], **__: Any) -> Any:
+        return type("Result", (), {"returncode": 2})()
+
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
+
+    result = CliInvoker().invoke(plugins_app, ["add", str(ansible)])
+
+    assert result.exit_code == 1
+    data = yaml.safe_load(_isolated_config.read_text())
+    assert data["plugins"] == {"tool": {"spec": "untaped", "editable": False}}

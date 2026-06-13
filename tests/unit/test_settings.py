@@ -52,15 +52,13 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            log_level: DEBUG
-            http:
-              ca_bundle: /etc/ssl/corp-ca.pem
-              verify_ssl: true
-            demo:
-              base_url: https://aap.example.com
-              token: secret
+        log_level: DEBUG
+        http:
+          ca_bundle: /etc/ssl/corp-ca.pem
+          verify_ssl: true
+        demo:
+          base_url: https://aap.example.com
+          token: secret
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -74,7 +72,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    demo:\n      token: ultra-secret-value\n")
+    cfg.write_text("demo:\n  token: ultra-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
     assert s.demo.token is not None
@@ -86,7 +84,7 @@ def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.Monke
 
 def test_env_var_overrides_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("profiles:\n  default:\n    demo:\n      token: from-yaml\n")
+    cfg.write_text("demo:\n  token: from-yaml\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
     s = get_settings()
@@ -136,9 +134,7 @@ def test_ui_settings_load_from_top_level_yaml(
           collection_view: list
           symbols:
             warning: "!"
-        profiles:
-          default:
-            log_level: DEBUG
+        log_level: DEBUG
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -154,13 +150,11 @@ def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.Monkey
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            demo:
-              base_url: https://awx.example.com
-              api_prefix: /api/v2/
-              default_organization: Default
-              page_size: 100
+        demo:
+          base_url: https://awx.example.com
+          api_prefix: /api/v2/
+          default_organization: Default
+          page_size: 100
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -202,9 +196,9 @@ def test_get_settings_translates_yaml_error_to_config_error(
 ) -> None:
     """A broken ``~/.untaped/config.yml`` must surface from ``get_settings``
     as ``ConfigError`` (clean ``error: …``) — not as a ``yaml.YAMLError``
-    bubbling out of ``ProfilesSettingsSource._load_raw_yaml``."""
+    bubbling out of ``LayoutSettingsSource._load_raw_yaml``."""
     cfg = tmp_path / "config.yml"
-    cfg.write_text("active: [unterminated\n")
+    cfg.write_text("log_level: [unterminated\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     with pytest.raises(ConfigError, match=str(cfg)):
         get_settings()
@@ -219,10 +213,8 @@ def test_get_settings_translates_validation_error_to_config_error(
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        profiles:
-          default:
-            demo:
-              page_size: not-an-int
+        demo:
+          page_size: not-an-int
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

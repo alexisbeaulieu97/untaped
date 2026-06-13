@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from untaped import ConfigError, resolve_profiles
+from untaped import (
+    ConfigError,
+    classify_active_profile,
+    effective_active_profile_name,
+    resolve_profiles,
+)
 
 
 def test_empty_config_returns_empty() -> None:
@@ -190,3 +195,36 @@ def test_keys_outside_profiles_are_ignored_by_resolver() -> None:
     effective, provenance = resolve_profiles(config)
     assert effective == {"awx": {"token": "d"}}
     assert provenance == {("awx", "token"): "default"}
+
+
+# ----------------------- active-profile classification ----------------------- #
+
+
+def test_classify_active_profile_prefers_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
+    assert classify_active_profile({"active": "prod"}) == ("stage", "env")
+
+
+def test_classify_active_profile_reads_persisted_active(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    assert classify_active_profile({"active": "prod"}) == ("prod", "config")
+
+
+def test_classify_active_profile_falls_back_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
+    assert classify_active_profile({}) == (None, "fallback")
+    assert classify_active_profile({"active": ""}) == (None, "fallback")
+
+
+def test_effective_active_profile_name_matches_classification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNTAPED_PROFILE", "stage")
+    assert effective_active_profile_name({"active": "prod"}) == "stage"
+    monkeypatch.delenv("UNTAPED_PROFILE")
+    assert effective_active_profile_name({"active": "prod"}) == "prod"
+    assert effective_active_profile_name({}) is None

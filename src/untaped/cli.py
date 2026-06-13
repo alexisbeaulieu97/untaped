@@ -41,7 +41,14 @@ ProfileOverrideOption = Annotated[
         help="Override the active profile for this command only.",
     ),
 ]
-"""Command-local read-time profile override for plugin/read commands."""
+"""Deprecated (plugin API v4): command-local read-time profile override.
+
+Profile selection is plugin-owned now — new code should rely on the root
+``--profile`` option contributed by the untaped-profile plugin. This alias
+stays importable because released v3-era plugins annotate their command
+parameters with it; removal is gated on the plugin-API-v4 rollout finishing
+across the plugin repos.
+"""
 
 
 def create_app(*, name: str, help: str = "") -> App:
@@ -140,7 +147,15 @@ def existing_file(type_: object, value: Path | None) -> None:
 
 @contextmanager
 def profile_override(name: str | None) -> Iterator[None]:
-    """Temporarily override ``UNTAPED_PROFILE`` for a command body."""
+    """Temporarily override ``UNTAPED_PROFILE`` for a command body.
+
+    Deprecated (plugin API v4): profile selection is plugin-owned and happens
+    before dispatch via the root ``--profile`` option. This shim stays because
+    released v3-era plugins wrap command bodies in it; it composes with the
+    untaped-profile plugin's scoped settings layout (which honours
+    ``UNTAPED_PROFILE``) and is inert under the default flat layout. Removal
+    is gated on the plugin-API-v4 rollout finishing across the plugin repos.
+    """
     if name is None:
         yield
         return

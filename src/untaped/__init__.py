@@ -27,6 +27,10 @@ from untaped.errors import ConfigError, HttpError, UntapedError, first_validatio
 from untaped.http import HttpClient, resolve_verify
 from untaped.output import OutputFormat, format_output
 from untaped.plugin_registry import SkillSpec
+
+# Deprecated transitional v3 compat (plugin API v4 extracted profiles to the
+# untaped-profile plugin): released v3-era plugins import these names, so
+# they stay re-exported until the rollout completes across the plugin repos.
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     ProfileSource,

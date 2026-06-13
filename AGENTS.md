@@ -180,6 +180,19 @@ class XPlugin:
         )
 ```
 
+**Api version 4 (declarative + root contributions):** same manifest contract
+as version 3 plus two optional fields that only v4 plugins may set —
+`root_options` (a sequence of `RootOptionSpec(name="--profile", help=...,
+handler_import_path="pkg.mod:handler")` adding value-taking root-level
+options whose handlers run before the command body) and `settings_layout`
+(`SettingsLayoutSpec(import_path="pkg.mod:LAYOUT")` resolving lazily to a
+`SettingsLayout` that maps the raw config dict to effective settings; at most
+one plugin may contribute one). A v3 manifest that populates either field is
+rejected at registration. Root options work in any token position: leading
+occurrences are consumed before dispatch, and an unknown-option parse error
+matching a registered root option triggers a strip-and-retry, so passthrough
+commands and commands declaring a homonymous option keep their own tokens.
+
 **Legacy (api version 2, imperative):** `untaped_api_version = 2` plus
 `register(self, registry: PluginRegistry) -> None` calling the registry hooks
 below. Still accepted; new plugins use manifests.
@@ -248,15 +261,28 @@ resolution. Managed sync uses the recorded core/plugin specs as the runtime
 source of truth and invokes `uv pip compile --no-sources`, so plugin
 repo-local `[tool.uv.sources]` tables remain development metadata only.
 Dependencies that exist only in a plugin checkout's `[tool.uv.sources]` table
-are not installed by managed sync. For editable multi-plugin development,
+are not installed by managed sync. When adding a **local** plugin checkout,
+`untaped plugins add` auto-records its path/git-sourced untaped-plugin
+dependencies as explicit specs (recursively; `--no-auto-deps` opts out; see
+`plugin_deps.py`); git/index specs are never inspected because their source
+tables describe the author's machine. For editable multi-plugin development,
 record every local plugin checkout that should be installed into the managed
 environment.
 
-Profile selection has two distinct CLI meanings. Read-time overrides use
-`ProfileOverrideOption` plus `profile_override(...)` and expose `--profile`
-on the command that reads settings; the helper restores `UNTAPED_PROFILE`
-and clears the `get_settings()` cache after the command body. Config mutation
-commands use `--target-profile` when choosing which profile to write to.
+Profile selection is fully plugin-owned: core has no profile concept. The
+untaped-profile plugin contributes the root `--profile` option (works in
+any token position via leading consumption plus strip-on-unknown-option
+retry) and the profiles settings layout; without it, the config is a flat
+single document and `profiles:`/`active:` keys are ignored with a stderr
+warning. Commands read settings via bare `plugin_context()` — never declare
+a command-local `--profile`. `ProfileOverrideOption`, `profile_override`,
+`plugin_context(profile=...)`, `profile_resolver.py`, and the config-file
+profile helpers are deprecated transitional v3 compat shims: released
+v2/v3-era plugins import them (the release-smoke stack at entry-point load
+time), so they stay importable — but core never uses them — until the
+plugin-API-v4 rollout finishes across the plugin repos, after which they are
+removed. Config mutation commands still accept `--target-profile`; it errors
+unless a scoped settings layout is registered.
 
 The default view is one row per plugin package/name, not separate rows for
 "loaded" and "desired" state. A desired package such as `untaped-awx` is
@@ -273,7 +299,9 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Standard "setting not configured" error    | `from untaped.api import missing_setting_error`             |
 | Walk paginated API collections             | `from untaped.api import paginate_offset, paginate_pages`   |
 | Read core settings only                    | `from untaped import get_core_settings`                     |
-| Add a command-local read-time profile override | `from untaped import ProfileOverrideOption, profile_override` (prefer `plugin_context(profile)` in new code) |
+| Contribute a root-level option from a plugin | `from untaped.api import RootOptionSpec` (manifest `root_options`, requires `untaped_api_version = 4`) |
+| Contribute a settings layout from a plugin | `from untaped.api import SettingsLayout, SettingsLayoutSpec` (manifest `settings_layout`, v4; at most one across all plugins) |
+| Invalidate cached settings from a root-option handler | `from untaped.api import invalidate_settings_cache` |
 | Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
 | Make an HTTP call                          | `from untaped import HttpClient`                            |
 | Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
@@ -300,8 +328,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Validate a Settings dict in isolation from disk/env | `from untaped import validate_settings_isolated` (used by built-in `config` write path; same shape any future read-modify-write helper needs) |
 | Read/write `~/.untaped/config.yml`         | `from untaped.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
 | Atomic read-modify-write the config file   | `from untaped.config_file import mutate_config` (file-locked) |
-| Read/write a single profile                | `from untaped.config_file import read_profile, write_profile, list_profile_names, get_active_profile_name, set_active_profile, delete_profile, rename_profile` |
-| Merge `default` ⤥ active to an effective dict | `from untaped import resolve_profiles` |
+| Read/write profiles                        | owned by `untaped-profile` (`untaped_profile.infrastructure.ProfileFileRepository`, built on `read_config_dict`/`mutate_config`) |
 | Mark a secret field                        | `pydantic.SecretStr`                                             |
 | Declare port `Protocol`s for a plugin      | `<plugin>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
 | Declare DTOs that cross app/infra boundary | `<plugin>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |

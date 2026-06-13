@@ -45,6 +45,11 @@ def sync_state_unlocked(state: PluginsState) -> None:
                 output_path,
             ),
             "plugin dependency resolution failed",
+            hint=(
+                "plugin [tool.uv.sources] entries are ignored here; if a plugin "
+                "depends on another untaped plugin that is not on an index, record "
+                "the dependency explicitly with `untaped plugins add <path-or-url>`"
+            ),
         )
         _run_command(
             uv_pip_sync_command(python, output_path),
@@ -138,8 +143,11 @@ def _requirement_line(spec: str, *, editable: bool) -> str:
     return f"-e {spec}" if editable else spec
 
 
-def _run_command(cmd: list[str], failure: str) -> None:
+def _run_command(cmd: list[str], failure: str, *, hint: str | None = None) -> None:
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
         rendered = " ".join(shlex.quote(part) for part in cmd)
-        raise ConfigError(f"{failure} with exit {result.returncode}: {rendered}")
+        message = f"{failure} with exit {result.returncode}: {rendered}"
+        if hint is not None:
+            message += f"\nhint: {hint}"
+        raise ConfigError(message)

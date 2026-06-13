@@ -27,49 +27,36 @@ class DemoSettings(BaseModel):
 def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
     reset_config_registry_for_tests()
     get_settings.cache_clear()
     yield cfg
-    os.environ.pop("UNTAPED_PROFILE", None)
     reset_config_registry_for_tests()
     get_settings.cache_clear()
-
-
-def _write_profiles(cfg: Path) -> None:
-    cfg.write_text(
-        "profiles:\n"
-        "  default:\n"
-        "    demo:\n"
-        "      endpoint: https://default.example\n"
-        "  stage:\n"
-        "    demo:\n"
-        "      endpoint: https://stage.example\n"
-    )
 
 
 def test_plugin_context_exposes_registered_section(_isolated_config: Path) -> None:
     register_profile_settings("demo", DemoSettings)
-    _write_profiles(_isolated_config)
+    _isolated_config.write_text("demo:\n  endpoint: https://configured.example\n")
 
     ctx = plugin_context()
 
     assert isinstance(ctx, PluginContext)
-    assert ctx.section("demo", DemoSettings).endpoint == "https://default.example"
+    assert ctx.section("demo", DemoSettings).endpoint == "https://configured.example"
 
 
-def test_plugin_context_resolves_profile_without_leaking_state(
-    _isolated_config: Path,
+def test_plugin_context_accepts_deprecated_profile_override(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    register_profile_settings("demo", DemoSettings)
-    _write_profiles(_isolated_config)
+    """Scope selection happens before dispatch via plugin root options, but
+    released v3-era plugins still pass ``plugin_context(profile)``; the
+    deprecated override must resolve settings without leaking into ambient
+    process state (release-smoke regression, PR #273)."""
+    monkeypatch.delenv("UNTAPED_PROFILE", raising=False)
 
     ctx = plugin_context(profile="stage")
 
-    assert ctx.section("demo", DemoSettings).endpoint == "https://stage.example"
-    # The override must not leak into ambient process state.
+    assert isinstance(ctx, PluginContext)
     assert "UNTAPED_PROFILE" not in os.environ
-    assert get_settings().demo.endpoint == "https://default.example"  # type: ignore[attr-defined]
 
 
 def test_plugin_context_section_rejects_unregistered_sections(

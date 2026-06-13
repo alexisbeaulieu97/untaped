@@ -20,6 +20,7 @@ from untaped.cli import (
 )
 from untaped.config_file import mutate_config
 from untaped.errors import ConfigError
+from untaped.plugin_deps import expand_plugin_dependencies
 from untaped.plugin_registry import (
     ENTRY_POINT_GROUP,
     CliSpec,
@@ -27,6 +28,8 @@ from untaped.plugin_registry import (
     PluginLoadError,
     PluginManifest,
     PluginRegistry,
+    RootOptionSpec,
+    SettingsLayoutSpec,
     SkillSpec,
     UntapedPlugin,
     current_registry,
@@ -63,6 +66,8 @@ __all__ = [
     "PluginLoadError",
     "PluginManifest",
     "PluginRegistry",
+    "RootOptionSpec",
+    "SettingsLayoutSpec",
     "SkillSpec",
     "UntapedPlugin",
     "app",
@@ -97,6 +102,13 @@ def add_command(
         bool,
         Parameter(name="--no-sync", help="Record only; do not run uv."),
     ] = False,
+    no_auto_deps: Annotated[
+        bool,
+        Parameter(
+            name="--no-auto-deps",
+            help="Do not auto-record local plugin dependencies.",
+        ),
+    ] = False,
 ) -> None:
     """Record desired plugin packages and optionally sync the managed venv."""
     if not package_specs and not stdin:
@@ -107,9 +119,18 @@ def add_command(
             canonical_install_spec(package_spec, editable=editable)
             for package_spec in requested_specs
         ]
+        auto_specs: list[tuple[PluginInstallSpec, str]] = []
+        if not no_auto_deps:
+            recorded = {plugin_package_key(package) for package in plugin_state().packages}
+            auto_specs = expand_plugin_dependencies(specs, already_recorded=recorded)
 
-        record_added_specs(specs, sync=not no_sync)
+        record_added_specs(specs + [spec for spec, _ in auto_specs], sync=not no_sync)
         ui = ui_context(strict=False)
+        for spec, parent in auto_specs:
+            ui.message(
+                "info",
+                f"auto-recorded plugin dependency: {spec.spec} (required by {parent})",
+            )
         for spec in specs:
             ui.message("success", f"added plugin package: {spec.spec}")
         if not no_sync:

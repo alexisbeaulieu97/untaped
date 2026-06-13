@@ -1,10 +1,9 @@
 """Per-invocation plugin execution context.
 
-``plugin_context()`` resolves settings exactly once (optionally under a
-read-time profile override) and hands plugins a frozen value object. Unlike
-``profile_override`` + ``get_config_section``, nothing about the resolution
-leaks into ambient process state: the override environment variable and the
-settings cache are restored before the context is returned.
+``plugin_context()`` resolves settings exactly once and hands plugins a
+frozen value object. Profile (or any other scope) selection happens before
+command dispatch via plugin-contributed root options, so nothing about the
+resolution leaks into ambient process state from here.
 """
 
 from __future__ import annotations
@@ -58,7 +57,19 @@ class PluginContext:
 
 
 def plugin_context(profile: str | None = None) -> PluginContext:
-    """Resolve effective settings once and return a frozen :class:`PluginContext`."""
+    """Resolve effective settings once and return a frozen :class:`PluginContext`.
+
+    Profile selection happens before dispatch via the root ``--profile``
+    option (untaped-profile plugin), so no parameters are needed here.
+
+    ``profile`` is deprecated transitional v3 compat: released v3-era plugins
+    pass their command-local ``--profile`` value. The override is applied only
+    while settings resolve — nothing leaks into ambient process state once the
+    context is returned. Removal is gated on the plugin-API-v4 rollout
+    finishing across the plugin repos.
+    """
+    if profile is None:
+        return PluginContext(settings=get_settings())
     with profile_override(profile):
         settings = get_settings()
     return PluginContext(settings=settings)
