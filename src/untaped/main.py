@@ -159,17 +159,10 @@ def _consume_leading_root_options(
 ) -> list[str]:
     """Apply and strip root options preceding the command, returning the rest."""
     while tokens:
-        name, separator, inline = tokens[0].partition("=")
+        name = tokens[0].partition("=")[0]
         if name not in root_options:
             break
-        if separator:
-            if not inline:
-                raise_usage(f"{name} expects a value")
-            value, tokens = inline, tokens[1:]
-        else:
-            if len(tokens) < 2 or tokens[1].startswith("-"):
-                raise_usage(f"{name} expects a value")
-            value, tokens = tokens[1], tokens[2:]
+        value, tokens = _extract_root_option_value(tokens, 0, name)
         _apply_root_option(root_options[name], value)
     return tokens
 
@@ -188,7 +181,7 @@ def _dispatch_with_root_options(
     side effects.
     """
     remaining = list(command_tokens)
-    retries = dict.fromkeys(root_options, 1)
+    applied: set[str] = set()
     while True:
         try:
             return app(
@@ -199,10 +192,10 @@ def _dispatch_with_root_options(
             )
         except UnknownOptionError as exc:
             name = _unknown_root_option(exc, root_options)
-            if name is None or retries[name] <= 0:
+            if name is None or name in applied:
                 echo(f"error: {exc}", err=True)
                 raise SystemExit(2) from exc
-            retries[name] -= 1
+            applied.add(name)
             value, remaining = _strip_trailing_root_option(remaining, name)
             _apply_root_option(root_options[name], value)
         except CycloptsError as exc:
@@ -231,16 +224,26 @@ def _strip_trailing_root_option(tokens: list[str], name: str) -> tuple[str, list
     """Remove the last ``name``/``name=value`` occurrence, returning its value."""
     for index in range(len(tokens) - 1, -1, -1):
         token = tokens[index]
-        if token == name:
-            if index + 1 >= len(tokens) or tokens[index + 1].startswith("-"):
-                raise_usage(f"{name} expects a value")
-            return tokens[index + 1], tokens[:index] + tokens[index + 2 :]
-        if token.startswith(f"{name}="):
-            value = token.partition("=")[2]
-            if not value:
-                raise_usage(f"{name} expects a value")
-            return value, tokens[:index] + tokens[index + 1 :]
+        if token == name or token.startswith(f"{name}="):
+            return _extract_root_option_value(tokens, index, name)
     raise_usage(f"{name} expects a value")
+
+
+def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tuple[str, list[str]]:
+    """Pull the value for the root option at ``tokens[index]``.
+
+    Handles both ``--name value`` and ``--name=value`` forms and returns the
+    value plus the token list with the option (and its value) removed. Raises a
+    usage error when the value is missing.
+    """
+    _, separator, inline = tokens[index].partition("=")
+    if separator:
+        if not inline:
+            raise_usage(f"{name} expects a value")
+        return inline, tokens[:index] + tokens[index + 1 :]
+    if index + 1 >= len(tokens) or tokens[index + 1].startswith("-"):
+        raise_usage(f"{name} expects a value")
+    return tokens[index + 1], tokens[:index] + tokens[index + 2 :]
 
 
 def _apply_root_option(spec: RootOptionSpec, value: str) -> None:
