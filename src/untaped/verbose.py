@@ -2,9 +2,11 @@
 
 ``--verbose``/``-v`` is a core root option whose handler is :func:`enable`. The
 flag is read by ``UiContext`` to stream a wrapped tool's output live instead of
-capturing it, and it raises the ``untaped`` logger to DEBUG on stderr. State is
-reset after each invocation by the root callback so it never leaks across
-in-process callers (tests, embedding).
+capturing it, and it raises the ``untaped`` logger to DEBUG on stderr. The root
+callback calls :func:`reset` after each invocation, clearing the flag and the
+DEBUG level so neither leaks across in-process callers (tests, embedding). The
+stderr handler added by :func:`configure_logging` is left attached (idempotent),
+but emits nothing once the level is restored.
 """
 
 from __future__ import annotations
@@ -34,9 +36,10 @@ def is_verbose() -> bool:
 
 
 def reset() -> None:
-    """Clear verbose state so it stays scoped to a single invocation."""
+    """Clear verbose state and the DEBUG level so neither leaks past one invocation."""
     global _verbose
     _verbose = False
+    logging.getLogger(_LOGGER_NAME).setLevel(logging.NOTSET)
 
 
 def configure_logging(level: int | str) -> None:

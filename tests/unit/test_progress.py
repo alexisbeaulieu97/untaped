@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import io
+import time
 
 import pytest
 
 from untaped.progress import progress_reporter
+
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 class TtyStringIO(io.StringIO):
@@ -41,6 +44,34 @@ def test_non_tty_progress_throttles_unmarked_updates() -> None:
 
     # The initial label always shows; the throttled ticks collapse.
     assert stream.getvalue().count("tick") <= 1
+
+
+def test_non_tty_progress_emits_on_fraction_step_within_throttle_window() -> None:
+    stream = io.StringIO()
+
+    # All updates happen within the throttle window, so only fraction-bucket
+    # advances (every 10%) should break through; same-bucket updates collapse.
+    with progress_reporter("Work", stream=stream, verbose=False, isatty=False) as p:
+        p.update("ten", fraction=0.10)
+        p.update("fifty", fraction=0.50)
+        p.update("fifty-five", fraction=0.55)
+
+    output = stream.getvalue()
+    assert "ten" in output
+    assert "fifty" in output
+    assert "fifty-five" not in output
+
+
+def test_tty_spinner_animates_while_the_main_thread_blocks() -> None:
+    stream = TtyStringIO()
+
+    with progress_reporter("Work", stream=stream, verbose=False, isatty=True):
+        # Block longer than a couple of spinner ticks so the background thread
+        # advances the frame on its own, with no update() calls.
+        time.sleep(0.25)
+
+    frames = {ch for ch in stream.getvalue() if ch in _SPINNER_FRAMES}
+    assert len(frames) >= 2
 
 
 def test_tty_progress_animates_on_stderr_and_clears_line_on_exit() -> None:
