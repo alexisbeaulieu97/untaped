@@ -40,6 +40,13 @@ def test_ui_helpers_are_re_exported() -> None:
     assert untaped.resolve_theme is ui.resolve_theme
 
 
+def test_progress_handle_is_re_exported() -> None:
+    from untaped import progress
+
+    assert untaped.ProgressHandle is progress.ProgressHandle
+    assert "ProgressHandle" in untaped.__all__
+
+
 def test_prompt_helpers_are_re_exported() -> None:
     assert untaped.PromptChoice is prompts.PromptChoice
     assert untaped.confirm is prompts.confirm

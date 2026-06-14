@@ -50,6 +50,7 @@ from untaped.plugin_registry import (
     SkillSpec,
     UntapedPlugin,
 )
+from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.settings import (
     HttpSettings,
@@ -85,6 +86,7 @@ __all__ = [
     "PluginManifest",
     "PluginRegistry",
     "ProfileOverrideOption",
+    "ProgressHandle",
     "PromptChoice",
     "RootOptionSpec",
     "SettingsLayout",

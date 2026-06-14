@@ -29,8 +29,23 @@ from untaped.plugins import (
 from untaped.settings import get_settings
 from untaped.skills import app as skills_app
 from untaped.skills import register_builtin_skills
+from untaped.verbose import reset as _reset_verbose
 
 CORE_COMMAND_NAMES = frozenset({"config", "plugins", "skills"})
+
+# Placeholder value passed to a flag handler (flags take no value).
+_FLAG_PRESENT = ""
+
+# Core hub-level root option, available without any plugin installed. Works in
+# any token position via the same leading-consume + strip-on-unknown machinery
+# as plugin-contributed options.
+_CORE_VERBOSE_SPEC = RootOptionSpec(
+    name="--verbose",
+    aliases=("-v",),
+    takes_value=False,
+    help="Stream underlying tool output live and enable debug logging.",
+    handler_import_path="untaped.verbose:enable",
+)
 
 
 def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
@@ -47,7 +62,7 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
         warning = startup_mismatch_warning(len(registry.plugin_ids))
         if warning is not None:
             echo(warning, err=True)
-    root_options = dict(registry.root_options)
+    root_options = {_CORE_VERBOSE_SPEC.name: _CORE_VERBOSE_SPEC, **registry.root_options}
 
     app = create_app(
         name="untaped",
@@ -75,6 +90,7 @@ def build_app(plugins: Iterable[UntapedPlugin] | None = None) -> App:
                 _mount_lazy_clis(app, registry, command_tokens)
                 return _dispatch_with_root_options(app, command_tokens, root_options)
         finally:
+            _reset_verbose()
             if dict(os.environ) != env_snapshot:
                 os.environ.clear()
                 os.environ.update(env_snapshot)
@@ -146,6 +162,32 @@ def _mount_lazy_clis(app: App, registry: PluginRegistry, command_tokens: list[st
     app.command(plugin_app, name=target)
 
 
+def _option_names(option: RootOptionSpec) -> str | tuple[str, ...]:
+    """Every accepted spelling for an option: canonical name plus any aliases."""
+    if option.aliases:
+        return (option.name, *option.aliases)
+    return option.name
+
+
+def _match_option(name: str, root_options: dict[str, RootOptionSpec]) -> RootOptionSpec | None:
+    """Return the spec whose canonical name or aliases match ``name``."""
+    for spec in root_options.values():
+        if name == spec.name or name in spec.aliases:
+            return spec
+    return None
+
+
+def _consume_option_at(
+    tokens: list[str], index: int, spec: RootOptionSpec, name: str
+) -> tuple[str, list[str]]:
+    """Pull a root option (and its value, if any) out of ``tokens`` at ``index``."""
+    if not spec.takes_value:
+        if "=" in tokens[index]:
+            raise_usage(f"{name} takes no value")
+        return _FLAG_PRESENT, tokens[:index] + tokens[index + 1 :]
+    return _extract_root_option_value(tokens, index, name)
+
+
 def _root_callback_signature(root_options: dict[str, RootOptionSpec]) -> inspect.Signature:
     """Build the meta callback signature advertising every root option in help."""
     parameters = [
@@ -156,15 +198,34 @@ def _root_callback_signature(root_options: dict[str, RootOptionSpec]) -> inspect
         )
     ]
     for index, option in enumerate(root_options.values()):
+        annotation: object
+        default: object
+        if option.takes_value:
+            annotation = Annotated[
+                str | None,
+                Parameter(name=_option_names(option), help=option.help, parse=False, show=True),
+            ]
+            default = None
+        else:
+            # negative="" drops the auto --no-<flag>; manual consumption never
+            # parses it, so advertising it in help would be a lie.
+            annotation = Annotated[
+                bool,
+                Parameter(
+                    name=_option_names(option),
+                    help=option.help,
+                    parse=False,
+                    show=True,
+                    negative="",
+                ),
+            ]
+            default = False
         parameters.append(
             inspect.Parameter(
                 f"_root_option_{index}",
                 inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=Annotated[
-                    str | None,
-                    Parameter(name=option.name, help=option.help, parse=False, show=True),
-                ],
+                default=default,
+                annotation=annotation,
             )
         )
     return inspect.Signature(parameters)
@@ -177,10 +238,11 @@ def _consume_leading_root_options(
     """Apply and strip root options preceding the command, returning the rest."""
     while tokens:
         name = tokens[0].partition("=")[0]
-        if name not in root_options:
+        spec = _match_option(name, root_options)
+        if spec is None:
             break
-        value, tokens = _extract_root_option_value(tokens, 0, name)
-        _apply_root_option(root_options[name], value)
+        value, tokens = _consume_option_at(tokens, 0, spec, name)
+        _apply_root_option(spec, value)
     return tokens
 
 
@@ -213,8 +275,9 @@ def _dispatch_with_root_options(
                 echo(f"error: {exc}", err=True)
                 raise SystemExit(2) from exc
             applied.add(name)
-            value, remaining = _strip_trailing_root_option(remaining, name)
-            _apply_root_option(root_options[name], value)
+            spec = root_options[name]
+            value, remaining = _strip_trailing_root_option(remaining, spec)
+            _apply_root_option(spec, value)
         except CycloptsError as exc:
             echo(f"error: {exc}", err=True)
             raise SystemExit(2) from exc
@@ -234,16 +297,18 @@ def _unknown_root_option(
     if not isinstance(keyword, str):
         return None
     name = keyword.partition("=")[0]
-    return name if name in root_options else None
+    spec = _match_option(name, root_options)
+    return spec.name if spec is not None else None
 
 
-def _strip_trailing_root_option(tokens: list[str], name: str) -> tuple[str, list[str]]:
-    """Remove the last ``name``/``name=value`` occurrence, returning its value."""
+def _strip_trailing_root_option(tokens: list[str], spec: RootOptionSpec) -> tuple[str, list[str]]:
+    """Remove the last occurrence of ``spec`` (by any spelling), returning its value."""
+    accepted = (spec.name, *spec.aliases)
     for index in range(len(tokens) - 1, -1, -1):
-        token = tokens[index]
-        if token == name or token.startswith(f"{name}="):
-            return _extract_root_option_value(tokens, index, name)
-    raise_usage(f"{name} expects a value")
+        head = tokens[index].partition("=")[0]
+        if head in accepted:
+            return _consume_option_at(tokens, index, spec, head)
+    raise_usage(f"{spec.name} expects a value")
 
 
 def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tuple[str, list[str]]:
