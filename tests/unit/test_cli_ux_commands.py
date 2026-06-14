@@ -306,3 +306,19 @@ def test_path_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
     result = runner.invoke(app, ["path", "alpha", "--stdin"], input="alpha\n")
     assert result.exit_code != 0
     assert "stdin" in (result.output + (result.stderr or "")).lower()
+
+
+def test_list_empty_guides_with_stderr_hint() -> None:
+    result = CliInvoker().invoke(app, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "No workspaces registered" in result.stderr
+
+
+def test_list_empty_json_stays_pipe_clean() -> None:
+    result = CliInvoker().invoke(app, ["list", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "[]"
+    assert "No workspaces registered" not in result.stderr

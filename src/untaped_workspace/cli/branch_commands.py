@@ -24,6 +24,7 @@ from untaped_workspace.cli.common import (
     RepoSelectorOption,
     WorkspaceNameOption,
     WorkspacePathOption,
+    progress_ui,
     resolve_workspace,
 )
 from untaped_workspace.domain import BranchApplyOutcome
@@ -72,11 +73,12 @@ def branch_set_command(
                 err=True,
             )
         if apply_checkout:
-            outcomes = ApplyWorkspaceBranch(
-                ManifestRepository(),
-                GitRunner(),
-                fs=LocalFilesystem(),
-            )(ws, repo=change.repo)
+            with progress_ui().progress("Applying branches…"):
+                outcomes = ApplyWorkspaceBranch(
+                    ManifestRepository(),
+                    GitRunner(),
+                    fs=LocalFilesystem(),
+                )(ws, repo=change.repo)
             print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
 
 
@@ -118,11 +120,12 @@ def branch_apply_command(
     """Checkout existing repos to the branch declared in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        outcomes = ApplyWorkspaceBranch(
-            ManifestRepository(),
-            GitRunner(),
-            fs=LocalFilesystem(),
-        )(ws, repo=repo)
+        with progress_ui().progress("Applying branches…"):
+            outcomes = ApplyWorkspaceBranch(
+                ManifestRepository(),
+                GitRunner(),
+                fs=LocalFilesystem(),
+            )(ws, repo=repo)
         print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
 
 
@@ -133,4 +136,6 @@ def print_branch_apply_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows = [row.model_dump() for row in outcomes]
-    echo(render_rows(rows, fmt=fmt, columns=columns))
+    rendered = render_rows(rows, fmt=fmt, columns=columns, empty="No matching repos to checkout.")
+    if rendered:
+        echo(rendered)

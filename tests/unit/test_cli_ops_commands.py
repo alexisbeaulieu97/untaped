@@ -602,3 +602,39 @@ def test_foreach_parallel_zero_coerces_to_serial(
 
     result = runner.invoke(app, ["foreach", "true", "--workspace", "smoke", "-j", "0"])
     assert result.exit_code == 0, result.output
+
+
+def test_sync_empty_workspace_reports_progress_and_hint(tmp_path: Path) -> None:
+    """A repo-less workspace still announces progress on stderr and guides with
+    an empty-state hint, while keeping stdout pipe-clean."""
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
+
+    result = runner.invoke(app, ["sync", "--workspace", "solo"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "Syncing workspaces" in result.stderr
+    assert "Nothing to sync" in result.stderr
+
+
+def test_status_empty_workspace_guides_with_stderr_hint(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
+
+    result = runner.invoke(app, ["status", "--workspace", "solo"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "No cloned repos" in result.stderr
+
+
+def test_foreach_no_matching_repos_guides_with_stderr_hint(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
+
+    result = runner.invoke(app, ["foreach", "true", "--workspace", "solo"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "No repos matched" in result.stderr

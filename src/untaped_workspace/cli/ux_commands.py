@@ -52,7 +52,14 @@ def list_command(
     with report_errors():
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
-        echo(render_rows(rows, fmt=fmt, columns=columns))
+        rendered = render_rows(
+            rows,
+            fmt=fmt,
+            columns=columns,
+            empty="No workspaces registered. Create one with `untaped workspace init <name>`.",
+        )
+        if rendered:
+            echo(rendered)
 
 
 def show_command(

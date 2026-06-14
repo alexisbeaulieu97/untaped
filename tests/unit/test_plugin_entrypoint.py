@@ -44,7 +44,7 @@ def test_workspace_plugin_entry_point_is_declared() -> None:
 
 
 def test_workspace_plugin_declares_untaped_api_version() -> None:
-    assert workspace_plugin.untaped_api_version == 3
+    assert workspace_plugin.untaped_api_version == 5
 
 
 def test_workspace_plugin_manifest_shape() -> None:

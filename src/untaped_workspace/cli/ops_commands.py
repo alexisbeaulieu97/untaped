@@ -22,6 +22,7 @@ from untaped_workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
     parallel_cap,
+    progress_ui,
     resolve_workspace,
     target_workspaces,
     workspace_settings,
@@ -109,14 +110,17 @@ def sync_command(
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
-        sweep = SyncWorkspaces(sync, notify=lambda m: echo(m, err=True))
-        outcomes = sweep(
-            targets,
-            only=repo,
-            prune=prune,
-            strict_only=not all_workspaces,
-            parallel=workers,
-        )
+        with progress_ui().progress("Syncing workspaces…") as p:
+            # The notify header fires once; new_phase forces it past the
+            # non-TTY throttle so the worker-count line still surfaces.
+            sweep = SyncWorkspaces(sync, notify=lambda m: p.update(m, new_phase=True))
+            outcomes = sweep(
+                targets,
+                only=repo,
+                prune=prune,
+                strict_only=not all_workspaces,
+                parallel=workers,
+            )
         print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
 
 
@@ -127,7 +131,14 @@ def print_sync_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows: list[dict[str, object]] = [o.model_dump() for o in outcomes]
-    echo(render_rows(rows, fmt=fmt, columns=columns))
+    rendered = render_rows(
+        rows,
+        fmt=fmt,
+        columns=columns,
+        empty="Nothing to sync; clones already match the manifest.",
+    )
+    if rendered:
+        echo(rendered)
 
 
 def status_command(
@@ -147,10 +158,18 @@ def status_command(
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
-        for ws in targets:
-            for entry in use_case(ws, only=repo):
-                rows.append(entry.model_dump())
-        echo(render_rows(rows, fmt=fmt, columns=columns))
+        with progress_ui().progress("Gathering workspace status…"):
+            for ws in targets:
+                for entry in use_case(ws, only=repo):
+                    rows.append(entry.model_dump())
+        rendered = render_rows(
+            rows,
+            fmt=fmt,
+            columns=columns,
+            empty="No cloned repos. Run `untaped workspace sync` to clone from the manifest.",
+        )
+        if rendered:
+            echo(rendered)
 
 
 def foreach_command(
@@ -220,6 +239,8 @@ def foreach_command(
         )
         failed = [o.repo for o in outcomes if o.returncode != 0]
         if fmt == "table":
+            if not outcomes:
+                echo("No repos matched. Check --repo or the workspace manifest.", err=True)
             for o in outcomes:
                 for line in o.stdout.splitlines():
                     echo(f"[{o.repo}] {line}")
@@ -231,6 +252,8 @@ def foreach_command(
                 echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
-            echo(render_rows(rows, fmt=fmt, columns=columns))
+            rendered = render_rows(rows, fmt=fmt, columns=columns)
+            if rendered:
+                echo(rendered)
         if failed and not ignore_errors:
             raise SystemExit(1)

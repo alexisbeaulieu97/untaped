@@ -362,3 +362,14 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     )
     assert head == "ticket-123"
     assert tracking_remote.returncode != 0
+
+
+def test_branch_apply_empty_guides_with_stderr_hint(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    runner.invoke(app, ["init", "solo", "--path", str(tmp_path / "solo")])
+
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "solo"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "No matching repos to checkout" in result.stderr
