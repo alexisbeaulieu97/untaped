@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
-from untaped.api import ConfigError, get_config_section, raise_usage, ui_context
+from untaped.api import ConfigError, UiContext, get_config_section, raise_usage, ui_context
 
 from untaped_workspace.application import WorkspaceResolver
 from untaped_workspace.domain import Workspace
@@ -74,6 +74,17 @@ def target_workspaces(
 
 def all_workspaces_from_registry() -> list[Workspace]:
     return WorkspaceRegistryRepository().entries()
+
+
+def progress_ui() -> UiContext:
+    """UiContext for stderr progress reporting on slow workspace operations.
+
+    Built with ``strict=False`` so a misconfigured ``ui.theme`` degrades the
+    spinner to the default theme rather than raising: the progress UI resolves
+    the theme up front (unlike ``render_rows`` for pipe formats, which bypasses
+    theme resolution), so feedback must never fail an otherwise-valid command.
+    """
+    return ui_context(strict=False)
 
 
 def confirm(prompt: str, *, yes: bool) -> bool:

@@ -18,7 +18,7 @@ from untaped_workspace.settings import WorkspaceSettings, WorkspaceState
 
 class WorkspacePlugin:
     id = "workspace"
-    untaped_api_version = 3
+    untaped_api_version = 5
 
     def manifest(self) -> PluginManifest:
         return PluginManifest(
