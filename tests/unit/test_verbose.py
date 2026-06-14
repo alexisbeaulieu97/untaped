@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+from collections.abc import Iterator
 
 import pytest
 
@@ -11,8 +12,15 @@ from untaped import verbose
 
 
 @pytest.fixture(autouse=True)
-def _reset_verbose() -> None:
+def _reset_verbose() -> Iterator[None]:
+    logger = logging.getLogger("untaped")
+    saved_handlers = list(logger.handlers)
+    saved_level = logger.level
     verbose.reset()
+    yield
+    verbose.reset()
+    logger.handlers[:] = saved_handlers
+    logger.setLevel(saved_level)
 
 
 def test_verbose_defaults_off() -> None:
@@ -28,6 +36,15 @@ def test_reset_turns_verbose_off() -> None:
     verbose.enable()
     verbose.reset()
     assert verbose.is_verbose() is False
+
+
+def test_reset_undoes_debug_logging() -> None:
+    verbose.enable()
+    assert logging.getLogger("untaped").level == logging.DEBUG
+
+    verbose.reset()
+
+    assert logging.getLogger("untaped").level != logging.DEBUG
 
 
 def test_enable_accepts_a_handler_value_and_ignores_it() -> None:

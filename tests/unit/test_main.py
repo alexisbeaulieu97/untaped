@@ -516,3 +516,13 @@ def test_verbose_flag_is_reset_after_invocation() -> None:
     CliInvoker().invoke(app, ["--verbose", "probe", "verbose"])
 
     assert is_verbose() is False
+
+
+def test_verbose_flag_is_not_stolen_from_passthrough_command() -> None:
+    """A passthrough command's own ``-v`` token must reach it verbatim."""
+    app = build_app(plugins=[_PassthroughProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "run", "git", "log", "-v"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["args"] == ["git", "log", "-v"]

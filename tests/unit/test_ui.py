@@ -5,11 +5,13 @@ from __future__ import annotations
 import io
 import json
 import re
+from pathlib import Path
 
+import pytest
 import yaml
 
 from untaped.output import format_output
-from untaped.ui import ThemeSpec, UiContext
+from untaped.ui import ThemeSpec, UiContext, ui_context
 
 
 class TtyStringIO(io.StringIO):
@@ -280,3 +282,23 @@ def test_collection_nonempty_table_does_not_emit_hint() -> None:
 
     assert "alpha" in rendered
     assert stderr.getvalue() == ""
+
+
+def test_ui_context_reflects_active_verbose_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped import verbose
+    from untaped.settings import get_settings
+
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    get_settings.cache_clear()
+    verbose.reset()
+
+    assert ui_context(strict=False).verbose is False
+
+    verbose.enable()
+    try:
+        assert ui_context(strict=False).verbose is True
+    finally:
+        verbose.reset()
+        get_settings.cache_clear()
