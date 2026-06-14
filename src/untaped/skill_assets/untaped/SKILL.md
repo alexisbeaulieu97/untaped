@@ -28,6 +28,10 @@ Use this skill when working in an `untaped` repo or when the user asks an agent 
 
 - Prefer `--format json` or `--format yaml` for structured automation.
 - Prefer `--format raw --columns ...` for shell pipelines.
+- Use `--format pipe` to chain one untaped command into another: it emits a
+  self-describing record stream (NDJSON) that a downstream command reads back
+  via `--stdin`/`--repo-stdin` (or `read_records`), preserving full records
+  instead of flattening to identifier strings.
 - Treat stdout as data. Status, warnings, prompts, and progress belong on stderr.
 - Repeated selector flags in plugins are usually additive; inspect `--help` before assuming singular behavior.
 

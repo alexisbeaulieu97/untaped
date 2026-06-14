@@ -18,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.errors import ConfigError
+from untaped.pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
 from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
@@ -27,7 +28,7 @@ from untaped.prompts import (
     prompt_style_from_roles,
 )
 
-OutputFormat = Literal["json", "yaml", "table", "raw"]
+OutputFormat = Literal["json", "yaml", "table", "raw", "pipe"]
 BorderStyle = Literal["rounded", "square", "ascii", "none"]
 CollectionView = Literal["table", "list"]
 DetailView = Literal["list", "table"]
@@ -100,6 +101,7 @@ class Renderer(Protocol):
         columns: list[str] | None,
         theme: ThemeSpec,
         colorize: bool,
+        kind: str | None = None,
     ) -> str: ...
 
     def render_detail(
@@ -110,6 +112,7 @@ class Renderer(Protocol):
         columns: list[str] | None,
         theme: ThemeSpec,
         colorize: bool,
+        kind: str | None = None,
     ) -> str: ...
 
     def render_message(
@@ -133,10 +136,13 @@ class RichTerminalRenderer:
         columns: list[str] | None,
         theme: ThemeSpec,
         colorize: bool,
+        kind: str | None = None,
     ) -> str:
         parsed = _parse_columns(columns)
         if fmt == "raw":
             return _format_raw(rows, parsed)
+        if fmt == "pipe":
+            return _format_pipe(rows, kind)
 
         selected = _select_rows(rows, parsed)
         if fmt == "json":
@@ -158,8 +164,11 @@ class RichTerminalRenderer:
         columns: list[str] | None,
         theme: ThemeSpec,
         colorize: bool,
+        kind: str | None = None,
     ) -> str:
         parsed = _parse_columns(columns)
+        if fmt == "pipe":
+            return _format_pipe([record], kind)
         selected = _select_record(record, parsed)
         if fmt == "raw":
             if not selected:
@@ -229,6 +238,7 @@ class UiContext:
         fmt: OutputFormat,
         columns: list[str] | None = None,
         empty: str | bool | None = None,
+        kind: str | None = None,
     ) -> str:
         rendered = self.renderer.render_collection(
             rows,
@@ -236,6 +246,7 @@ class UiContext:
             columns=columns,
             theme=self.theme,
             colorize=_stream_is_tty(self.stdout),
+            kind=kind,
         )
         if not rows and fmt == "table" and empty:
             note = empty if isinstance(empty, str) else "No results."
@@ -253,6 +264,7 @@ class UiContext:
         *,
         fmt: OutputFormat,
         columns: list[str] | None = None,
+        kind: str | None = None,
     ) -> str:
         return self.renderer.render_detail(
             record,
@@ -260,6 +272,7 @@ class UiContext:
             columns=columns,
             theme=self.theme,
             colorize=_stream_is_tty(self.stdout),
+            kind=kind,
         )
 
     def message(self, kind: MessageKind, text: str) -> None:
@@ -443,6 +456,17 @@ def _format_raw(rows: Sequence[Row], parsed: list[tuple[str, list[str]]] | None)
         return "\n".join(_render_cell(row.get(first_key, "")) for row in rows)
     return "\n".join(
         "\t".join(_render_cell(_resolve_path(row, segments)) for _, segments in parsed)
+        for row in rows
+    )
+
+
+def _format_pipe(rows: Sequence[Row], kind: str | None) -> str:
+    """Render rows as the self-describing NDJSON ``pipe`` envelope (full records)."""
+    return "\n".join(
+        json.dumps(
+            {PIPE_MARKER_KEY: PIPE_ENVELOPE_VERSION, "kind": kind, "record": dict(row)},
+            default=str,
+        )
         for row in rows
     )
 

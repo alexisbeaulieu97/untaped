@@ -323,13 +323,14 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Register an agent skill from a plugin | `from untaped.api import SkillSpec`; include it in `PluginManifest(skills=(...))` |
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Cyclopts command | `from untaped import FormatOption, ColumnsOption`      |
-| Render `--format`/`--columns` row collections | `from untaped import render_rows` (themed table for humans; theme-independent json/raw for pipes) |
+| Render `--format`/`--columns` row collections | `from untaped import render_rows` (themed table for humans; theme-independent json/raw/pipe for pipes; pass `kind=` to tag `--format pipe` records) |
 | Show a guiding empty-state note for a no-result table | `render_rows(..., empty="hint")` or `ui.collection(..., empty=...)` — prints to stderr for the human `table` view only; json/yaml/raw stay byte-stable (v5) |
 | Report progress for a slow/blocking operation | `ui_context(strict=False).progress(label)` — spinner on TTY, throttled lines otherwise; `with ... as p: p.update(msg, fraction=..., new_phase=...)`; never wrap an interactive prompt (v5) |
 | Reject bad usage with `error: ...` + exit 2 | `from untaped import raise_usage`                          |
 | Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
 | Read piped values from stdin               | `from untaped import read_stdin`                            |
-| Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` |
+| Read a `--format pipe` stream into typed envelopes | `from untaped import read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
+| Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped import resolve_each`         |
 | Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
 | Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
@@ -421,7 +422,7 @@ Cross-cutting subsystems with their own internals doc:
   streams it live and raises the `untaped` logger to DEBUG on stderr.
 - **Row-oriented data commands** (`list`, `status`, row-producing `get`,
   …) expose:
-  - `--format / -f` (`json | yaml | table | raw`); default `table` for
+  - `--format / -f` (`json | yaml | table | raw | pipe`); default `table` for
     `list`, `yaml` for `get`.
   - `--columns / -c` (repeatable). Dotted paths supported
     (`summary_fields.project.name`).
@@ -454,6 +455,13 @@ Cross-cutting subsystems with their own internals doc:
   emit structured data under `--format json` must match this shape.
   yaml/raw/table under `--follow` is per-line single-doc emission;
   yaml has no canonical streaming form.
+- **`--format pipe` is the typed interchange stream.** Self-describing
+  NDJSON — one `{"untaped":"1","kind":<hint|null>,"record":{…}}` per line —
+  meant to be read back by another untaped command (`read_records`, or
+  `read_identifiers(..., id_field=…)` which auto-detects it and still accepts
+  bare lines). Distinct from `--follow --format json` above (which streams
+  *bare* records). `pipe` emits the full record (ignores `--columns`);
+  untagged producers emit `kind: null`.
 
 Pipeline examples and the morning-routine workflow live in
 [`docs/README.md`](docs/README.md#pipe-friendly-by-design).

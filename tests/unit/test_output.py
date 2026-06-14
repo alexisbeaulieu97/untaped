@@ -193,3 +193,33 @@ def test_nested_list_falls_back_to_repr() -> None:
     raw = format_output(rows, fmt="raw", columns=["items"])
     assert "id" in raw
     assert "{" in raw  # repr-shaped, not "id, id"
+
+
+def test_pipe_emits_one_self_describing_envelope_per_line(
+    rows: list[dict[str, object]],
+) -> None:
+    out = format_output(rows, fmt="pipe")
+    lines = out.splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0]) == {
+        "untaped": "1",
+        "kind": None,
+        "record": {"id": 1, "name": "alpha", "project_id": 100},
+    }
+
+
+def test_pipe_ignores_columns_and_emits_full_record(
+    rows: list[dict[str, object]],
+) -> None:
+    out = format_output(rows, fmt="pipe", columns=["name"])
+    record = json.loads(out.splitlines()[0])["record"]
+    assert record == {"id": 1, "name": "alpha", "project_id": 100}
+
+
+def test_pipe_empty_rows_is_empty_string() -> None:
+    assert format_output([], fmt="pipe") == ""
+
+
+def test_pipe_tags_kind_when_supplied(rows: list[dict[str, object]]) -> None:
+    out = format_output(rows, fmt="pipe", kind="awx.job_template")
+    assert json.loads(out.splitlines()[0])["kind"] == "awx.job_template"

@@ -15,8 +15,9 @@ untaped profile ...      # optional plugin: manage configuration profiles
 ```
 
 Row-oriented `list`/`get`/`status`-style commands accept
-`--format json|yaml|table|raw` and `--columns`, so their output
-composes:
+`--format json|yaml|table|raw|pipe` and `--columns`, so their output
+composes (`pipe` is a self-describing record stream another untaped command
+can read back):
 
 ```bash
 untaped awx job-templates list --format raw --columns name \
