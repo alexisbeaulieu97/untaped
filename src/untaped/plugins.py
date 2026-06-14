@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -54,10 +56,11 @@ from untaped.plugin_state import (
     remove_plugin_spec,
     upsert_plugin_spec,
 )
-from untaped.plugin_sync import managed_env_lock, sync_state_unlocked
+from untaped.plugin_sync import SyncProgress, managed_env_lock, sync_state_unlocked
+from untaped.progress import ProgressHandle
 from untaped.settings import PluginInstallSpec, PluginsState
 from untaped.stdin import read_identifiers
-from untaped.ui import ui_context
+from untaped.ui import UiContext, ui_context
 
 __all__ = [
     "ENTRY_POINT_GROUP",
@@ -81,6 +84,31 @@ app = create_app(
     name="plugins",
     help="Manage untaped plugins installed into the managed virtual environment.",
 )
+
+
+class _UiSyncProgress:
+    """Adapt a UiContext progress handle to the plugin_sync ``SyncProgress`` port."""
+
+    def __init__(self, handle: ProgressHandle, *, verbose: bool) -> None:
+        self._handle = handle
+        self._verbose = verbose
+
+    def phase(self, label: str) -> None:
+        self._handle.update(label, new_phase=True)
+
+    @property
+    def verbose(self) -> bool:
+        return self._verbose
+
+
+@contextmanager
+def _sync_progress(ui: UiContext, *, sync: bool) -> Iterator[SyncProgress | None]:
+    """Yield a sync progress sink, showing a spinner only when actually syncing."""
+    if not sync:
+        yield None
+        return
+    with ui.progress("Syncing plugin environment…") as handle:
+        yield _UiSyncProgress(handle, verbose=ui.verbose)
 
 
 @app.command(name="add")
@@ -124,8 +152,10 @@ def add_command(
             recorded = {plugin_package_key(package) for package in plugin_state().packages}
             auto_specs = expand_plugin_dependencies(specs, already_recorded=recorded)
 
-        record_added_specs(specs + [spec for spec, _ in auto_specs], sync=not no_sync)
         ui = ui_context(strict=False)
+        all_specs = specs + [spec for spec, _ in auto_specs]
+        with _sync_progress(ui, sync=not no_sync) as progress:
+            record_added_specs(all_specs, sync=not no_sync, progress=progress)
         for spec, parent in auto_specs:
             ui.message(
                 "info",
@@ -161,8 +191,9 @@ def remove_command(
             read_identifiers(list(package_specs or []), stdin=stdin)
         )
 
-        record_removed_specs(requested_specs, sync=not no_sync)
         ui = ui_context(strict=False)
+        with _sync_progress(ui, sync=not no_sync) as progress:
+            record_removed_specs(requested_specs, sync=not no_sync, progress=progress)
         for package_spec in requested_specs:
             ui.message("success", f"removed plugin package: {package_spec}")
         if not no_sync:
@@ -173,17 +204,20 @@ def remove_command(
 def sync_command() -> None:
     """Rebuild the managed venv with every recorded plugin package."""
     with report_errors():
-        with managed_env_lock():
+        ui = ui_context(strict=False)
+        with (
+            _sync_progress(ui, sync=True) as progress,
+            managed_env_lock(progress=progress),
+        ):
             original = plugin_state()
             state = canonical_plugin_state(original)
-            sync_state_unlocked(state)
+            sync_state_unlocked(state, progress=progress)
 
             def _apply(data: dict[str, object]) -> None:
                 if plugin_state_from_config(data) == original:
                     store_plugin_state(data, state)
 
             mutate_config(_apply)
-        ui = ui_context(strict=False)
         ui.message("info", "plugin environment synced; run a fresh untaped invocation")
 
 
@@ -200,7 +234,12 @@ def list_command(
         rows = plugin_rows(state, loaded_ids=set(registry.plugin_ids))
         if fmt == "raw" and columns is None:
             rows = [row for row in rows if row["spec"]]
-        rendered = render_rows(rows, fmt=fmt, columns=columns)
+        rendered = render_rows(
+            rows,
+            fmt=fmt,
+            columns=columns,
+            empty="No plugins installed. Add one with `untaped plugins add <pkg>`.",
+        )
         if rendered:
             echo(rendered)
 
@@ -301,22 +340,26 @@ def read_project_name(path: Path) -> str:
     return normalize_package_name(project["name"])
 
 
-def record_added_specs(specs: list[PluginInstallSpec], *, sync: bool) -> None:
+def record_added_specs(
+    specs: list[PluginInstallSpec], *, sync: bool, progress: SyncProgress | None = None
+) -> None:
     """Persist added package specs, then sync outside the config lock."""
     if not sync:
         mutate_config(lambda data: store_plugin_state(data, add_specs_to_state(data, specs)))
         return
 
-    with managed_env_lock():
+    with managed_env_lock(progress=progress):
         before, updated = mutate_added_specs(specs)
         try:
-            sync_state_unlocked(updated)
+            sync_state_unlocked(updated, progress=progress)
         except Exception:
             rollback_added_specs(specs, before)
             raise
 
 
-def record_removed_specs(requested_specs: list[str], *, sync: bool) -> None:
+def record_removed_specs(
+    requested_specs: list[str], *, sync: bool, progress: SyncProgress | None = None
+) -> None:
     """Persist removed package specs, then sync outside the config lock."""
     if not sync:
         mutate_config(
@@ -331,10 +374,10 @@ def record_removed_specs(requested_specs: list[str], *, sync: bool) -> None:
         )
         return
 
-    with managed_env_lock():
+    with managed_env_lock(progress=progress):
         before, updated = mutate_removed_specs(requested_specs)
         try:
-            sync_state_unlocked(updated)
+            sync_state_unlocked(updated, progress=progress)
         except Exception:
             rollback_removed_specs(requested_specs, before)
             raise

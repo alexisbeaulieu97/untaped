@@ -12,8 +12,38 @@ import pytest
 
 from untaped.errors import ConfigError
 from untaped.install_paths import default_managed_venv_path
-from untaped.plugin_sync import sync_state_unlocked, uv_pip_compile_command, venv_python
+from untaped.plugin_sync import (
+    managed_env_lock,
+    sync_state_unlocked,
+    uv_pip_compile_command,
+    venv_python,
+)
 from untaped.settings import PluginInstallSpec, PluginsState, PluginToolSpec
+
+
+class _FakeProgress:
+    """Records phase labels and exposes a fixed verbose flag."""
+
+    def __init__(self, *, verbose: bool = False) -> None:
+        self._verbose = verbose
+        self.phases: list[str] = []
+
+    def phase(self, label: str) -> None:
+        self.phases.append(label)
+
+    @property
+    def verbose(self) -> bool:
+        return self._verbose
+
+
+def _fake_result(*, returncode: int, stdout: str = "", stderr: str = "") -> object:
+    return type("Result", (), {"returncode": returncode, "stdout": stdout, "stderr": stderr})()
+
+
+def _prepare_managed_python() -> None:
+    python = venv_python(default_managed_venv_path())
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.touch()
 
 
 def test_uv_compile_command_ignores_all_uv_sources(tmp_path: Path) -> None:
@@ -195,7 +225,7 @@ def test_compile_failure_hints_at_explicit_plugin_specs(
     python.touch()
 
     def _fail(cmd: list[str], **_: object) -> object:
-        return type("Result", (), {"returncode": 1})()
+        return _fake_result(returncode=1)
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _fail)
     state = PluginsState(
@@ -210,3 +240,97 @@ def test_compile_failure_hints_at_explicit_plugin_specs(
     assert "plugin dependency resolution failed" in message
     assert "hint:" in message
     assert "untaped plugins add" in message
+
+
+def test_sync_failure_surfaces_captured_tool_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_managed_python()
+    monkeypatch.setattr(
+        "untaped.plugin_sync.subprocess.run",
+        lambda cmd, **kw: _fake_result(returncode=1, stderr="error: could not resolve foo"),
+    )
+    state = PluginsState(
+        tool=PluginToolSpec(spec="untaped"),
+        packages=[PluginInstallSpec(spec="untaped-ansible")],
+    )
+
+    with pytest.raises(ConfigError) as excinfo:
+        sync_state_unlocked(state)
+
+    assert "could not resolve foo" in str(excinfo.value)
+
+
+def test_sync_verbose_streams_tool_output_without_capturing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_managed_python()
+    calls: list[dict[str, object]] = []
+
+    def _run(cmd: list[str], **kwargs: object) -> object:
+        calls.append(kwargs)
+        return _fake_result(returncode=0)
+
+    monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
+    state = PluginsState(tool=PluginToolSpec(spec="untaped"), packages=[])
+
+    sync_state_unlocked(state, progress=_FakeProgress(verbose=True))
+
+    assert calls
+    assert all(not kwargs.get("capture_output") for kwargs in calls)
+
+
+def test_sync_reports_resolving_and_installing_phases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_managed_python()
+    monkeypatch.setattr(
+        "untaped.plugin_sync.subprocess.run",
+        lambda cmd, **kw: _fake_result(returncode=0),
+    )
+    state = PluginsState(tool=PluginToolSpec(spec="untaped"), packages=[])
+    progress = _FakeProgress()
+
+    sync_state_unlocked(state, progress=progress)
+
+    assert any("Resolving" in phase for phase in progress.phases)
+    assert any("Installing" in phase for phase in progress.phases)
+
+
+def test_managed_env_lock_announces_wait_on_contention(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from filelock import Timeout
+
+    class _ContendedLock:
+        def acquire(self, timeout: float | None = None, **kw: object) -> None:
+            if timeout == 0:
+                raise Timeout("locked")
+
+        def release(self) -> None:
+            return None
+
+    monkeypatch.setattr("untaped.plugin_sync.FileLock", lambda *a, **k: _ContendedLock())
+    progress = _FakeProgress()
+
+    with managed_env_lock(tmp_path / "venv", progress=progress):
+        pass
+
+    assert any("Waiting" in phase for phase in progress.phases)
+
+
+def test_managed_env_lock_stays_silent_when_uncontended(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class _FreeLock:
+        def acquire(self, timeout: float | None = None, **kw: object) -> None:
+            return None
+
+        def release(self) -> None:
+            return None
+
+    monkeypatch.setattr("untaped.plugin_sync.FileLock", lambda *a, **k: _FreeLock())
+    progress = _FakeProgress()
+
+    with managed_env_lock(tmp_path / "venv", progress=progress):
+        pass
+
+    assert progress.phases == []

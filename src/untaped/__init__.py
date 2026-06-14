@@ -38,6 +38,7 @@ from untaped.profile_resolver import (
     effective_active_profile_name,
     resolve_profiles,
 )
+from untaped.progress import ProgressHandle
 from untaped.prompts import (
     PromptChoice,
     confirm,
@@ -87,6 +88,7 @@ __all__ = [
     "PluginsState",
     "ProfileOverrideOption",
     "ProfileSource",
+    "ProgressHandle",
     "PromptChoice",
     "Settings",
     "SkillSpec",

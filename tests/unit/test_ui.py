@@ -5,11 +5,13 @@ from __future__ import annotations
 import io
 import json
 import re
+from pathlib import Path
 
+import pytest
 import yaml
 
 from untaped.output import format_output
-from untaped.ui import ThemeSpec, UiContext
+from untaped.ui import ThemeSpec, UiContext, ui_context
 
 
 class TtyStringIO(io.StringIO):
@@ -214,3 +216,89 @@ def test_success_message_preserves_plain_text_by_default() -> None:
     ui.message("success", "created profile: dev")
 
     assert stderr.getvalue().splitlines() == ["created profile: dev"]
+
+
+def test_progress_reports_on_stderr_and_keeps_stdout_clean() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    ui = UiContext(stdout=stdout, stderr=stderr)
+
+    with ui.progress("Resolving deps") as p:
+        p.update("installing", new_phase=True)
+
+    assert stdout.getvalue() == ""
+    assert "Resolving deps" in stderr.getvalue()
+    assert "installing" in stderr.getvalue()
+
+
+def test_progress_verbose_context_passes_through_without_animation() -> None:
+    stderr = io.StringIO()
+    ui = UiContext(stdout=io.StringIO(), stderr=stderr, verbose=True)
+
+    with ui.progress("Resolving deps") as p:
+        p.update("downloading")
+
+    output = stderr.getvalue()
+    assert "Resolving deps" in output
+    assert "downloading" in output
+    assert "\r" not in output
+
+
+def test_collection_empty_table_emits_hint_to_stderr() -> None:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    ui = UiContext(stdout=stdout, stderr=stderr)
+
+    rendered = ui.collection([], fmt="table", empty="No plugins installed.")
+
+    assert rendered == ""
+    assert stdout.getvalue() == ""
+    assert "No plugins installed." in stderr.getvalue()
+
+
+def test_collection_empty_structured_formats_emit_no_hint() -> None:
+    stderr = io.StringIO()
+    ui = UiContext(stderr=stderr)
+
+    assert ui.collection([], fmt="json", empty="No results.") == "[]"
+    assert ui.collection([], fmt="yaml", empty="No results.") == "[]"
+    assert ui.collection([], fmt="raw", empty="No results.") == ""
+    assert stderr.getvalue() == ""
+
+
+def test_collection_empty_table_without_hint_stays_silent() -> None:
+    stderr = io.StringIO()
+    ui = UiContext(stderr=stderr)
+
+    assert ui.collection([], fmt="table") == ""
+    assert stderr.getvalue() == ""
+
+
+def test_collection_nonempty_table_does_not_emit_hint() -> None:
+    stderr = io.StringIO()
+    ui = UiContext(stderr=stderr)
+
+    rendered = ui.collection([{"name": "alpha"}], fmt="table", empty="No results.")
+
+    assert "alpha" in rendered
+    assert stderr.getvalue() == ""
+
+
+def test_ui_context_reflects_active_verbose_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped import verbose
+    from untaped.settings import get_settings
+
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    get_settings.cache_clear()
+    verbose.reset()
+
+    assert ui_context(strict=False).verbose is False
+
+    verbose.enable()
+    try:
+        assert ui_context(strict=False).verbose is True
+    finally:
+        verbose.reset()
+        get_settings.cache_clear()

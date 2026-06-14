@@ -73,15 +73,17 @@ def render_rows(
     *,
     fmt: OutputFormat,
     columns: list[str] | None = None,
+    empty: str | bool | None = None,
 ) -> str:
     """Render a row collection: themed table for humans, plain output for pipes.
 
     Only ``table`` goes through the settings-resolved :func:`ui_context` —
     structured formats (json, raw, ...) must stay byte-stable regardless of the
-    active theme, so they render through a bare :class:`UiContext`.
+    active theme, so they render through a bare :class:`UiContext`. ``empty`` is
+    a human hint printed to stderr only when ``table`` output has no rows.
     """
     ui = ui_context() if fmt == "table" else UiContext()
-    return ui.collection(rows, fmt=fmt, columns=columns)
+    return ui.collection(rows, fmt=fmt, columns=columns, empty=empty)
 
 
 def run_cyclopts_app(
