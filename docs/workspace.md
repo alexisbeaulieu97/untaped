@@ -97,7 +97,7 @@ name and path.
 
 ```bash
 untaped workspace show [--workspace <ws> | --path <dir>]
-                       [--format json|yaml|table|raw] [--columns ...]
+                       [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
 Show the manifest details for one workspace. Each repo produces one
@@ -293,7 +293,7 @@ and abort the command.
 ```bash
 untaped workspace status [--workspace <ws> | --path <dir>] [--all]
                          [--repo <repo>]...
-                         [--format json|yaml|table|raw] [--columns ...]
+                         [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
 Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
@@ -313,16 +313,16 @@ untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
                                 [--repo <repo>]...
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
-                                [--format json|yaml|table|raw]
+                                [--format json|yaml|table|raw|pipe]
 ```
 
 Run a shell command in every repo of a workspace. Default
 `--format table` replays each repo's captured stdout / stderr with a
 `[<repo>]` prefix once that repo finishes — output is buffered per
 repo, so chatty commands won't interleave but you also won't see
-anything until each repo exits. `--format json|yaml|raw` emits one
+anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 `ForeachOutcome` row per repo (with `command` and `duration_s`) for
-piping into `jq` / `awk`.
+piping into `jq` / `awk` or another untaped command.
 
 ```bash
 untaped workspace foreach 'git status -s' --workspace prod

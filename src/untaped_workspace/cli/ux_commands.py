@@ -85,7 +85,7 @@ def path_command(
         Parameter(
             name="--stdin",
             negative="",
-            help="Read workspace names from stdin (one per line).",
+            help="Read workspace names from stdin (one per line, or a --format pipe stream).",
         ),
     ] = False,
 ) -> None:

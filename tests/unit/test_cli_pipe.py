@@ -64,3 +64,62 @@ def test_path_stdin_bare_line_still_works(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == str(target.resolve())
+
+
+def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.strip().splitlines()[0])
+    assert envelope["kind"] == "workspace.sync-outcome"
+
+
+def test_status_pipe_tags_status(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+
+    result = runner.invoke(app, ["status", "--workspace", "smoke", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.strip().splitlines()[0])
+    assert envelope["kind"] == "workspace.status"
+
+
+def test_foreach_pipe_tags_foreach_outcome(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+
+    result = runner.invoke(
+        app,
+        ["foreach", "git rev-parse --abbrev-ref HEAD", "--workspace", "smoke", "--format", "pipe"],
+    )
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.strip().splitlines()[0])
+    assert envelope["kind"] == "workspace.foreach-outcome"
+
+
+def test_branch_apply_pipe_tags_branch_outcome(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "develop"])
+    runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
+
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.strip().splitlines()[0])
+    assert envelope["kind"] == "workspace.branch-outcome"
