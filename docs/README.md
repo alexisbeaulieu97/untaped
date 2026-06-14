@@ -30,8 +30,10 @@ For installation, see the repo's [README](../README.md).
 ## Pipe-friendly by design
 
 Row-oriented `list`/`get`/`status`-style commands support
-`--format json|yaml|table|raw` and `--columns <field>` so their stdout
-can feed into the next tool:
+`--format json|yaml|table|raw|pipe` and `--columns <field>` so their stdout
+can feed into the next tool. `--format pipe` is a self-describing record stream
+(NDJSON) that another untaped command reads back — typed composition without
+flattening to strings:
 
 ```bash
 # Pick a job template interactively, then fetch its details as JSON.
@@ -45,6 +47,10 @@ untaped workspace sync --all
 untaped workspace status --all --format raw \
     --columns workspace --columns repo --columns behind \
   | awk '$3 > 0 { print }'
+
+# --format pipe carries full records between untaped commands (no flattening).
+untaped github search repos --org acme --format pipe \
+  | untaped github search code "BaseModel" --repo-stdin
 ```
 
 Side-effect commands (`profile use` from the optional profile plugin,

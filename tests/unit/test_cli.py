@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
@@ -192,6 +193,22 @@ def test_set_success_message_falls_back_when_global_ui_theme_unknown(
     assert f"set log_level (config: {_isolate_settings})" in result.output
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data == {"ui": {"theme": "missing"}, "log_level": "DEBUG"}
+
+
+def test_get_pipe_format_emits_single_envelope_via_detail_path(
+    _isolate_settings: Path,
+) -> None:
+    """``config get`` renders through the detail path; ``--format pipe`` must
+    emit one self-describing envelope, not raise ``unknown format`` (which would
+    escape ``report_errors`` as a traceback)."""
+    result = CliInvoker().invoke(app, ["get", "log_level", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    lines = [line for line in result.output.splitlines() if line.strip()]
+    assert len(lines) == 1
+    envelope = json.loads(lines[0])
+    assert envelope["untaped"] == "1"
+    assert isinstance(envelope["record"], dict) and envelope["record"]
 
 
 def test_set_ui_theme_writes_global_ui_state(_isolate_settings: Path) -> None:

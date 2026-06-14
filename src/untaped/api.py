@@ -33,6 +33,7 @@ from untaped.cli import (
 from untaped.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped.http import HttpClient, resolve_verify
 from untaped.output import OutputFormat
+from untaped.pipe import PipeEnvelope, common_kind
 from untaped.plugin_context import PluginContext, plugin_context
 from untaped.plugin_http import (
     connected_client,
@@ -59,7 +60,7 @@ from untaped.settings import (
     get_settings,
 )
 from untaped.settings_layout import SettingsLayout
-from untaped.stdin import read_identifiers, read_stdin
+from untaped.stdin import read_identifiers, read_records, read_stdin
 from untaped.ui import ThemeSpec, UiContext, ui_context
 
 
@@ -82,6 +83,7 @@ __all__ = [
     "HttpError",
     "HttpSettings",
     "OutputFormat",
+    "PipeEnvelope",
     "PluginContext",
     "PluginManifest",
     "PluginRegistry",
@@ -97,6 +99,7 @@ __all__ = [
     "UntapedError",
     "UntapedPlugin",
     "clamp_parallel",
+    "common_kind",
     "connected_client",
     "create_app",
     "echo",
@@ -114,6 +117,7 @@ __all__ = [
     "profile_override",
     "raise_usage",
     "read_identifiers",
+    "read_records",
     "read_stdin",
     "render_rows",
     "report_errors",

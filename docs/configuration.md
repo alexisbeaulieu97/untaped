@@ -222,13 +222,13 @@ untaped config list                          # effective values (flat, or active
 untaped config list --profile <name>         # one-off read against a named profile (root option, any position)
 untaped config list --all-profiles           # one row per (profile, key); requires untaped-profile
 untaped config list --show-secrets           # reveal redacted values
-untaped config list --format json|yaml|table|raw
+untaped config list --format json|yaml|table|raw|pipe
 untaped config list --format raw --columns key --columns value
                                              # available columns: key, value, default, source, profile
 untaped config get <key>                     # print one effective scalar value
 untaped config get <key> --profile <name>    # one-off read against a named profile (root option)
 untaped config get <key> --show-secrets      # reveal a secret value
-untaped config get <key> --format json|yaml|table|raw
+untaped config get <key> --format json|yaml|table|raw|pipe
 untaped config set <key> <value>             # write (top level, or the active profile)
 untaped config set <key> --stdin             # read one value from stdin
 untaped config set <key> --prompt            # prompt on stderr using the setting type
