@@ -56,6 +56,7 @@ def list_command(
             rows,
             fmt=fmt,
             columns=columns,
+            kind="workspace.workspace",
             empty="No workspaces registered. Create one with `untaped workspace init <name>`.",
         )
         if rendered:
@@ -73,7 +74,7 @@ def show_command(
     with report_errors():
         ws = resolve_workspace(workspace, path)
         rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
-        echo(render_rows(rows, fmt=fmt, columns=columns))
+        echo(render_rows(rows, fmt=fmt, columns=columns, kind="workspace.repo"))
 
 
 def path_command(
@@ -84,7 +85,7 @@ def path_command(
         Parameter(
             name="--stdin",
             negative="",
-            help="Read workspace names from stdin (one per line).",
+            help="Read workspace names from stdin (one per line, or a --format pipe stream).",
         ),
     ] = False,
 ) -> None:
@@ -92,7 +93,7 @@ def path_command(
     get_path = WorkspacePath(WorkspaceRegistryRepository())
     any_failed = False
     with report_errors():
-        idents = read_identifiers(list(names or []), stdin=stdin)
+        idents = read_identifiers(list(names or []), stdin=stdin, id_field="name")
 
         def _echo_path(workspace_name: str) -> None:
             echo(str(get_path(workspace_name)))

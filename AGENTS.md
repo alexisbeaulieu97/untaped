@@ -24,7 +24,7 @@ Profile selection is contributed by `untaped-profile`.
 3. **Expose the plugin through the `untaped.plugins` entry point.**
    `workspace = "untaped_workspace.plugin:plugin"` is the public integration
    point. The plugin object must expose `id = "workspace"`, literal
-   `untaped_api_version = 3`, and `manifest() -> PluginManifest`. `plugin.py`
+   `untaped_api_version = 5`, and `manifest() -> PluginManifest`. `plugin.py`
    must not import the CLI: the manifest's
    `CliSpec(name="workspace", import_path="untaped_workspace.cli:app", ...)`
    defers that import until the command is dispatched, and the package
@@ -59,7 +59,14 @@ Profile selection is contributed by `untaped-profile`.
     `--format table` output goes through core `ui_context()` so global
     `ui:` settings and plugin themes apply. Structured `json`, `yaml`, and
     `raw` output goes through a plain `UiContext()` so missing or bad themes
-    do not break pipe-friendly output.
+    do not break pipe-friendly output. Every producer also passes a `kind=`
+    so `--format pipe` emits self-describing NDJSON: `list` →
+    `workspace.workspace`, `show` → `workspace.repo` (per-repo grain),
+    `sync` → `workspace.sync-outcome`, `status` → `workspace.status`,
+    `foreach` → `workspace.foreach-outcome`, `branch apply` →
+    `workspace.branch-outcome`. `path` consumes that stream via
+    `read_identifiers(..., id_field="name")`, so
+    `list --format pipe | path --stdin` works (bare names still work too).
 12. **Interactive prompts use core prompt primitives.** Destructive
     confirmations go through `ui_context(strict=False).confirm(...)`, render
     on stderr, require TTY stdin, and keep `--yes` for automation.
