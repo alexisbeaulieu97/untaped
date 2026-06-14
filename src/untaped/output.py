@@ -10,6 +10,9 @@ Conventions:
 - ``table`` produces a rich-rendered ASCII table for human consumption.
   Its width follows the ``COLUMNS`` env var (or the inherited TTY size);
   no hard-coded cap. Tests that need a stable render can pin ``COLUMNS``.
+- ``pipe`` produces the self-describing NDJSON interchange stream (one
+  ``{"untaped": ..., "kind": ..., "record": {...}}`` per line) for piping into
+  another untaped command; pass ``kind`` to tag records. Ignores ``columns``.
 
 If no ``columns`` are specified for ``raw``, the value of the first
 key of each row is emitted — so the first key of every row is the
@@ -40,6 +43,11 @@ def format_output(
     fmt: OutputFormat,
     columns: list[str] | None = None,
     theme: ThemeSpec | None = None,
+    kind: str | None = None,
 ) -> str:
-    """Render ``rows`` as a string in the requested format."""
-    return UiContext(theme=theme).collection(rows, fmt=fmt, columns=columns)
+    """Render ``rows`` as a string in the requested format.
+
+    ``kind`` tags ``--format pipe`` records with a producer hint; it is ignored
+    by every other format.
+    """
+    return UiContext(theme=theme).collection(rows, fmt=fmt, columns=columns, kind=kind)

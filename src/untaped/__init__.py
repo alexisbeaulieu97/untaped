@@ -26,6 +26,7 @@ from untaped.config_schema import (
 from untaped.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped.http import HttpClient, resolve_verify
 from untaped.output import OutputFormat, format_output
+from untaped.pipe import PipeEnvelope, common_kind
 from untaped.plugin_registry import SkillSpec
 
 # Deprecated transitional v3 compat (plugin API v4 extracted profiles to the
@@ -63,7 +64,7 @@ from untaped.settings import (
     splice_registered_state,
     validate_settings_isolated,
 )
-from untaped.stdin import read_identifiers, read_stdin
+from untaped.stdin import read_identifiers, read_records, read_stdin
 from untaped.ui import (
     BUILTIN_THEMES,
     ThemeSpec,
@@ -84,6 +85,7 @@ __all__ = [
     "HttpError",
     "HttpSettings",
     "OutputFormat",
+    "PipeEnvelope",
     "PluginInstallSpec",
     "PluginsState",
     "ProfileOverrideOption",
@@ -98,6 +100,7 @@ __all__ = [
     "UntapedError",
     "clamp_parallel",
     "classify_active_profile",
+    "common_kind",
     "confirm",
     "create_app",
     "echo",
@@ -117,6 +120,7 @@ __all__ = [
     "profile_override",
     "raise_usage",
     "read_identifiers",
+    "read_records",
     "read_stdin",
     "redact_secrets",
     "register_profile_settings",
