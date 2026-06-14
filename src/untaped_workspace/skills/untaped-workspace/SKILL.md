@@ -26,5 +26,6 @@ Use this skill when the user wants an agent to operate `untaped workspace` for l
 ## Agent Guidance
 
 - Prefer `--format json` for structured state and `--format raw --columns ...` for shell pipelines.
+- Use `--format pipe` to chain untaped commands: it emits one self-describing record per line tagged with a `kind` (e.g. `workspace.workspace`, `workspace.repo`); `path --stdin` reads that stream back (`list --format pipe | path --stdin`).
 - Do not assume the current directory is the intended workspace. Resolve target precedence: `--workspace`, then `--path`, then nearest parent `untaped.yml`.
 - Treat destructive repo operations as explicit user intent. Inspect `workspace status` before broad sync or branch changes.

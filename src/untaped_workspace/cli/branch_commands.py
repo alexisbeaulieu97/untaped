@@ -136,6 +136,12 @@ def print_branch_apply_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows = [row.model_dump() for row in outcomes]
-    rendered = render_rows(rows, fmt=fmt, columns=columns, empty="No matching repos to checkout.")
+    rendered = render_rows(
+        rows,
+        fmt=fmt,
+        columns=columns,
+        kind="workspace.branch-outcome",
+        empty="No matching repos to checkout.",
+    )
     if rendered:
         echo(rendered)

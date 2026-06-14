@@ -135,6 +135,7 @@ def print_sync_outcomes(
         rows,
         fmt=fmt,
         columns=columns,
+        kind="workspace.sync-outcome",
         empty="Nothing to sync; clones already match the manifest.",
     )
     if rendered:
@@ -166,6 +167,7 @@ def status_command(
             rows,
             fmt=fmt,
             columns=columns,
+            kind="workspace.status",
             empty="No cloned repos. Run `untaped workspace sync` to clone from the manifest.",
         )
         if rendered:
@@ -252,7 +254,7 @@ def foreach_command(
                 echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
-            rendered = render_rows(rows, fmt=fmt, columns=columns)
+            rendered = render_rows(rows, fmt=fmt, columns=columns, kind="workspace.foreach-outcome")
             if rendered:
                 echo(rendered)
         if failed and not ignore_errors:
