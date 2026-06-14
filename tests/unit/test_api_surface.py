@@ -62,7 +62,11 @@ EXPECTED_SURFACE = frozenset(
         "ui_context",
         # Stdin
         "read_identifiers",
+        "read_records",
         "read_stdin",
+        # Pipe interchange
+        "PipeEnvelope",
+        "common_kind",
     }
 )
 

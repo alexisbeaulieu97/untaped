@@ -331,3 +331,17 @@ def test_render_rows_structured_formats_ignore_theme(_isolated_config: Path) -> 
     raw = render_rows(rows, fmt="raw", columns=["name"])
     assert raw == "alpha"
     assert "\x1b[" not in raw
+
+
+def test_render_rows_pipe_tags_each_record_with_kind(_isolated_config: Path) -> None:
+    rows: list[dict[str, object]] = [{"full_name": "a/b"}, {"full_name": "c/d"}]
+    out = render_rows(rows, fmt="pipe", kind="github.repo")
+    assert [json.loads(line) for line in out.splitlines()] == [
+        {"untaped": "1", "kind": "github.repo", "record": {"full_name": "a/b"}},
+        {"untaped": "1", "kind": "github.repo", "record": {"full_name": "c/d"}},
+    ]
+
+
+def test_render_rows_pipe_kind_defaults_to_null(_isolated_config: Path) -> None:
+    out = render_rows([{"x": 1}], fmt="pipe")
+    assert json.loads(out)["kind"] is None
