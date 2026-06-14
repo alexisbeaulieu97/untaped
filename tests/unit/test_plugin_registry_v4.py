@@ -161,14 +161,31 @@ def test_settings_layout_import_path_is_validated() -> None:
         SettingsLayoutSpec(import_path="missing-colon")
 
 
-def test_unsupported_version_message_lists_v4() -> None:
+def test_v5_plugin_with_manifest_registers() -> None:
     registry = PluginRegistry()
+    manifest = PluginManifest(clis=(CliSpec(name="demo", app=create_app(name="demo")),))
 
     class V5Plugin:
-        id = "future"
+        id = "demo"
         untaped_api_version = 5
+
+        def manifest(self) -> PluginManifest:
+            return manifest
 
     register_plugins(registry, [V5Plugin()])
 
+    assert registry.load_errors == []
+    assert registry.plugin_ids == {"demo"}
+
+
+def test_unsupported_version_message_lists_supported_versions() -> None:
+    registry = PluginRegistry()
+
+    class V6Plugin:
+        id = "future"
+        untaped_api_version = 6
+
+    register_plugins(registry, [V6Plugin()])
+
     assert len(registry.load_errors) == 1
-    assert "2, 3, 4" in registry.load_errors[0].error
+    assert "2, 3, 4, 5" in registry.load_errors[0].error

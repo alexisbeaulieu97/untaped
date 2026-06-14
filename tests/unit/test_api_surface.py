@@ -56,6 +56,7 @@ EXPECTED_SURFACE = frozenset(
         "ProfileOverrideOption",
         "profile_override",
         # Interactive UI
+        "ProgressHandle",
         "PromptChoice",
         "UiContext",
         "ui_context",

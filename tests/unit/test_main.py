@@ -66,6 +66,31 @@ def _isolate_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_verbose() -> Iterator[None]:
+    from untaped import verbose
+
+    verbose.reset()
+    yield
+    verbose.reset()
+
+
+class _VerboseProbePlugin:
+    id = "verbose-probe"
+    untaped_api_version = 2
+
+    def register(self, registry: PluginRegistry) -> None:
+        probe_app = create_app(name="probe")
+
+        @probe_app.command(name="verbose")
+        def verbose_cmd() -> None:
+            from untaped.verbose import is_verbose
+
+            echo("on" if is_verbose() else "off")
+
+        registry.add_cli("probe", probe_app)
+
+
 def test_help_lists_core_commands_only_without_plugins(app: object) -> None:
     result = CliInvoker().invoke(app, ["--help"])
     assert result.exit_code == 0
@@ -447,3 +472,47 @@ def test_discovery_emits_environment_warning_on_stderr(
     captured = capsys.readouterr()
     assert "warning: recorded plugins cannot load" in captured.err
     assert captured.out == ""
+
+
+def test_core_verbose_flag_appears_in_root_help(app: object) -> None:
+    result = CliInvoker().invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "--verbose" in result.stdout
+
+
+def test_verbose_flag_leading_position_enables_verbose() -> None:
+    app = build_app(plugins=[_VerboseProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["--verbose", "probe", "verbose"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "on"
+
+
+def test_verbose_short_alias_trailing_position_enables_verbose() -> None:
+    app = build_app(plugins=[_VerboseProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "verbose", "-v"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "on"
+
+
+def test_without_verbose_flag_stays_off() -> None:
+    app = build_app(plugins=[_VerboseProbePlugin()])
+
+    result = CliInvoker().invoke(app, ["probe", "verbose"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "off"
+
+
+def test_verbose_flag_is_reset_after_invocation() -> None:
+    from untaped.verbose import is_verbose
+
+    app = build_app(plugins=[_VerboseProbePlugin()])
+
+    CliInvoker().invoke(app, ["--verbose", "probe", "verbose"])
+
+    assert is_verbose() is False

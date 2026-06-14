@@ -7,6 +7,7 @@ import json
 import shutil
 import sys
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import Any, Literal, Protocol, TextIO, cast
 
 import yaml
@@ -17,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.errors import ConfigError
+from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
@@ -206,9 +208,11 @@ class UiContext:
         stdin: TextIO | None = None,
         stdout: TextIO | None = None,
         stderr: TextIO | None = None,
+        verbose: bool = False,
     ) -> None:
         self.theme = theme or BUILTIN_THEMES["default"]
         self.renderer = renderer or RichTerminalRenderer()
+        self.verbose = verbose
         self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
@@ -224,14 +228,24 @@ class UiContext:
         *,
         fmt: OutputFormat,
         columns: list[str] | None = None,
+        empty: str | bool | None = None,
     ) -> str:
-        return self.renderer.render_collection(
+        rendered = self.renderer.render_collection(
             rows,
             fmt=fmt,
             columns=columns,
             theme=self.theme,
             colorize=_stream_is_tty(self.stdout),
         )
+        if not rows and fmt == "table" and empty:
+            note = empty if isinstance(empty, str) else "No results."
+            print(
+                self.renderer.render_message(
+                    "info", note, theme=self.theme, colorize=_stream_is_tty(self.stderr)
+                ),
+                file=self.stderr,
+            )
+        return rendered
 
     def detail(
         self,
@@ -256,6 +270,20 @@ class UiContext:
             colorize=_stream_is_tty(self.stderr),
         )
         print(rendered, file=self.stderr)
+
+    def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
+        """Report progress for a blocking operation on stderr.
+
+        TTY renders an animated spinner; non-TTY emits throttled lines; under
+        ``verbose`` the wrapped tool's own output streams through. stdout stays
+        untouched so piped data is never polluted.
+        """
+        return progress_reporter(
+            label,
+            stream=self.stderr,
+            verbose=self.verbose,
+            isatty=_stream_is_tty(self.stderr),
+        )
 
     def confirm(self, message: str, *, default: bool = False) -> bool:
         """Prompt for a yes/no response."""

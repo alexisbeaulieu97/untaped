@@ -9,6 +9,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Protocol
 
 from filelock import FileLock, Timeout
 
@@ -20,24 +21,41 @@ from untaped.settings import PluginInstallSpec, PluginsState, PluginToolSpec
 _DEFAULT_ENV_LOCK_TIMEOUT = 300.0
 
 
-def sync_state(state: PluginsState) -> None:
+class SyncProgress(Protocol):
+    """Narrow progress sink for managed-env sync, kept UI-free.
+
+    ``phase`` announces a new step; ``verbose`` selects live tool output over
+    output captured and surfaced only on failure. The concrete adapter lives at
+    the composition root (``plugins.py``), which owns the ``UiContext``.
+    """
+
+    def phase(self, label: str) -> None: ...
+
+    @property
+    def verbose(self) -> bool: ...
+
+
+def sync_state(state: PluginsState, *, progress: SyncProgress | None = None) -> None:
     """Rebuild the managed untaped virtual environment for recorded state."""
-    with managed_env_lock():
-        sync_state_unlocked(state)
+    with managed_env_lock(progress=progress):
+        sync_state_unlocked(state, progress=progress)
 
 
-def sync_state_unlocked(state: PluginsState) -> None:
+def sync_state_unlocked(state: PluginsState, *, progress: SyncProgress | None = None) -> None:
     """Rebuild the managed untaped virtual environment without locking it."""
     validate_syncable_plugins(state)
     venv = default_managed_venv_path()
     python = venv_python(venv)
+    verbose = progress.verbose if progress is not None else False
     if not python.exists():
-        _run_command(uv_venv_command(venv), "plugin venv creation failed")
+        _run_command(uv_venv_command(venv), "plugin venv creation failed", verbose=verbose)
     requirements = render_requirements(state.tool, state.packages)
     with tempfile.TemporaryDirectory() as tmp:
         input_path = Path(tmp) / "requirements.in"
         output_path = Path(tmp) / "requirements.txt"
         input_path.write_text(requirements, encoding="utf-8")
+        if progress is not None:
+            progress.phase("Resolving plugin dependencies…")
         _run_command(
             uv_pip_compile_command(
                 python,
@@ -50,21 +68,45 @@ def sync_state_unlocked(state: PluginsState) -> None:
                 "depends on another untaped plugin that is not on an index, record "
                 "the dependency explicitly with `untaped plugins add <path-or-url>`"
             ),
+            verbose=verbose,
         )
+        if progress is not None:
+            progress.phase("Installing plugins…")
         _run_command(
             uv_pip_sync_command(python, output_path),
             "plugin sync failed",
+            verbose=verbose,
         )
 
 
 @contextmanager
-def managed_env_lock(venv: Path | None = None) -> Iterator[None]:
+def managed_env_lock(
+    venv: Path | None = None, *, progress: SyncProgress | None = None
+) -> Iterator[None]:
     """Serialize writes to the managed untaped virtual environment."""
     venv = venv or default_managed_venv_path()
     lock_path = venv.parent / "venv.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     timeout = float(os.environ.get("UNTAPED_PLUGIN_ENV_LOCK_TIMEOUT", _DEFAULT_ENV_LOCK_TIMEOUT))
     lock = FileLock(str(lock_path), timeout=timeout)
+    _acquire_env_lock(lock, venv, timeout, progress)
+    try:
+        yield
+    finally:
+        lock.release()
+
+
+def _acquire_env_lock(
+    lock: FileLock, venv: Path, timeout: float, progress: SyncProgress | None
+) -> None:
+    """Grab the env lock, announcing the wait only when actually contended."""
+    try:
+        lock.acquire(timeout=0)
+        return
+    except Timeout:
+        pass
+    if progress is not None:
+        progress.phase("Waiting for another untaped process to finish…")
     try:
         lock.acquire()
     except Timeout as exc:
@@ -72,10 +114,6 @@ def managed_env_lock(venv: Path | None = None) -> Iterator[None]:
             f"could not acquire lock on {venv}; another untaped plugin sync is "
             f"running (waited {timeout}s)."
         ) from exc
-    try:
-        yield
-    finally:
-        lock.release()
 
 
 def validate_syncable_plugins(state: PluginsState) -> None:
@@ -143,11 +181,25 @@ def _requirement_line(spec: str, *, editable: bool) -> str:
     return f"-e {spec}" if editable else spec
 
 
-def _run_command(cmd: list[str], failure: str, *, hint: str | None = None) -> None:
-    result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
+def _run_command(
+    cmd: list[str], failure: str, *, hint: str | None = None, verbose: bool = False
+) -> None:
+    returncode, captured = _execute(cmd, verbose=verbose)
+    if returncode != 0:
         rendered = " ".join(shlex.quote(part) for part in cmd)
-        message = f"{failure} with exit {result.returncode}: {rendered}"
+        message = f"{failure} with exit {returncode}: {rendered}"
         if hint is not None:
             message += f"\nhint: {hint}"
+        detail = captured.strip()
+        if detail:
+            message += f"\n{detail}"
         raise ConfigError(message)
+
+
+def _execute(cmd: list[str], *, verbose: bool) -> tuple[int, str]:
+    """Run ``cmd``; under ``verbose`` stream stdio live, else capture for failures."""
+    if verbose:
+        result = subprocess.run(cmd, check=False)
+        return result.returncode, ""
+    captured = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    return captured.returncode, f"{captured.stdout or ''}{captured.stderr or ''}"

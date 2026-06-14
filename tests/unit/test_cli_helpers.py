@@ -310,6 +310,17 @@ def test_render_rows_table_contains_cells(_isolated_config: Path) -> None:
     assert "name" in rendered
 
 
+def test_render_rows_empty_table_emits_hint_to_stderr(
+    _isolated_config: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rendered = render_rows([], fmt="table", empty="No plugins installed.")
+    captured = capsys.readouterr()
+    assert rendered == ""
+    assert captured.out == ""
+    assert "No plugins installed." in captured.err
+
+
 def test_render_rows_structured_formats_ignore_theme(_isolated_config: Path) -> None:
     """json/raw output must stay byte-stable no matter the configured theme."""
     _isolated_config.write_text("ui:\n  theme: dark\n")

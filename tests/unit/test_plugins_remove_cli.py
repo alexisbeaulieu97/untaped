@@ -31,7 +31,7 @@ def _record_successful_uv_calls(calls: list[list[str]], requirements: list[str])
         if cmd[:3] == ["uv", "pip", "compile"]:
             requirements.append(Path(cmd[3]).read_text())
             Path(cmd[5]).write_text("# resolved\n")
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     return _run
 
@@ -250,10 +250,10 @@ def test_plugins_remove_sync_failure_restores_editable_path_removed_by_spec(
         calls.append(cmd)
         if cmd[:3] == ["uv", "pip", "compile"]:
             Path(cmd[5]).write_text("# resolved\n")
-            return type("Result", (), {"returncode": 0})()
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         if cmd[:3] == ["uv", "pip", "sync"]:
-            return type("Result", (), {"returncode": 2})()
-        return type("Result", (), {"returncode": 0})()
+            return type("Result", (), {"returncode": 2, "stdout": "", "stderr": ""})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 

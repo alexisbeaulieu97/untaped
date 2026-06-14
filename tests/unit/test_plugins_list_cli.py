@@ -27,6 +27,27 @@ def test_plugins_list_reports_invalid_plugin_state_without_traceback(
     assert "Traceback" not in result.output
 
 
+def test_plugins_list_empty_table_shows_guiding_hint(_isolated_config: Path) -> None:
+    set_current_registry(PluginRegistry())
+
+    result = CliInvoker().invoke(plugins_app, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "No plugins installed" in result.stderr
+    assert "untaped plugins add" in result.stderr
+
+
+def test_plugins_list_empty_json_emits_array_without_hint(_isolated_config: Path) -> None:
+    set_current_registry(PluginRegistry())
+
+    result = CliInvoker().invoke(plugins_app, ["list", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == []
+    assert "No plugins installed" not in result.stderr
+
+
 def test_plugins_list_defaults_to_table_output(_isolated_config: Path) -> None:
     _isolated_config.write_text(
         "plugins:\n"

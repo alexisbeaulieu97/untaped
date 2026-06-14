@@ -34,7 +34,7 @@ def _record_successful_uv_calls(calls: list[list[str]], requirements: list[str])
         if cmd[:3] == ["uv", "pip", "compile"]:
             requirements.append(Path(cmd[3]).read_text())
             Path(cmd[5]).write_text("# resolved\n")
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     return _run
 
@@ -64,7 +64,9 @@ def test_plugins_sync_rolls_back_when_uv_fails(
     def _run(_: list[str], **__: Any) -> Any:
         nonlocal calls
         calls += 1
-        return type("Result", (), {"returncode": 0 if calls < 3 else 2})()
+        return type(
+            "Result", (), {"returncode": 0 if calls < 3 else 2, "stdout": "", "stderr": ""}
+        )()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
@@ -92,7 +94,7 @@ def test_plugins_sync_requires_recorded_core_spec_before_uv(
 
     def _run(cmd: list[str], **_: Any) -> Any:
         calls.append(cmd)
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
@@ -279,7 +281,7 @@ def test_plugins_sync_reads_state_after_acquiring_env_lock(
     )
 
     @contextmanager
-    def _lock() -> Iterator[None]:
+    def _lock(*_args: Any, **_kwargs: Any) -> Iterator[None]:
         def _record_profile(data: dict[str, Any]) -> None:
             plugins = data.setdefault("plugins", {})
             assert isinstance(plugins, dict)
@@ -320,7 +322,9 @@ def test_plugins_sync_does_not_canonicalize_recorded_bare_direct_url_when_uv_fai
     def _run(_: list[str], **__: Any) -> Any:
         nonlocal calls
         calls += 1
-        return type("Result", (), {"returncode": 0 if calls < 3 else 2})()
+        return type(
+            "Result", (), {"returncode": 0 if calls < 3 else 2, "stdout": "", "stderr": ""}
+        )()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
@@ -346,7 +350,7 @@ def test_plugins_sync_rejects_recorded_uninferable_bare_direct_url_before_uv(
 
     def _run(cmd: list[str], **_: Any) -> Any:
         calls.append(cmd)
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
