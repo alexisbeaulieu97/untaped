@@ -29,11 +29,15 @@ ENTRY_POINT_GROUP = "untaped.plugins"
 _LEGACY_PLUGIN_API_VERSION = 2
 _MANIFEST_PLUGIN_API_VERSION = 3
 _ROOT_OPTION_PLUGIN_API_VERSION = 4
+# v5 adds runtime UiContext capabilities (progress(), collection(empty=)); these
+# are not new manifest fields, so no extra manifest validation is required.
+_PROGRESS_PLUGIN_API_VERSION = 5
 _SUPPORTED_PLUGIN_API_VERSIONS = frozenset(
     {
         _LEGACY_PLUGIN_API_VERSION,
         _MANIFEST_PLUGIN_API_VERSION,
         _ROOT_OPTION_PLUGIN_API_VERSION,
+        _PROGRESS_PLUGIN_API_VERSION,
     }
 )
 
@@ -112,16 +116,21 @@ class CliSpec:
 
 @dataclass(frozen=True)
 class RootOptionSpec:
-    """A value-taking root-level option contributed by a plugin (e.g. ``--profile``).
+    """A root-level option contributed by core or a plugin (e.g. ``--profile``).
 
     The handler behind ``handler_import_path`` (``Callable[[str], None]``) is
     imported only when the option is actually used, and runs before the
-    dispatched command body reads settings.
+    dispatched command body reads settings. Value options (the default) take the
+    following token as their value; ``takes_value=False`` declares a boolean flag
+    (e.g. ``--verbose``) whose handler is called with a placeholder string.
+    ``aliases`` lists extra accepted spellings such as a short ``-v``.
     """
 
     name: str
     help: str
     handler_import_path: str
+    takes_value: bool = True
+    aliases: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name.startswith("--") or len(self.name) <= 2:

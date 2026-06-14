@@ -33,7 +33,7 @@ def _record_successful_uv_calls(calls: list[list[str]], requirements: list[str])
         if cmd[:3] == ["uv", "pip", "compile"]:
             requirements.append(Path(cmd[3]).read_text())
             Path(cmd[5]).write_text("# resolved\n")
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     return _run
 
@@ -174,7 +174,7 @@ def test_plugins_add_sync_requires_recorded_core_spec(
 
     def _run(cmd: list[str], **_: Any) -> Any:
         calls.append(cmd)
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
@@ -245,7 +245,9 @@ def test_plugins_add_sync_rolls_back_state_when_uv_fails(
     def _run(_: list[str], **__: Any) -> Any:
         nonlocal calls
         calls += 1
-        return type("Result", (), {"returncode": 0 if calls < 3 else 2})()
+        return type(
+            "Result", (), {"returncode": 0 if calls < 3 else 2, "stdout": "", "stderr": ""}
+        )()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
@@ -285,7 +287,7 @@ def test_plugins_add_sync_keeps_concurrent_plugin_state_change(
             worker = Thread(target=_concurrent_write)
             worker.start()
             concurrent_done.wait(timeout=0.2)
-        return type("Result", (), {"returncode": 0})()
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 
@@ -588,7 +590,7 @@ def test_plugins_add_sync_failure_rolls_back_auto_recorded_dependencies(
     )
 
     def _run(_: list[str], **__: Any) -> Any:
-        return type("Result", (), {"returncode": 2})()
+        return type("Result", (), {"returncode": 2, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("untaped.plugin_sync.subprocess.run", _run)
 

@@ -196,6 +196,17 @@ occurrences are consumed before dispatch, and an unknown-option parse error
 matching a registered root option triggers a strip-and-retry, so passthrough
 commands and commands declaring a homonymous option keep their own tokens.
 
+**Api version 5 (declarative + runtime feedback):** same manifest contract as
+version 4 plus new runtime `UiContext` capabilities a plugin may call — animated
+(TTY) / throttled (non-TTY) progress via `with ui.progress(label) as p:
+p.update(msg, fraction=..., new_phase=...)` and guiding empty-state notes via
+`render_rows(..., empty="...")` / `ui.collection(..., empty=...)`. These are
+runtime capabilities, not manifest fields, so no new manifest validation exists;
+a v5 plugin running on a pre-v5 core is rejected cleanly at registration (shown
+by `untaped plugins doctor`) instead of failing with `AttributeError` mid-run.
+Declare `untaped_api_version = 5` only when the plugin actually uses a v5
+capability, and bump its `untaped>=` floor to the release that introduced it.
+
 **Legacy (api version 2, imperative):** `untaped_api_version = 2` plus
 `register(self, registry: PluginRegistry) -> None` calling the registry hooks
 below. Still accepted; new plugins use manifests.
@@ -313,6 +324,8 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
 | Add `--format` / `--columns` to a Cyclopts command | `from untaped import FormatOption, ColumnsOption`      |
 | Render `--format`/`--columns` row collections | `from untaped import render_rows` (themed table for humans; theme-independent json/raw for pipes) |
+| Show a guiding empty-state note for a no-result table | `render_rows(..., empty="hint")` or `ui.collection(..., empty=...)` — prints to stderr for the human `table` view only; json/yaml/raw stay byte-stable (v5) |
+| Report progress for a slow/blocking operation | `ui_context(strict=False).progress(label)` — spinner on TTY, throttled lines otherwise; `with ... as p: p.update(msg, fraction=..., new_phase=...)`; never wrap an interactive prompt (v5) |
 | Reject bad usage with `error: ...` + exit 2 | `from untaped import raise_usage`                          |
 | Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
 | Read piped values from stdin               | `from untaped import read_stdin`                            |
@@ -403,6 +416,9 @@ Cross-cutting subsystems with their own internals doc:
   stdout.
 - **stderr = everything else.** Logs, progress, prompts. Use
   `echo(msg, err=True)`.
+- **`--verbose` / `-v`** is a core root option (any token position). By
+  default slow tool output is captured and shown only on failure; `--verbose`
+  streams it live and raises the `untaped` logger to DEBUG on stderr.
 - **Row-oriented data commands** (`list`, `status`, row-producing `get`,
   …) expose:
   - `--format / -f` (`json | yaml | table | raw`); default `table` for
