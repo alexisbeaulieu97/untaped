@@ -16,6 +16,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
+from untaped.identity import set_tool_command
 from untaped.plugin_context import PluginContext, plugin_context
 from untaped.settings import register_profile_settings, register_state_settings
 
@@ -77,8 +78,10 @@ def register_tool(spec: ToolSpec) -> None:
 
     Only registered sections are resolved; other tools' sections in the shared
     config file are ignored. The profile and (optional) state models are
-    validated as disjoint by the settings registry.
+    validated as disjoint by the settings registry. Records the tool's command
+    as the process identity so SDK guidance can name it.
     """
+    set_tool_command(spec.command)
     register_profile_settings(spec.section, spec.profile_model)
     if spec.state_model is not None:
         register_state_settings(spec.section, spec.state_model)

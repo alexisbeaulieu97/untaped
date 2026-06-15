@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from untaped.errors import ConfigError
+from untaped.identity import reset_tool_command
 from untaped.plugins import PluginRegistry, set_current_registry
 from untaped.settings import (
     get_settings,
@@ -40,6 +41,14 @@ def _reset_flat_layout_warning() -> Iterator[None]:
     reset_flat_layout_warning_for_tests()
     yield
     reset_flat_layout_warning_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _reset_tool_command() -> Iterator[None]:
+    """Clear the process-global tool command so it never bleeds across tests."""
+    reset_tool_command()
+    yield
+    reset_tool_command()
 
 
 @pytest.fixture

@@ -16,17 +16,28 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError, UntapedError
 from untaped.http import HttpClient, resolve_verify
+from untaped.identity import current_tool_command
 from untaped.settings import HttpSettings
 
 PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
 
 
 def missing_setting_error(section: str, field: str) -> ConfigError:
-    """A standard "go set this config key" error for a missing plugin setting."""
+    """A standard "go set this config key" error for a missing tool setting.
+
+    Names the running tool's command with a bare key (``untaped-github config
+    set token``) when a tool is registered; falls back to the umbrella,
+    fully-qualified form (``untaped config set github.field``) otherwise.
+    """
     placeholder = field.rsplit("_", maxsplit=1)[-1]
+    command = current_tool_command()
+    if command is None:
+        cmd, key = "untaped", f"{section}.{field}"
+    else:
+        cmd, key = command, field
     return ConfigError(
         f"{section}.{field} is not configured (set it via "
-        f"`untaped config set {section}.{field} <{placeholder}>` or "
+        f"`{cmd} config set {key} <{placeholder}>` or "
         f"UNTAPED_{section.upper()}__{field.upper()})"
     )
 
