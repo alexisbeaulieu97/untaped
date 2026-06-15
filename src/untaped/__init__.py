@@ -1,5 +1,6 @@
 """Public API for the untaped core and plugin platform."""
 
+from untaped.batch import BatchOutcome, batch_apply
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
@@ -77,6 +78,7 @@ from untaped.ui import (
 __all__ = [
     "BUILTIN_THEMES",
     "DEFAULT_PROFILE",
+    "BatchOutcome",
     "ColumnsOption",
     "ConfigError",
     "FieldDescriptor",
@@ -98,6 +100,7 @@ __all__ = [
     "UiContext",
     "UiSettings",
     "UntapedError",
+    "batch_apply",
     "clamp_parallel",
     "classify_active_profile",
     "common_kind",

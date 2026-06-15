@@ -14,6 +14,7 @@ from __future__ import annotations
 # plugin's root --profile option): released v3-era plugins import them at
 # command dispatch, so they stay on this surface until the rollout completes
 # across the plugin repos.
+from untaped.batch import BatchOutcome, batch_apply
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
@@ -74,6 +75,7 @@ def invalidate_settings_cache() -> None:
 
 
 __all__ = [
+    "BatchOutcome",
     "CliSpec",
     "ColumnsOption",
     "ConfigError",
@@ -98,6 +100,7 @@ __all__ = [
     "UiContext",
     "UntapedError",
     "UntapedPlugin",
+    "batch_apply",
     "clamp_parallel",
     "common_kind",
     "connected_client",
