@@ -19,6 +19,27 @@ Both end up editing the same file. This page covers what's in it, how
 the values are resolved, and how to manage profiles and keys without
 hand-editing YAML.
 
+## Config format v1 (stable across SDK 1.x)
+
+Under the SDK-only direction, each tool is installed in its own `uv tool`
+environment but they all read and write this one file, so its format is a
+shared contract. It is declared **v1** and **frozen and stable across all
+`untaped` SDK 1.x releases**; any change is a major (2.0) SDK event. The frozen
+surface:
+
+- Top-level SDK-owned keys: `active:`, `profiles:`, `http:`, `ui:`.
+- One section per tool, holding that tool's profile fields plus its disjoint
+  state fields (the two field sets do not overlap).
+- Profile layering: `profiles.default` sits beneath `profiles.<active>`.
+- Env-var override shape: `UNTAPED_<SECTION>__<FIELD>` (uppercased section,
+  double underscore before the field).
+- `http` and `ui` are addressed as top-level globals (e.g. `http.verify_ssl`,
+  `ui.theme`).
+- Bare config keys address the invoking tool's own section.
+
+Each tool validates only its own section and writes are surgical, so an older
+tool never clobbers a newer tool's section. See [decisions.md](./decisions.md).
+
 ## Where the file lives
 
 ```text
