@@ -82,17 +82,22 @@ def _root_options() -> dict[str, _RootOption]:
 
 def build_tool_app(app: App, spec: ToolSpec) -> App:
     """Wire ``spec`` onto ``app`` and return it ready to run via ``app.meta``."""
+    first_wiring = "config" not in app
     register_tool(spec)
     register_settings_layout(ProfilesSettingsLayout, key="untaped.sdk:profiles")
-    app.command(build_config_app(spec), name="config")
-    app.command(build_profile_app(spec.command), name="profile")
-    app.command(build_skills_app(spec), name="skills")
+    _mount(app, build_config_app(spec), name="config")
+    _mount(app, build_profile_app(spec.command), name="profile")
+    _mount(app, build_skills_app(spec), name="skills")
     # cyclopts only accepts a name at construction (``App.name`` is a read-only
     # property over the ``_name`` backing field). A tool hands us its own app,
     # so override the backing field to make help/usage read the tool command.
     app._name = (spec.command,)
-    _install_root_callback(app, _root_options())
-    app.register_install_completion_command()
+    if first_wiring:
+        # The meta default callback and the completion command can each only be
+        # registered once; the mounts above are del-if-present so they re-wire
+        # cleanly, but these must be gated to the first wiring.
+        _install_root_callback(app, _root_options())
+        app.register_install_completion_command()
     return app
 
 
@@ -107,6 +112,17 @@ def run_tool(
     """Wire ``spec`` onto ``app`` and run it. Use as a tool's ``main()``."""
     wired = build_tool_app(app, spec)
     return run_cyclopts_app(wired.meta, tokens, console=console, error_console=error_console)
+
+
+def _mount(app: App, sub: App, *, name: str) -> None:
+    """Mount ``sub`` as ``name``, replacing any existing command.
+
+    Makes wiring idempotent so ``build_tool_app`` / ``run_tool`` can be called
+    more than once on the same app (tests, embedding) without a collision.
+    """
+    if name in app:
+        del app[name]
+    app.command(sub, name=name)
 
 
 def _install_root_callback(app: App, root_options: dict[str, _RootOption]) -> None:
