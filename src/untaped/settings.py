@@ -59,6 +59,7 @@ class PluginsState(BaseModel):
 
 
 BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {
+    "http": HttpSettings,
     "plugins": PluginsState,
     "ui": UiSettings,
 }
