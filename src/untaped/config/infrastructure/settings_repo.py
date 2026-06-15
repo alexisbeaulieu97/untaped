@@ -1,8 +1,11 @@
 """Adapter wiring schema introspection + YAML I/O + env detection together.
 
 All scope (profile) awareness goes through the registered settings layout:
-with the flat default, writes land on top-level keys; with the
-untaped-profile plugin's layout, writes land in ``profiles.<target>``.
+with the flat default, writes land on top-level keys; with the profiles
+layout, writes land in ``profiles.<target>``. SDK-owned *global* sections
+are addressed by a ``<section>.`` prefix and written at the top level
+instead of within a profile. The legacy central config exposes only ``ui``
+as global; SDK tools also treat ``http`` as global via ``global_sections``.
 """
 
 from __future__ import annotations
@@ -12,13 +15,12 @@ from dataclasses import replace
 from typing import Any
 
 import yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from untaped import (
     ConfigError,
     FieldDescriptor,
     Settings,
-    UiSettings,
     find_descriptor,
     first_validation_error,
     get_profile_settings_model,
@@ -33,19 +35,27 @@ from untaped.config_file import (
     set_at_path,
     unset_at_path,
 )
-from untaped.settings import active_settings_layout
+from untaped.settings import BUILTIN_STATE_SECTIONS, active_settings_layout
 
 GLOBAL_SETTINGS_TARGET = "global"
-_GLOBAL_UI_PREFIX = "ui."
+#: Sections addressed with a ``<section>.`` prefix and written at the top
+#: level rather than within a profile. Legacy central config: ``ui`` only.
+DEFAULT_GLOBAL_SECTIONS = ("ui",)
 
 
 class SettingsFileRepository:
-    """Single concrete adapter for everything ``untaped config`` needs."""
+    """Single concrete adapter for everything ``config`` needs."""
 
-    def __init__(self, settings_cls: type[Settings] | None = None) -> None:
+    def __init__(
+        self,
+        settings_cls: type[Settings] | None = None,
+        *,
+        global_sections: tuple[str, ...] = DEFAULT_GLOBAL_SECTIONS,
+    ) -> None:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
-        self._ui_descriptors: list[FieldDescriptor] | None = None
+        self._global_descriptor_cache: dict[str, list[FieldDescriptor]] = {}
+        self._global_sections = tuple(global_sections)
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -60,21 +70,42 @@ class SettingsFileRepository:
             raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}")
         return descriptor
 
-    def ui_descriptors(self) -> list[FieldDescriptor]:
-        if self._ui_descriptors is None:
-            self._ui_descriptors = [
-                replace(descriptor, path=("ui", *descriptor.path))
-                for descriptor in walk_settings(UiSettings)
-            ]
-        return self._ui_descriptors
+    # ----- global (top-level) sections -----
 
-    def ui_descriptor(self, key: str) -> FieldDescriptor:
-        descriptors = self.ui_descriptors()
+    def global_section_of(self, key: str) -> str | None:
+        """Return the global section a key addresses (``ui.theme`` -> ``ui``), or None."""
+        for section in self._global_sections:
+            if key.startswith(section + "."):
+                return section
+        return None
+
+    def _global_model(self, section: str) -> type[BaseModel]:
+        return BUILTIN_STATE_SECTIONS[section]
+
+    def _global_descriptors(self, section: str) -> list[FieldDescriptor]:
+        cached = self._global_descriptor_cache.get(section)
+        if cached is None:
+            cached = [
+                replace(descriptor, path=(section, *descriptor.path))
+                for descriptor in walk_settings(self._global_model(section))
+            ]
+            self._global_descriptor_cache[section] = cached
+        return cached
+
+    def global_descriptor(self, key: str, section: str) -> FieldDescriptor:
+        descriptors = self._global_descriptors(section)
         descriptor = find_descriptor(descriptors, key)
         if descriptor is None:
             valid = ", ".join(d.key for d in descriptors)
-            raise ConfigError(f"unknown UI setting: {key!r}. Valid keys: {valid}")
+            raise ConfigError(f"unknown {section} setting: {key!r}. Valid keys: {valid}")
         return descriptor
+
+    def ui_descriptors(self) -> list[FieldDescriptor]:
+        """Back-compat alias used by the legacy config CLI + ``GetSetting``."""
+        return self._global_descriptors("ui")
+
+    def ui_descriptor(self, key: str) -> FieldDescriptor:
+        return self.global_descriptor(key, "ui")
 
     def current_settings(self) -> Settings:
         return get_settings()
@@ -125,11 +156,12 @@ class SettingsFileRepository:
         """Coerce ``raw_value``, validate against the schema, then persist.
 
         Returns the resolved target scope name (``None`` for scope-less
-        layouts, ``"global"`` for top-level UI settings) so callers can
+        layouts, ``"global"`` for top-level global settings) so callers can
         report where the write landed.
         """
-        if _is_global_ui_key(key):
-            return self._set_ui_value(key, raw_value, profile=profile)
+        section = self.global_section_of(key)
+        if section is not None:
+            return self._set_global_value(key, raw_value, section, profile=profile)
         descriptor = self.descriptor(key)
         coerced = _coerce_scalar(raw_value)
         resolved: str | None = None
@@ -149,15 +181,18 @@ class SettingsFileRepository:
         mutate_config(_apply)
         return resolved
 
-    def _set_ui_value(self, key: str, raw_value: str, *, profile: str | None) -> str:
+    def _set_global_value(
+        self, key: str, raw_value: str, section: str, *, profile: str | None
+    ) -> str:
         if profile is not None:
-            raise ConfigError("ui settings are global; --target-profile cannot be used")
-        descriptor = self.ui_descriptor(key)
+            raise ConfigError(f"{section} settings are global; --target-profile cannot be used")
+        descriptor = self.global_descriptor(key, section)
         coerced = _coerce_scalar(raw_value)
+        model = self._global_model(section)
 
         def _apply(data: dict[str, Any]) -> None:
             set_at_path(data, descriptor.path, coerced)
-            _validate_ui_state(data, key)
+            _validate_global_state(data, key, section, model)
 
         mutate_config(_apply)
         return GLOBAL_SETTINGS_TARGET
@@ -170,8 +205,9 @@ class SettingsFileRepository:
         simply isn't set in the resolved scope is a no-op
         (``removed=False``).
         """
-        if _is_global_ui_key(key):
-            return self._unset_ui_value(key, profile=profile)
+        section = self.global_section_of(key)
+        if section is not None:
+            return self._unset_global_value(key, section, profile=profile)
         descriptor = self.descriptor(key)
         removed = False
         resolved: str | None = None
@@ -198,17 +234,20 @@ class SettingsFileRepository:
         mutate_config(_apply)
         return removed, resolved
 
-    def _unset_ui_value(self, key: str, *, profile: str | None) -> tuple[bool, str]:
+    def _unset_global_value(
+        self, key: str, section: str, *, profile: str | None
+    ) -> tuple[bool, str]:
         if profile is not None:
-            raise ConfigError("ui settings are global; --target-profile cannot be used")
-        descriptor = self.ui_descriptor(key)
+            raise ConfigError(f"{section} settings are global; --target-profile cannot be used")
+        descriptor = self.global_descriptor(key, section)
         removed = False
+        model = self._global_model(section)
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed
             removed = unset_at_path(data, descriptor.path)
             if removed:
-                _validate_ui_state(data, key)
+                _validate_global_state(data, key, section, model)
 
         mutate_config(_apply)
         return removed, GLOBAL_SETTINGS_TARGET
@@ -218,16 +257,14 @@ def _scope_label(scope: str | None) -> str:
     return f"profile {scope!r}" if scope else "the config"
 
 
-def _is_global_ui_key(key: str) -> bool:
-    return key.startswith(_GLOBAL_UI_PREFIX)
-
-
-def _validate_ui_state(data: dict[str, Any], key: str) -> None:
-    raw = data.get("ui") or {}
+def _validate_global_state(
+    data: dict[str, Any], key: str, section: str, model: type[BaseModel]
+) -> None:
+    raw = data.get(section) or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"invalid value for {key!r}: Input should be a valid dictionary")
     try:
-        UiSettings.model_validate(raw)
+        model.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
 
