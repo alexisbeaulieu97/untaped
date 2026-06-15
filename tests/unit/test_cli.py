@@ -559,7 +559,7 @@ def test_set_ui_theme_prompt_uses_registered_theme_choices(
     seen: dict[str, object] = {}
     original_registry = current_registry()
     registry = PluginRegistry()
-    registry.add_theme("classic", ThemeSpec(border="rounded"))
+    registry.add_theme("midnight", ThemeSpec(border="rounded"))
     set_current_registry(registry)
 
     class _PromptUi:
@@ -575,7 +575,7 @@ def test_set_ui_theme_prompt_uses_registered_theme_choices(
             seen["choices"] = [(choice.value, choice.label) for choice in choices]
             seen["default"] = default
             seen["search"] = search
-            return "classic"
+            return "midnight"
 
         def secret(self, *_: object, **__: object) -> str:
             raise AssertionError("ui.theme must not use secret prompts")
@@ -603,11 +603,14 @@ def test_set_ui_theme_prompt_uses_registered_theme_choices(
         ("classic", "classic"),
         ("compact", "compact"),
         ("default", "default"),
+        ("high-contrast", "high-contrast"),
+        ("midnight", "midnight"),
         ("plain", "plain"),
+        ("quiet", "quiet"),
     ]
     assert seen["default"] == "default"
     assert seen["search"] is True
-    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"theme": "classic"}}
+    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"theme": "midnight"}}
 
 
 def test_set_with_prompt_rejects_unknown_key_before_prompt(
