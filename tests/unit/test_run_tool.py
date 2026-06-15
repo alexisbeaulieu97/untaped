@@ -106,3 +106,7 @@ def test_program_name_is_tool_command(_isolated_config: Path, tmp_path: Path) ->
     wired = _wired(tmp_path)
     result = CliInvoker().invoke(wired.meta, ["--help"])
     assert "untaped-github" in result.output
+
+
+def test_run_tool_surface_is_exported_from_api() -> None:
+    from untaped.api import build_tool_app, run_tool  # noqa: F401
