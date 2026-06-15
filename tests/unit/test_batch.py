@@ -73,7 +73,7 @@ def test_interactive_destructive_previews_and_confirms(
     assert captured.out == ""  # preview/progress stay off stdout
     assert ui.confirms == [{"message": "Continue?", "default": False}]
     assert calls == ["a", "b"]
-    assert outcome.confirmed and outcome.failed == 0
+    assert outcome.failed == 0
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
 
 
@@ -84,7 +84,6 @@ def test_decline_runs_no_action(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert calls == []
-    assert outcome.confirmed is False
     assert outcome.results == []
     assert outcome.total == 2
     assert len(outcome.planned_rows) == 2
@@ -102,7 +101,7 @@ def test_assume_yes_skips_gate_and_preview(
     assert "About to delete" not in capsys.readouterr().err
     assert ui.confirms == []
     assert calls == ["a", "b"]
-    assert outcome.confirmed and outcome.failed == 0
+    assert outcome.failed == 0
 
 
 def test_benign_verb_skips_gate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,7 +117,7 @@ def test_benign_verb_skips_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert calls == ["a", "b"]
-    assert outcome.confirmed
+    assert outcome.results == [("a", "done-a"), ("b", "done-b")]
 
 
 def test_destructive_non_interactive_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,7 +136,6 @@ def test_preview_only_returns_plan_without_acting(monkeypatch: pytest.MonkeyPatc
 
     assert calls == []
     assert ui.confirms == []
-    assert outcome.confirmed is False
     assert outcome.planned_rows == [_describe("a"), _describe("b")]
 
 
@@ -162,27 +160,6 @@ def test_partial_failure_counts_and_continues(
     assert outcome.failed == 1
     assert outcome.results == [("b", "done-b")]
     assert outcome.any_failed
-
-
-def test_fail_fast_stops_at_first_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[str] = []
-
-    def action(item: str) -> str:
-        seen.append(item)
-        raise HttpError("boom")
-
-    outcome = _run(
-        monkeypatch,
-        interactive=True,
-        items=["a", "b"],
-        action=action,
-        ui=_FakeUi(),
-        fail_fast=True,
-    )
-
-    assert seen == ["a"]  # stopped before "b"
-    assert outcome.failed == 1
-    assert outcome.results == []
 
 
 def test_empty_items_is_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:

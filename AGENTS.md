@@ -332,7 +332,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Read a `--format pipe` stream into typed envelopes | `from untaped import read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped import resolve_each`         |
-| Run a mutating verb over a resolved set (preview → confirm → progress) | `from untaped import batch_apply` (the standard destructive-batch UX: `destructive`/`assume_yes`/`preview_only`/`fail_fast`; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
+| Run a mutating verb over a resolved set (preview → confirm → progress) | `from untaped import batch_apply` (the standard destructive-batch UX: `destructive`/`assume_yes`/`preview_only`; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
 | Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
 | Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
 | Print a semantic status/warning/info message to stderr | `ui_context(strict=False).message(kind, msg)` |
