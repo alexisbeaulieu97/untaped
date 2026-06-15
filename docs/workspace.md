@@ -2,7 +2,7 @@
 
 A *workspace* is a directory that holds a collection of git repos
 managed together — typically one per environment, project, or team.
-`untaped workspace` lets you declare what's in a workspace, clone or
+`untaped-workspace` lets you declare what's in a workspace, clone or
 update everything in one shot, run a command across every repo, and
 jump between workspaces from your shell.
 
@@ -21,28 +21,26 @@ want; the registry is local-only.
 ## Quick tour
 
 ```bash
-untaped workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
-untaped workspace add git@github.com:acme/api --workspace prod  # add a repo
-untaped workspace show --workspace prod                         # inspect manifest details
-untaped workspace branch set main --workspace prod              # update manifest default branch
-untaped workspace sync --workspace prod              # clone everything in the manifest
-untaped workspace status --workspace prod            # per-repo git status
+untaped-workspace init prod                     # new workspace at ~/.untaped/workspaces/prod
+untaped-workspace add git@github.com:acme/api --workspace prod  # add a repo
+untaped-workspace show --workspace prod                         # inspect manifest details
+untaped-workspace branch set main --workspace prod              # update manifest default branch
+untaped-workspace sync --workspace prod              # clone everything in the manifest
+untaped-workspace status --workspace prod            # per-repo git status
 ```
 
-Profile selection uses the root `--profile` option. It works in any
+Profile selection uses the built-in `--profile` option. It works in any
 token position, so it can sit next to the command being run:
 
 ```bash
-untaped workspace init prod --profile work
-untaped workspace sync --workspace prod --profile work
-untaped workspace status --workspace prod --profile work
+untaped-workspace init prod --profile work
+untaped-workspace sync --workspace prod --profile work
+untaped-workspace status --workspace prod --profile work
 ```
 
-The leading form is equivalent, for example
-`untaped --profile work workspace status --workspace prod`. There is no
-command-local `--profile`; the root option — contributed by the
-[`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
-plugin — is the only selector.
+The `--profile` option works in any token position, for example
+`untaped-workspace --profile work status --workspace prod`. It is the only
+profile selector.
 
 If you `cd` into a workspace directory, the `--workspace` flag becomes
 optional — most commands walk up from the current directory looking
@@ -86,17 +84,17 @@ unique within a manifest.
 ### `list`
 
 ```bash
-untaped workspace list                                      # tabular
-untaped workspace list --profile work --format raw --columns name
+untaped-workspace list                                      # tabular
+untaped-workspace list --profile work --format raw --columns name
 ```
 
-Lists the central registry — every workspace `untaped` knows about by
-name and path.
+Lists the central registry — every workspace `untaped-workspace` knows about
+by name and path.
 
 ### `show`
 
 ```bash
-untaped workspace show [--workspace <ws> | --path <dir>]
+untaped-workspace show [--workspace <ws> | --path <dir>]
                        [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
 
@@ -106,24 +104,24 @@ repo URL, per-repo branch override, and effective target branch. Empty
 manifests still emit a single summary row with `repo_count: 0`.
 
 `show` reads `untaped.yml` only. It does not inspect git status or
-remote state; use `workspace status` for live checkout data.
+remote state; use `untaped-workspace status` for live checkout data.
 
 ### `init`
 
 ```bash
-untaped workspace init <name> [--path <dir>] [--branch <default>]
+untaped-workspace init <name> [--path <dir>] [--branch <default>]
 ```
 
 Creates a new workspace named `<name>` and registers it. The default
-location is `<workspace.workspaces_dir>/<name>` (the `workspaces_dir`
-setting defaults to `~/.untaped/workspaces` and is profile-overridable).
+location is `<workspaces_dir>/<name>` (the `workspaces_dir` profile setting
+defaults to `~/.untaped/workspaces` and is profile-overridable).
 Pass `-p / --path` to override the location for a one-off workspace
 that lives elsewhere. Writes a starter `untaped.yml` in the directory.
 
 ### `adopt`
 
 ```bash
-untaped workspace adopt <path> [--name <name>]
+untaped-workspace adopt <path> [--name <name>]
 ```
 
 Adopt existing workspace state at a path.
@@ -146,30 +144,30 @@ only links *new* clones via `git clone --reference`.
 ```bash
 git clone git@github.com:acme/api  ~/work/prod/api
 git clone git@github.com:acme/web  ~/work/prod/web
-untaped workspace adopt ~/work/prod --name prod
+untaped-workspace adopt ~/work/prod --name prod
 
 # Later, on another machine or after removing the registry entry:
-untaped workspace adopt ~/work/prod
+untaped-workspace adopt ~/work/prod
 ```
 
 ### `forget`
 
 ```bash
-untaped workspace forget <name> [--prune] [--yes]
+untaped-workspace forget <name> [--prune] [--yes]
 ```
 
 Remove a workspace from the central registry. The on-disk manifest and
 clones are preserved by default — `forget` is the inverse of `init` /
 `adopt`, not of `sync --prune`. Pass `--prune` to also `rmtree` the
 workspace directory; pruning is refused (mirroring
-`workspace remove --prune`) when any declared repo has uncommitted
+`remove --prune`) when any declared repo has uncommitted
 changes. A missing manifest or missing directory is tolerated; the
 registry entry is removed regardless.
 
 ### `import`
 
 ```bash
-untaped workspace import <source.yml> <dest> [--name <name>] [--sync]
+untaped-workspace import <source.yml> <dest> [--name <name>] [--sync]
 ```
 
 Adopt an existing manifest into a new workspace directory. Useful when
@@ -180,10 +178,10 @@ the imported manifest — same scope as `add --sync`).
 ### `add`
 
 ```bash
-untaped workspace add <url>... [--workspace <ws>] [--path <ws-dir>]
+untaped-workspace add <url>... [--workspace <ws>] [--path <ws-dir>]
                                [--branch <b>] [--repo-name <alias>]
                                [--sync]
-untaped workspace add --stdin --workspace <ws>
+untaped-workspace add --stdin --workspace <ws>
 ```
 
 Add one or more repo URLs to the workspace's manifest. Multiple URLs
@@ -196,9 +194,9 @@ to clone).
 ### `remove`
 
 ```bash
-untaped workspace remove <repo>... [--workspace <ws> | --path <dir>]
+untaped-workspace remove <repo>... [--workspace <ws> | --path <dir>]
                                   [--prune] [--yes]
-untaped workspace remove --stdin [--workspace <ws> | --path <dir>]
+untaped-workspace remove --stdin [--workspace <ws> | --path <dir>]
 ```
 
 Remove one or more repos from the manifest, identified by URL or
@@ -208,18 +206,18 @@ prune. With `--stdin`, reads repo identifiers one per line — works
 nicely with `fzf`:
 
 ```bash
-untaped workspace status --workspace prod --format raw --columns repo \
+untaped-workspace status --workspace prod --format raw --columns repo \
   | fzf -m \
-  | untaped workspace remove --stdin --workspace prod
+  | untaped-workspace remove --stdin --workspace prod
 ```
 
 ### `branch`
 
 ```bash
-untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
+untaped-workspace branch set <branch> [--workspace <ws> | --path <dir>]
                                 [--repo <repo>] [--apply]
-untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
-untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
+untaped-workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
+untaped-workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
@@ -234,11 +232,11 @@ Use `branch apply` to checkout existing local clones to the manifest's
 target branch:
 
 ```bash
-untaped workspace branch set main --workspace prod
-untaped workspace branch apply --workspace prod
+untaped-workspace branch set main --workspace prod
+untaped-workspace branch apply --workspace prod
 
 # or do both steps in one command
-untaped workspace branch set main --workspace prod --apply
+untaped-workspace branch set main --workspace prod --apply
 ```
 
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
@@ -252,7 +250,7 @@ current clean HEAD.
 ### `sync`
 
 ```bash
-untaped workspace sync [--workspace <ws> | --path <dir>]
+untaped-workspace sync [--workspace <ws> | --path <dir>]
                        [--repo <repo>]... [--prune]
                        [--timeout <seconds>] [--all]
 ```
@@ -291,7 +289,7 @@ and abort the command.
 ### `status`
 
 ```bash
-untaped workspace status [--workspace <ws> | --path <dir>] [--all]
+untaped-workspace status [--workspace <ws> | --path <dir>] [--all]
                          [--repo <repo>]...
                          [--format json|yaml|table|raw|pipe] [--columns ...]
 ```
@@ -301,7 +299,7 @@ Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
 
 ```bash
 # Repos with upstream commits you haven't pulled
-untaped workspace status --all --format raw \
+untaped-workspace status --all --format raw \
     --columns workspace --columns repo --columns behind \
   | awk '$3 > 0 { print }'
 ```
@@ -309,7 +307,7 @@ untaped workspace status --all --format raw \
 ### `foreach`
 
 ```bash
-untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
+untaped-workspace foreach <cmd> [--workspace <ws> | --path <dir>]
                                 [--repo <repo>]...
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
@@ -322,12 +320,12 @@ Run a shell command in every repo of a workspace. Default
 repo, so chatty commands won't interleave but you also won't see
 anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 `ForeachOutcome` row per repo (with `command` and `duration_s`) for
-piping into `jq` / `awk` or another untaped command.
+piping into `jq` / `awk` or another command.
 
 ```bash
-untaped workspace foreach 'git status -s' --workspace prod
-untaped workspace foreach 'git status -s' --workspace prod --repo api --repo ui
-untaped workspace foreach 'git pull --ff-only' --workspace prod --parallel 4
+untaped-workspace foreach 'git status -s' --workspace prod
+untaped-workspace foreach 'git status -s' --workspace prod --repo api --repo ui
+untaped-workspace foreach 'git pull --ff-only' --workspace prod --parallel 4
 ```
 
 Three error-handling modes:
@@ -351,22 +349,22 @@ always run to completion; only queued work is cancelled on fail-fast.
 ### `path`
 
 ```bash
-untaped workspace path <name>...                # one absolute path per name
-untaped workspace path --stdin                  # read names from stdin
+untaped-workspace path <name>...                # one absolute path per name
+untaped-workspace path --stdin                  # read names from stdin
 ```
 
-Pipe-friendly — pairs well with `cd "$(untaped workspace path prod)"`,
+Pipe-friendly — pairs well with `cd "$(untaped-workspace path prod)"`,
 or to fan out paths:
 
 ```bash
-untaped workspace list --format raw \
-  | untaped workspace path --stdin
+untaped-workspace list --format raw \
+  | untaped-workspace path --stdin
 ```
 
 ### `shell-init`
 
 ```bash
-untaped workspace shell-init zsh                # or: bash, fish
+untaped-workspace shell-init zsh                # or: bash, fish
 ```
 
 Emits a shell snippet defining `uwcd <workspace>` and shell completion
@@ -374,7 +372,7 @@ for registered workspace names. Add it to your shell rc:
 
 ```bash
 # in ~/.zshrc
-eval "$(untaped workspace shell-init zsh)"
+eval "$(untaped-workspace shell-init zsh)"
 
 # then, anywhere:
 uwcd <TAB>        # completes workspace names
@@ -384,7 +382,7 @@ uwcd prod          # cd ~/work/prod
 ### `edit`
 
 ```bash
-untaped workspace edit [--workspace <ws> | --path <dir>] [--editor <cmd>]
+untaped-workspace edit [--workspace <ws> | --path <dir>] [--editor <cmd>]
 ```
 
 Opens the resolved workspace root in your editor. With no explicit
@@ -397,8 +395,8 @@ Honours `$VISUAL` then `$EDITOR`, overrideable with `--editor`.
 ### Morning routine across every workspace
 
 ```bash
-untaped workspace sync --all
-untaped workspace status --all --format raw \
+untaped-workspace sync --all
+untaped-workspace status --all --format raw \
     --columns workspace --columns repo --columns behind --columns modified \
   | awk '$3 > 0 || $4 > 0 { print }'
 ```
@@ -409,15 +407,15 @@ that's behind upstream or has uncommitted changes.
 ### Pick a repo with `fzf` and run a command in just that one
 
 ```bash
-repo="$(untaped workspace status --workspace prod --format raw --columns repo | fzf)"
-untaped workspace foreach 'git log --oneline -10' --workspace prod --repo "$repo"
+repo="$(untaped-workspace status --workspace prod --format raw --columns repo | fzf)"
+untaped-workspace foreach 'git log --oneline -10' --workspace prod --repo "$repo"
 ```
 
 ### Adopt a colleague's workspace
 
 ```bash
 git clone git@github.com:acme/devops-manifests ~/manifests
-untaped workspace import ~/manifests/prod.yml ~/work/prod --sync
+untaped-workspace import ~/manifests/prod.yml ~/work/prod --sync
 ```
 
 ### Adopt a directory you've already cloned by hand
@@ -426,23 +424,21 @@ untaped workspace import ~/manifests/prod.yml ~/work/prod --sync
 mkdir -p ~/work/prod && cd ~/work/prod
 git clone git@github.com:acme/api
 git clone git@github.com:acme/web
-untaped workspace adopt . --name prod
-untaped workspace status --workspace prod        # already populated
+untaped-workspace adopt . --name prod
+untaped-workspace status --workspace prod        # already populated
 ```
 
 ## Storage
 
 By default, bare clones are cached at `~/.untaped/repositories`
-(override with `workspace.cache_dir` in your config). Workspace
+(override with `untaped-workspace config set cache_dir <dir>`). Workspace
 clones use `git clone --reference` against the cached bare, so disk
 and bandwidth are shared without the branch conflicts that
 `git worktree` would introduce.
 
 ## See also
 
-- [`untaped` configuration docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md)
-  — `untaped config`, optional profile commands, and the YAML schema.
-- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) — the
-  optional AWX plugin.
+- [`untaped` SDK configuration docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md)
+  — `untaped-workspace config`, profile selection, and the YAML schema.
 - [AGENTS.md](../AGENTS.md) — internals (manifest vs registry split, the
   `GitRunner` boundary, sync state machine).
