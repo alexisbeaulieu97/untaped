@@ -31,6 +31,7 @@ from untaped.cli import (
     report_errors,
     resolve_each,
 )
+from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
 from untaped.errors import ConfigError, HttpError, UntapedError, first_validation_error
 from untaped.http import HttpClient, resolve_verify
 from untaped.output import OutputFormat
@@ -106,6 +107,7 @@ __all__ = [
     "connected_client",
     "create_app",
     "echo",
+    "ensure_config",
     "existing_directory",
     "existing_file",
     "first_validation_error",
@@ -113,6 +115,7 @@ __all__ = [
     "get_core_settings",
     "invalidate_settings_cache",
     "missing_setting_error",
+    "mutate_tool_state",
     "paginate_offset",
     "paginate_pages",
     "parse_kv_pairs",
@@ -122,6 +125,7 @@ __all__ = [
     "read_identifiers",
     "read_records",
     "read_stdin",
+    "read_tool_state",
     "render_rows",
     "report_errors",
     "resolve_each",
