@@ -16,6 +16,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
+from untaped.plugin_context import PluginContext, plugin_context
+from untaped.settings import register_profile_settings, register_state_settings
 
 
 @dataclass(frozen=True)
@@ -68,3 +70,20 @@ class ToolSpec:
 def _require_model(model: object, label: str) -> None:
     if not (isinstance(model, type) and issubclass(model, BaseModel)):
         raise ConfigError(f"{label} must be a pydantic BaseModel subclass")
+
+
+def register_tool(spec: ToolSpec) -> None:
+    """Register a tool's own settings section(s) for this process.
+
+    Only registered sections are resolved; other tools' sections in the shared
+    config file are ignored. The profile and (optional) state models are
+    validated as disjoint by the settings registry.
+    """
+    register_profile_settings(spec.section, spec.profile_model)
+    if spec.state_model is not None:
+        register_state_settings(spec.section, spec.state_model)
+
+
+def app_context() -> PluginContext:
+    """Resolve this tool's effective settings once into a frozen context."""
+    return plugin_context()

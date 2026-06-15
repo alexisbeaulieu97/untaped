@@ -63,6 +63,7 @@ from untaped.settings import (
 )
 from untaped.settings_layout import SettingsLayout
 from untaped.stdin import read_identifiers, read_records, read_stdin
+from untaped.tool import SkillAsset, ToolSpec, app_context, register_tool
 from untaped.ui import ThemeSpec, UiContext, ui_context
 
 
@@ -96,11 +97,14 @@ __all__ = [
     "RootOptionSpec",
     "SettingsLayout",
     "SettingsLayoutSpec",
+    "SkillAsset",
     "SkillSpec",
     "ThemeSpec",
+    "ToolSpec",
     "UiContext",
     "UntapedError",
     "UntapedPlugin",
+    "app_context",
     "batch_apply",
     "clamp_parallel",
     "common_kind",
@@ -126,6 +130,7 @@ __all__ = [
     "read_records",
     "read_stdin",
     "read_tool_state",
+    "register_tool",
     "render_rows",
     "report_errors",
     "resolve_each",
