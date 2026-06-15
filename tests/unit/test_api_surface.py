@@ -67,6 +67,9 @@ EXPECTED_SURFACE = frozenset(
         # Pipe interchange
         "PipeEnvelope",
         "common_kind",
+        # Batch mutation
+        "batch_apply",
+        "BatchOutcome",
     }
 )
 

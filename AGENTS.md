@@ -332,6 +332,7 @@ matches; the row status is `installed`, `recorded`, or `loaded`.
 | Read a `--format pipe` stream into typed envelopes | `from untaped import read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
 | Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped import resolve_each`         |
+| Run a mutating verb over a resolved set (preview → confirm → progress) | `from untaped import batch_apply` (the standard destructive-batch UX: `destructive`/`assume_yes`/`preview_only`/`fail_fast`; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
 | Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
 | Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
 | Print a semantic status/warning/info message to stderr | `ui_context(strict=False).message(kind, msg)` |
@@ -461,7 +462,11 @@ Cross-cutting subsystems with their own internals doc:
   `read_identifiers(..., id_field=…)` which auto-detects it and still accepts
   bare lines). Distinct from `--follow --format json` above (which streams
   *bare* records). `pipe` emits the full record (ignores `--columns`);
-  untagged producers emit `kind: null`.
+  untagged producers emit `kind: null`. A consumer that *mutates* the piped set
+  (e.g. `list --format pipe | delete --stdin --yes`) should route through
+  `batch_apply` so the preview/confirm/`--yes`/progress UX is identical across
+  plugins; a destructive verb refuses a non-interactive stdin without `--yes`
+  (the stream is the data, so there is nothing to confirm against).
 
 Pipeline examples and the morning-routine workflow live in
 [`docs/README.md`](docs/README.md#pipe-friendly-by-design).
