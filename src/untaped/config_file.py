@@ -105,6 +105,49 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
         lock.release()
 
 
+def ensure_config(path: Path | None = None) -> Path:
+    """Create an empty config file (and its parent dir) if absent. Idempotent.
+
+    Returns the resolved config path. An existing file is never touched.
+    """
+    target = path or resolve_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        target.write_text("", encoding="utf-8")
+        os.chmod(target, 0o600)
+    return target
+
+
+def read_tool_state(section: str, path: Path | None = None) -> dict[str, Any]:
+    """Return a copy of a tool's top-level state ``section`` dict, or ``{}``."""
+    raw = read_config_dict(path).get(section)
+    return copy.deepcopy(raw) if isinstance(raw, dict) else {}
+
+
+def mutate_tool_state(
+    section: str, fn: Callable[[dict[str, Any]], None], path: Path | None = None
+) -> None:
+    """Safely mutate a tool's top-level state ``section`` under the config lock.
+
+    ``fn`` receives only the named section's dict to mutate in place; every other
+    section — and any keys within this section that ``fn`` does not touch — is
+    preserved. Independent tools share one config file (possibly across SDK
+    versions), so a write must never drop data it doesn't understand. The section
+    is removed when ``fn`` leaves it empty.
+    """
+
+    def _apply(data: dict[str, Any]) -> None:
+        existing = data.get(section)
+        sub: dict[str, Any] = existing if isinstance(existing, dict) else {}
+        fn(sub)
+        if sub:
+            data[section] = sub
+        elif isinstance(existing, dict):
+            del data[section]
+
+    mutate_config(_apply, path)
+
+
 def parse_key(key: str) -> tuple[str, ...]:
     """Convert ``"http.verify_ssl"`` to ``("http", "verify_ssl")``."""
     if not key or key.startswith(".") or key.endswith("."):
