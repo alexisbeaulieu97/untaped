@@ -110,3 +110,20 @@ def test_program_name_is_tool_command(_isolated_config: Path, tmp_path: Path) ->
 
 def test_run_tool_surface_is_exported_from_api() -> None:
     from untaped.api import build_tool_app, run_tool  # noqa: F401
+
+
+def test_build_tool_app_is_idempotent(_isolated_config: Path, tmp_path: Path) -> None:
+    # run_tool/build_tool_app may be invoked more than once on the same app
+    # object (tests, embedding); mounting must not collide.
+    app = create_app(name="github", help="Work with GitHub.")
+
+    @app.command(name="whoami")
+    def whoami() -> None:
+        echo(app_context().section("github", _GithubSettings).token or "(none)")
+
+    spec = _make_spec(tmp_path)
+    build_tool_app(app, spec)
+    wired = build_tool_app(app, spec)  # second call must not raise
+    result = CliInvoker().invoke(wired.meta, ["whoami"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "(none)"
