@@ -34,8 +34,6 @@ class BatchOutcome[T, R]:
     the ``--dry-run`` output and any summary so callers don't recompute it.
     """
 
-    confirmed: bool
-    total: int
     results: list[tuple[T, R]]
     failed: int
     planned_rows: list[dict[str, object]]
@@ -43,6 +41,10 @@ class BatchOutcome[T, R]:
     @property
     def any_failed(self) -> bool:
         return self.failed > 0
+
+    @property
+    def total(self) -> int:
+        return len(self.planned_rows)
 
 
 def _stdin_is_interactive() -> bool:
@@ -64,7 +66,6 @@ def batch_apply[T, R](
     destructive: bool = False,
     assume_yes: bool = False,
     preview_only: bool = False,
-    fail_fast: bool = False,
 ) -> BatchOutcome[T, R]:
     """Preview, optionally confirm, then run ``action`` over ``items``.
 
@@ -73,37 +74,27 @@ def batch_apply[T, R](
     lines; ``describe(item)`` is the row used for the preview and ``planned_rows``.
 
     A **destructive** verb gates execution: with ``assume_yes`` it proceeds; on an
-    interactive stdin it previews then prompts (decline → ``confirmed=False``, no
-    action run); otherwise it raises :class:`ConfigError` (stdin is the data pipe,
-    so there is nothing to confirm against — pass ``--yes``). Benign verbs and
-    ``--yes`` skip straight to execution. ``preview_only`` (``--dry-run``) returns
-    ``planned_rows`` without running ``action``.
+    interactive stdin it previews then prompts (decline → no action run);
+    otherwise it raises :class:`ConfigError` (stdin is the data pipe, so there is
+    nothing to confirm against — pass ``--yes``). Benign verbs and ``--yes`` skip
+    straight to execution. ``preview_only`` (``--dry-run``) returns ``planned_rows``
+    without running ``action``.
 
-    Per-item :class:`UntapedError` is caught and counted (``fail_fast`` stops at
-    the first); anything else propagates. The helper never renders the summary or
-    raises ``SystemExit`` — the caller owns stdout and the exit code.
+    Per-item :class:`UntapedError` is caught and counted; anything else
+    propagates. The helper never renders the summary or raises ``SystemExit`` —
+    the caller owns stdout and the exit code.
     """
     planned_rows = [describe(item) for item in items]
-    total = len(items)
-    if total == 0:
-        return BatchOutcome(confirmed=False, total=0, results=[], failed=0, planned_rows=[])
-    if preview_only:
-        return BatchOutcome(
-            confirmed=False, total=total, results=[], failed=0, planned_rows=planned_rows
-        )
+    if not items or preview_only:
+        return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
+    total = len(planned_rows)
     if destructive and not assume_yes:
         if _stdin_is_interactive():
             echo(f"About to {verb} {total} {noun}(s):", err=True)
             for row in planned_rows:
                 echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
             if not ui.confirm("Continue?"):
-                return BatchOutcome(
-                    confirmed=False,
-                    total=total,
-                    results=[],
-                    failed=0,
-                    planned_rows=planned_rows,
-                )
+                return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
         else:
             raise ConfigError(f"{verb} requires --yes when stdin is not interactive")
     results: list[tuple[T, R]] = []
@@ -116,8 +107,4 @@ def batch_apply[T, R](
             except UntapedError as exc:
                 echo(f"error: {label(item)}: {exc}", err=True)
                 failed += 1
-                if fail_fast:
-                    break
-    return BatchOutcome(
-        confirmed=True, total=total, results=results, failed=failed, planned_rows=planned_rows
-    )
+    return BatchOutcome(results=results, failed=failed, planned_rows=planned_rows)
