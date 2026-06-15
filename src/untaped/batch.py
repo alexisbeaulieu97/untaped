@@ -87,7 +87,7 @@ def batch_apply[T, R](
     planned_rows = [describe(item) for item in items]
     if not items or preview_only:
         return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
-    total = len(items)
+    total = len(planned_rows)
     if destructive and not assume_yes:
         if _stdin_is_interactive():
             echo(f"About to {verb} {total} {noun}(s):", err=True)
