@@ -55,6 +55,7 @@ from untaped.plugin_registry import (
 )
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
+from untaped.run import build_tool_app, run_tool
 from untaped.settings import (
     HttpSettings,
     get_config_section,
@@ -106,6 +107,7 @@ __all__ = [
     "UntapedPlugin",
     "app_context",
     "batch_apply",
+    "build_tool_app",
     "clamp_parallel",
     "common_kind",
     "connected_client",
@@ -135,5 +137,6 @@ __all__ = [
     "report_errors",
     "resolve_each",
     "resolve_verify",
+    "run_tool",
     "ui_context",
 ]
