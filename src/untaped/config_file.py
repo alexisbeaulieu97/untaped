@@ -1,7 +1,8 @@
 """Read/write helpers for the ``~/.untaped/config.yml`` file.
 
-These are the lowest-level primitives behind ``untaped config set/unset``.
-They never validate against the Settings schema — that's the caller's job.
+These are the lowest-level primitives behind each tool's ``<tool> config
+set/unset``. They never validate against the Settings schema — that's the
+caller's job.
 
 Note: round-tripping with PyYAML drops comments. Acceptable for v0; if we
 need comment preservation later, swap to ``ruamel.yaml``.
@@ -208,15 +209,11 @@ def _to_yaml_value(value: Any) -> Any:
 
 # ---------------------------- profile helpers ---------------------------- #
 #
-# Deprecated (plugin API v4): profile storage is owned by the
-# untaped-profile plugin. These dumb primitives stay importable because
-# released v3-era plugin builds import them; removal is gated on the
-# plugin-API-v4 rollout finishing across the plugin repos.
-#
-# All helpers below edit / read the `profiles.<name>` section without
-# enforcing policy. Use cases (in `untaped-profile`) are responsible for
-# "default cannot be deleted", "active must point at an existing profile",
-# etc.
+# Low-level primitives behind the SDK's built-in profile group
+# (`<tool> profile …`). All helpers below edit / read the `profiles.<name>`
+# section without enforcing policy. The use cases that mount them (in
+# `untaped.profile`) own the rules — "default cannot be deleted", "active
+# must point at an existing profile", etc.
 
 
 def list_profile_names(path: Path | None = None) -> list[str]:

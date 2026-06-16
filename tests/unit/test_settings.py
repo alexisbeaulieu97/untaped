@@ -52,15 +52,20 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
+    # ``log_level`` and tool sections (``demo``) are profile-scoped, so they
+    # live under ``profiles.default``; ``http`` is a top-level-spliced global
+    # section and stays at the top level.
     cfg.write_text(
         """
-        log_level: DEBUG
         http:
           ca_bundle: /etc/ssl/corp-ca.pem
           verify_ssl: true
-        demo:
-          base_url: https://aap.example.com
-          token: secret
+        profiles:
+          default:
+            log_level: DEBUG
+            demo:
+              base_url: https://aap.example.com
+              token: secret
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -74,7 +79,7 @@ def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_secret_str_repr_does_not_leak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("demo:\n  token: ultra-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: ultra-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings()
     assert s.demo.token is not None
@@ -128,6 +133,9 @@ def test_ui_settings_load_from_top_level_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
+    # ``ui`` is a top-level-spliced global section and stays at the top
+    # level; ``log_level`` is profile-scoped and lives under
+    # ``profiles.default``.
     cfg.write_text(
         """
         ui:
@@ -136,7 +144,9 @@ def test_ui_settings_load_from_top_level_yaml(
           collection_view: list
           symbols:
             warning: "!"
-        log_level: DEBUG
+        profiles:
+          default:
+            log_level: DEBUG
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -152,11 +162,13 @@ def test_plugin_loads_extended_fields(tmp_path: Path, monkeypatch: pytest.Monkey
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        demo:
-          base_url: https://awx.example.com
-          api_prefix: /api/v2/
-          default_organization: Default
-          page_size: 100
+        profiles:
+          default:
+            demo:
+              base_url: https://awx.example.com
+              api_prefix: /api/v2/
+              default_organization: Default
+              page_size: 100
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -213,10 +225,14 @@ def test_get_settings_translates_validation_error_to_config_error(
     ``get_settings`` as ``ConfigError`` carrying the offending field — not
     as a multi-line ``pydantic.ValidationError`` traceback."""
     cfg = tmp_path / "config.yml"
+    # ``demo`` is profile-scoped: it must live under ``profiles.default`` to
+    # be effective and therefore actually validated against the schema.
     cfg.write_text(
         """
-        demo:
-          page_size: not-an-int
+        profiles:
+          default:
+            demo:
+              page_size: not-an-int
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

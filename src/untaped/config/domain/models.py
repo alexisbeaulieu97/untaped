@@ -17,8 +17,8 @@ class Source:
     - ``env``     — an ``UNTAPED_*`` environment variable.
     - ``global``  — a top-level YAML app setting such as ``ui.theme``.
     - ``profile`` — a YAML profile (``profile`` field names which one);
-      requires a scoped settings layout (the untaped-profile plugin).
-    - ``config``  — the config file itself (flat layout, no scopes).
+      requires a scoped settings layout (the built-in profiles layout).
+    - ``config``  — the config file's top level (no profile scope).
     - ``default`` — the schema default declared on the Pydantic model.
     - ``unset``   — no default, no value; the field is genuinely empty.
     """
@@ -36,7 +36,7 @@ class Source:
 
 
 class SettingEntry(BaseModel):
-    """One row in the ``untaped config list`` table.
+    """One row in the ``<tool> config list`` table.
 
     Secret values are pre-masked into ``value`` (``"***"``), so callers don't
     need a separate ``is_secret`` flag.

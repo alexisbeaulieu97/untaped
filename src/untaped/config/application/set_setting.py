@@ -9,9 +9,8 @@ class SetSetting:
     """Validate then persist ``key = value`` in the user's config file.
 
     ``profile`` selects the target scope when the active settings layout
-    supports scopes (the untaped-profile plugin). Returns the resolved
-    target scope name (``None`` for scope-less layouts) so callers can echo
-    where the write landed.
+    supports scopes (the built-in profiles layout). Returns the resolved
+    target scope name so callers can echo where the write landed.
     """
 
     def __init__(self, repo: SettingsRepository) -> None:
