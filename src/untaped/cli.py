@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn
 
@@ -97,9 +98,16 @@ def run_cyclopts_app(
     | Callable[[Any], Any]
     | None = None,
 ) -> object:
-    """Run a Cyclopts app while preserving untaped's usage-error contract."""
+    """Run a Cyclopts app while preserving untaped's usage-error contract.
+
+    Also converts a broken downstream pipe — the consumer closed it early, e.g.
+    ``untaped-tool list | head`` or a consumer that exits before reading all of
+    its input — into a clean ``SystemExit(1)``. Without this the producer's
+    buffered stdout flush fails at interpreter shutdown and Python prints a
+    noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
+    """
     try:
-        return app(
+        result = app(
             tokens,
             console=console,
             error_console=error_console,
@@ -110,6 +118,36 @@ def run_cyclopts_app(
     except CycloptsError as exc:
         echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
+    except BrokenPipeError:
+        # Pipe broke mid-write (output large enough to flush before we got here).
+        _exit_broken_pipe()
+    except SystemExit:
+        # cyclopts exits (0 on success) rather than returning. Flush buffered
+        # stdout now so a broken pipe surfaces here — catchable — instead of at
+        # interpreter shutdown, where it can't be handled.
+        _flush_stdout()
+        raise
+    _flush_stdout()
+    return result
+
+
+def _flush_stdout() -> None:
+    """Flush stdout, converting a broken pipe into a clean exit."""
+    try:
+        sys.stdout.flush()
+    except BrokenPipeError:
+        _exit_broken_pipe()
+
+
+def _exit_broken_pipe() -> NoReturn:
+    """Silence the interpreter's final stdout flush, then exit 1.
+
+    Redirecting the stdout fd to ``/dev/null`` stops Python re-raising the
+    broken pipe when it flushes the standard streams on the way out. The guard
+    covers streams with no real fd (a captured ``StringIO`` under tests)."""
+    with suppress(OSError, ValueError):
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+    raise SystemExit(1) from None
 
 
 def existing_directory(type_: object, value: Path | None) -> None:

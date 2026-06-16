@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from untaped import (
     report_errors,
     resolve_each,
 )
+from untaped.cli import run_cyclopts_app
 from untaped.testing import CliInvoker
 
 
@@ -65,6 +67,52 @@ def test_passes_through_non_untaped_exception() -> None:
     assert result.exit_code != 0
     # The bug-style exception should bubble up
     assert isinstance(result.exception, ValueError)
+
+
+# ---- BrokenPipe handling -------------------------------------------------
+
+
+def test_broken_pipe_from_command_exits_cleanly() -> None:
+    """A consumer closing the pipe mid-write surfaces as ``BrokenPipeError``;
+    it must convert to a clean ``SystemExit(1)``, not leak as a traceback."""
+    app = create_app(name="test")
+
+    @app.default
+    def boom() -> None:
+        raise BrokenPipeError(32, "Broken pipe")
+
+    result = CliInvoker().invoke(app, [])
+    assert result.exit_code == 1
+    # Clean exit — NOT a leaked BrokenPipeError bubbling up as a bug.
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The common case: the producer's buffered stdout flush fails because the
+    consumer already closed the pipe. ``run_cyclopts_app`` forces the flush so
+    the failure surfaces here (not at uncatchable interpreter shutdown) and
+    exits cleanly. ``fileno()`` raising stands in for a stream with no real fd
+    (StringIO, etc.) and exercises the devnull-redirect guard."""
+    app = create_app(name="test")
+
+    @app.default
+    def ok() -> None:
+        pass
+
+    class _BrokenStdout:
+        def write(self, _s: str) -> int:
+            return 0
+
+        def flush(self) -> None:
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def fileno(self) -> int:
+            raise ValueError("no fd")
+
+    monkeypatch.setattr(sys, "stdout", _BrokenStdout())
+    with pytest.raises(SystemExit) as exc:
+        run_cyclopts_app(app, [])
+    assert exc.value.code == 1
 
 
 # ---- parse_kv_pairs ------------------------------------------------------
