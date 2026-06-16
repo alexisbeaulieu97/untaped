@@ -2,7 +2,7 @@
 
 Profiles are a first-class SDK capability: this resolver and
 :class:`untaped.settings_layout.ProfilesSettingsLayout` are the SDK's home
-for profile resolution (absorbed from the retired untaped-profile plugin).
+for profile resolution.
 
 The resolver is layer-agnostic: callers hand it the parsed
 ``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when

@@ -26,13 +26,14 @@ def missing_setting_error(section: str, field: str) -> ConfigError:
     """A standard "go set this config key" error for a missing tool setting.
 
     Names the running tool's command with a bare key (``untaped-github config
-    set token``) when a tool is registered; falls back to the umbrella,
-    fully-qualified form (``untaped config set github.field``) otherwise.
+    set token``) when a tool is registered; falls back to a neutral
+    ``<tool> config set <section>.<field>`` placeholder otherwise (no tool
+    registered is a misuse path — e.g. the SDK used without ``run_tool``).
     """
     placeholder = field.rsplit("_", maxsplit=1)[-1]
     command = current_tool_command()
     if command is None:
-        cmd, key = "untaped", f"{section}.{field}"
+        cmd, key = "<tool>", f"{section}.{field}"
     else:
         cmd, key = command, field
     return ConfigError(

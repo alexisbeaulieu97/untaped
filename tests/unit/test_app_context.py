@@ -35,7 +35,9 @@ def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
 
 def test_app_context_exposes_registered_section(_isolated_config: Path) -> None:
     register_profile_settings("demo", DemoSettings)
-    _isolated_config.write_text("demo:\n  endpoint: https://configured.example\n")
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    demo:\n      endpoint: https://configured.example\n"
+    )
 
     ctx = app_context()
 

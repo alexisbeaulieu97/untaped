@@ -24,18 +24,21 @@ class DemoSettings(BaseModel):
 
 
 def test_missing_setting_error_names_config_set_and_env_paths() -> None:
+    # No tool registered here, so the neutral <tool> placeholder is used
+    # (never the retired central `untaped` command).
     error = missing_setting_error("demo", "token")
 
     assert isinstance(error, ConfigError)
     assert "demo.token is not configured" in str(error)
-    assert "`untaped config set demo.token <token>`" in str(error)
+    assert "`<tool> config set demo.token <token>`" in str(error)
+    assert "untaped config set demo.token" not in str(error)
     assert "UNTAPED_DEMO__TOKEN" in str(error)
 
 
 def test_missing_setting_error_placeholder_uses_last_field_word() -> None:
     error = missing_setting_error("demo", "base_url")
 
-    assert "`untaped config set demo.base_url <url>`" in str(error)
+    assert "`<tool> config set demo.base_url <url>`" in str(error)
 
 
 @respx.mock

@@ -10,7 +10,7 @@ from untaped.config_schema import FieldDescriptor
 
 
 class ListSettings:
-    """Build the ``untaped config list`` table — one entry per leaf scalar."""
+    """Build the ``<tool> config list`` table — one entry per leaf scalar."""
 
     def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
@@ -31,7 +31,7 @@ class ListSettings:
 
 
 class ListAllProfilesSettings:
-    """Build the ``untaped config list --all-profiles`` table.
+    """Build the ``<tool> config list --all-profiles`` table.
 
     One entry per ``(profile, key)`` pair where the profile actually sets the
     leaf. Schema defaults are *not* included (use plain ``ListSettings`` for

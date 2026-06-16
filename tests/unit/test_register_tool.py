@@ -26,7 +26,9 @@ class WorkspaceState(BaseModel):
 
 
 def test_register_tool_resolves_own_section(_isolated_config: Path) -> None:
-    _isolated_config.write_text("github:\n  token: t\n", encoding="utf-8")
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    github:\n      token: t\n", encoding="utf-8"
+    )
     register_tool(
         ToolSpec(command="untaped-github", section="github", profile_model=GithubSettings)
     )
@@ -34,7 +36,10 @@ def test_register_tool_resolves_own_section(_isolated_config: Path) -> None:
 
 
 def test_register_tool_ignores_foreign_sections(_isolated_config: Path) -> None:
-    _isolated_config.write_text("github:\n  token: t\njira:\n  url: x\n", encoding="utf-8")
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    github:\n      token: t\n    jira:\n      url: x\n",
+        encoding="utf-8",
+    )
     register_tool(
         ToolSpec(command="untaped-github", section="github", profile_model=GithubSettings)
     )

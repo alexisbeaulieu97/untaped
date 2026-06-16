@@ -135,13 +135,13 @@ def test_mutate_config_clears_get_settings_cache(
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
-    write_config_dict({"log_level": "INFO"})
+    write_config_dict({"profiles": {"default": {"log_level": "INFO"}}})
 
     get_settings.cache_clear()
     assert get_settings().log_level == "INFO"
 
     def _set_debug(data: dict[str, Any]) -> None:
-        data["log_level"] = "DEBUG"
+        data["profiles"]["default"]["log_level"] = "DEBUG"
 
     mutate_config(_set_debug)
     assert get_settings().log_level == "DEBUG"

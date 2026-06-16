@@ -1,4 +1,4 @@
-"""Pure formatting helpers for ``untaped config list`` table cells."""
+"""Pure formatting helpers for ``<tool> config list`` table cells."""
 
 from __future__ import annotations
 

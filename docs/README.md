@@ -1,29 +1,33 @@
 # `untaped` — documentation
 
-`untaped` is a personal DevOps CLI suite. One binary loads core
-commands and installed domain plugins (AWX/AAP, Ansible, Jira, workspaces,
-GitHub, profile, themes, ...), so daily DevOps work composes — row-oriented
-`list`/`get`/`status`-style commands are designed to be piped into
-`fzf`, `jq`, `awk`, or each other.
+`untaped` is a batteries-included CLI **framework** (an SDK) for building
+standalone DevOps tools. There is no central `untaped` command: each tool is an
+independent CLI (`untaped-github`, `untaped-awx`, …) that depends on the SDK and
+is installed in its own `uv tool` environment. Tools share two frozen contracts
+— the `~/.untaped/config.yml` format and the `--format pipe` envelope — so they
+interoperate and compose.
 
 ## Pages
 
 - [Configuration](./configuration.md) — `~/.untaped/config.yml`,
   profiles, secrets, TLS, env-var overrides. Start here.
-- [Plugins](./plugins.md) — install, sync, list, and diagnose optional
-  plugin packages.
-- [Agent Skills](./skills.md) — list and install Codex/Claude skills
-  contributed by core and installed plugins.
+- [Building a tool with the untaped SDK](./plugins.md) — declare a `ToolSpec`,
+  wire `run_tool`, and ship an independent CLI.
+- [Agent Skills](./skills.md) — list and install Codex/Claude skills that each
+  tool ships.
+- [Architecture decisions](./decisions.md) — the settled ADRs behind the
+  SDK-only direction.
+- [Migration](./migration.md) — moving off the retired plugin runtime to the
+  independent tool installs.
 
-Plugin docs and command references live in their plugin repos:
+Command references live in each tool's own repo:
 
-- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
-- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
-- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
 - [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
 - [Jira](https://github.com/alexisbeaulieu97/untaped-jira)
-- [Profile](https://github.com/alexisbeaulieu97/untaped-profile)
-- [Themes](https://github.com/alexisbeaulieu97/untaped-themes)
+- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
+- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
+- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
+- [Apple Health](https://github.com/alexisbeaulieu97/untaped-apple-health)
 
 For installation, see the repo's [README](../README.md).
 
@@ -32,34 +36,26 @@ For installation, see the repo's [README](../README.md).
 Row-oriented `list`/`get`/`status`-style commands support
 `--format json|yaml|table|raw|pipe` and `--columns <field>` so their stdout
 can feed into the next tool. `--format pipe` is a self-describing record stream
-(NDJSON) that another untaped command reads back — typed composition without
+(NDJSON) that another untaped tool reads back — typed composition without
 flattening to strings:
 
 ```bash
 # Pick a job template interactively, then fetch its details as JSON.
-untaped awx job-templates list --format raw --columns name \
+untaped-awx job-templates list --format raw --columns name \
   | fzf \
-  | untaped awx job-templates get --stdin --format json
+  | untaped-awx job-templates get --stdin --format json
 
-# With the optional workspace plugin installed, sync every workspace
-# and flag anything behind upstream.
-untaped workspace sync --all
-untaped workspace status --all --format raw \
-    --columns workspace --columns repo --columns behind \
-  | awk '$3 > 0 { print }'
-
-# --format pipe carries full records between untaped commands (no flattening).
-untaped github search repos --org acme --format pipe \
-  | untaped github search code "BaseModel" --repo-stdin
+# --format pipe carries full records between independently-installed tools.
+untaped-github search repos --org acme --format pipe \
+  | untaped-github search code "BaseModel" --repo-stdin
 ```
 
-Side-effect commands (`profile use` from the optional profile plugin,
-`config set`, `apply --yes`, …)
-print a short confirmation to stderr and exit. **Logs go to stderr;
-only data hits stdout** — so pipes stay clean.
+Side-effect commands (`<tool> profile use`, `<tool> config set`, `apply --yes`,
+…) print a short confirmation to stderr and exit. **Logs go to stderr; only
+data hits stdout** — so pipes stay clean.
 
 ## Contributing / extending
 
-Architecture, conventions, and the recipes for adding a new domain or
-command live in [AGENTS.md](../AGENTS.md). It's the single source of
-truth for *how* `untaped` is built — read it before sending changes.
+Architecture, conventions, and the recipes for building a tool live in
+[AGENTS.md](../AGENTS.md). It's the single source of truth for *how* `untaped`
+is built — read it before sending changes.

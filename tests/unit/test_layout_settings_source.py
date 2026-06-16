@@ -1,9 +1,8 @@
 """Tests for ``LayoutSettingsSource`` — the YAML-through-layout settings source.
 
-These exercise ``Settings`` against the default flat layout and registered
-plugin sections: top-level key loading, YAML error translation, and generic
-top-level plugin state splicing. Profile layering lives in the
-untaped-profile plugin and is tested in that repo.
+These exercise ``Settings`` against the default profiles layout and registered
+plugin sections: profile-scoped key loading (under ``profiles.default``), YAML
+error translation, and generic top-level plugin state splicing.
 """
 
 from __future__ import annotations
@@ -46,14 +45,16 @@ def _reset_cache() -> Iterator[None]:
     get_settings.cache_clear()
 
 
-def test_loads_flat_top_level_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_loads_profile_default_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
-        log_level: DEBUG
-        demo:
-          base_url: https://aap.local
-          token: secret-value
+        profiles:
+          default:
+            log_level: DEBUG
+            demo:
+              base_url: https://aap.local
+              token: secret-value
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -95,18 +96,22 @@ def test_registered_state_lives_at_top_level(
     assert s.demo.entries == ["prod", "stage"]
 
 
-def test_state_and_profile_fields_share_one_top_level_section(
+def test_state_and_profile_fields_share_one_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Flat layout: a section's user-tunable fields and its app state live
-    in the same top-level block; the state splice must merge, not clobber."""
+    """Profiles layout: a section's user-tunable fields live under
+    ``profiles.default.<section>`` while its app state stays at the top-level
+    ``<section>`` block; the state splice must merge, not clobber."""
     register_profile_settings("demo", DemoProfileSettings)
     register_state_settings("demo", DemoStateSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
+        profiles:
+          default:
+            demo:
+              cache_dir: /from/config
         demo:
-          cache_dir: /from/config
           entries:
             - prod
         """
