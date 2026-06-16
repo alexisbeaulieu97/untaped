@@ -34,7 +34,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from untaped import get_settings_model, walk_settings
+from untaped.config_schema import walk_settings
+from untaped.settings import get_settings_model
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = REPO_ROOT / "src"

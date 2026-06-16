@@ -1,8 +1,8 @@
 """Registry-backed configuration loaded from ``~/.untaped/config.yml``.
 
-Core owns YAML/env loading and the registry that plugins use to contribute
-typed settings sections and (at most one) settings layout. Plugins own their
-section models; the untaped-profile plugin owns profile resolution.
+The SDK owns YAML/env loading and an in-process registry that the running tool
+populates (via :func:`untaped.tool.register_tool`) with its typed settings
+section(s) and the built-in profiles layout.
 """
 
 from __future__ import annotations
@@ -30,42 +30,20 @@ DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 
 
 class HttpSettings(BaseModel):
-    """Cross-cutting HTTP behaviour shared by every plugin client."""
+    """Cross-cutting HTTP behaviour shared by every tool's HTTP client."""
 
     ca_bundle: Path | None = None
     verify_ssl: bool = True
 
 
-class PluginInstallSpec(BaseModel):
-    """One uv-installable plugin package spec recorded for the managed venv."""
-
-    spec: str
-    editable: bool = False
-    name: str | None = None
-
-
-class PluginToolSpec(BaseModel):
-    """The core package spec used when rebuilding the managed venv."""
-
-    spec: str | None = None
-    editable: bool = False
-
-
-class PluginsState(BaseModel):
-    """Top-level app state for desired managed venv installations."""
-
-    tool: PluginToolSpec = Field(default_factory=PluginToolSpec)
-    packages: list[PluginInstallSpec] = Field(default_factory=list)
-
-
 BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {
-    "plugins": PluginsState,
+    "http": HttpSettings,
     "ui": UiSettings,
 }
 
 
 class _ConfigRegistry:
-    """Mutable in-process registry of config sections contributed by plugins."""
+    """Mutable in-process registry of the running tool's config sections."""
 
     def __init__(self) -> None:
         self.profile_sections: dict[str, type[BaseModel]] = {}
@@ -209,10 +187,10 @@ def validate_disjoint_settings_sections(
 
 
 def reset_config_registry_for_tests() -> None:
-    """Reset plugin-contributed config sections.
+    """Reset the running tool's registered config sections.
 
-    Public only for tests and plugin loader isolation. Production code should
-    register through :class:`untaped.plugins.PluginRegistry`.
+    Public only for test isolation. Production code registers sections via
+    :func:`untaped.tool.register_tool`.
     """
     _CONFIG_REGISTRY.reset()
 

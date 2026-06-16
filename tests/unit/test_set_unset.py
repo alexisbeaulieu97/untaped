@@ -56,7 +56,9 @@ def test_set_coerces_yaml_scalars(_isolate_settings: Path) -> None:
 
 
 def test_set_validates_via_pydantic(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="invalid value"):
+    # `http` is an SDK-owned global section, so an invalid value is rejected
+    # via state-section validation; the offending key is still named.
+    with pytest.raises(ConfigError, match="verify_ssl"):
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
 
@@ -75,7 +77,11 @@ def test_set_validation_isolated_from_env_overlay(
     # Env says verify_ssl=true (valid). If validation consulted env,
     # the bad YAML write below would be accepted because env wins.
     monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
-    with pytest.raises(ConfigError, match="invalid value"):
+    # Validation judges the raw YAML write, not the env-overlaid value, so the
+    # bad disk write is caught even though the env var would resolve to a valid
+    # bool. (`http` validates via state-section splicing now, but on the raw
+    # dict — the env-isolation property is unchanged.)
+    with pytest.raises(ConfigError, match="verify_ssl"):
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
 

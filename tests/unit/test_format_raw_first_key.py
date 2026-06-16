@@ -1,12 +1,12 @@
-"""Pin core ``--format raw`` first-key row contracts."""
+"""Pin SDK ``--format raw`` first-key row contracts."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from untaped.config.cli.commands import _entry_to_row
 from untaped.config.domain.models import SettingEntry, Source
+from untaped.config_app import _entry_to_row
 
 _CONTRACT_REF = "see AGENTS.md '--format raw default-column contract'"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -26,10 +26,10 @@ def test_config_list_row_first_key_is_key() -> None:
 
 
 def test_config_list_command_calls_row_helper() -> None:
-    source = _REPO_ROOT / "src/untaped/config/cli/commands.py"
+    source = _REPO_ROOT / "src/untaped/config_app.py"
     tree = ast.parse(source.read_text())
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "list_command":
+        if isinstance(node, ast.FunctionDef) and node.name == "_list":
             callees = {
                 sub.func.id
                 for sub in ast.walk(node)
@@ -41,4 +41,4 @@ def test_config_list_command_calls_row_helper() -> None:
                 f"({_CONTRACT_REF})."
             )
             return
-    raise AssertionError(f"function 'list_command' not found in {source}")
+    raise AssertionError(f"function '_list' not found in {source}")

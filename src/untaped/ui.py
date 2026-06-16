@@ -87,6 +87,51 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
     "default": ThemeSpec(),
     "plain": ThemeSpec(border="ascii"),
     "compact": ThemeSpec(density="compact"),
+    "high-contrast": ThemeSpec(
+        border="square",
+        density="normal",
+        collection_view="table",
+        detail_view="list",
+        color_roles={
+            "header": "bold bright_cyan",
+            "border": "bright_cyan",
+            "key": "bold bright_cyan",
+            "value": "bright_white",
+            "success": "bold bright_green",
+            "info": "bold bright_blue",
+            "warning": "bold yellow",
+            "error": "bold bright_red",
+        },
+    ),
+    "quiet": ThemeSpec(
+        border="none",
+        density="compact",
+        collection_view="list",
+        detail_view="list",
+        color_roles={
+            "key": "dim cyan",
+            "success": "green",
+            "info": "blue",
+            "warning": "yellow",
+            "error": "red",
+        },
+    ),
+    "classic": ThemeSpec(
+        border="rounded",
+        density="normal",
+        collection_view="table",
+        detail_view="list",
+        color_roles={
+            "header": "bold cyan",
+            "border": "cyan",
+            "key": "cyan",
+            "value": "white",
+            "success": "green",
+            "info": "blue",
+            "warning": "yellow",
+            "error": "red",
+        },
+    ),
 }
 
 
@@ -402,14 +447,13 @@ def ui_context(
     stderr: TextIO | None = None,
     strict: bool = True,
 ) -> UiContext:
-    """Build a UI context from active settings and registered theme presets."""
-    from untaped.plugin_registry import current_registry  # noqa: PLC0415
+    """Build a UI context from active settings and the built-in theme presets."""
     from untaped.settings import get_settings  # noqa: PLC0415
     from untaped.verbose import is_verbose  # noqa: PLC0415
 
     try:
         settings = cast(_HasUiSettings, get_settings())
-        theme = resolve_theme(settings.ui, themes=current_registry().themes)
+        theme = resolve_theme(settings.ui)
     except ConfigError:
         if strict:
             raise

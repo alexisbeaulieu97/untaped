@@ -1,35 +1,41 @@
-"""Agent skill commands and install helpers."""
+"""Agent skill install helpers shared by the per-tool ``skills`` command group.
+
+:mod:`untaped.skills_app` builds each tool's ``skills list / install`` group on
+top of the selection, planning, and copy machinery defined here.
+"""
 
 from __future__ import annotations
 
 import json
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from importlib.resources import files
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from cyclopts import Parameter
 
-from untaped.cli import (
-    ColumnsOption,
-    FormatOption,
-    create_app,
-    echo,
-    existing_directory,
-    raise_usage,
-    render_rows,
-    report_errors,
-)
+from untaped.cli import existing_directory
 from untaped.errors import ConfigError
-from untaped.plugin_registry import PluginRegistry, SkillSpec, current_registry
 from untaped.stdin import read_identifiers
-from untaped.ui import ui_context
 
-CORE_SKILL_NAME = "untaped"
-CORE_SKILL_DESCRIPTION = "Use the untaped CLI, configuration model, and plugin system."
+
+class InstallableSkill(Protocol):
+    """A packaged agent skill the install machinery can list and copy.
+
+    Structural type implemented by :class:`~untaped.tool.SkillAsset` (a frozen
+    dataclass). The members are read-only properties because the concrete type
+    is frozen; a plain attribute Protocol would (wrongly) demand settability.
+    """
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def source(self) -> Path: ...
+    @property
+    def description(self) -> str: ...
 
 
 class SkillInstallTarget(StrEnum):
@@ -103,78 +109,7 @@ SkillTargetDirOption = Annotated[
 ]
 
 
-app = create_app(
-    name="skills",
-    help="List and install agent skills contributed by untaped plugins.",
-)
-
-
-@app.command(name="list")
-def list_command(
-    *,
-    fmt: FormatOption = "table",
-    columns: ColumnsOption = None,
-) -> None:
-    """List registered agent skills."""
-    with report_errors():
-        rows = skill_rows(current_registry())
-        rendered = render_rows(rows, fmt=fmt, columns=columns)
-        if rendered:
-            echo(rendered)
-
-
-@app.command(name="install")
-def install_command(
-    skill_names: SkillNamesArgument = None,
-    *,
-    stdin: SkillStdinOption = False,
-    all_skills: AllSkillsOption = False,
-    target: SkillTargetOption = SkillInstallTarget.codex,
-    force: SkillForceOption = False,
-    scope: SkillScopeOption = SkillInstallScope.global_,
-    project_dir: SkillProjectDirOption = None,
-    target_dir: SkillTargetDirOption = None,
-) -> None:
-    """Install registered skills into an agent skill directory."""
-    if not skill_names and not stdin and not all_skills:
-        raise_usage("provide skill names, --stdin, or --all")
-    with report_errors():
-        registry = current_registry()
-        selected_names = _selected_skill_names(
-            registry,
-            list(skill_names or []),
-            stdin=stdin,
-            all_skills=all_skills,
-        )
-        targets = _install_targets(
-            target,
-            scope=scope,
-            project_dir=project_dir,
-            target_dir=target_dir,
-        )
-        install_plan = _plan_install(registry, selected_names, targets, force=force)
-        for spec, target_destination, destination in install_plan:
-            _install_skill(
-                spec,
-                target_destination=target_destination,
-                destination=destination,
-                force=force,
-            )
-            ui_context(strict=False).message("success", f"installed skill: {spec.name}")
-
-
-def register_builtin_skills(registry: PluginRegistry) -> None:
-    """Register core-owned packaged skills."""
-    registry.add_skill(
-        SkillSpec(
-            name=CORE_SKILL_NAME,
-            source=Path(str(files("untaped").joinpath("skill_assets", CORE_SKILL_NAME))),
-            description=CORE_SKILL_DESCRIPTION,
-        )
-    )
-
-
-def skill_rows(registry: PluginRegistry) -> list[dict[str, object]]:
+def skill_rows(skills: Mapping[str, InstallableSkill]) -> list[dict[str, object]]:
     """Return deterministic row data for registered skills."""
     return [
         {
@@ -182,12 +117,12 @@ def skill_rows(registry: PluginRegistry) -> list[dict[str, object]]:
             "description": spec.description,
             "source": str(spec.source),
         }
-        for spec in sorted(registry.skills.values(), key=lambda item: item.name)
+        for spec in sorted(skills.values(), key=lambda item: item.name)
     ]
 
 
 def _selected_skill_names(
-    registry: PluginRegistry,
+    skills: Mapping[str, InstallableSkill],
     skill_names: list[str],
     *,
     stdin: bool,
@@ -196,11 +131,11 @@ def _selected_skill_names(
     selector_count = int(bool(skill_names)) + int(stdin) + int(all_skills)
     if selector_count != 1:
         raise ConfigError("provide skill names, --stdin, or --all; not more than one")
-    selected = sorted(registry.skills) if all_skills else read_identifiers(skill_names, stdin=stdin)
+    selected = sorted(skills) if all_skills else read_identifiers(skill_names, stdin=stdin)
     duplicate = _first_duplicate(selected)
     if duplicate is not None:
         raise ConfigError(f"duplicate skill selected: {duplicate}")
-    missing = [name for name in selected if name not in registry.skills]
+    missing = [name for name in selected if name not in skills]
     if len(missing) == 1:
         raise ConfigError(f"unknown skill: {missing[0]}")
     if missing:
@@ -258,15 +193,15 @@ def _target_skill_root(target_dir: Path) -> Path:
 
 
 def _plan_install(
-    registry: PluginRegistry,
+    skills: Mapping[str, InstallableSkill],
     selected_names: list[str],
     targets: list[SkillInstallDestination],
     *,
     force: bool,
-) -> list[tuple[SkillSpec, SkillInstallDestination, Path]]:
-    plan: list[tuple[SkillSpec, SkillInstallDestination, Path]] = []
+) -> list[tuple[InstallableSkill, SkillInstallDestination, Path]]:
+    plan: list[tuple[InstallableSkill, SkillInstallDestination, Path]] = []
     for name in selected_names:
-        spec = registry.skills[name]
+        spec = skills[name]
         for target_destination in targets:
             destination = target_destination.root / name
             if destination.exists() and not force:
@@ -276,7 +211,7 @@ def _plan_install(
 
 
 def _install_skill(
-    spec: SkillSpec,
+    spec: InstallableSkill,
     *,
     target_destination: SkillInstallDestination,
     destination: Path,

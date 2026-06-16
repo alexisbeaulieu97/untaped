@@ -120,5 +120,5 @@ def test_get_global_ui_setting_uses_schema_default(_isolate_settings: Path) -> N
 
 
 def test_get_rejects_dict_shaped_ui_settings(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="unknown UI setting"):
+    with pytest.raises(ConfigError, match="unknown ui setting"):
         GetSetting(SettingsFileRepository())("ui.color_roles")

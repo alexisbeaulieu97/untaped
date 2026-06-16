@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from untaped import FieldDescriptor, Settings
+from untaped.config_schema import FieldDescriptor
+from untaped.settings import Settings
 
 
 class SettingsReader(Protocol):

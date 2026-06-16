@@ -1,7 +1,7 @@
 [project]
 name = "untaped"
-version = "0.6.0"
-description = "A personal DevOps CLI suite."
+version = "1.0.0"
+description = "A batteries-included CLI framework for building standalone DevOps tools."
 readme = "README.md"
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" },
@@ -18,9 +18,6 @@ dependencies = [
     "rich>=15.0.0",
     "truststore>=0.10.4",
 ]
-
-[project.scripts]
-untaped = "untaped.main:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
