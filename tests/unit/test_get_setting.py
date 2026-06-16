@@ -31,16 +31,19 @@ def _isolate_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     get_settings.cache_clear()
 
 
-def test_get_returns_config_source_for_flat_value(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("log_level: DEBUG\n")
+def test_get_returns_default_profile_source_for_scoped_value(_isolate_settings: Path) -> None:
+    # The profiles layout is the default, so a core profile-scoped field like
+    # ``log_level`` is only effective under ``profiles.default``; the resolved
+    # source names the ``default`` profile.
+    _isolate_settings.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
 
     entry = GetSetting(SettingsFileRepository())("log_level")
 
     assert entry.key == "log_level"
     assert entry.value == "DEBUG"
     assert entry.default == "INFO"
-    assert entry.source.label == "config"
-    assert entry.profile is None
+    assert entry.source.label == "profile:default"
+    assert entry.profile == "default"
 
 
 def test_get_profile_setting_returns_effective_value_source_and_profile(
@@ -79,7 +82,7 @@ def test_get_honours_environment_override(
 
 
 def test_get_redacts_secret_by_default(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("demo:\n  token: secret-token\n")
+    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
 
     entry = GetSetting(SettingsFileRepository())("demo.token")
 
@@ -87,7 +90,7 @@ def test_get_redacts_secret_by_default(_isolate_settings: Path) -> None:
 
 
 def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("demo:\n  token: secret-token\n")
+    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      token: secret-token\n")
 
     entry = GetSetting(SettingsFileRepository())("demo.token", reveal_secrets=True)
 

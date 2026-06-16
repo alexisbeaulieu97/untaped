@@ -23,7 +23,7 @@ from pydantic_settings import (
 from pydantic_settings.sources import InitSettingsSource
 
 from untaped.errors import ConfigError, first_validation_error
-from untaped.settings_layout import FlatSettingsLayout, SettingsLayout
+from untaped.settings_layout import ProfilesSettingsLayout, SettingsLayout
 from untaped.ui import UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -83,7 +83,7 @@ class _ConfigRegistry:
     def active_layout(self) -> SettingsLayout:
         if self._resolved_layout is None:
             provider = self.settings_layout_provider
-            self._resolved_layout = provider() if provider is not None else FlatSettingsLayout()
+            self._resolved_layout = provider() if provider is not None else ProfilesSettingsLayout()
         return self._resolved_layout
 
     def register_profile_settings(self, section: str, model: type[BaseModel]) -> None:

@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+import yaml
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped import ConfigError
@@ -54,20 +55,23 @@ def test_default_when_no_yaml_no_env() -> None:
     assert log_level.default == "INFO"
 
 
-def test_value_from_config_is_attributed_to_config(
+def test_value_from_default_profile_is_attributed_to_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The profiles layout is the default, so a profile-scoped value such as
+    # ``log_level`` lives under ``profiles.default`` and is attributed to the
+    # supplying profile (here ``default``), not to a scope-less ``config``
+    # source.
     cfg = tmp_path / "config.yml"
-    cfg.write_text("log_level: DEBUG\n")
+    cfg.write_text("profiles:\n  default:\n    log_level: DEBUG\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     log_level = entries["log_level"]
-    assert log_level.source == Source(kind="config")
-    assert log_level.source.label == "config"
+    assert log_level.source == Source(kind="profile", profile="default")
+    assert log_level.source.label == "profile:default"
     assert log_level.value == "DEBUG"
-    assert log_level.profile is None
 
 
 def test_env_overrides_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,7 +88,7 @@ def test_env_overrides_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 def test_secrets_redacted_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("demo:\n  token: super-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: super-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
@@ -94,7 +98,7 @@ def test_secrets_redacted_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("demo:\n  token: super-secret-value\n")
+    cfg.write_text("profiles:\n  default:\n    demo:\n      token: super-secret-value\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
@@ -158,19 +162,47 @@ def test_source_label_renders_string() -> None:
     assert Source(kind="profile", profile="prod").label == "profile:prod"
 
 
-def test_all_profiles_errors_without_scoped_layout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``--all-profiles`` data needs scopes; flat repos report none."""
+def test_default_layout_supports_profiles_but_reports_none_when_unconfigured() -> None:
+    """The profiles layout is the default, so the repo always supports scopes;
+    with no ``profiles:`` block defined it simply reports no profile data.
+
+    (Rewritten from ``test_all_profiles_errors_without_scoped_layout``, whose
+    flat-layout premise — ``supports_profiles() is False`` — is obsolete now
+    that the scoped layout is the default.)
+    """
     repo = SettingsFileRepository()
-    assert repo.supports_profiles() is False
+    assert repo.supports_profiles() is True
     assert repo.profile_names() == []
     assert repo.profile_data("prod") is None
 
 
-def test_repo_rejects_write_scope_in_flat_mode() -> None:
-    with pytest.raises(ConfigError, match="profiles are not available"):
-        SettingsFileRepository().set_value("log_level", "DEBUG", profile="prod")
+def test_bare_write_lands_under_default_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scope-less write resolves to ``profiles.default`` under the default
+    layout, and targeting a profile that doesn't exist is rejected.
+
+    (Rewritten from ``test_repo_rejects_write_scope_in_flat_mode``: the flat
+    layout it relied on no longer exists, so its rejection assertion is
+    obsolete. The remaining guardrail is that an unknown target profile is
+    refused; the new default behaviour is that a bare key lands in
+    ``profiles.default``.)
+    """
+    cfg = tmp_path / "config.yml"
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+
+    repo = SettingsFileRepository()
+
+    # Targeting a profile that doesn't exist is the guardrail that survives.
+    with pytest.raises(ConfigError, match="does not exist"):
+        repo.set_value("log_level", "DEBUG", profile="prod")
+
+    # A bare write resolves to the default profile and persists there.
+    resolved = repo.set_value("log_level", "DEBUG")
+    assert resolved == "default"
+    written = yaml.safe_load(cfg.read_text())
+    assert written == {"profiles": {"default": {"log_level": "DEBUG"}}}
 
 
 class TestScopedLayoutListing:

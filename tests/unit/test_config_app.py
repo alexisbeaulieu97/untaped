@@ -71,18 +71,6 @@ def app(_isolated_config: Path):
 
 
 @pytest.fixture
-def flat_app(_isolated_config: Path):
-    """A github config app with no layout registered (flat config).
-
-    Flat mode has no scopes, so ``--target-profile`` and ``--all-profiles``
-    must be refused; bare keys still write to ``github.*`` at the top level.
-    """
-    register_tool(GH_SPEC)
-    get_settings.cache_clear()
-    return build_config_app(GH_SPEC)
-
-
-@pytest.fixture
 def scoped_app(_isolated_config: Path, fake_scoped_layout: object):
     """A github config app over the conftest ``FakeScopedLayout``.
 
@@ -182,16 +170,6 @@ def test_set_coerces_value_as_yaml_scalar(app, _isolated_config: Path) -> None:
     assert read_config_dict(_isolated_config)["profiles"]["default"]["github"]["verbose"] is True
 
 
-def test_set_bare_key_flat_message_omits_profile(flat_app, _isolated_config: Path) -> None:
-    # In flat mode there is no scope, so the success message names no profile
-    # and the value lands at the top level under the tool's section.
-    result = CliInvoker().invoke(flat_app, ["set", "base_url", "https://flat"])
-    assert result.exit_code == 0, result.output
-    assert "set github.base_url (config:" in result.output
-    assert "in profile" not in result.output
-    assert read_config_dict(_isolated_config)["github"]["base_url"] == "https://flat"
-
-
 # ── set: --target-profile (scoped layout) ────────────────────────────────────
 
 
@@ -216,10 +194,14 @@ def test_set_target_profile_unknown_scope_errors(scoped_app, _isolated_config: P
     assert "ghost" in result.output
 
 
-def test_set_target_profile_without_scoped_layout_errors(flat_app, _isolated_config: Path) -> None:
-    result = CliInvoker().invoke(flat_app, ["set", "token", "x", "--target-profile", "prod"])
+def test_set_target_profile_unknown_scope_on_default_layout_errors(
+    app, _isolated_config: Path
+) -> None:
+    # The profiles layout is the SDK default, so --target-profile is always
+    # available; targeting a profile that doesn't exist is the guardrail.
+    result = CliInvoker().invoke(app, ["set", "token", "x", "--target-profile", "prod"])
     assert result.exit_code != 0
-    assert "profiles are not available" in result.output
+    assert "does not exist" in result.output
     assert not _isolated_config.exists()
 
 
@@ -710,12 +692,6 @@ def test_list_show_secrets_reveals(app, _isolated_config: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "s3cr3t" in result.stdout
-
-
-def test_list_all_profiles_requires_scoped_layout(flat_app, _isolated_config: Path) -> None:
-    result = CliInvoker().invoke(flat_app, ["list", "--all-profiles"])
-    assert result.exit_code != 0
-    assert "--all-profiles requires profiles" in result.output
 
 
 def test_list_all_profiles_shows_per_profile_rows(scoped_app, _isolated_config: Path) -> None:
