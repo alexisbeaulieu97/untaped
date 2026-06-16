@@ -16,14 +16,12 @@ class Source:
 
     - ``env``     — an ``UNTAPED_*`` environment variable.
     - ``global``  — a top-level YAML app setting such as ``ui.theme``.
-    - ``profile`` — a YAML profile (``profile`` field names which one);
-      requires a scoped settings layout (the built-in profiles layout).
-    - ``config``  — the config file's top level (no profile scope).
+    - ``profile`` — a YAML profile (``profile`` field names which one).
     - ``default`` — the schema default declared on the Pydantic model.
     - ``unset``   — no default, no value; the field is genuinely empty.
     """
 
-    kind: Literal["profile", "config", "env", "global", "default", "unset"]
+    kind: Literal["profile", "env", "global", "default", "unset"]
     profile: str | None = None
 
     @property

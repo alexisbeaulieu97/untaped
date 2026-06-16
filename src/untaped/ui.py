@@ -251,7 +251,7 @@ class RichTerminalRenderer:
 
 
 class UiContext:
-    """Theme-aware UI context for commands and plugin CLIs."""
+    """Theme-aware UI context for tool commands."""
 
     def __init__(
         self,

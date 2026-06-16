@@ -17,8 +17,6 @@ interoperate and compose.
   tool ships.
 - [Architecture decisions](./decisions.md) — the settled ADRs behind the
   SDK-only direction.
-- [Migration](./migration.md) — moving off the retired plugin runtime to the
-  independent tool installs.
 
 Command references live in each tool's own repo:
 

@@ -4,7 +4,7 @@
 tool, so each independent CLI exposes ``profile list / show / use / current
 / create / delete / rename`` over the shared ``~/.untaped/config.yml``. The
 ``command`` argument (e.g. ``untaped-github``) is woven into user-facing
-hints so guidance names the actual executable, not a generic umbrella.
+hints so guidance names the actual executable, not a generic placeholder.
 
 Command bodies are module-level functions wired onto a fresh app per call;
 only ``list`` needs the tool command (for its empty-state hint), so it is

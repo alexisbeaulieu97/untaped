@@ -1,6 +1,6 @@
 """Standardized destructive-batch UX: preview → confirm → execute → summarize.
 
-:func:`batch_apply` is the shared front-end a plugin uses to act on a *set* of
+:func:`batch_apply` is the shared front-end a tool uses to act on a *set* of
 already-resolved items (typically read from a ``--format pipe`` stream via
 :func:`untaped.stdin.read_identifiers` / :func:`untaped.stdin.read_records`). It
 previews the targets, gates a destructive verb behind a confirmation (or
@@ -8,7 +8,7 @@ previews the targets, gates a destructive verb behind a confirmation (or
 per-item failures — leaving the caller to render the outcome rows and choose the
 exit code (summary shape and prior-failure composition are caller concerns).
 
-This is distinct from the ``apply`` *command* some plugins expose (a file-based
+This is distinct from the ``apply`` *command* some tools expose (a file-based
 declarative reconciler): :func:`batch_apply` is a pipe-consumer mutation helper,
 not a YAML applier, and its ``--yes`` means "skip the confirm" (not "write").
 """

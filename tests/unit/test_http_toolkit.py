@@ -10,7 +10,7 @@ import respx
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError, UntapedError
-from untaped.plugin_http import (
+from untaped.http import (
     connected_client,
     missing_setting_error,
     paginate_offset,
