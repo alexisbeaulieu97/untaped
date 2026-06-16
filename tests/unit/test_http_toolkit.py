@@ -95,6 +95,39 @@ def test_connected_client_strips_trailing_base_url_slash() -> None:
         assert client.get_json_dict("/user") == {"ok": True}
 
 
+@respx.mock
+def test_connected_client_sends_bearer_when_token_not_required() -> None:
+    """A configured token still authenticates when left out of ``required``.
+
+    awx leaves ``token`` out of ``required`` so a token-less client can hit
+    unauthenticated endpoints, yet a token that *is* configured must still
+    become the ``Authorization: Bearer`` header.
+    """
+    route = respx.get("https://api.example.com/projects/").mock(
+        return_value=httpx.Response(200, json={"results": []})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo", required=("base_url",)) as client:
+        client.get_json_dict("/projects/")
+
+    assert route.calls.last.request.headers["Authorization"] == "Bearer sekret"
+
+
+@respx.mock
+def test_connected_client_token_optional_builds_without_auth() -> None:
+    """No token + token-not-required builds a client that sends no auth header."""
+    route = respx.get("https://api.example.com/ping/").mock(
+        return_value=httpx.Response(200, json={"pong": True})
+    )
+    config = DemoSettings(token=None)
+
+    with connected_client(config, section="demo", required=("base_url",)) as client:
+        assert client.get_json_dict("/ping/") == {"pong": True}
+
+    assert "Authorization" not in route.calls.last.request.headers
+
+
 def test_paginate_pages_follows_cursors_and_respects_limit() -> None:
     pages: dict[str | None, tuple[list[dict[str, Any]], str | None]] = {
         None: ([{"n": 1}, {"n": 2}], "p2"),
