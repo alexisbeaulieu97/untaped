@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  release-smoke:
+  sdk-wheel-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -29,77 +29,58 @@ jobs:
           version: "0.11.19"
           enable-cache: true
 
-      - name: Configure temp paths
-        run: |
-          mkdir -p "$RUNNER_TEMP/home/.local/bin" "$RUNNER_TEMP/data"
-          {
-            echo "HOME=$RUNNER_TEMP/home"
-            echo "XDG_DATA_HOME=$RUNNER_TEMP/data"
-            echo "UNTAPED_CONFIG=$RUNNER_TEMP/untaped-config.yml"
-          } >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/home/.local/bin" >> "$GITHUB_PATH"
+      # untaped is an SDK, not an app: the wheel must build, install cleanly,
+      # ship NO `untaped` console script (the central command is retired), and
+      # expose the exact public surface tools depend on. Tools live in their
+      # own repos and run their own install smokes; this gate proves the SDK
+      # boundary a tool builds against.
+      - name: Build the SDK wheel
+        run: uv build --wheel
 
-      - name: Install current core with migration plugin stack
+      - name: Install the built wheel into an isolated venv
         run: |
-          scripts/install.sh --editable .
-          untaped plugins add \
-            "untaped-awx @ git+https://github.com/alexisbeaulieu97/untaped-awx@cyclopts-migration" \
-            "untaped-workspace @ git+https://github.com/alexisbeaulieu97/untaped-workspace@cyclopts-migration" \
-            "untaped-github @ git+https://github.com/alexisbeaulieu97/untaped-github@cyclopts-migration" \
-            "untaped-ansible @ git+https://github.com/alexisbeaulieu97/untaped-ansible@cyclopts-migration" \
-            "untaped-jira @ git+https://github.com/alexisbeaulieu97/untaped-jira@cyclopts-migration" \
-            "untaped-profile @ git+https://github.com/alexisbeaulieu97/untaped-profile@cyclopts-migration" \
-            "untaped-themes @ git+https://github.com/alexisbeaulieu97/untaped-themes@cyclopts-migration"
-          test -x "$HOME/.local/bin/untaped"
+          uv venv --python 3.14 "$RUNNER_TEMP/venv"
+          uv pip install --python "$RUNNER_TEMP/venv/bin/python" dist/*.whl
 
-      - name: Verify plugin discovery
+      - name: Assert the SDK ships no console script
         run: |
-          expected="$(mktemp)"
-          actual="$(mktemp)"
-          cat > "$expected" <<'EOF'
-          ansible
-          awx
-          github
-          jira
-          profile
-          themes
-          workspace
-          EOF
-          untaped plugins list --format raw --columns plugin_id | sort > "$actual"
-          diff -u "$expected" "$actual"
+          if [ -e "$RUNNER_TEMP/venv/bin/untaped" ]; then
+            echo "error: the SDK wheel installed an 'untaped' console script; the central command is retired" >&2
+            exit 1
+          fi
 
-      - name: Verify skill discovery
+      - name: Assert the public API surface resolves
         run: |
-          expected="$(mktemp)"
-          actual="$(mktemp)"
-          cat > "$expected" <<'EOF'
-          untaped
-          untaped-ansible
-          untaped-awx
-          untaped-github
-          untaped-jira
-          untaped-profile
-          untaped-workspace
-          EOF
-          untaped skills list --format raw --columns name > "$actual"
-          diff -u "$expected" "$actual"
+          "$RUNNER_TEMP/venv/bin/python" - <<'PY'
+          import untaped
+          import untaped.api
 
-      - name: Verify local agent skill installation
-        run: |
-          project_dir="$RUNNER_TEMP/project"
-          mkdir -p "$project_dir"
-          untaped skills install --all --target all --scope local --project-dir "$project_dir"
-          for skill in \
-            untaped \
-            untaped-ansible \
-            untaped-awx \
-            untaped-github \
-            untaped-jira \
-            untaped-profile \
-            untaped-workspace
-          do
-            test -f "$project_dir/.agents/skills/$skill/SKILL.md"
-            test -f "$project_dir/.agents/skills/$skill/.untaped-skill.json"
-            test -f "$project_dir/.claude/skills/$skill/SKILL.md"
-            test -f "$project_dir/.claude/skills/$skill/.untaped-skill.json"
-          done
+          # The package root re-exports api.py verbatim.
+          assert untaped.__all__ == untaped.api.__all__, "root/api surface drift"
+
+          # The composition contract a tool builds against.
+          from untaped.api import (
+              ToolSpec,
+              SkillAsset,
+              register_tool,
+              run_tool,
+              build_tool_app,
+              app_context,
+          )
+
+          # A sampling of the frozen contract surface (config + pipe + http).
+          required = (
+              "ensure_config",
+              "mutate_tool_state",
+              "read_tool_state",
+              "get_config_section",
+              "PipeEnvelope",
+              "common_kind",
+              "connected_client",
+              "missing_setting_error",
+          )
+          missing = [name for name in required if not hasattr(untaped.api, name)]
+          assert not missing, f"missing SDK surface: {missing}"
+
+          print(f"ok: {len(untaped.api.__all__)} public names, no console script")
+          PY
