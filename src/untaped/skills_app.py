@@ -2,11 +2,11 @@
 
 ``run_tool`` calls :func:`build_skills_app` and mounts the result, so each tool
 exposes ``skills list / install`` over its OWN packaged skills (``spec.skills``,
-a tuple of :class:`~untaped.tool.SkillAsset`) instead of the plugin registry.
+a tuple of :class:`~untaped.tool.SkillAsset`).
 
 The selection, planning, and install machinery lives in :mod:`untaped.skills`;
-this module supplies the skill source from the tool's own assets (rather than a
-plugin registry) and renders/exits.
+this module supplies the skill source from the tool's own assets and
+renders/exits.
 """
 
 from __future__ import annotations

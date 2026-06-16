@@ -43,7 +43,7 @@ def classify_active_profile(
     Same precedence as :func:`effective_active_profile_name` (env var >
     ``data['active']`` > unset), but also tells the caller whether the
     answer came from the env var, the persisted ``active:`` key, or
-    neither (fallback). Powers the profile plugin's ``current`` command
+    neither (fallback). Powers the ``profile current`` command
     and any other code path that needs to classify the layer.
     """
     env_override = os.environ.get(ACTIVE_PROFILE_ENV)

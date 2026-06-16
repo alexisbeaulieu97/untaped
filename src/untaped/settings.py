@@ -8,7 +8,7 @@ section(s) and the built-in profiles layout.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
@@ -23,7 +23,7 @@ from pydantic_settings import (
 from pydantic_settings.sources import InitSettingsSource
 
 from untaped.errors import ConfigError, first_validation_error
-from untaped.settings_layout import ProfilesSettingsLayout, SettingsLayout
+from untaped.settings_layout import ProfilesSettingsLayout
 from untaped.ui import UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
@@ -48,43 +48,13 @@ class _ConfigRegistry:
     def __init__(self) -> None:
         self.profile_sections: dict[str, type[BaseModel]] = {}
         self.state_sections: dict[str, type[BaseModel]] = {}
-        self.settings_layout_provider: Callable[[], SettingsLayout] | None = None
-        self.settings_layout_key: str | None = None
-        self._resolved_layout: SettingsLayout | None = None
 
     def reset(self) -> None:
         self.profile_sections = {}
         self.state_sections = dict(BUILTIN_STATE_SECTIONS)
-        self.settings_layout_provider = None
-        self.settings_layout_key = None
-        self._resolved_layout = None
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
-
-    def register_settings_layout(
-        self,
-        provider: Callable[[], SettingsLayout],
-        *,
-        key: str | None = None,
-    ) -> None:
-        if self.settings_layout_provider is not None and (
-            key is None or key != self.settings_layout_key
-        ):
-            raise ConfigError("a settings layout is already registered")
-        # Falling through with an already-registered provider means the same
-        # plugin is re-registering (e.g. build_app called again): refresh the
-        # provider, keep the single-layout invariant.
-        self.settings_layout_provider = provider
-        self.settings_layout_key = key
-        self._resolved_layout = None
-        get_settings.cache_clear()
-
-    def active_layout(self) -> SettingsLayout:
-        if self._resolved_layout is None:
-            provider = self.settings_layout_provider
-            self._resolved_layout = provider() if provider is not None else ProfilesSettingsLayout()
-        return self._resolved_layout
 
     def register_profile_settings(self, section: str, model: type[BaseModel]) -> None:
         existing = self.profile_sections.get(section)
@@ -144,33 +114,21 @@ class Settings(BaseSettings):
         )
 
 
-def register_settings_layout(
-    provider: Callable[[], SettingsLayout],
-    *,
-    key: str | None = None,
-) -> None:
-    """Register the (single) plugin-contributed settings layout provider.
-
-    The provider runs lazily on first settings access so plugin modules stay
-    off the startup import path. ``key`` identifies the contributor (the
-    spec's import path): re-registering the same key refreshes the provider,
-    a different key is rejected.
-    """
-    _CONFIG_REGISTRY.register_settings_layout(provider, key=key)
+_PROFILES_LAYOUT = ProfilesSettingsLayout()
 
 
-def active_settings_layout() -> SettingsLayout:
-    """Return the layout mapping raw config to effective settings."""
-    return _CONFIG_REGISTRY.active_layout()
+def active_settings_layout() -> ProfilesSettingsLayout:
+    """Return the SDK's settings layout (the profiles layout, always)."""
+    return _PROFILES_LAYOUT
 
 
 def register_profile_settings(section: str, model: type[BaseModel]) -> None:
-    """Register a plugin-owned section that lives under ``profiles.<name>``."""
+    """Register a tool's profile-scoped section (lives under ``profiles.<name>``)."""
     _CONFIG_REGISTRY.register_profile_settings(section, model)
 
 
 def register_state_settings(section: str, model: type[BaseModel]) -> None:
-    """Register top-level plugin state spliced into the effective config."""
+    """Register a tool's top-level state section spliced into the effective config."""
     _CONFIG_REGISTRY.register_state_settings(section, model)
 
 
