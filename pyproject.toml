@@ -1,6 +1,6 @@
 [project]
 name = "untaped-workspace"
-version = "0.3.1"
+version = "0.4.0"
 description = "Local git workspace management CLI built on the untaped SDK."
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }
@@ -10,7 +10,7 @@ dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
     "pyyaml>=6.0.3",
-    "untaped>=0.6",
+    "untaped @ git+https://github.com/alexisbeaulieu97/untaped.git@v1.0.0",
 ]
 
 [project.scripts]
@@ -19,12 +19,6 @@ untaped-workspace = "untaped_workspace.__main__:main"
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
-
-# Pilot: resolve the SDK from the local sdk-only-phase0 branch (unpublished),
-# editable so SDK iterations reflect live. Dev-only — replaced by the
-# published `untaped>=1,<2` at release.
-[tool.uv.sources]
-untaped = { path = "../untaped", editable = true }
 
 [dependency-groups]
 dev = [
