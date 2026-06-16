@@ -1,17 +1,16 @@
 # AGENTS.md - `untaped-workspace`
 
-Single source of truth for this standalone plugin repo. If you change
+Single source of truth for this standalone CLI repo. If you change
 architecture, command behavior, settings behavior, or the development
 workflow, update this file in the same commit.
 
 ## Mission
 
-`untaped-workspace` is an `untaped` plugin. It owns the `untaped workspace`
-command group for local git workspaces: per-workspace `untaped.yml`
-manifests, central registry state, git sync/status operations, and shell
-helpers. `untaped` core owns the binary, plugin discovery, config loading,
-output helpers, stdin helpers, HTTP/TLS primitives, and shared errors.
-Profile selection is contributed by `untaped-profile`.
+`untaped-workspace` is a standalone CLI built on the `untaped` SDK. It owns
+the `untaped-workspace` command tree for local git workspaces: per-workspace
+`untaped.yml` manifests, central registry state, git sync/status operations,
+and shell helpers. The `untaped` SDK provides config loading, output helpers,
+stdin helpers, HTTP/TLS primitives, profile selection, and shared errors.
 
 ## Hard Rules
 
@@ -21,24 +20,24 @@ Profile selection is contributed by `untaped-profile`.
    `src/untaped_workspace/skills/untaped-workspace/SKILL.md`.
 2. **Prefer `uv` commands over manual dependency edits.** Use `uv add` and
    `uv add --group dev`; hand-edit tool config only.
-3. **Expose the plugin through the `untaped.plugins` entry point.**
-   `workspace = "untaped_workspace.plugin:plugin"` is the public integration
-   point. The plugin object must expose `id = "workspace"`, literal
-   `untaped_api_version = 5`, and `manifest() -> PluginManifest`. `plugin.py`
-   must not import the CLI: the manifest's
-   `CliSpec(name="workspace", import_path="untaped_workspace.cli:app", ...)`
-   defers that import until the command is dispatched, and the package
-   `__init__.py` re-exports `app` lazily (PEP 562 `__getattr__`) so loading
-   `untaped_workspace.plugin` never drags the CLI tree onto the startup
-   import path.
+3. **Expose the CLI through the `untaped-workspace` console script.**
+   `untaped-workspace = "untaped_workspace.__main__:main"` in
+   `[project.scripts]` is the public entry point. `main()` hands the Cyclopts
+   `app` and a `ToolSpec(command="untaped-workspace", section="workspace",
+   profile_model=WorkspaceSettings, state_model=WorkspaceState, skills=...)` to
+   the SDK's `run_tool`, which mounts the shared `config` / `profile` /
+   `skills` command groups and runs under the SDK error contract. The package
+   `__init__.py` re-exports `app` lazily (PEP 562 `__getattr__`) so importing
+   `untaped_workspace` never drags the whole CLI tree onto the import path
+   before it is needed.
 4. **Use the 4-layer DDD layout.** `cli -> application -> domain`, with
    `infrastructure -> domain`; `application` and `infrastructure` must not
    import each other at runtime.
 5. **Declare ports in `application/ports.py`.** Use cases depend on the
    narrowest `Protocol`; concrete adapters satisfy ports structurally.
 6. **Use absolute imports.** `from untaped_workspace...` and
-   `from untaped.api ...` (the supported plugin SDK surface), never relative
-   imports. The only core imports outside `untaped.api` are
+   `from untaped.api ...` (the supported SDK surface), never relative
+   imports. The only SDK imports outside `untaped.api` are
    `untaped.config_file` (state read/write helpers; not part of the API
    surface) in infrastructure, and test-only helpers (`untaped.testing`,
    `untaped.main`, `untaped.settings`) in `tests/`.
@@ -55,9 +54,9 @@ Profile selection is contributed by `untaped-profile`.
 10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
     registry rows start with `name`; sync/status/foreach rows start with
     `workspace`.
-11. **Row-oriented CLI output uses core `untaped.render_rows`.** Human
-    `--format table` output goes through core `ui_context()` so global
-    `ui:` settings and plugin themes apply. Structured `json`, `yaml`, and
+11. **Row-oriented CLI output uses the SDK's `untaped.render_rows`.** Human
+    `--format table` output goes through the SDK `ui_context()` so global
+    `ui:` settings and themes apply. Structured `json`, `yaml`, and
     `raw` output goes through a plain `UiContext()` so missing or bad themes
     do not break pipe-friendly output. Every producer also passes a `kind=`
     so `--format pipe` emits self-describing NDJSON: `list` →
@@ -67,20 +66,18 @@ Profile selection is contributed by `untaped-profile`.
     `workspace.branch-outcome`. `path` consumes that stream via
     `read_identifiers(..., id_field="name")`, so
     `list --format pipe | path --stdin` works (bare names still work too).
-12. **Interactive prompts use core prompt primitives.** Destructive
+12. **Interactive prompts use the SDK's prompt primitives.** Destructive
     confirmations go through `ui_context(strict=False).confirm(...)`, render
     on stderr, require TTY stdin, and keep `--yes` for automation.
-13. **Plugin code reads typed settings through `get_config_section`.** Use
+13. **Read typed settings through `get_config_section`.** Use
     `get_config_section("workspace", WorkspaceSettings)` (via
     `cli/common.py`'s `workspace_settings()`), not a global aggregate
-    `settings.workspace` attribute. This package deliberately stays on
-    `get_config_section` instead of `plugin_context().section`: the CLI app
-    is exercised directly in tests without plugin registration, where only
-    `get_config_section` can build its one-off section model.
-    Profile selection is owned by the root `--profile` option, which works
-    in any token position (plugin API v4). Commands must not declare a
-    command-local `--profile`; they call `plugin_context()` /
-    `get_config_section` bare and read whatever profile the root selected.
+    `settings.workspace` attribute. `get_config_section` builds the one-off
+    section model directly, so the CLI app can be exercised in tests without
+    going through `run_tool`. Profile selection is owned by the built-in
+    `--profile` option, which works in any token position. Commands must not
+    declare a command-local `--profile`; they call `get_config_section` bare
+    and read whatever profile was selected.
 14. **All git subprocess calls live behind infrastructure ports.** New git
     operations go in `GitRunner`; application code depends on Protocols.
 15. **Finish with verification.** Run `uv run ruff check --fix`,
@@ -91,21 +88,23 @@ Profile selection is contributed by `untaped-profile`.
 ```text
 src/untaped_workspace/
 ├── __init__.py           # lazily re-exports app (PEP 562 __getattr__)
-├── plugin.py             # entry-point plugin object; declares the manifest
-├── settings.py           # plugin-owned profile settings and app state
+├── __main__.py           # console-script entry point; builds the ToolSpec
+├── settings.py           # profile settings and app state models
+├── errors.py             # workspace-specific errors
 ├── cli/                  # Cyclopts commands; composition root
 ├── application/          # use cases and ports
 ├── domain/               # pure models and value objects
 └── infrastructure/       # git, manifest, registry, filesystem adapters
 ```
 
-The plugin object's `manifest()` returns a `PluginManifest` declaring
-`WorkspaceSettings` as the `workspace` profile settings section,
-`WorkspaceState` as the top-level `workspace` app-state section, the Cyclopts
-app as the root `workspace` command (via a lazy `CliSpec` import path, so root
-`--help` never imports the CLI tree), and the packaged `untaped-workspace`
-agent skill. Keep that static skill asset current with major workspace
-workflow changes.
+`__main__.main()` builds a `ToolSpec(command="untaped-workspace",
+section="workspace", profile_model=WorkspaceSettings,
+state_model=WorkspaceState, skills=...)` and hands it plus the Cyclopts `app`
+to the SDK's `run_tool`. The spec declares `WorkspaceSettings` as the
+`workspace` profile settings section, `WorkspaceState` as the top-level
+`workspace` app-state section, and the packaged `untaped-workspace` agent
+skill. Keep that static skill asset current with major workspace workflow
+changes.
 
 ## Manifest + registry split
 
@@ -179,15 +178,13 @@ registers the concern modules under `cli/`: display/UX commands in
 mutation commands in `repo_commands.py`, and sync/status/foreach operations in
 `ops_commands.py`. Shared CLI-only helpers live in `cli/common.py`.
 
-Profile selection is the root `--profile` option's job: since plugin API
-v4 it works in any token position (`untaped workspace sync --profile work`
-behaves the same as `untaped --profile work workspace sync`). Workspace
-commands declare no command-local `--profile` and no `profile_override`
-wrapper — they read registry state and workspace profile settings (via
-bare `plugin_context()` / `get_config_section`) under whatever profile the
-root selected. This is pinned by
-`test_commands_do_not_expose_command_local_profile` in
-`tests/unit/test_plugin_entrypoint.py`.
+Profile selection is the built-in `--profile` option's job: it works in any
+token position (`untaped-workspace sync --profile work` behaves the same as
+`untaped-workspace --profile work sync`). Workspace commands declare no
+command-local `--profile` and no `profile_override` wrapper — they read
+registry state and workspace profile settings (via bare `get_config_section`)
+under whatever profile was selected. The console-script wiring and the
+profile/state split are pinned by `tests/unit/test_tool_entrypoint.py`.
 
 Lifecycle and single-target commands (`init <name>`, `adopt <path>`,
 `forget <name>`, `import <source> <dest>`, `path <name>`) take
@@ -511,7 +508,7 @@ returned by `resolve_each`; `import --sync` passes
 they chain
 
 ```bash
-untaped workspace import <src> <dest> && untaped workspace sync -p <dest>
+untaped-workspace import <src> <dest> && untaped-workspace sync -p <dest>
 ```
 
 — the lifecycle command stays focused on its own deltas.
@@ -575,7 +572,7 @@ uv run pytest
 uv run mypy
 uv run ruff check --fix
 uv run ruff format
-uv run untaped workspace --help
+uv run untaped-workspace --help
 ```
 
 Use `pytest --no-cov` for tight local loops. Full `pytest` enforces the
@@ -594,7 +591,7 @@ coverage gate.
    and register it from `cli/commands.py`; keep stdout data-only and expose
    `--format`/`--columns` for data output.
 6. If the command emits rows, update `tests/unit/test_format_raw_first_key.py`.
-7. Run `uv run untaped workspace <command> --help` plus the full verification
+7. Run `uv run untaped-workspace <command> --help` plus the full verification
    commands above.
 
 ## See Also
