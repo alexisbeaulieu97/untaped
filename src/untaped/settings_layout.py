@@ -1,16 +1,13 @@
-"""Layout protocol mapping the raw config file to effective settings.
+"""The SDK's settings layout: map the raw config file to effective values.
 
-A *settings layout* decides how the parsed ``~/.untaped/config.yml`` dict
-becomes the effective settings values. The SDK ships one layout,
-:class:`ProfilesSettingsLayout`, which layers ``profiles.default`` beneath
-``profiles.<active>``. At most one layout is active, registered via
-:func:`untaped.settings.register_settings_layout`; it is also the registry
-default when no tool has registered one.
+`ProfilesSettingsLayout` layers ``profiles.default`` beneath
+``profiles.<active>`` and is the SDK's only layout — every tool resolves
+through it.
 """
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from untaped.errors import ConfigError
 from untaped.identity import current_tool_command
@@ -21,60 +18,20 @@ from untaped.profile_resolver import (
 )
 
 
-@runtime_checkable
-class SettingsLayout(Protocol):
-    """Maps the parsed config dict to effective settings values."""
-
-    supports_scopes: bool
-
-    def effective(self, raw: dict[str, Any], *, scope: str | None = None) -> dict[str, Any]:
-        """Return the effective settings values.
-
-        ``scope`` resolves the view as if that scope (profile) were active —
-        used to validate writes that target a non-active scope. Layouts
-        without scopes ignore it.
-        """
-        ...
-
-    def provenance(self, raw: dict[str, Any]) -> dict[tuple[str, ...], str]:
-        """Return ``leaf path -> scope name`` for every value in ``effective``."""
-        ...
-
-    def scope_names(self, raw: dict[str, Any]) -> list[str]:
-        """Return the selectable scope (profile) names, if any."""
-        ...
-
-    def scope_data(self, raw: dict[str, Any], name: str) -> dict[str, Any] | None:
-        """Return one scope's raw values, or ``None`` when undefined."""
-        ...
-
-    def write_scope(
-        self, raw: dict[str, Any], requested: str | None
-    ) -> tuple[dict[str, Any], str | None]:
-        """Return ``(mutable target dict, scope name)`` for settings writes.
-
-        The scope name is ``None`` for layouts without scopes (writes land
-        at the top level). A ``requested`` scope the layout cannot satisfy
-        raises ``ConfigError``.
-        """
-        ...
-
-
 class ProfilesSettingsLayout:
-    """Built-in layout that layers ``profiles.default`` beneath ``profiles.<active>``.
+    """Layer ``profiles.default`` beneath ``profiles.<active>``.
 
     Profiles are a first-class SDK capability, so this layout (and the
-    resolver it delegates to) lives in core. ``run_tool`` registers it for
-    every tool, and it is the registry default when none is registered.
+    resolver it delegates to) lives in core.
     """
 
-    supports_scopes = True
-
     def effective(self, raw: dict[str, Any], *, scope: str | None = None) -> dict[str, Any]:
+        """Return the effective settings values for the active (or given) scope."""
         effective, _ = self._resolve(raw, scope)
         return effective
 
     def provenance(self, raw: dict[str, Any]) -> dict[tuple[str, ...], str]:
+        """Return ``leaf path -> profile name`` for every value in ``effective``."""
         _, provenance = self._resolve(raw)
         return provenance
 
@@ -86,10 +43,12 @@ class ProfilesSettingsLayout:
         return resolve_profiles(raw, active_override=override)
 
     def scope_names(self, raw: dict[str, Any]) -> list[str]:
+        """Return the selectable profile names."""
         profiles = raw.get("profiles")
         return sorted(profiles) if isinstance(profiles, dict) else []
 
     def scope_data(self, raw: dict[str, Any], name: str) -> dict[str, Any] | None:
+        """Return one profile's raw values, or ``None`` when undefined."""
         profiles = raw.get("profiles")
         if not isinstance(profiles, dict):
             return None

@@ -48,7 +48,6 @@ def test_get_returns_default_profile_source_for_scoped_value(_isolate_settings: 
 
 def test_get_profile_setting_returns_effective_value_source_and_profile(
     _isolate_settings: Path,
-    fake_scoped_layout: object,
 ) -> None:
     _isolate_settings.write_text(
         "profiles:\n"

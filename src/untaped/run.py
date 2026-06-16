@@ -30,8 +30,7 @@ from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
 from untaped.config_app import build_config_app
 from untaped.profile import build_profile_app
 from untaped.profile_resolver import ACTIVE_PROFILE_ENV
-from untaped.settings import get_settings, register_settings_layout
-from untaped.settings_layout import ProfilesSettingsLayout
+from untaped.settings import get_settings
 from untaped.skills_app import build_skills_app
 from untaped.tool import ToolSpec, register_tool
 from untaped.verbose import enable as _enable_verbose
@@ -84,7 +83,6 @@ def build_tool_app(app: App, spec: ToolSpec) -> App:
     """Wire ``spec`` onto ``app`` and return it ready to run via ``app.meta``."""
     first_wiring = "config" not in app
     register_tool(spec)
-    register_settings_layout(ProfilesSettingsLayout, key="untaped.sdk:profiles")
     _mount(app, build_config_app(spec), name="config")
     _mount(app, build_profile_app(spec.command), name="profile")
     _mount(app, build_skills_app(spec), name="skills")

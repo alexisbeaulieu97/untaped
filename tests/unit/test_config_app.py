@@ -30,8 +30,6 @@ from untaped import get_settings
 from untaped.config_app import build_config_app
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
-from untaped.settings import register_settings_layout
-from untaped.settings_layout import ProfilesSettingsLayout
 from untaped.testing import CliInvoker
 from untaped.tool import ToolSpec, register_tool
 
@@ -59,24 +57,22 @@ GH_SPEC = ToolSpec(
 
 @pytest.fixture
 def app(_isolated_config: Path):
-    """A github config app over the real ``ProfilesSettingsLayout``.
+    """A github config app over the default ``ProfilesSettingsLayout``.
 
     This layout supports profiles, so writes land under
     ``profiles.<active>.github.*`` and the resolved active scope is ``default``.
     """
-    register_settings_layout(lambda: ProfilesSettingsLayout(), key="sdk:profiles")
     register_tool(GH_SPEC)
     get_settings.cache_clear()
     return build_config_app(GH_SPEC)
 
 
 @pytest.fixture
-def scoped_app(_isolated_config: Path, fake_scoped_layout: object):
-    """A github config app over the conftest ``FakeScopedLayout``.
+def scoped_app(_isolated_config: Path):
+    """A github config app over the default scoped ``ProfilesSettingsLayout``.
 
-    The fake scoped layout stores ``profiles.<name>.github.*`` and supports
-    named scopes, so ``--target-profile`` and ``--all-profiles`` work without
-    depending on the real profile plugin.
+    The layout is scoped by default now, so named scopes work and
+    ``--target-profile`` / ``--all-profiles`` resolve against real profiles.
     """
     register_tool(GH_SPEC)
     get_settings.cache_clear()
@@ -740,7 +736,6 @@ def test_state_field_is_not_settable(_isolated_config: Path) -> None:
         profile_model=_WsProfile,
         state_model=_WsState,
     )
-    register_settings_layout(lambda: ProfilesSettingsLayout(), key="sdk:profiles")
     register_tool(spec)
     get_settings.cache_clear()
     app = build_config_app(spec)

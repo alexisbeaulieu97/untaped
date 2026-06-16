@@ -50,9 +50,11 @@ def test_set_creates_nested_path(_isolate_settings: Path) -> None:
 
 
 def test_set_coerces_yaml_scalars(_isolate_settings: Path) -> None:
+    # ``http`` is an SDK global section (like ``ui``), so it is written at the
+    # top level rather than within ``profiles.default``.
     SetSetting(SettingsFileRepository())("http.verify_ssl", "false")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"http": {"verify_ssl": False}}}}
+    assert data == {"http": {"verify_ssl": False}}
 
 
 def test_set_validates_via_pydantic(_isolate_settings: Path) -> None:
@@ -325,19 +327,16 @@ def test_unset_error_message_names_the_key_and_the_scope(_isolate_settings: Path
     assert "default" in message
 
 
-# ── scoped layout pass-through (FakeScopedLayout) ────────────────────────────
+# ── scoped writes through the default profiles layout ────────────────────────
 
 
 class TestScopedLayoutWrites:
-    """Core's write plumbing against a registered scoped layout.
+    """The default ``ProfilesSettingsLayout`` routes writes through
+    ``write_scope`` and reports the resolved scope name.
 
-    The real scoped layout (and its policy details) live in the
-    untaped-profile plugin; these tests only pin that core routes writes
-    through ``write_scope`` and reports the resolved scope name."""
-
-    @pytest.fixture(autouse=True)
-    def _scoped(self, _isolate_settings: Path, fake_scoped_layout: object) -> Iterator[None]:
-        yield
+    The layout is scoped by default now (no registry, no fake), so these
+    exercise the real profile-write semantics: writes land in the active or
+    named profile, and an unknown target profile is rejected."""
 
     def test_set_writes_into_active_scope_and_returns_its_name(
         self, _isolate_settings: Path
