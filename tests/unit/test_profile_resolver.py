@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from untaped import (
-    ConfigError,
+from untaped.errors import ConfigError
+from untaped.profile_resolver import (
     classify_active_profile,
     effective_active_profile_name,
     resolve_profiles,

@@ -13,6 +13,12 @@ Record values are serialized with ``json.dumps(default=str)`` (same as
 ``--format json``), so non-JSON-native types (datetime, Decimal, enum) become
 strings and do **not** round-trip to their original type — fidelity is
 JSON-native types only.
+
+Pipe envelope **v1** — frozen and stable across all ``untaped`` SDK 1.x
+releases. Any change to the envelope shape is a major (2.0) SDK event. This
+freeze is what lets independently-installed tools interoperate: each tool may
+ship its own SDK version, but ``untaped-github | untaped-ansible`` is
+guaranteed to work as long as both stay on SDK 1.x. See ``docs/decisions.md``.
 """
 
 from __future__ import annotations
@@ -33,7 +39,13 @@ SUPPORTED_PIPE_VERSIONS = frozenset({"1"})
 
 @dataclass(frozen=True)
 class PipeEnvelope:
-    """One decoded ``--format pipe`` line: a record plus its metadata."""
+    """One decoded ``--format pipe`` line: a record plus its metadata.
+
+    This is the **v1** envelope, frozen and stable across all ``untaped`` SDK
+    1.x releases; any change to its shape is a major (2.0) SDK event so that
+    independently-installed tools on different 1.x SDKs interoperate. See the
+    module docstring and ``docs/decisions.md``.
+    """
 
     kind: str | None
     record: dict[str, object]

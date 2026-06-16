@@ -11,7 +11,14 @@ import pytest
 import yaml
 
 from untaped.output import format_output
-from untaped.ui import ThemeSpec, UiContext, ui_context
+from untaped.ui import (
+    BUILTIN_THEMES,
+    ThemeSpec,
+    UiContext,
+    UiSettings,
+    resolve_theme,
+    ui_context,
+)
 
 
 class TtyStringIO(io.StringIO):
@@ -302,3 +309,24 @@ def test_ui_context_reflects_active_verbose_state(
     finally:
         verbose.reset()
         get_settings.cache_clear()
+
+
+def test_builtin_themes_include_folded_presets() -> None:
+    for name in ("high-contrast", "quiet", "classic"):
+        assert name in BUILTIN_THEMES
+
+
+def test_resolve_theme_finds_quiet_preset_from_builtins_without_registry() -> None:
+    theme = resolve_theme(UiSettings(theme="quiet"))
+
+    assert theme.border == "none"
+    assert theme.density == "compact"
+    assert theme.collection_view == "list"
+    assert theme.detail_view == "list"
+    assert theme.color_roles == {
+        "key": "dim cyan",
+        "success": "green",
+        "info": "blue",
+        "warning": "yellow",
+        "error": "red",
+    }

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped import FieldDescriptor
 from untaped.config.application.ports import SettingsReader
 from untaped.config.domain import SettingEntry, Source, display_default, display_value
+from untaped.config_schema import FieldDescriptor
 
 
 class ListSettings:

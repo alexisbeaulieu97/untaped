@@ -1,10 +1,8 @@
 """Pure helper that merges ``profiles.default`` with ``profiles.<active>``.
 
-Deprecated (plugin API v4): core no longer resolves profiles — the
-untaped-profile plugin owns the resolver and the profiles settings layout.
-This module stays importable because released v3-era plugins import it (via
-the ``untaped`` re-exports); removal is gated on the plugin-API-v4 rollout
-finishing across the plugin repos.
+Profiles are a first-class SDK capability: this resolver and
+:class:`untaped.settings_layout.ProfilesSettingsLayout` are the SDK's home
+for profile resolution (absorbed from the retired untaped-profile plugin).
 
 The resolver is layer-agnostic: callers hand it the parsed
 ``~/.untaped/config.yml`` dict and an optional ``active_override`` (set when
