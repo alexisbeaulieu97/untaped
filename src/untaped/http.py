@@ -242,7 +242,9 @@ def connected_client(
     caller supplied their own.
     """
     values: dict[str, str] = {}
-    for field in (*required, base_url_field):
+    # ``base_url_field`` is unioned in so a client can be built even when it is
+    # not listed in ``required``; de-dup so a field named in both is walked once.
+    for field in dict.fromkeys((*required, base_url_field)):
         raw = getattr(config, field, None)
         if isinstance(raw, SecretStr):
             raw = raw.get_secret_value()
