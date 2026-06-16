@@ -1,82 +1,106 @@
 # untaped
 
-A personal DevOps CLI suite. One binary (`untaped`), one sub-command
-per domain, designed to pipe into the next.
+**untaped** is a batteries-included CLI framework for building standalone
+DevOps tools on [cyclopts](https://cyclopts.readthedocs.io/). It is an SDK, not
+an app: there is no central `untaped` command. You build a tool, depend on the
+SDK, and ship an independent CLI.
 
-```text
-untaped config ...       # inspect and edit ~/.untaped/config.yml
-untaped plugins ...      # add, sync, list, and diagnose plugins
-untaped awx ...          # optional plugin: Ansible Automation Platform / AWX
-untaped ansible ...      # optional plugin: Ansible dependency graphs
-untaped jira ...         # optional plugin: Jira Data Center tickets
-untaped workspace ...    # optional plugin: manage local git workspaces
-untaped github ...       # optional plugin: GitHub user/search commands
-untaped profile ...      # optional plugin: manage configuration profiles
+The SDK gives every tool, for free:
+
+- **Config** — a shared `~/.untaped/config.yml` with SDK-owned `active:`,
+  `profiles:`, `http:`, and `ui:` sections plus one section per tool.
+- **Profiles** — named overlays (`dev`, `prod`, `homelab`) and a `--profile`
+  root option, built in.
+- **Themes** — built-in theme presets for consistent terminal styling.
+- **Output** — consistent `--format json|yaml|table|raw|pipe` and `--columns`,
+  so commands compose. `pipe` is a self-describing NDJSON record stream another
+  untaped tool can read back.
+- **HTTP / UI helpers** — an `HttpClient` with profile-aware TLS and pagination
+  helpers, plus a `UiContext` for messages, prompts, and progress.
+
+You import the surface from `untaped.api` (re-exported from the `untaped`
+package root), declare a `ToolSpec`, and call `run_tool(app, spec)` from your
+tool's `main()`. The contract surface is the `__all__` list in
+[`src/untaped/api.py`](./src/untaped/api.py).
+
+```python
+# my_tool/__main__.py
+from untaped.api import create_app, run_tool, ToolSpec
+from my_tool.settings import MyProfile
+
+app = create_app(...)
+
+def main() -> None:
+    run_tool(app, ToolSpec(
+        command="untaped-mytool",
+        section="mytool",
+        profile_model=MyProfile,
+    ))
 ```
 
-Row-oriented `list`/`get`/`status`-style commands accept
-`--format json|yaml|table|raw|pipe` and `--columns`, so their output
-composes (`pipe` is a self-describing record stream another untaped command
-can read back):
+```toml
+# pyproject.toml
+[project]
+dependencies = [
+    # Tools depend on the SDK via a git link (PyPI publishing is deferred).
+    "untaped @ git+https://github.com/alexisbeaulieu97/untaped.git@v1.0.0",
+]
 
-```bash
-untaped awx job-templates list --format raw --columns name \
-  | fzf \
-  | untaped awx job-templates get --stdin --format json
+[project.scripts]
+untaped-mytool = "my_tool.__main__:main"
 ```
 
 ## Requirements
 
 Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
-## Install
+## The suite
 
-Clone and run from source:
-
-```bash
-git clone https://github.com/alexisbeaulieu97/untaped
-cd untaped
-uv sync
-uv run untaped --help
-```
-
-Or install an editable `untaped` binary into the managed environment on your
-`PATH`:
+Six tools are built on the SDK. Each is an independent CLI installed into its
+own `uv tool` environment:
 
 ```bash
-scripts/install.sh --editable .
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-jira.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-awx.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-ansible.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-workspace.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-apple-health.git
 ```
 
-`uv` resolves the core package in place, so local edits are picked up
-without reinstalling.
+Because every tool reads the same `~/.untaped/config.yml` and shares the same
+`--format pipe` envelope, independently installed tools interoperate and
+compose:
 
-Domain commands such as `untaped awx`, `untaped ansible`, `untaped jira`,
-`untaped profile`, `untaped github`, and `untaped workspace` are not bundled
-in core. Install the standalone plugins when you want those commands. See
-[Plugins](./docs/plugins.md) for direct git installs, managed plugin state,
-editable source installs, and multi-plugin sync examples.
+```bash
+untaped-awx job-templates list --format raw --columns name \
+  | fzf \
+  | untaped-awx job-templates get --stdin --format json
+```
 
 ## Documentation
 
 User-facing docs live in [`docs/`](./docs/README.md):
 
-- [Configuration](./docs/configuration.md) — profiles, secrets, TLS.
-- [Plugins](./docs/plugins.md) — installing, syncing, listing, and
-  diagnosing optional plugins.
-- [Agent Skills](./docs/skills.md) — installing Codex/Claude skills
-  contributed by core and plugins.
+- [Building a tool with the untaped SDK](./docs/plugins.md) — the guide to
+  declaring a `ToolSpec`, wiring `run_tool`, and packaging an independent CLI.
+- [Configuration](./docs/configuration.md) — the `~/.untaped/config.yml`
+  format, profiles, secrets, and TLS.
+- [Agent Skills](./docs/skills.md) — how each tool ships and installs
+  Codex/Claude agent skills.
+- [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the
+  SDK-only direction.
 
-Plugin docs and command references live in their plugin repos:
+Per-tool command references live in each tool's own repo:
 
-- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
-- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
-- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
 - [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
 - [Jira](https://github.com/alexisbeaulieu97/untaped-jira)
-- [Profile](https://github.com/alexisbeaulieu97/untaped-profile)
-- [Themes](https://github.com/alexisbeaulieu97/untaped-themes)
+- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
+- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
+- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
+- [Apple Health](https://github.com/alexisbeaulieu97/untaped-apple-health)
 
 ## Contributing
 
-See [AGENTS.md](./AGENTS.md) for the architecture, hard rules, and
-recipes for extending the project.
+See [AGENTS.md](./AGENTS.md) for the architecture, hard rules, and recipes for
+extending the SDK and its tools.

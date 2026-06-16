@@ -14,9 +14,12 @@ Each tool is an **independent CLI** that depends on the `untaped` SDK and is
 installed in its own `uv tool` environment:
 
 ```bash
-uv tool install untaped-github
-uv tool install untaped-ansible
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-ansible.git
 ```
+
+PyPI publishing is deferred, so tools currently install and depend on the SDK
+via git links rather than PyPI package names.
 
 The suite is: `github`, `jira`, `awx`, `ansible`, `workspace`, `apple-health`.
 

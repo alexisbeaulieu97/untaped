@@ -1,680 +1,444 @@
 # AGENTS.md — `untaped`
 
-Single source of truth for how `untaped` core is built. AI agents and
-humans both read this file. Plugin internals live in their own repos and
-own `AGENTS.md` files. If you change architecture or agent-facing
-workflows, update the relevant instruction and packaged skill files in
-the same commit.
+Single source of truth for how the `untaped` SDK is built. AI agents and
+humans both read this file. This repo is the **SDK only**; each tool
+(`github`, `jira`, `awx`, `ansible`, `workspace`, `apple-health`) lives in
+its own repo with its own `AGENTS.md`. If you change the SDK surface or an
+agent-facing workflow, update this file and `docs/` in the same commit.
 
 ## Mission
 
-`untaped` is a personal DevOps CLI hub. The root package owns plumbing:
-the binary, plugin discovery, configuration loading, settings layout
-dispatch, output, stdin, HTTP/TLS, and shared errors. Domain functionality (workspace, awx,
-github, profile, …) is delivered by plugins exposing Cyclopts sub-apps
-through the `untaped.plugins` entry point group. Daily DevOps work
-composes — row-oriented `list`/`get`/`status`-style commands are
-pipe-friendly. We build *on top of* existing CLIs (`gh`, `awx-cli`) where
-that is the right abstraction.
+`untaped` is a batteries-included CLI **framework/SDK** built on cyclopts:
+config, profiles, themes, consistent output, typed piping, HTTP/TLS, and
+UI/prompt helpers. There is **no** central `untaped` command, **no** plugin
+platform, **no** plugin registry/manifest/entry points, **no** managed
+virtualenv, and **no** install script. See [`docs/decisions.md`](docs/decisions.md)
+for the authoritative ADRs behind this direction.
+
+Each tool is an **independent CLI** in its own repo. It depends on this SDK,
+declares its own console script, and its `main()` calls `run_tool(app, spec)`.
+Daily DevOps work composes — row-oriented `list`/`get`/`status`-style commands
+are pipe-friendly via the `--format pipe` envelope (#3 below). We build *on
+top of* existing CLIs (`gh`, `awx-cli`) where that is the right abstraction.
 
 ## Repository Map
 
-The workspace root **is** the `untaped` core package. Domain plugins live
-in separate repositories and integrate through entry points.
+The workspace root **is** the `untaped` SDK package. Tools live in separate
+repositories and depend on this SDK via a git link.
 
 ```
 untaped/
-├── pyproject.toml                # the `untaped` package
+├── pyproject.toml                # the `untaped` SDK package
 ├── uv.lock                       # lockfile (commit it)
 ├── .python-version               # 3.14
 ├── .pre-commit-config.yaml
-├── AGENTS.md                     # ← you are here (root rules)
+├── AGENTS.md                     # ← you are here (SDK rules)
 ├── CLAUDE.md                     # imports @AGENTS.md
 ├── README.md                     # human-facing intro
-├── docs/                         # user-facing reference
-├── src/untaped/                  # core CLI, config, plugin plumbing, shared helpers
-└── tests/                        # tests for core and shared contracts
+├── docs/                         # user-facing reference + decisions.md (ADRs)
+├── src/untaped/                  # the SDK: api surface, config, run/tool, helpers
+└── tests/                        # SDK tests
 ```
 
-| Package             | Type | Owns                                                                  | Internals doc |
-| ------------------- | ---- | --------------------------------------------------------------------- | ------------- |
-| `untaped` (root)    | app/lib | Core binary, built-in `config`, plugin discovery/install/sync, settings registry, root-option dispatch, output/stdin/http/errors. | this file |
+The SDK exposes its entire public surface from `src/untaped/api.py` (and
+re-exported identically from the package root). Internal modules — `run.py`,
+`tool.py`, `app_context.py`, `settings.py`, `config_file.py`, `cli.py`,
+`http.py`, `output.py`, `pipe.py`, `ui.py`, `stdin.py`, `batch.py`, the
+built-in `config/` and `profile/` groups — stay free to reorganize as long as
+`untaped.api` keeps resolving.
 
-Plugins live in their own repositories and depend on the public `untaped`
-plugin API. Current plugins:
+Tools that depend on the SDK:
 
-- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx)
-  — the `awx` command for Ansible Automation Platform / AWX workflows.
-- [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible)
-  — the `ansible` command for Ansible dependency graph workflows.
-- [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
-  — the `github` command for authenticated user and search workflows.
-- [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira)
-  — the `jira` command for Jira Data Center workflows.
-- [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile)
-  — the `profile` command for managing the profile inventory.
-- [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes)
-  — terminal theme presets for semantic UI rendering.
-- [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
-  — the `workspace` command for local git workspace manifests and registry state.
+- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) — `untaped-awx`, Ansible Automation Platform / AWX.
+- [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible) — `untaped-ansible`, Ansible dependency-graph workflows.
+- [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github) — `untaped-github`, authenticated user and search.
+- [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira) — `untaped-jira`, Jira Data Center workflows.
+- [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace) — `untaped-workspace`, local git workspace manifests.
+- [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health) — `untaped-apple-health`, Apple Health export analysis.
+
+Profiles **and** themes are built into the SDK; the standalone
+`untaped-profile` and `untaped-themes` packages are **retired**.
+
+## How a tool depends on and uses the SDK
+
+There is no PyPI release yet, so tools depend on the SDK via a **git link**
+pinned to a tag. In the tool's `pyproject.toml`:
+
+```toml
+[project]
+dependencies = [
+  "cyclopts>=4.16.0,<5",
+  "untaped @ git+https://github.com/alexisbeaulieu97/untaped.git@v1.0.0",
+]
+
+[project.scripts]
+untaped-github = "untaped_github.__main__:main"
+```
+
+The tool's `main()` is the composition root:
+
+```python
+from untaped.api import ToolSpec, create_app, run_tool
+
+def main() -> None:
+    app = create_app()
+    # ... register the tool's commands on `app` ...
+    run_tool(app, ToolSpec(
+        command="untaped-github",
+        section="github",
+        profile_model=GithubProfileSettings,
+        state_model=None,          # optional, disjoint from profile_model
+        skills=(),                 # SkillAsset(...) entries, optional
+    ))
+```
+
+Users install a tool directly from its repo:
+
+```bash
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.5.0  # pin a tag
+```
+
+## SDK public surface (`untaped.api`)
+
+Tools import **only** from `untaped.api` (equivalently from the `untaped`
+package root — identical surface). Reaching into SDK internals is not
+supported. `__all__` in `src/untaped/api.py` is the contract:
+
+- **Adding** a name to `__all__` is backwards-compatible (patch/minor).
+- **Removing or renaming** a name (or changing its behaviour) is a **MAJOR**
+  SDK version event.
+
+The composition contract a tool builds on:
+
+- `ToolSpec(command, section, profile_model, state_model=None, skills=())` —
+  everything the SDK needs to run a tool, as data.
+- `SkillAsset(name, source, description)` — one packaged agent skill.
+- `register_tool(spec)` — registers the tool's settings section(s) for the
+  process (validates profile/state models as disjoint).
+- `build_tool_app(app, spec)` — wires `spec` onto a cyclopts app and returns
+  it (drive `app.meta` directly in tests).
+- `run_tool(app, spec)` — `build_tool_app` + run; use it as the tool's `main()`.
+
+`run_tool` mounts per-tool command groups `<tool> config`, `<tool> profile`,
+and `<tool> skills`; injects position-independent `--profile` / `--verbose`
+root options (usable in any token position via leading-consume +
+strip-on-unknown-option retry); and overrides the cyclopts app's display name
+to the tool command.
+
+Per-command settings are read via `app_context()`, which returns a frozen
+`AppContext` with `.section(name, model)`, `.http`, and `.ui(strict=...)`.
+(The old `plugin_context()` no longer exists.) Never declare a command-local
+`--profile`.
+
+## Config & state model
+
+Shared config lives at `~/.untaped/config.yml`. **Format = v1, FROZEN across
+SDK 1.x** — independently installed tools all read/write this file, so it is a
+cross-tool contract; any change to its shape is a MAJOR (2.0) SDK event.
+
+The frozen surface:
+
+- **SDK-owned top-level keys:** `active:`, `profiles:`, `http:`, `ui:`.
+- **One section per tool** under the active profile, holding that tool's
+  profile fields plus its disjoint, tool-managed **state** fields (the two
+  field sets must not overlap).
+- **Profile layering:** `profiles.default` sits beneath `profiles.<active>`.
+- **Env-var override shape:** `UNTAPED_<SECTION>__<FIELD>` (uppercased
+  section, double underscore before the field).
+
+Command surface and routing:
+
+- `<tool> config get/set/unset` manages scalar settings. **Bare config keys
+  address the invoking tool's own section** — `untaped-github config set token X`
+  writes `github.token` under the active profile.
+- **SDK globals** are addressed via reserved prefixes: `http.*` (e.g.
+  `http.verify_ssl`) and `ui.theme`.
+- Target a non-active profile for a write with `--target-profile`.
+- **Tool-managed STATE fields are excluded from `config set`** (they are
+  mutated by the tool, not the user).
+- `<tool> profile create|list|use|delete` manages the profile inventory
+  (this is the absorbed, formerly-standalone profile workflow).
+
+Writes are **surgical and filelocked** — never validate-and-rewrite the whole
+file. Each tool validates **only its own section** (`extra="ignore"`), so an
+older tool never clobbers a newer tool's section.
+
+## Themes
+
+Themes are built into the SDK as presets in `BUILTIN_THEMES`, selected via the
+`ui.theme` config key. `ThemeSpec.color_roles` accepts Rich style strings for
+`header`, `border`, `key`, `value`, `success`, `info`, `warning`, and `error`.
+Those styles are emitted only for interactive terminal output; redirected
+output stays plain text, and `json`/`yaml`/`raw`/`pipe` remain theme-independent.
+
+## Agent skills
+
+The SDK ships **no core agent skill**. Each tool ships its own `SKILL.md`,
+declared as a `SkillAsset` in its `ToolSpec(skills=...)` and installed via that
+tool's `<tool> skills` group. Guidance on building tools with the SDK lives in
+the README and `docs/`, not in a packaged agent skill.
 
 ## Hard Rules
 
 Non-negotiable. Every contribution must respect them.
 
-1. **Keep all `AGENTS.md` files and packaged `SKILL.md` assets up to
-   date.** Root for core and cross-cutting rules; plugin repos for
-   domain-specific architecture and agent skills. If you change the
-   plugin contract, a DDD layout, a command/settings workflow, or a
-   cross-cutting helper, edit the relevant instruction and skill files
-   in the same commit.
+1. **Keep `AGENTS.md` and `docs/` up to date.** If you change the SDK surface,
+   the config/pipe contracts, a command/settings workflow, or a cross-cutting
+   helper, edit the relevant docs in the same commit.
 2. **Prefer `uv` commands over manual `pyproject.toml` edits.** Use
-   `uv add`, `uv add --package <name>`, `uv add --group dev`,
-   `uv init --package --lib|--app`. Hand-editing is fine for tool config
-   (`[tool.ruff]`, `[tool.mypy]`, …) but never for dependencies.
-3. **Register every new plugin through an entry point.** Use
-   `[project.entry-points."untaped.plugins"]`; the root must not
-   statically import plugin modules.
-4. **Use `uv init --package` with `--lib` or `--app` for new plugin
-   repos.** Never the bare `uv init` (gives flat layout).
-5. **Create shared plumbing only when it is genuinely cross-cutting.**
-   Don't duplicate code across plugins. If two plugins need the same
-   helper and it is part of the hub contract, it belongs in `src/untaped/`;
-   otherwise use a separate shared library.
-6. **Search before writing.** Grep `src/untaped` and relevant plugin
-   repos before implementing a helper. If it exists in the wrong place,
-   *move* it (and update callers); don't fork.
-7. **Finish each session with `uv run ruff check --fix && uv run ruff
-   format`.** No exceptions.
-8. **Write tests that verify the result.** TDD: failing test first, then
+   `uv add`, `uv add --group dev`, `uv init --package --lib|--app`.
+   Hand-editing is fine for tool config (`[tool.ruff]`, `[tool.mypy]`, …) but
+   never for dependencies.
+3. **The SDK public surface is `untaped.api`.** New public API goes in
+   `__all__` there. Removing/renaming a name is a MAJOR version event — never
+   do it casually. Internal modules may reorganize freely behind that surface.
+4. **Write tests that verify the result.** TDD: failing test first, then
    implementation. Test through public APIs — never suppress warnings to
    access private members.
-9. **Cyclopts command signatures are explicit.** Use
+5. **Search before writing.** Grep `src/untaped` before implementing a helper.
+   If it exists in the wrong place, *move* it (and update callers); don't fork.
+6. **Finish each session with `uv run ruff check --fix && uv run ruff
+   format`.** No exceptions.
+7. **Cyclopts command signatures are explicit.** Use
    `Annotated[..., Parameter(...)]` for options/arguments and name public
-   commands/options explicitly. Required inputs are required
-   positional-only parameters (`Parameter(help=...)`, no `name=`, declared
-   before `/`); a missing value renders `error: ... requires an argument`
-   on stderr with exit 2 via `run_cyclopts_app` — never emulate it with an
-   optional default plus a manual help dance.
-10. **Every plugin declares port `Protocol`s in `application/ports.py`.**
-    Use cases import their ports from there; concrete adapters in
-    `infrastructure/` satisfy the Protocols structurally (no
-    inheritance). Subsystems within a domain may add their own
-    (`untaped-awx` has `application/test/ports.py` for the test runner).
-    Use cases declare the **narrowest port they need**; fatter ports
-    extend slimmer ones via `Protocol` inheritance so concrete adapters
-    satisfy every variant structurally.
-11. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API
-    keys. `untaped config list` redacts them; `repr(settings)` won't leak
-    them in tracebacks. Call `.get_secret_value()` only at point of use.
-12. **Use `resolve_verify(settings.http)` for every httpx client.** Never
-    hard-code `verify=True/False` or a path.
-13. **Use absolute imports.** `from untaped import …`, never
-    `from .foo import bar`. Enforced by ruff's
+   commands/options explicitly. Required inputs are required positional-only
+   parameters (`Parameter(help=...)`, no `name=`, declared before `/`); a
+   missing value renders `error: ... requires an argument` on stderr with exit
+   2 via `run_cyclopts_app` — never emulate it with an optional default plus a
+   manual help dance.
+8. **Mark every secret as `pydantic.SecretStr`.** Tokens, passwords, API keys.
+   `config list` redacts them; `repr(settings)` won't leak them in tracebacks.
+   Call `.get_secret_value()` only at point of use.
+9. **Use `resolve_verify(ctx.http)` for every httpx client.** Never hard-code
+   `verify=True/False` or a path.
+10. **Use absolute imports.** `from untaped import …` / `from untaped.api
+    import …`, never `from .foo import bar`. Enforced by ruff's
     `ban-relative-imports = "all"`; applies to tests too.
 
-## Architecture: Core + Plugin DDD
+## Tool DDD layout (for reference)
 
-`untaped` core is the exception: it is the hub and shared library, not a
-domain plugin. Its layout is intentionally mostly flat for plumbing
-(`plugins.py`, `settings.py`, `config_file.py`, `http.py`, `output.py`,
-…), with built-in `config` under `src/untaped/config/`.
-
-Every plugin package (`untaped-<X>`) has the same internal layout:
+The SDK does not prescribe internals for tools, but the suite tools follow a
+DDD layout. Tool repos document their own architecture; the shared convention is:
 
 ```
 src/untaped_<x>/
-├── __init__.py           # re-exports `app: cyclopts.App`
-├── cli/                  # Cyclopts commands (thin)
-├── application/          # use cases (orchestration)
+├── __init__.py           # re-exports the cyclopts app
+├── __main__.py           # main() → run_tool(app, ToolSpec(...))
+├── cli/                  # cyclopts commands (thin)
+├── application/          # use cases (orchestration); ports in application/ports.py
 ├── domain/               # entities, value objects (pure, no I/O)
 └── infrastructure/       # external adapters (httpx clients, fs, …)
 ```
 
-**Import direction (enforced):**
+Import direction: `cli → application → domain` and `infrastructure → domain`;
+`domain/` imports nothing from the other layers. A use case in `application/`
+is unit-testable with a stub satisfying its `Protocol` — no httpx, no settings
+file.
 
-```
-cli  →  application  →  domain
-                 ↓
-           infrastructure  →  domain
-```
-
-- `domain/` imports nothing from the other three layers — pure.
-  Owns transport DTOs that cross the application/infrastructure
-  boundary (in `domain/payloads.py`) so adapters need not import from
-  application.
-- `application/` orchestrates: declares its port `Protocol`s and any
-  Callable aliases in `application/ports.py`; use cases take them via
-  constructor (DI). Concrete adapters speak the port shapes
-  structurally — they don't import from `application/`.
-- `infrastructure/` knows about httpx, the filesystem, the config file.
-- `cli/` is the thinnest layer: parse Cyclopts args, build a use case
-  (passing in concrete adapters), call it, format the result.
-
-A use case in `application/` is unit-testable with a stub satisfying its
-`Protocol` — no httpx, no fixtures, no settings file.
-
-## Plugin Contract
-
-Plugins expose one object through the `untaped.plugins` entry point group and
-import the SDK surface from `untaped.api` (the supported plugin API; core
-internals stay free to move as long as `untaped.api` keeps resolving).
-
-**Preferred (api version 3, declarative):** the object defines `id`, literal
-`untaped_api_version = 3`, and `manifest() -> PluginManifest`. The manifest is
-data (`clis`, `profile_settings`, `state_settings`, `themes`, `skills`,
-`diagnostics`); core validates it as a whole and commits it atomically, so a
-conflicting manifest contributes nothing. `CliSpec(name=..., import_path=
-"untaped_<x>.cli:app", help=...)` defers importing the CLI module until the
-command is dispatched — root `--help` lists the command from the spec's
-`help` text without paying the import.
-
-```python
-from untaped.api import CliSpec, PluginManifest
-
-class XPlugin:
-    id = "<x>"
-    untaped_api_version = 3
-
-    def manifest(self) -> PluginManifest:
-        return PluginManifest(
-            clis=(CliSpec(name="<x>", import_path="untaped_<x>.cli:app", help="..."),),
-            profile_settings={"<x>": XSettings},
-        )
-```
-
-**Api version 4 (declarative + root contributions):** same manifest contract
-as version 3 plus two optional fields that only v4 plugins may set —
-`root_options` (a sequence of `RootOptionSpec(name="--profile", help=...,
-handler_import_path="pkg.mod:handler")` adding value-taking root-level
-options whose handlers run before the command body) and `settings_layout`
-(`SettingsLayoutSpec(import_path="pkg.mod:LAYOUT")` resolving lazily to a
-`SettingsLayout` that maps the raw config dict to effective settings; at most
-one plugin may contribute one). A v3 manifest that populates either field is
-rejected at registration. Root options work in any token position: leading
-occurrences are consumed before dispatch, and an unknown-option parse error
-matching a registered root option triggers a strip-and-retry, so passthrough
-commands and commands declaring a homonymous option keep their own tokens.
-
-**Api version 5 (declarative + runtime feedback):** same manifest contract as
-version 4 plus new runtime `UiContext` capabilities a plugin may call — animated
-(TTY) / throttled (non-TTY) progress via `with ui.progress(label) as p:
-p.update(msg, fraction=..., new_phase=...)` and guiding empty-state notes via
-`render_rows(..., empty="...")` / `ui.collection(..., empty=...)`. These are
-runtime capabilities, not manifest fields, so no new manifest validation exists;
-a v5 plugin running on a pre-v5 core is rejected cleanly at registration (shown
-by `untaped plugins doctor`) instead of failing with `AttributeError` mid-run.
-Declare `untaped_api_version = 5` only when the plugin actually uses a v5
-capability, and bump its `untaped>=` floor to the release that introduced it.
-
-**Legacy (api version 2, imperative):** `untaped_api_version = 2` plus
-`register(self, registry: PluginRegistry) -> None` calling the registry hooks
-below. Still accepted; new plugins use manifests.
-
-The plugin object must declare the API version as a literal. Do not import a
-core constant for this value; future cores use the literal to reject plugins
-built for an incompatible plugin API before running registration hooks.
-Package dependency bounds still matter for import-time failures, while the
-runtime API version catches registration-contract mismatches and reports them
-through `untaped plugins doctor`.
-
-Available registry hooks (manifest fields map 1:1 onto these):
-
-- `add_cli(name, app)` adds a root command.
-- `add_profile_settings(section, model)` contributes a typed profile
-  settings section.
-- `add_state_settings(section, model)` contributes top-level app state
-  spliced into the effective settings model.
-- `add_theme(name, spec)` contributes a named `ThemeSpec` preset for
-  terminal rendering. Theme plugins register presets only; core owns the
-  renderer and still keeps `json`, `yaml`, and `raw` pipe-friendly.
-  `ThemeSpec.color_roles` accepts Rich style strings for `header`,
-  `border`, `key`, `value`, `success`, `info`, `warning`, and `error`.
-  Core emits those styles only for interactive terminal output; redirected
-  output remains plain text.
-- `add_skill(spec)` contributes a packaged agent skill directory. Skill
-  names must be `untaped` or start with `untaped-`; the source directory
-  must contain a valid `SKILL.md`. Core owns `untaped skills list/install`
-  and plugins only register static skill assets.
-- `add_diagnostic(name, check)` contributes `untaped plugins doctor`
-  checks.
-
-There is intentionally no prompt-backend registry hook yet. Core owns prompt
-primitives and backs them with `prompt_toolkit`; plugins should call the core
-prompt helpers instead of importing CLI framework prompt helpers, or
-`prompt_toolkit` directly.
-
-Duplicate plugin ids, CLI command names, profile sections, state sections,
-diagnostics, theme names, or skill names fail with `ConfigError`. Built-in
-theme and skill names are reserved and cannot be shadowed by plugins.
-Plugin load failures are recorded and reported by `untaped plugins doctor`;
-they must not break built-in core commands such as `untaped config`.
-
-Plugin install specs are keyed by normalized package/plugin name. Direct
-URL convenience input (`git+https://.../untaped-profile.git`) is accepted
-only when the name can be inferred from the final path segment, then stored
-canonically as `untaped-profile @ git+https://...`. Removal and replacement
-must work by that normalized name, including for legacy bare URL state.
-`untaped plugins list` is a row-oriented data command and follows the shared
-`--format` / `--columns` contract; its first row key is `name` so
-implicit `--format raw` is pipe-friendly for `untaped plugins remove`.
-Implicit raw output emits only removable recorded packages; loaded-only rows
-remain visible in table/json/yaml output or when explicitly selecting columns.
-`untaped plugins add` and `untaped plugins remove` accept package specs from
-multiple positionals or `--stdin`; when syncing, each command mutates the full
-batch first and exact-syncs the managed untaped virtual environment once.
-Core and plugins are installed into
-`${XDG_DATA_HOME:-~/.local/share}/untaped/venv`, with `~/.local/bin/untaped`
-as the user-facing shim. Synced plugin commands require the core install spec
-recorded by the managed installer; do not fall back to an implicit core spec.
-Keep long-running `uv` resolution/install work outside the config file lock and
-serialize managed venv writes with the plugin environment lock. Do not
-reintroduce `uv tool install --with` as the plugin lifecycle; plugin
-dependencies belong in normal package metadata and `uv pip sync` owns
-resolution. Managed sync uses the recorded core/plugin specs as the runtime
-source of truth and invokes `uv pip compile --no-sources`, so plugin
-repo-local `[tool.uv.sources]` tables remain development metadata only.
-Dependencies that exist only in a plugin checkout's `[tool.uv.sources]` table
-are not installed by managed sync. When adding a **local** plugin checkout,
-`untaped plugins add` auto-records its path/git-sourced untaped-plugin
-dependencies as explicit specs (recursively; `--no-auto-deps` opts out; see
-`plugin_deps.py`); git/index specs are never inspected because their source
-tables describe the author's machine. For editable multi-plugin development,
-record every local plugin checkout that should be installed into the managed
-environment.
-
-Profiles are built into the SDK. `run_tool` registers the profiles settings
-layout and wires the root `--profile` option (works in any token position via
-leading consumption plus strip-on-unknown-option retry); the config is a flat
-single document until that layout is registered. Commands read settings via
-bare `app_context()` — never declare a command-local `--profile`. Config
-mutation commands accept `--target-profile`; it errors unless the profiles
-layout is registered.
-
-## Cross-Cutting helpers (`untaped`)
+## Cross-Cutting helpers (`untaped.api`)
 
 | Need                                       | Use                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------- |
-| Read a typed config section                | `from untaped.api import get_config_section`                    |
-| Resolve settings once per command (profile-aware, no global state) | `from untaped.api import app_context`; read sections with `ctx.section(name, Model)` |
-| Build a validated HTTP client (token check + bearer auth + TLS) | `from untaped.api import connected_client` |
-| Standard "setting not configured" error    | `from untaped.api import missing_setting_error`             |
-| Walk paginated API collections             | `from untaped.api import paginate_offset, paginate_pages`   |
-| Read core settings only                    | `from untaped import get_core_settings`                     |
-| Contribute a root-level option from a plugin | `from untaped.api import RootOptionSpec` (manifest `root_options`, requires `untaped_api_version = 4`) |
-| Contribute a settings layout from a plugin | `from untaped.api import SettingsLayout, SettingsLayoutSpec` (manifest `settings_layout`, v4; at most one across all plugins) |
-| Invalidate cached settings from a root-option handler | `from untaped.api import invalidate_settings_cache` |
-| Resolve TLS verify (OS trust + ca_bundle)  | `from untaped import resolve_verify`                        |
-| Make an HTTP call                          | `from untaped import HttpClient`                            |
-| Render semantic output/messages with active theme | `from untaped import ui_context, UiContext, ThemeSpec` |
-| Prompt for typed interactive input         | `from untaped import ui_context, PromptChoice`; use `ui_context(strict=False).confirm/text/secret/select/multiselect(...)` |
-| Register an agent skill from a plugin | `from untaped.api import SkillSpec`; include it in `PluginManifest(skills=(...))` |
-| Format row output without reading config (compatibility wrapper) | `from untaped import format_output, OutputFormat` |
-| Add `--format` / `--columns` to a Cyclopts command | `from untaped import FormatOption, ColumnsOption`      |
-| Render `--format`/`--columns` row collections | `from untaped import render_rows` (themed table for humans; theme-independent json/raw/pipe for pipes; pass `kind=` to tag `--format pipe` records) |
-| Show a guiding empty-state note for a no-result table | `render_rows(..., empty="hint")` or `ui.collection(..., empty=...)` — prints to stderr for the human `table` view only; json/yaml/raw stay byte-stable (v5) |
-| Report progress for a slow/blocking operation | `ui_context(strict=False).progress(label)` — spinner on TTY, throttled lines otherwise; `with ... as p: p.update(msg, fraction=..., new_phase=...)`; never wrap an interactive prompt (v5) |
-| Reject bad usage with `error: ...` + exit 2 | `from untaped import raise_usage`                          |
-| Wrap a command body so `UntapedError` → exit 1 | `from untaped import report_errors`                     |
-| Read piped values from stdin               | `from untaped import read_stdin`                            |
-| Read a `--format pipe` stream into typed envelopes | `from untaped import read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
-| Resolve identifiers from positionals or stdin (one source only) | `from untaped import read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
-| Loop over identifiers with per-id `error: <id>: <exc>` rows | `from untaped import resolve_each`         |
-| Run a mutating verb over a resolved set (preview → confirm → progress) | `from untaped import batch_apply` (the standard destructive-batch UX: `destructive`/`assume_yes`/`preview_only`; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
-| Parse repeated `KEY=VALUE` flags           | `from untaped import parse_kv_pairs`                        |
-| Clamp `--parallel N` at an upper bound with a stderr warning | `from untaped import clamp_parallel` (caller supplies `cap` and `policy`) |
-| Print a semantic status/warning/info message to stderr | `ui_context(strict=False).message(kind, msg)` |
-| Prompt users interactively                 | `ui_context(strict=False).confirm/text/secret/select/multiselect(...)`; prompts require TTY stdin and render on stderr |
-| Print raw logs, command passthrough, or low-level fallback errors | `echo(msg, err=True)` |
-| Inject a stderr-warning hook into a use case | accept `warn: Callable[[str], None]` in `__init__`; `cli/` wires `echo(f"warning: {msg}", err=True)` |
-| Raise a typed error                        | subclass `untaped.UntapedError`                             |
-| Walk the Settings schema (for tooling)     | `from untaped import walk_settings`                         |
-| Register profile settings                  | `from untaped import register_profile_settings`             |
-| Register top-level app state               | `from untaped import register_state_settings`               |
-| Validate a Settings dict in isolation from disk/env | `from untaped import validate_settings_isolated` (used by built-in `config` write path; same shape any future read-modify-write helper needs) |
-| Read/write `~/.untaped/config.yml`         | `from untaped.config_file import read_config_dict, write_config_dict, set_at_path, unset_at_path` |
-| Atomic read-modify-write the config file   | `from untaped.config_file import mutate_config` (file-locked) |
-| Read/write profiles                        | owned by `untaped-profile` (`untaped_profile.infrastructure.ProfileFileRepository`, built on `read_config_dict`/`mutate_config`) |
-| Mark a secret field                        | `pydantic.SecretStr`                                             |
-| Declare port `Protocol`s for a plugin      | `<plugin>/src/untaped_<x>/application/ports.py` (Hard Rule #10) |
-| Declare DTOs that cross app/infra boundary | `<plugin>/src/untaped_<x>/domain/payloads.py` (pydantic `BaseModel` with `frozen=True`) |
+| Resolve settings once per command (profile-aware, no global state) | `app_context()`; read sections with `ctx.section(name, Model)`, HTTP via `ctx.http`, UI via `ctx.ui(strict=...)` |
+| Read a typed config section directly       | `get_config_section` |
+| Build a cyclopts app                       | `create_app` |
+| Build a validated HTTP client (token check + bearer auth + TLS) | `connected_client` |
+| Standard "setting not configured" error    | `missing_setting_error` |
+| Walk paginated API collections             | `paginate_offset`, `paginate_pages` |
+| Resolve TLS verify (OS trust + ca_bundle)  | `resolve_verify` |
+| Make an HTTP call                          | `HttpClient` |
+| Render semantic output/messages with active theme | `ctx.ui(strict=False)` / `ui_context`, `UiContext`, `ThemeSpec` |
+| Prompt for typed interactive input         | `ctx.ui(strict=False).confirm/text/secret/select/multiselect(...)`; with `PromptChoice` |
+| Add `--format` / `--columns` to a command  | `FormatOption`, `ColumnsOption` |
+| Render `--format`/`--columns` row collections | `render_rows` (themed table for humans; theme-independent json/raw/pipe for pipes; pass `kind=` to tag `--format pipe` records; `empty="hint"` for a no-result note) |
+| Report progress for a slow operation       | `ctx.ui(strict=False).progress(label)` — spinner on TTY, throttled lines otherwise; `with ... as p: p.update(msg, fraction=..., new_phase=...)`; never wrap an interactive prompt; `ProgressHandle` |
+| Reject bad usage with `error: ...` + exit 2 | `raise_usage` |
+| Wrap a command body so `UntapedError` → exit 1 | `report_errors` |
+| Read piped values from stdin               | `read_stdin` |
+| Read a `--format pipe` stream into typed envelopes | `read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
+| Resolve identifiers from positionals or stdin (one source only) | `read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
+| Loop over identifiers with per-id `error: <id>: <exc>` rows | `resolve_each` |
+| Run a mutating verb over a resolved set (preview → confirm → progress) | `batch_apply` (`destructive`/`assume_yes`/`preview_only`; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
+| Parse repeated `KEY=VALUE` flags           | `parse_kv_pairs` |
+| Clamp `--parallel N` at an upper bound      | `clamp_parallel` (caller supplies `cap` and `policy`) |
+| Validate paths as cyclopts converters       | `existing_directory`, `existing_file` |
+| Print raw logs / passthrough / low-level errors | `echo(msg, err=True)` |
+| Raise a typed error                        | subclass `UntapedError` (also `ConfigError`, `HttpError`); `first_validation_error` for pydantic |
+| Read core/section settings explicitly       | `get_settings`, `get_core_settings`, `HttpSettings`; `invalidate_settings_cache` from a root handler |
+| Ensure / read / mutate config & tool state | `ensure_config`, `read_tool_state`, `mutate_tool_state` |
 
-Cross-cutting subsystems with their own internals doc:
-
-- **Configuration, profiles, plugin installs, and TLS** live in `src/untaped/`.
-  User-facing reference: [`docs/configuration.md`](docs/configuration.md).
-  `untaped config get/set/unset` manages scalar settings. Profile keys resolve
-  through the active or requested profile; scalar `ui.*` keys are the deliberate
-  exception because they read/write the top-level global `ui:` block.
-  Structured app state such as `plugins.*`, `workspace.*`, `ui.symbols`, and
-  `ui.color_roles` stays outside `config get/set/unset`.
-- **Workspace management** lives in the extracted
-  [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
-  plugin. Core plugin install guidance lives in
-  [`docs/plugins.md`](docs/plugins.md); command reference lives in the plugin
-  repo.
-- **AWX resource framework, apply pipeline, jobs/track, test runner** live
-  in the extracted
-  [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx)
-  plugin. Core plugin install guidance lives in
-  [`docs/plugins.md`](docs/plugins.md); command reference lives in the plugin
-  repo.
-- **GitHub authenticated user and search** live in the extracted
-  [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github)
-  plugin. Core plugin install guidance lives in
-  [`docs/plugins.md`](docs/plugins.md); command reference lives in the plugin
-  repo.
-
-## Conventions
-
-- **Module docstrings.** Every source module (`*.py`) opens with a
-  module docstring describing what it owns. Re-export stubs (layer
-  `__init__.py` files like `cli/__init__.py`,
-  `infrastructure/__init__.py`, …) are exempt — they're plumbing,
-  with nothing to describe.
-- **Re-export the public surface.**
-  - **Plugin packages**: `<pkg>/__init__.py` re-exports `app:
-    cyclopts.App` *lazily* via a module-level `__getattr__` (PEP 562) —
-    an eager `from untaped_<x>.cli import app` would defeat the
-    manifest's `import_path` laziness, because loading
-    `untaped_<x>.plugin` from the entry point imports the package
-    `__init__` first. `<pkg>/plugin.py` exposes the entry-point object
-    that declares the manifest. Public adapters live in
-    `infrastructure/__init__.py` with explicit `__all__`.
-  - **`untaped`**: re-exports its public plugin/core API from
-    `src/untaped/__init__.py` with explicit `__all__`.
-- **Per-command flags vs shared option types.** Per-command flags in
-  `cli/commands.py` use `Annotated[..., Parameter(...)]` at the call
-  site. Shared option types reused across commands live in `untaped` as
-  `Annotated[…, Parameter(…)]` aliases (e.g. `FormatOption`,
-  `ColumnsOption`).
-- **`errors.py` placement.** Domain packages with their own exception
-  subclasses keep them in a top-level `errors.py`; `untaped-awx`
-  additionally has `infrastructure/errors.py` for HTTP-status →
-  exception mapping. Plugins that only raise `untaped` exceptions don't
-  need an `errors.py`.
-- **Lazy imports on CLI startup paths.** Heavy transitive imports that
-  would pay on every `untaped --help` are deferred into subcommand
-  bodies. Add `# noqa: PLC0415` only when Ruff currently flags that
-  specific import. Scope: any module reached on the import graph from
-  `src/untaped/main.py` at startup. Enforced by ruff
-  (`extend-select = ["PLC0415"]`); tests are exempted.
+`PipeEnvelope`, `OutputFormat`, `AppContext`, `BatchOutcome`, `ThemeSpec`,
+`UiContext`, and `ProgressHandle` are the public types backing the rows above.
 
 ## Output & Piping Conventions
 
-- **stdout = data only.** Never print logs, prompts, or progress to
-  stdout.
-- **stderr = everything else.** Logs, progress, prompts. Use
-  `echo(msg, err=True)`.
-- **`--verbose` / `-v`** is a core root option (any token position). By
-  default slow tool output is captured and shown only on failure; `--verbose`
-  streams it live and raises the `untaped` logger to DEBUG on stderr.
-- **Row-oriented data commands** (`list`, `status`, row-producing `get`,
-  …) expose:
+- **stdout = data only.** Never print logs, prompts, or progress to stdout.
+- **stderr = everything else.** Logs, progress, prompts. Use `echo(msg, err=True)`.
+- **`--verbose` / `-v`** is an SDK-injected root option (any token position).
+  By default slow tool output is captured and shown only on failure;
+  `--verbose` streams it live and raises the `untaped` logger to DEBUG.
+- **Row-oriented data commands** (`list`, `status`, row-producing `get`, …)
+  expose:
   - `--format / -f` (`json | yaml | table | raw | pipe`); default `table` for
     `list`, `yaml` for `get`.
-  - `--columns / -c` (repeatable). Dotted paths supported
-    (`summary_fields.project.name`).
-  - `--stdin` to consume newline-separated identifiers when the command
-    takes a list.
-- **Scalar detail commands** may deliberately omit `--columns` and choose a
-  command-specific format default. `untaped config get <key>` defaults to raw
-  value output so it can be used directly in shell scripts.
-- **Side-effect-only commands** (`use`, `delete`, `rename`,
-  `apply --yes`, …) and interactive flows are exempt — no `--format`
-  knob.
-- **`--format raw` without `--columns`** emits each row's first key.
-  Every list use case promises that the first key is the row's
-  identifier (workspace name, job id, login, …) so pipelines like
-  `untaped workspace list -f raw | xargs -I{} untaped workspace path
-  {}` get the right value. Reordering keys in a row source — hand-built
-  dict or pydantic model — is a contract break. Details:
-  this section's `--format raw` default-column contract.
-- **`--all` vs `--all-<axis>`.** Bare `--all` means "iterate every
-  instance of the noun the command targets" (`workspace sync --all`,
-  `workspace status --all`). When a command iterates a *different*
-  axis or changes view shape, use `--all-<axis>` to disambiguate
-  (`awx save --all-kinds` for the type axis, `config list
-  --all-profiles` for view shape). New commands that grow an `--all`
-  flag must cross-check this convention.
-- **`--follow --format json` always emits NDJSON.** One bare JSON
-  object per line, no enclosing array brackets — so `jq` can ingest
-  the stream directly without `jq -s '.[]'`. Today: `awx jobs events
-  --follow` and `awx jobs logs --follow`. New `--follow` commands that
-  emit structured data under `--format json` must match this shape.
-  yaml/raw/table under `--follow` is per-line single-doc emission;
-  yaml has no canonical streaming form.
-- **`--format pipe` is the typed interchange stream.** Self-describing
-  NDJSON — one `{"untaped":"1","kind":<hint|null>,"record":{…}}` per line —
-  meant to be read back by another untaped command (`read_records`, or
-  `read_identifiers(..., id_field=…)` which auto-detects it and still accepts
-  bare lines). Distinct from `--follow --format json` above (which streams
-  *bare* records). `pipe` emits the full record (ignores `--columns`);
-  untagged producers emit `kind: null`. A consumer that *mutates* the piped set
-  (e.g. `list --format pipe | delete --stdin --yes`) should route through
-  `batch_apply` so the preview/confirm/`--yes`/progress UX is identical across
-  plugins; a destructive verb refuses a non-interactive stdin without `--yes`
-  (the stream is the data, so there is nothing to confirm against).
-
-Pipeline examples and the morning-routine workflow live in
-[`docs/README.md`](docs/README.md#pipe-friendly-by-design).
+  - `--columns / -c` (repeatable). Dotted paths supported.
+  - `--stdin` to consume newline-separated identifiers when the command takes
+    a list.
+- **Scalar detail commands** may omit `--columns` and choose their own format
+  default. `<tool> config get <key>` defaults to raw value output for scripting.
+- **Side-effect-only commands** (`use`, `delete`, `rename`, `apply --yes`, …)
+  and interactive flows are exempt — no `--format` knob.
+- **`--format raw` without `--columns`** emits each row's first key. Every list
+  use case promises the first key is the row's identifier so pipelines get the
+  right value; reordering keys in a row source is a contract break.
+- **`--all` vs `--all-<axis>`.** Bare `--all` means "iterate every instance of
+  the noun the command targets". When a command iterates a *different* axis or
+  changes view shape, use `--all-<axis>`.
+- **`--follow --format json` always emits NDJSON** — one bare JSON object per
+  line, no enclosing array. yaml/raw/table under `--follow` is per-line
+  single-doc emission.
+- **`--format pipe` is the typed interchange stream.** Self-describing NDJSON —
+  one `{"untaped":"1","kind":<hint|null>,"record":{…}}` per line —
+  meant to be read back by another tool (`read_records`, or
+  `read_identifiers(..., id_field=…)`). The **v1 envelope is FROZEN across SDK
+  1.x**; any change is a MAJOR (2.0) event. This is what guarantees
+  `untaped-github | untaped-ansible` works across independently-installed tools
+  built on different 1.x SDKs. `pipe` emits the full record (ignores
+  `--columns`); untagged producers emit `kind: null`. A consumer that
+  *mutates* the piped set (e.g. `list --format pipe | delete --stdin --yes`)
+  should route through `batch_apply` so the preview/confirm/`--yes`/progress UX
+  is identical across tools; a destructive verb refuses a non-interactive stdin
+  without `--yes` (the stream is the data, so there is nothing to confirm against).
 
 ## Development Workflow
 
 ```bash
-uv sync                                         # install / sync core
+uv sync                                         # install / sync the SDK
 uv run pre-commit install                       # local lint at commit + mypy at push
-uv add --group dev some-test-helper             # dev dep on the root
+uv add --group dev some-test-helper             # dev dep
 uv run pytest                                   # tests with coverage (gate: 80%)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
-uv run untaped --help                           # run the CLI from source
-scripts/install.sh --editable .                 # install the managed `untaped` shim
 ```
 
-User-facing config, profile resolution, and the optional profile plugin
-workflow are documented in [`docs/configuration.md`](docs/configuration.md).
+The SDK has **no console script** — it is a library, so there is no
+`untaped --help` to run from source. Drive behaviour through tests (build a
+tool app via `build_tool_app` / `run_tool` and `CliInvoker`) or install a tool
+that depends on it.
 
-**Coverage measurement.** `--cov` is in `addopts`, so every `pytest`
-invocation measures coverage by default (gate: 80%). Two non-obvious
-behaviours worth knowing:
+**Coverage measurement.** `--cov` is in `addopts`, so every `pytest` run
+measures coverage (gate: 80%). Two non-obvious behaviours:
 
-- `pytest --collect-only` reports ~31% coverage. The cov-plugin runs
-  against import-time only when collection is the only step — it's not
-  a regression in real coverage. Run `pytest` (without `--collect-only`)
-  for the real number.
-- For tight TDD loops, `pytest --no-cov` skips coverage measurement
-  and shaves a few hundred milliseconds per run.
+- `pytest --collect-only` reports ~31% coverage (import-time only); not a
+  regression. Run plain `pytest` for the real number.
+- For tight TDD loops, `pytest --no-cov` skips coverage and shaves a few
+  hundred ms per run.
 
 **TDD loop:**
-1. Write the failing test (`tests/unit/` for core; plugin repos use
-   their own `tests/unit/`).
+1. Write the failing test in `tests/unit/`.
 2. Run it; confirm it fails for the right reason.
 3. Implement the smallest change that makes it pass.
 4. Refactor with the test still green.
 
 **Test layout:**
-- Core tests live in `tests/unit/`. Plugin tests live in each plugin
-  repo. Use `tests/integration/` when the test exercises a real
-  subprocess or fake-server fixture.
-- No `__init__.py` files inside `tests/` — pytest uses
-  `--import-mode=importlib`.
+- SDK tests live in `tests/unit/`; use `tests/integration/` for real
+  subprocess or fake-server fixtures.
+- No `__init__.py` files inside `tests/` — pytest uses `--import-mode=importlib`.
 - Mock httpx with `respx` (already a dev dep).
 - For CLI tests, use `untaped.testing.CliInvoker`.
 
 ## Releasing
 
-Every repo keeps `pyproject.toml` `version` equal to its **next** release, and
-the latest git tag equals the **released** version. So **bump `version` in the
-same PR as any user-facing change** — a new command/flag, a behaviour change, a
-dropped option, or a dependency-floor change. Do not leave the bump (or the
-release) as a separate follow-up; a merged PR that changed behaviour without a
-version bump leaves the repo in a half-released state. Pre-1.0, a breaking
-change bumps the **minor** (`0.3.0 → 0.4.0`); additive-only changes bump the
-patch.
+Keep `pyproject.toml` `version` equal to the **next** release; the latest git
+tag equals the **released** version. **Bump `version` in the same PR as any
+user-facing change** — a surface change, behaviour change, dropped name, or
+dependency-floor change. Don't leave the bump (or release) as a follow-up.
 
-Releases go through PRs, not direct pushes — the environment blocks
-`git push` to `main` and tag pushes. The flow:
+SDK versioning: **adding** an `untaped.api` name is additive (patch/minor);
+**removing or renaming** one — or changing the v1 config/pipe contracts — is a
+**MAJOR** event.
+
+Releases go through PRs, not direct pushes — the environment blocks `git push`
+to `main` and tag pushes. The flow:
 
 1. Branch; bump `version`; `uv lock`; gate (`ruff check` + `ruff format` +
    `mypy` + `pytest`); open a PR.
 2. `gh pr merge --merge` once CI is green.
-3. `gh release create vX.Y.Z --target main --title ... --notes ...` — this
-   creates the tag + release via the API (plain `git tag` + `git push <tag>`
-   is gated, `gh` is not).
+3. `gh release create vX.Y.Z --target main --title ... --notes ...` — creates
+   the tag + release via the API (`gh` is not gated; plain `git tag` +
+   `git push <tag>` is). If 1Password GPG signing is flaky, sign with
+   `--no-gpg-sign`.
 
-Cross-repo ordering for an ecosystem-wide change (e.g. a plugin-API bump):
+Cross-repo ordering for an SDK change that tools must adopt:
 
-- **Core first.** Plugins resolve `untaped` from the git default branch
-  (`[tool.uv.sources]`), so `uv lock --upgrade-package untaped` only picks up
-  new core after it lands on `main`.
-- **untaped-profile releases with (or before) core** whenever core's profile
-  behaviour changes — without it installed, core's flat default layout ignores
-  `profiles:` config, so `--profile` vanishes for users mid-upgrade.
-- **Bump each plugin's `untaped>=` floor** to the new core release in the same
-  pass, relock, and **release the plugin too** (its own version bump + tag) —
-  the floor bump is a dependency change, which is itself a release-worthy
-  change per the rule above.
+- **SDK first.** Tools resolve `untaped` from a git tag, so a tool only picks
+  up new SDK behaviour after the SDK tag exists.
+- **Bump each tool's `untaped @ git+...@vX.Y.Z` pin** to the new SDK release,
+  relock (`uv lock --upgrade-package untaped`), gate, and **release the tool
+  too** — the pin bump is itself a release-worthy dependency change.
 
 ## Decision Tree: Where does this code go?
 
-1. **Shared across two or more plugins?** → `src/untaped/` if it is hub
-   plumbing, or a separate shared lib if it is a coherent subdomain.
-2. **CLI-only (argument parsing, output formatting)?** → `cli/` inside
-   the domain.
-3. **Pure business logic — entities, value objects, invariants?** →
-   `domain/`.
-4. **Talks to an external service (HTTP, fs, subprocess)?** →
-   `infrastructure/`.
-5. **Orchestrates steps between domain and infrastructure?** →
+1. **Reusable across multiple tools / part of the framework contract?** →
+   `src/untaped/`, and expose it from `untaped.api` if tools should consume it.
+2. **Tool-specific?** → it belongs in that tool's repo, not here.
+3. Within a tool: CLI parsing/output → `cli/`; pure business logic → `domain/`;
+   external service (HTTP, fs, subprocess) → `infrastructure/`; orchestration →
    `application/`.
 
-## Recipe: Add a new plugin repo
+## Conventions
 
-```bash
-# 1. Create the plugin repo/package
-uv init --package --lib untaped-<X>
-# 2. Add deps
-uv add 'cyclopts>=4.16.0,<5' 'untaped>=0.2.0'
-# 3. Build the 4 layers
-mkdir -p src/untaped_<x>/{cli,application,domain,infrastructure}
-mkdir -p tests/unit
-```
-
-Then:
-- Implement `domain/models.py`, `infrastructure/<x>_client.py`,
-  `application/<use_case>.py`, `cli/commands.py`.
-- Re-export `app` from `cli/__init__.py` and the package `__init__.py`.
-- Add `plugin.py` and declare the manifest (do not import the CLI module
-  here — the `import_path` keeps it off the startup path):
-  ```python
-  from untaped.api import CliSpec, PluginManifest
-
-  class XPlugin:
-      id = "<x>"
-      untaped_api_version = 3
-
-      def manifest(self) -> PluginManifest:
-          return PluginManifest(
-              clis=(CliSpec(name="<x>", import_path="untaped_<x>.cli:app", help="..."),),
-          )
-
-  plugin = XPlugin()
-  ```
-- Add the entry point to the package `pyproject.toml`:
-  ```toml
-  [project.entry-points."untaped.plugins"]
-  <x> = "untaped_<x>.plugin:plugin"
-  ```
-- Add a package-local `AGENTS.md` for domain-specific internals
-  (resource framework, side-effect adapters, polling cadence, …) plus a
-  short `CLAUDE.md` stub pointing back to that file and the core repo.
-- Add plugin docs with the package-specific install spec and command usage.
-  Link to `untaped` core's `docs/plugins.md` for generic direct install,
-  managed state, editable source, and multi-plugin sync workflows; do not
-  duplicate those full flows in every plugin repo.
-- Run `uv sync && uv run pytest && uv run untaped <x> --help`.
-
-## Recipe: Add a new command to an existing plugin
-
-1. **Test first** in the plugin repo's `tests/unit/test_<feature>.py`.
-2. New external call → add a method to the existing
-   `infrastructure/<x>_client.py`. Don't create a new client class
-   unless it's a different service.
-3. New domain logic → add an entity/method in `domain/`, a use case in
-   `application/`.
-4. Add the Cyclopts command in `cli/commands.py`:
-   - use `@app.command(name="documented-name")` for public commands
-   - express options/arguments as `Annotated[..., Parameter(...)]`
-   - required inputs are required positional-only params
-     (`Parameter(help=...)` before `/`); missing values become
-     `error: ... requires an argument` (exit 2) automatically
-   - stdin-fed list commands guard with
-     `raise_usage("provide <thing>(s) or --stdin")` when no input source
-     is given
-   - suppress the auto `--no-*` variant on action-like boolean flags with
-     `negative=""` (`--yes`, `--stdin`, `--clear-*`); keep it for genuine
-     persistent toggles
-   - log to stderr; print only data to stdout
-   - if it emits data: accept `--format` and `--columns`; support
-     `--stdin` if it takes a list
-   - pure side-effect commands and interactive flows can skip the
-     pipe-friendly knobs
-5. Run tests, lint, format. Verify:
-   `uv run untaped <X> <new-command> --help`.
-
-## Recipe: Add a new setting
-
-Core settings (`log_level`, `http`) live in `src/untaped/settings.py`.
-Plugin settings live with the plugin and are registered from
-`plugin.py` with `add_profile_settings` and/or `add_state_settings`.
-Credentials must be `SecretStr`; HTTP clients must still consume
-`resolve_verify(get_core_settings().http)`.
+- **Module docstrings.** Every source module (`*.py`) opens with a docstring
+  describing what it owns. Re-export stubs (layer `__init__.py` files) are
+  exempt — they're plumbing.
+- **Re-export the public surface.** The SDK re-exports its full public API from
+  `src/untaped/api.py` (and the package root) with an explicit `__all__`.
+- **Per-command flags vs shared option types.** Per-command flags use
+  `Annotated[..., Parameter(...)]` at the call site. Shared option types reused
+  across commands live in the SDK as `Annotated[…, Parameter(…)]` aliases
+  (`FormatOption`, `ColumnsOption`); use them in the annotation position, not as
+  default values.
+- **`errors.py` placement.** Packages with their own exception subclasses keep
+  them in a top-level `errors.py`. Code that only raises `untaped` exceptions
+  (`UntapedError`, `ConfigError`, `HttpError`) doesn't need one.
+- **Lazy imports on CLI startup paths.** Heavy transitive imports that would
+  pay on every `--help` are deferred into subcommand bodies. Add
+  `# noqa: PLC0415` only when Ruff flags that specific import. Enforced by ruff
+  (`extend-select = ["PLC0415"]`); tests are exempt.
+- **mypy.** `[tool.mypy] plugins = ["pydantic.mypy"]` is configured; keep
+  models pydantic-friendly. Run `uv run mypy` (strict) before pushing.
 
 ## Common Mistakes
 
-- **Importing httpx, pyyaml, or os in a `domain/` module.** Domain is
-  pure. Move the call to `infrastructure/`.
-- **A `cli/` module calling business logic from `infrastructure/`
-  instead of going through an `application/` use case.** Wiring concrete
-  adapters at the composition root (e.g. `cli/_context.py`) is fine; the
-  ban is on bypassing application use cases for the actual logic.
-- **Adding a new dep with `pyproject.toml` edits.** Use `uv add` in the
-  repo that owns the dependency.
-- **Writing a helper inside a plugin that another plugin will need.**
-  Move it to `src/untaped/` only if it is hub plumbing; otherwise use a
-  separate shared lib (move ≠ copy).
-- **Forgetting the plugin entry point.** Test: does
-  `uv run untaped --help` list the plugin command after the package is
-  installed in the environment?
-- **Relying on inferred Cyclopts public names.** Public command and option
-  paths should use explicit `name=...` metadata so documented CLI contracts
-  do not drift when Python identifiers change. Positional-only parameters
-  are the exception: they take `Parameter(help=...)` with no `name=` —
-  `Parameter(name="")` renders broken help and error text.
-- **Using an `Annotated[..., Parameter(...)]` alias as a default value.**
-  Put shared aliases in the annotation position (`value: Alias = default`);
-  otherwise Cyclopts/Pydantic may validate the alias object itself.
-- **Adding a new setting without thinking about secrets and TLS.**
-  Credentials → `pydantic.SecretStr`. Hostnames for TLS services → the
-  client must use `resolve_verify(get_core_settings().http)`.
-- **Naming a method `list` on a class whose annotations elsewhere include
-  `list[X]`.** mypy resolves `list` to the method, not the builtin. Use
-  `entries` instead, or `Iterator[X]` / `Iterable[X]` returns (no
-  collision).
-- **Changing workspace git semantics in core.** Workspace git operations
-  live in the extracted `untaped-workspace` plugin; update that repo's
-  `AGENTS.md` and tests with any workspace behavior change.
+- **Reaching into SDK internals from a tool.** Import from `untaped.api` only;
+  internals move without notice.
+- **Calling `plugin_context()`.** It is gone — use `app_context()`.
+- **Importing httpx, pyyaml, or os in a `domain/` module.** Domain is pure;
+  move the call to `infrastructure/`.
+- **A `cli/` module calling `infrastructure/` business logic directly instead
+  of through an `application/` use case.** Wiring concrete adapters at the
+  composition root is fine; bypassing use cases for the logic is not.
+- **Adding a dep with `pyproject.toml` edits.** Use `uv add`.
+- **Adding a setting without thinking about secrets and TLS.** Credentials →
+  `pydantic.SecretStr`. TLS clients → `resolve_verify(ctx.http)`.
+- **Naming a method `list` on a class whose annotations include `list[X]`.**
+  mypy resolves `list` to the method. Use `entries`, or `Iterator[X]` returns.
+- **Overlapping profile and state fields in a `ToolSpec`.** The two field sets
+  must be disjoint; `register_tool` validates them.
+- **Removing or renaming an `untaped.api` name without a MAJOR bump.** That
+  breaks every installed tool pinned to a 1.x tag.
 
 ## See also
 
-- **Plugins**:
+- **Decisions (ADRs):** [`docs/decisions.md`](docs/decisions.md) — the
+  authoritative record of the SDK-only direction.
+- **User-facing docs:** [`docs/`](docs/README.md) — configuration, profiles,
+  themes, piping.
+- **Tools:**
   [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx),
   [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible),
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
   [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira),
-  [`untaped-profile`](https://github.com/alexisbeaulieu97/untaped-profile),
-  [`untaped-themes`](https://github.com/alexisbeaulieu97/untaped-themes),
-  [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace)
-- **User-facing docs**: [`docs/`](docs/README.md) — core configuration and
-  plugin install/sync UX. Plugin command references live in the plugin repos.
+  [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace),
+  [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health)

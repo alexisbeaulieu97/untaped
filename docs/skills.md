@@ -1,58 +1,77 @@
 # Agent Skills
 
-`untaped` and its plugins can ship packaged agent skills: directories with a
+Each untaped tool can ship packaged **agent skills**: directories with a
 `SKILL.md` file plus optional resources such as `references/`, `scripts/`, or
-`assets/`. These teach Codex, Claude, and compatible agents how to use the CLI
-surface without mixing that state into plugin installation.
+`assets/`. These teach Codex, Claude, and compatible agents how to use that
+tool's CLI surface.
 
-Plugin sync and skill install are intentionally separate:
+Skills are **per tool**. A tool declares its skills as `SkillAsset`s in its
+`ToolSpec`, and the SDK mounts a `skills` command group on the tool that lists
+and installs *only that tool's* skills. There is no central `untaped skills`
+command and no SDK-level skill — install each tool's skills from that tool.
 
-- `untaped plugins add/remove/sync` manages Python packages in the managed
-  untaped virtual environment.
-- `untaped skills list/install` manages files in agent skill directories.
+```python
+from untaped.api import SkillAsset, ToolSpec
+
+ToolSpec(
+    command="untaped-github",
+    section="github",
+    profile_model=GithubProfile,
+    skills=(
+        SkillAsset(
+            name="untaped-github",
+            source=Path(__file__).parent / "skills" / "untaped-github",
+            description="Drive the untaped-github CLI from an agent.",
+        ),
+    ),
+)
+```
 
 ## List Available Skills
 
+Each tool exposes its own `skills list`:
+
 ```bash
-untaped skills list
-untaped skills list --format raw
-untaped skills list --format json
+untaped-github skills list
+untaped-github skills list --format raw
+untaped-github skills list --format json
 ```
 
-The built-in `untaped` skill is always available. Installed plugins may add
-their own prefixed skills such as `untaped-awx`, `untaped-workspace`,
-`untaped-github`, `untaped-profile`, `untaped-jira`, or `untaped-ansible`.
+The list shows only the skills that tool ships (the `SkillAsset`s in its
+`ToolSpec`). Other tools, such as `untaped-awx` or `untaped-workspace`, list and
+install their own skills from their own `skills` group.
 
 ## Install Skills
 
-Install selected skills by name:
+Install selected skills by name from the owning tool:
 
 ```bash
-untaped skills install untaped untaped-awx --target codex
-untaped skills install untaped-workspace --target claude
-untaped skills install untaped-github --target all --scope local
+untaped-github skills install untaped-github --target codex
+untaped-workspace skills install untaped-workspace --target claude
+untaped-awx skills install untaped-awx --target all --scope local
 ```
 
-Install every registered skill explicitly with `--all`:
+Install every skill the tool ships with `--all`:
 
 ```bash
-untaped skills install --all --target all
+untaped-github skills install --all --target all
 ```
 
 Batch selection also works through stdin:
 
 ```bash
-untaped skills list --format raw | untaped skills install --stdin --target codex
+untaped-github skills list --format raw | untaped-github skills install --stdin --target codex
 ```
 
 Exactly one selector source is allowed: positional names, `--stdin`, or
-`--all`.
+`--all`. There is no cross-tool `skills --all`; each tool installs only its own
+skills, so run the command once per tool you want installed.
 
 ## Targets And Scopes
 
-`--target codex` installs Codex-readable skills. `--target claude` installs
-Claude Code-readable skills. `--target all` installs into both target roots for
-the selected scope.
+`--target codex` installs Codex-readable skills (the default). `--target claude`
+installs Claude Code-readable skills. `--target all` installs into both target
+roots for the selected scope.
 
 `--scope global` is the default. It means user/personal, not admin or
 enterprise-wide:
@@ -65,9 +84,9 @@ enterprise-wide:
 - Codex local: `<project-root>/.agents/skills`
 - Claude local: `<project-root>/.claude/skills`
 
-When `--project-dir PATH` is provided, `PATH` is the project root. Without
-`--project-dir`, local installs use the current git repository root when
-available, otherwise the current working directory.
+When `--project-dir PATH` is provided, `PATH` is the project root (it requires
+`--scope local`). Without `--project-dir`, local installs use the current git
+repository root when available, otherwise the current working directory.
 
 Local installs create project files that can be committed if the skill should
 travel with the repository. Keep them uncommitted for machine-local
@@ -82,13 +101,16 @@ reloads its skill catalog.
 
 ## Overwrite Policy
 
-`untaped skills install` refuses to replace an existing skill directory unless
+`skills install` refuses to replace an existing skill directory unless
 `--force` is passed:
 
 ```bash
-untaped skills install untaped-awx --target codex --force
+untaped-awx skills install untaped-awx --target codex --force
 ```
 
-Each installed skill directory includes `.untaped-skill.json` so future tooling
-can identify the skill name, source, installation target, scope, and resolved
-install root.
+## Skill Marker
+
+Each installed skill lands in `.claude/skills/<name>/` (Claude) and/or
+`.agents/skills/<name>/` (Codex), and every installed directory includes a
+`.untaped-skill.json` marker so future tooling can identify the skill's `name`,
+`source`, installation `target`, `scope`, and resolved `install_root`.
