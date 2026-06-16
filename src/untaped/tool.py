@@ -17,7 +17,6 @@ from pydantic import BaseModel
 
 from untaped.errors import ConfigError
 from untaped.identity import set_tool_command
-from untaped.plugin_context import PluginContext, plugin_context
 from untaped.settings import register_profile_settings, register_state_settings
 
 
@@ -85,8 +84,3 @@ def register_tool(spec: ToolSpec) -> None:
     register_profile_settings(spec.section, spec.profile_model)
     if spec.state_model is not None:
         register_state_settings(spec.section, spec.state_model)
-
-
-def app_context() -> PluginContext:
-    """Resolve this tool's effective settings once into a frozen context."""
-    return plugin_context()

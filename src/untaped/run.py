@@ -10,9 +10,9 @@ completion, and runs under untaped's error-reporting contract.
 ``build_tool_app`` is the wiring half — it returns the configured app so
 callers (and tests) can drive ``app.meta`` directly without running it.
 
-The leading-consume + strip-on-unknown machinery is ported from the old
-``untaped.main`` hub but decoupled from the plugin registry: a tool's root
-options are a fixed pair backed by direct handler callables.
+The leading-consume + strip-on-unknown machinery gives ``--profile`` /
+``--verbose`` position-independence: a tool's root options are a fixed pair
+backed by direct handler callables.
 """
 
 from __future__ import annotations

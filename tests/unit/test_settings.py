@@ -4,12 +4,14 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, SecretStr, ValidationError, field_validator
 
-from untaped import ConfigError, resolve_config_path, validate_settings_isolated
+from untaped.errors import ConfigError
 from untaped.settings import (
     Settings,
     get_settings,
     register_profile_settings,
     reset_config_registry_for_tests,
+    resolve_config_path,
+    validate_settings_isolated,
 )
 
 

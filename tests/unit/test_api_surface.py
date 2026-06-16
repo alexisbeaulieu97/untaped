@@ -1,4 +1,4 @@
-"""Contract tests for the ``untaped.api`` plugin SDK namespace."""
+"""Contract tests for the ``untaped.api`` SDK namespace."""
 
 from __future__ import annotations
 
@@ -6,20 +6,16 @@ import importlib
 
 EXPECTED_SURFACE = frozenset(
     {
-        # Plugin contract
-        "CliSpec",
-        "PluginManifest",
-        "PluginRegistry",
-        "RootOptionSpec",
-        "SettingsLayout",
-        "SettingsLayoutSpec",
-        "UntapedPlugin",
-        "SkillSpec",
-        "DiagnosticResult",
+        # Tool composition contract
+        "ToolSpec",
+        "SkillAsset",
+        "register_tool",
+        "run_tool",
+        "build_tool_app",
+        # Tool execution context
+        "AppContext",
+        "app_context",
         "ThemeSpec",
-        # Plugin execution context
-        "PluginContext",
-        "plugin_context",
         # Errors
         "UntapedError",
         "ConfigError",
@@ -50,11 +46,12 @@ EXPECTED_SURFACE = frozenset(
         # Settings access
         "get_config_section",
         "get_core_settings",
+        "get_settings",
         "invalidate_settings_cache",
-        # Deprecated transitional v3 compat (removal gated on the
-        # plugin-API-v4 rollout finishing across the plugin repos)
-        "ProfileOverrideOption",
-        "profile_override",
+        # Safe shared-config surface
+        "ensure_config",
+        "read_tool_state",
+        "mutate_tool_state",
         # Interactive UI
         "ProgressHandle",
         "PromptChoice",
@@ -92,15 +89,35 @@ def test_api_names_resolve() -> None:
     assert not unresolved, f"untaped.api.__all__ names that do not resolve: {unresolved}"
 
 
-def test_api_keeps_v3_profile_compat_shims() -> None:
-    """Profile selection moved to the untaped-profile plugin (API v4), but
-    released v3 plugins still import these names at command dispatch; they
-    stay as deprecated shims until the rollout completes (release-smoke
-    regression, PR #273)."""
+def test_package_root_reexports_api_surface() -> None:
+    """``from untaped import X`` must mirror ``from untaped.api import X``."""
+    import untaped
+
     api = importlib.import_module("untaped.api")
-    for name in ("ProfileOverrideOption", "profile_override"):
-        assert hasattr(api, name), f"untaped.api.{name} must stay importable"
-        assert name in api.__all__
+    assert set(untaped.__all__) == set(api.__all__)
+    for name in api.__all__:
+        assert getattr(untaped, name) is getattr(api, name)
+
+
+def test_api_drops_retired_plugin_contract() -> None:
+    """The plugin platform is retired; its types must not resurface."""
+    api = importlib.import_module("untaped.api")
+    retired = {
+        "CliSpec",
+        "PluginManifest",
+        "PluginRegistry",
+        "RootOptionSpec",
+        "SettingsLayoutSpec",
+        "UntapedPlugin",
+        "SkillSpec",
+        "DiagnosticResult",
+        "PluginContext",
+        "plugin_context",
+        "ProfileOverrideOption",
+        "profile_override",
+    }
+    leaked = retired & set(api.__all__)
+    assert not leaked, f"retired plugin contract still on the SDK surface: {sorted(leaked)}"
 
 
 def test_api_exposes_get_settings_for_root_option_handlers() -> None:
