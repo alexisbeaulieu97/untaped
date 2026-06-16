@@ -1,10 +1,8 @@
 """untaped-workspace: manage local git workspaces.
 
-``app`` is re-exported lazily (PEP 562): the plugin manifest defers the CLI
-import via ``CliSpec.import_path``, and loading ``untaped_workspace.plugin``
-from the entry point imports this package ``__init__`` first — an eager
-``from untaped_workspace.cli import app`` here would pull the whole CLI tree
-onto the startup import path anyway.
+``app`` is re-exported lazily (PEP 562) so importing this package does not pull
+the whole CLI tree onto the startup import path. ``__main__:main`` (and tests)
+import ``app`` only when they actually need it.
 """
 
 from __future__ import annotations
