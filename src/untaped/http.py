@@ -242,9 +242,11 @@ def connected_client(
     caller supplied their own.
     """
     values: dict[str, str] = {}
-    # ``base_url_field`` is unioned in so a client can be built even when it is
-    # not listed in ``required``; de-dup so a field named in both is walked once.
-    for field in dict.fromkeys((*required, base_url_field)):
+    # ``base_url_field`` and ``bearer_token_field`` are always walked — even
+    # when not listed in ``required`` — so the client can be built and the
+    # bearer header set; de-dup keeps a field named twice from being read twice.
+    optional = (base_url_field, bearer_token_field) if bearer_token_field else (base_url_field,)
+    for field in dict.fromkeys((*required, *optional)):
         raw = getattr(config, field, None)
         if isinstance(raw, SecretStr):
             raw = raw.get_secret_value()
