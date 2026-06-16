@@ -9,13 +9,13 @@ class UnsetSetting:
     """Remove ``key`` from the named profile (default = active).
 
     Returns ``(removed, target_scope)`` where ``removed`` is ``True`` if a
-    value was actually removed and ``target_scope`` is ``None`` for
-    scope-less layouts. An explicit ``--target-profile`` the layout cannot
-    satisfy raises ``ConfigError`` — same contract as ``set``.
+    value was actually removed and ``target_scope`` is the resolved profile
+    name (or ``"global"``). An explicit ``--target-profile`` the layout
+    cannot satisfy raises ``ConfigError`` — same contract as ``set``.
     """
 
     def __init__(self, repo: SettingsRepository) -> None:
         self._repo = repo
 
-    def __call__(self, key: str, *, profile: str | None = None) -> tuple[bool, str | None]:
+    def __call__(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
         return self._repo.unset_value(key, profile=profile)
