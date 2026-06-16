@@ -1,4 +1,4 @@
-"""Pin the workspace plugin's ``--format raw`` first-key contract."""
+"""Pin the workspace tool's ``--format raw`` first-key contract."""
 
 from __future__ import annotations
 
