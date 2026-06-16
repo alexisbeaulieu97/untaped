@@ -283,33 +283,21 @@ tables describe the author's machine. For editable multi-plugin development,
 record every local plugin checkout that should be installed into the managed
 environment.
 
-Profile selection is fully plugin-owned: core has no profile concept. The
-untaped-profile plugin contributes the root `--profile` option (works in
-any token position via leading consumption plus strip-on-unknown-option
-retry) and the profiles settings layout; without it, the config is a flat
-single document and `profiles:`/`active:` keys are ignored with a stderr
-warning. Commands read settings via bare `plugin_context()` — never declare
-a command-local `--profile`. `ProfileOverrideOption`, `profile_override`,
-`plugin_context(profile=...)`, `profile_resolver.py`, and the config-file
-profile helpers are deprecated transitional v3 compat shims: released
-v2/v3-era plugins import them (the release-smoke stack at entry-point load
-time), so they stay importable — but core never uses them — until the
-plugin-API-v4 rollout finishes across the plugin repos, after which they are
-removed. Config mutation commands still accept `--target-profile`; it errors
-unless a scoped settings layout is registered.
-
-The default view is one row per plugin package/name, not separate rows for
-"loaded" and "desired" state. A desired package such as `untaped-awx` is
-coalesced with a loaded plugin id such as `awx` when the normalized suffix
-matches; the row status is `installed`, `recorded`, or `loaded`.
+Profiles are built into the SDK. `run_tool` registers the profiles settings
+layout and wires the root `--profile` option (works in any token position via
+leading consumption plus strip-on-unknown-option retry); the config is a flat
+single document until that layout is registered. Commands read settings via
+bare `app_context()` — never declare a command-local `--profile`. Config
+mutation commands accept `--target-profile`; it errors unless the profiles
+layout is registered.
 
 ## Cross-Cutting helpers (`untaped`)
 
 | Need                                       | Use                                                              |
 | ------------------------------------------ | ---------------------------------------------------------------- |
-| Read typed plugin config                   | `from untaped import get_config_section`                    |
-| Resolve settings once per command (profile-aware, no global state) | `from untaped.api import plugin_context`; read sections with `ctx.section(name, Model)` |
-| Build a validated plugin HTTP client (token check + bearer auth + TLS) | `from untaped.api import connected_client` |
+| Read a typed config section                | `from untaped.api import get_config_section`                    |
+| Resolve settings once per command (profile-aware, no global state) | `from untaped.api import app_context`; read sections with `ctx.section(name, Model)` |
+| Build a validated HTTP client (token check + bearer auth + TLS) | `from untaped.api import connected_client` |
 | Standard "setting not configured" error    | `from untaped.api import missing_setting_error`             |
 | Walk paginated API collections             | `from untaped.api import paginate_offset, paginate_pages`   |
 | Read core settings only                    | `from untaped import get_core_settings`                     |

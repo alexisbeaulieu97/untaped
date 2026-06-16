@@ -1,10 +1,9 @@
 """The untaped SDK tool composition contract.
 
 A standalone tool built on the untaped SDK declares a :class:`ToolSpec` and runs
-``run_tool(app, spec)``. ``ToolSpec`` is the SDK-only replacement for the old
-``PluginManifest``: it carries everything the SDK needs to wire a tool's config,
-profile, and skills surfaces and to render command-aware messages. ``SkillAsset``
-replaces the registry ``SkillSpec`` for standalone tools.
+``run_tool(app, spec)``. ``ToolSpec`` carries everything the SDK needs to wire a
+tool's config, profile, and skills surfaces and to render command-aware
+messages; ``SkillAsset`` describes one packaged agent skill the tool ships.
 """
 
 from __future__ import annotations
