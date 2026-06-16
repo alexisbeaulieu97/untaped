@@ -1,10 +1,10 @@
 """Layout protocol mapping the raw config file to effective settings.
 
 A *settings layout* decides how the parsed ``~/.untaped/config.yml`` dict
-becomes the effective settings values: flat top-level keys by default, or a
-plugin-contributed scheme (the untaped-profile plugin layers
-``profiles.default`` and ``profiles.<active>``). At most one plugin may
-contribute a layout via ``PluginManifest.settings_layout``.
+becomes the effective settings values: flat top-level keys by default, or the
+built-in profiles layout (which layers ``profiles.default`` and
+``profiles.<active>``). At most one layout is active, registered via
+:func:`untaped.settings.register_settings_layout`.
 """
 
 from __future__ import annotations

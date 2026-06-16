@@ -145,7 +145,7 @@ Plugin CLIs follow the suite's shared command conventions and helpers from
 `untaped.api`: render `--format`/`--columns` row output with `render_rows`,
 wrap command bodies in `report_errors`, and reject bad usage with
 `raise_usage` (exit 2). Command bodies resolve settings once via
-`plugin_context(profile)` and read their section with
+`app_context()` and read their section with
 `ctx.section("example", ExampleSettings)`; HTTP-backed plugins build their
 client with `connected_client(...)`, which validates required settings and
 raises the standard "set it via `untaped config set ...`" error for missing
