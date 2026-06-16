@@ -1,5 +1,5 @@
-"""Built-in ``untaped config`` command package."""
+"""Config read/write building blocks.
 
-from untaped.config.cli import app
-
-__all__ = ["app"]
+The ``application`` / ``domain`` / ``infrastructure`` subpackages back the
+per-tool ``config`` command group built by :func:`untaped.config_app.build_config_app`.
+"""

@@ -7,14 +7,14 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, Field, SecretStr
 
-from untaped import (
+from untaped.config_schema import (
     find_descriptor,
-    get_settings_model,
     redact_secrets,
     secret_field_paths,
     walk_settings,
 )
 from untaped.settings import (
+    get_settings_model,
     register_profile_settings,
     register_state_settings,
     reset_config_registry_for_tests,

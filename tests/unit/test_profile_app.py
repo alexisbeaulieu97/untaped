@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from untaped import get_settings, register_profile_settings
 from untaped.config_file import read_config_dict
 from untaped.profile import build_profile_app
+from untaped.settings import get_settings, register_profile_settings
 from untaped.testing import CliInvoker
 
 

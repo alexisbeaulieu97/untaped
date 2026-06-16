@@ -13,11 +13,12 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from untaped import get_settings
+from untaped.app_context import app_context
 from untaped.cli import create_app, echo
 from untaped.run import build_tool_app
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker
-from untaped.tool import SkillAsset, ToolSpec, app_context
+from untaped.tool import SkillAsset, ToolSpec
 
 
 class _GithubSettings(BaseModel):

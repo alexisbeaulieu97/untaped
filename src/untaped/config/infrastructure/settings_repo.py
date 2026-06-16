@@ -4,8 +4,8 @@ All scope (profile) awareness goes through the registered settings layout:
 with the flat default, writes land on top-level keys; with the profiles
 layout, writes land in ``profiles.<target>``. SDK-owned *global* sections
 are addressed by a ``<section>.`` prefix and written at the top level
-instead of within a profile. The legacy central config exposes only ``ui``
-as global; SDK tools also treat ``http`` as global via ``global_sections``.
+instead of within a profile. ``global_sections`` controls which sections are
+global; the per-tool ``config`` group passes ``("ui", "http")``.
 """
 
 from __future__ import annotations
@@ -17,25 +17,23 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from untaped import (
-    ConfigError,
-    FieldDescriptor,
-    Settings,
-    find_descriptor,
-    first_validation_error,
-    get_profile_settings_model,
-    get_settings,
-    splice_registered_state,
-    validate_settings_isolated,
-    walk_settings,
-)
 from untaped.config_file import (
     mutate_config,
     read_config_dict,
     set_at_path,
     unset_at_path,
 )
-from untaped.settings import BUILTIN_STATE_SECTIONS, active_settings_layout
+from untaped.config_schema import FieldDescriptor, find_descriptor, walk_settings
+from untaped.errors import ConfigError, first_validation_error
+from untaped.settings import (
+    BUILTIN_STATE_SECTIONS,
+    Settings,
+    active_settings_layout,
+    get_profile_settings_model,
+    get_settings,
+    splice_registered_state,
+    validate_settings_isolated,
+)
 
 GLOBAL_SETTINGS_TARGET = "global"
 #: Sections addressed with a ``<section>.`` prefix and written at the top

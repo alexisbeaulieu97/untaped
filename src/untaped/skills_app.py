@@ -4,9 +4,9 @@
 exposes ``skills list / install`` over its OWN packaged skills (``spec.skills``,
 a tuple of :class:`~untaped.tool.SkillAsset`) instead of the plugin registry.
 
-The selection, planning, and install machinery is shared with the legacy
-``untaped skills`` group (see :mod:`untaped.skills`); this module only swaps the
-skill source from the registry to the tool's own assets and renders/exits.
+The selection, planning, and install machinery lives in :mod:`untaped.skills`;
+this module supplies the skill source from the tool's own assets (rather than a
+plugin registry) and renders/exits.
 """
 
 from __future__ import annotations

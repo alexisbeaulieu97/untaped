@@ -447,14 +447,13 @@ def ui_context(
     stderr: TextIO | None = None,
     strict: bool = True,
 ) -> UiContext:
-    """Build a UI context from active settings and registered theme presets."""
-    from untaped.plugin_registry import current_registry  # noqa: PLC0415
+    """Build a UI context from active settings and the built-in theme presets."""
     from untaped.settings import get_settings  # noqa: PLC0415
     from untaped.verbose import is_verbose  # noqa: PLC0415
 
     try:
         settings = cast(_HasUiSettings, get_settings())
-        theme = resolve_theme(settings.ui, themes=current_registry().themes)
+        theme = resolve_theme(settings.ui)
     except ConfigError:
         if strict:
             raise

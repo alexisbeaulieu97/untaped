@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from untaped.app_context import app_context
 from untaped.errors import ConfigError
-from untaped.tool import ToolSpec, app_context, register_tool
+from untaped.tool import ToolSpec, register_tool
 
 
 class GithubSettings(BaseModel):

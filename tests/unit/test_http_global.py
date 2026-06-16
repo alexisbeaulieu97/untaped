@@ -12,8 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from untaped import get_settings, register_profile_settings
-from untaped.settings import register_settings_layout
+from untaped.settings import get_settings, register_profile_settings, register_settings_layout
 from untaped.settings_layout import ProfilesSettingsLayout
 
 
