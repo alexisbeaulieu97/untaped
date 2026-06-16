@@ -219,12 +219,10 @@ def _set(
         ui_context(strict=False).message("success", _set_message(full, target))
 
 
-def _set_message(full: str, target: str | None) -> str:
+def _set_message(full: str, target: str) -> str:
     path = resolve_config_path()
     if _is_global(full):
         return f"set {full} globally (config: {path})"
-    if target is None:
-        return f"set {full} (config: {path})"
     return f"set {full} in profile {target} (config: {path})"
 
 
@@ -237,7 +235,7 @@ def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
             msg = f"unset {full} globally" if removed else f"{full} was not set globally"
             ui.message("success" if removed else "info", msg)
             return
-        where = f"in profile {target}" if target else "in config"
+        where = f"in profile {target}"
         if removed:
             ui.message("success", f"unset {full} {where}")
         else:

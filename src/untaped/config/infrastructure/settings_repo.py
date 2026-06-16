@@ -46,7 +46,6 @@ class SettingsFileRepository:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
         self._global_descriptor_cache: dict[str, list[FieldDescriptor]] = {}
-        self._global_sections = GLOBAL_SECTIONS
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -65,7 +64,7 @@ class SettingsFileRepository:
 
     def global_section_of(self, key: str) -> str | None:
         """Return the global section a key addresses (``ui.theme`` -> ``ui``), or None."""
-        for section in self._global_sections:
+        for section in GLOBAL_SECTIONS:
             if key.startswith(section + "."):
                 return section
         return None
@@ -90,10 +89,6 @@ class SettingsFileRepository:
             valid = ", ".join(d.key for d in descriptors)
             raise ConfigError(f"unknown {section} setting: {key!r}. Valid keys: {valid}")
         return descriptor
-
-    def ui_descriptors(self) -> list[FieldDescriptor]:
-        """Back-compat alias used by the legacy config CLI + ``GetSetting``."""
-        return self._global_descriptors("ui")
 
     def ui_descriptor(self, key: str) -> FieldDescriptor:
         return self.global_descriptor(key, "ui")
@@ -139,12 +134,12 @@ class SettingsFileRepository:
     def env_value_for(self, descriptor: FieldDescriptor) -> str | None:
         return os.environ.get(self.env_var_for(descriptor))
 
-    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str | None:
+    def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
         """Coerce ``raw_value``, validate against the schema, then persist.
 
-        Returns the resolved target scope name (``None`` for scope-less
-        layouts, ``"global"`` for top-level global settings) so callers can
-        report where the write landed.
+        Returns the resolved target scope name (a profile name, or
+        ``"global"`` for top-level global settings) so callers can report
+        where the write landed.
         """
         section = self.global_section_of(key)
         if section is not None:
@@ -166,6 +161,9 @@ class SettingsFileRepository:
                 ) from exc
 
         mutate_config(_apply)
+        # ``mutate_config`` always runs ``_apply``, which sets ``resolved`` from
+        # ``write_scope`` (always a scope name).
+        assert resolved is not None
         return resolved
 
     def _set_global_value(
@@ -184,7 +182,7 @@ class SettingsFileRepository:
         mutate_config(_apply)
         return GLOBAL_SETTINGS_TARGET
 
-    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str | None]:
+    def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
         """Remove ``key`` from the resolved write scope.
 
         Returns ``(removed, target)``. An explicit ``--target-profile`` the
@@ -214,11 +212,14 @@ class SettingsFileRepository:
                 validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
                 raise ConfigError(
-                    f"unsetting {key!r} would leave {_scope_label(resolved)} invalid: "
+                    f"unsetting {key!r} would leave profile {resolved!r} invalid: "
                     f"{first_validation_error(exc)}"
                 ) from exc
 
         mutate_config(_apply)
+        # ``write_scope`` (run inside ``_apply``, before the early return) always
+        # sets ``resolved`` to a scope name.
+        assert resolved is not None
         return removed, resolved
 
     def _unset_global_value(
@@ -238,10 +239,6 @@ class SettingsFileRepository:
 
         mutate_config(_apply)
         return removed, GLOBAL_SETTINGS_TARGET
-
-
-def _scope_label(scope: str | None) -> str:
-    return f"profile {scope!r}" if scope else "the config"
 
 
 def _validate_global_state(
