@@ -16,7 +16,6 @@ from untaped.settings import (
     register_settings_layout,
     reset_config_registry_for_tests,
 )
-from untaped.settings_layout import reset_flat_layout_warning_for_tests
 
 
 @pytest.fixture(autouse=True)
@@ -31,14 +30,6 @@ def _isolated_install_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "baseline-config.yml"))
     get_settings.cache_clear()
-
-
-@pytest.fixture(autouse=True)
-def _reset_flat_layout_warning() -> Iterator[None]:
-    """Keep the flat layout's warn-once latch from bleeding across tests."""
-    reset_flat_layout_warning_for_tests()
-    yield
-    reset_flat_layout_warning_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -64,10 +55,10 @@ class FakeScopedLayout:
     """A minimal scoped ``SettingsLayout`` for exercising core scope plumbing.
 
     Stores scopes under a ``profiles`` top-level key with a ``default``
-    base layer beneath the ``active`` scope — mirroring the untaped-profile
-    plugin's semantics closely enough to test core's pass-throughs
+    base layer beneath the ``active`` scope — mirroring the built-in
+    profiles layout's semantics closely enough to test core's pass-throughs
     (``--target-profile``, ``--all-profiles``, provenance with names)
-    without depending on the plugin.
+    without the real layout.
     """
 
     supports_scopes = True

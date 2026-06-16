@@ -1,8 +1,9 @@
 """Walk a Pydantic ``Settings`` model into a flat list of leaf descriptors.
 
-Used by ``untaped config list/set/unset`` to enumerate what's configurable
-without hard-coding the schema. Lists, dicts, and other collection types are
-skipped — they are managed by domain-specific plugin commands.
+Used by each tool's ``<tool> config list/set/unset`` to enumerate what's
+configurable without hard-coding the schema. Lists, dicts, and other
+collection types are skipped — they are managed by domain-specific tool
+commands.
 """
 
 from __future__ import annotations

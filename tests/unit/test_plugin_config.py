@@ -61,7 +61,9 @@ def test_get_config_section_resolves_config_and_env(
     _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     register_profile_settings("demo", DemoSettings)
-    _isolated_config.write_text("demo:\n  endpoint: https://configured.example\n")
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    demo:\n      endpoint: https://configured.example\n"
+    )
     monkeypatch.setenv("UNTAPED_DEMO__TOKEN", "from-env")
 
     section = get_config_section("demo", DemoSettings)
@@ -75,7 +77,13 @@ def test_state_sections_are_spliced_from_top_level(_isolated_config: Path) -> No
     register_profile_settings("demo", DemoSettings)
     register_state_settings("demo", DemoState)
     _isolated_config.write_text(
-        "demo:\n  endpoint: https://configured.example\n  entries:\n    - alpha\n"
+        "profiles:\n"
+        "  default:\n"
+        "    demo:\n"
+        "      endpoint: https://configured.example\n"
+        "demo:\n"
+        "  entries:\n"
+        "    - alpha\n"
     )
 
     settings = get_settings()
