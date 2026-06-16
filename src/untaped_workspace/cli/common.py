@@ -37,7 +37,7 @@ def workspace_settings() -> WorkspaceSettings:
     """Typed workspace profile settings for the active profile.
 
     Stays on ``get_config_section`` rather than ``app_context().section``:
-    the CLI app is exercised directly in tests (without plugin registration),
+    the CLI app is exercised directly in tests (without section registration),
     where only ``get_config_section`` can build its one-off section model.
     Profile selection is owned by the root ``--profile`` option (valid in any
     token position); commands no longer take a command-local override.

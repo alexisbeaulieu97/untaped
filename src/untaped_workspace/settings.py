@@ -1,4 +1,4 @@
-"""Settings model contributed by the workspace plugin."""
+"""Settings model for the workspace tool."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Architecture guard tests for the workspace plugin's DDD layers."""
+"""Architecture guard tests for the workspace tool's DDD layers."""
 
 from __future__ import annotations
 
