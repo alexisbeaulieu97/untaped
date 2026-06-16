@@ -6,8 +6,8 @@ helpers can render command-aware guidance ("set it with ``untaped-github
 config set token``") without threading the :class:`~untaped.tool.ToolSpec`
 through every call site.
 
-``None`` means no tool has registered: the legacy umbrella (``untaped``)
-context, where guidance keeps its historical, fully-qualified form.
+``None`` means no tool has registered (e.g. the SDK used without ``run_tool``),
+where guidance falls back to a neutral ``<tool>`` placeholder.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ def set_tool_command(command: str | None) -> None:
 
 
 def current_tool_command() -> str | None:
-    """Return the running tool's command, or ``None`` in the umbrella context."""
+    """Return the running tool's command, or ``None`` when no tool is registered."""
     return _command
 
 

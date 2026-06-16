@@ -77,7 +77,6 @@ jobs:
               "PipeEnvelope",
               "common_kind",
               "connected_client",
-              "missing_setting_error",
           )
           missing = [name for name in required if not hasattr(untaped.api, name)]
           assert not missing, f"missing SDK surface: {missing}"

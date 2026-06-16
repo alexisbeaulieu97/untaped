@@ -41,10 +41,6 @@ def test_effective_honours_explicit_scope() -> None:
     assert effective["github"]["token"] == "T"
 
 
-def test_supports_scopes_is_true() -> None:
-    assert ProfilesSettingsLayout().supports_scopes is True
-
-
 def test_scope_names_sorted() -> None:
     assert ProfilesSettingsLayout().scope_names(_config()) == ["default", "work"]
 

@@ -79,10 +79,3 @@ Per-tool `SKILL.md`s (installed via each tool's `skills` group) cover tool
 usage, and guidance on building tools with the SDK lives in the README and
 `docs/`, not in a packaged agent skill. (The file is removed later, in Phase 3;
 this entry only records the decision.)
-
-## 6. The managed-runtime spec is superseded
-
-The in-process managed-runtime design,
-[`docs/specs/2026-06-15-managed-runtime-uv-project-design.md`](./specs/2026-06-15-managed-runtime-uv-project-design.md)
-(in-process uv-project, "Option 1"), is **superseded** by the SDK-only
-direction recorded here. It is retained for historical context only.

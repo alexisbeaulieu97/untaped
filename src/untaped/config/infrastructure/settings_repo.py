@@ -1,11 +1,9 @@
 """Adapter wiring schema introspection + YAML I/O + env detection together.
 
-All scope (profile) awareness goes through the registered settings layout:
-with the flat default, writes land on top-level keys; with the profiles
-layout, writes land in ``profiles.<target>``. SDK-owned *global* sections
-are addressed by a ``<section>.`` prefix and written at the top level
-instead of within a profile. ``global_sections`` controls which sections are
-global; the per-tool ``config`` group passes ``("ui", "http")``.
+Scope (profile) awareness goes through the settings layout: writes land in
+``profiles.<target>``. SDK-owned *global* sections (``ui`` and ``http``) are
+addressed by a ``<section>.`` prefix and written at the top level instead of
+within a profile.
 """
 
 from __future__ import annotations
@@ -37,23 +35,18 @@ from untaped.settings import (
 
 GLOBAL_SETTINGS_TARGET = "global"
 #: Sections addressed with a ``<section>.`` prefix and written at the top
-#: level rather than within a profile. Legacy central config: ``ui`` only.
-DEFAULT_GLOBAL_SECTIONS = ("ui",)
+#: level rather than within a profile: the SDK globals ``ui`` and ``http``.
+GLOBAL_SECTIONS = ("ui", "http")
 
 
 class SettingsFileRepository:
     """Single concrete adapter for everything ``config`` needs."""
 
-    def __init__(
-        self,
-        settings_cls: type[Settings] | None = None,
-        *,
-        global_sections: tuple[str, ...] = DEFAULT_GLOBAL_SECTIONS,
-    ) -> None:
+    def __init__(self, settings_cls: type[Settings] | None = None) -> None:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
         self._global_descriptor_cache: dict[str, list[FieldDescriptor]] = {}
-        self._global_sections = tuple(global_sections)
+        self._global_sections = GLOBAL_SECTIONS
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -118,10 +111,6 @@ class SettingsFileRepository:
             return active_settings_layout().provenance(self.yaml_dict())
         except ConfigError:
             return {}
-
-    def supports_profiles(self) -> bool:
-        """Whether the active settings layout has selectable scopes."""
-        return active_settings_layout().supports_scopes
 
     def profile_names(self) -> list[str]:
         return active_settings_layout().scope_names(self.yaml_dict())

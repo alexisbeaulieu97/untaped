@@ -29,15 +29,15 @@ from untaped.cli import (
 )
 from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
 from untaped.errors import ConfigError, HttpError, UntapedError, first_validation_error
-from untaped.http import HttpClient, resolve_verify
-from untaped.output import OutputFormat
-from untaped.pipe import PipeEnvelope, common_kind
-from untaped.plugin_http import (
+from untaped.http import (
+    HttpClient,
     connected_client,
-    missing_setting_error,
     paginate_offset,
     paginate_pages,
+    resolve_verify,
 )
+from untaped.output import OutputFormat
+from untaped.pipe import PipeEnvelope, common_kind
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.run import build_tool_app, run_tool
@@ -95,7 +95,6 @@ __all__ = [
     "get_core_settings",
     "get_settings",
     "invalidate_settings_cache",
-    "missing_setting_error",
     "mutate_tool_state",
     "paginate_offset",
     "paginate_pages",

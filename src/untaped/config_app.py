@@ -38,7 +38,7 @@ from untaped.config.application import (
     UnsetSetting,
 )
 from untaped.config.domain import SettingEntry
-from untaped.config.infrastructure import SettingsFileRepository
+from untaped.config.infrastructure import GLOBAL_SECTIONS, SettingsFileRepository
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.output import OutputFormat
@@ -46,9 +46,6 @@ from untaped.prompts import PromptChoice
 from untaped.settings import resolve_config_path
 from untaped.tool import ToolSpec
 from untaped.ui import BUILTIN_THEMES, UiContext, ui_context
-
-#: Sections the per-tool config group treats as top-level SDK globals.
-GLOBAL_SECTIONS = ("ui", "http")
 
 
 @dataclass(frozen=True)
@@ -61,7 +58,7 @@ class _Ctx:
     state_fields: frozenset[str]
 
     def repo(self) -> SettingsFileRepository:
-        return SettingsFileRepository(global_sections=GLOBAL_SECTIONS)
+        return SettingsFileRepository()
 
 
 def build_config_app(spec: ToolSpec) -> Any:
@@ -186,8 +183,6 @@ def _list(
     with report_errors():
         repo = ctx.repo()
         if all_profiles:
-            if not repo.supports_profiles():
-                raise ConfigError("--all-profiles requires profiles")
             entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
         else:
             entries = ListSettings(repo)(reveal_secrets=show_secrets)

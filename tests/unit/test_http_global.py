@@ -12,8 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from untaped.settings import get_settings, register_profile_settings, register_settings_layout
-from untaped.settings_layout import ProfilesSettingsLayout
+from untaped.settings import get_settings, register_profile_settings
 
 
 class _GithubSettings(BaseModel):
@@ -21,7 +20,6 @@ class _GithubSettings(BaseModel):
 
 
 def test_top_level_http_resolves_under_profiles_layout(_isolated_config: Path) -> None:
-    register_settings_layout(lambda: ProfilesSettingsLayout(), key="sdk:profiles")
     register_profile_settings("github", _GithubSettings)
     _isolated_config.write_text(
         "http:\n  verify_ssl: false\n"

@@ -15,7 +15,7 @@ import pytest
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
-from untaped.plugin_http import missing_setting_error
+from untaped.http import missing_setting_error
 from untaped.settings_layout import ProfilesSettingsLayout
 from untaped.tool import ToolSpec, register_tool
 
