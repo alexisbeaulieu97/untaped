@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from untaped.errors import ConfigError
 from untaped.settings import HttpSettings, Settings, get_settings
-from untaped.ui import UiContext, ui_context
+from untaped.ui import BUILTIN_THEMES, UiContext, UiSettings, resolve_theme, ui_context
 
 
 @dataclass(frozen=True)
@@ -49,8 +49,20 @@ class AppContext:
         return self.settings.http
 
     def ui(self, *, strict: bool = True) -> UiContext:
-        """The themed UI context for messages and prompts."""
-        return ui_context(strict=strict)
+        """The themed UI context for messages and prompts.
+
+        Built from this context's frozen settings snapshot, so the theme is
+        stable for the life of the context even if the settings cache is later
+        invalidated. ``strict=False`` degrades a theme-resolution
+        :class:`ConfigError` (e.g. an unknown theme name) to the default theme.
+        """
+        try:
+            theme = resolve_theme(self.section("ui", UiSettings))
+        except ConfigError:
+            if strict:
+                raise
+            theme = BUILTIN_THEMES["default"]
+        return ui_context(theme=theme)
 
 
 def app_context() -> AppContext:

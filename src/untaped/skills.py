@@ -7,8 +7,10 @@ top of the selection, planning, and copy machinery defined here.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -202,6 +204,11 @@ def _plan_install(
     plan: list[tuple[InstallableSkill, SkillInstallDestination, Path]] = []
     for name in selected_names:
         spec = skills[name]
+        # Validate every source up front, before any destructive step runs, so
+        # an invalid source aborts the whole install with nothing removed
+        # (``is_dir`` is False for both a missing path and a non-directory).
+        if not spec.source.is_dir():
+            raise ConfigError(f"skill source missing: {name} ({spec.source})")
         for target_destination in targets:
             destination = target_destination.root / name
             if destination.exists() and not force:
@@ -217,30 +224,40 @@ def _install_skill(
     destination: Path,
     force: bool,
 ) -> None:
-    if destination.exists():
-        if not force:
-            raise ConfigError(f"skill already exists: {spec.name}")
-        shutil.rmtree(destination)
+    if destination.exists() and not force:
+        raise ConfigError(f"skill already exists: {spec.name}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(
-        spec.source,
-        destination,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
-    destination.joinpath(".untaped-skill.json").write_text(
-        json.dumps(
-            {
-                "install_root": str(target_destination.root),
-                "name": spec.name,
-                "scope": target_destination.scope.value,
-                "source": str(spec.source),
-                "target": target_destination.target,
-            },
-            indent=2,
-            sort_keys=True,
+    # Stage the full copy beside the destination, then swap it in atomically:
+    # the old skill is removed only after the new one is fully built, so a
+    # mid-copy failure never destroys an existing install (mirrors the
+    # tmp + os.replace idiom in config_file.write_config_dict).
+    stage = Path(tempfile.mkdtemp(dir=destination.parent, prefix=f".{destination.name}.tmp-"))
+    try:
+        staged_skill = stage / destination.name
+        shutil.copytree(
+            spec.source,
+            staged_skill,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
-        + "\n"
-    )
+        staged_skill.joinpath(".untaped-skill.json").write_text(
+            json.dumps(
+                {
+                    "install_root": str(target_destination.root),
+                    "name": spec.name,
+                    "scope": target_destination.scope.value,
+                    "source": str(spec.source),
+                    "target": target_destination.target,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        if destination.exists():
+            shutil.rmtree(destination)
+        os.replace(staged_skill, destination)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
 
 
 def _codex_destination(
