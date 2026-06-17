@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from untaped.errors import ConfigError
 from untaped.output import format_output
 from untaped.ui import (
     BUILTIN_THEMES,
@@ -308,6 +309,37 @@ def test_ui_context_reflects_active_verbose_state(
         assert ui_context(strict=False).verbose is True
     finally:
         verbose.reset()
+        get_settings.cache_clear()
+
+
+def test_ui_context_degrades_unknown_theme_to_default_when_not_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.settings import get_settings
+
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("ui:\n  theme: nonexistent\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+    try:
+        assert ui_context(strict=False).theme == BUILTIN_THEMES["default"]
+    finally:
+        get_settings.cache_clear()
+
+
+def test_ui_context_raises_on_unknown_theme_when_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.settings import get_settings
+
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("ui:\n  theme: nonexistent\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ConfigError, match="unknown UI theme"):
+            ui_context(strict=True)
+    finally:
         get_settings.cache_clear()
 
 
