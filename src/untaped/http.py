@@ -21,7 +21,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.errors import ConfigError, HttpError, UntapedError
+from untaped.errors import (
+    ConfigError,
+    HttpError,
+    HttpStatusError,
+    HttpTransportError,
+    UntapedError,
+)
 from untaped.identity import current_tool_command
 from untaped.settings import HttpSettings
 
@@ -67,6 +73,7 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         auth: AuthFn | None = None,
         verify: VerifyTypes = True,
+        proxy: str | None = None,
     ) -> None:
         import httpx  # noqa: PLC0415
 
@@ -75,6 +82,7 @@ class HttpClient:
             timeout=timeout,
             headers=headers or {},
             verify=verify,
+            proxy=proxy,
         )
         self._auth = auth
 
@@ -87,9 +95,9 @@ class HttpClient:
         try:
             response = self._client.send(request)
         except httpx.HTTPError as exc:
-            raise HttpError(str(exc), url=str(request.url)) from exc
+            raise HttpTransportError(str(exc), url=str(request.url)) from exc
         if response.status_code >= 400:
-            raise HttpError(
+            raise HttpStatusError(
                 f"HTTP {response.status_code} for {request.url}",
                 status_code=response.status_code,
                 url=str(request.url),
@@ -268,10 +276,13 @@ def connected_client(
         if token:
             request_headers.setdefault("Authorization", f"Bearer {token}")
 
+    http_settings = http or HttpSettings()
     return HttpClient(
         base_url=values[base_url_field].rstrip("/"),
         headers=request_headers,
-        verify=resolve_verify(http or HttpSettings()),
+        verify=resolve_verify(http_settings),
+        timeout=http_settings.timeout,
+        proxy=http_settings.proxy,
     )
 
 

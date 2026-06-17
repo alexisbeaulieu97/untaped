@@ -43,6 +43,26 @@ class HttpError(UntapedError):
         self.body = body
 
 
+class HttpStatusError(HttpError):
+    """Raised when the server responded with a non-2xx status (>=400).
+
+    ``status_code`` is always set (alongside ``url`` and a ``body`` snippet), so
+    callers can act on "the server said no" — inspect the status/body — as
+    distinct from never reaching the server (:class:`HttpTransportError`). A
+    successful response whose body is unusable (bad JSON/shape) is *not* this:
+    it stays a plain :class:`HttpError`.
+    """
+
+
+class HttpTransportError(HttpError):
+    """Raised when the request never produced a response.
+
+    Connection failures, timeouts, and DNS errors map here; ``status_code`` is
+    ``None`` because no status was ever received. These are typically transient
+    and worth retrying, unlike :class:`HttpStatusError`.
+    """
+
+
 def first_validation_error(exc: ValidationError) -> str:
     """Format the first issue from a Pydantic ``ValidationError`` as ``loc: msg``."""
     errs = exc.errors()
