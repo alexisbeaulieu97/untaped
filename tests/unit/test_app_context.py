@@ -65,13 +65,13 @@ def test_ui_uses_settings_snapshot_not_later_cache_state(_isolated_config: Path)
     """``ctx.ui()`` builds from the context's frozen settings snapshot, so a
     settings-cache invalidation after the context exists must not change the
     theme it renders with."""
-    _isolated_config.write_text("ui:\n  theme: classic\n")
+    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      theme: classic\n")
     get_settings.cache_clear()
     ctx = app_context()
     snapshot_theme = ctx.ui().theme
 
-    # Change the global theme and drop the cache after the context was built.
-    _isolated_config.write_text("ui:\n  theme: default\n")
+    # Change the theme and drop the cache after the context was built.
+    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      theme: default\n")
     get_settings.cache_clear()
 
     # A fresh, re-reading context observes the change...
@@ -84,7 +84,7 @@ def test_ui_degrades_unknown_theme_per_strict_flag(_isolated_config: Path) -> No
     """``ctx.ui()`` shares one degrade policy with ``ui_context``: an unknown
     theme name falls back to the default preset when ``strict=False`` and raises
     when ``strict=True``."""
-    _isolated_config.write_text("ui:\n  theme: nonexistent\n")
+    _isolated_config.write_text("profiles:\n  default:\n    ui:\n      theme: nonexistent\n")
     get_settings.cache_clear()
     ctx = app_context()
 

@@ -7,9 +7,10 @@ about httpx-specific exceptions.
 TLS verification is centralised in :func:`resolve_verify`. By default we read
 the OS trust store via :mod:`truststore`, which transparently picks up
 corporate CAs that have been installed system-wide. Override this with
-``http.ca_bundle`` in settings to pin a specific PEM file, or
-``http.verify_ssl: false`` to disable verification (escape hatch — leaves
-traffic open to MITM).
+``http.ca_bundle`` to pin a specific PEM file, ``http.verify_hostname: false``
+to keep chain verification but skip the hostname/SAN check (for a self-signed
+cert that modern Python rejects on hostname), or ``http.verify_ssl: false`` to
+disable verification entirely (escape hatch — leaves traffic open to MITM).
 """
 
 from __future__ import annotations
@@ -29,9 +30,11 @@ from untaped.errors import (
     UntapedError,
 )
 from untaped.identity import current_tool_command
-from untaped.settings import HttpSettings
+from untaped.settings import HttpSettings, get_settings
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import httpx
 
 type AuthFn = Callable[[httpx.Request], httpx.Request]
@@ -44,19 +47,33 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
 
     Resolution order:
 
-    1. If ``verify_ssl`` is ``False`` → return ``False`` (no verification).
-    2. If ``ca_bundle`` is set → return the absolute path of that file.
-    3. Otherwise → return an SSLContext backed by the OS trust store
-       (``truststore``).
+    1. ``verify_ssl`` is ``False`` → ``False`` (no verification at all).
+    2. ``verify_hostname`` and ``ca_bundle`` set → the absolute path of that
+       file (httpx builds a default, hostname-checking context from it).
+    3. Otherwise → an :class:`ssl.SSLContext` whose ``check_hostname`` mirrors
+       ``verify_hostname``: the OS trust store (``truststore``) when no
+       ``ca_bundle``, else a default context loaded from the bundle.
 
-    The truststore default makes corporate CAs that are installed in the
-    OS keychain (macOS Keychain, Windows certstore, Linux system trust)
-    "just work" without per-user configuration.
+    ``verify_hostname: false`` keeps chain verification but drops the
+    hostname/SAN check — the case where a trusted self-signed cert is still
+    rejected by modern Python. The truststore default makes corporate CAs in
+    the OS keychain "just work" without per-user configuration.
     """
     if not http.verify_ssl:
         return False
-    if http.ca_bundle is not None:
+    # Fast path: hostname-checked + a pinned CA → hand httpx the path and let it
+    # build the (equivalent) default, hostname-checking context itself.
+    if http.verify_hostname and http.ca_bundle is not None:
         return str(http.ca_bundle.expanduser())
+    context = _ssl_context(http.ca_bundle)
+    context.check_hostname = http.verify_hostname
+    return context
+
+
+def _ssl_context(ca_bundle: Path | None) -> ssl.SSLContext:
+    """Build an SSLContext: a bundle-loaded default context, else OS trust."""
+    if ca_bundle is not None:
+        return ssl.create_default_context(cafile=str(ca_bundle.expanduser()))
     import truststore  # noqa: PLC0415
 
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -254,7 +271,9 @@ def connected_client(
     (:class:`SecretStr` values are unwrapped); a missing one raises the
     standard :func:`missing_setting_error`. ``bearer_token_field`` (when set
     and configured) becomes an ``Authorization: Bearer`` header unless the
-    caller supplied their own.
+    caller supplied their own. ``http`` defaults to the active profile's
+    resolved :class:`HttpSettings` (proxy/ca/verify), so per-profile HTTP
+    config takes effect without each tool threading it explicitly.
     """
     values: dict[str, str] = {}
     # ``base_url_field`` and ``bearer_token_field`` are always walked — even
@@ -276,7 +295,7 @@ def connected_client(
         if token:
             request_headers.setdefault("Authorization", f"Bearer {token}")
 
-    http_settings = http or HttpSettings()
+    http_settings = http if http is not None else get_settings().http
     return HttpClient(
         base_url=values[base_url_field].rstrip("/"),
         headers=request_headers,

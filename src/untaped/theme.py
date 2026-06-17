@@ -39,7 +39,7 @@ class ThemeSpec(BaseModel):
 
 
 class UiSettings(BaseModel):
-    """Global UI preferences loaded from the top-level ``ui`` config section."""
+    """Per-profile UI presentation preferences (the ``ui`` section of a profile)."""
 
     theme: str = "default"
     border: BorderStyle | None = None

@@ -14,12 +14,7 @@ class GetSetting:
         self._repo = repo
 
     def __call__(self, key: str, *, reveal_secrets: bool = False) -> SettingEntry:
-        section = self._repo.global_section_of(key)
-        descriptor = (
-            self._repo.global_descriptor(key, section)
-            if section is not None
-            else self._repo.descriptor(key)
-        )
+        descriptor = self._repo.descriptor(key)
         return setting_entry_for_descriptor(
             self._repo,
             descriptor,

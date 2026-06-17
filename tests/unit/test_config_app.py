@@ -1,9 +1,10 @@
 """End-to-end tests for the SDK config command-group factory.
 
 ``build_config_app`` produces the ``<tool> config …`` group that ``run_tool``
-mounts. Key model: bare keys address the tool's own section; ``http.*`` and
-``ui.theme`` are SDK globals written at the top level; tool-managed state
-fields are not settable. Exercised through the CLI (the public surface): every
+mounts. Key model: bare keys address the tool's own section; ``http.*``,
+``ui.*`` and ``log_level`` are SDK-owned per-profile settings written within
+the active (or ``--target-profile``) profile like any other key; tool-managed
+state fields are not settable. Exercised through the CLI (the public surface): every
 assertion is on a process exit code, on captured stdout/stderr, or on the YAML
 that lands in ``~/.untaped/config.yml`` read back from disk.
 
@@ -144,20 +145,40 @@ def test_set_bare_key_writes_to_section_within_a_profile(app, _isolated_config: 
     assert data["profiles"]["default"]["github"]["token"] == "ghp_x"
 
 
-def test_set_http_writes_top_level_global(app, _isolated_config: Path) -> None:
+def test_set_http_writes_active_profile(app, _isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "false"])
     assert result.exit_code == 0, result.output
-    assert "set http.verify_ssl globally" in result.output
+    assert "set http.verify_ssl in profile default" in result.output
     data = read_config_dict(_isolated_config)
-    assert data["http"] == {"verify_ssl": False}
-    assert "profiles" not in data  # global, not profile-scoped
+    assert data["profiles"]["default"]["http"] == {"verify_ssl": False}
 
 
-def test_set_ui_theme_writes_top_level_global(app, _isolated_config: Path) -> None:
+def test_set_ui_theme_writes_active_profile(app, _isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["set", "ui.theme", "quiet"])
     assert result.exit_code == 0, result.output
-    assert "set ui.theme globally" in result.output
-    assert read_config_dict(_isolated_config)["ui"] == {"theme": "quiet"}
+    assert "set ui.theme in profile default" in result.output
+    assert read_config_dict(_isolated_config)["profiles"]["default"]["ui"] == {"theme": "quiet"}
+
+
+def test_sdk_http_key_wins_over_a_like_named_tool_field(_isolated_config: Path) -> None:
+    """A tool field literally named ``http`` must not capture the SDK ``http.*``
+    key — SDK roots take precedence in key resolution."""
+
+    class _Profile(BaseModel):
+        http: bool = False  # collides with the SDK ``http`` root by name
+
+    spec = ToolSpec(command="untaped-demo", section="demo", profile_model=_Profile)
+    register_tool(spec)
+    get_settings.cache_clear()
+    app = build_config_app(spec)
+
+    result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "false"])
+    assert result.exit_code == 0, result.output
+    assert "set http.verify_ssl in profile default" in result.output
+    data = read_config_dict(_isolated_config)
+    # Lands on the SDK http section, not demo.http.
+    assert data["profiles"]["default"]["http"] == {"verify_ssl": False}
+    assert "http" not in data["profiles"]["default"].get("demo", {})
 
 
 def test_set_coerces_value_as_yaml_scalar(app, _isolated_config: Path) -> None:
@@ -201,21 +222,31 @@ def test_set_target_profile_unknown_scope_on_default_layout_errors(
     assert not _isolated_config.exists()
 
 
-def test_set_target_profile_with_global_key_is_rejected(app, _isolated_config: Path) -> None:
+def test_set_http_target_profile_writes_named_profile(scoped_app, _isolated_config: Path) -> None:
+    """http is per-profile: ``--target-profile`` scopes it to one profile."""
+    _isolated_config.write_text("profiles:\n  default: {}\n  prod: {}\n", encoding="utf-8")
+    get_settings.cache_clear()
     result = CliInvoker().invoke(
-        app, ["set", "http.verify_ssl", "false", "--target-profile", "prod"]
+        scoped_app, ["set", "http.verify_ssl", "false", "--target-profile", "prod"]
     )
-    assert result.exit_code != 0
-    assert "global" in result.output
-    assert "--target-profile" in result.output
-    assert not _isolated_config.exists()
+    assert result.exit_code == 0, result.output
+    assert "set http.verify_ssl in profile prod" in result.output
+    data = read_config_dict(_isolated_config)
+    assert data["profiles"]["prod"]["http"] == {"verify_ssl": False}
+    assert data["profiles"]["default"] == {}
 
 
-def test_set_target_profile_with_ui_theme_is_rejected(app, _isolated_config: Path) -> None:
-    result = CliInvoker().invoke(app, ["set", "ui.theme", "quiet", "--target-profile", "prod"])
-    assert result.exit_code != 0
-    assert "global" in result.output
-    assert not _isolated_config.exists()
+def test_set_ui_theme_target_profile_writes_named_profile(
+    scoped_app, _isolated_config: Path
+) -> None:
+    _isolated_config.write_text("profiles:\n  default: {}\n  prod: {}\n", encoding="utf-8")
+    get_settings.cache_clear()
+    result = CliInvoker().invoke(
+        scoped_app, ["set", "ui.theme", "quiet", "--target-profile", "prod"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "set ui.theme in profile prod" in result.output
+    assert read_config_dict(_isolated_config)["profiles"]["prod"]["ui"] == {"theme": "quiet"}
 
 
 # ── set: --stdin ─────────────────────────────────────────────────────────────
@@ -231,7 +262,9 @@ def test_set_stdin_reads_single_value(app, _isolated_config: Path) -> None:
 def test_set_stdin_preserves_yaml_scalar_parsing(app, _isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "--stdin"], input="false\n")
     assert result.exit_code == 0, result.output
-    assert read_config_dict(_isolated_config)["http"] == {"verify_ssl": False}
+    assert read_config_dict(_isolated_config)["profiles"]["default"]["http"] == {
+        "verify_ssl": False
+    }
 
 
 def test_set_stdin_rejects_empty_value(app, _isolated_config: Path) -> None:
@@ -394,8 +427,8 @@ def test_set_prompt_select_for_ui_theme(
     assert ("default", "default") in ui.calls["choices"]
     assert ui.calls["default"] == "default"
     assert ui.calls["search"] is True
-    assert "set ui.theme globally" in ui.calls["status_text"]
-    assert read_config_dict(_isolated_config)["ui"] == {"theme": "classic"}
+    assert "set ui.theme in profile default" in ui.calls["status_text"]
+    assert read_config_dict(_isolated_config)["profiles"]["default"]["ui"] == {"theme": "classic"}
 
 
 def test_set_prompt_prefills_default_from_target_profile(
@@ -580,13 +613,15 @@ def test_unset_bare_key_removes_from_section(app, _isolated_config: Path) -> Non
     assert "token" not in github
 
 
-def test_unset_global_removes_top_level(app, _isolated_config: Path) -> None:
-    _isolated_config.write_text("http:\n  verify_ssl: false\n", encoding="utf-8")
+def test_unset_http_removes_from_active_profile(app, _isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        "profiles:\n  default:\n    http:\n      verify_ssl: false\n", encoding="utf-8"
+    )
     get_settings.cache_clear()
     result = CliInvoker().invoke(app, ["unset", "http.verify_ssl"])
     assert result.exit_code == 0, result.output
-    assert "unset http.verify_ssl globally" in result.output
-    assert "http" not in read_config_dict(_isolated_config)
+    assert "unset http.verify_ssl in profile default" in result.output
+    assert "http" not in read_config_dict(_isolated_config)["profiles"]["default"]
 
 
 def test_unset_clean_noop_when_not_set(app, _isolated_config: Path) -> None:
@@ -595,10 +630,10 @@ def test_unset_clean_noop_when_not_set(app, _isolated_config: Path) -> None:
     assert "github.token was not set in profile default" in result.output
 
 
-def test_unset_global_clean_noop_when_not_set(app, _isolated_config: Path) -> None:
+def test_unset_http_clean_noop_when_not_set(app, _isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["unset", "http.verify_ssl"])
     assert result.exit_code == 0, result.output
-    assert "http.verify_ssl was not set globally" in result.output
+    assert "http.verify_ssl was not set in profile default" in result.output
 
 
 def test_unset_works_after_set(app, _isolated_config: Path) -> None:
