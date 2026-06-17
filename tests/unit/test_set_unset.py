@@ -50,16 +50,16 @@ def test_set_creates_nested_path(_isolate_settings: Path) -> None:
 
 
 def test_set_coerces_yaml_scalars(_isolate_settings: Path) -> None:
-    # ``http`` is an SDK global section (like ``ui``), so it is written at the
-    # top level rather than within ``profiles.default``.
+    # ``http`` is an ordinary per-profile setting now, written under the active
+    # profile like any other key.
     SetSetting(SettingsFileRepository())("http.verify_ssl", "false")
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"http": {"verify_ssl": False}}
+    assert data == {"profiles": {"default": {"http": {"verify_ssl": False}}}}
 
 
 def test_set_validates_via_pydantic(_isolate_settings: Path) -> None:
-    # `http` is an SDK-owned global section, so an invalid value is rejected
-    # via state-section validation; the offending key is still named.
+    # An invalid http value is rejected via the profile schema; the offending
+    # key is still named in the error.
     with pytest.raises(ConfigError, match="verify_ssl"):
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
@@ -81,8 +81,8 @@ def test_set_validation_isolated_from_env_overlay(
     monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
     # Validation judges the raw YAML write, not the env-overlaid value, so the
     # bad disk write is caught even though the env var would resolve to a valid
-    # bool. (`http` validates via state-section splicing now, but on the raw
-    # dict — the env-isolation property is unchanged.)
+    # bool. (`http` validates via the profile schema on the raw dict — the
+    # env-isolation property is unchanged.)
     with pytest.raises(ConfigError, match="verify_ssl"):
         SetSetting(SettingsFileRepository())("http.verify_ssl", "not-a-bool-or-anything")
 
@@ -128,25 +128,25 @@ def test_set_preserves_other_keys_and_state(_isolate_settings: Path) -> None:
     assert data["workspace"]["workspaces"][0]["name"] == "ws1"
 
 
-def test_set_ui_theme_writes_top_level_ui(_isolate_settings: Path) -> None:
+def test_set_ui_theme_writes_into_default_profile(_isolate_settings: Path) -> None:
     target = SetSetting(SettingsFileRepository())("ui.theme", "classic")
 
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert target == "global"
-    assert data == {"ui": {"theme": "classic"}}
+    assert target == "default"
+    assert data == {"profiles": {"default": {"ui": {"theme": "classic"}}}}
 
 
 def test_set_ui_collection_view_accepts_valid_literal(_isolate_settings: Path) -> None:
     SetSetting(SettingsFileRepository())("ui.collection_view", "list")
 
     data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"ui": {"collection_view": "list"}}
+    assert data == {"profiles": {"default": {"ui": {"collection_view": "list"}}}}
 
 
 def test_set_ui_collection_view_rejects_invalid_literal_atomically(
     _isolate_settings: Path,
 ) -> None:
-    original = "ui:\n  theme: classic\n"
+    original = "profiles:\n  default:\n    ui:\n      theme: classic\n"
     _isolate_settings.write_text(original)
 
     with pytest.raises(ConfigError, match="invalid value"):
@@ -155,14 +155,14 @@ def test_set_ui_collection_view_rejects_invalid_literal_atomically(
     assert _isolate_settings.read_text() == original
 
 
-def test_set_rejects_target_profile_for_global_ui(_isolate_settings: Path) -> None:
-    original = "log_level: INFO\n"
-    _isolate_settings.write_text(original)
-
-    with pytest.raises(ConfigError, match="global"):
-        SetSetting(SettingsFileRepository())("ui.theme", "classic", profile="prod")
-
-    assert _isolate_settings.read_text() == original
+def test_set_http_proxy_into_named_profile(_isolate_settings: Path) -> None:
+    """``http`` is per-profile now: ``--target-profile`` scopes it to one profile."""
+    _isolate_settings.write_text("profiles:\n  default: {}\n  work: {}\n")
+    target = SetSetting(SettingsFileRepository())("http.proxy", "http://p:8080", profile="work")
+    assert target == "work"
+    data = yaml.safe_load(_isolate_settings.read_text())
+    assert data["profiles"]["work"] == {"http": {"proxy": "http://p:8080"}}
+    assert data["profiles"]["default"] == {}
 
 
 def test_set_rejects_non_ui_top_level_state(_isolate_settings: Path) -> None:
@@ -221,25 +221,18 @@ def test_unset_rejects_unknown_target_profile(_isolate_settings: Path) -> None:
     assert _isolate_settings.read_text() == original
 
 
-def test_unset_ui_theme_removes_top_level_key_and_cleans_empty_ui(
-    _isolate_settings: Path,
-) -> None:
-    _isolate_settings.write_text("ui:\n  theme: classic\nlog_level: DEBUG\n")
+def test_unset_ui_theme_removes_from_default_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text(
+        "profiles:\n  default:\n    log_level: DEBUG\n    ui:\n      theme: classic\n"
+    )
 
     removed, target = UnsetSetting(SettingsFileRepository())("ui.theme")
 
     assert removed is True
-    assert target == "global"
-    assert yaml.safe_load(_isolate_settings.read_text()) == {"log_level": "DEBUG"}
-
-
-def test_unset_rejects_target_profile_for_global_ui(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("ui:\n  theme: classic\n")
-
-    with pytest.raises(ConfigError, match="global"):
-        UnsetSetting(SettingsFileRepository())("ui.theme", profile="prod")
-
-    assert yaml.safe_load(_isolate_settings.read_text()) == {"ui": {"theme": "classic"}}
+    assert target == "default"
+    assert yaml.safe_load(_isolate_settings.read_text()) == {
+        "profiles": {"default": {"log_level": "DEBUG"}}
+    }
 
 
 # ── issue #136: post-unset schema validation ─────────────────────────────────

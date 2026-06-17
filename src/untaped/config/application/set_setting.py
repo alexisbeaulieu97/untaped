@@ -9,8 +9,8 @@ class SetSetting:
     """Validate then persist ``key = value`` in the user's config file.
 
     ``profile`` selects the target profile (defaults to the active one).
-    Returns the resolved scope name (a profile name, or ``"global"`` for
-    global settings) so callers can echo where the write landed.
+    Returns the resolved profile name so callers can echo where the write
+    landed.
     """
 
     def __init__(self, repo: SettingsRepository) -> None:

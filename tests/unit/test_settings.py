@@ -52,17 +52,16 @@ def test_defaults_when_no_config_file(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_loads_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = tmp_path / "config.yml"
-    # ``log_level`` and tool sections (``demo``) are profile-scoped, so they
-    # live under ``profiles.default``; ``http`` is a top-level-spliced global
-    # section and stays at the top level.
+    # ``log_level``, ``http`` and tool sections (``demo``) are all profile-scoped
+    # now, so they live under ``profiles.default``.
     cfg.write_text(
         """
-        http:
-          ca_bundle: /etc/ssl/corp-ca.pem
-          verify_ssl: true
         profiles:
           default:
             log_level: DEBUG
+            http:
+              ca_bundle: /etc/ssl/corp-ca.pem
+              verify_ssl: true
             demo:
               base_url: https://aap.example.com
               token: secret
@@ -129,24 +128,23 @@ def test_ui_settings_default_to_global_default_theme(
     assert s.ui.collection_view is None
 
 
-def test_ui_settings_load_from_top_level_yaml(
+def test_ui_settings_load_from_profile_yaml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
-    # ``ui`` is a top-level-spliced global section and stays at the top
-    # level; ``log_level`` is profile-scoped and lives under
+    # ``ui`` (like ``log_level``) is profile-scoped now and lives under
     # ``profiles.default``.
     cfg.write_text(
         """
-        ui:
-          theme: compact
-          border: square
-          collection_view: list
-          symbols:
-            warning: "!"
         profiles:
           default:
             log_level: DEBUG
+            ui:
+              theme: compact
+              border: square
+              collection_view: list
+              symbols:
+                warning: "!"
         """
     )
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

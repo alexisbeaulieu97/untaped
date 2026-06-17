@@ -1,19 +1,17 @@
 """Adapter wiring schema introspection + YAML I/O + env detection together.
 
-Scope (profile) awareness goes through the settings layout: writes land in
-``profiles.<target>``. SDK-owned *global* sections (``ui`` and ``http``) are
-addressed by a ``<section>.`` prefix and written at the top level instead of
-within a profile.
+Scope (profile) awareness goes through the settings layout: every write —
+including ``http``/``ui``, which are ordinary per-profile settings now — lands
+in ``profiles.<target>``.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import replace
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from untaped.config_file import (
     mutate_config,
@@ -24,7 +22,6 @@ from untaped.config_file import (
 from untaped.config_schema import FieldDescriptor, find_descriptor, walk_settings
 from untaped.errors import ConfigError, first_validation_error
 from untaped.settings import (
-    BUILTIN_STATE_SECTIONS,
     Settings,
     active_settings_layout,
     get_profile_settings_model,
@@ -33,11 +30,6 @@ from untaped.settings import (
     validate_settings_isolated,
 )
 
-GLOBAL_SETTINGS_TARGET = "global"
-#: Sections addressed with a ``<section>.`` prefix and written at the top
-#: level rather than within a profile: the SDK globals ``ui`` and ``http``.
-GLOBAL_SECTIONS = ("ui", "http")
-
 
 class SettingsFileRepository:
     """Single concrete adapter for everything ``config`` needs."""
@@ -45,7 +37,6 @@ class SettingsFileRepository:
     def __init__(self, settings_cls: type[Settings] | None = None) -> None:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
-        self._global_descriptor_cache: dict[str, list[FieldDescriptor]] = {}
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -58,36 +49,6 @@ class SettingsFileRepository:
         if descriptor is None:
             valid = ", ".join(d.key for d in descriptors)
             raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}")
-        return descriptor
-
-    # ----- global (top-level) sections -----
-
-    def global_section_of(self, key: str) -> str | None:
-        """Return the global section a key addresses (``ui.theme`` -> ``ui``), or None."""
-        for section in GLOBAL_SECTIONS:
-            if key.startswith(section + "."):
-                return section
-        return None
-
-    def _global_model(self, section: str) -> type[BaseModel]:
-        return BUILTIN_STATE_SECTIONS[section]
-
-    def _global_descriptors(self, section: str) -> list[FieldDescriptor]:
-        cached = self._global_descriptor_cache.get(section)
-        if cached is None:
-            cached = [
-                replace(descriptor, path=(section, *descriptor.path))
-                for descriptor in walk_settings(self._global_model(section))
-            ]
-            self._global_descriptor_cache[section] = cached
-        return cached
-
-    def global_descriptor(self, key: str, section: str) -> FieldDescriptor:
-        descriptors = self._global_descriptors(section)
-        descriptor = find_descriptor(descriptors, key)
-        if descriptor is None:
-            valid = ", ".join(d.key for d in descriptors)
-            raise ConfigError(f"unknown {section} setting: {key!r}. Valid keys: {valid}")
         return descriptor
 
     def current_settings(self) -> Settings:
@@ -134,13 +95,9 @@ class SettingsFileRepository:
     def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
         """Coerce ``raw_value``, validate against the schema, then persist.
 
-        Returns the resolved target scope name (a profile name, or
-        ``"global"`` for top-level global settings) so callers can report
-        where the write landed.
+        Returns the resolved target profile name so callers can report where
+        the write landed.
         """
-        section = self.global_section_of(key)
-        if section is not None:
-            return self._set_global_value(key, raw_value, section, profile=profile)
         descriptor = self.descriptor(key)
         coerced = _coerce_scalar(raw_value)
         resolved: str | None = None
@@ -163,22 +120,6 @@ class SettingsFileRepository:
         assert resolved is not None
         return resolved
 
-    def _set_global_value(
-        self, key: str, raw_value: str, section: str, *, profile: str | None
-    ) -> str:
-        if profile is not None:
-            raise ConfigError(f"{section} settings are global; --target-profile cannot be used")
-        descriptor = self.global_descriptor(key, section)
-        coerced = _coerce_scalar(raw_value)
-        model = self._global_model(section)
-
-        def _apply(data: dict[str, Any]) -> None:
-            set_at_path(data, descriptor.path, coerced)
-            _validate_global_state(data, key, section, model)
-
-        mutate_config(_apply)
-        return GLOBAL_SETTINGS_TARGET
-
     def unset_value(self, key: str, *, profile: str | None = None) -> tuple[bool, str]:
         """Remove ``key`` from the resolved write scope.
 
@@ -187,9 +128,6 @@ class SettingsFileRepository:
         simply isn't set in the resolved scope is a no-op
         (``removed=False``).
         """
-        section = self.global_section_of(key)
-        if section is not None:
-            return self._unset_global_value(key, section, profile=profile)
         descriptor = self.descriptor(key)
         removed = False
         resolved: str | None = None
@@ -218,36 +156,6 @@ class SettingsFileRepository:
         # sets ``resolved`` to a scope name.
         assert resolved is not None
         return removed, resolved
-
-    def _unset_global_value(
-        self, key: str, section: str, *, profile: str | None
-    ) -> tuple[bool, str]:
-        if profile is not None:
-            raise ConfigError(f"{section} settings are global; --target-profile cannot be used")
-        descriptor = self.global_descriptor(key, section)
-        removed = False
-        model = self._global_model(section)
-
-        def _apply(data: dict[str, Any]) -> None:
-            nonlocal removed
-            removed = unset_at_path(data, descriptor.path)
-            if removed:
-                _validate_global_state(data, key, section, model)
-
-        mutate_config(_apply)
-        return removed, GLOBAL_SETTINGS_TARGET
-
-
-def _validate_global_state(
-    data: dict[str, Any], key: str, section: str, model: type[BaseModel]
-) -> None:
-    raw = data.get(section) or {}
-    if not isinstance(raw, dict):
-        raise ConfigError(f"invalid value for {key!r}: Input should be a valid dictionary")
-    try:
-        model.model_validate(raw)
-    except ValidationError as exc:
-        raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
 
 
 def _merge_for_validation(data: dict[str, Any], *, scope: str | None) -> dict[str, Any]:

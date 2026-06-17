@@ -133,17 +133,25 @@ Per-command settings are read via `app_context()`, which returns a frozen
 
 ## Config & state model
 
-Shared config lives at `~/.untaped/config.yml`. **Format = v1, FROZEN across
-SDK 1.x** — independently installed tools all read/write this file, so it is a
-cross-tool contract; any change to its shape is a MAJOR (2.0) SDK event.
+Shared config lives at `~/.untaped/config.yml`. **Format = v2 (SDK 2.x)** —
+independently installed tools all read/write this file, so it is a cross-tool
+contract; any change to its shape is a MAJOR SDK event. SDK 2.0 moved `http`
+and `ui` out of the top-level "globals" position into ordinary per-profile
+settings (the v1→v2 breaking change).
 
-The frozen surface:
+The v2 surface:
 
-- **SDK-owned top-level keys:** `active:`, `profiles:`, `http:`, `ui:`.
+- **Top-level keys:** `active:`, `profiles:`, plus tool-owned top-level
+  **state**.
+- **`http` and `ui` are per-profile settings** (base fields on `Settings`,
+  alongside `log_level`), addressed by dotted name (`http.verify_ssl`,
+  `ui.theme`) and living under `profiles.<name>.http` / `profiles.<name>.ui`.
+  A top-level `http:`/`ui:` block is ignored.
 - **One section per tool** under the active profile, holding that tool's
   profile fields plus its disjoint, tool-managed **state** fields (the two
   field sets must not overlap).
-- **Profile layering:** `profiles.default` sits beneath `profiles.<active>`.
+- **Profile layering:** `profiles.default` sits beneath `profiles.<active>`;
+  `http`/`ui` layer leaf-by-leaf like any other profile field.
 - **Env-var override shape:** `UNTAPED_<SECTION>__<FIELD>` (uppercased
   section, double underscore before the field).
 
@@ -152,8 +160,10 @@ Command surface and routing:
 - `<tool> config get/set/unset` manages scalar settings. **Bare config keys
   address the invoking tool's own section** — `untaped-github config set token X`
   writes `github.token` under the active profile.
-- **SDK globals** are addressed via reserved prefixes: `http.*` (e.g.
-  `http.verify_ssl`) and `ui.theme`.
+- **`http.*` and `ui.*` are per-profile keys** addressed via their dotted
+  prefix; they honour `--profile`/`--target-profile` like any profile key.
+  There is no `--global` flag — target `--target-profile default` for a shared
+  base value.
 - Target a non-active profile for a write with `--target-profile`.
 - **Tool-managed STATE fields are excluded from `config set`** (they are
   mutated by the tool, not the user).

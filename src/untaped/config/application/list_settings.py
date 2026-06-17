@@ -6,7 +6,6 @@ from typing import Any
 
 from untaped.config.application.ports import SettingsReader
 from untaped.config.domain import SettingEntry, Source, display_default, display_value
-from untaped.config_file import MISSING, get_at_path
 from untaped.config_schema import FieldDescriptor
 
 
@@ -19,14 +18,12 @@ class ListSettings:
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
         settings = self._repo.current_settings()
         provenance = self._repo.provenance()
-        yaml_dict = self._repo.yaml_dict()
         return [
             setting_entry_for_descriptor(
                 self._repo,
                 descriptor,
                 settings=settings,
                 provenance=provenance,
-                yaml_dict=yaml_dict,
                 reveal_secrets=reveal_secrets,
             )
             for descriptor in self._repo.descriptors()
@@ -71,33 +68,25 @@ def setting_entry_for_descriptor(
     *,
     settings: Any | None = None,
     provenance: dict[tuple[str, ...], str] | None = None,
-    yaml_dict: dict[str, Any] | None = None,
     reveal_secrets: bool = False,
     include_profile: bool = False,
 ) -> SettingEntry:
     """Build a display-ready entry for one effective scalar setting.
 
-    Provenance for SDK-owned *global* sections (``ui``, ``http``) is detected
-    here for every such key — a top-level block is attributed to ``global`` —
-    so the ``get`` and ``list`` surfaces stay consistent without per-section
-    special-casing. ``settings``/``provenance``/``yaml_dict`` may be passed in
-    so a batch caller (``ListSettings``) resolves each once instead of per entry.
+    ``http``/``ui`` are ordinary per-profile settings, so every key resolves
+    through the same provenance path (env → profile → default → unset).
+    ``settings``/``provenance`` may be passed in so a batch caller
+    (``ListSettings``) resolves each once instead of per entry.
     """
     resolved_settings = repo.current_settings() if settings is None else settings
     resolved_provenance = repo.provenance() if provenance is None else provenance
-    resolved_yaml = repo.yaml_dict() if yaml_dict is None else yaml_dict
     current = _walk_attr(resolved_settings, descriptor.path)
     in_env = repo.env_value_for(descriptor) is not None
-    global_configured = (
-        repo.global_section_of(descriptor.key) is not None
-        and get_at_path(resolved_yaml, descriptor.path) is not MISSING
-    )
     source = _resolve_source(
         in_env,
         resolved_provenance.get(descriptor.path),
         descriptor,
         current,
-        global_configured=global_configured,
     )
     return SettingEntry(
         key=descriptor.key,
@@ -136,13 +125,9 @@ def _resolve_source(
     scope_name: str | None,
     descriptor: FieldDescriptor,
     current: Any,
-    *,
-    global_configured: bool = False,
 ) -> Source:
     if in_env:
         return Source(kind="env")
-    if global_configured:
-        return Source(kind="global")
     if scope_name is not None:
         return Source(kind="profile", profile=scope_name)
     if current is None and not (descriptor.has_default and descriptor.default is not None):
