@@ -69,14 +69,22 @@ def setting_entry_for_descriptor(
     settings: Any | None = None,
     provenance: dict[tuple[str, ...], str] | None = None,
     reveal_secrets: bool = False,
-    global_configured: bool = False,
     include_profile: bool = False,
 ) -> SettingEntry:
-    """Build a display-ready entry for one effective scalar setting."""
+    """Build a display-ready entry for one effective scalar setting.
+
+    Provenance for SDK-owned *global* sections (``ui``, ``http``) is detected
+    here for every such key — a top-level block is attributed to ``global`` —
+    so the ``get`` and ``list`` surfaces stay consistent without per-section
+    special-casing.
+    """
     resolved_settings = repo.current_settings() if settings is None else settings
     resolved_provenance = repo.provenance() if provenance is None else provenance
     current = _walk_attr(resolved_settings, descriptor.path)
     in_env = repo.env_value_for(descriptor) is not None
+    global_configured = repo.global_section_of(descriptor.key) is not None and _has_path(
+        repo.yaml_dict(), descriptor.path
+    )
     source = _resolve_source(
         in_env,
         resolved_provenance.get(descriptor.path),
@@ -91,6 +99,16 @@ def setting_entry_for_descriptor(
         source=source,
         profile=source.profile if include_profile else None,
     )
+
+
+def _has_path(data: dict[str, Any], path: tuple[str, ...]) -> bool:
+    """True when ``path`` resolves to a leaf present in the raw YAML dict."""
+    cursor: Any = data
+    for segment in path:
+        if not isinstance(cursor, dict) or segment not in cursor:
+            return False
+        cursor = cursor[segment]
+    return True
 
 
 def _walk_attr(obj: Any, path: tuple[str, ...]) -> Any:

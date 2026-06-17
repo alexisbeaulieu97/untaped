@@ -309,8 +309,9 @@ def _prompt_value(
 
 
 def _descriptor_for_key(full_key: str, repo: SettingsFileRepository) -> FieldDescriptor:
-    if full_key.startswith("ui."):
-        return repo.ui_descriptor(full_key)
+    section = repo.global_section_of(full_key)
+    if section is not None:
+        return repo.global_descriptor(full_key, section)
     return repo.descriptor(full_key)
 
 
