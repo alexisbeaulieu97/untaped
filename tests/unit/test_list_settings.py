@@ -152,19 +152,19 @@ def test_plugin_profile_default_shown() -> None:
     assert str(directory.value) == "~/.demo"
 
 
-def test_global_http_setting_attributed_to_global(
+def test_http_setting_attributed_to_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A top-level ``http:`` global must be attributed to ``global`` in the list,
-    # the same as ``ui`` — not silently reported as the schema default.
+    # ``http`` is per-profile now: a value under ``profiles.default`` is
+    # attributed to that profile, not silently reported as the schema default.
     cfg = tmp_path / "config.yml"
-    cfg.write_text("http:\n  verify_ssl: false\n")
+    cfg.write_text("profiles:\n  default:\n    http:\n      verify_ssl: false\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     get_settings.cache_clear()
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     http = entries["http.verify_ssl"]
-    assert http.source == Source(kind="global")
+    assert http.source == Source(kind="profile", profile="default")
     assert http.value == "False"
 
 
@@ -174,7 +174,6 @@ def test_source_label_renders_string() -> None:
     assert Source(kind="env").label == "env"
     assert Source(kind="default").label == "default"
     assert Source(kind="unset").label == "unset"
-    assert Source(kind="global").label == "global"
     assert Source(kind="profile", profile="prod").label == "profile:prod"
 
 

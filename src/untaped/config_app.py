@@ -8,7 +8,9 @@ Key model:
 
 * A **bare key** addresses the tool's own section: ``untaped-github config
   set token X`` writes ``github.token`` (within the active profile).
-* ``ui.theme`` and ``http.*`` are **SDK globals**, written at the top level.
+* ``ui.*``, ``http.*`` and ``log_level`` are SDK-owned per-profile settings,
+  addressed by their fully-qualified key and written within the active (or
+  ``--target-profile``) profile like any other setting.
 * **State fields** (tool-managed) are not settable here.
 """
 
@@ -38,12 +40,12 @@ from untaped.config.application import (
     UnsetSetting,
 )
 from untaped.config.domain import SettingEntry
-from untaped.config.infrastructure import GLOBAL_SECTIONS, SettingsFileRepository
+from untaped.config.infrastructure import SettingsFileRepository
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.output import OutputFormat
 from untaped.prompts import PromptChoice
-from untaped.settings import resolve_config_path
+from untaped.settings import Settings, resolve_config_path
 from untaped.theme import BUILTIN_THEMES
 from untaped.tool import ToolSpec
 from untaped.ui import UiContext, ui_context
@@ -155,22 +157,20 @@ def build_config_app(spec: ToolSpec) -> Any:
 def _resolve_key(ctx: _Ctx, key: str) -> str:
     """Map a user key to its fully-qualified config key.
 
-    Bare keys naming a section field are prefixed with the tool's section;
-    global prefixes (``ui.``, ``http.``) and base fields pass through. Keys
-    naming a tool-managed state field are rejected.
+    Bare keys naming the tool's own section field are prefixed with the tool's
+    section; SDK-owned roots (``log_level``, ``http.*``, ``ui.*`` — the base
+    fields on :class:`~untaped.settings.Settings`) pass through, taking
+    precedence over a tool field of the same name. Keys naming a tool-managed
+    state field are rejected.
     """
     first = key.split(".", 1)[0]
-    if first in GLOBAL_SECTIONS:
+    if first in Settings.model_fields:
         return key
     if first in ctx.state_fields:
         raise ConfigError(f"{key!r} is managed by {ctx.command} and is not a configurable setting")
     if first in ctx.section_fields:
         return f"{ctx.section}.{key}"
     return key
-
-
-def _is_global(full_key: str) -> bool:
-    return full_key.split(".", 1)[0] in GLOBAL_SECTIONS
 
 
 def _list(
@@ -209,22 +209,13 @@ def _set(
 ) -> None:
     with report_errors():
         full = _resolve_key(ctx, key)
-        if _is_global(full) and target_profile is not None:
-            section = full.split(".", 1)[0]
-            raise ConfigError(f"{section} settings are global; --target-profile cannot be used")
         repo = ctx.repo()
         resolved_value = _resolve_set_value(
             full, value, stdin=stdin, prompt=prompt, repo=repo, target_profile=target_profile
         )
         target = SetSetting(repo)(full, resolved_value, profile=target_profile)
-        ui_context(strict=False).message("success", _set_message(full, target))
-
-
-def _set_message(full: str, target: str) -> str:
-    path = resolve_config_path()
-    if _is_global(full):
-        return f"set {full} globally (config: {path})"
-    return f"set {full} in profile {target} (config: {path})"
+        message = f"set {full} in profile {target} (config: {resolve_config_path()})"
+        ui_context(strict=False).message("success", message)
 
 
 def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
@@ -232,10 +223,6 @@ def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
         full = _resolve_key(ctx, key)
         removed, target = UnsetSetting(ctx.repo())(full, profile=target_profile)
         ui = ui_context(strict=False)
-        if _is_global(full):
-            msg = f"unset {full} globally" if removed else f"{full} was not set globally"
-            ui.message("success" if removed else "info", msg)
-            return
         where = f"in profile {target}"
         if removed:
             ui.message("success", f"unset {full} {where}")
@@ -280,7 +267,7 @@ def _read_stdin_value() -> str:
 def _prompt_value(
     full_key: str, repo: SettingsFileRepository, *, target_profile: str | None
 ) -> str:
-    descriptor = _descriptor_for_key(full_key, repo)
+    descriptor = repo.descriptor(full_key)
     message = f"Value for {full_key}"
     ui = ui_context(strict=False)
     if descriptor.is_secret:
@@ -307,13 +294,6 @@ def _prompt_value(
             default=default if default in bool_values else None,
         )
     return ui.text(message, default=default)
-
-
-def _descriptor_for_key(full_key: str, repo: SettingsFileRepository) -> FieldDescriptor:
-    section = repo.global_section_of(full_key)
-    if section is not None:
-        return repo.global_descriptor(full_key, section)
-    return repo.descriptor(full_key)
 
 
 def _prompt_default(

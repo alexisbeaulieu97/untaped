@@ -101,19 +101,19 @@ def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> Non
         GetSetting(SettingsFileRepository())("plugins.tool.spec")
 
 
-def test_get_global_ui_setting_from_top_level_state(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("ui:\n  theme: classic\n")
+def test_get_ui_setting_from_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    ui:\n      theme: classic\n")
 
     entry = GetSetting(SettingsFileRepository())("ui.theme")
 
     assert entry.key == "ui.theme"
     assert entry.value == "classic"
     assert entry.default == "default"
-    assert entry.source.label == "global"
-    assert entry.profile is None
+    assert entry.source.label == "profile:default"
+    assert entry.profile == "default"
 
 
-def test_get_global_ui_setting_uses_schema_default(_isolate_settings: Path) -> None:
+def test_get_ui_setting_uses_schema_default(_isolate_settings: Path) -> None:
     entry = GetSetting(SettingsFileRepository())("ui.theme")
 
     assert entry.value == "default"
@@ -122,24 +122,22 @@ def test_get_global_ui_setting_uses_schema_default(_isolate_settings: Path) -> N
 
 
 def test_get_rejects_dict_shaped_ui_settings(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="unknown ui setting"):
+    with pytest.raises(ConfigError, match="unknown setting"):
         GetSetting(SettingsFileRepository())("ui.color_roles")
 
 
-def test_get_global_http_setting_from_top_level_state(_isolate_settings: Path) -> None:
-    # ``http`` is an SDK global alongside ``ui``; a top-level ``http:`` block
-    # must be attributed to the ``global`` source, not the schema default.
-    _isolate_settings.write_text("http:\n  verify_ssl: false\n")
+def test_get_http_setting_from_profile(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    http:\n      verify_ssl: false\n")
 
     entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
 
     assert entry.key == "http.verify_ssl"
     assert entry.value == "False"
-    assert entry.source.label == "global"
-    assert entry.profile is None
+    assert entry.source.label == "profile:default"
+    assert entry.profile == "default"
 
 
-def test_get_global_http_setting_uses_schema_default(_isolate_settings: Path) -> None:
+def test_get_http_setting_uses_schema_default(_isolate_settings: Path) -> None:
     entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
 
     assert entry.value == "True"

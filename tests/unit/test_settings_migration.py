@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from untaped.errors import ConfigError
 from untaped.settings import (
     get_settings,
     register_profile_settings,
+    register_state_settings,
     reset_config_registry_for_tests,
 )
 
@@ -68,9 +70,11 @@ def test_no_warning_for_correctly_nested_section(
     assert _warnings(caplog) == []
 
 
-def test_no_warning_for_top_level_http_and_ui_state_sections(
+def test_warns_for_top_level_http_and_ui(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    # http/ui are per-profile in v2; a top-level block is silently ignored (and
+    # `http.verify_ssl`/`proxy` affect security + connectivity), so it must warn.
     register_profile_settings("demo", DemoSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text("http:\n  verify_ssl: false\nui:\n  theme: plain\n")
@@ -80,7 +84,33 @@ def test_no_warning_for_top_level_http_and_ui_state_sections(
     with caplog.at_level(logging.WARNING, logger="untaped"):
         get_settings()
 
-    assert _warnings(caplog) == []
+    messages = _warnings(caplog)
+    assert any("http" in m and "ui" in m and "profiles.default" in m for m in messages), messages
+
+
+@pytest.mark.parametrize("reserved", ["http", "ui", "log_level"])
+def test_reserved_sdk_section_names_are_rejected(reserved: str) -> None:
+    # http/ui/log_level are base fields on Settings; a tool registering a
+    # section with one of those names would shadow the SDK field.
+    with pytest.raises(ConfigError, match="reserved"):
+        register_profile_settings(reserved, DemoSettings)
+    with pytest.raises(ConfigError, match="reserved"):
+        register_state_settings(reserved, DemoSettings)
+
+
+def test_warns_for_top_level_log_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # log_level is a base per-profile field too; flat at top level → ignored → warn.
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("log_level: DEBUG\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+
+    with caplog.at_level(logging.WARNING, logger="untaped"):
+        get_settings()
+
+    assert any("log_level" in m and "profiles.default" in m for m in _warnings(caplog))
 
 
 def test_warns_at_most_once_per_config_path(

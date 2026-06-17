@@ -31,18 +31,20 @@ DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 
 
 class HttpSettings(BaseModel):
-    """Cross-cutting HTTP behaviour shared by every tool's HTTP client."""
+    """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
 
     ca_bundle: Path | None = None
     verify_ssl: bool = True
+    verify_hostname: bool = True
     timeout: float = Field(default=30.0, gt=0)
     proxy: str | None = None
 
 
-BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {
-    "http": HttpSettings,
-    "ui": UiSettings,
-}
+#: Built-in top-level *state* sections (tool-managed runtime data spliced in
+#: regardless of profile). ``http``/``ui`` used to live here but are now ordinary
+#: per-profile settings (base fields on :class:`Settings`); only a tool's own
+#: ``state_model`` registers here at runtime.
+BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {}
 
 
 class _ConfigRegistry:
@@ -61,6 +63,7 @@ class _ConfigRegistry:
         get_profile_settings_model.cache_clear()
 
     def register_profile_settings(self, section: str, model: type[BaseModel]) -> None:
+        _reject_reserved_section(section)
         existing = self.profile_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate profile settings section: {section}")
@@ -73,6 +76,7 @@ class _ConfigRegistry:
         get_profile_settings_model.cache_clear()
 
     def register_state_settings(self, section: str, model: type[BaseModel]) -> None:
+        _reject_reserved_section(section)
         existing = self.state_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate state settings section: {section}")
@@ -103,6 +107,7 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     http: HttpSettings = Field(default_factory=HttpSettings)
+    ui: UiSettings = Field(default_factory=UiSettings)
 
     @classmethod
     def settings_customise_sources(
@@ -150,6 +155,17 @@ def validate_disjoint_settings_sections(
     if overlap:
         joined = ", ".join(overlap)
         raise ConfigError(f"overlapping profile/state settings for section {section!r}: {joined}")
+
+
+def _reject_reserved_section(section: str) -> None:
+    """Reject a tool section name that collides with an SDK base field.
+
+    ``log_level``/``http``/``ui`` are base fields on :class:`Settings`;
+    registering a tool section with one of those names would shadow the SDK
+    field in the dynamically built model and break config resolution.
+    """
+    if section in Settings.model_fields:
+        raise ConfigError(f"reserved SDK settings section: {section!r}")
 
 
 def reset_config_registry_for_tests() -> None:
@@ -205,16 +221,18 @@ def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -
 
 
 def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
-    """Warn once when a registered profile section sits at the config top level.
+    """Warn once when a per-profile setting sits at the config top level.
 
-    The flat top-level layout was removed in v1.0.1; such a section is now
-    silently ignored by the profiles resolver. ``http``/``ui`` (state sections)
-    legitimately stay top-level, so only profile-scoped sections are flagged.
+    The flat top-level layout was removed in v1.0.1 (and ``http``/``ui`` joined
+    it in v2.0.0); such a key is now silently ignored by the profiles resolver.
+    The set of "belongs under a profile" keys is derived from the schema — the
+    base per-profile fields (``log_level``, ``http``, ``ui``) plus every
+    registered tool section — so there's no hard-coded name list. Tool-managed
+    top-level *state* sections legitimately stay top-level and are excluded.
     """
+    profile_keys = set(Settings.model_fields) | set(_CONFIG_REGISTRY.profile_sections)
     offending = sorted(
-        key
-        for key in raw
-        if key in _CONFIG_REGISTRY.profile_sections and key not in _CONFIG_REGISTRY.state_sections
+        key for key in raw if key in profile_keys and key not in _CONFIG_REGISTRY.state_sections
     )
     if not offending:
         return

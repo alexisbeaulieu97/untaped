@@ -10,8 +10,8 @@ class UnsetSetting:
 
     Returns ``(removed, target_scope)`` where ``removed`` is ``True`` if a
     value was actually removed and ``target_scope`` is the resolved profile
-    name (or ``"global"``). An explicit ``--target-profile`` the layout
-    cannot satisfy raises ``ConfigError`` — same contract as ``set``.
+    name. An explicit ``--target-profile`` the layout cannot satisfy raises
+    ``ConfigError`` — same contract as ``set``.
     """
 
     def __init__(self, repo: SettingsRepository) -> None:

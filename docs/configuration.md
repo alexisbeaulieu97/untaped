@@ -8,7 +8,7 @@ own `uv tool` environment. They all read and write **one shared file**,
 commands that manage it are per tool:
 
 - `<tool> config set|get|list|unset` — read and write the setting *keys*
-  (the tool's own section, plus the SDK globals `http.*` and `ui.theme`).
+  (the tool's own section, plus the per-profile `http.*` and `ui.*` scalars).
 - `<tool> profile create|list|use|delete` — manage the *profiles* (named
   overlays such as `dev`, `prod`, `homelab`).
 
@@ -18,27 +18,52 @@ This page covers what's in the file, how the values are resolved, and how to
 manage profiles and keys without hand-editing YAML. Examples use
 `untaped-github`; substitute any other tool.
 
-## Config format v1 (stable across SDK 1.x)
+## Config format v2 (SDK 2.x)
 
 Independent tool environments all read and write this one file, so its format is
-a shared contract. It is declared **v1** and **frozen and stable across all
-`untaped` SDK 1.x releases**; any change is a major (2.0) SDK event. The frozen
-surface:
+a shared contract. The previous **v1** format was frozen across all SDK 1.x
+releases; SDK **2.0** is the major event that v1 anticipated. The one breaking
+change in 2.0: `http` and `ui` are no longer top-level SDK globals — they are
+now **ordinary per-profile settings** that live under `profiles.<name>.http` /
+`profiles.<name>.ui`, exactly like `log_level` and each tool's own section. A
+top-level `http:`/`ui:` block is now ignored (the same as any other misplaced
+profile section). The frozen surface for v2:
 
-- Top-level SDK-owned keys: `active:`, `profiles:`, `http:`, `ui:`.
+- Top-level keys: `active:`, `profiles:`, plus tool-owned top-level **state**
+  (such as `workspace.workspaces`; see [State vs. profile fields](#state-vs-profile-fields)).
+- Per-profile keys, addressed by dotted name: each tool's own section plus
+  `http.*` and `ui.*` (e.g. `http.verify_ssl`, `ui.theme`). These layer through
+  profiles like any other profile field.
 - One section per tool, holding that tool's profile fields plus its disjoint
-  state fields (the two field sets do not overlap).
+  top-level state fields (the two field sets do not overlap).
 - Profile layering: `profiles.default` sits beneath `profiles.<active>`.
 - Env-var override shape: `UNTAPED_<SECTION>__<FIELD>` (uppercased section,
   double underscore before the field).
-- `http` and `ui` are addressed as top-level globals (e.g. `http.verify_ssl`,
-  `ui.theme`).
 - Bare config keys address the invoking tool's own section (e.g.
   `untaped-github config set token X` writes `github.token`).
 
 Each tool validates **only its own section** (`extra="ignore"`) and writes are
 surgical and filelocked, so an older tool never clobbers a newer tool's section.
 See [decisions.md](./decisions.md).
+
+### Migrating a v1 config to v2
+
+If you have a pre-2.0 config with top-level `http:` or `ui:` blocks, move them
+under `profiles.default` (anything else under `profiles.default` is unchanged).
+Any tool will **warn** on load if it finds a per-profile key stranded at the top
+level, naming the key and where it belongs. A top-level block is otherwise
+silently ignored — note that a stranded `http.verify_ssl: false` reverts to
+verification *on*, and a stranded `http.proxy` stops being applied.
+
+```yaml
+# v1 (ignored in v2)            # v2
+http:                           profiles:
+  verify_ssl: false               default:
+ui:                                 http:
+  theme: quiet                        verify_ssl: false
+                                      ui:
+                                        theme: quiet
+```
 
 ## Where the file lives
 
@@ -52,14 +77,11 @@ things out without touching your real config.
 
 ## File layout
 
-Profile-scoped configuration lives under `profiles.<name>`. A few keys live
-*outside* the `profiles` block:
+Profile-scoped configuration lives under `profiles.<name>`. This includes each
+tool's own section plus `http:` and `ui:`, which are per-profile settings in
+SDK 2.x. A couple of things live *outside* the `profiles` block:
 
 - `active: <name>` — selects which profile is on top. Optional.
-- `http:` — cross-cutting HTTP behaviour shared by every tool's HTTP client.
-  Global, not a profile overlay.
-- `ui:` — global terminal presentation preferences. These are user interface
-  preferences, not profile overlays.
 - Tool-owned top-level **state**, such as `workspace.workspaces` or
   `ansible.sources`. State is not user-tunable scalar config; the owning tool
   writes it programmatically (see [State vs. profile fields](#state-vs-profile-fields)).
@@ -67,26 +89,24 @@ Profile-scoped configuration lives under `profiles.<name>`. A few keys live
 ```yaml
 active: prod                       # optional; selects the overlay profile
 
-http:                              # optional global HTTP behaviour
-  verify_ssl: true
-
-ui:                                # optional global terminal presentation
-  theme: default                   # built-in presets (BUILTIN_THEMES)
-  border: rounded                  # rounded, square, ascii, none
-  collection_view: table           # table or list for human output
-  detail_view: list                # list or table for single-object views
-  color_roles:                     # optional Rich style strings for TTY output
-    header: bold cyan
-    border: green
-    key: cyan
-    value: white
-    success: green
-    info: blue
-    warning: yellow
-    error: red
-
 profiles:
   default:                         # the shared base layer (optional but conventional)
+    http:                             # per-profile HTTP behaviour
+      verify_ssl: true
+    ui:                               # per-profile terminal presentation
+      theme: default                  # built-in presets (BUILTIN_THEMES)
+      border: rounded                 # rounded, square, ascii, none
+      collection_view: table          # table or list for human output
+      detail_view: list               # list or table for single-object views
+      color_roles:                    # optional Rich style strings for TTY output
+        header: bold cyan
+        border: green
+        key: cyan
+        value: white
+        success: green
+        info: blue
+        warning: yellow
+        error: red
     ansible:                          # ansible tool's section
       index_path: ~/.untaped/ansible-index.sqlite3
       repo_cache_path: ~/.untaped/ansible-repositories
@@ -124,18 +144,20 @@ Themes are built into the SDK; their presets live in `BUILTIN_THEMES` and are
 selected through `ui.theme`:
 
 ```yaml
-ui:
-  theme: quiet
+profiles:
+  default:
+    ui:
+      theme: quiet
 ```
 
 `default` is conventional but not required. When it exists, every other profile
 inherits its values; when it doesn't, the active profile is layered alone and
 the schema's built-in defaults sit beneath everything.
 
-`ui:` is intentionally global. It affects human terminal rendering for semantic
-collections, details, and status messages. It does not change `--format json`,
-`--format yaml`, or `--format raw`; those structured formats still work if a
-configured theme preset is unavailable.
+`ui:` is a per-profile setting in SDK 2.x, but it still only affects human
+terminal rendering for semantic collections, details, and status messages. It
+does not change `--format json`, `--format yaml`, or `--format raw`; those
+structured formats ignore theme presets entirely.
 
 `ui.color_roles` values are Rich style strings, such as `bold cyan`, `green`, or
 `red`. Supported role names are `header`, `border`, `key`, `value`, `success`,
@@ -226,17 +248,23 @@ untaped-github config set <key> --prompt         # prompt on stderr using the se
 untaped-github config set <key> <value> --target-profile <name>   # write to a non-active profile
 untaped-github config unset <key>                # remove (the active profile)
 untaped-github config unset <key> --target-profile <name>
-untaped-github config set ui.theme classic       # write a global UI preference
-untaped-github config unset ui.theme             # remove a global UI preference
+untaped-github config set ui.theme classic       # write a UI preference (active profile)
+untaped-github config set ui.theme classic --target-profile default  # shared base
+untaped-github config unset ui.theme             # remove a UI preference
 ```
 
 Bare keys address the **invoking tool's own section**, so for `untaped-github`,
-`config set token ghp_xxx` writes `github.token`. SDK globals are addressed
-through reserved prefixes regardless of which tool you invoke:
+`config set token ghp_xxx` writes `github.token`. The `http.*` and `ui.*` keys
+are per-profile settings addressed by their dotted prefix regardless of which
+tool you invoke:
 
 - `http.*` — e.g. `untaped-github config set http.verify_ssl false`.
 - `ui.theme` (and other `ui.*` scalars) — e.g.
   `untaped-github config set ui.theme quiet`.
+
+Like any profile key, these honour `--profile` (reads) and `--target-profile`
+(writes); there is no `--global` flag. To set a shared base value, target
+`--target-profile default`.
 
 `config get` defaults to `--format raw` and prints only the selected value, so
 `untaped-github config get ui.theme` is safe to use in shell scripts. Its
@@ -268,10 +296,10 @@ writes to `default` (or the active profile) automatically, while
 to already exist.
 
 `config get/set/unset` also supports scalar `ui.*` preferences such as
-`ui.theme`, `ui.border`, `ui.collection_view`, and `ui.detail_view`. These read
-and write the top-level `ui:` block because UI preferences are global, not
-profile overlays. Do not pass `--profile` to `config get ui.*`, or
-`--target-profile` to `config set/unset ui.*`.
+`ui.theme`, `ui.border`, `ui.collection_view`, and `ui.detail_view`. These are
+per-profile keys like any other, so they honour `--profile` (reads) and
+`--target-profile` (writes), and layer `profiles.default` beneath the active
+profile.
 
 ### State vs. profile fields
 
@@ -309,17 +337,35 @@ via the `truststore` package. Corporate root CAs that are already installed in
 macOS Keychain, Windows certstore, or the Linux system trust will "just work" —
 no configuration needed.
 
-Two overrides, both under the global `http` section:
+Three overrides, all per-profile `http.*` keys:
 
 ```bash
 untaped-github config set http.ca_bundle /path/to/corp-ca.pem
+untaped-github config set http.verify_hostname false  # keep the chain check, skip hostname/SAN
 untaped-github config set http.verify_ssl false       # last-resort escape hatch
 ```
 
+Because `http.*` is per-profile, these can differ between profiles — for
+example a `work` profile that pins a corporate CA or relaxes the hostname check
+for internal services, while your default profile keeps full verification for
+external ones:
+
+```bash
+untaped-github config set http.ca_bundle /path/to/corp-ca.pem --target-profile work
+```
+
+`http.verify_hostname: false` keeps TLS chain verification on but skips the
+hostname/SAN check. This is the right fix for a **self-signed certificate that
+is trusted (its CA is in your trust store or pinned via `http.ca_bundle`) but
+still rejected by modern Python because its SAN doesn't match the hostname** you
+connect to. It is strictly safer than `http.verify_ssl: false` — the chain is
+still validated — so prefer it whenever the hostname is the only thing wrong.
+
 `http.verify_ssl: false` disables certificate validation entirely. Only use it
 on a network you trust completely: traffic is open to MITM, and any tokens a
-tool sends become visible to anyone on-path. Prefer `http.ca_bundle` whenever
-the certificate is the real problem.
+tool sends become visible to anyone on-path. Prefer `http.ca_bundle` (or
+`http.verify_hostname false` for a hostname mismatch) whenever the certificate
+is the real problem.
 
 ## Environment-variable overrides
 
@@ -338,11 +384,12 @@ workspace.workspaces_dir   → UNTAPED_WORKSPACE__WORKSPACES_DIR
 ui.theme                   → UNTAPED_UI__THEME
 ui.collection_view         → UNTAPED_UI__COLLECTION_VIEW
 http.verify_ssl            → UNTAPED_HTTP__VERIFY_SSL
+http.verify_hostname       → UNTAPED_HTTP__VERIFY_HOSTNAME
 ```
 
 Note the `UNTAPED_` prefix, the **double underscore** between the (uppercased)
-section and the field, and that each tool only reads its own section plus the
-shared `http`/`ui` globals. These beat the YAML — useful for CI, one-off
+section and the field, and that each tool reads its own section plus the
+per-profile `http`/`ui` keys. These beat the YAML — useful for CI, one-off
 invocations, or keeping a token in a secret manager rather than the file.
 
 ## Worked example: dev / prod profiles
