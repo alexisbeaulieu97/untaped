@@ -16,6 +16,7 @@ from untaped.settings import (
     register_profile_settings,
     reset_config_registry_for_tests,
 )
+from untaped.ui import ui_context
 
 
 class DemoSettings(BaseModel):
@@ -57,3 +58,22 @@ def test_app_context_exposes_http_settings(_isolated_config: Path) -> None:
 
     assert isinstance(ctx.http, HttpSettings)
     assert ctx.http.verify_ssl is True
+
+
+def test_ui_uses_settings_snapshot_not_later_cache_state(_isolated_config: Path) -> None:
+    """``ctx.ui()`` builds from the context's frozen settings snapshot, so a
+    settings-cache invalidation after the context exists must not change the
+    theme it renders with."""
+    _isolated_config.write_text("ui:\n  theme: classic\n")
+    get_settings.cache_clear()
+    ctx = app_context()
+    snapshot_theme = ctx.ui().theme
+
+    # Change the global theme and drop the cache after the context was built.
+    _isolated_config.write_text("ui:\n  theme: default\n")
+    get_settings.cache_clear()
+
+    # A fresh, re-reading context observes the change...
+    assert ui_context().theme != snapshot_theme
+    # ...but the snapshot-bound context stays pinned to its resolved theme.
+    assert ctx.ui().theme == snapshot_theme

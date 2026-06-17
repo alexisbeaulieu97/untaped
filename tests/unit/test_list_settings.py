@@ -152,6 +152,22 @@ def test_plugin_profile_default_shown() -> None:
     assert str(directory.value) == "~/.demo"
 
 
+def test_global_http_setting_attributed_to_global(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A top-level ``http:`` global must be attributed to ``global`` in the list,
+    # the same as ``ui`` — not silently reported as the schema default.
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("http:\n  verify_ssl: false\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+
+    entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
+    http = entries["http.verify_ssl"]
+    assert http.source == Source(kind="global")
+    assert http.value == "False"
+
+
 def test_source_label_renders_string() -> None:
     """``Source.label`` collapses the structured source into a single string
     suitable for raw/table cells."""
