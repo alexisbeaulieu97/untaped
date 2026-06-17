@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from untaped.errors import ConfigError
 from untaped.settings import HttpSettings, Settings, get_settings
-from untaped.ui import BUILTIN_THEMES, UiContext, UiSettings, resolve_theme, ui_context
+from untaped.ui import UiContext, UiSettings, resolve_theme_or_default, ui_context
 
 
 @dataclass(frozen=True)
@@ -56,12 +56,7 @@ class AppContext:
         invalidated. ``strict=False`` degrades a theme-resolution
         :class:`ConfigError` (e.g. an unknown theme name) to the default theme.
         """
-        try:
-            theme = resolve_theme(self.section("ui", UiSettings))
-        except ConfigError:
-            if strict:
-                raise
-            theme = BUILTIN_THEMES["default"]
+        theme = resolve_theme_or_default(lambda: self.section("ui", UiSettings), strict=strict)
         return ui_context(theme=theme)
 
 

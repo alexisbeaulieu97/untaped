@@ -6,7 +6,7 @@ import io
 import json
 import shutil
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import Any, Literal, Protocol, TextIO, cast
 
@@ -461,14 +461,30 @@ def ui_context(
     if theme is None:
         from untaped.settings import get_settings  # noqa: PLC0415
 
-        try:
-            settings = cast(_HasUiSettings, get_settings())
-            theme = resolve_theme(settings.ui)
-        except ConfigError:
-            if strict:
-                raise
-            theme = BUILTIN_THEMES["default"]
+        theme = resolve_theme_or_default(
+            lambda: cast(_HasUiSettings, get_settings()).ui, strict=strict
+        )
     return UiContext(theme=theme, stdin=stdin, stdout=stdout, stderr=stderr, verbose=is_verbose())
+
+
+def resolve_theme_or_default(
+    produce_settings: Callable[[], UiSettings | None],
+    *,
+    strict: bool,
+) -> ThemeSpec:
+    """Resolve the theme from ``produce_settings()``, degrading to the default.
+
+    A :class:`ConfigError` from either fetching the settings or resolving the
+    theme degrades to the default preset unless ``strict``. The settings source
+    is a thunk so callers supply their own (live cache vs. a frozen snapshot)
+    while sharing this one degrade policy.
+    """
+    try:
+        return resolve_theme(produce_settings())
+    except ConfigError:
+        if strict:
+            raise
+        return BUILTIN_THEMES["default"]
 
 
 def resolve_theme(
