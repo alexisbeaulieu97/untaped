@@ -68,9 +68,11 @@ def test_no_warning_for_correctly_nested_section(
     assert _warnings(caplog) == []
 
 
-def test_no_warning_for_top_level_http_and_ui_state_sections(
+def test_warns_for_top_level_http_and_ui(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    # http/ui are per-profile in v2; a top-level block is silently ignored (and
+    # `http.verify_ssl`/`proxy` affect security + connectivity), so it must warn.
     register_profile_settings("demo", DemoSettings)
     cfg = tmp_path / "config.yml"
     cfg.write_text("http:\n  verify_ssl: false\nui:\n  theme: plain\n")
@@ -80,7 +82,23 @@ def test_no_warning_for_top_level_http_and_ui_state_sections(
     with caplog.at_level(logging.WARNING, logger="untaped"):
         get_settings()
 
-    assert _warnings(caplog) == []
+    messages = _warnings(caplog)
+    assert any("http" in m and "ui" in m and "profiles.default" in m for m in messages), messages
+
+
+def test_warns_for_top_level_log_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # log_level is a base per-profile field too; flat at top level → ignored → warn.
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("log_level: DEBUG\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    get_settings.cache_clear()
+
+    with caplog.at_level(logging.WARNING, logger="untaped"):
+        get_settings()
+
+    assert any("log_level" in m and "profiles.default" in m for m in _warnings(caplog))
 
 
 def test_warns_at_most_once_per_config_path(
