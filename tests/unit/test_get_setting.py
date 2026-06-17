@@ -124,3 +124,23 @@ def test_get_global_ui_setting_uses_schema_default(_isolate_settings: Path) -> N
 def test_get_rejects_dict_shaped_ui_settings(_isolate_settings: Path) -> None:
     with pytest.raises(ConfigError, match="unknown ui setting"):
         GetSetting(SettingsFileRepository())("ui.color_roles")
+
+
+def test_get_global_http_setting_from_top_level_state(_isolate_settings: Path) -> None:
+    # ``http`` is an SDK global alongside ``ui``; a top-level ``http:`` block
+    # must be attributed to the ``global`` source, not the schema default.
+    _isolate_settings.write_text("http:\n  verify_ssl: false\n")
+
+    entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
+
+    assert entry.key == "http.verify_ssl"
+    assert entry.value == "False"
+    assert entry.source.label == "global"
+    assert entry.profile is None
+
+
+def test_get_global_http_setting_uses_schema_default(_isolate_settings: Path) -> None:
+    entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
+
+    assert entry.value == "True"
+    assert entry.source.label == "default"

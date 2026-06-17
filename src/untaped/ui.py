@@ -442,22 +442,32 @@ class UiContext:
 
 def ui_context(
     *,
+    theme: ThemeSpec | None = None,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     strict: bool = True,
 ) -> UiContext:
-    """Build a UI context from active settings and the built-in theme presets."""
-    from untaped.settings import get_settings  # noqa: PLC0415
+    """Build a UI context from the built-in theme presets.
+
+    When ``theme`` is given it is used as-is (callers holding a resolved
+    settings snapshot — e.g. ``AppContext.ui()`` — pass it so the context is
+    not coupled to the live settings cache). Otherwise the active settings are
+    read and the theme resolved from them; ``strict=False`` then degrades a
+    settings :class:`ConfigError` to the default theme.
+    """
     from untaped.verbose import is_verbose  # noqa: PLC0415
 
-    try:
-        settings = cast(_HasUiSettings, get_settings())
-        theme = resolve_theme(settings.ui)
-    except ConfigError:
-        if strict:
-            raise
-        theme = BUILTIN_THEMES["default"]
+    if theme is None:
+        from untaped.settings import get_settings  # noqa: PLC0415
+
+        try:
+            settings = cast(_HasUiSettings, get_settings())
+            theme = resolve_theme(settings.ui)
+        except ConfigError:
+            if strict:
+                raise
+            theme = BUILTIN_THEMES["default"]
     return UiContext(theme=theme, stdin=stdin, stdout=stdout, stderr=stderr, verbose=is_verbose())
 
 

@@ -124,3 +124,95 @@ def test_skills_install_unknown_name_is_rejected(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert "untaped-missing" in result.stderr
     assert not target.exists()
+
+
+def test_skills_install_force_with_missing_source_keeps_existing(tmp_path: Path) -> None:
+    """A ``--force`` reinstall whose source has vanished must not delete the
+    already-installed skill (the data-loss bug: rmtree before copy validates)."""
+    source = _skill_dir(tmp_path)
+    target = tmp_path / "codex-skills"
+    good_app = build_skills_app(_spec(_asset(source)))
+    initial = CliInvoker().invoke(
+        good_app,
+        ["install", "untaped-demo", "--target", "codex", "--target-dir", str(target)],
+    )
+    assert initial.exit_code == 0, initial.output
+    installed = target / "untaped-demo"
+    original = installed.joinpath("SKILL.md").read_text()
+
+    missing_source = tmp_path / "gone" / "untaped-demo"  # never created
+    bad_app = build_skills_app(
+        _spec(
+            SkillAsset(
+                name="untaped-demo",
+                source=missing_source,
+                description="Teach agents how to use the demo.",
+            )
+        )
+    )
+    result = CliInvoker().invoke(
+        bad_app,
+        ["install", "untaped-demo", "--force", "--target", "codex", "--target-dir", str(target)],
+    )
+
+    assert result.exit_code != 0
+    assert "untaped-demo" in result.stderr
+    # The pre-existing install must survive a failed replace.
+    assert installed.joinpath("SKILL.md").read_text() == original
+
+
+def test_skills_install_aborts_before_any_change_when_a_source_is_invalid(
+    tmp_path: Path,
+) -> None:
+    """Source validation happens up front, so one bad source in a multi-skill
+    install leaves every skill untouched (no partial install)."""
+    good = _skill_dir(tmp_path, name="untaped-one")
+    missing = tmp_path / "gone" / "untaped-two"  # never created
+    app = build_skills_app(
+        _spec(
+            _asset(good),
+            SkillAsset(
+                name="untaped-two",
+                source=missing,
+                description="Teach agents how to use two.",
+            ),
+        )
+    )
+    target = tmp_path / "codex-skills"
+
+    result = CliInvoker().invoke(
+        app,
+        ["install", "--all", "--target", "codex", "--target-dir", str(target)],
+    )
+
+    assert result.exit_code != 0
+    assert "untaped-two" in result.stderr
+    # Nothing installed — not even the valid skill processed earlier in the loop.
+    assert not (target / "untaped-one").exists()
+    assert not (target / "untaped-two").exists()
+
+
+def test_skills_install_force_replaces_existing(tmp_path: Path) -> None:
+    """A valid ``--force`` reinstall fully replaces the destination (not merge)."""
+    source = _skill_dir(tmp_path)
+    target = tmp_path / "codex-skills"
+    app = build_skills_app(_spec(_asset(source)))
+    first = CliInvoker().invoke(
+        app,
+        ["install", "untaped-demo", "--target", "codex", "--target-dir", str(target)],
+    )
+    assert first.exit_code == 0, first.output
+    installed = target / "untaped-demo"
+    installed.joinpath("STALE.md").write_text("old\n")  # should not survive a replace
+    source.joinpath("SKILL.md").write_text(
+        "---\nname: untaped-demo\ndescription: updated.\n---\n\n# Updated\n"
+    )
+
+    result = CliInvoker().invoke(
+        app,
+        ["install", "untaped-demo", "--force", "--target", "codex", "--target-dir", str(target)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "# Updated" in installed.joinpath("SKILL.md").read_text()
+    assert not installed.joinpath("STALE.md").exists()

@@ -90,9 +90,6 @@ class SettingsFileRepository:
             raise ConfigError(f"unknown {section} setting: {key!r}. Valid keys: {valid}")
         return descriptor
 
-    def ui_descriptor(self, key: str) -> FieldDescriptor:
-        return self.global_descriptor(key, "ui")
-
     def current_settings(self) -> Settings:
         return get_settings()
 
