@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from untaped.errors import ConfigError, UntapedError
 from untaped.http import (
@@ -16,11 +16,62 @@ from untaped.http import (
     paginate_offset,
     paginate_pages,
 )
+from untaped.settings import HttpSettings
 
 
 class DemoSettings(BaseModel):
     base_url: str = "https://api.example.com"
     token: SecretStr | None = None
+
+
+def test_http_settings_timeout_and_proxy_defaults() -> None:
+    settings = HttpSettings()
+    assert settings.timeout == 30.0
+    assert settings.proxy is None
+
+
+@pytest.mark.parametrize("bad", [0, -1, -0.5])
+def test_http_settings_rejects_non_positive_timeout(bad: float) -> None:
+    with pytest.raises(ValidationError):
+        HttpSettings(timeout=bad)
+
+
+@respx.mock
+def test_connected_client_applies_settings_timeout() -> None:
+    respx.get("https://api.example.com/user").mock(return_value=httpx.Response(200, json={}))
+    config = DemoSettings(token=SecretStr("x"))
+
+    with connected_client(config, section="demo", http=HttpSettings(timeout=5.0)) as client:
+        client.get("/user")
+
+    timeout = respx.calls.last.request.extensions["timeout"]
+    assert timeout["connect"] == 5.0
+    assert timeout["read"] == 5.0
+
+
+def test_connected_client_passes_proxy_and_timeout_to_httpx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Proxy/timeout from settings thread through to the httpx client constructor."""
+    captured: dict[str, object] = {}
+    real_client = httpx.Client
+
+    def spy(*args: object, **kwargs: object) -> httpx.Client:
+        captured.update(kwargs)
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "Client", spy)
+    config = DemoSettings(token=SecretStr("x"))
+
+    with connected_client(
+        config,
+        section="demo",
+        http=HttpSettings(timeout=12.0, proxy="http://proxy.example:8080"),
+    ):
+        pass
+
+    assert captured["proxy"] == "http://proxy.example:8080"
+    assert captured["timeout"] == 12.0
 
 
 def test_missing_setting_error_names_config_set_and_env_paths() -> None:
