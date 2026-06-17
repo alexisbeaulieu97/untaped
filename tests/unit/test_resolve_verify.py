@@ -50,11 +50,13 @@ def test_ca_bundle_expanduser() -> None:
 
 def _self_signed_cert(tmp_path: Path) -> Path:
     """Mint a throwaway self-signed cert (CN-only, no SAN — the failing case)."""
+    openssl = shutil.which("openssl")
+    assert openssl is not None, "callers guard on shutil.which('openssl')"
     cert = tmp_path / "self-signed.pem"
     key = tmp_path / "self-signed.key"
     subprocess.run(
         [
-            "openssl",
+            openssl,
             "req",
             "-x509",
             "-newkey",

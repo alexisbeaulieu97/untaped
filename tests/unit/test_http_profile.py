@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from untaped.settings import get_settings, register_profile_settings
 
 
 class _GithubSettings(BaseModel):
-    token: str | None = None
+    token: SecretStr | None = None
 
 
 def test_http_resolves_from_active_profile(_isolated_config: Path) -> None:
@@ -32,7 +32,8 @@ def test_http_resolves_from_active_profile(_isolated_config: Path) -> None:
 
     settings = get_settings()
     assert settings.http.verify_ssl is False
-    assert settings.github.token == "t"
+    assert settings.github.token is not None
+    assert settings.github.token.get_secret_value() == "t"
 
 
 def test_active_profile_http_overrides_default_base(_isolated_config: Path) -> None:

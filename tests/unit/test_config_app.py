@@ -160,6 +160,27 @@ def test_set_ui_theme_writes_active_profile(app, _isolated_config: Path) -> None
     assert read_config_dict(_isolated_config)["profiles"]["default"]["ui"] == {"theme": "quiet"}
 
 
+def test_sdk_http_key_wins_over_a_like_named_tool_field(_isolated_config: Path) -> None:
+    """A tool field literally named ``http`` must not capture the SDK ``http.*``
+    key — SDK roots take precedence in key resolution."""
+
+    class _Profile(BaseModel):
+        http: bool = False  # collides with the SDK ``http`` root by name
+
+    spec = ToolSpec(command="untaped-demo", section="demo", profile_model=_Profile)
+    register_tool(spec)
+    get_settings.cache_clear()
+    app = build_config_app(spec)
+
+    result = CliInvoker().invoke(app, ["set", "http.verify_ssl", "false"])
+    assert result.exit_code == 0, result.output
+    assert "set http.verify_ssl in profile default" in result.output
+    data = read_config_dict(_isolated_config)
+    # Lands on the SDK http section, not demo.http.
+    assert data["profiles"]["default"]["http"] == {"verify_ssl": False}
+    assert "http" not in data["profiles"]["default"].get("demo", {})
+
+
 def test_set_coerces_value_as_yaml_scalar(app, _isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["set", "verbose", "true"])
     assert result.exit_code == 0, result.output

@@ -63,6 +63,7 @@ class _ConfigRegistry:
         get_profile_settings_model.cache_clear()
 
     def register_profile_settings(self, section: str, model: type[BaseModel]) -> None:
+        _reject_reserved_section(section)
         existing = self.profile_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate profile settings section: {section}")
@@ -75,6 +76,7 @@ class _ConfigRegistry:
         get_profile_settings_model.cache_clear()
 
     def register_state_settings(self, section: str, model: type[BaseModel]) -> None:
+        _reject_reserved_section(section)
         existing = self.state_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate state settings section: {section}")
@@ -153,6 +155,17 @@ def validate_disjoint_settings_sections(
     if overlap:
         joined = ", ".join(overlap)
         raise ConfigError(f"overlapping profile/state settings for section {section!r}: {joined}")
+
+
+def _reject_reserved_section(section: str) -> None:
+    """Reject a tool section name that collides with an SDK base field.
+
+    ``log_level``/``http``/``ui`` are base fields on :class:`Settings`;
+    registering a tool section with one of those names would shadow the SDK
+    field in the dynamically built model and break config resolution.
+    """
+    if section in Settings.model_fields:
+        raise ConfigError(f"reserved SDK settings section: {section!r}")
 
 
 def reset_config_registry_for_tests() -> None:
