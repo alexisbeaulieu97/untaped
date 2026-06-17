@@ -1,3 +1,3 @@
-from untaped.config.infrastructure.settings_repo import GLOBAL_SECTIONS, SettingsFileRepository
+from untaped.config.infrastructure.settings_repo import SettingsFileRepository
 
-__all__ = ["GLOBAL_SECTIONS", "SettingsFileRepository"]
+__all__ = ["SettingsFileRepository"]

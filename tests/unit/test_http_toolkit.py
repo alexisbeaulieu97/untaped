@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -16,7 +17,7 @@ from untaped.http import (
     paginate_offset,
     paginate_pages,
 )
-from untaped.settings import HttpSettings
+from untaped.settings import HttpSettings, reset_config_registry_for_tests
 
 
 class DemoSettings(BaseModel):
@@ -72,6 +73,38 @@ def test_connected_client_passes_proxy_and_timeout_to_httpx(
 
     assert captured["proxy"] == "http://proxy.example:8080"
     assert captured["timeout"] == 12.0
+
+
+def test_connected_client_defaults_to_resolved_profile_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no explicit ``http=``, the client uses the active profile's HTTP
+    settings — so a per-profile proxy/ca/verify actually takes effect for every
+    tool without each one remembering to thread it."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        "profiles:\n  default:\n    http:\n      proxy: http://corp-proxy:3128\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    reset_config_registry_for_tests()
+
+    captured: dict[str, object] = {}
+    real_client = httpx.Client
+
+    def spy(*args: object, **kwargs: object) -> httpx.Client:
+        captured.update(kwargs)
+        return real_client(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "Client", spy)
+    config = DemoSettings(token=SecretStr("x"))
+    try:
+        with connected_client(config, section="demo"):
+            pass
+    finally:
+        reset_config_registry_for_tests()
+
+    assert captured["proxy"] == "http://corp-proxy:3128"
 
 
 def test_missing_setting_error_names_config_set_and_env_paths() -> None:

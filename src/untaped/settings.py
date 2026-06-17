@@ -31,18 +31,20 @@ DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 
 
 class HttpSettings(BaseModel):
-    """Cross-cutting HTTP behaviour shared by every tool's HTTP client."""
+    """Cross-cutting HTTP behaviour for a tool's HTTP client (per-profile)."""
 
     ca_bundle: Path | None = None
     verify_ssl: bool = True
+    verify_hostname: bool = True
     timeout: float = Field(default=30.0, gt=0)
     proxy: str | None = None
 
 
-BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {
-    "http": HttpSettings,
-    "ui": UiSettings,
-}
+#: Built-in top-level *state* sections (tool-managed runtime data spliced in
+#: regardless of profile). ``http``/``ui`` used to live here but are now ordinary
+#: per-profile settings (base fields on :class:`Settings`); only a tool's own
+#: ``state_model`` registers here at runtime.
+BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {}
 
 
 class _ConfigRegistry:
@@ -103,6 +105,7 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     http: HttpSettings = Field(default_factory=HttpSettings)
+    ui: UiSettings = Field(default_factory=UiSettings)
 
     @classmethod
     def settings_customise_sources(
@@ -205,11 +208,13 @@ def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -
 
 
 def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
-    """Warn once when a registered profile section sits at the config top level.
+    """Warn once when a registered tool profile section sits at the config top level.
 
     The flat top-level layout was removed in v1.0.1; such a section is now
-    silently ignored by the profiles resolver. ``http``/``ui`` (state sections)
-    legitimately stay top-level, so only profile-scoped sections are flagged.
+    silently ignored by the profiles resolver. Tool-managed top-level *state*
+    sections legitimately stay top-level, so only profile-scoped tool sections
+    are flagged. (``http``/``ui`` are base per-profile fields, not registered
+    sections, so they aren't flagged here — like ``log_level``.)
     """
     offending = sorted(
         key
