@@ -210,12 +210,8 @@ def _set(
             full, value, stdin=stdin, prompt=prompt, repo=repo, target_profile=target_profile
         )
         target = SetSetting(repo)(full, resolved_value, profile=target_profile)
-        ui_context(strict=False).message("success", _set_message(full, target))
-
-
-def _set_message(full: str, target: str) -> str:
-    path = resolve_config_path()
-    return f"set {full} in profile {target} (config: {path})"
+        message = f"set {full} in profile {target} (config: {resolve_config_path()})"
+        ui_context(strict=False).message("success", message)
 
 
 def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
@@ -267,7 +263,7 @@ def _read_stdin_value() -> str:
 def _prompt_value(
     full_key: str, repo: SettingsFileRepository, *, target_profile: str | None
 ) -> str:
-    descriptor = _descriptor_for_key(full_key, repo)
+    descriptor = repo.descriptor(full_key)
     message = f"Value for {full_key}"
     ui = ui_context(strict=False)
     if descriptor.is_secret:
@@ -294,10 +290,6 @@ def _prompt_value(
             default=default if default in bool_values else None,
         )
     return ui.text(message, default=default)
-
-
-def _descriptor_for_key(full_key: str, repo: SettingsFileRepository) -> FieldDescriptor:
-    return repo.descriptor(full_key)
 
 
 def _prompt_default(
