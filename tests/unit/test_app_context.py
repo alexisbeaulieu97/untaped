@@ -16,7 +16,8 @@ from untaped.settings import (
     register_profile_settings,
     reset_config_registry_for_tests,
 )
-from untaped.ui import BUILTIN_THEMES, ui_context
+from untaped.theme import BUILTIN_THEMES
+from untaped.ui import ui_context
 
 
 class DemoSettings(BaseModel):
