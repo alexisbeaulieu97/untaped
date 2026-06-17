@@ -321,8 +321,10 @@ def test_status_honors_global_ui_collection_view_for_table_output(
     )
     isolate_config.write_text(
         f"""
-        ui:
-          collection_view: list
+        profiles:
+          default:
+            ui:
+              collection_view: list
         workspace:
           workspaces:
             - name: prod
