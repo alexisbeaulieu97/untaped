@@ -30,7 +30,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from untaped.ui import OutputFormat, ThemeSpec, UiContext
+from untaped.theme import ThemeSpec
+from untaped.ui import OutputFormat, UiContext
 
 Row = dict[str, object]
 

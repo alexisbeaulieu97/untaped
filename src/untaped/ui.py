@@ -6,12 +6,11 @@ import io
 import json
 import shutil
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from typing import Any, Literal, Protocol, TextIO, cast
 
 import yaml
-from pydantic import BaseModel, Field
 from rich import box
 from rich.console import Console
 from rich.table import Table
@@ -23,116 +22,25 @@ from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
-    PromptToolkitPromptBackend,
     handle_prompt_exception,
-    prompt_style_from_roles,
+)
+from untaped.theme import (
+    BUILTIN_THEMES,
+    DEFAULT_SYMBOLS,
+    BorderStyle,
+    ThemeSpec,
+    UiSettings,
+    resolve_theme_or_default,
 )
 
 OutputFormat = Literal["json", "yaml", "table", "raw", "pipe"]
-BorderStyle = Literal["rounded", "square", "ascii", "none"]
-CollectionView = Literal["table", "list"]
-DetailView = Literal["list", "table"]
-Density = Literal["normal", "compact"]
 MessageKind = Literal["success", "warning", "error", "info"]
 
 Row = dict[str, object]
 
-DEFAULT_SYMBOLS: dict[str, str] = {
-    "success": "",
-    "warning": "",
-    "error": "",
-    "info": "",
-}
-
-
-class ThemeSpec(BaseModel):
-    """Terminal presentation tokens and default semantic view choices."""
-
-    border: BorderStyle = "rounded"
-    density: Density = "normal"
-    collection_view: CollectionView = "table"
-    detail_view: DetailView = "list"
-    symbols: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_SYMBOLS))
-    color_roles: dict[str, str] = Field(default_factory=dict)
-
-
-class UiSettings(BaseModel):
-    """Global UI preferences loaded from the top-level ``ui`` config section."""
-
-    theme: str = "default"
-    border: BorderStyle | None = None
-    density: Density | None = None
-    collection_view: CollectionView | None = None
-    detail_view: DetailView | None = None
-    symbols: dict[str, str] = Field(default_factory=dict)
-    color_roles: dict[str, str] = Field(default_factory=dict)
-
-    def apply_to(self, theme: ThemeSpec) -> ThemeSpec:
-        """Apply user overrides to a registered or built-in theme."""
-        data = theme.model_dump()
-        for field in ("border", "density", "collection_view", "detail_view"):
-            value = getattr(self, field)
-            if value is not None:
-                data[field] = value
-        data["symbols"] = {**theme.symbols, **self.symbols}
-        data["color_roles"] = {**theme.color_roles, **self.color_roles}
-        return ThemeSpec.model_validate(data)
-
 
 class _HasUiSettings(Protocol):
     ui: UiSettings
-
-
-BUILTIN_THEMES: dict[str, ThemeSpec] = {
-    "default": ThemeSpec(),
-    "plain": ThemeSpec(border="ascii"),
-    "compact": ThemeSpec(density="compact"),
-    "high-contrast": ThemeSpec(
-        border="square",
-        density="normal",
-        collection_view="table",
-        detail_view="list",
-        color_roles={
-            "header": "bold bright_cyan",
-            "border": "bright_cyan",
-            "key": "bold bright_cyan",
-            "value": "bright_white",
-            "success": "bold bright_green",
-            "info": "bold bright_blue",
-            "warning": "bold yellow",
-            "error": "bold bright_red",
-        },
-    ),
-    "quiet": ThemeSpec(
-        border="none",
-        density="compact",
-        collection_view="list",
-        detail_view="list",
-        color_roles={
-            "key": "dim cyan",
-            "success": "green",
-            "info": "blue",
-            "warning": "yellow",
-            "error": "red",
-        },
-    ),
-    "classic": ThemeSpec(
-        border="rounded",
-        density="normal",
-        collection_view="table",
-        detail_view="list",
-        color_roles={
-            "header": "bold cyan",
-            "border": "cyan",
-            "key": "cyan",
-            "value": "white",
-            "success": "green",
-            "info": "blue",
-            "warning": "yellow",
-            "error": "red",
-        },
-    ),
-}
 
 
 class Renderer(Protocol):
@@ -270,11 +178,31 @@ class UiContext:
         self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
-        self.prompt_backend = prompt_backend or PromptToolkitPromptBackend(
-            stdin=self.stdin,
-            stderr=self.stderr,
-            style=prompt_style_from_roles(self.theme.color_roles),
-        )
+        self._prompt_backend = prompt_backend
+
+    @property
+    def prompt_backend(self) -> PromptBackend:
+        """The interactive prompt backend, built lazily on first use.
+
+        Constructing the default backend imports ``prompt_toolkit``; deferring
+        it here keeps that cost off any rendering-only or piped invocation that
+        never prompts. An injected backend (tests, alternative frontends) is
+        returned as-is.
+        """
+        backend = self._prompt_backend
+        if backend is None:
+            from untaped.prompts import (  # noqa: PLC0415
+                PromptToolkitPromptBackend,
+                prompt_style_from_roles,
+            )
+
+            backend = PromptToolkitPromptBackend(
+                stdin=self.stdin,
+                stderr=self.stderr,
+                style=prompt_style_from_roles(self.theme.color_roles),
+            )
+            self._prompt_backend = backend
+        return backend
 
     def collection(
         self,
@@ -465,41 +393,6 @@ def ui_context(
             lambda: cast(_HasUiSettings, get_settings()).ui, strict=strict
         )
     return UiContext(theme=theme, stdin=stdin, stdout=stdout, stderr=stderr, verbose=is_verbose())
-
-
-def resolve_theme_or_default(
-    produce_settings: Callable[[], UiSettings | None],
-    *,
-    strict: bool,
-) -> ThemeSpec:
-    """Resolve the theme from ``produce_settings()``, degrading to the default.
-
-    A :class:`ConfigError` from either fetching the settings or resolving the
-    theme degrades to the default preset unless ``strict``. The settings source
-    is a thunk so callers supply their own (live cache vs. a frozen snapshot)
-    while sharing this one degrade policy.
-    """
-    try:
-        return resolve_theme(produce_settings())
-    except ConfigError:
-        if strict:
-            raise
-        return BUILTIN_THEMES["default"]
-
-
-def resolve_theme(
-    settings: UiSettings | None = None,
-    *,
-    themes: Mapping[str, ThemeSpec] | None = None,
-) -> ThemeSpec:
-    """Resolve the active theme plus user overrides."""
-    ui_settings = settings or UiSettings()
-    available = {**BUILTIN_THEMES, **dict(themes or {})}
-    theme = available.get(ui_settings.theme)
-    if theme is None:
-        valid = ", ".join(sorted(available))
-        raise ConfigError(f"unknown UI theme: {ui_settings.theme!r}. Valid themes: {valid}")
-    return ui_settings.apply_to(theme)
 
 
 def _parse_columns(columns: list[str] | None) -> list[tuple[str, list[str]]] | None:

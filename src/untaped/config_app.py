@@ -44,8 +44,9 @@ from untaped.errors import ConfigError
 from untaped.output import OutputFormat
 from untaped.prompts import PromptChoice
 from untaped.settings import resolve_config_path
+from untaped.theme import BUILTIN_THEMES
 from untaped.tool import ToolSpec
-from untaped.ui import BUILTIN_THEMES, UiContext, ui_context
+from untaped.ui import UiContext, ui_context
 
 
 @dataclass(frozen=True)

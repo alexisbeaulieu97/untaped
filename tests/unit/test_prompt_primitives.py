@@ -192,8 +192,12 @@ def test_prompt_toolkit_select_uses_stderr_session_and_returns_typed_value(
     ]
     seen: dict[str, Any] = {}
 
-    monkeypatch.setattr("untaped.prompts.create_input", lambda stream: ("input", stream))
-    monkeypatch.setattr("untaped.prompts.create_output", lambda stream: ("output", stream))
+    monkeypatch.setattr(
+        "prompt_toolkit.input.defaults.create_input", lambda stream: ("input", stream)
+    )
+    monkeypatch.setattr(
+        "prompt_toolkit.output.defaults.create_output", lambda stream: ("output", stream)
+    )
 
     @contextmanager
     def _app_session(**kwargs: object) -> Any:
@@ -204,8 +208,8 @@ def test_prompt_toolkit_select_uses_stderr_session_and_returns_typed_value(
         seen["choice"] = kwargs
         return 0
 
-    monkeypatch.setattr("untaped.prompts.create_app_session", _app_session)
-    monkeypatch.setattr("untaped.prompts.choice", _choice)
+    monkeypatch.setattr("prompt_toolkit.application.current.create_app_session", _app_session)
+    monkeypatch.setattr("prompt_toolkit.shortcuts.choice", _choice)
 
     selected = PromptToolkitPromptBackend(stdin=stdin, stderr=stderr).select(
         "Pick repo",
@@ -237,8 +241,8 @@ def test_prompt_style_preserves_white_and_bright_white_distinction() -> None:
 def test_prompt_toolkit_multiselect_handles_cancelled_dialog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("untaped.prompts.create_input", lambda stream: stream)
-    monkeypatch.setattr("untaped.prompts.create_output", lambda stream: stream)
+    monkeypatch.setattr("prompt_toolkit.input.defaults.create_input", lambda stream: stream)
+    monkeypatch.setattr("prompt_toolkit.output.defaults.create_output", lambda stream: stream)
 
     @contextmanager
     def _app_session(**_: object) -> Any:
@@ -248,9 +252,9 @@ def test_prompt_toolkit_multiselect_handles_cancelled_dialog(
         def run(self) -> None:
             return None
 
-    monkeypatch.setattr("untaped.prompts.create_app_session", _app_session)
+    monkeypatch.setattr("prompt_toolkit.application.current.create_app_session", _app_session)
     monkeypatch.setattr(
-        "untaped.prompts.checkboxlist_dialog",
+        "prompt_toolkit.shortcuts.checkboxlist_dialog",
         lambda **_: _Dialog(),
     )
 

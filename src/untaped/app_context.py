@@ -14,7 +14,8 @@ from pydantic import BaseModel
 
 from untaped.errors import ConfigError
 from untaped.settings import HttpSettings, Settings, get_settings
-from untaped.ui import UiContext, UiSettings, resolve_theme_or_default, ui_context
+from untaped.theme import UiSettings, resolve_theme_or_default
+from untaped.ui import UiContext, ui_context
 
 
 @dataclass(frozen=True)
