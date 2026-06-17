@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.errors import HttpError
+from untaped.errors import HttpError, HttpStatusError, HttpTransportError
 from untaped.http import HttpClient
 
 
@@ -87,6 +87,51 @@ def test_network_error_raises_http_error() -> None:
         with pytest.raises(HttpError) as exc_info:
             client.get("/fail")
     assert exc_info.value.status_code is None
+
+
+def test_status_failure_raises_http_status_error() -> None:
+    """A 4xx/5xx is an ``HttpStatusError`` — still an ``HttpError`` (base)."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/missing").mock(return_value=httpx.Response(404, json={"e": "nope"}))
+        with pytest.raises(HttpStatusError) as exc_info:
+            client.get("/missing")
+    assert isinstance(exc_info.value, HttpError)
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.body is not None
+
+
+@pytest.mark.parametrize(
+    "transport_exc",
+    [httpx.ConnectError("dns"), httpx.ReadTimeout("slow"), httpx.PoolTimeout("pool")],
+)
+def test_transport_failure_raises_http_transport_error(
+    transport_exc: httpx.HTTPError,
+) -> None:
+    """Connect/timeout/pool failures are ``HttpTransportError`` — still ``HttpError``."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/fail").mock(side_effect=transport_exc)
+        with pytest.raises(HttpTransportError) as exc_info:
+            client.get("/fail")
+    assert isinstance(exc_info.value, HttpError)
+    assert exc_info.value.status_code is None
+
+
+def test_status_error_is_not_a_transport_error() -> None:
+    """The two subclasses are siblings, so a status failure isn't transport."""
+    with (
+        respx.mock(base_url="https://example.com") as mock,
+        HttpClient(base_url="https://example.com") as client,
+    ):
+        mock.get("/boom").mock(return_value=httpx.Response(500))
+        with pytest.raises(HttpError) as exc_info:
+            client.get("/boom")
+    assert not isinstance(exc_info.value, HttpTransportError)
 
 
 def test_get_json_returns_decoded_body() -> None:

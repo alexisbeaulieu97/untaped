@@ -25,6 +25,16 @@ def test_prompt_choice_is_re_exported() -> None:
     assert "PromptChoice" in untaped.__all__
 
 
+def test_http_error_subclasses_are_re_exported() -> None:
+    from untaped import errors
+
+    assert untaped.HttpStatusError is errors.HttpStatusError
+    assert untaped.HttpTransportError is errors.HttpTransportError
+    assert issubclass(untaped.HttpStatusError, untaped.HttpError)
+    assert issubclass(untaped.HttpTransportError, untaped.HttpError)
+    assert {"HttpStatusError", "HttpTransportError"} <= set(untaped.__all__)
+
+
 def test_retired_names_are_not_exposed() -> None:
     """The retired plugin/profile-shim/logging names stay off the surface."""
     for name in (

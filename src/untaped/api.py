@@ -28,7 +28,14 @@ from untaped.cli import (
     resolve_each,
 )
 from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
-from untaped.errors import ConfigError, HttpError, UntapedError, first_validation_error
+from untaped.errors import (
+    ConfigError,
+    HttpError,
+    HttpStatusError,
+    HttpTransportError,
+    UntapedError,
+    first_validation_error,
+)
 from untaped.http import (
     HttpClient,
     connected_client,
@@ -71,6 +78,8 @@ __all__ = [
     "HttpClient",
     "HttpError",
     "HttpSettings",
+    "HttpStatusError",
+    "HttpTransportError",
     "OutputFormat",
     "PipeEnvelope",
     "ProgressHandle",

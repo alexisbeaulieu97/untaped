@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import sys
 from collections.abc import Sequence
@@ -218,14 +219,14 @@ class UiContext:
             fmt=fmt,
             columns=columns,
             theme=self.theme,
-            colorize=_stream_is_tty(self.stdout),
+            colorize=_should_colorize(self.stdout),
             kind=kind,
         )
         if not rows and fmt == "table" and empty:
             note = empty if isinstance(empty, str) else "No results."
             print(
                 self.renderer.render_message(
-                    "info", note, theme=self.theme, colorize=_stream_is_tty(self.stderr)
+                    "info", note, theme=self.theme, colorize=_should_colorize(self.stderr)
                 ),
                 file=self.stderr,
             )
@@ -244,7 +245,7 @@ class UiContext:
             fmt=fmt,
             columns=columns,
             theme=self.theme,
-            colorize=_stream_is_tty(self.stdout),
+            colorize=_should_colorize(self.stdout),
             kind=kind,
         )
 
@@ -253,7 +254,7 @@ class UiContext:
             kind,
             text,
             theme=self.theme,
-            colorize=_stream_is_tty(self.stderr),
+            colorize=_should_colorize(self.stderr),
         )
         print(rendered, file=self.stderr)
 
@@ -527,6 +528,24 @@ def _stream_is_tty(stream: TextIO) -> bool:
         return bool(isatty())
     except OSError:
         return False
+
+
+def _should_colorize(stream: TextIO) -> bool:
+    """Decide whether to emit ANSI color for ``stream``.
+
+    Precedence (the de-facto cross-tool convention):
+
+    1. ``NO_COLOR`` set to any non-empty value → never color (opt-out wins).
+    2. ``FORCE_COLOR`` set to any non-empty value → always color.
+    3. Otherwise auto-detect from ``stream.isatty()``.
+
+    Color is on/off only; ``FORCE_COLOR``'s 1/2/3 depth levels are not honoured.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    return _stream_is_tty(stream)
 
 
 def _render_text(text: Text, *, colorize: bool) -> str:

@@ -7,6 +7,7 @@ section(s) and the built-in profiles layout.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from functools import lru_cache
@@ -34,6 +35,8 @@ class HttpSettings(BaseModel):
 
     ca_bundle: Path | None = None
     verify_ssl: bool = True
+    timeout: float = Field(default=30.0, gt=0)
+    proxy: str | None = None
 
 
 BUILTIN_STATE_SECTIONS: dict[str, type[BaseModel]] = {
@@ -52,6 +55,7 @@ class _ConfigRegistry:
     def reset(self) -> None:
         self.profile_sections = {}
         self.state_sections = dict(BUILTIN_STATE_SECTIONS)
+        _warned_legacy_config.clear()
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
@@ -82,6 +86,10 @@ class _ConfigRegistry:
 
 
 _CONFIG_REGISTRY = _ConfigRegistry()
+
+# Config paths already warned about (warn-once-per-process for the flat→profiles
+# migration); keyed by (path, offending section names). Cleared on registry reset.
+_warned_legacy_config: set[tuple[str, frozenset[str]]] = set()
 
 
 class Settings(BaseSettings):
@@ -160,6 +168,7 @@ class LayoutSettingsSource(InitSettingsSource):
         raw = self._load_raw_yaml(yaml_file)
         effective = active_settings_layout().effective(raw)
         splice_registered_state(raw, effective)
+        _warn_on_legacy_flat_sections(raw, yaml_file)
         super().__init__(settings_cls, effective)
 
     @staticmethod
@@ -193,6 +202,35 @@ def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -
             merged.update(state_data)
         else:
             effective[section] = state_data
+
+
+def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
+    """Warn once when a registered profile section sits at the config top level.
+
+    The flat top-level layout was removed in v1.0.1; such a section is now
+    silently ignored by the profiles resolver. ``http``/``ui`` (state sections)
+    legitimately stay top-level, so only profile-scoped sections are flagged.
+    """
+    offending = sorted(
+        key
+        for key in raw
+        if key in _CONFIG_REGISTRY.profile_sections and key not in _CONFIG_REGISTRY.state_sections
+    )
+    if not offending:
+        return
+    cache_key = (str(path), frozenset(offending))
+    if cache_key in _warned_legacy_config:
+        return
+    _warned_legacy_config.add(cache_key)
+    sections = ", ".join(offending)
+    logging.getLogger("untaped").warning(
+        "%s has top-level section(s) %s that are ignored since the v1.0.1 profiles "
+        "layout. Move them under `profiles.default.<section>` "
+        "(e.g. `profiles:` → `default:` → `%s: ...`).",
+        path,
+        sections,
+        offending[0],
+    )
 
 
 def resolve_config_path() -> Path:

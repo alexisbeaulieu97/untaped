@@ -144,6 +144,63 @@ def test_structured_formats_ignore_color_roles_even_for_tty_stdout() -> None:
     assert not _has_ansi(ui.collection(rows, fmt="raw"))
 
 
+def test_no_color_env_strips_ansi_even_for_tty_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
+
+    rendered = UiContext(stdout=TtyStringIO(), theme=theme).collection(
+        [{"id": 1, "name": "alpha"}],
+        fmt="table",
+    )
+
+    assert "alpha" in rendered
+    assert not _has_ansi(rendered)
+
+
+def test_force_color_env_emits_ansi_even_for_non_tty_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
+
+    rendered = UiContext(stdout=io.StringIO(), theme=theme).collection(
+        [{"id": 1, "name": "alpha"}],
+        fmt="table",
+    )
+
+    assert _has_ansi(rendered)
+
+
+def test_no_color_wins_over_force_color_when_both_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
+
+    rendered = UiContext(stdout=TtyStringIO(), theme=theme).collection(
+        [{"id": 1, "name": "alpha"}],
+        fmt="table",
+    )
+
+    assert not _has_ansi(rendered)
+
+
+def test_empty_force_color_does_not_force_color_on_non_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``FORCE_COLOR=`` (empty) is not a request to force color (matches NO_COLOR)."""
+    monkeypatch.setenv("FORCE_COLOR", "")
+    theme = ThemeSpec(color_roles={"header": "bold cyan", "value": "yellow"})
+
+    rendered = UiContext(stdout=io.StringIO(), theme=theme).collection(
+        [{"id": 1, "name": "alpha"}],
+        fmt="table",
+    )
+
+    assert not _has_ansi(rendered)
+
+
 def test_format_output_accepts_explicit_theme_for_compatibility() -> None:
     rendered = format_output(
         [{"id": 1, "name": "alpha"}],
