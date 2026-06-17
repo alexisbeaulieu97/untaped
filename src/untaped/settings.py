@@ -208,18 +208,18 @@ def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -
 
 
 def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
-    """Warn once when a registered tool profile section sits at the config top level.
+    """Warn once when a per-profile setting sits at the config top level.
 
-    The flat top-level layout was removed in v1.0.1; such a section is now
-    silently ignored by the profiles resolver. Tool-managed top-level *state*
-    sections legitimately stay top-level, so only profile-scoped tool sections
-    are flagged. (``http``/``ui`` are base per-profile fields, not registered
-    sections, so they aren't flagged here — like ``log_level``.)
+    The flat top-level layout was removed in v1.0.1 (and ``http``/``ui`` joined
+    it in v2.0.0); such a key is now silently ignored by the profiles resolver.
+    The set of "belongs under a profile" keys is derived from the schema — the
+    base per-profile fields (``log_level``, ``http``, ``ui``) plus every
+    registered tool section — so there's no hard-coded name list. Tool-managed
+    top-level *state* sections legitimately stay top-level and are excluded.
     """
+    profile_keys = set(Settings.model_fields) | set(_CONFIG_REGISTRY.profile_sections)
     offending = sorted(
-        key
-        for key in raw
-        if key in _CONFIG_REGISTRY.profile_sections and key not in _CONFIG_REGISTRY.state_sections
+        key for key in raw if key in profile_keys and key not in _CONFIG_REGISTRY.state_sections
     )
     if not offending:
         return

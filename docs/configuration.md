@@ -46,6 +46,25 @@ Each tool validates **only its own section** (`extra="ignore"`) and writes are
 surgical and filelocked, so an older tool never clobbers a newer tool's section.
 See [decisions.md](./decisions.md).
 
+### Migrating a v1 config to v2
+
+If you have a pre-2.0 config with top-level `http:` or `ui:` blocks, move them
+under `profiles.default` (anything else under `profiles.default` is unchanged).
+Any tool will **warn** on load if it finds a per-profile key stranded at the top
+level, naming the key and where it belongs. A top-level block is otherwise
+silently ignored — note that a stranded `http.verify_ssl: false` reverts to
+verification *on*, and a stranded `http.proxy` stops being applied.
+
+```yaml
+# v1 (ignored in v2)            # v2
+http:                           profiles:
+  verify_ssl: false               default:
+ui:                                 http:
+  theme: quiet                        verify_ssl: false
+                                      ui:
+                                        theme: quiet
+```
+
 ## Where the file lives
 
 ```text

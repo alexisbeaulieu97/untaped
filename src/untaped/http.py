@@ -61,6 +61,8 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
     """
     if not http.verify_ssl:
         return False
+    # Fast path: hostname-checked + a pinned CA → hand httpx the path and let it
+    # build the (equivalent) default, hostname-checking context itself.
     if http.verify_hostname and http.ca_bundle is not None:
         return str(http.ca_bundle.expanduser())
     context = _ssl_context(http.ca_bundle)
