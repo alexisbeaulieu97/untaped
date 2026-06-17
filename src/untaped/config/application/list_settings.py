@@ -6,6 +6,7 @@ from typing import Any
 
 from untaped.config.application.ports import SettingsReader
 from untaped.config.domain import SettingEntry, Source, display_default, display_value
+from untaped.config_file import MISSING, get_at_path
 from untaped.config_schema import FieldDescriptor
 
 
@@ -18,12 +19,14 @@ class ListSettings:
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
         settings = self._repo.current_settings()
         provenance = self._repo.provenance()
+        yaml_dict = self._repo.yaml_dict()
         return [
             setting_entry_for_descriptor(
                 self._repo,
                 descriptor,
                 settings=settings,
                 provenance=provenance,
+                yaml_dict=yaml_dict,
                 reveal_secrets=reveal_secrets,
             )
             for descriptor in self._repo.descriptors()
@@ -68,6 +71,7 @@ def setting_entry_for_descriptor(
     *,
     settings: Any | None = None,
     provenance: dict[tuple[str, ...], str] | None = None,
+    yaml_dict: dict[str, Any] | None = None,
     reveal_secrets: bool = False,
     include_profile: bool = False,
 ) -> SettingEntry:
@@ -76,14 +80,17 @@ def setting_entry_for_descriptor(
     Provenance for SDK-owned *global* sections (``ui``, ``http``) is detected
     here for every such key — a top-level block is attributed to ``global`` —
     so the ``get`` and ``list`` surfaces stay consistent without per-section
-    special-casing.
+    special-casing. ``settings``/``provenance``/``yaml_dict`` may be passed in
+    so a batch caller (``ListSettings``) resolves each once instead of per entry.
     """
     resolved_settings = repo.current_settings() if settings is None else settings
     resolved_provenance = repo.provenance() if provenance is None else provenance
+    resolved_yaml = repo.yaml_dict() if yaml_dict is None else yaml_dict
     current = _walk_attr(resolved_settings, descriptor.path)
     in_env = repo.env_value_for(descriptor) is not None
-    global_configured = repo.global_section_of(descriptor.key) is not None and _has_path(
-        repo.yaml_dict(), descriptor.path
+    global_configured = (
+        repo.global_section_of(descriptor.key) is not None
+        and get_at_path(resolved_yaml, descriptor.path) is not MISSING
     )
     source = _resolve_source(
         in_env,
@@ -99,16 +106,6 @@ def setting_entry_for_descriptor(
         source=source,
         profile=source.profile if include_profile else None,
     )
-
-
-def _has_path(data: dict[str, Any], path: tuple[str, ...]) -> bool:
-    """True when ``path`` resolves to a leaf present in the raw YAML dict."""
-    cursor: Any = data
-    for segment in path:
-        if not isinstance(cursor, dict) or segment not in cursor:
-            return False
-        cursor = cursor[segment]
-    return True
 
 
 def _walk_attr(obj: Any, path: tuple[str, ...]) -> Any:
