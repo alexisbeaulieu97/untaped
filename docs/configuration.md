@@ -8,7 +8,7 @@ own `uv tool` environment. They all read and write **one shared file**,
 commands that manage it are per tool:
 
 - `<tool> config set|get|list|unset` — read and write the setting *keys*
-  (the tool's own section, plus the per-profile `http.*` and `ui.theme`).
+  (the tool's own section, plus the per-profile `http.*` and `ui.*` scalars).
 - `<tool> profile create|list|use|delete` — manage the *profiles* (named
   overlays such as `dev`, `prod`, `homelab`).
 
@@ -157,7 +157,7 @@ the schema's built-in defaults sit beneath everything.
 `ui:` is a per-profile setting in SDK 2.x, but it still only affects human
 terminal rendering for semantic collections, details, and status messages. It
 does not change `--format json`, `--format yaml`, or `--format raw`; those
-structured formats still work if a configured theme preset is unavailable.
+structured formats ignore theme presets entirely.
 
 `ui.color_roles` values are Rich style strings, such as `bold cyan`, `green`, or
 `red`. Supported role names are `header`, `border`, `key`, `value`, `success`,

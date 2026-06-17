@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from untaped.errors import ConfigError
 from untaped.settings import (
     get_settings,
     register_profile_settings,
+    register_state_settings,
     reset_config_registry_for_tests,
 )
 
@@ -84,6 +86,16 @@ def test_warns_for_top_level_http_and_ui(
 
     messages = _warnings(caplog)
     assert any("http" in m and "ui" in m and "profiles.default" in m for m in messages), messages
+
+
+@pytest.mark.parametrize("reserved", ["http", "ui", "log_level"])
+def test_reserved_sdk_section_names_are_rejected(reserved: str) -> None:
+    # http/ui/log_level are base fields on Settings; a tool registering a
+    # section with one of those names would shadow the SDK field.
+    with pytest.raises(ConfigError, match="reserved"):
+        register_profile_settings(reserved, DemoSettings)
+    with pytest.raises(ConfigError, match="reserved"):
+        register_state_settings(reserved, DemoSettings)
 
 
 def test_warns_for_top_level_log_level(

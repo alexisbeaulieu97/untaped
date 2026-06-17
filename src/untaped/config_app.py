@@ -45,7 +45,7 @@ from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.output import OutputFormat
 from untaped.prompts import PromptChoice
-from untaped.settings import resolve_config_path
+from untaped.settings import Settings, resolve_config_path
 from untaped.theme import BUILTIN_THEMES
 from untaped.tool import ToolSpec
 from untaped.ui import UiContext, ui_context
@@ -158,10 +158,14 @@ def _resolve_key(ctx: _Ctx, key: str) -> str:
     """Map a user key to its fully-qualified config key.
 
     Bare keys naming the tool's own section field are prefixed with the tool's
-    section; fully-qualified keys (``ui.``, ``http.``, ``log_level``) pass
-    through. Keys naming a tool-managed state field are rejected.
+    section; SDK-owned roots (``log_level``, ``http.*``, ``ui.*`` — the base
+    fields on :class:`~untaped.settings.Settings`) pass through, taking
+    precedence over a tool field of the same name. Keys naming a tool-managed
+    state field are rejected.
     """
     first = key.split(".", 1)[0]
+    if first in Settings.model_fields:
+        return key
     if first in ctx.state_fields:
         raise ConfigError(f"{key!r} is managed by {ctx.command} and is not a configurable setting")
     if first in ctx.section_fields:
