@@ -12,14 +12,8 @@ import yaml
 
 from untaped.errors import ConfigError
 from untaped.output import format_output
-from untaped.ui import (
-    BUILTIN_THEMES,
-    ThemeSpec,
-    UiContext,
-    UiSettings,
-    resolve_theme,
-    ui_context,
-)
+from untaped.theme import BUILTIN_THEMES, ThemeSpec, UiSettings, resolve_theme
+from untaped.ui import UiContext, ui_context
 
 
 class TtyStringIO(io.StringIO):
@@ -362,3 +356,15 @@ def test_resolve_theme_finds_quiet_preset_from_builtins_without_registry() -> No
         "warning": "yellow",
         "error": "red",
     }
+
+
+def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None:
+    """With no injected backend, the default prompt_toolkit backend is built on
+    first access (the only path that imports ``prompt_toolkit``) and reused."""
+    from untaped.prompts import PromptToolkitPromptBackend
+
+    ui = UiContext()
+
+    backend = ui.prompt_backend
+    assert isinstance(backend, PromptToolkitPromptBackend)
+    assert ui.prompt_backend is backend  # cached, not rebuilt per access

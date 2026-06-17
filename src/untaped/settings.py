@@ -24,7 +24,7 @@ from pydantic_settings.sources import InitSettingsSource
 
 from untaped.errors import ConfigError, first_validation_error
 from untaped.settings_layout import ProfilesSettingsLayout
-from untaped.ui import UiSettings
+from untaped.theme import UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 

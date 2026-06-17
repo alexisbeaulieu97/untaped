@@ -17,17 +17,18 @@ from __future__ import annotations
 import ssl
 from collections.abc import Callable, Iterator, Mapping
 from types import TracebackType
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-import httpx
-import truststore
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.identity import current_tool_command
 from untaped.settings import HttpSettings
 
-AuthFn = Callable[[httpx.Request], httpx.Request]
+if TYPE_CHECKING:
+    import httpx
+
+type AuthFn = Callable[[httpx.Request], httpx.Request]
 VerifyTypes = bool | str | ssl.SSLContext
 PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
 
@@ -50,6 +51,8 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
         return False
     if http.ca_bundle is not None:
         return str(http.ca_bundle.expanduser())
+    import truststore  # noqa: PLC0415
+
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
 
@@ -65,6 +68,8 @@ class HttpClient:
         auth: AuthFn | None = None,
         verify: VerifyTypes = True,
     ) -> None:
+        import httpx  # noqa: PLC0415
+
         self._client = httpx.Client(
             base_url=base_url,
             timeout=timeout,
@@ -74,6 +79,8 @@ class HttpClient:
         self._auth = auth
 
     def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        import httpx  # noqa: PLC0415
+
         request = self._client.build_request(method, path, **kwargs)
         if self._auth is not None:
             request = self._auth(request)
