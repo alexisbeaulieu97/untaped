@@ -48,8 +48,9 @@ from untaped.settings import (
     get_settings,
 )
 from untaped.stdin import read_identifiers, read_records, read_stdin
+from untaped.theme import ThemeSpec
 from untaped.tool import SkillAsset, ToolSpec, register_tool
-from untaped.ui import ThemeSpec, UiContext, ui_context
+from untaped.ui import UiContext, ui_context
 
 
 def invalidate_settings_cache() -> None:

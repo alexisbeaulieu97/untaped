@@ -8,19 +8,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
-from prompt_toolkit import PromptSession
-from prompt_toolkit.application.current import create_app_session
-from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.formatted_text import AnyFormattedText
-from prompt_toolkit.input.defaults import create_input
-from prompt_toolkit.output.defaults import create_output
-from prompt_toolkit.shortcuts import checkboxlist_dialog, choice
-from prompt_toolkit.styles import Style
-
 from untaped.errors import ConfigError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from prompt_toolkit.completion import WordCompleter
+    from prompt_toolkit.formatted_text import AnyFormattedText
+    from prompt_toolkit.styles import Style
 
 
 T = TypeVar("T")
@@ -111,6 +106,8 @@ class PromptToolkitPromptBackend:
     ) -> T:
         if search:
             return self._search_select(message, choices, default=default)
+        from prompt_toolkit.shortcuts import choice  # noqa: PLC0415
+
         options = [
             (index, _choice_display(choice_item)) for index, choice_item in enumerate(choices)
         ]
@@ -131,6 +128,8 @@ class PromptToolkitPromptBackend:
         *,
         defaults: Sequence[T],
     ) -> list[T]:
+        from prompt_toolkit.shortcuts import checkboxlist_dialog  # noqa: PLC0415
+
         values = [
             (index, _choice_display(choice_item)) for index, choice_item in enumerate(choices)
         ]
@@ -156,6 +155,8 @@ class PromptToolkitPromptBackend:
         *,
         default: T | None,
     ) -> T:
+        from prompt_toolkit.completion import WordCompleter  # noqa: PLC0415
+
         labels = [_choice_display(choice_item) for choice_item in choices]
         by_label = dict(zip(labels, choices, strict=True))
         default_index = _choice_index(choices, default)
@@ -178,6 +179,10 @@ class PromptToolkitPromptBackend:
         is_password: bool = False,
         completer: WordCompleter | None = None,
     ) -> str:
+        from prompt_toolkit import PromptSession  # noqa: PLC0415
+        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
+        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+
         session: PromptSession[str] = PromptSession(
             input=create_input(self.stdin),
             output=create_output(self.stderr),
@@ -189,6 +194,10 @@ class PromptToolkitPromptBackend:
 
     @contextmanager
     def _app_session(self) -> Iterator[None]:
+        from prompt_toolkit.application.current import create_app_session  # noqa: PLC0415
+        from prompt_toolkit.input.defaults import create_input  # noqa: PLC0415
+        from prompt_toolkit.output.defaults import create_output  # noqa: PLC0415
+
         with create_app_session(
             input=create_input(self.stdin),
             output=create_output(self.stderr),
@@ -198,6 +207,8 @@ class PromptToolkitPromptBackend:
 
 def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
     """Build a prompt_toolkit style from conservative UI color roles."""
+    from prompt_toolkit.styles import Style  # noqa: PLC0415
+
     key = _prompt_toolkit_style(color_roles.get("key") or color_roles.get("header"))
     value = _prompt_toolkit_style(color_roles.get("value"))
     border = _prompt_toolkit_style(color_roles.get("border"))
