@@ -16,7 +16,7 @@ from untaped.settings import (
     register_profile_settings,
     reset_config_registry_for_tests,
 )
-from untaped.ui import ui_context
+from untaped.ui import BUILTIN_THEMES, ui_context
 
 
 class DemoSettings(BaseModel):
@@ -77,3 +77,16 @@ def test_ui_uses_settings_snapshot_not_later_cache_state(_isolated_config: Path)
     assert ui_context().theme != snapshot_theme
     # ...but the snapshot-bound context stays pinned to its resolved theme.
     assert ctx.ui().theme == snapshot_theme
+
+
+def test_ui_degrades_unknown_theme_per_strict_flag(_isolated_config: Path) -> None:
+    """``ctx.ui()`` shares one degrade policy with ``ui_context``: an unknown
+    theme name falls back to the default preset when ``strict=False`` and raises
+    when ``strict=True``."""
+    _isolated_config.write_text("ui:\n  theme: nonexistent\n")
+    get_settings.cache_clear()
+    ctx = app_context()
+
+    assert ctx.ui(strict=False).theme == BUILTIN_THEMES["default"]
+    with pytest.raises(ConfigError, match="unknown UI theme"):
+        ctx.ui(strict=True)
