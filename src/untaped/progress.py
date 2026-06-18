@@ -26,6 +26,21 @@ _THROTTLE_INTERVAL = 2.0
 _PERCENT_STEP = 10
 _SPINNER_TICK = 0.1
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_ASCII_SPINNER_FRAMES = "|/-\\"
+
+
+def _spinner_frames(stream: TextIO) -> str:
+    """Braille frames on a UTF-8 stream, ASCII frames otherwise.
+
+    An unknown encoding (e.g. a ``StringIO`` with no ``encoding`` attribute) is
+    assumed UTF-8; only a stream that *declares* a non-UTF encoding (a legacy
+    ``LANG=C`` terminal) falls back to ASCII so the spinner doesn't render as
+    replacement boxes.
+    """
+    encoding = (getattr(stream, "encoding", None) or "").lower()
+    if encoding and "utf" not in encoding:
+        return _ASCII_SPINNER_FRAMES
+    return _SPINNER_FRAMES
 
 
 class ProgressHandle(Protocol):
@@ -51,6 +66,21 @@ class _Backend(Protocol):
     ) -> None: ...
 
     def finish(self, *, failed: bool) -> None: ...
+
+
+class _SilentHandle:
+    """No-op progress for ``--quiet``: emits nothing on any stream."""
+
+    def start(self) -> None:
+        return None
+
+    def update(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None:
+        return None
+
+    def finish(self, *, failed: bool) -> None:
+        return None
 
 
 class _VerboseHandle:
@@ -117,6 +147,7 @@ class _SpinnerHandle:
     def __init__(self, label: str, *, stream: TextIO) -> None:
         self._label = label
         self._stream = stream
+        self._frames = _spinner_frames(stream)
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -149,7 +180,7 @@ class _SpinnerHandle:
                 self._draw()
 
     def _draw(self) -> None:
-        frame = _SPINNER_FRAMES[self._frame % len(_SPINNER_FRAMES)]
+        frame = self._frames[self._frame % len(self._frames)]
         self._frame += 1
         elapsed = int(time.monotonic() - self._started_at)
         line = f"{frame} {self._label} ({elapsed}s)"
@@ -158,7 +189,11 @@ class _SpinnerHandle:
         self._line_width = len(line)
 
 
-def _make_handle(label: str, *, stream: TextIO, verbose: bool, isatty: bool) -> _Backend:
+def _make_handle(
+    label: str, *, stream: TextIO, verbose: bool, quiet: bool, isatty: bool
+) -> _Backend:
+    if quiet:
+        return _SilentHandle()
     if verbose:
         return _VerboseHandle(label, stream=stream)
     if isatty:
@@ -168,15 +203,16 @@ def _make_handle(label: str, *, stream: TextIO, verbose: bool, isatty: bool) -> 
 
 @contextmanager
 def progress_reporter(
-    label: str, *, stream: TextIO, verbose: bool, isatty: bool
+    label: str, *, stream: TextIO, verbose: bool, isatty: bool, quiet: bool = False
 ) -> Iterator[ProgressHandle]:
     """Report progress for a blocking operation on ``stream`` (typically stderr).
 
     Yields a :class:`ProgressHandle`; the rendering mode is chosen from
-    ``verbose``/``isatty``. The spinner line (TTY) is cleared on exit — success
-    or failure — so any propagating error prints cleanly.
+    ``quiet``/``verbose``/``isatty`` (``quiet`` wins — it stays fully silent).
+    The spinner line (TTY) is cleared on exit — success or failure — so any
+    propagating error prints cleanly.
     """
-    handle = _make_handle(label, stream=stream, verbose=verbose, isatty=isatty)
+    handle = _make_handle(label, stream=stream, verbose=verbose, quiet=quiet, isatty=isatty)
     handle.start()
     failed = False
     try:

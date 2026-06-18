@@ -167,6 +167,13 @@ Command surface and routing:
 - Target a non-active profile for a write with `--target-profile`.
 - **Tool-managed STATE fields are excluded from `config set`** (they are
   mutated by the tool, not the user).
+- `<tool> config doctor` diagnoses the config: prints the path, active profile
+  + source, known profiles, the resolved settings table, warns about any legacy
+  top-level section that belongs under `profiles.default`, and exits non-zero if
+  the file fails to load.
+- `<tool> config edit` opens `~/.untaped/config.yml` in `$VISUAL`/`$EDITOR`
+  (parsed with `shlex.split`), creating the parent dir if needed, and
+  re-validates on save.
 - `<tool> profile create|list|use|delete` manages the profile inventory
   (this is the absorbed, formerly-standalone profile workflow).
 
@@ -253,7 +260,8 @@ file.
 | Resolve settings once per command (profile-aware, no global state) | `app_context()`; read sections with `ctx.section(name, Model)`, HTTP via `ctx.http`, UI via `ctx.ui(strict=...)` |
 | Read a typed config section directly       | `get_config_section` |
 | Build a cyclopts app                       | `create_app` |
-| Build a validated HTTP client (token check + bearer auth + TLS) | `connected_client` |
+| Build a validated HTTP client (token check + bearer auth + TLS + retries) | `connected_client` (enables a default `RetryPolicy()`; pass `retry=None` to disable or a custom policy to override) |
+| Tune transient-failure retries (backoff, statuses, idempotency) | `RetryPolicy`; per-call override on `HttpClient.request(..., retry=...)` |
 | Standard "setting not configured" error    | `missing_setting_error` |
 | Walk paginated API collections             | `paginate_offset`, `paginate_pages` |
 | Resolve TLS verify (OS trust + ca_bundle)  | `resolve_verify` |
@@ -262,6 +270,7 @@ file.
 | Prompt for typed interactive input         | `ctx.ui(strict=False).confirm/text/secret/select/multiselect(...)`; with `PromptChoice` |
 | Add `--format` / `--columns` to a command  | `FormatOption`, `ColumnsOption` |
 | Render `--format`/`--columns` row collections | `render_rows` (themed table for humans; theme-independent json/raw/pipe for pipes; pass `kind=` to tag `--format pipe` records; `empty="hint"` for a no-result note) |
+| Emit a single entity OR a collection (shape-dispatched, writes stdout itself) | `emit(records, fmt=…, columns=…, empty=…, kind=…)` — a single model/dict renders as a vertical `key: value` detail (bare `{…}` under json/yaml); a sequence renders as a collection. Accepts pydantic models directly; prefer over `echo(render_rows([x.model_dump()], …))` for single-entity commands |
 | Report progress for a slow operation       | `ctx.ui(strict=False).progress(label)` — spinner on TTY, throttled lines otherwise; `with ... as p: p.update(msg, fraction=..., new_phase=...)`; never wrap an interactive prompt; `ProgressHandle` |
 | Reject bad usage with `error: ...` + exit 2 | `raise_usage` |
 | Wrap a command body so `UntapedError` → exit 1 | `report_errors` |
@@ -278,8 +287,9 @@ file.
 | Read core/section settings explicitly       | `get_settings`, `get_core_settings`, `HttpSettings`; `invalidate_settings_cache` from a root handler |
 | Ensure / read / mutate config & tool state | `ensure_config`, `read_tool_state`, `mutate_tool_state` |
 
-`PipeEnvelope`, `OutputFormat`, `AppContext`, `BatchOutcome`, `ThemeSpec`,
-`UiContext`, and `ProgressHandle` are the public types backing the rows above.
+`PipeEnvelope`, `OutputFormat`, `AppContext`, `BatchOutcome`, `RetryPolicy`,
+`ThemeSpec`, `UiContext`, and `ProgressHandle` are the public types backing the
+rows above.
 
 ## Output & Piping Conventions
 
@@ -288,6 +298,14 @@ file.
 - **`--verbose` / `-v`** is an SDK-injected root option (any token position).
   By default slow tool output is captured and shown only on failure;
   `--verbose` streams it live and raises the `untaped` logger to DEBUG.
+- **`--quiet` / `-q`** is the inverse SDK-injected root option (any token
+  position). It mutes the progress spinner and semantic `success`/`info`
+  messages; `warning`/`error`, interactive prompts, data on stdout, and
+  destructive-action confirmation previews are never muted.
+- **HTTP error bodies are parsed for the human message.** When an error body is
+  JSON with a `message`/`error`/`detail` or `errors[].message` field, the CLI
+  shows `error: HTTP <code> … — <message>`; non-JSON/unrecognized bodies fall
+  back to the raw `response: <body>` (also kept under `--verbose`).
 - **Row-oriented data commands** (`list`, `status`, row-producing `get`, …)
   expose:
   - `--format / -f` (`json | yaml | table | raw | pipe`); default `table` for
@@ -311,10 +329,12 @@ file.
 - **`--format pipe` is the typed interchange stream.** Self-describing NDJSON —
   one `{"untaped":"1","kind":<hint|null>,"record":{…}}` per line —
   meant to be read back by another tool (`read_records`, or
-  `read_identifiers(..., id_field=…)`). The **v1 envelope is FROZEN across SDK
-  1.x**; any change is a MAJOR (2.0) event. This is what guarantees
-  `untaped-github | untaped-ansible` works across independently-installed tools
-  built on different 1.x SDKs. `pipe` emits the full record (ignores
+  `read_identifiers(..., id_field=…)`). The **v1 envelope is versioned
+  independently of the SDK and FROZEN across SDK 1.x AND 2.x**; it carries its
+  own version (`"untaped":"1"`) and any change bumps the envelope version. This
+  is what guarantees `untaped-github | untaped-ansible` works across
+  independently-installed tools built on different SDK versions. `pipe` emits the
+  full record (ignores
   `--columns`); untagged producers emit `kind: null`. A consumer that
   *mutates* the piped set (e.g. `list --format pipe | delete --stdin --yes`)
   should route through `batch_apply` so the preview/confirm/`--yes`/progress UX

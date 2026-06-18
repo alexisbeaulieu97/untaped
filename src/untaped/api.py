@@ -19,6 +19,7 @@ from untaped.cli import (
     clamp_parallel,
     create_app,
     echo,
+    emit,
     existing_directory,
     existing_file,
     parse_kv_pairs,
@@ -38,6 +39,7 @@ from untaped.errors import (
 )
 from untaped.http import (
     HttpClient,
+    RetryPolicy,
     connected_client,
     paginate_offset,
     paginate_pages,
@@ -84,6 +86,7 @@ __all__ = [
     "PipeEnvelope",
     "ProgressHandle",
     "PromptChoice",
+    "RetryPolicy",
     "SkillAsset",
     "ThemeSpec",
     "ToolSpec",
@@ -97,6 +100,7 @@ __all__ = [
     "connected_client",
     "create_app",
     "echo",
+    "emit",
     "ensure_config",
     "existing_directory",
     "existing_file",

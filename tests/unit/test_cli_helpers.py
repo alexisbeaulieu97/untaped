@@ -3,12 +3,15 @@ import sys
 from pathlib import Path
 
 import pytest
+from cyclopts import App
+from pydantic import BaseModel
 
 from untaped import (
     HttpError,
     UntapedError,
     clamp_parallel,
     create_app,
+    emit,
     get_settings,
     parse_kv_pairs,
     render_rows,
@@ -32,7 +35,9 @@ def test_clean_message_for_untaped_error() -> None:
     assert "error: something went wrong" in (result.output or result.stderr)
 
 
-def test_report_errors_includes_http_response_body() -> None:
+def test_report_errors_surfaces_json_api_message() -> None:
+    """A JSON error body's human message is surfaced inline; the raw body is
+    not dumped (that only happens for unparseable bodies, or under --verbose)."""
     app = create_app(name="test")
 
     @app.default
@@ -50,8 +55,8 @@ def test_report_errors_includes_http_response_body() -> None:
     assert result.exit_code == 1
     output = result.output or result.stderr
     assert "error: HTTP 403 for https://api.github.com/repos/acme/private" in output
-    assert "response:" in output
-    assert "Resource not accessible by personal access token" in output
+    assert "— Resource not accessible by personal access token" in output
+    assert "response:" not in output
 
 
 def test_passes_through_non_untaped_exception() -> None:
@@ -213,7 +218,7 @@ def test_resolve_each_collects_successes_and_echoes_per_id_untaped_errors(
     assert "error: bad: not found" in capsys.readouterr().err
 
 
-def test_resolve_each_includes_http_response_body(
+def test_resolve_each_surfaces_json_api_message(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     def fn(_id: str) -> str:
@@ -230,8 +235,8 @@ def test_resolve_each_includes_http_response_body(
     assert results == []
     assert any_failed is True
     assert "error: secure: HTTP 403 for https://api.example.test/secure" in err
-    assert "response:" in err
-    assert "missing permission" in err
+    assert "— missing permission" in err
+    assert "response:" not in err
 
 
 def test_resolve_each_propagates_non_untaped_exceptions() -> None:
@@ -336,3 +341,149 @@ def test_render_rows_pipe_tags_each_record_with_kind(_isolated_config: Path) -> 
 def test_render_rows_pipe_kind_defaults_to_null(_isolated_config: Path) -> None:
     out = render_rows([{"x": 1}], fmt="pipe")
     assert json.loads(out)["kind"] is None
+
+
+# ---- emit ------------------------------------------------------------------
+
+
+class _Widget(BaseModel):
+    name: str
+    value: int
+
+
+def test_emit_single_model_json_is_bare_object(capsys: pytest.CaptureFixture[str]) -> None:
+    """A single entity under ``--format json`` is a bare object, not a 1-element array."""
+    emit(_Widget(name="alpha", value=1), fmt="json")
+    assert json.loads(capsys.readouterr().out) == {"name": "alpha", "value": 1}
+
+
+def test_emit_sequence_json_is_array(capsys: pytest.CaptureFixture[str]) -> None:
+    """A sequence stays a JSON array — collection semantics."""
+    emit([_Widget(name="alpha", value=1), _Widget(name="beta", value=2)], fmt="json")
+    assert json.loads(capsys.readouterr().out) == [
+        {"name": "alpha", "value": 1},
+        {"name": "beta", "value": 2},
+    ]
+
+
+def test_emit_accepts_a_single_mapping(capsys: pytest.CaptureFixture[str]) -> None:
+    """A bare dict is treated as one record (detail), not iterated as a sequence."""
+    emit({"name": "alpha", "value": 1}, fmt="json")
+    assert json.loads(capsys.readouterr().out) == {"name": "alpha", "value": 1}
+
+
+def test_emit_single_pipe_emits_one_envelope(capsys: pytest.CaptureFixture[str]) -> None:
+    emit(_Widget(name="alpha", value=1), fmt="pipe", kind="demo.widget")
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == {
+        "untaped": "1",
+        "kind": "demo.widget",
+        "record": {"name": "alpha", "value": 1},
+    }
+
+
+def test_emit_single_model_table_renders_vertical_detail(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Default theme detail_view is ``list`` — a vertical key:value block, not a wide table."""
+    emit(_Widget(name="alpha", value=1), fmt="table")
+    out = capsys.readouterr().out
+    assert "name" in out
+    assert "alpha" in out
+
+
+def test_emit_writes_to_stdout_no_manual_echo(capsys: pytest.CaptureFixture[str]) -> None:
+    """``emit`` writes the output itself — no forgotten-``echo`` footgun."""
+    emit(_Widget(name="alpha", value=1), fmt="json")
+    assert capsys.readouterr().out != ""
+
+
+def test_emit_empty_sequence_table_emits_no_spurious_stdout(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    emit([], fmt="table", empty="Nothing here.")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Nothing here." in captured.err
+
+
+# ---- _format_error JSON body extraction ------------------------------------
+
+
+def _http_error_app(body: str) -> App:
+    app = create_app(name="test")
+
+    @app.default
+    def boom() -> None:
+        with report_errors():
+            raise HttpError(
+                "HTTP 401 for https://api.example.test/x",
+                status_code=401,
+                url="https://api.example.test/x",
+                body=body,
+            )
+
+    return app
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ('{"message":"Bad credentials"}', "Bad credentials"),
+        ('{"error":"invalid_token"}', "invalid_token"),
+        ('{"detail":"Not found"}', "Not found"),
+        ('{"errors":[{"message":"field is required"}]}', "field is required"),
+    ],
+    ids=["message", "error", "detail", "errors-list"],
+)
+def test_format_error_surfaces_known_json_message(body: str, expected: str) -> None:
+    result = CliInvoker().invoke(_http_error_app(body), [])
+    output = result.output or result.stderr
+    assert f"— {expected}" in output
+    assert "response:" not in output
+
+
+def test_format_error_falls_back_to_raw_for_non_json_body() -> None:
+    result = CliInvoker().invoke(_http_error_app("<html>nope</html>"), [])
+    output = result.output or result.stderr
+    assert "response: <html>nope</html>" in output
+
+
+def test_format_error_falls_back_to_raw_for_unrecognised_json_shape() -> None:
+    """Valid JSON with no known message key keeps the raw body (e.g. Jira's
+    ``errorMessages``)."""
+    result = CliInvoker().invoke(_http_error_app('{"errorMessages":["boom"]}'), [])
+    output = result.output or result.stderr
+    assert 'response: {"errorMessages":["boom"]}' in output
+
+
+def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("untaped.cli.is_verbose", lambda: True)
+    result = CliInvoker().invoke(_http_error_app('{"message":"Bad credentials"}'), [])
+    output = result.output or result.stderr
+    assert "— Bad credentials" in output
+    assert "response:" in output
+
+
+# ---- --columns ? discoverability -------------------------------------------
+
+
+def test_render_rows_columns_question_mark_lists_keys(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rendered = render_rows([{"name": "a", "value": 1}], fmt="table", columns=["?"])
+    assert rendered == ""
+    err = capsys.readouterr().err
+    assert "name" in err
+    assert "value" in err
+
+
+def test_emit_columns_question_mark_lists_model_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit(_Widget(name="a", value=1), fmt="table", columns=["?"])
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "name" in captured.err
+    assert "value" in captured.err
