@@ -37,16 +37,19 @@ per tool by `run_tool`. The standalone `untaped-profile` and `untaped-themes`
 packages are **retired** — a standalone tool would reintroduce "install one
 more thing to manage shared state".
 
-## 3. Pipe envelope v1 — frozen across SDK 1.x
+## 3. Pipe envelope v1 — versioned independently of the SDK
 
 The `--format pipe` envelope (NDJSON; see [`src/untaped/pipe.py`](../src/untaped/pipe.py))
-is declared **v1** and is **frozen and stable across all `untaped` SDK 1.x
-releases**. Any change to the envelope shape is a major (2.0) SDK event.
+is declared **v1** and is **frozen and stable across SDK 1.x *and* 2.x**. The
+envelope carries its own version number (`"untaped": "1"`) and is versioned
+independently of the SDK: it did not change when the SDK went to 2.0 (that was a
+config-layout break, not a pipe break). Any change to the envelope shape would
+bump the envelope version, regardless of the SDK version it ships in.
 
 Tools pipe across separate `uv tool` environments that may run different SDK
 versions, so the envelope is a cross-tool wire contract: this freeze is what
-guarantees `untaped-github | untaped-ansible` works regardless of which 1.x SDK
-each tool was built against.
+guarantees `untaped-github | untaped-ansible` works regardless of which SDK
+version each tool was built against.
 
 ## 4. Config format — v1 (SDK 1.x) → v2 (SDK 2.x)
 
@@ -94,3 +97,40 @@ Per-tool `SKILL.md`s (installed via each tool's `skills` group) cover tool
 usage, and guidance on building tools with the SDK lives in the README and
 `docs/`, not in a packaged agent skill. (The file is removed later, in Phase 3;
 this entry only records the decision.)
+
+## 6. `emit` detail-routing and safe HTTP retries (SDK 2.1)
+
+Two additive surface changes in SDK 2.1, both about making the common case
+correct by default.
+
+**`emit` routes a single entity to a detail view.** Single-entity commands
+(`whoami`/`get`/`show`/`status`) used to render their one object as a one-row
+table via `echo(render_rows([x.model_dump()], …))` — a wide, awkward shape, easy
+to forget the `echo` (silent no output), and a manual `model_dump()`. `emit`
+dispatches by shape: a single pydantic model or `Mapping` renders as a vertical
+`key: value` **detail** view (reviving the previously-unused
+`UiContext.detail()`), while a sequence renders as a **collection**. It accepts
+models directly and writes stdout itself. Under structured formats this also
+fixes the single-entity JSON shape: a tool that adopts `emit` emits a bare
+object `{…}` instead of a one-element array `[{…}]` for a single entity.
+`--format pipe` is unchanged (the per-record envelope is identical to
+`render_rows`), so the pipe contract from #3 is untouched. `render_rows` stays
+for explicit row collections.
+
+**`connected_client` retries transient failures by default.** A new public
+`RetryPolicy` (a frozen dataclass) backs retries in `HttpClient`, and
+`connected_client(...)` enables a safe default `RetryPolicy()` automatically
+(`retry=None` disables it; a custom policy overrides). The policy is deliberately
+conservative so an automatic default can never silently double a non-idempotent
+write:
+
+- **Transport failures are phase-gated.** A *pre-send* connect failure never
+  reached the server, so it is retried for any method; a *post-send* read/write
+  error may already have been processed, so it is retried only for idempotent
+  methods. This distinction is what makes retrying-by-default safe.
+- **`429`/`503` retries are idempotency-gated.** They apply only to
+  `idempotent_methods` (`GET`/`HEAD`/`OPTIONS`/`PUT`/`DELETE` by default). A
+  caller whose `POST` is genuinely idempotent (a search endpoint) opts in by
+  passing a `RetryPolicy` whose `idempotent_methods` includes `"POST"`.
+- `Retry-After` (seconds or HTTP-date) is honored up to `retry_after_max`;
+  otherwise the delay is exponential backoff capped at `backoff_max`.

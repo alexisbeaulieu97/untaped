@@ -425,3 +425,41 @@ def test_ui_context_builds_default_prompt_backend_lazily_and_caches_it() -> None
     backend = ui.prompt_backend
     assert isinstance(backend, PromptToolkitPromptBackend)
     assert ui.prompt_backend is backend  # cached, not rebuilt per access
+
+
+# ---- --quiet gating --------------------------------------------------------
+
+
+def test_message_suppresses_success_and_info_when_quiet() -> None:
+    buf = io.StringIO()
+    ctx = UiContext(quiet=True, stderr=buf)
+    ctx.message("success", "done")
+    ctx.message("info", "fyi")
+    assert buf.getvalue() == ""
+
+
+def test_message_keeps_warning_and_error_when_quiet() -> None:
+    buf = io.StringIO()
+    ctx = UiContext(quiet=True, stderr=buf)
+    ctx.message("warning", "careful")
+    ctx.message("error", "boom")
+    rendered = buf.getvalue()
+    assert "careful" in rendered
+    assert "boom" in rendered
+
+
+def test_message_shows_success_when_not_quiet() -> None:
+    buf = io.StringIO()
+    ctx = UiContext(stderr=buf)  # quiet defaults to False
+    ctx.message("success", "done")
+    assert "done" in buf.getvalue()
+
+
+def test_ui_context_factory_reads_quiet_flag(_isolated_config: Path) -> None:
+    from untaped.quiet import enable, reset
+
+    try:
+        enable()
+        assert ui_context().quiet is True
+    finally:
+        reset()

@@ -112,3 +112,30 @@ def test_progress_reraises_exception_from_block() -> None:
 
     # The spinner line is still cleared so the propagating error prints cleanly.
     assert stream.getvalue().endswith("\r")
+
+
+def test_progress_reporter_is_silent_when_quiet() -> None:
+    """``--quiet`` mutes progress entirely, even on a TTY."""
+    stream = TtyStringIO()
+    with progress_reporter(
+        "Working", stream=stream, verbose=False, quiet=True, isatty=True
+    ) as handle:
+        handle.update("step", fraction=0.5)
+    assert stream.getvalue() == ""
+
+
+class AsciiTty(io.StringIO):
+    encoding = "ascii"
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_spinner_falls_back_to_ascii_frames_on_non_utf8_stream() -> None:
+    """A stream declaring a non-UTF encoding gets ASCII spinner frames, not braille."""
+    stream = AsciiTty()
+    with progress_reporter("Working", stream=stream, verbose=False, isatty=True):
+        pass
+    out = stream.getvalue()
+    assert any(ch in out for ch in "|/-\\")
+    assert not any(ch in out for ch in _SPINNER_FRAMES)

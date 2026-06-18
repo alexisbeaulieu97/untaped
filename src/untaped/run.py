@@ -30,6 +30,8 @@ from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
 from untaped.config_app import build_config_app
 from untaped.profile import build_profile_app
 from untaped.profile_resolver import ACTIVE_PROFILE_ENV
+from untaped.quiet import enable as _enable_quiet
+from untaped.quiet import reset as _reset_quiet
 from untaped.settings import get_settings
 from untaped.skills_app import build_skills_app
 from untaped.tool import ToolSpec, register_tool
@@ -44,6 +46,7 @@ _PROFILE_HELP = (
     "(equivalent to setting the UNTAPED_PROFILE environment variable)."
 )
 _VERBOSE_HELP = "Stream underlying tool output live and enable debug logging."
+_QUIET_HELP = "Suppress progress and success/info messages (errors still print)."
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,12 @@ def _root_options() -> dict[str, _RootOption]:
             aliases=("-v",),
             help=_VERBOSE_HELP,
             handler=_enable_verbose,
+        ),
+        "--quiet": _RootOption(
+            name="--quiet",
+            aliases=("-q",),
+            help=_QUIET_HELP,
+            handler=_enable_quiet,
         ),
     }
 
@@ -143,6 +152,7 @@ def _install_root_callback(app: App, root_options: dict[str, _RootOption]) -> No
                 return _dispatch_with_root_options(app, command_tokens, root_options)
         finally:
             _reset_verbose()
+            _reset_quiet()
             if dict(os.environ) != env_snapshot:
                 os.environ.clear()
                 os.environ.update(env_snapshot)

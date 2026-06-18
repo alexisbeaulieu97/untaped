@@ -16,6 +16,9 @@ Key model:
 
 from __future__ import annotations
 
+import os
+import shlex
+import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -41,11 +44,13 @@ from untaped.config.application import (
 )
 from untaped.config.domain import SettingEntry
 from untaped.config.infrastructure import SettingsFileRepository
+from untaped.config_file import read_config_dict
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
 from untaped.output import OutputFormat
+from untaped.profile_resolver import classify_active_profile
 from untaped.prompts import PromptChoice
-from untaped.settings import Settings, resolve_config_path
+from untaped.settings import Settings, get_settings, legacy_flat_sections, resolve_config_path
 from untaped.theme import BUILTIN_THEMES
 from untaped.tool import ToolSpec
 from untaped.ui import UiContext, ui_context
@@ -151,6 +156,16 @@ def build_config_app(spec: ToolSpec) -> Any:
         """Remove ``key`` from the resolved write scope (no-op if it wasn't set)."""
         _unset(ctx, key, target_profile=target_profile)
 
+    @app.command(name="doctor")
+    def doctor_command() -> None:
+        """Diagnose the config: active profile, layout issues, and resolved values."""
+        _doctor(ctx)
+
+    @app.command(name="edit")
+    def edit_command() -> None:
+        """Open ``~/.untaped/config.yml`` in $VISUAL/$EDITOR and re-validate on save."""
+        _edit()
+
     return app
 
 
@@ -228,6 +243,54 @@ def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
             ui.message("success", f"unset {full} {where}")
         else:
             ui.message("info", f"{full} was not set {where}")
+
+
+def _doctor(ctx: _Ctx) -> None:
+    with report_errors():
+        path = resolve_config_path()
+        echo(f"config: {path}", err=True)
+        raw = read_config_dict(path)
+        name, source = classify_active_profile(raw)
+        echo(f"active profile: {name or 'default'} (source: {source})", err=True)
+        repo = ctx.repo()
+        profiles = repo.profile_names()
+        if profiles:
+            echo(f"profiles: {', '.join(profiles)}", err=True)
+        ui = ui_context(strict=False)
+        for section in legacy_flat_sections(raw):
+            ui.message(
+                "warning",
+                f"top-level `{section}:` is ignored since the v2 profiles layout — "
+                f"move it under `profiles.default.{section}`",
+            )
+        get_settings.cache_clear()
+        get_settings()  # raises ConfigError (→ clean error, exit 1) if invalid
+        ui.message("success", "config loaded OK")
+        echo(render_rows([_entry_to_row(e) for e in ListSettings(repo)()], fmt="table"))
+
+
+def _edit() -> None:
+    with report_errors():
+        editor = shlex.split(os.environ.get("VISUAL") or os.environ.get("EDITOR") or "")
+        if not editor:
+            raise ConfigError("set $VISUAL or $EDITOR to use `config edit`")
+        path = resolve_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            subprocess.run([*editor, str(path)], check=True)
+        except FileNotFoundError as exc:
+            raise ConfigError(f"editor not found: {editor[0]}") from exc
+        except subprocess.CalledProcessError as exc:
+            raise ConfigError(f"editor exited with status {exc.returncode}") from exc
+        ui = ui_context(strict=False)
+        for section in legacy_flat_sections(read_config_dict(path)):
+            ui.message(
+                "warning",
+                f"top-level `{section}:` is ignored — move it under `profiles.default.{section}`",
+            )
+        get_settings.cache_clear()
+        get_settings()  # raises ConfigError if the edited file is invalid
+        ui.message("success", f"config saved and validated (config: {path})")
 
 
 def _resolve_set_value(

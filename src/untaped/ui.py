@@ -172,10 +172,12 @@ class UiContext:
         stdout: TextIO | None = None,
         stderr: TextIO | None = None,
         verbose: bool = False,
+        quiet: bool = False,
     ) -> None:
         self.theme = theme or BUILTIN_THEMES["default"]
         self.renderer = renderer or RichTerminalRenderer()
         self.verbose = verbose
+        self.quiet = quiet
         self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
@@ -250,6 +252,8 @@ class UiContext:
         )
 
     def message(self, kind: MessageKind, text: str) -> None:
+        if self.quiet and kind in ("success", "info"):
+            return
         rendered = self.renderer.render_message(
             kind,
             text,
@@ -269,6 +273,7 @@ class UiContext:
             label,
             stream=self.stderr,
             verbose=self.verbose,
+            quiet=self.quiet,
             isatty=_stream_is_tty(self.stderr),
         )
 
@@ -385,6 +390,7 @@ def ui_context(
     read and the theme resolved from them; ``strict=False`` then degrades a
     settings :class:`ConfigError` to the default theme.
     """
+    from untaped.quiet import is_quiet  # noqa: PLC0415
     from untaped.verbose import is_verbose  # noqa: PLC0415
 
     if theme is None:
@@ -393,7 +399,14 @@ def ui_context(
         theme = resolve_theme_or_default(
             lambda: cast(_HasUiSettings, get_settings()).ui, strict=strict
         )
-    return UiContext(theme=theme, stdin=stdin, stdout=stdout, stderr=stderr, verbose=is_verbose())
+    return UiContext(
+        theme=theme,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        verbose=is_verbose(),
+        quiet=is_quiet(),
+    )
 
 
 def _parse_columns(columns: list[str] | None) -> list[tuple[str, list[str]]] | None:

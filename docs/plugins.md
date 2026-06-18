@@ -17,16 +17,17 @@ hand it to the SDK.
 Each tool is an independent CLI named `untaped-<x>` that depends on the SDK and
 installs into its own `uv tool` environment. Tools are versioned, installed, and
 released independently — possibly against different SDK versions — but they
-**share two frozen contracts** so independently installed tools interoperate:
+**share two interop contracts** so independently installed tools cooperate:
 
-- **Config v1** — the `~/.untaped/config.yml` format (one section per tool, the
-  SDK-owned `active:`/`profiles:`/`http:`/`ui:` keys, the
-  `UNTAPED_<SECTION>__<FIELD>` env-var override shape). Frozen across SDK 1.x.
-- **Pipe v1** — the `--format pipe` NDJSON envelope (see §7). Frozen across SDK
-  1.x.
+- **Config v2** — the `~/.untaped/config.yml` format (one section per tool;
+  top-level `active:`/`profiles:`; per-profile `http:`/`ui:`/`log_level` under
+  `profiles.<name>`; the `UNTAPED_<SECTION>__<FIELD>` env-var override shape).
+  The layout changed v1→v2 at SDK 2.0 and is stable within SDK 2.x.
+- **Pipe v1** — the `--format pipe` NDJSON envelope (see §7). Versioned
+  independently of the SDK and stable across SDK 1.x **and** 2.x.
 
-Both are deliberately frozen so `untaped-github | untaped-ansible` works no
-matter which SDK 1.x each tool was built against. See decisions
+These contracts are what let `untaped-github | untaped-ansible` interoperate and
+share one config file across independently installed tools. See decisions
 [#3](./decisions.md) and [#4](./decisions.md).
 
 You import everything you need from `untaped.api` (equivalently `untaped`). The
@@ -191,8 +192,7 @@ from untaped.api import (
     ColumnsOption,
     FormatOption,
     app_context,
-    echo,
-    render_rows,
+    emit,
     report_errors,
 )
 
@@ -209,7 +209,7 @@ def whoami_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None
         with AcmeClient(config, http=ctx.http) as client:  # see connected_client below
             with ui.progress("Fetching authenticated user…"):
                 user = client.me()
-        echo(render_rows([user], fmt=fmt, columns=columns, kind="acme.user"))
+        emit(user, fmt=fmt, columns=columns, kind="acme.user")  # single entity → detail view
 ```
 
 Key conventions, all from the github tool:
@@ -236,6 +236,31 @@ Key conventions, all from the github tool:
           return self._http.get_json_dict("/user")
   ```
 
+  `connected_client(...)` enables a safe default `RetryPolicy()` automatically,
+  so transient HTTP failures (connect errors, and `429`/`503` on idempotent
+  methods) are retried with backoff. Pass `retry=None` to disable retries or a
+  custom `RetryPolicy(...)` to override. Defaults:
+  `max_attempts=3`, `backoff_base=0.5`, `backoff_max=30.0`,
+  `retry_after_max=60.0`, `retry_statuses=(429, 503)`, `honor_retry_after=True`,
+  `retry_on_transport=True`, and
+  `idempotent_methods=frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})`.
+
+  Two rules keep retries safe:
+
+  - **Transport failures retry by phase.** A pre-send connect failure
+    (`ConnectError`/`ConnectTimeout`/`PoolTimeout`/`ProxyError`) never reached
+    the server, so it is retried for *any* method; a post-send read/write error
+    may already have been processed, so it is retried only for
+    `idempotent_methods`.
+  - **`429`/`503` retry only for `idempotent_methods`.** A caller whose POST is
+    genuinely idempotent (e.g. a search endpoint) opts in with
+    `RetryPolicy(idempotent_methods=frozenset({"POST", "GET", ...}))`.
+
+  `Retry-After` (integer seconds or HTTP-date) is honored, capped at
+  `retry_after_max`; otherwise the delay is exponential backoff capped at
+  `backoff_max`. A per-call override exists on `HttpClient.request(..., retry=…)`
+  — a policy overrides, `None` disables, omitted inherits the client's policy.
+
 - **Paginate with the SDK loops.** `paginate_pages(fetch, limit=...)` drives a
   cursor-style loop (`fetch` maps a cursor to `(items, next_cursor)`);
   `paginate_offset(http, "GET", path, item_key=..., limit=...)` walks
@@ -246,6 +271,26 @@ Key conventions, all from the github tool:
   (`--columns`), an optional `empty` hint, and a `kind` tag for pipe records.
   Use the `FormatOption` / `ColumnsOption` annotated types so every command
   exposes the same flags.
+
+- **Prefer `emit(...)` for single-entity commands.** `emit` dispatches by shape
+  and writes stdout itself, so you don't wrap it in `echo(...)` or call
+  `.model_dump()` by hand:
+
+  ```python
+  from untaped.api import emit
+
+  emit(user, fmt=fmt, columns=columns, kind="acme.user")
+  ```
+
+  A single model or dict renders as a vertical `key: value` **detail** view (a
+  bare object `{...}` under `--format json`/`yaml`); a sequence renders as a
+  **collection** (themed table, or a JSON array). It honors `empty=` for an
+  empty sequence and emits the same `--format pipe` NDJSON envelope as
+  `render_rows`. Prefer `emit(x, ...)` over
+  `echo(render_rows([x.model_dump()], ...))` for `whoami`/`get`/`show`/`status`
+  commands that return one entity — it gives them the proper detail view and
+  removes the "forgot to `echo`" silent-no-output trap. `render_rows` is
+  unchanged and still the right call for explicit row collections.
 
 - **Wrap bodies in `report_errors()`** so `ConfigError`/`HttpError`/usage errors
   render as clean `error: …` lines with the right exit codes instead of
@@ -326,9 +371,9 @@ records = read_records(stdin=True)
 
 `id_field` + `kind` are how independently-installed tools chain:
 `untaped-github search repos --format pipe | untaped-acme import --stdin`. The
-envelope shape is frozen across SDK 1.x, so the producer and consumer need not
-share an SDK version. `PipeEnvelope` and `common_kind` are exported if you parse
-envelopes yourself.
+envelope shape is versioned independently of the SDK and stable across SDK 1.x
+and 2.x, so the producer and consumer need not share an SDK version.
+`PipeEnvelope` and `common_kind` are exported if you parse envelopes yourself.
 
 ## 8. Packaging agent skills
 
