@@ -43,10 +43,10 @@ SUPPORTED_PIPE_VERSIONS = frozenset({"1"})
 class PipeEnvelope:
     """One decoded ``--format pipe`` line: a record plus its metadata.
 
-    This is the **v1** envelope, frozen and stable across all ``untaped`` SDK
-    1.x releases; any change to its shape is a major (2.0) SDK event so that
-    independently-installed tools on different 1.x SDKs interoperate. See the
-    module docstring and ``docs/decisions.md``.
+    This is the **v1** envelope, versioned independently of the SDK and frozen
+    across SDK 1.x and 2.x; any change to its shape would bump the envelope
+    version (not the SDK major) so independently-installed tools on different
+    SDK versions interoperate. See the module docstring and ``docs/decisions.md``.
     """
 
     kind: str | None
