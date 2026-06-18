@@ -110,12 +110,19 @@ def emit(
     if columns == ["?"]:
         _print_available_columns(_candidate_columns(records))
         return
-    ui = ui_context() if fmt == "table" else UiContext()
     if isinstance(records, BaseModel | Mapping):
+        ui = ui_context() if fmt == "table" else UiContext()
         rendered = ui.detail(_as_row(records), fmt=fmt, columns=columns, kind=kind)
     else:
-        rows = [_as_row(record) for record in records]
-        rendered = ui.collection(rows, fmt=fmt, columns=columns, empty=empty, kind=kind)
+        # The collection path is exactly render_rows; reuse it (it returns the
+        # string and emits any empty-state hint to stderr itself).
+        rendered = render_rows(
+            [_as_row(record) for record in records],
+            fmt=fmt,
+            columns=columns,
+            empty=empty,
+            kind=kind,
+        )
     if rendered:
         echo(rendered)
 

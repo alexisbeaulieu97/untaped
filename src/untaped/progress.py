@@ -203,7 +203,7 @@ def _make_handle(
 
 @contextmanager
 def progress_reporter(
-    label: str, *, stream: TextIO, verbose: bool, quiet: bool = False, isatty: bool
+    label: str, *, stream: TextIO, verbose: bool, isatty: bool, quiet: bool = False
 ) -> Iterator[ProgressHandle]:
     """Report progress for a blocking operation on ``stream`` (typically stderr).
 
