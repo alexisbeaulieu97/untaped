@@ -134,6 +134,20 @@ def test_postsend_read_timeout_is_not_retried_on_post(no_sleep: list[float]) -> 
     assert no_sleep == []
 
 
+def test_permanent_transport_error_is_not_retried(no_sleep: list[float]) -> None:
+    """A permanent transport error (e.g. an unsupported URL scheme) is not
+    transient — don't burn retries/backoff on it, even for an idempotent GET."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/x").mock(side_effect=httpx.UnsupportedProtocol("bad scheme"))
+        with (
+            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
+            pytest.raises(HttpTransportError),
+        ):
+            client.get("/x")
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
 def test_postsend_read_timeout_is_retried_on_get(no_sleep: list[float]) -> None:
     with respx.mock(base_url="https://example.com") as mock:
         route = mock.get("/things").mock(
