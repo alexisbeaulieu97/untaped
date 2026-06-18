@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal, NoReturn
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
+from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.errors import HttpError, UntapedError
 from untaped.output import OutputFormat
 from untaped.ui import UiContext, ui_context
+from untaped.verbose import is_verbose
 
 FormatOption = Annotated[
     OutputFormat,
@@ -68,8 +71,78 @@ def render_rows(
     ``kind`` tags ``--format pipe`` records with a producer hint (ignored by
     every other format).
     """
+    if columns == ["?"]:
+        _print_available_columns(list(rows[0]) if rows else [])
+        return ""
     ui = ui_context() if fmt == "table" else UiContext()
     return ui.collection(rows, fmt=fmt, columns=columns, empty=empty, kind=kind)
+
+
+def _print_available_columns(keys: Iterable[str]) -> None:
+    """Print the addressable top-level column names to stderr (for ``--columns ?``)."""
+    names = list(dict.fromkeys(keys))
+    if not names:
+        echo("no columns available (no records to inspect)", err=True)
+        return
+    echo("available columns:", err=True)
+    for name in names:
+        echo(f"  {name}", err=True)
+
+
+def emit(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+    *,
+    fmt: OutputFormat,
+    columns: list[str] | None = None,
+    empty: str | bool | None = None,
+    kind: str | None = None,
+) -> None:
+    """Render records to stdout, dispatching by shape.
+
+    A single model or mapping renders as a vertical ``key: value`` detail view
+    (a bare object under structured formats); a sequence renders as a collection
+    (themed table for humans, array/NDJSON for pipes). Accepts pydantic models
+    directly — no manual ``model_dump()`` — and writes the result itself, so
+    there is no "forgot to ``echo``" silent-no-output trap. ``empty`` and
+    ``kind`` behave as in :func:`render_rows`; ``empty`` applies to a sequence
+    only.
+    """
+    if columns == ["?"]:
+        _print_available_columns(_candidate_columns(records))
+        return
+    if isinstance(records, BaseModel | Mapping):
+        ui = ui_context() if fmt == "table" else UiContext()
+        rendered = ui.detail(_as_row(records), fmt=fmt, columns=columns, kind=kind)
+    else:
+        # The collection path is exactly render_rows; reuse it (it returns the
+        # string and emits any empty-state hint to stderr itself).
+        rendered = render_rows(
+            [_as_row(record) for record in records],
+            fmt=fmt,
+            columns=columns,
+            empty=empty,
+            kind=kind,
+        )
+    if rendered:
+        echo(rendered)
+
+
+def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
+    """Normalize a model or mapping into a plain row dict."""
+    if isinstance(record, BaseModel):
+        return record.model_dump()
+    return dict(record)
+
+
+def _candidate_columns(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+) -> list[str]:
+    """Top-level column names a record exposes (for ``emit(..., columns=['?'])``)."""
+    if isinstance(records, BaseModel | Mapping):
+        return list(_as_row(records))
+    for record in records:
+        return list(_as_row(record))
+    return []
 
 
 def run_cyclopts_app(
@@ -257,6 +330,41 @@ def report_errors() -> Iterator[None]:
 
 def _format_error(exc: UntapedError) -> str:
     message = str(exc)
-    if isinstance(exc, HttpError) and exc.body:
+    if not isinstance(exc, HttpError) or not exc.body:
+        return message
+    friendly = _api_error_message(exc.body)
+    if friendly is None:
+        # Unparseable / unrecognised body — show it raw so detail isn't lost.
         return f"{message}\nresponse: {exc.body}"
-    return message
+    if is_verbose():
+        return f"{message} — {friendly}\nresponse: {exc.body}"
+    return f"{message} — {friendly}"
+
+
+def _api_error_message(body: str) -> str | None:
+    """Pull a human message out of a JSON error body, if present.
+
+    Recognises the shapes most JSON APIs use — a top-level
+    ``message``/``error``/``detail`` string or ``errors: [{"message": ...}]``
+    (GitHub, AWX, DRF, ...) — and returns the first match. Returns ``None`` for
+    a non-JSON body or an unrecognised shape so the caller falls back to the raw
+    snippet.
+    """
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    for key in ("message", "error", "detail"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    errors = data.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if isinstance(item, dict):
+                nested = item.get("message")
+                if isinstance(nested, str) and nested.strip():
+                    return nested.strip()
+    return None

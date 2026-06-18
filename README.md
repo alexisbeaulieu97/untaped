@@ -14,9 +14,14 @@ The SDK gives every tool, for free:
 - **Themes** — built-in theme presets for consistent terminal styling.
 - **Output** — consistent `--format json|yaml|table|raw|pipe` and `--columns`,
   so commands compose. `pipe` is a self-describing NDJSON record stream another
-  untaped tool can read back.
-- **HTTP / UI helpers** — an `HttpClient` with profile-aware TLS and pagination
-  helpers, plus a `UiContext` for messages, prompts, and progress.
+  untaped tool can read back. `emit(...)` renders a single entity as a vertical
+  detail view or a sequence as a collection, dispatching by shape.
+- **HTTP / UI helpers** — an `HttpClient` with profile-aware TLS, automatic
+  retries for transient failures (`RetryPolicy`), and pagination helpers, plus a
+  `UiContext` for messages, prompts, and progress.
+- **Config tooling** — `<tool> config doctor` diagnoses the shared file and
+  `<tool> config edit` opens it in `$VISUAL`/`$EDITOR`; a `--quiet` root option
+  mutes progress and `success`/`info` chatter.
 
 You import the surface from `untaped.api` (re-exported from the `untaped`
 package root), declare a `ToolSpec`, and call `run_tool(app, spec)` from your

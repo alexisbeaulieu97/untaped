@@ -168,7 +168,9 @@ def _use_command(
     """Persist ``active: <name>`` in the config file."""
     with report_errors():
         UseProfile(ProfileFileRepository())(name)
-        echo(f"active profile: {name} (config: {resolve_config_path()})", err=True)
+        ui_context(strict=False).message(
+            "success", f"active profile: {name} (config: {resolve_config_path()})"
+        )
 
 
 def _current_command() -> None:
@@ -198,7 +200,7 @@ def _create_command(
     with report_errors():
         CreateProfile(ProfileFileRepository())(name, copy_from=copy_from)
         suffix = f" (copied from {copy_from})" if copy_from else ""
-        echo(f"created profile: {name}{suffix}", err=True)
+        ui_context(strict=False).message("success", f"created profile: {name}{suffix}")
 
 
 def _delete_command(
@@ -218,7 +220,7 @@ def _delete_command(
         if not yes:
             _confirm_delete(preview)
         delete_profile(name)
-        echo(f"deleted profile: {name}", err=True)
+        ui_context(strict=False).message("success", f"deleted profile: {name}")
 
 
 def _rename_command(
@@ -229,7 +231,7 @@ def _rename_command(
     """Rename a profile, updating ``active:`` if it pointed at the old name."""
     with report_errors():
         RenameProfile(ProfileFileRepository())(old_name, new_name)
-        echo(f"renamed profile: {old_name} → {new_name}", err=True)
+        ui_context(strict=False).message("success", f"renamed profile: {old_name} → {new_name}")
 
 
 def _confirm_delete(preview: ProfileDeletePreview) -> None:

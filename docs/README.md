@@ -48,9 +48,14 @@ untaped-github search repos --org acme --format pipe \
   | untaped-github search code "BaseModel" --repo-stdin
 ```
 
+Single-entity commands (`whoami`/`get`/`show`/`status`) render their one object
+as a vertical `key: value` detail view via `emit(...)`, which dispatches by
+shape — a sequence becomes a collection — and still honours every `--format`.
+
 Side-effect commands (`<tool> profile use`, `<tool> config set`, `apply --yes`,
 …) print a short confirmation to stderr and exit. **Logs go to stderr; only
-data hits stdout** — so pipes stay clean.
+data hits stdout** — so pipes stay clean. A `--quiet` root option mutes progress
+and `success`/`info` messages without touching data or warnings/errors.
 
 ## Contributing / extending
 
