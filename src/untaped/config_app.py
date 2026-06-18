@@ -20,7 +20,7 @@ import os
 import shlex
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, get_args, get_origin
 
@@ -245,6 +245,16 @@ def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
             ui.message("info", f"{full} was not set {where}")
 
 
+def _warn_legacy_flat(ui: UiContext, raw: Mapping[str, Any]) -> None:
+    """Warn about each top-level section the v2 profiles layout silently ignores."""
+    for section in legacy_flat_sections(raw):
+        ui.message(
+            "warning",
+            f"top-level `{section}:` is ignored since the v2 profiles layout — "
+            f"move it under `profiles.default.{section}`",
+        )
+
+
 def _doctor(ctx: _Ctx) -> None:
     with report_errors():
         path = resolve_config_path()
@@ -257,12 +267,7 @@ def _doctor(ctx: _Ctx) -> None:
         if profiles:
             echo(f"profiles: {', '.join(profiles)}", err=True)
         ui = ui_context(strict=False)
-        for section in legacy_flat_sections(raw):
-            ui.message(
-                "warning",
-                f"top-level `{section}:` is ignored since the v2 profiles layout — "
-                f"move it under `profiles.default.{section}`",
-            )
+        _warn_legacy_flat(ui, raw)
         get_settings.cache_clear()
         get_settings()  # raises ConfigError (→ clean error, exit 1) if invalid
         ui.message("success", "config loaded OK")
@@ -283,11 +288,7 @@ def _edit() -> None:
         except subprocess.CalledProcessError as exc:
             raise ConfigError(f"editor exited with status {exc.returncode}") from exc
         ui = ui_context(strict=False)
-        for section in legacy_flat_sections(read_config_dict(path)):
-            ui.message(
-                "warning",
-                f"top-level `{section}:` is ignored — move it under `profiles.default.{section}`",
-            )
+        _warn_legacy_flat(ui, read_config_dict(path))
         get_settings.cache_clear()
         get_settings()  # raises ConfigError if the edited file is invalid
         ui.message("success", f"config saved and validated (config: {path})")
