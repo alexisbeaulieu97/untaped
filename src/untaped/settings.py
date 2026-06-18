@@ -220,8 +220,8 @@ def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -
             effective[section] = state_data
 
 
-def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
-    """Warn once when a per-profile setting sits at the config top level.
+def legacy_flat_sections(raw: Mapping[str, Any]) -> list[str]:
+    """Top-level config keys that belong under ``profiles.default`` (and are ignored).
 
     The flat top-level layout was removed in v1.0.1 (and ``http``/``ui`` joined
     it in v2.0.0); such a key is now silently ignored by the profiles resolver.
@@ -229,11 +229,17 @@ def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
     base per-profile fields (``log_level``, ``http``, ``ui``) plus every
     registered tool section — so there's no hard-coded name list. Tool-managed
     top-level *state* sections legitimately stay top-level and are excluded.
+    Shared by the load-time warning and ``config doctor``.
     """
     profile_keys = set(Settings.model_fields) | set(_CONFIG_REGISTRY.profile_sections)
-    offending = sorted(
+    return sorted(
         key for key in raw if key in profile_keys and key not in _CONFIG_REGISTRY.state_sections
     )
+
+
+def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
+    """Warn once when a per-profile setting sits at the config top level."""
+    offending = legacy_flat_sections(raw)
     if not offending:
         return
     cache_key = (str(path), frozenset(offending))

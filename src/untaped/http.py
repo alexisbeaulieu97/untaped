@@ -15,8 +15,12 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 
 from __future__ import annotations
 
+import email.utils
 import ssl
+import time
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -40,6 +44,77 @@ if TYPE_CHECKING:
 type AuthFn = Callable[[httpx.Request], httpx.Request]
 VerifyTypes = bool | str | ssl.SSLContext
 PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """How :class:`HttpClient` retries transient HTTP failures.
+
+    Transport failures are retried by *phase*: a pre-send connect failure never
+    reached the server and is safe to retry for any method, while a post-send
+    read/write error may already have been processed and is retried only for
+    ``idempotent_methods``. Retryable statuses (429/503) are likewise retried
+    only for ``idempotent_methods`` — a caller whose POST is genuinely
+    idempotent (e.g. a search endpoint) opts in by passing a policy whose
+    ``idempotent_methods`` includes ``"POST"``. ``Retry-After`` (delta-seconds
+    or HTTP-date) is honoured up to ``retry_after_max``; otherwise the delay is
+    exponential backoff capped at ``backoff_max``.
+    """
+
+    max_attempts: int = 3
+    backoff_base: float = 0.5
+    backoff_max: float = 30.0
+    retry_after_max: float = 60.0
+    retry_statuses: tuple[int, ...] = (429, 503)
+    honor_retry_after: bool = True
+    retry_on_transport: bool = True
+    idempotent_methods: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+
+    def allows_status_retry(self, method: str, status_code: int) -> bool:
+        return status_code in self.retry_statuses and method.upper() in self.idempotent_methods
+
+    def allows_transport_retry(self, method: str, *, presend: bool) -> bool:
+        return self.retry_on_transport and (presend or method.upper() in self.idempotent_methods)
+
+    def backoff(self, attempt: int) -> float:
+        return min(self.backoff_max, self.backoff_base * 2.0 ** (attempt - 1))
+
+    def status_delay(self, attempt: int, retry_after: str | None) -> float:
+        if self.honor_retry_after and retry_after:
+            parsed = _parse_retry_after(retry_after)
+            if parsed is not None:
+                return min(parsed, self.retry_after_max)
+        return self.backoff(attempt)
+
+
+class _Inherit:
+    """Sentinel: a per-call ``retry`` left unset inherits the client's policy."""
+
+
+_INHERIT = _Inherit()
+_DEFAULT_RETRY = RetryPolicy()
+
+
+def _parse_retry_after(value: str) -> float | None:
+    """Parse a ``Retry-After`` header (delta-seconds or HTTP-date) to seconds.
+
+    Returns ``None`` when unparseable so the caller falls back to computed
+    backoff; a past HTTP-date clamps to ``0`` (retry immediately).
+    """
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except TypeError, ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _sleep(seconds: float) -> None:  # pragma: no cover - thin wrapper, patched in tests
+    time.sleep(seconds)
 
 
 def resolve_verify(http: HttpSettings) -> VerifyTypes:
@@ -91,6 +166,7 @@ class HttpClient:
         auth: AuthFn | None = None,
         verify: VerifyTypes = True,
         proxy: str | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         import httpx  # noqa: PLC0415
 
@@ -102,25 +178,65 @@ class HttpClient:
             proxy=proxy,
         )
         self._auth = auth
+        self._retry = retry
 
-    def request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        retry: RetryPolicy | None | _Inherit = _INHERIT,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Send a request, retrying transient failures per the active policy.
+
+        ``retry`` overrides the client's policy for this call: a
+        :class:`RetryPolicy` replaces it, ``None`` disables retries, and the
+        default (``_INHERIT``) keeps the client's policy. The request is rebuilt
+        each attempt so re-signing auth and re-reading the body stay correct.
+        """
         import httpx  # noqa: PLC0415
 
-        request = self._client.build_request(method, path, **kwargs)
-        if self._auth is not None:
-            request = self._auth(request)
-        try:
-            response = self._client.send(request)
-        except httpx.HTTPError as exc:
-            raise HttpTransportError(str(exc), url=str(request.url)) from exc
-        if response.status_code >= 400:
-            raise HttpStatusError(
-                f"HTTP {response.status_code} for {request.url}",
-                status_code=response.status_code,
-                url=str(request.url),
-                body=_body_snippet(response, _BODY_LIMIT),
-            )
-        return response
+        policy = self._retry if isinstance(retry, _Inherit) else retry
+        attempt = 0
+        while True:
+            attempt += 1
+            request = self._client.build_request(method, path, **kwargs)
+            if self._auth is not None:
+                request = self._auth(request)
+            try:
+                response = self._client.send(request)
+            except httpx.HTTPError as exc:
+                presend = isinstance(
+                    exc,
+                    httpx.ConnectError
+                    | httpx.ConnectTimeout
+                    | httpx.PoolTimeout
+                    | httpx.ProxyError,
+                )
+                if (
+                    policy is not None
+                    and attempt < policy.max_attempts
+                    and policy.allows_transport_retry(method, presend=presend)
+                ):
+                    _sleep(policy.backoff(attempt))
+                    continue
+                raise HttpTransportError(str(exc), url=str(request.url)) from exc
+            if response.status_code >= 400:
+                if (
+                    policy is not None
+                    and attempt < policy.max_attempts
+                    and policy.allows_status_retry(method, response.status_code)
+                ):
+                    _sleep(policy.status_delay(attempt, response.headers.get("Retry-After")))
+                    continue
+                raise HttpStatusError(
+                    f"HTTP {response.status_code} for {request.url}",
+                    status_code=response.status_code,
+                    url=str(request.url),
+                    body=_body_snippet(response, _BODY_LIMIT),
+                )
+            return response
 
     def get(self, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("GET", path, **kwargs)
@@ -264,6 +380,7 @@ def connected_client(
     base_url_field: str = "base_url",
     bearer_token_field: str | None = "token",
     http: HttpSettings | None = None,
+    retry: RetryPolicy | None = _DEFAULT_RETRY,
 ) -> HttpClient:
     """Validate a tool's connection settings and build an :class:`HttpClient`.
 
@@ -273,7 +390,10 @@ def connected_client(
     and configured) becomes an ``Authorization: Bearer`` header unless the
     caller supplied their own. ``http`` defaults to the active profile's
     resolved :class:`HttpSettings` (proxy/ca/verify), so per-profile HTTP
-    config takes effect without each tool threading it explicitly.
+    config takes effect without each tool threading it explicitly. ``retry``
+    defaults to a safe :class:`RetryPolicy` (transport + idempotent-method
+    429/503 backoff); pass ``None`` to disable, or a custom policy to opt a
+    POST endpoint in.
     """
     values: dict[str, str] = {}
     # ``base_url_field`` and ``bearer_token_field`` are always walked — even
@@ -302,6 +422,7 @@ def connected_client(
         verify=resolve_verify(http_settings),
         timeout=http_settings.timeout,
         proxy=http_settings.proxy,
+        retry=retry,
     )
 
 

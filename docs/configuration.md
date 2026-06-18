@@ -190,6 +190,22 @@ The active profile is selected by, in order:
 
 Every command, including each tool's domain subcommands, honours `--profile`.
 
+### Output verbosity — `--verbose` / `--quiet`
+
+Two position-independent root options (usable in any token position, like
+`--profile`) control how chatty a command is:
+
+- `--verbose` / `-v` streams captured tool output live and raises logging to
+  DEBUG.
+- `--quiet` / `-q` is its inverse: it mutes the progress spinner and the
+  semantic `success` / `info` messages. `warning` / `error`, interactive
+  prompts, data on stdout, and destructive-action confirmation previews are
+  **not** muted, so `--quiet` stays safe for scripts and destructive commands.
+
+```bash
+untaped-github --quiet config set token --stdin < token.txt
+```
+
 ## Managing profiles — `<tool> profile`
 
 The profile command group is built into the SDK and exposed by every tool:
@@ -251,6 +267,8 @@ untaped-github config unset <key> --target-profile <name>
 untaped-github config set ui.theme classic       # write a UI preference (active profile)
 untaped-github config set ui.theme classic --target-profile default  # shared base
 untaped-github config unset ui.theme             # remove a UI preference
+untaped-github config doctor                     # diagnose the config (path, profile, warnings)
+untaped-github config edit                       # open the file in $VISUAL/$EDITOR
 ```
 
 Bare keys address the **invoking tool's own section**, so for `untaped-github`,
@@ -300,6 +318,30 @@ to already exist.
 per-profile keys like any other, so they honour `--profile` (reads) and
 `--target-profile` (writes), and layer `profiles.default` beneath the active
 profile.
+
+### Inspecting and editing the file — `config doctor` / `config edit`
+
+`<tool> config doctor` is a one-shot health check for the shared file. It prints
+the config path, the active profile and where it came from (`env` / `config` /
+`fallback`), the known profiles, and the resolved settings table — and it
+**warns** about any legacy top-level section that should live under
+`profiles.default` (the v1→v2 flat-layout footgun). If the file fails to load it
+exits non-zero with a clean error instead of a traceback.
+
+```bash
+untaped-github config doctor
+```
+
+`<tool> config edit` opens `~/.untaped/config.yml` in `$VISUAL` (preferred) or
+`$EDITOR`, creating the parent directory if it's missing. The editor command is
+parsed with `shlex.split`, so editor arguments work
+(`EDITOR="code --wait"`). On save it re-validates the file and reports any
+errors or legacy-section warnings. It errors cleanly if neither `$VISUAL` nor
+`$EDITOR` is set, or if the configured editor binary can't be found.
+
+```bash
+EDITOR="code --wait" untaped-github config edit
+```
 
 ### State vs. profile fields
 

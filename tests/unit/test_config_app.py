@@ -19,6 +19,7 @@ choices/default, what gets written, the success text) is still observed.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -778,3 +779,59 @@ def test_state_field_is_not_settable(_isolated_config: Path) -> None:
     result = CliInvoker().invoke(app, ["set", "workspaces", "[]"])
     assert result.exit_code != 0
     assert "workspaces" in result.stderr
+
+
+# ---- config doctor ---------------------------------------------------------
+
+
+def test_doctor_reports_profile_and_validates(app: Any) -> None:
+    result = CliInvoker().invoke(app, ["doctor"])
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert "config:" in out
+    assert "active profile:" in out
+    assert "OK" in out
+
+
+def test_doctor_flags_legacy_top_level_section(app: Any, _isolated_config: Path) -> None:
+    _isolated_config.write_text("http:\n  proxy: http://corp:8080\n", encoding="utf-8")
+    get_settings.cache_clear()
+    result = CliInvoker().invoke(app, ["doctor"])
+    out = result.output
+    assert "http" in out
+    assert "profiles.default" in out
+
+
+def test_doctor_exits_nonzero_on_unparseable_config(app: Any, _isolated_config: Path) -> None:
+    _isolated_config.write_text("profiles: [unclosed\n", encoding="utf-8")
+    get_settings.cache_clear()
+    result = CliInvoker().invoke(app, ["doctor"])
+    assert result.exit_code == 1
+
+
+# ---- config edit -----------------------------------------------------------
+
+
+def test_edit_opens_editor_and_validates(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A no-op "editor" that exits 0 without touching the file.
+    monkeypatch.setenv("EDITOR", f'{sys.executable} -c "pass"')
+    monkeypatch.delenv("VISUAL", raising=False)
+    result = CliInvoker().invoke(app, ["edit"])
+    assert result.exit_code == 0, result.output
+    assert "validated" in result.output
+
+
+def test_edit_requires_an_editor_env(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EDITOR", raising=False)
+    monkeypatch.delenv("VISUAL", raising=False)
+    result = CliInvoker().invoke(app, ["edit"])
+    assert result.exit_code == 1
+    assert "EDITOR" in result.output or "VISUAL" in result.output
+
+
+def test_edit_reports_missing_editor_binary(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EDITOR", "definitely-not-a-real-binary-xyz")
+    monkeypatch.delenv("VISUAL", raising=False)
+    result = CliInvoker().invoke(app, ["edit"])
+    assert result.exit_code == 1
+    assert "editor not found" in result.output

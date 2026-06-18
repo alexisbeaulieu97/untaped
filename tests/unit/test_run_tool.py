@@ -128,3 +128,19 @@ def test_build_tool_app_is_idempotent(_isolated_config: Path, tmp_path: Path) ->
     result = CliInvoker().invoke(wired.meta, ["whoami"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "(none)"
+
+
+def test_profile_create_success_shown_without_quiet(_isolated_config: Path, tmp_path: Path) -> None:
+    wired = _wired(tmp_path)
+    result = CliInvoker().invoke(wired.meta, ["profile", "create", "p1"])
+    assert result.exit_code == 0, result.output
+    assert "created profile: p1" in result.stderr
+
+
+def test_quiet_mutes_profile_create_success(_isolated_config: Path, tmp_path: Path) -> None:
+    """``--quiet`` mutes the (now semantic) success confirmation; the profile is
+    still created and the command still exits 0."""
+    wired = _wired(tmp_path)
+    result = CliInvoker().invoke(wired.meta, ["--quiet", "profile", "create", "p1"])
+    assert result.exit_code == 0, result.output
+    assert "created profile" not in result.stderr
