@@ -257,16 +257,16 @@ def _warn_legacy_flat(ui: UiContext, raw: Mapping[str, Any]) -> None:
 
 def _doctor(ctx: _Ctx) -> None:
     with report_errors():
+        ui = ui_context(strict=False)
         path = resolve_config_path()
-        echo(f"config: {path}", err=True)
+        ui.message("info", f"config: {path}")
         raw = read_config_dict(path)
         name, source = classify_active_profile(raw)
-        echo(f"active profile: {name or 'default'} (source: {source})", err=True)
+        ui.message("info", f"active profile: {name or 'default'} (source: {source})")
         repo = ctx.repo()
         profiles = repo.profile_names()
         if profiles:
-            echo(f"profiles: {', '.join(profiles)}", err=True)
-        ui = ui_context(strict=False)
+            ui.message("info", f"profiles: {', '.join(profiles)}")
         _warn_legacy_flat(ui, raw)
         get_settings.cache_clear()
         get_settings()  # raises ConfigError (→ clean error, exit 1) if invalid
