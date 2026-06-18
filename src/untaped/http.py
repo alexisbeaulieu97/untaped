@@ -214,9 +214,18 @@ class HttpClient:
                     | httpx.PoolTimeout
                     | httpx.ProxyError,
                 )
+                # Only genuinely transient transport failures are retried; a
+                # permanent HTTPError (UnsupportedProtocol, DecodingError,
+                # TooManyRedirects, LocalProtocolError) raises immediately
+                # rather than burning the backoff budget.
+                transient = presend or isinstance(
+                    exc,
+                    httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError,
+                )
                 if (
                     policy is not None
                     and attempt < policy.max_attempts
+                    and transient
                     and policy.allows_transport_retry(method, presend=presend)
                 ):
                     _sleep(policy.backoff(attempt))
