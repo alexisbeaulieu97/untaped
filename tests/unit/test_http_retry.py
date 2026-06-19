@@ -249,3 +249,41 @@ def test_paginate_offset_post_inherits_client_policy_and_does_not_retry(
             list(paginate_offset(client, "POST", "/search", item_key="issues", body={"jql": "x"}))
     assert route.call_count == 1
     assert no_sleep == []
+
+
+def test_paginate_offset_get_retry_none_disables_client_policy(no_sleep: list[float]) -> None:
+    """``retry=None`` reaches the GET page fetch and disables a retry the
+    client's policy would otherwise apply to an idempotent GET."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/things").mock(return_value=httpx.Response(503))
+        with (
+            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
+            pytest.raises(HttpStatusError),
+        ):
+            list(paginate_offset(client, "GET", "/things", item_key="items", retry=None))
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
+def test_paginate_offset_forwards_retry_on_later_pages(no_sleep: list[float]) -> None:
+    """The per-call policy is forwarded on every page, so a 429 on page 2 of a
+    multi-page walk retries — not just the first fetch."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/things").mock(
+            side_effect=[
+                httpx.Response(200, json={"items": [{"i": 1}, {"i": 2}]}),  # full page, not last
+                httpx.Response(429),  # page 2, retried
+                httpx.Response(200, json={"items": [{"i": 3}], "isLast": True}),
+            ]
+        )
+        # Bare client (retry=None); the explicit per-call policy is the only
+        # thing that can make page 2 retry — proving it threads through the loop.
+        with HttpClient(base_url="https://example.com") as client:
+            rows = list(
+                paginate_offset(
+                    client, "GET", "/things", item_key="items", page_size=2, retry=RetryPolicy()
+                )
+            )
+    assert [r["i"] for r in rows] == [1, 2, 3]
+    assert route.call_count == 3
+    assert len(no_sleep) == 1
