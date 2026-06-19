@@ -481,12 +481,16 @@ def paginate_offset(
     limit: int | None = None,
     start_param: str = "startAt",
     size_param: str = "maxResults",
+    retry: RetryPolicy | None | _Inherit = _INHERIT,
 ) -> Iterator[dict[str, Any]]:
     """Walk offset/limit collection envelopes (Jira-style ``startAt`` pages).
 
     Rows live under ``item_key``; termination honours an ``isLast`` flag or a
     ``total`` count when the server provides one, and otherwise stops at the
-    first short or empty page.
+    first short or empty page. ``retry`` is forwarded per page-fetch: the
+    default ``_INHERIT`` uses the client's policy, while a caller fetching an
+    idempotent ``POST`` collection (e.g. a JQL search) can pass a
+    POST-inclusive :class:`RetryPolicy` to make just that endpoint retry.
     """
     if limit is not None and limit <= 0:
         return
@@ -497,7 +501,9 @@ def paginate_offset(
         if request_size <= 0:
             return
         window = {start_param: start, size_param: request_size}
-        payload = _fetch_offset_page(http, method, path, params=params, body=body, window=window)
+        payload = _fetch_offset_page(
+            http, method, path, params=params, body=body, window=window, retry=retry
+        )
         rows = payload.get(item_key) if isinstance(payload, dict) else None
         if not isinstance(rows, list) or not rows:
             return
@@ -520,10 +526,11 @@ def _fetch_offset_page(
     params: dict[str, Any] | None,
     body: dict[str, Any] | None,
     window: dict[str, Any],
+    retry: RetryPolicy | None | _Inherit = _INHERIT,
 ) -> Any:
     if method == "GET":
-        return http.get_json_dict(path, params={**(params or {}), **window})
-    return http.request_json("POST", path, json={**(body or {}), **window})
+        return http.get_json_dict(path, params={**(params or {}), **window}, retry=retry)
+    return http.request_json("POST", path, json={**(body or {}), **window}, retry=retry)
 
 
 def _offset_pages_exhausted(

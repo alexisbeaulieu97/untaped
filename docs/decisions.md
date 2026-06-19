@@ -134,3 +134,11 @@ write:
   passing a `RetryPolicy` whose `idempotent_methods` includes `"POST"`.
 - `Retry-After` (seconds or HTTP-date) is honored up to `retry_after_max`;
   otherwise the delay is exponential backoff capped at `backoff_max`.
+
+**`paginate_offset` forwards a per-call `retry=` (2.2.0).** The POST opt-in above
+only reaches a single request; collection walks go through `paginate_offset`,
+which previously fetched each page with the client's default policy and no way to
+override it. It now takes a `retry=` (default `_INHERIT`) and forwards it to every
+page fetch, so a tool can make just its idempotent search endpoint retry without
+making any other `POST` (e.g. a create) retryable. Additive; existing callers that
+omit `retry=` are unchanged.

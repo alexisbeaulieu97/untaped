@@ -17,7 +17,7 @@ import respx
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import HttpStatusError, HttpTransportError
-from untaped.http import HttpClient, RetryPolicy, connected_client
+from untaped.http import HttpClient, RetryPolicy, connected_client, paginate_offset
 
 
 @pytest.fixture
@@ -208,3 +208,44 @@ def test_retry_policy_is_exported_from_package() -> None:
     from untaped import RetryPolicy as Exported
 
     assert Exported is RetryPolicy
+
+
+_POST_OK = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
+
+
+def test_paginate_offset_post_retries_with_optin_policy(no_sleep: list[float]) -> None:
+    """A per-call POST-inclusive policy lets an idempotent search page retry a
+    429 — even though the client's default policy would not retry a POST."""
+    policy = RetryPolicy(idempotent_methods=_POST_OK)
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.post("/search").mock(
+            side_effect=[
+                httpx.Response(429),
+                httpx.Response(200, json={"issues": [{"id": "1"}], "isLast": True}),
+            ]
+        )
+        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
+            rows = list(
+                paginate_offset(
+                    client, "POST", "/search", item_key="issues", body={"jql": "x"}, retry=policy
+                )
+            )
+    assert rows == [{"id": "1"}]
+    assert route.call_count == 2
+    assert len(no_sleep) == 1
+
+
+def test_paginate_offset_post_inherits_client_policy_and_does_not_retry(
+    no_sleep: list[float],
+) -> None:
+    """With the default ``_INHERIT``, the search page inherits the client's
+    policy — which excludes POST — so a 429 raises without retrying."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.post("/search").mock(return_value=httpx.Response(429))
+        with (
+            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
+            pytest.raises(HttpStatusError),
+        ):
+            list(paginate_offset(client, "POST", "/search", item_key="issues", body={"jql": "x"}))
+    assert route.call_count == 1
+    assert no_sleep == []
