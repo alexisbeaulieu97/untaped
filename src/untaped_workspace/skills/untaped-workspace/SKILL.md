@@ -27,5 +27,6 @@ Use this skill when the user wants an agent to operate `untaped-workspace` for l
 
 - Prefer `--format json` for structured state and `--format raw --columns ...` for shell pipelines.
 - Use `--format pipe` to chain commands: it emits one self-describing record per line tagged with a `kind` (e.g. `workspace.workspace`, `workspace.repo`); `path --stdin` reads that stream back (`untaped-workspace list --format pipe | untaped-workspace path --stdin`).
+- The SDK provides `--quiet`/`-q` to mute the spinner and success/info lines (errors and data still print), plus `config doctor` and `config edit` for diagnosing and editing the active config.
 - Do not assume the current directory is the intended workspace. Resolve target precedence: `--workspace`, then `--path`, then nearest parent `untaped.yml`.
 - Treat destructive repo operations as explicit user intent. Inspect `untaped-workspace status` before broad sync or branch changes.
