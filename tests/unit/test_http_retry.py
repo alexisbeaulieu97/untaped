@@ -17,7 +17,7 @@ import respx
 from pydantic import BaseModel, SecretStr
 
 from untaped.errors import HttpStatusError, HttpTransportError
-from untaped.http import HttpClient, RetryPolicy, connected_client
+from untaped.http import HttpClient, RetryPolicy, connected_client, paginate_offset
 
 
 @pytest.fixture
@@ -208,3 +208,82 @@ def test_retry_policy_is_exported_from_package() -> None:
     from untaped import RetryPolicy as Exported
 
     assert Exported is RetryPolicy
+
+
+_POST_OK = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "POST"})
+
+
+def test_paginate_offset_post_retries_with_optin_policy(no_sleep: list[float]) -> None:
+    """A per-call POST-inclusive policy lets an idempotent search page retry a
+    429 — even though the client's default policy would not retry a POST."""
+    policy = RetryPolicy(idempotent_methods=_POST_OK)
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.post("/search").mock(
+            side_effect=[
+                httpx.Response(429),
+                httpx.Response(200, json={"issues": [{"id": "1"}], "isLast": True}),
+            ]
+        )
+        with HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client:
+            rows = list(
+                paginate_offset(
+                    client, "POST", "/search", item_key="issues", body={"jql": "x"}, retry=policy
+                )
+            )
+    assert rows == [{"id": "1"}]
+    assert route.call_count == 2
+    assert len(no_sleep) == 1
+
+
+def test_paginate_offset_post_inherits_client_policy_and_does_not_retry(
+    no_sleep: list[float],
+) -> None:
+    """With the default ``_INHERIT``, the search page inherits the client's
+    policy — which excludes POST — so a 429 raises without retrying."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.post("/search").mock(return_value=httpx.Response(429))
+        with (
+            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
+            pytest.raises(HttpStatusError),
+        ):
+            list(paginate_offset(client, "POST", "/search", item_key="issues", body={"jql": "x"}))
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
+def test_paginate_offset_get_retry_none_disables_client_policy(no_sleep: list[float]) -> None:
+    """``retry=None`` reaches the GET page fetch and disables a retry the
+    client's policy would otherwise apply to an idempotent GET."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/things").mock(return_value=httpx.Response(503))
+        with (
+            HttpClient(base_url="https://example.com", retry=RetryPolicy()) as client,
+            pytest.raises(HttpStatusError),
+        ):
+            list(paginate_offset(client, "GET", "/things", item_key="items", retry=None))
+    assert route.call_count == 1
+    assert no_sleep == []
+
+
+def test_paginate_offset_forwards_retry_on_later_pages(no_sleep: list[float]) -> None:
+    """The per-call policy is forwarded on every page, so a 429 on page 2 of a
+    multi-page walk retries — not just the first fetch."""
+    with respx.mock(base_url="https://example.com") as mock:
+        route = mock.get("/things").mock(
+            side_effect=[
+                httpx.Response(200, json={"items": [{"i": 1}, {"i": 2}]}),  # full page, not last
+                httpx.Response(429),  # page 2, retried
+                httpx.Response(200, json={"items": [{"i": 3}], "isLast": True}),
+            ]
+        )
+        # Bare client (retry=None); the explicit per-call policy is the only
+        # thing that can make page 2 retry — proving it threads through the loop.
+        with HttpClient(base_url="https://example.com") as client:
+            rows = list(
+                paginate_offset(
+                    client, "GET", "/things", item_key="items", page_size=2, retry=RetryPolicy()
+                )
+            )
+    assert [r["i"] for r in rows] == [1, 2, 3]
+    assert route.call_count == 3
+    assert len(no_sleep) == 1
