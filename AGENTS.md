@@ -55,8 +55,8 @@ stdin helpers, HTTP/TLS primitives, profile selection, and shared errors.
     registry rows start with `name`; sync/status/foreach rows start with
     `workspace`.
 11. **Row-oriented CLI output uses the SDK's `untaped.render_rows`.** Human
-    `--format table` output goes through the SDK `ui_context()` so global
-    `ui:` settings and themes apply. Structured `json`, `yaml`, and
+    `--format table` output goes through the SDK `ui_context()` so profile
+    `ui:` settings and SDK built-in themes apply. Structured `json`, `yaml`, and
     `raw` output goes through a plain `UiContext()` so missing or bad themes
     do not break pipe-friendly output. Every producer also passes a `kind=`
     so `--format pipe` emits self-describing NDJSON: `list` →
@@ -596,7 +596,7 @@ coverage gate.
 
 ## See Also
 
-- [`untaped` core](https://github.com/alexisbeaulieu97/untaped) - plugin
+- [`untaped` core](https://github.com/alexisbeaulieu97/untaped) - SDK
   runtime, settings registry, config-file helpers, output helpers.
 - [`untaped` configuration docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md)
   - user-facing profile, config, secrets, and TLS behavior.
