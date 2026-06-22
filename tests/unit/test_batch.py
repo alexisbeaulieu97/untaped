@@ -77,6 +77,31 @@ def test_interactive_destructive_previews_and_confirms(
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
 
 
+def test_interactive_destructive_can_skip_generic_preview(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    action, calls = _recorder()
+    ui = _FakeUi()
+    outcome = _run(
+        monkeypatch,
+        interactive=True,
+        items=["a", "b"],
+        action=action,
+        ui=ui,
+        render_generic_preview=False,
+    )
+
+    captured = capsys.readouterr()
+    assert "About to delete" not in captured.err
+    assert "name-a" not in captured.err
+    assert "name-b" not in captured.err
+    assert captured.out == ""
+    assert ui.confirms == [{"message": "Continue?", "default": False}]
+    assert calls == ["a", "b"]
+    assert outcome.failed == 0
+    assert outcome.results == [("a", "done-a"), ("b", "done-b")]
+
+
 def test_decline_runs_no_action(monkeypatch: pytest.MonkeyPatch) -> None:
     action, calls = _recorder()
     outcome = _run(
@@ -96,6 +121,27 @@ def test_assume_yes_skips_gate_and_preview(
     ui = _FakeUi()
     outcome = _run(
         monkeypatch, interactive=True, items=["a", "b"], action=action, ui=ui, assume_yes=True
+    )
+
+    assert "About to delete" not in capsys.readouterr().err
+    assert ui.confirms == []
+    assert calls == ["a", "b"]
+    assert outcome.failed == 0
+
+
+def test_assume_yes_skips_generic_preview_even_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    action, calls = _recorder()
+    ui = _FakeUi()
+    outcome = _run(
+        monkeypatch,
+        interactive=True,
+        items=["a", "b"],
+        action=action,
+        ui=ui,
+        assume_yes=True,
+        render_generic_preview=True,
     )
 
     assert "About to delete" not in capsys.readouterr().err
@@ -125,6 +171,23 @@ def test_destructive_non_interactive_refuses(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(ConfigError, match="requires --yes when stdin is not interactive"):
         _run(monkeypatch, interactive=False, items=["a", "b"], action=action, ui=_FakeUi())
     assert calls == []
+
+
+def test_destructive_non_interactive_refuses_before_generic_preview(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    action, calls = _recorder()
+    with pytest.raises(ConfigError, match="requires --yes when stdin is not interactive"):
+        _run(
+            monkeypatch,
+            interactive=False,
+            items=["a", "b"],
+            action=action,
+            ui=_FakeUi(),
+            render_generic_preview=False,
+        )
+    assert calls == []
+    assert "About to delete" not in capsys.readouterr().err
 
 
 def test_preview_only_returns_plan_without_acting(monkeypatch: pytest.MonkeyPatch) -> None:

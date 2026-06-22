@@ -318,6 +318,12 @@ For interactive input, use the UI context prompts:
 `ctx.ui(strict=False).confirm/text/secret/select/multiselect(...)`. They require
 a TTY and render on stderr, keeping stdout clean for data.
 
+For destructive batch actions, use `batch_apply(...)` so piped and interactive
+mutations share the same `--yes`, confirmation, progress, and per-item failure
+behavior. When a command has already rendered a richer domain-specific preview,
+pass `render_generic_preview=False`; the helper still prompts, but it skips its
+generic `About to ...` row dump.
+
 ## 6. Tool-managed state
 
 If you declared a `state_model`, write state through the SDK's safe state

@@ -278,7 +278,7 @@ file.
 | Read a `--format pipe` stream into typed envelopes | `read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
 | Resolve identifiers from positionals or stdin (one source only) | `read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `resolve_each` |
-| Run a mutating verb over a resolved set (preview → confirm → progress) | `batch_apply` (`destructive`/`assume_yes`/`preview_only`; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
+| Run a mutating verb over a resolved set (preview → confirm → progress) | `batch_apply` (`destructive`/`assume_yes`/`preview_only`; pass `render_generic_preview=False` only when the caller already rendered a richer preview; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
 | Parse repeated `KEY=VALUE` flags           | `parse_kv_pairs` |
 | Clamp `--parallel N` at an upper bound      | `clamp_parallel` (caller supplies `cap` and `policy`) |
 | Validate paths as cyclopts converters       | `existing_directory`, `existing_file` |
