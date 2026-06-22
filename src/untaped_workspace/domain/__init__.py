@@ -9,6 +9,7 @@ from untaped_workspace.domain.manifest import (
 )
 from untaped_workspace.domain.models import Workspace
 from untaped_workspace.domain.payloads import (
+    BareCacheEntry,
     BranchApplyAction,
     BranchApplyOutcome,
     BranchChange,
@@ -26,6 +27,7 @@ from untaped_workspace.domain.state import (
 )
 
 __all__ = [
+    "BareCacheEntry",
     "BranchApplyAction",
     "BranchApplyOutcome",
     "BranchChange",

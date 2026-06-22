@@ -7,25 +7,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from untaped_workspace.domain import (
+    BareCacheEntry,
     DiscoveryResult,
     ManifestSource,
     RepoStatus,
-    SyncOutcome,
     Workspace,
     WorkspaceManifest,
 )
-
-if TYPE_CHECKING:
-    # Defer to break the cycle: ``sync_workspace`` already imports
-    # ``ManifestReader`` / ``GitOperations`` / ``Filesystem`` from this
-    # module, so a runtime import of ``BareFetchTracker`` here would be
-    # circular. Standard idiom for breaking application-internal cycles
-    # in type-only positions; ``from __future__ import annotations``
-    # above keeps the runtime evaluation deferred.
-    from untaped_workspace.application.sync_workspace import BareFetchTracker
 
 
 class ManifestReader(Protocol):
@@ -94,7 +85,8 @@ class BranchOperations(GitInspector, Protocol):
 
 
 class GitOperations(BranchOperations, Protocol):
-    def ensure_bare(self, url: str, *, cache_dir: Path) -> Path: ...
+    def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path: ...
+    def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry: ...
     def bare_fetch(self, bare_path: Path) -> None: ...
     def clone_with_reference(
         self, *, url: str, dest: Path, bare: Path, branch: str | None = None
@@ -104,27 +96,6 @@ class GitOperations(BranchOperations, Protocol):
 
 class RepoDiscoverer(Protocol):
     def discover(self, path: Path) -> DiscoveryResult: ...
-
-
-class SyncWorkspaceCallable(Protocol):
-    """Callable surface of :class:`SyncWorkspace` consumed by sibling use cases.
-
-    Declares the per-workspace primitive that :class:`SyncWorkspaces`
-    (the plural) dispatches across; structural so test stubs satisfy
-    it without inheriting. Mirrors the singular's keyword-only contract
-    exactly — ``only`` / ``prune`` / ``strict_only`` / ``bare_tracker``
-    are all positional-via-keyword today.
-    """
-
-    def __call__(
-        self,
-        workspace: Workspace,
-        *,
-        only: Sequence[str] | None = None,
-        prune: bool = False,
-        strict_only: bool = True,
-        bare_tracker: BareFetchTracker | None = None,
-    ) -> list[SyncOutcome]: ...
 
 
 class CompletedCommand(Protocol):
@@ -162,6 +133,5 @@ __all__ = [
     "RepoDiscoverer",
     "ShellRunner",
     "StatusInspector",
-    "SyncWorkspaceCallable",
     "WorkspaceRegistry",
 ]

@@ -12,7 +12,11 @@ from untaped_workspace.application.remove_repo import RemoveRepo
 from untaped_workspace.application.shell_init import ShellInit
 from untaped_workspace.application.show_workspace import ShowWorkspace
 from untaped_workspace.application.status_workspace import WorkspaceStatus
-from untaped_workspace.application.sync_workspace import BareFetchTracker, SyncWorkspace
+from untaped_workspace.application.sync_workspace import (
+    BareFetchTracker,
+    RepoSyncEngine,
+    SyncWorkspace,
+)
 from untaped_workspace.application.sync_workspaces import SyncWorkspaces
 from untaped_workspace.application.workspace_bootstrapper import WorkspaceBootstrapper
 from untaped_workspace.application.workspace_path import WorkspacePath
@@ -32,6 +36,7 @@ __all__ = [
     "InitWorkspace",
     "ListWorkspaces",
     "RemoveRepo",
+    "RepoSyncEngine",
     "SetWorkspaceBranch",
     "ShellInit",
     "ShowWorkspace",

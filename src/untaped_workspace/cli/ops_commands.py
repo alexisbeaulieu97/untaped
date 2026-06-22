@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Annotated
 
 from cyclopts import App, Parameter
@@ -16,7 +17,7 @@ from untaped.api import (
     report_errors,
 )
 
-from untaped_workspace.application import Foreach, SyncWorkspace, SyncWorkspaces, WorkspaceStatus
+from untaped_workspace.application import Foreach, RepoSyncEngine, SyncWorkspaces, WorkspaceStatus
 from untaped_workspace.cli.common import (
     RepoSelectorOption,
     WorkspaceNameOption,
@@ -27,7 +28,7 @@ from untaped_workspace.cli.common import (
     target_workspaces,
     workspace_settings,
 )
-from untaped_workspace.domain import SyncOutcome
+from untaped_workspace.domain import SyncAction, SyncOutcome
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -59,8 +60,8 @@ def sync_command(
             name="--timeout",
             help=(
                 f"Per-call timeout ceiling (seconds) for every git invocation "
-                f"this sync makes (read-only ops AND network clone/fetch). "
-                f"Defaults: {DEFAULT_TIMEOUT:g}s for read-only ops, "
+                f"this sync makes (local-only git ops AND network clone/fetch). "
+                f"Defaults: {DEFAULT_TIMEOUT:g}s for local-only git ops, "
                 f"{DEFAULT_SLOW_TIMEOUT:g}s for clone/fetch. Pass a single value "
                 f"to cap both."
             ),
@@ -75,9 +76,9 @@ def sync_command(
         Parameter(
             name=["--parallel", "-j"],
             help=(
-                "Concurrent workspaces (only with --all). Per-workspace "
-                "outcomes are rows, not exceptions, so the pool drains "
-                "to completion. Capped at a CPU-relative ceiling; values "
+                "Concurrent repo sync jobs. Per-repo outcomes are rows, "
+                "not exceptions, so the pool drains to completion. Capped "
+                "at a CPU-relative ceiling; values "
                 "above are clamped with a stderr warning."
             ),
         ),
@@ -90,16 +91,13 @@ def sync_command(
         raise_usage("--timeout must be positive")
     if parallel < 1:
         raise_usage("--parallel must be >= 1")
-    if parallel > 1 and not all_workspaces:
-        raise_usage("--parallel >1 requires --all")
     workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
     with report_errors():
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
         runner = (
             GitRunner(timeout=timeout, slow_timeout=timeout) if timeout is not None else GitRunner()
         )
-        sync = SyncWorkspace(
-            ManifestRepository(),
+        engine = RepoSyncEngine(
             runner,
             fs=LocalFilesystem(),
             cache_dir=workspace_settings().cache_dir,
@@ -110,10 +108,9 @@ def sync_command(
                 "matching repos will be skipped, not rejected.",
                 err=True,
             )
-        with progress_ui().progress("Syncing workspaces…") as p:
-            # The notify header fires once; new_phase forces it past the
-            # non-TTY throttle so the worker-count line still surfaces.
-            sweep = SyncWorkspaces(sync, notify=lambda m: p.update(m, new_phase=True))
+        ui = progress_ui()
+        with ui.progress("Syncing repos…") as p:
+            sweep = SyncWorkspaces(ManifestRepository(), engine, notify=p.update)
             outcomes = sweep(
                 targets,
                 only=repo,
@@ -121,6 +118,7 @@ def sync_command(
                 strict_only=not all_workspaces,
                 parallel=workers,
             )
+        ui.message("info", _sync_summary(outcomes))
         print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
 
 
@@ -140,6 +138,24 @@ def print_sync_outcomes(
     )
     if rendered:
         echo(rendered)
+
+
+def _sync_summary(outcomes: list[SyncOutcome]) -> str:
+    total = len(outcomes)
+    noun = "repo" if total == 1 else "repos"
+    if total == 0:
+        return "sync complete: 0 repos"
+    counts = Counter(o.action for o in outcomes)
+    action_labels: tuple[tuple[SyncAction, str], ...] = (
+        ("clone", "cloned"),
+        ("pull", "pulled"),
+        ("up-to-date", "up to date"),
+        ("skip", "skipped"),
+        ("remove", "removed"),
+        ("unmatched", "unmatched"),
+    )
+    parts = [f"{counts[action]} {label}" for action, label in action_labels if counts[action]]
+    return f"sync complete: {total} {noun} ({', '.join(parts)})"
 
 
 def status_command(

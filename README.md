@@ -27,7 +27,7 @@ untaped-workspace remove <repo>... [--workspace <ws> | --path <dir>]
 untaped-workspace branch set <branch> [--workspace <ws> | --path <dir>]
 untaped-workspace branch unset [--workspace <ws> | --path <dir>]
 untaped-workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
-untaped-workspace sync [--workspace <ws> | --path <dir>] [--repo <repo>]...
+untaped-workspace sync [--workspace <ws> | --path <dir> | --all] [--repo <repo>]... [-j N]
 untaped-workspace status [--workspace <ws> | --path <dir>] [--repo <repo>]...
 untaped-workspace foreach <cmd> [--workspace <ws> | --path <dir>] [--repo <repo>]...
 untaped-workspace path <name>...
@@ -45,6 +45,11 @@ untaped-workspace status --workspace prod --profile work
 
 See [docs/workspace.md](./docs/workspace.md) for manifest shape, command
 details, registry behavior, and shell helper examples.
+
+`sync -j N` runs up to `N` repo sync jobs concurrently, whether syncing one
+workspace or `--all`. Missing clones still use the central bare cache plus
+`git clone --reference`; existing clones fetch and pull their own working
+remotes without touching the cache.
 
 ## Development
 

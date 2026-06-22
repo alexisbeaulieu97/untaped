@@ -19,7 +19,7 @@ Use this skill when the user wants an agent to operate `untaped-workspace` for l
 - `untaped-workspace list` shows registered workspaces.
 - `untaped-workspace show` reads the manifest for one workspace.
 - `untaped-workspace status` reports repo branch/dirty/ahead/behind state.
-- `untaped-workspace sync` updates repos, and `--all` applies across registered workspaces.
+- `untaped-workspace sync` updates repos, and `--all` applies across registered workspaces. Use `-j N` / `--parallel N` for up to `N` concurrent repo sync jobs; the cap is global across selected repos, not per workspace.
 - `untaped-workspace foreach` runs a shell command across selected repos; use care with side effects.
 - Branch commands operate on workspace manifests and git refs; inspect `--help` for exact selector behavior.
 
@@ -30,3 +30,6 @@ Use this skill when the user wants an agent to operate `untaped-workspace` for l
 - The SDK provides `--quiet`/`-q` to mute the spinner and success/info lines (errors and data still print), plus `config doctor` and `config edit` for diagnosing and editing the active config.
 - Do not assume the current directory is the intended workspace. Resolve target precedence: `--workspace`, then `--path`, then nearest parent `untaped.yml`.
 - Treat destructive repo operations as explicit user intent. Inspect `untaped-workspace status` before broad sync or branch changes.
+- Sync uses a central bare cache plus `git clone --reference` for missing clones. Existing clones fetch/pull their own working remotes and do not touch the bare cache; deleting or corrupting the cache can damage referenced clones.
+- Sync branch metadata is clone-time only. Use `untaped-workspace branch apply` to switch existing clones; sync skips dirty, diverged, or wrong-branch repos instead of checking them out.
+- `sync -j N` is not host-aware, and Ctrl-C can wait for in-flight git subprocesses until their timeout.

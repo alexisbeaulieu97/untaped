@@ -1,6 +1,6 @@
 [project]
 name = "untaped-workspace"
-version = "0.6.0"
+version = "0.7.0"
 description = "Local git workspace management CLI built on the untaped SDK."
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }
