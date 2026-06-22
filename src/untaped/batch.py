@@ -66,6 +66,7 @@ def batch_apply[T, R](
     destructive: bool = False,
     assume_yes: bool = False,
     preview_only: bool = False,
+    render_generic_preview: bool = True,
 ) -> BatchOutcome[T, R]:
     """Preview, optionally confirm, then run ``action`` over ``items``.
 
@@ -76,9 +77,11 @@ def batch_apply[T, R](
     A **destructive** verb gates execution: with ``assume_yes`` it proceeds; on an
     interactive stdin it previews then prompts (decline → no action run);
     otherwise it raises :class:`ConfigError` (stdin is the data pipe, so there is
-    nothing to confirm against — pass ``--yes``). Benign verbs and ``--yes`` skip
-    straight to execution. ``preview_only`` (``--dry-run``) returns ``planned_rows``
-    without running ``action``.
+    nothing to confirm against — pass ``--yes``). Callers that already rendered a
+    richer preview can pass ``render_generic_preview=False`` to keep the
+    confirmation prompt without the generic tab-row preview. Benign verbs and
+    ``--yes`` skip straight to execution. ``preview_only`` (``--dry-run``) returns
+    ``planned_rows`` without running ``action``.
 
     Per-item :class:`UntapedError` is caught and counted; anything else
     propagates. The helper never renders the summary or raises ``SystemExit`` —
@@ -90,9 +93,10 @@ def batch_apply[T, R](
     total = len(planned_rows)
     if destructive and not assume_yes:
         if _stdin_is_interactive():
-            echo(f"About to {verb} {total} {noun}(s):", err=True)
-            for row in planned_rows:
-                echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
+            if render_generic_preview:
+                echo(f"About to {verb} {total} {noun}(s):", err=True)
+                for row in planned_rows:
+                    echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
             if not ui.confirm("Continue?"):
                 return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
         else:
