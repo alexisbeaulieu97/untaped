@@ -46,18 +46,17 @@ def _step(prefix: str) -> Iterator[None]:
 
 @dataclass
 class BareFetchTracker:
-    """Session-scoped dedup state for ``SyncWorkspace`` bare fetches.
+    """Session-scoped dedup state for bare-cache refreshes.
 
-    Owned by the sweep's orchestrator — :class:`SyncWorkspaces` (the
-    plural use case) allocates one per ``__call__`` and threads it
-    into every singular ``SyncWorkspace.__call__`` in the sweep so the
-    same bare repo isn't fetched once per workspace. Per-call callers
-    that don't need cross-workspace dedup (``add --sync``,
-    ``import --sync``) let the singular allocate a fresh tracker via
-    its ``bare_tracker=None`` default. ``lock_for(url)`` serialises
+    Owned by the sweep's orchestrator — :class:`SyncWorkspaces` allocates
+    one per ``__call__`` and threads it into every repo job so the same
+    bare repo isn't fetched once per workspace or repo. Per-call callers
+    that don't need cross-workspace dedup (``add --sync``, ``import
+    --sync``) let the singular allocate a fresh tracker via its
+    ``bare_tracker=None`` default. ``lock_for(url)`` serialises
     ``ensure_bare → check → fetch → add`` for one URL while letting
-    different URLs proceed in parallel — the contract that
-    ``sync --all -j N`` relies on.
+    different URLs proceed in parallel — the contract that repo-job
+    parallel sync relies on.
     """
 
     fetched: set[Path] = field(default_factory=set)
@@ -73,88 +72,33 @@ class BareFetchTracker:
             return self._url_locks.setdefault(url, threading.Lock())
 
 
-class SyncWorkspace:
+class RepoSyncEngine:
+    """Per-repo sync state machine shared by sync orchestration entry points."""
+
     def __init__(
         self,
-        manifests: ManifestReader,
         git: GitOperations,
         *,
         fs: Filesystem,
         cache_dir: Path,
     ) -> None:
-        self._manifests = manifests
         self._git = git
         self._fs = fs
         self._cache_dir = cache_dir
-
-    def __call__(
-        self,
-        workspace: Workspace,
-        *,
-        only: Sequence[str] | None = None,
-        prune: bool = False,
-        strict_only: bool = True,
-        bare_tracker: BareFetchTracker | None = None,
-    ) -> list[SyncOutcome]:
-        """Reconcile ``workspace`` with its manifest.
-
-        ``strict_only`` controls how unmatched repo identifiers
-        surface:
-
-        - ``True`` (default, single-workspace mode) — raise
-          :class:`UnmatchedRepoFilter` so a typo on
-          ``sync --workspace x --repo typo`` is loud.
-        - ``False`` (CLI's ``--all`` path) — synthesise a per-identifier
-          ``SyncOutcome(action="unmatched", repo=<identifier>, ...)``
-          row for each unmatched value and continue with the matched
-          repos. Lets ``sync --all --repo repo-x`` traverse every
-          workspace, syncing ones that have ``repo-x`` and emitting
-          visible rows for any typo.
-
-        ``bare_tracker`` is a session-scoped dedup primitive owned by the
-        caller. The CLI's ``--all`` sweep allocates one and passes it
-        on every iteration so workspaces sharing repo URLs share the
-        bare-fetch. ``None`` (the default) allocates a fresh tracker
-        scoped to this call only — isolated, with no cross-call dedup.
-        Single-workspace callers (`add --sync`, `import --sync`) get
-        the convenience; anything iterating ``__call__`` must pass an
-        explicit tracker to keep the dedup.
-        """
-        tracker = bare_tracker if bare_tracker is not None else BareFetchTracker()
-        manifest = self._manifests.read(workspace.path)
-        repos, unmatched = select_repos(manifest, only)
-        if unmatched and strict_only:
-            raise UnmatchedRepoFilter(unmatched)
-        # Order: unmatched rows first (so a missing identifier is
-        # visible at the top of per-workspace output), then sync rows,
-        # then prune.
-        outcomes: list[SyncOutcome] = [
-            SyncOutcome(
-                workspace=workspace.name,
-                repo=identifier,
-                action="unmatched",
-                detail="not in this workspace's manifest",
-            )
-            for identifier in unmatched
-        ]
-        outcomes.extend(self._sync_repo(workspace, manifest, repo, tracker) for repo in repos)
-        if prune:
-            outcomes.extend(self._prune_orphans(workspace, manifest))
-        return outcomes
-
-    # internal -----------------------------------------------------------
 
     def _ensure_bare_fresh(self, url: str, tracker: BareFetchTracker) -> Path:
         # Per-URL lock so concurrent same-URL syncs do exactly one
         # ensure_bare + bare_fetch; different URLs proceed in parallel.
         with tracker.lock_for(url):
-            bare = self._git.ensure_bare(url, cache_dir=self._cache_dir)
+            entry = self._git.ensure_bare(url, cache_dir=self._cache_dir)
+            bare = entry.path
             if bare not in tracker.fetched:
-                self._git.bare_fetch(bare)
+                if not entry.created:
+                    self._git.bare_fetch(bare)
                 tracker.fetched.add(bare)
         return bare
 
-    def _sync_repo(
+    def sync_repo(
         self,
         workspace: Workspace,
         manifest: WorkspaceManifest,
@@ -164,10 +108,9 @@ class SyncWorkspace:
         local = workspace.path / repo.name
         target_branch = manifest.target_branch_for(repo)
         try:
-            with _step("cache fetch failed"):
-                bare = self._ensure_bare_fresh(repo.url, tracker)
-
             if not self._fs.exists(local):
+                with _step("cache fetch failed"):
+                    bare = self._ensure_bare_fresh(repo.url, tracker)
                 with _step("clone failed"):
                     self._git.clone_with_reference(
                         url=repo.url, dest=local, bare=bare, branch=target_branch
@@ -208,9 +151,7 @@ class SyncWorkspace:
         except _Skip as exc:
             return _outcome(workspace, repo, "skip", exc.detail)
 
-    def _prune_orphans(
-        self, workspace: Workspace, manifest: WorkspaceManifest
-    ) -> list[SyncOutcome]:
+    def prune_orphans(self, workspace: Workspace, manifest: WorkspaceManifest) -> list[SyncOutcome]:
         if not self._fs.is_dir(workspace.path):
             return []
         declared = {r.name for r in manifest.repos}
@@ -247,6 +188,56 @@ class SyncWorkspace:
             action="remove",
             detail="no longer declared",
         )
+
+
+class SyncWorkspace:
+    def __init__(
+        self,
+        manifests: ManifestReader,
+        git: GitOperations,
+        *,
+        fs: Filesystem,
+        cache_dir: Path,
+    ) -> None:
+        self._manifests = manifests
+        self._engine = RepoSyncEngine(git, fs=fs, cache_dir=cache_dir)
+
+    def __call__(
+        self,
+        workspace: Workspace,
+        *,
+        only: Sequence[str] | None = None,
+        prune: bool = False,
+        strict_only: bool = True,
+        bare_tracker: BareFetchTracker | None = None,
+    ) -> list[SyncOutcome]:
+        """Reconcile one workspace with its manifest.
+
+        This remains the serial convenience facade for ``add --sync``,
+        ``import --sync``, and tests that exercise the single-workspace
+        primitive. Multi-workspace CLI sync uses :class:`SyncWorkspaces`
+        for repo-job scheduling.
+        """
+        tracker = bare_tracker if bare_tracker is not None else BareFetchTracker()
+        manifest = self._manifests.read(workspace.path)
+        repos, unmatched = select_repos(manifest, only)
+        if unmatched and strict_only:
+            raise UnmatchedRepoFilter(unmatched)
+        outcomes: list[SyncOutcome] = [
+            SyncOutcome(
+                workspace=workspace.name,
+                repo=identifier,
+                action="unmatched",
+                detail="not in this workspace's manifest",
+            )
+            for identifier in unmatched
+        ]
+        outcomes.extend(
+            self._engine.sync_repo(workspace, manifest, repo, tracker) for repo in repos
+        )
+        if prune:
+            outcomes.extend(self._engine.prune_orphans(workspace, manifest))
+        return outcomes
 
 
 def _outcome(workspace: Workspace, repo: Repo, action: SyncAction, detail: str = "") -> SyncOutcome:

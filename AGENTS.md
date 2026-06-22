@@ -359,51 +359,73 @@ a target branch, fetch failures, status failures, and checkout failures are
 row-level `skip`s. `workspace show` is manifest-only; it formats the
 effective branch cascade without reading live git state.
 
-## `sync --all -j N` parallelism
+## `sync -j N` repo-job scheduler
 
-`workspace sync --all -j N` dispatches workspaces through the
-plural `application.SyncWorkspaces` use case. The plural wraps the
-singular `SyncWorkspace` (constructor dep, typed via the
-`SyncWorkspaceCallable` Protocol in `application/ports.py`) with
-serial/parallel dispatch, outcome sort, and a `notify` stderr-hook
-seam. `cli/ops_commands.py` builds the singular, wraps it, and invokes the plural
-via `SyncWorkspaces.__call__(targets, parallel=workers, ...)` — no
-executor lives in the CLI layer any more. The singular is still
-the right primitive for `add --sync` / `import --sync`, which sync a
-single workspace and don't need the plural's dispatch.
+`workspace sync -j N` and `workspace sync --all -j N` both route through
+the plural `application.SyncWorkspaces` scheduler. `-j` means
+**maximum concurrent repo sync jobs**, not maximum concurrent
+workspaces. The scheduler reads every selected manifest up front,
+validates strict `--repo` selectors before network work, builds
+`RepoSyncJob` records with explicit output ordinals, and dispatches
+those jobs through a `ThreadPoolExecutor` when `parallel > 1`. The CLI
+still clamps `-j` through `untaped.clamp_parallel` with
+`cap = 2 * os.cpu_count()` and raises usage errors for values `< 1`.
+The cap is global and intentionally not host-aware in v1.
 
-When `parallel > 1` *and* `len(workspaces) > 1`, the plural emits
-`"syncing N workspaces with up to M workers"` via `notify`
-(`cli/ops_commands.py` wires `notify=lambda m: echo(m, err=True)`),
-dispatches via `ThreadPoolExecutor`, drains via `as_completed`, and
-re-sorts outcomes by `(workspace_input_order, repo)` so JSON/table
-consumers see stable rows regardless of completion timing. Below that
-threshold the plural runs a serial loop and stays silent (no header,
-no pool). The CLI clamps `-j` through `untaped.clamp_parallel`
-(cap = `2 * os.cpu_count()`, shared with `foreach` and `awx apply`)
-and rejects `parallel > 1` outside `--all` with `raise_usage` —
-single-workspace parallelism would have to push inside `SyncWorkspace`
-and racing the bare-cache per-repo isn't worth the complexity.
+Per-repo behavior lives in `application.RepoSyncEngine`, which owns the
+state machine that used to sit inside `SyncWorkspace._sync_repo`.
+`SyncWorkspace` is now the thin serial facade for one workspace,
+including `add --sync` and `import --sync`. Keep future changes to the
+fetch/status/clone/pull decision tree in `RepoSyncEngine` so the
+single-workspace facade and global scheduler cannot diverge.
+
+Output order is planned, not completion-derived: workspace input
+order, unmatched selector rows first, sync rows in manifest order, and
+prune rows last. Do not sort by repo name. `--prune` is a serial
+second phase after all repo jobs finish, which avoids racing directory
+iteration/deletion against in-flight clones. Progress goes through the
+`notify` hook with repo-oriented messages such as
+`"syncing N repos with up to M workers"` and
+`"X/Y repos complete"`; `sync_command` writes the final summary to
+stderr through `UiContext.message("info", ...)`, so SDK quiet behavior
+applies and stdout remains data-only.
+
+Expected `GitError`s remain row-level `skip` outcomes. Unexpected
+exceptions inside repo jobs are collected while the executor drains;
+after all submitted futures finish, `SyncWorkspaces` raises a summarized
+`WorkspaceError`. Do not turn internal bugs, filesystem failures, or
+unexpected adapter exceptions into `skip` rows.
 
 Bare-fetch dedup lives on a session-scoped `BareFetchTracker` object
-(`fetched: set[Path]` + per-URL `threading.Lock`s + a guard).
-`SyncWorkspaces` allocates one per call by default and threads it
-into every `SyncWorkspace.__call__` in the sweep — serial and parallel
-paths alike — so workspaces sharing a repo URL share one
-`ensure_bare + bare_fetch` round-trip. Callers that need cross-call
-dedup can pass an explicit `bare_tracker=` (kept on the plural's
-signature so a future multi-sweep orchestrator doesn't have to fork).
-The `BareFetchTracker.lock_for(url)` helper serialises
-`ensure_bare → check → fetch → add` for one URL while letting threads
-on different URLs proceed in parallel. On `GitError`, the URL is
-left out of `tracker.fetched` so the next caller retries — same
-semantics as the pre-parallel serial path. The singular's
-`__call__` still accepts `bare_tracker: BareFetchTracker | None =
-None`; the default allocates a fresh per-call tracker (no cross-call
-dedup), which is what single-workspace callers (`add --sync`,
-`import --sync`) and unit tests want. **Never reach into
-`tracker.fetched` directly from a worker — always go through the use
-case's `_ensure_bare_fresh` so the per-URL lock is honoured.**
+(`fetched: set[Path]` + per-URL `threading.Lock`s + a guard). The
+scheduler allocates one per call by default and passes it to every repo
+job; callers can pass an explicit `bare_tracker=` for cross-call dedup.
+`GitOperations.ensure_bare()` returns `BareCacheEntry(path, created)`.
+Existing local clones do not call `ensure_bare` or `bare_fetch`; they
+fetch their own working-clone remote refs. Missing clones use
+`RepoSyncEngine._ensure_bare_fresh`: under the per-URL lock it calls
+`ensure_bare`, skips immediate `bare_fetch` when `created=True`, and
+marks the bare path fetched either way. Existing bares are fetched at
+most once per URL per sync run, on demand. On `GitError`, the path is
+left out of `tracker.fetched` so a later same-URL job retries.
+**Never reach into `tracker.fetched` directly from a worker — always go
+through `_ensure_bare_fresh` so the per-URL lock and retry semantics are
+honoured.**
+
+Branch behavior remains clone-time-only for sync. `git clone
+--reference <bare> --branch <branch> <url>` contacts the origin for refs
+and borrows objects from the bare, so a remotely-created branch can be
+cloned even when the bare cache was stale before the run. Existing
+clones are not auto-switched by sync; `workspace branch apply` is still
+the explicit checkout path and already fetches working-clone refs.
+Dirty, diverged, wrong-branch, detached-without-target, fetch/status,
+clone, and pull failures stay row-level `skip`s.
+
+Known limitations to preserve in docs: `-j` is not host-aware; Ctrl-C
+can wait on in-flight git subprocesses until their timeout; and
+`git clone --reference` means working clones depend on cache objects
+unless later dissociated, so deleting or corrupting the bare cache can
+damage referenced clones.
 
 ## `init` vs. `adopt` vs. `import` vs. `forget`
 

@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from untaped_workspace.domain import RepoStatus
+from untaped_workspace.domain import BareCacheEntry, RepoStatus
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure.bare_cache import cache_path_for
 
@@ -40,20 +40,20 @@ class GitRunner:
 
     # cache --------------------------------------------------------------
 
-    def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
-        """Ensure a bare clone of ``url`` exists in the cache; return its path."""
+    def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
+        """Ensure a bare clone of ``url`` exists in the cache."""
         bare = cache_path_for(url, cache_dir=cache_dir)
         if bare.is_dir() and (bare / "HEAD").is_file():
-            return bare
+            return BareCacheEntry(path=bare, created=False)
         # ``mkdir(parents=True, exist_ok=True)`` is the thread-safety
-        # boundary for `sync --all -j N`: different URLs race on the
-        # same ``cache_dir`` here, and ``exist_ok=True`` (plus the
+        # boundary for repo-level sync parallelism: different URLs can
+        # race on the same ``cache_dir`` here, and ``exist_ok=True`` (plus the
         # per-level ``FileExistsError`` handling in ``os.makedirs``)
         # makes it idempotent. Don't replace with a non-idempotent
         # variant.
         bare.parent.mkdir(parents=True, exist_ok=True)
         self._run(["clone", "--bare", url, str(bare)], timeout=self._slow_timeout)
-        return bare
+        return BareCacheEntry(path=bare, created=True)
 
     def bare_fetch(self, bare_path: Path) -> None:
         self._run(["fetch", "--all", "--prune"], cwd=bare_path, timeout=self._slow_timeout)

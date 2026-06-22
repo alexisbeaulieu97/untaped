@@ -252,7 +252,7 @@ current clean HEAD.
 ```bash
 untaped-workspace sync [--workspace <ws> | --path <dir>]
                        [--repo <repo>]... [--prune]
-                       [--timeout <seconds>] [--all]
+                       [--timeout <seconds>] [--parallel N] [--all]
 ```
 
 Reconcile each repo on disk with the manifest:
@@ -274,6 +274,30 @@ a morning routine.
 hung remote can't strand a `--all` sweep. Defaults are 60s for
 read-only ops and 600s for clone/fetch; passing `--timeout 30` caps
 both at 30s (CI-friendly fail-fast).
+
+`--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
+This works for a single workspace and for `--all`; the cap is global
+across every selected repo, not per workspace. The value is clamped to
+`2 * os.cpu_count()` with a stderr warning when needed. Default sync
+is still serial.
+
+Sync output remains deterministic even when repo jobs finish out of
+order: workspace input order first, then unmatched selector rows,
+manifest-order sync rows, and prune rows last. `--prune` runs as a
+serial second phase after all clone/fetch/pull jobs finish, so it
+doesn't race in-flight clones. Progress and the final summary are
+stderr-only; `json`, `yaml`, `raw`, and `pipe` stdout rows keep the
+same `SyncOutcome` shape.
+
+Known limitations:
+
+- `-j` is a global cap, not host-aware. Pick values that fit your git
+  remotes' SSH/HTTP limits.
+- Ctrl-C can still wait for in-flight git subprocesses until their
+  timeout expires.
+- `git clone --reference` keeps working clones dependent on objects in
+  the bare cache unless you later dissociate them. Deleting or
+  corrupting the cache can damage referenced clones.
 
 **`--all --repo` semantics.** Under `--all`, `--repo` is a per-workspace
 filter: workspaces whose manifests don't contain the requested
@@ -434,7 +458,12 @@ By default, bare clones are cached at `~/.untaped/repositories`
 (override with `untaped-workspace config set cache_dir <dir>`). Workspace
 clones use `git clone --reference` against the cached bare, so disk
 and bandwidth are shared without the branch conflicts that
-`git worktree` would introduce.
+`git worktree` would introduce. Existing local clones do not touch the
+bare cache during sync; they fetch their own `origin` refs and then
+fast-forward or skip. Missing clones use the bare cache as the
+reference source. A fresh bare clone is treated as already fresh, while
+an existing bare is fetched at most once per URL per sync run, on
+demand, before reference clones use it.
 
 ## See also
 

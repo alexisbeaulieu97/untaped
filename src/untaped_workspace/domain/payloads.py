@@ -46,6 +46,15 @@ class ManifestSource(BaseModel):
     source: Path
 
 
+class BareCacheEntry(BaseModel):
+    """A bare-cache repo path plus whether it was created by this call."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path: Path
+    created: bool
+
+
 class WorkspaceDetailRow(BaseModel):
     """One data row for ``workspace show`` output."""
 

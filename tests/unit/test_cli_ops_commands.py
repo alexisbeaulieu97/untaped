@@ -155,15 +155,96 @@ def test_repo_operating_commands_expose_repo_filter(args: list[str]) -> None:
     assert "--only" not in result.output
 
 
-def test_sync_parallel_without_all_is_rejected() -> None:
-    """``--parallel >1`` only makes sense with ``--all``. Anything else is a
-    usage error exit. Checked before any registry lookup so a
-    nonexistent workspace name doesn't change the error."""
+def test_sync_parallel_single_workspace_uses_repo_workers_in_manifest_order(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    """``sync -j N`` works for a single workspace and keeps manifest order
+    even when repo names would sort differently alphabetically."""
     runner = CliInvoker()
-    result = runner.invoke(app, ["sync", "--workspace", "nope", "-j", "4"])
-    assert result.exit_code != 0
-    combined = (result.stderr or "") + result.output
-    assert "--all" in combined
+    target = tmp_path / "ws"
+    other_upstream = tmp_path / "other.git"
+    shutil.copytree(upstream, other_upstream)
+    runner.invoke(app, ["init", "prod", "--path", str(target)])
+    runner.invoke(
+        app,
+        ["add", f"file://{upstream}", "--repo-name", "z-repo", "--workspace", "prod"],
+    )
+    runner.invoke(
+        app,
+        ["add", f"file://{other_upstream}", "--repo-name", "a-repo", "--workspace", "prod"],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "sync",
+            "--workspace",
+            "prod",
+            "-j",
+            "2",
+            "--format",
+            "raw",
+            "--columns",
+            "repo",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["z-repo", "a-repo"]
+    assert "syncing 2 repos with up to 2 workers" in result.output
+    assert "sync complete: 2 repos (2 cloned)" in result.output
+
+
+def test_sync_stale_bare_cache_clones_remote_created_branch(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    warm = tmp_path / "warm"
+    runner.invoke(app, ["init", "warm", "--path", str(warm)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "warm"])
+    warmed = runner.invoke(app, ["sync", "--workspace", "warm"])
+    assert warmed.exit_code == 0, warmed.output
+
+    seed = tmp_path / "_branch_seed"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "commit.gpgsign", "false"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "tag.gpgsign", "false"], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "checkout", "-b", "develop"],
+        check=True,
+        capture_output=True,
+    )
+    (seed / "develop.txt").write_text("develop")
+    subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(seed), "commit", "--no-gpg-sign", "-m", "develop"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(seed), "push", "origin", "develop"],
+        check=True,
+        capture_output=True,
+    )
+
+    target = tmp_path / "target"
+    runner.invoke(app, ["init", "target", "--path", str(target)])
+    runner.invoke(
+        app,
+        ["add", f"file://{upstream}", "--workspace", "target", "--branch", "develop"],
+    )
+    synced = runner.invoke(app, ["sync", "--workspace", "target"])
+
+    assert synced.exit_code == 0, synced.output
+    head = subprocess.run(
+        ["git", "-C", str(target / "upstream"), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head == "develop"
 
 
 def test_sync_all_rejects_workspace_target() -> None:
@@ -227,7 +308,8 @@ def test_sync_all_parallel_covers_every_workspace(
     )
     assert result.exit_code == 0, result.output
     # stderr header — CliInvoker combines stderr into output by default.
-    assert "syncing 4 workspaces with up to 4 workers" in result.output
+    assert "syncing 4 repos with up to 4 workers" in result.output
+    assert "sync complete: 4 repos (4 cloned)" in result.output
     rows = [r for r in result.stdout.strip().splitlines() if "\t" in r]
     assert sorted(rows) == sorted(f"{n}\tclone" for n in names), rows
 
@@ -616,7 +698,8 @@ def test_sync_empty_workspace_reports_progress_and_hint(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
-    assert "Syncing workspaces" in result.stderr
+    assert "Syncing repos" in result.stderr
+    assert "sync complete: 0 repos" in result.stderr
     assert "Nothing to sync" in result.stderr
 
 

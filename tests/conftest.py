@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from untaped_workspace.domain import (
+    BareCacheEntry,
     ManifestSource,
     RepoStatus,
     Workspace,
@@ -79,9 +80,9 @@ class StubGit:
         self._pull_fail = pull_fail
         self._checkout_fail = checkout_fail
 
-    def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
+    def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
         self.events.append(("ensure_bare", url))
-        return Path(f"/tmp/cache/{url.split('/')[-1]}")
+        return BareCacheEntry(path=Path(f"/tmp/cache/{url.split('/')[-1]}"), created=False)
 
     def bare_fetch(self, bare_path: Path) -> None:
         self.events.append(("bare_fetch", bare_path))

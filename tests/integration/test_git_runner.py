@@ -43,18 +43,20 @@ def upstream(tmp_path: Path) -> Path:
 def test_ensure_bare_clones_first_time_and_caches(tmp_path: Path, upstream: Path) -> None:
     cache = tmp_path / "cache"
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
-    assert bare.is_dir()
-    assert (bare / "HEAD").is_file()
+    first = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
+    assert first.created is True
+    assert first.path.is_dir()
+    assert (first.path / "HEAD").is_file()
     # second call is a no-op
-    bare2 = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
-    assert bare2 == bare
+    second = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
+    assert second.created is False
+    assert second.path == first.path
 
 
 def test_clone_with_reference(tmp_path: Path, upstream: Path) -> None:
     cache = tmp_path / "cache"
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache).path
     workspace = tmp_path / "ws"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace / "svc-a", bare=bare)
     assert (workspace / "svc-a" / ".git").is_dir()
@@ -87,7 +89,7 @@ def test_clone_with_reference_specific_branch(tmp_path: Path, upstream: Path) ->
         ["git", "-C", str(seed), "push", "origin", "develop"], check=True, capture_output=True
     )
 
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache).path
     runner.bare_fetch(bare)
 
     workspace = tmp_path / "ws"
@@ -133,7 +135,7 @@ def test_checkout_branch_checks_out_remote_branch_after_fetch(
         capture_output=True,
     )
 
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache)
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=cache).path
     workspace_repo = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
     subprocess.run(
@@ -225,7 +227,7 @@ def test_checkout_branch_creates_local_branch_when_remote_branch_is_missing(
     upstream: Path,
 ) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     workspace_repo = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
 
@@ -253,7 +255,7 @@ def test_checkout_branch_creates_local_branch_when_remote_ref_is_not_a_commit(
     upstream: Path,
 ) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     workspace_repo = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
     tree = subprocess.run(
@@ -290,7 +292,7 @@ def test_checkout_branch_checks_out_existing_local_branch(
     upstream: Path,
 ) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     workspace_repo = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
     subprocess.run(
@@ -320,7 +322,7 @@ def test_checkout_branch_raises_git_error_for_invalid_branch_name(
     upstream: Path,
 ) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     workspace_repo = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace_repo, bare=bare)
 
@@ -330,7 +332,7 @@ def test_checkout_branch_raises_git_error_for_invalid_branch_name(
 
 def test_status_clean_repo(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     ws = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
     status = runner.status(ws)
@@ -342,7 +344,7 @@ def test_status_clean_repo(tmp_path: Path, upstream: Path) -> None:
 
 def test_status_dirty_working_tree(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     ws = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
     (ws / "README.md").write_text("changed")
@@ -355,7 +357,7 @@ def test_status_dirty_working_tree(tmp_path: Path, upstream: Path) -> None:
 
 def test_default_branch_reads_bare_head(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     assert runner.default_branch(bare) == "main"
 
 
@@ -372,7 +374,7 @@ def test_runner_raises_git_error_on_bad_command(tmp_path: Path) -> None:
 
 def test_read_remote_url_returns_origin_url(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     ws = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
     assert runner.read_remote_url(ws) == f"file://{upstream}"
@@ -388,7 +390,7 @@ def test_read_remote_url_returns_none_for_missing_remote(tmp_path: Path) -> None
 
 def test_read_current_branch_returns_branch_name(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     ws = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
     assert runner.read_current_branch(ws) == "main"
@@ -396,7 +398,7 @@ def test_read_current_branch_returns_branch_name(tmp_path: Path, upstream: Path)
 
 def test_read_current_branch_returns_none_when_detached(tmp_path: Path, upstream: Path) -> None:
     runner = GitRunner()
-    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache")
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
     ws = tmp_path / "ws" / "svc-a"
     runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
     sha = subprocess.run(

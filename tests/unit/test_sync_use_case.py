@@ -7,6 +7,7 @@ from conftest import StubGit
 
 from untaped_workspace.application import BareFetchTracker, SyncWorkspace
 from untaped_workspace.domain import (
+    BareCacheEntry,
     ManifestDefaults,
     Repo,
     RepoStatus,
@@ -342,7 +343,7 @@ def test_ensure_bare_failure_yields_skip(tmp_path: Path) -> None:
     ``_sync_repo``'s point of view, so the prefix is shared."""
 
     class _BareErrorStub(StubGit):
-        def ensure_bare(self, url: str, *, cache_dir: Path) -> Path:
+        def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
             self.events.append(("ensure_bare", url))
             raise GitError("permission denied")
 
@@ -371,6 +372,24 @@ def test_existing_clone_is_fetched_before_status(tmp_path: Path) -> None:
     fetch_idx = op_names.index("fetch")
     status_idx = op_names.index("status")
     assert fetch_idx < status_idx
+
+
+def test_existing_clone_does_not_touch_bare_cache(tmp_path: Path) -> None:
+    """Existing clones fetch their own origin refs; the bare cache is only
+    needed as a reference source for missing clones."""
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a").mkdir()
+    git = StubGit(on_disk=["svc-a"])
+
+    SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
+
+    op_names = [event[0] for event in git.events]
+    assert "ensure_bare" not in op_names
+    assert "bare_fetch" not in op_names
+    assert "fetch" in op_names
 
 
 def test_fresh_clone_does_not_call_local_fetch(tmp_path: Path) -> None:
@@ -525,6 +544,44 @@ def test_bare_fetch_cached_across_workspaces(tmp_path: Path) -> None:
     assert bare_fetch_count == 1  # fetch deduped via shared cache
 
 
+def test_fresh_bare_clone_marks_tracker_fetched_and_skips_bare_fetch(
+    tmp_path: Path,
+) -> None:
+    """A bare repo created by this run is already fresh, so same-URL
+    sibling clone jobs must not immediately fetch it again."""
+
+    class FreshThenExistingStub(StubGit):
+        def __init__(self) -> None:
+            super().__init__()
+            self._calls = 0
+            self.bare_path = tmp_path / "cache" / "svc-a.git"
+
+        def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
+            self.events.append(("ensure_bare", url))
+            self._calls += 1
+            return BareCacheEntry(path=self.bare_path, created=self._calls == 1)
+
+    manifest = WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")])
+    ws_a_path = tmp_path / "a"
+    ws_b_path = tmp_path / "b"
+    ws_a_path.mkdir()
+    ws_b_path.mkdir()
+    ManifestRepository().write(ws_a_path, manifest)
+    ManifestRepository().write(ws_b_path, manifest)
+
+    git = FreshThenExistingStub()
+    use_case = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)
+    tracker = BareFetchTracker()
+    use_case(Workspace(name="a", path=ws_a_path), bare_tracker=tracker)
+    use_case(Workspace(name="b", path=ws_b_path), bare_tracker=tracker)
+
+    ensure_bare_count = sum(1 for e in git.events if e[0] == "ensure_bare")
+    bare_fetch_count = sum(1 for e in git.events if e[0] == "bare_fetch")
+    assert ensure_bare_count == 2
+    assert bare_fetch_count == 0, git.events
+    assert tracker.fetched == {git.bare_path}
+
+
 def test_no_shared_tracker_means_each_call_refetches(tmp_path: Path) -> None:
     """Default ``bare_tracker=None`` allocates a fresh tracker per call —
     two unrelated single-workspace invocations both fetch. Pins that
@@ -594,9 +651,9 @@ def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> No
     """If ``bare_fetch`` raises ``GitError``, the URL must stay out of
     the shared cache so a subsequent ``__call__`` (with the same cache)
     retries instead of silently re-using a bare that was never fetched.
-    Pins the pre-parallel "retry on failure" semantics that the parallel
-    rewrite is documented to preserve (see ``AGENTS.md``,
-    "sync --all -j N parallelism")."""
+    Pins the pre-parallel "retry on failure" semantics that the repo-job
+    scheduler is documented to preserve (see ``AGENTS.md``,
+    "`sync -j N` repo-job scheduler")."""
     calls = {"n": 0}
 
     class FlakyFetchStub(StubGit):

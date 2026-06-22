@@ -1,276 +1,284 @@
-"""Unit tests for the plural ``SyncWorkspaces`` use case.
-
-These tests pin the dispatch / ordering / progress-notification shape
-of the orchestrator that wraps the singular ``SyncWorkspace`` for
-``workspace sync --all -j N``. The singular use case's behaviour
-(per-workspace reconciliation, bare-cache lock contract,
-``unmatched`` row synthesis) is covered by ``test_sync_use_case.py``
-and is not re-exercised here — the plural is driven against a stub
-``SyncWorkspace`` that records the kwargs it was called with and
-returns a canned ``list[SyncOutcome]``.
-"""
+"""Unit tests for the plural ``SyncWorkspaces`` repo-job scheduler."""
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import pytest
+from conftest import StubManifests
+
 from untaped_workspace.application import BareFetchTracker, SyncWorkspaces
-from untaped_workspace.domain import SyncAction, SyncOutcome, Workspace
+from untaped_workspace.domain import Repo, SyncAction, SyncOutcome, Workspace, WorkspaceManifest
+from untaped_workspace.errors import UnmatchedRepoFilter, WorkspaceError
 
 
-class _StubSync:
-    """Stub satisfying :class:`SyncWorkspaceCallable` for the plural use case.
+class _Notify:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+        self.calls: list[dict[str, Any]] = []
 
-    Records every call's positional + keyword args and returns a
-    pre-seeded ``list[SyncOutcome]`` keyed by workspace name. The
-    ``gate_by_ws`` / ``release_after_by_ws`` knobs let tests
-    deterministically scramble parallel completion order without
-    any wall-clock sleep:
+    def __call__(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None:
+        self.messages.append(message)
+        self.calls.append(
+            {
+                "message": message,
+                "fraction": fraction,
+                "new_phase": new_phase,
+            }
+        )
 
-    - ``gate_by_ws[name]`` — a worker for ``name`` blocks on this
-      ``Event`` until something sets it.
-    - ``release_after_by_ws[name]`` — *after* the worker for ``name``
-      returns, it sets this ``Event``. Chain ``release_after`` →
-      ``gate`` to guarantee strict completion ordering (worker A
-      finishes, then releases worker B's gate, so B can only complete
-      after A).
-    """
 
+class _Engine:
     def __init__(
         self,
         *,
-        outcomes_by_ws: dict[str, list[SyncOutcome]],
-        gate_by_ws: dict[str, threading.Event] | None = None,
-        release_after_by_ws: dict[str, threading.Event] | None = None,
+        gates: dict[tuple[str, str], threading.Event] | None = None,
+        release_after: dict[tuple[str, str], threading.Event] | None = None,
+        raises: dict[tuple[str, str], Exception] | None = None,
+        prune_rows: dict[str, list[SyncOutcome]] | None = None,
+        release_all: threading.Event | None = None,
     ) -> None:
-        self._outcomes = outcomes_by_ws
-        self._gates = gate_by_ws or {}
-        self._release_after = release_after_by_ws or {}
-        self.calls: list[dict[str, Any]] = []
+        self._gates = gates or {}
+        self._release_after = release_after or {}
+        self._raises = raises or {}
+        self._prune_rows = prune_rows or {}
+        self._release_all = release_all
+        self.calls: list[tuple[str, str, int]] = []
+        self.max_active = 0
+        self._active = 0
         self._lock = threading.Lock()
+        self._started = threading.Condition(self._lock)
 
-    def __call__(
+    def sync_repo(
         self,
         workspace: Workspace,
-        *,
-        only: Sequence[str] | None = None,
-        prune: bool = False,
-        strict_only: bool = True,
-        bare_tracker: BareFetchTracker | None = None,
-    ) -> list[SyncOutcome]:
+        _manifest: WorkspaceManifest,
+        repo: Repo,
+        tracker: BareFetchTracker,
+    ) -> SyncOutcome:
         with self._lock:
-            self.calls.append(
-                {
-                    "workspace": workspace,
-                    "only": only,
-                    "prune": prune,
-                    "strict_only": strict_only,
-                    "bare_tracker": bare_tracker,
-                }
-            )
-        gate = self._gates.get(workspace.name)
-        if gate is not None:
-            gate.wait(timeout=2.0)
-        result = list(self._outcomes.get(workspace.name, []))
-        post = self._release_after.get(workspace.name)
-        if post is not None:
-            post.set()
-        return result
+            self.calls.append((workspace.name, repo.name, id(tracker)))
+            self._active += 1
+            self.max_active = max(self.max_active, self._active)
+            self._started.notify_all()
+        try:
+            if self._release_all is not None:
+                self._release_all.wait(timeout=2.0)
+            gate = self._gates.get((workspace.name, repo.name))
+            if gate is not None:
+                gate.wait(timeout=2.0)
+            error = self._raises.get((workspace.name, repo.name))
+            if error is not None:
+                raise error
+            return _outcome(workspace.name, repo.name)
+        finally:
+            post = self._release_after.get((workspace.name, repo.name))
+            if post is not None:
+                post.set()
+            with self._lock:
+                self._active -= 1
+
+    def prune_orphans(
+        self, workspace: Workspace, _manifest: WorkspaceManifest
+    ) -> list[SyncOutcome]:
+        return list(self._prune_rows.get(workspace.name, []))
+
+    def wait_for_started(self, count: int) -> None:
+        with self._started:
+            self._started.wait_for(lambda: len(self.calls) >= count, timeout=2.0)
 
 
-def _ws(name: str) -> Workspace:
-    return Workspace(name=name, path=Path(f"/tmp/{name}"))
+def _ws(tmp_path: Path, name: str) -> Workspace:
+    return Workspace(name=name, path=tmp_path / name)
 
 
-def _outcome(workspace: str, repo: str, action: SyncAction = "up-to-date") -> SyncOutcome:
-    return SyncOutcome(workspace=workspace, repo=repo, action=action, detail="")
+def _manifest(*names: str) -> WorkspaceManifest:
+    return WorkspaceManifest(repos=[Repo(url=f"https://x/{name}.git") for name in names])
 
 
-# ── serial dispatch ─────────────────────────────────────────────────────────
+def _outcome(
+    workspace: str, repo: str, action: SyncAction = "up-to-date", detail: str = ""
+) -> SyncOutcome:
+    return SyncOutcome(workspace=workspace, repo=repo, action=action, detail=detail)
 
 
-def test_serial_when_parallel_is_one() -> None:
-    """``parallel=1`` → singular called in input order, no notify."""
-    stub = _StubSync(outcomes_by_ws={"a": [_outcome("a", "r")], "b": [_outcome("b", "r")]})
-    notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)
-
-    outcomes = use_case([_ws("a"), _ws("b")], parallel=1)
-
-    assert [c["workspace"].name for c in stub.calls] == ["a", "b"]
-    assert notifications == []
-    assert [o.workspace for o in outcomes] == ["a", "b"]
-
-
-def test_serial_when_only_one_workspace_even_at_high_parallel() -> None:
-    """``len(workspaces)==1`` → never spin up the pool, never notify."""
-    stub = _StubSync(outcomes_by_ws={"solo": [_outcome("solo", "r")]})
-    notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)
-
-    use_case([_ws("solo")], parallel=8)
-
-    assert [c["workspace"].name for c in stub.calls] == ["solo"]
-    assert notifications == []
+def _scheduler(
+    tmp_path: Path,
+    manifests: dict[str, WorkspaceManifest],
+    engine: _Engine,
+    *,
+    notify: _Notify | None = None,
+) -> tuple[SyncWorkspaces, list[Workspace]]:
+    workspaces = [_ws(tmp_path, name) for name in manifests]
+    reader = StubManifests({ws.path: manifests[ws.name] for ws in workspaces})
+    return SyncWorkspaces(reader, engine, notify=notify), workspaces
 
 
-def test_default_notify_is_silent_noop() -> None:
-    """Use case constructible without a notify callable; parallel path stays silent."""
-    stub = _StubSync(outcomes_by_ws={"a": [_outcome("a", "r")], "b": [_outcome("b", "r")]})
-    use_case = SyncWorkspaces(stub)
-    # Just must not raise — no header is emitted but the dispatch still works.
-    outcomes = use_case([_ws("a"), _ws("b")], parallel=2)
-    assert {o.workspace for o in outcomes} == {"a", "b"}
+def test_serial_jobs_use_manifest_order_and_one_shared_tracker(tmp_path: Path) -> None:
+    engine = _Engine()
+    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("z-repo", "a-repo")}, engine)
 
+    outcomes = use_case(workspaces, parallel=1)
 
-# ── parallel dispatch + ordering ────────────────────────────────────────────
-
-
-def test_parallel_dispatch_emits_one_header() -> None:
-    """``parallel>1`` and >1 workspace → notify fires once with the
-    canonical ``"syncing N workspaces with up to M workers"`` text."""
-    stub = _StubSync(outcomes_by_ws={"a": [_outcome("a", "r")], "b": [_outcome("b", "r")]})
-    notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)
-
-    use_case([_ws("a"), _ws("b")], parallel=4)
-
-    assert notifications == ["syncing 2 workspaces with up to 4 workers"]
-
-
-def test_parallel_outcomes_sort_by_input_order_then_repo() -> None:
-    """``as_completed`` order is non-deterministic; the plural re-sorts
-    by ``(workspace_input_order, repo)`` so JSON/table consumers see
-    stable rows.
-
-    Chains the gates so 'second' is guaranteed to complete *before*
-    'first': 'second' starts immediately (its gate is pre-set), and
-    only sets 'first''s gate *after* returning. The tail sort must
-    still place 'first''s rows ahead of 'second''s, even though
-    'second''s future settles first. No wall clock — strict happens-
-    before via ``threading.Event`` chaining.
-    """
-    first_gate = threading.Event()
-    second_gate = threading.Event()
-    second_gate.set()  # 'second' runs immediately.
-    stub = _StubSync(
-        outcomes_by_ws={
-            "first": [_outcome("first", "z-repo"), _outcome("first", "a-repo")],
-            "second": [_outcome("second", "m-repo")],
-        },
-        gate_by_ws={"first": first_gate, "second": second_gate},
-        # 'second' releases 'first' only after returning — so 'first'
-        # cannot complete until 'second' has, regardless of OS
-        # scheduling. Guarantees as_completed sees second-then-first.
-        release_after_by_ws={"second": first_gate},
-    )
-    use_case = SyncWorkspaces(stub)
-
-    outcomes = use_case([_ws("first"), _ws("second")], parallel=2)
-
-    # Sort key is (workspace_input_order, repo); within "first", the two
-    # repos sort alphabetically: a-repo < z-repo.
     assert [(o.workspace, o.repo) for o in outcomes] == [
-        ("first", "a-repo"),
-        ("first", "z-repo"),
-        ("second", "m-repo"),
+        ("prod", "z-repo"),
+        ("prod", "a-repo"),
+    ]
+    assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [
+        ("prod", "z-repo"),
+        ("prod", "a-repo"),
+    ]
+    assert len({tracker_id for *_prefix, tracker_id in engine.calls}) == 1
+
+
+def test_parallel_single_workspace_preserves_manifest_order(tmp_path: Path) -> None:
+    z_gate = threading.Event()
+    a_gate = threading.Event()
+    a_gate.set()
+    engine = _Engine(
+        gates={
+            ("prod", "z-repo"): z_gate,
+            ("prod", "a-repo"): a_gate,
+        },
+        release_after={("prod", "a-repo"): z_gate},
+    )
+    notify = _Notify()
+    use_case, workspaces = _scheduler(
+        tmp_path, {"prod": _manifest("z-repo", "a-repo")}, engine, notify=notify
+    )
+
+    outcomes = use_case(workspaces, parallel=2)
+
+    assert [(o.workspace, o.repo) for o in outcomes] == [
+        ("prod", "z-repo"),
+        ("prod", "a-repo"),
+    ]
+    assert notify.messages == [
+        "syncing 2 repos with up to 2 workers",
+        "1/2 repos complete",
+        "2/2 repos complete",
+    ]
+    assert notify.calls[0]["new_phase"] is True
+
+
+def test_parallel_cap_is_global_repo_jobs_not_workspaces(tmp_path: Path) -> None:
+    release = threading.Event()
+    engine = _Engine(release_all=release)
+    use_case, workspaces = _scheduler(
+        tmp_path,
+        {
+            "alpha": _manifest("a1", "a2"),
+            "beta": _manifest("b1", "b2"),
+        },
+        engine,
+    )
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            result["outcomes"] = use_case(workspaces, parallel=2)
+        except Exception as exc:  # pragma: no cover - surfaced by assertion below.
+            result["error"] = exc
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    engine.wait_for_started(2)
+    assert engine.max_active == 2
+    assert len(engine.calls) == 2
+
+    release.set()
+    thread.join(timeout=2.0)
+    assert not thread.is_alive()
+    assert "error" not in result
+    assert len(result["outcomes"]) == 4
+    assert engine.max_active <= 2
+
+
+def test_parallel_phase_order_is_unmatched_sync_then_prune(tmp_path: Path) -> None:
+    z_gate = threading.Event()
+    a_gate = threading.Event()
+    a_gate.set()
+    engine = _Engine(
+        gates={
+            ("prod", "z-repo"): z_gate,
+            ("prod", "a-repo"): a_gate,
+        },
+        release_after={("prod", "a-repo"): z_gate},
+        prune_rows={"prod": [_outcome("prod", "old-repo", "remove")]},
+    )
+    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("z-repo", "a-repo")}, engine)
+
+    outcomes = use_case(
+        workspaces,
+        only=["ghost", "z-repo", "a-repo"],
+        strict_only=False,
+        prune=True,
+        parallel=2,
+    )
+
+    assert [(o.repo, o.action) for o in outcomes] == [
+        ("ghost", "unmatched"),
+        ("z-repo", "up-to-date"),
+        ("a-repo", "up-to-date"),
+        ("old-repo", "remove"),
     ]
 
 
-# ── BareFetchTracker threading ──────────────────────────────────────────────
+def test_strict_unmatched_raises_before_network_work(tmp_path: Path) -> None:
+    engine = _Engine()
+    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("api")}, engine)
+
+    with pytest.raises(UnmatchedRepoFilter) as excinfo:
+        use_case(workspaces, only=["ghost"], parallel=2)
+
+    assert excinfo.value.unmatched == ("ghost",)
+    assert engine.calls == []
 
 
-def test_allocates_one_tracker_and_threads_it_into_every_call() -> None:
-    """When the caller doesn't supply one, the plural allocates a
-    single ``BareFetchTracker`` and passes the same instance to every
-    singular ``__call__`` — that's how bare-cache dedup works across
-    workspaces."""
-    stub = _StubSync(outcomes_by_ws={"a": [], "b": [], "c": []})
-    use_case = SyncWorkspaces(stub)
-
-    use_case([_ws("a"), _ws("b"), _ws("c")], parallel=1)
-
-    trackers = [c["bare_tracker"] for c in stub.calls]
-    assert all(isinstance(t, BareFetchTracker) for t in trackers)
-    assert len({id(t) for t in trackers}) == 1, "expected one shared tracker, got distinct"
-
-
-def test_caller_supplied_tracker_is_passed_through() -> None:
-    """The caller may pass an explicit tracker (e.g. for cross-call
-    dedup in a custom orchestration); the plural must thread *that*
-    instance, not allocate a fresh one."""
-    stub = _StubSync(outcomes_by_ws={"a": [], "b": []})
-    use_case = SyncWorkspaces(stub)
-    explicit = BareFetchTracker()
-
-    use_case([_ws("a"), _ws("b")], parallel=1, bare_tracker=explicit)
-
-    for call in stub.calls:
-        assert call["bare_tracker"] is explicit
-
-
-# ── kwarg pass-through ──────────────────────────────────────────────────────
-
-
-def test_passes_only_prune_strict_only_to_every_call() -> None:
-    """The plural is pure dispatch — every singular call receives the
-    same ``only`` / ``prune`` / ``strict_only`` the caller asked for."""
-    stub = _StubSync(outcomes_by_ws={"a": [], "b": []})
-    use_case = SyncWorkspaces(stub)
-
-    use_case(
-        [_ws("a"), _ws("b")],
-        only=["repo-x"],
-        prune=True,
-        strict_only=False,
-        parallel=1,
+def test_caller_supplied_tracker_is_used_for_every_job(tmp_path: Path) -> None:
+    engine = _Engine()
+    use_case, workspaces = _scheduler(
+        tmp_path,
+        {
+            "alpha": _manifest("api"),
+            "beta": _manifest("api"),
+        },
+        engine,
     )
+    tracker = BareFetchTracker()
 
-    for call in stub.calls:
-        assert call["only"] == ["repo-x"]
-        assert call["prune"] is True
-        assert call["strict_only"] is False
+    use_case(workspaces, parallel=2, bare_tracker=tracker)
 
-
-# ── aggregation ─────────────────────────────────────────────────────────────
+    assert {tracker_id for *_prefix, tracker_id in engine.calls} == {id(tracker)}
 
 
-def test_outcomes_aggregated_from_every_workspace_parallel_path() -> None:
-    """No outcomes are dropped on the parallel path — every singular
-    row from every workspace appears in the final list."""
-    stub = _StubSync(
-        outcomes_by_ws={
-            "a": [_outcome("a", "r1"), _outcome("a", "r2")],
-            "b": [_outcome("b", "r3")],
-            "c": [_outcome("c", "r4"), _outcome("c", "r5"), _outcome("c", "r6")],
-        }
-    )
-    use_case = SyncWorkspaces(stub)
+def test_unexpected_job_exceptions_drain_pool_then_raise(tmp_path: Path) -> None:
+    engine = _Engine(raises={("prod", "bad"): RuntimeError("boom")})
+    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("bad", "good")}, engine)
 
-    outcomes = use_case([_ws("a"), _ws("b"), _ws("c")], parallel=4)
+    with pytest.raises(WorkspaceError) as excinfo:
+        use_case(workspaces, parallel=2)
 
-    assert len(outcomes) == 6
-    assert {(o.workspace, o.repo) for o in outcomes} == {
-        ("a", "r1"),
-        ("a", "r2"),
-        ("b", "r3"),
-        ("c", "r4"),
-        ("c", "r5"),
-        ("c", "r6"),
-    }
+    assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [
+        ("prod", "bad"),
+        ("prod", "good"),
+    ]
+    message = str(excinfo.value)
+    assert "sync failed with unexpected error" in message
+    assert "prod/bad: RuntimeError: boom" in message
 
 
-def test_empty_workspace_list_is_a_noop() -> None:
-    """Zero workspaces → zero singular calls, zero outcomes, no header."""
-    stub = _StubSync(outcomes_by_ws={})
-    notifications: list[str] = []
-    use_case = SyncWorkspaces(stub, notify=notifications.append)
+def test_empty_workspace_list_is_a_noop(tmp_path: Path) -> None:
+    engine = _Engine()
+    notify = _Notify()
+    use_case, workspaces = _scheduler(tmp_path, {}, engine, notify=notify)
 
-    outcomes = use_case([], parallel=4)
+    outcomes = use_case(workspaces, parallel=4)
 
-    assert stub.calls == []
     assert outcomes == []
-    assert notifications == []
+    assert engine.calls == []
+    assert notify.messages == []
