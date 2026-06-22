@@ -272,7 +272,7 @@ a morning routine.
 
 `--timeout <seconds>` caps every git invocation in this sync run, so a
 hung remote can't strand a `--all` sweep. Defaults are 60s for
-read-only ops and 600s for clone/fetch; passing `--timeout 30` caps
+local-only git ops and 600s for clone/fetch; passing `--timeout 30` caps
 both at 30s (CI-friendly fail-fast).
 
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
@@ -462,8 +462,8 @@ and bandwidth are shared without the branch conflicts that
 bare cache during sync; they fetch their own `origin` refs and then
 fast-forward or skip. Missing clones use the bare cache as the
 reference source. A fresh bare clone is treated as already fresh, while
-an existing bare is fetched at most once per URL per sync run, on
-demand, before reference clones use it.
+an existing bare is fetched at most once per bare cache path per sync
+run, on demand, before reference clones use it.
 
 ## See also
 

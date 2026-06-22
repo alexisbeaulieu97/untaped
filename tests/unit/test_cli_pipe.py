@@ -77,6 +77,10 @@ def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_ca
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
     assert envelope["kind"] == "workspace.sync-outcome"
+    assert set(envelope["record"]) == {"workspace", "repo", "action", "detail"}
+    assert envelope["record"]["action"] == "clone"
+    assert "Syncing repos" not in result.stdout
+    assert "sync complete:" not in result.stdout
 
 
 def test_status_pipe_tags_status(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:

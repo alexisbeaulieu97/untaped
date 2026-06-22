@@ -8,9 +8,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from untaped.api import build_tool_app
 from untaped.testing import CliInvoker
 
 from untaped_workspace import app
+from untaped_workspace.__main__ import SPEC
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
 
@@ -135,6 +137,11 @@ def test_sync_help_exposes_repo_filter_not_only() -> None:
     assert result.exit_code == 0, result.output
     assert "--repo" in result.output
     assert "-r" in result.output
+    assert "--parallel" in result.output
+    assert "-j" in result.output
+    assert "Concurrent repo sync jobs" in result.output
+    assert "local-only git ops" in result.output
+    assert "read-only ops" not in result.output
     assert "--only" not in result.output
 
 
@@ -193,6 +200,62 @@ def test_sync_parallel_single_workspace_uses_repo_workers_in_manifest_order(
     assert result.stdout.splitlines() == ["z-repo", "a-repo"]
     assert "syncing 2 repos with up to 2 workers" in result.output
     assert "sync complete: 2 repos (2 cloned)" in result.output
+
+
+def test_sync_quiet_suppresses_progress_and_summary(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    other_upstream = tmp_path / "other.git"
+    shutil.copytree(upstream, other_upstream)
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(
+        app,
+        ["add", f"file://{other_upstream}", "--repo-name", "ui", "--workspace", "smoke"],
+    )
+
+    wired = build_tool_app(app, SPEC)
+    result = runner.invoke(
+        wired.meta,
+        [
+            "sync",
+            "--quiet",
+            "--workspace",
+            "smoke",
+            "-j",
+            "2",
+            "--format",
+            "raw",
+            "--columns",
+            "repo",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["upstream", "ui"]
+    assert result.stderr == ""
+
+
+def test_sync_json_stdout_shape_stays_data_only(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    parsed = json.loads(result.stdout)
+    assert isinstance(parsed, list)
+    assert len(parsed) == 1
+    assert set(parsed[0]) == {"workspace", "repo", "action", "detail"}
+    assert parsed[0]["action"] == "clone"
+    assert "Syncing repos" not in result.stdout
+    assert "sync complete:" not in result.stdout
 
 
 def test_sync_stale_bare_cache_clones_remote_created_branch(

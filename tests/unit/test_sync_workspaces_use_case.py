@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import StubManifests
+from conftest import StubFilesystem, StubGit, StubManifests
 
-from untaped_workspace.application import BareFetchTracker, SyncWorkspaces
-from untaped_workspace.domain import Repo, SyncAction, SyncOutcome, Workspace, WorkspaceManifest
+from untaped_workspace.application import BareFetchTracker, RepoSyncEngine, SyncWorkspaces
+from untaped_workspace.domain import (
+    BareCacheEntry,
+    Repo,
+    SyncAction,
+    SyncOutcome,
+    Workspace,
+    WorkspaceManifest,
+)
 from untaped_workspace.errors import UnmatchedRepoFilter, WorkspaceError
 
 
@@ -270,6 +278,71 @@ def test_unexpected_job_exceptions_drain_pool_then_raise(tmp_path: Path) -> None
     message = str(excinfo.value)
     assert "sync failed with unexpected error" in message
     assert "prod/bad: RuntimeError: boom" in message
+
+
+def test_serial_unexpected_job_exceptions_drain_then_raise(tmp_path: Path) -> None:
+    engine = _Engine(raises={("prod", "bad"): RuntimeError("boom")})
+    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("bad", "good")}, engine)
+
+    with pytest.raises(WorkspaceError) as excinfo:
+        use_case(workspaces, parallel=1)
+
+    assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [
+        ("prod", "bad"),
+        ("prod", "good"),
+    ]
+    message = str(excinfo.value)
+    assert "sync failed with unexpected error" in message
+    assert "prod/bad: RuntimeError: boom" in message
+
+
+def test_parallel_same_cache_path_urls_share_bare_fetch_lock(tmp_path: Path) -> None:
+    class SameCachePathGit(StubGit):
+        def __init__(self) -> None:
+            super().__init__()
+            self.bare = tmp_path / "cache" / "github.com" / "acme" / "svc.git"
+
+        def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path:
+            self.events.append(("bare_cache_path", url))
+            return self.bare
+
+        def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
+            self.events.append(("ensure_bare", url))
+            return BareCacheEntry(path=self.bare, created=False)
+
+        def bare_fetch(self, bare_path: Path) -> None:
+            self.events.append(("bare_fetch", bare_path))
+            time.sleep(0.05)
+
+    workspaces = [_ws(tmp_path, "alpha"), _ws(tmp_path, "beta")]
+    manifests = StubManifests(
+        {
+            workspaces[0].path: WorkspaceManifest(
+                repos=[
+                    Repo(
+                        url="https://github.com/acme/svc.git",
+                        name="svc-https",
+                    )
+                ]
+            ),
+            workspaces[1].path: WorkspaceManifest(
+                repos=[
+                    Repo(
+                        url="git@github.com:acme/svc.git",
+                        name="svc-ssh",
+                    )
+                ]
+            ),
+        }
+    )
+    git = SameCachePathGit()
+    engine = RepoSyncEngine(git, fs=StubFilesystem(), cache_dir=tmp_path / "cache")
+
+    outcomes = SyncWorkspaces(manifests, engine)(workspaces, parallel=2)
+
+    assert [o.action for o in outcomes] == ["clone", "clone"]
+    bare_fetch_count = sum(1 for event in git.events if event[0] == "bare_fetch")
+    assert bare_fetch_count == 1, git.events
 
 
 def test_empty_workspace_list_is_a_noop(tmp_path: Path) -> None:

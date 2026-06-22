@@ -53,10 +53,10 @@ class BareFetchTracker:
     bare repo isn't fetched once per workspace or repo. Per-call callers
     that don't need cross-workspace dedup (``add --sync``, ``import
     --sync``) let the singular allocate a fresh tracker via its
-    ``bare_tracker=None`` default. ``lock_for(url)`` serialises
-    ``ensure_bare → check → fetch → add`` for one URL while letting
-    different URLs proceed in parallel — the contract that repo-job
-    parallel sync relies on.
+    ``bare_tracker=None`` default. ``lock_for(cache_path)`` serialises
+    ``ensure_bare → check → fetch → add`` for one bare cache location
+    while letting different cache paths proceed in parallel — the
+    contract that repo-job parallel sync relies on.
     """
 
     fetched: set[Path] = field(default_factory=set)
@@ -64,12 +64,14 @@ class BareFetchTracker:
     # constructor (the underscore prefix alone is just a convention; the
     # generated __init__ would otherwise still accept them as kwargs).
     # repr=False keeps tracebacks readable when a tracker is referenced.
-    _url_locks: dict[str, threading.Lock] = field(init=False, repr=False, default_factory=dict)
-    _url_locks_guard: threading.Lock = field(init=False, repr=False, default_factory=threading.Lock)
+    _bare_locks: dict[Path, threading.Lock] = field(init=False, repr=False, default_factory=dict)
+    _bare_locks_guard: threading.Lock = field(
+        init=False, repr=False, default_factory=threading.Lock
+    )
 
-    def lock_for(self, url: str) -> threading.Lock:
-        with self._url_locks_guard:
-            return self._url_locks.setdefault(url, threading.Lock())
+    def lock_for(self, bare_path: Path) -> threading.Lock:
+        with self._bare_locks_guard:
+            return self._bare_locks.setdefault(bare_path, threading.Lock())
 
 
 class RepoSyncEngine:
@@ -87,9 +89,10 @@ class RepoSyncEngine:
         self._cache_dir = cache_dir
 
     def _ensure_bare_fresh(self, url: str, tracker: BareFetchTracker) -> Path:
-        # Per-URL lock so concurrent same-URL syncs do exactly one
-        # ensure_bare + bare_fetch; different URLs proceed in parallel.
-        with tracker.lock_for(url):
+        # Lock by canonical cache path so URL aliases that share one bare
+        # repo do exactly one ensure_bare + bare_fetch.
+        bare_lock_path = self._git.bare_cache_path(url, cache_dir=self._cache_dir)
+        with tracker.lock_for(bare_lock_path):
             entry = self._git.ensure_bare(url, cache_dir=self._cache_dir)
             bare = entry.path
             if bare not in tracker.fetched:

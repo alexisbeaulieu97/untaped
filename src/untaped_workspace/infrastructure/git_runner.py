@@ -40,9 +40,12 @@ class GitRunner:
 
     # cache --------------------------------------------------------------
 
+    def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path:
+        return cache_path_for(url, cache_dir=cache_dir)
+
     def ensure_bare(self, url: str, *, cache_dir: Path) -> BareCacheEntry:
         """Ensure a bare clone of ``url`` exists in the cache."""
-        bare = cache_path_for(url, cache_dir=cache_dir)
+        bare = self.bare_cache_path(url, cache_dir=cache_dir)
         if bare.is_dir() and (bare / "HEAD").is_file():
             return BareCacheEntry(path=bare, created=False)
         # ``mkdir(parents=True, exist_ok=True)`` is the thread-safety

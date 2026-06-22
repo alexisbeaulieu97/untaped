@@ -608,7 +608,7 @@ def test_no_shared_tracker_means_each_call_refetches(tmp_path: Path) -> None:
 
 def test_bare_fetch_dedup_is_threadsafe(tmp_path: Path) -> None:
     """Concurrent ``__call__`` invocations sharing a ``BareFetchTracker``
-    and repo URL must still bare_fetch exactly once. Without per-URL
+    and repo URL must still bare_fetch exactly once. Without cache-path
     locking, the check-and-add window in ``_ensure_bare_fresh`` is
     wide enough for every thread to slip past the membership check
     before any of them adds — we sleep inside the stub's ``bare_fetch``

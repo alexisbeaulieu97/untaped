@@ -60,8 +60,8 @@ def sync_command(
             name="--timeout",
             help=(
                 f"Per-call timeout ceiling (seconds) for every git invocation "
-                f"this sync makes (read-only ops AND network clone/fetch). "
-                f"Defaults: {DEFAULT_TIMEOUT:g}s for read-only ops, "
+                f"this sync makes (local-only git ops AND network clone/fetch). "
+                f"Defaults: {DEFAULT_TIMEOUT:g}s for local-only git ops, "
                 f"{DEFAULT_SLOW_TIMEOUT:g}s for clone/fetch. Pass a single value "
                 f"to cap both."
             ),

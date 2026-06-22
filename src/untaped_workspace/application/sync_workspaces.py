@@ -77,7 +77,8 @@ class SyncWorkspaces:
         unexpected: list[tuple[RepoSyncJob, Exception]] = []
         if plan.jobs:
             if parallel <= 1 or len(plan.jobs) <= 1:
-                planned.extend(self._run_serial(plan.jobs, tracker))
+                rows, unexpected = self._run_serial(plan.jobs, tracker)
+                planned.extend(rows)
             else:
                 self._notify_start(total=len(plan.jobs), workers=parallel)
                 rows, unexpected = self._run_parallel(plan.jobs, tracker, parallel)
@@ -143,18 +144,24 @@ class SyncWorkspaces:
         self,
         jobs: Sequence[RepoSyncJob],
         tracker: BareFetchTracker,
-    ) -> list[_PlannedOutcome]:
+    ) -> tuple[list[_PlannedOutcome], list[tuple[RepoSyncJob, Exception]]]:
         rows: list[_PlannedOutcome] = []
+        unexpected: list[tuple[RepoSyncJob, Exception]] = []
         total = len(jobs)
         for done, job in enumerate(jobs, start=1):
-            rows.append(
-                _PlannedOutcome(
-                    ordinal=job.ordinal,
-                    outcome=self._engine.sync_repo(job.workspace, job.manifest, job.repo, tracker),
+            try:
+                outcome = self._engine.sync_repo(job.workspace, job.manifest, job.repo, tracker)
+            except Exception as exc:
+                unexpected.append((job, exc))
+            else:
+                rows.append(
+                    _PlannedOutcome(
+                        ordinal=job.ordinal,
+                        outcome=outcome,
+                    )
                 )
-            )
             self._notify_progress(done=done, total=total)
-        return rows
+        return rows, unexpected
 
     def _run_parallel(
         self,

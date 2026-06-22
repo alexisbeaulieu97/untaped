@@ -219,7 +219,7 @@ methods (`ensure_bare` clone, `bare_fetch`, `clone_with_reference`,
 `workspace sync --timeout N`, which sets both buckets to `N` for that
 invocation (so a CI script can fail fast on hung clones with a single
 knob). Timeouts surface as `GitError("git <args> timed out after Ns")`,
-which `SyncWorkspace._sync_repo`'s existing `GitError` handlers
+which `RepoSyncEngine.sync_repo`'s existing `GitError` handlers
 translate to `skip` rows without further plumbing.
 
 `GitRunner.fetch` explicitly fetches all `origin` branch heads into
@@ -340,7 +340,7 @@ Per-repo `branch` > workspace `defaults.branch` > the remote's HEAD.
 but subsequent syncs do *not* auto-switch branches: they skip-with-warning
 when the on-disk branch doesn't match the manifest's target. This stops a
 stale `defaults.branch` from kidnapping a user mid-`feature/x`. State
-machine: `application.SyncWorkspace._sync_repo`.
+machine: `application.RepoSyncEngine.sync_repo`.
 
 `workspace branch set` and `workspace branch unset` are manifest-editing
 commands only: they update `defaults.branch` or a repo override in
@@ -397,20 +397,21 @@ after all submitted futures finish, `SyncWorkspaces` raises a summarized
 unexpected adapter exceptions into `skip` rows.
 
 Bare-fetch dedup lives on a session-scoped `BareFetchTracker` object
-(`fetched: set[Path]` + per-URL `threading.Lock`s + a guard). The
+(`fetched: set[Path]` + per-cache-path `threading.Lock`s + a guard). The
 scheduler allocates one per call by default and passes it to every repo
 job; callers can pass an explicit `bare_tracker=` for cross-call dedup.
 `GitOperations.ensure_bare()` returns `BareCacheEntry(path, created)`.
 Existing local clones do not call `ensure_bare` or `bare_fetch`; they
 fetch their own working-clone remote refs. Missing clones use
-`RepoSyncEngine._ensure_bare_fresh`: under the per-URL lock it calls
-`ensure_bare`, skips immediate `bare_fetch` when `created=True`, and
-marks the bare path fetched either way. Existing bares are fetched at
-most once per URL per sync run, on demand. On `GitError`, the path is
-left out of `tracker.fetched` so a later same-URL job retries.
+`RepoSyncEngine._ensure_bare_fresh`: under the per-cache-path lock it
+calls `ensure_bare`, skips immediate `bare_fetch` when `created=True`,
+and marks the bare path fetched either way. Existing bares are fetched
+at most once per bare cache path per sync run, on demand. On `GitError`,
+the path is left out of `tracker.fetched` so a later job sharing that
+cache path retries.
 **Never reach into `tracker.fetched` directly from a worker — always go
-through `_ensure_bare_fresh` so the per-URL lock and retry semantics are
-honoured.**
+through `_ensure_bare_fresh` so the per-cache-path lock and retry
+semantics are honoured.**
 
 Branch behavior remains clone-time-only for sync. `git clone
 --reference <bare> --branch <branch> <url>` contacts the origin for refs
