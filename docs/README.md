@@ -25,6 +25,7 @@ Command references live in each tool's own repo:
 - [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
 - [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
 - [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
+- [Recipe](https://github.com/alexisbeaulieu97/untaped-recipe)
 - [Apple Health](https://github.com/alexisbeaulieu97/untaped-apple-health)
 
 For installation, see the repo's [README](../README.md).

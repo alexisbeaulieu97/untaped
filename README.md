@@ -61,7 +61,7 @@ Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
 ## The suite
 
-Six tools are built on the SDK. Each is an independent CLI installed into its
+Seven tools are built on the SDK. Each is an independent CLI installed into its
 own `uv tool` environment:
 
 ```bash
@@ -70,6 +70,7 @@ uv tool install git+https://github.com/alexisbeaulieu97/untaped-jira.git
 uv tool install git+https://github.com/alexisbeaulieu97/untaped-awx.git
 uv tool install git+https://github.com/alexisbeaulieu97/untaped-ansible.git
 uv tool install git+https://github.com/alexisbeaulieu97/untaped-workspace.git
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-recipe.git
 uv tool install git+https://github.com/alexisbeaulieu97/untaped-apple-health.git
 ```
 
@@ -103,9 +104,20 @@ Per-tool command references live in each tool's own repo:
 - [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
 - [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
 - [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
+- [Recipe](https://github.com/alexisbeaulieu97/untaped-recipe)
 - [Apple Health](https://github.com/alexisbeaulieu97/untaped-apple-health)
+
+## Security
+
+Please report suspected vulnerabilities privately. See
+[SECURITY.md](./SECURITY.md).
 
 ## Contributing
 
-See [AGENTS.md](./AGENTS.md) for the architecture, hard rules, and recipes for
-extending the SDK and its tools.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md) for the
+local workflow, architecture rules, and recipes for extending the SDK and its
+tools.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
