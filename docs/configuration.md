@@ -2,7 +2,8 @@
 
 `untaped` is an SDK, not an app: there is no central `untaped` command. Each
 tool is an independent CLI (`untaped-github`, `untaped-jira`, `untaped-awx`,
-`untaped-ansible`, `untaped-workspace`, `untaped-apple-health`) installed in its
+`untaped-ansible`, `untaped-workspace`, `untaped-recipe`,
+`untaped-apple-health`) installed in its
 own `uv tool` environment. They all read and write **one shared file**,
 `~/.untaped/config.yml`, so configuration is a cross-tool contract — but the
 commands that manage it are per tool:
@@ -484,6 +485,8 @@ uv tool install git+https://github.com/alexisbeaulieu97/untaped-awx.git
   GitHub command reference.
 - [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira) — Jira
   command reference.
+- [`untaped-recipe`](https://github.com/alexisbeaulieu97/untaped-recipe) —
+  recipe automation command reference.
 - [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health)
   — Apple Health command reference.
 - [decisions.md](./decisions.md) — the architecture decisions behind the
