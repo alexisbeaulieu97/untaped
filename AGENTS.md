@@ -2,7 +2,7 @@
 
 Single source of truth for how the `untaped` SDK is built. AI agents and
 humans both read this file. This repo is the **SDK only**; each tool
-(`github`, `jira`, `awx`, `ansible`, `workspace`, `apple-health`) lives in
+(`github`, `jira`, `awx`, `ansible`, `workspace`, `recipe`, `apple-health`) lives in
 its own repo with its own `AGENTS.md`. If you change the SDK surface or an
 agent-facing workflow, update this file and `docs/` in the same commit.
 
@@ -54,6 +54,7 @@ Tools that depend on the SDK:
 - [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github) — `untaped-github`, authenticated user and search.
 - [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira) — `untaped-jira`, Jira Data Center workflows.
 - [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace) — `untaped-workspace`, local git workspace manifests.
+- [`untaped-recipe`](https://github.com/alexisbeaulieu97/untaped-recipe) — `untaped-recipe`, reusable local recipe automation.
 - [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health) — `untaped-apple-health`, Apple Health export analysis.
 
 Profiles **and** themes are built into the SDK; the standalone
@@ -471,4 +472,5 @@ Cross-repo ordering for an SDK change that tools must adopt:
   [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github),
   [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira),
   [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace),
+  [`untaped-recipe`](https://github.com/alexisbeaulieu97/untaped-recipe),
   [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health)

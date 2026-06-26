@@ -424,6 +424,8 @@ work across tools the same way (`untaped-acme --profile work whoami`).
   Ansible dependency graph and impact-analysis workflows.
 - [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace) —
   local git workspace manifests and registry state.
+- [`untaped-recipe`](https://github.com/alexisbeaulieu97/untaped-recipe) —
+  reusable local recipe automation.
 - [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health) —
   Apple Health export sync and analysis.
 </content>
