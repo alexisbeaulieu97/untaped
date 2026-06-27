@@ -17,7 +17,7 @@ exclusive to this package.
 ``StubGit`` mirrors the full ``GitRunner`` surface consumed across
 sync and status tests; per-test failure injection rides on the kwargs
 (``clone_fail``, ``fetch_fail``, ``local_fetch_fail``, ``status_fail``,
-``pull_fail``). ``StubRegistry`` exposes the union of
+``prune_fail``, ``pull_fail``). ``StubRegistry`` exposes the union of
 ``WorkspaceRegistryRepository`` methods (``register`` / ``find_by_path``
 / ``entries`` / ``get`` / ``unregister``) with optional positional
 seeding so empty-init and seeded-init test sites both keep working
@@ -45,6 +45,10 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
+from untaped_workspace.domain.prune_safety import (
+    DIRTY_WORKTREE_BLOCKER,
+    UNREACHABLE_COMMITS_BLOCKER,
+)
 from untaped_workspace.errors import GitError, ManifestError, RegistryError
 
 pytest_plugins = ("cli_fixtures",)
@@ -67,6 +71,8 @@ class StubGit:
         fetch_fail: bool = False,
         local_fetch_fail: Set[str] = frozenset(),
         status_fail: Set[str] = frozenset(),
+        prune_fail: Set[str] = frozenset(),
+        prune_blockers: dict[str, tuple[str, ...]] | None = None,
         pull_fail: Set[str] = frozenset(),
         checkout_fail: Set[str] = frozenset(),
     ) -> None:
@@ -77,6 +83,8 @@ class StubGit:
         self._fetch_fail = fetch_fail
         self._local_fetch_fail = local_fetch_fail
         self._status_fail = status_fail
+        self._prune_fail = prune_fail
+        self._prune_blockers = prune_blockers or {}
         self._pull_fail = pull_fail
         self._checkout_fail = checkout_fail
 
@@ -111,6 +119,19 @@ class StubGit:
         if repo_path.name in self._status_fail:
             raise GitError("status failed")
         return self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+
+    def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
+        self.events.append(("prune_blockers", repo_path.name))
+        if repo_path.name in self._prune_fail:
+            raise GitError("status failed")
+        if repo_path.name in self._prune_blockers:
+            return self._prune_blockers[repo_path.name]
+        status = self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        if status.dirty:
+            return (DIRTY_WORKTREE_BLOCKER,)
+        if status.ahead:
+            return (UNREACHABLE_COMMITS_BLOCKER,)
+        return ()
 
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
         self.events.append(("pull", repo_path.name, branch))
@@ -183,15 +204,19 @@ class StubFilesystem:
       ``shutil.rmtree`` for the dirs-only model used here.
     """
 
-    def __init__(self, dirs: Iterable[Path] = ()) -> None:
+    def __init__(self, dirs: Iterable[Path] = (), symlinks: Iterable[Path] = ()) -> None:
         self._dirs: set[Path] = {Path(p) for p in dirs}
+        self._symlinks: set[Path] = {Path(p) for p in symlinks}
         self.events: list[tuple[str, Path]] = []
 
     def exists(self, path: Path) -> bool:
-        return path in self._dirs
+        return path in self._dirs or path in self._symlinks
 
     def is_dir(self, path: Path) -> bool:
         return path in self._dirs
+
+    def is_symlink(self, path: Path) -> bool:
+        return path in self._symlinks
 
     def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None:
         # Honour `exist_ok` so tests catch any caller that flips it to
@@ -210,6 +235,7 @@ class StubFilesystem:
     def rmtree(self, path: Path) -> None:
         self.events.append(("rmtree", path))
         self._dirs = {p for p in self._dirs if p != path and path not in p.parents}
+        self._symlinks.discard(path)
 
 
 class StubManifests:

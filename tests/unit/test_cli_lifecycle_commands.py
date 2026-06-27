@@ -273,6 +273,34 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.Mon
     assert "lab" in listed.stdout.splitlines()  # registry untouched
 
 
+def test_forget_prune_refuses_unsafe_undeclared_child_clone(tmp_path: Path, upstream: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "lab", "--path", str(target)])
+    clone = target / "scratch"
+    subprocess.run(["git", "clone", str(upstream), str(clone)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(clone), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(clone), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(clone), "config", "commit.gpgsign", "false"], check=True)
+    (clone / "local.txt").write_text("local")
+    subprocess.run(["git", "-C", str(clone), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(clone), "commit", "--no-gpg-sign", "-m", "local-only"],
+        check=True,
+        capture_output=True,
+    )
+
+    forget = runner.invoke(app, ["forget", "lab", "--prune", "--yes"])
+
+    assert forget.exit_code == 1
+    assert "unsafe local state" in forget.output
+    assert "scratch" in forget.output
+    assert target.is_dir()
+    assert clone.is_dir()
+    listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+    assert "lab" in listed.stdout.splitlines()
+
+
 # ── add / remove (manifest only) ────────────────────────────────────────────
 
 

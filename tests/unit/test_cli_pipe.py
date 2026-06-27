@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -81,6 +82,37 @@ def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_ca
     assert envelope["record"]["action"] == "clone"
     assert "Syncing repos" not in result.stdout
     assert "sync complete:" not in result.stdout
+
+
+def test_sync_prune_pipe_reports_unsafe_orphan_skip(tmp_path: Path, upstream: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    orphan = target / "scratch"
+    subprocess.run(["git", "clone", str(upstream), str(orphan)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(orphan), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(orphan), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(orphan), "config", "commit.gpgsign", "false"], check=True)
+    (orphan / "local.txt").write_text("local")
+    subprocess.run(["git", "-C", str(orphan), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(orphan), "commit", "--no-gpg-sign", "-m", "local"],
+        check=True,
+        capture_output=True,
+    )
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--prune", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.strip())
+    assert envelope["kind"] == "workspace.sync-outcome"
+    assert envelope["record"] == {
+        "workspace": "smoke",
+        "repo": "scratch",
+        "action": "skip",
+        "detail": "unsafe local state: local commits not reachable from any remote-tracking ref",
+    }
+    assert orphan.is_dir()
 
 
 def test_status_pipe_tags_status(tmp_path: Path, upstream: Path, isolated_cache: Path) -> None:

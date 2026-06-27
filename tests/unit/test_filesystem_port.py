@@ -8,8 +8,8 @@ These tests pin two invariants the port was widened to support:
 2. ``application/`` no longer reaches into ``pathlib`` for I/O —
    every disk read/write flows through the port. The grep guard
    doubles as a regression test for future PRs that might
-   accidentally add ``Path.is_dir()`` / ``.exists()`` / ``.iterdir()``
-   / ``.mkdir()`` calls back into application code.
+   accidentally add ``Path.is_dir()`` / ``.exists()`` / ``.is_symlink()``
+   / ``.iterdir()`` / ``.mkdir()`` calls back into application code.
 
 Worked examples using :class:`conftest.StubFilesystem` demonstrate
 the payoff: use-case tests that don't need ``tmp_path`` at all.
@@ -43,6 +43,17 @@ def test_local_filesystem_exists_and_is_dir(tmp_path: Path) -> None:
     assert not fs.exists(sub) and not fs.is_dir(sub)
     sub.mkdir()
     assert fs.exists(sub) and fs.is_dir(sub)
+
+
+def test_local_filesystem_is_symlink(tmp_path: Path) -> None:
+    fs = LocalFilesystem()
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+
+    assert fs.is_symlink(link)
+    assert not fs.is_symlink(target)
 
 
 def test_local_filesystem_mkdir_parents_and_exist_ok(tmp_path: Path) -> None:
@@ -92,8 +103,8 @@ def test_no_pathlib_io_in_application_layer() -> None:
 
     The ``Filesystem`` Protocol (plus ``ManifestReader.exists``) exists
     so use cases stay testable with stubs; if a future PR accidentally
-    adds a bare ``Path.is_dir()`` / ``.exists()`` / ``.iterdir()`` /
-    ``.mkdir()`` to a use case, this test fails fast with a precise
+    adds a bare ``Path.is_dir()`` / ``.exists()`` / ``.is_symlink()`` /
+    ``.iterdir()`` / ``.mkdir()`` to a use case, this test fails fast with a precise
     pointer.
 
     **Convention enforced by this test.** Port-mediated calls must use
@@ -109,11 +120,11 @@ def test_no_pathlib_io_in_application_layer() -> None:
     method *declarations*, not calls.
     """
     pkg = Path(__file__).resolve().parents[2] / "src" / "untaped_workspace" / "application"
-    leak_pattern = re.compile(r"\.(is_dir|exists|iterdir|mkdir)\(")
+    leak_pattern = re.compile(r"\.(is_dir|exists|is_symlink|iterdir|mkdir)\(")
     # Any attribute access of the form ``self._<name>.method(`` is a
     # port call (``self._fs``, ``self._manifests``, ``self._registry``,
     # ``self._discoverer``, …) — those are the seam, not the leak.
-    port_call = re.compile(r"self\._\w+\.(is_dir|exists|iterdir|mkdir)\(")
+    port_call = re.compile(r"self\._\w+\.(is_dir|exists|is_symlink|iterdir|mkdir)\(")
     hits: list[str] = []
     for path in pkg.rglob("*.py"):
         if path.name == "ports.py":
@@ -143,8 +154,8 @@ def test_workspace_status_uses_port_to_check_clone_presence() -> None:
         def status(self, repo_path: Path) -> RepoStatus:
             return RepoStatus(branch="main")
 
-        def is_dirty(self, repo_path: Path) -> bool:
-            return False
+        def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
+            return ()
 
         def read_remote_url(self, repo_path: Path, *, remote: str = "origin") -> str | None:
             return None

@@ -211,16 +211,18 @@ so a hung remote never strands a `sync --all` sweep. The split is
 bucket includes `ff_only_pull`, which does write HEAD via
 `git merge --ff-only` — but executes locally with no network round
 trip, so the fast budget still applies). Local-only methods
-(`status`, `is_dirty`, `default_branch`, `read_remote_url`,
+(`status`, `prune_blockers`, `default_branch`, `read_remote_url`,
 `read_current_branch`, `ff_only_pull`) get `DEFAULT_TIMEOUT`; network
 methods (`ensure_bare` clone, `bare_fetch`, `clone_with_reference`,
-`fetch`) get `DEFAULT_SLOW_TIMEOUT`. Override per-instance via
-`GitRunner(timeout=…, slow_timeout=…)`. The CLI surfaces
-`workspace sync --timeout N`, which sets both buckets to `N` for that
-invocation (so a CI script can fail fast on hung clones with a single
-knob). Timeouts surface as `GitError("git <args> timed out after Ns")`,
-which `RepoSyncEngine.sync_repo`'s existing `GitError` handlers
-translate to `skip` rows without further plumbing.
+`fetch`) get `DEFAULT_SLOW_TIMEOUT`. `prune_blockers()` may run multiple
+local git commands, but none may use the slow/network timeout or fetch.
+Override per-instance via `GitRunner(timeout=…, slow_timeout=…)`. The
+CLI surfaces `workspace sync --timeout N`, which sets both buckets to
+`N` for that invocation (so a CI script can fail fast on hung clones
+with a single knob). Timeouts surface as
+`GitError("git <args> timed out after Ns")`, which
+`RepoSyncEngine.sync_repo`'s existing `GitError` handlers translate to
+`skip` rows without further plumbing.
 
 `GitRunner.fetch` explicitly fetches all `origin` branch heads into
 `refs/remotes/origin/*`, instead of relying on the clone's configured
@@ -229,13 +231,25 @@ refspec only tracks the original branch; widening the fetch here lets
 `workspace branch apply` discover later manifest target branches when
 they already exist on the remote.
 
+`GitRunner.prune_blockers(repo_path) -> tuple[str, ...]` is the shared
+destructive-deletion safety predicate for clone pruning. It raises
+`GitError` when the path cannot be inspected; otherwise an empty tuple
+means safe. It must stay offline and side-effect-free: reuse
+`status()` for dirty/untracked/staged state, inspect `git stash list`,
+and, when `HEAD` exists, use
+`git rev-list HEAD --branches --tags --not --remotes --count` to refuse
+local commits, including commits reachable only from local tags, that
+are not reachable from local remote-tracking refs. Do not fetch, inspect
+upstream config, or assume an `origin` remote in this predicate; stale
+remote-tracking refs are the accepted offline boundary.
+
 ## Ports module
 
 Every cross-use-case `Protocol` and Callable alias lives in
 `application/ports.py`. Use cases declare the narrowest port they need;
 this package's concrete chains are
 `ManifestReader ⊂ ManifestRepository`, `RegistryReader ⊂
-WorkspaceRegistry`, and `StatusInspector ⊂ GitInspector ⊂
+WorkspaceRegistry`, and `PruneSafetyInspector ⊂ GitInspector ⊂
 BranchOperations ⊂ GitOperations`. The concrete `ManifestRepository` /
 `WorkspaceRegistryRepository` / `GitRunner` / `LocalFilesystem` /
 `LocalRepoDiscoverer` adapters satisfy every variant structurally
@@ -251,8 +265,8 @@ package's pydantic-everywhere convention.
 ## `system_adapters` for other side effects
 
 Other side-effecting calls (shell-out for `foreach`, editor launch for
-`edit`, plus every disk read/write — `exists`, `is_dir`, `mkdir`,
-`iterdir`, `rmtree`) have their default implementations in
+`edit`, plus every disk read/write — `exists`, `is_dir`, `is_symlink`,
+`mkdir`, `iterdir`, `rmtree`) have their default implementations in
 `infrastructure.system_adapters`:
 
 - `shell_runner` — concrete factory satisfying `application.ports.ShellRunner`
@@ -267,12 +281,12 @@ Other side-effecting calls (shell-out for `foreach`, editor launch for
   splitting branches are exercised without a Windows CI runner. Raises
   `WorkspaceError` on an empty argv and on `shlex.split` failures.
 - `LocalFilesystem` — concrete class satisfying `application.ports.Filesystem`,
-  which declares `exists` / `is_dir` / `mkdir(*, parents, exist_ok)`
-  (no defaults — call sites pass both kwargs explicitly so the
-  divergence from `pathlib.Path.mkdir`'s `False/False` can't slip
-  through silently) / `iterdir` / `rmtree`. Methods delegate to the
-  equivalent `pathlib.Path` operation (or `shutil.rmtree` for the
-  recursive delete).
+  which declares `exists` / `is_dir` / `is_symlink` /
+  `mkdir(*, parents, exist_ok)` (no defaults — call sites pass both
+  kwargs explicitly so the divergence from `pathlib.Path.mkdir`'s
+  `False/False` can't slip through silently) / `iterdir` / `rmtree`.
+  Methods delegate to the equivalent `pathlib.Path` operation (or
+  `shutil.rmtree` for the recursive delete).
 
 Application use cases require the port shapes as constructor arguments
 — **none of them imports `subprocess` or `shutil`, or reaches into
@@ -280,9 +294,9 @@ Application use cases require the port shapes as constructor arguments
 flows through the `Filesystem` port; the contract is pinned by
 `tests/unit/test_filesystem_port.py::test_no_pathlib_io_in_application_layer`,
 which greps `application/` for `.is_dir()` / `.exists()` / `.iterdir()`
-/ `.mkdir()` and fails CI on any leak. The CLI composition root wires
-the defaults; tests inject the conftest `StubFilesystem` to assert
-disk side effects without `tmp_path`.
+/ `.is_symlink()` / `.mkdir()` and fails CI on any leak. The CLI
+composition root wires the defaults; tests inject the conftest
+`StubFilesystem` to assert disk side effects without `tmp_path`.
 
 **`self._<name>` convention.** Use cases must hold their port on a
 private attribute (`self._fs`, `self._manifests`, `self._registry`, …)
@@ -383,8 +397,18 @@ Output order is planned, not completion-derived: workspace input
 order, unmatched selector rows first, sync rows in manifest order, and
 prune rows last. Do not sort by repo name. `--prune` is a serial
 second phase after all repo jobs finish, which avoids racing directory
-iteration/deletion against in-flight clones. Progress goes through the
-`notify` hook with repo-oriented messages such as
+iteration/deletion against in-flight clones. It scans immediate child
+git clones not declared in the manifest and calls
+`GitOperations.prune_blockers()` before deletion. Safe orphans emit
+`remove`; unsafe orphans emit `skip` with
+`unsafe local state: <first blocker>` or
+`unsafe local state: <first blocker>; +N more`; uninspectable/corrupt
+orphans emit `skip` with `not a usable git repo`, and symlinked git
+candidates emit a `skip` row instead of being followed or deleted.
+`sync --prune` has no confirmation prompt and no `--yes`; it remains
+automation-friendly by skipping unsafe orphans instead of failing the
+whole sync. Progress goes through the `notify` hook with repo-oriented
+messages such as
 `"syncing N repos with up to M workers"` and
 `"X/Y repos complete"`; `sync_command` writes the final summary to
 stderr through `UiContext.message("info", ...)`, so SDK quiet behavior
@@ -512,12 +536,28 @@ Four workspace lifecycle commands with deliberately distinct shapes:
 - **`workspace forget <name>`** — removes the workspace's registry
   entry only; the on-disk manifest and clones are preserved. Pass
   `--prune` to also `rmtree` the workspace directory; pruning is
-  refused (mirroring `workspace remove --prune`) when any declared repo
-  has uncommitted changes. A missing manifest or missing directory are
-  tolerated — the registry entry is removed regardless. Implementation:
-  `application.ForgetWorkspace` with explicit `Filesystem` +
-  dirty-checker ports, wired to `LocalFilesystem` + `GitRunner` at the
-  CLI composition root.
+  refused (mirroring `workspace remove --prune`) when any clone that
+  would be deleted has unsafe local state. `ForgetWorkspace` checks all
+  existing declared repo paths, even if they lack `.git`, plus every
+  immediate child directory containing `.git`, then dedupes by resolved
+  path before inspecting. Symlinked child entries are skipped because
+  the full workspace `rmtree` unlinks them without deleting their
+  targets. This protects undeclared/orphan child clones before the full
+  workspace `rmtree`, but loose files, non-git child directories,
+  workspace-root git repos, and nested repos below non-repo child
+  directories are out of scope. A missing manifest or missing directory
+  are tolerated — the registry entry is removed regardless.
+  Implementation: `application.ForgetWorkspace` with
+  explicit `Filesystem` + `PruneSafetyInspector` ports, wired to
+  `LocalFilesystem` + `GitRunner` at the CLI composition root.
+
+Repo mutation prune behavior: `workspace remove <repo> --prune` removes
+a repo from the manifest and deletes its local clone only after the
+shared `PruneSafetyInspector.prune_blockers()` check returns no blockers.
+Unsafe or uninspectable clones raise `WorkspaceError` before the
+manifest is written and before any filesystem deletion. The CLI still
+uses the shared destructive confirmation prompt, with `--yes` for
+automation.
 
 ### `--sync` scope contract
 
@@ -569,9 +609,10 @@ sibling identifier matched.
 
 ## Shared test stubs
 
-`StubGit` (satisfies the `GitRunner` port), `StubRegistry`
+`StubGit` (satisfies the `GitRunner` port, including
+`prune_blockers()` for prune-safety tests), `StubRegistry`
 (satisfies `WorkspaceRegistryRepository`), `StubFilesystem`
-(satisfies the `Filesystem` port with an in-memory set of paths so
+(satisfies the `Filesystem` port with in-memory path and symlink sets so
 use-case tests assert disk predicates without touching `tmp_path`),
 `StubManifests` (satisfies the `ManifestRepository` port with an
 in-memory map — used by the resolver's stub-driven unit tests where

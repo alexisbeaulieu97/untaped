@@ -160,9 +160,18 @@ Remove a workspace from the central registry. The on-disk manifest and
 clones are preserved by default — `forget` is the inverse of `init` /
 `adopt`, not of `sync --prune`. Pass `--prune` to also `rmtree` the
 workspace directory; pruning is refused (mirroring
-`remove --prune`) when any declared repo has uncommitted
-changes. A missing manifest or missing directory is tolerated; the
-registry entry is removed regardless.
+`remove --prune`) when any git clone that would be deleted has unsafe
+local state. Before deleting the workspace directory, `forget --prune`
+inspects every existing declared repo path and every immediate child
+directory containing `.git`, including undeclared/orphan clones. It
+refuses on dirty/untracked/staged work, stash entries, or commits not
+reachable from local remote-tracking refs, including commits reachable
+only from local tags. Symlinked child entries are not inspected because
+the workspace deletion only unlinks them, not their targets. Loose
+files, non-git child directories, workspace-root git repos, and nested
+repos below non-repo child directories are outside this safety contract.
+A missing manifest or missing directory is tolerated; the registry entry
+is removed regardless.
 
 ### `import`
 
@@ -200,9 +209,16 @@ untaped-workspace remove --stdin [--workspace <ws> | --path <dir>]
 ```
 
 Remove one or more repos from the manifest, identified by URL or
-alias. `--prune` also deletes the local clone (refused if it has
-uncommitted changes); `--yes` skips the confirmation prompt for
-prune. With `--stdin`, reads repo identifiers one per line — works
+alias. `--prune` also deletes the local clone after confirming the
+destructive action. The prune is refused if the clone has unsafe local
+state: dirty/untracked/staged work, stash entries, or commits not
+reachable from local remote-tracking refs, including commits reachable
+only from local tags. The safety check is offline and does not fetch,
+inspect upstream config, or require an `origin` remote. Stale
+remote-tracking refs are trusted as the offline safety boundary; fetch
+the clone yourself first if you need the check to reflect current
+remote state. `--yes` skips the confirmation prompt for prune. With
+`--stdin`, reads repo identifiers one per line — works
 nicely with `fzf`:
 
 ```bash
@@ -288,6 +304,18 @@ serial second phase after all clone/fetch/pull jobs finish, so it
 doesn't race in-flight clones. Progress and the final summary are
 stderr-only; `json`, `yaml`, `raw`, and `pipe` stdout rows keep the
 same `SyncOutcome` shape.
+
+`sync --prune` deletes immediate child git clones that are no longer
+declared in the manifest only when the clone is safe to delete. Unsafe
+orphans are not deleted; they emit a `skip` row whose detail begins with
+`unsafe local state:`. Multiple blockers render as
+`unsafe local state: <first>; +N more`. Uninspectable/corrupt orphans
+remain distinct as `not a usable git repo`; symlinked git candidates are
+also skipped instead of followed or deleted. Unlike `remove --prune` and
+`forget --prune`, `sync --prune` has no confirmation prompt and no
+`--yes`; it keeps the automation-friendly skip-and-continue model. The
+same local remote-tracking ref boundary applies here: `sync --prune`
+does not fetch during the prune phase.
 
 Known limitations:
 

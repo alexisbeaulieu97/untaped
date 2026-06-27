@@ -13,12 +13,29 @@ from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 _FS = LocalFilesystem()
 
 
+class _PruneSafety:
+    def __init__(
+        self,
+        blockers: dict[Path, tuple[str, ...]] | None = None,
+        failures: set[Path] | None = None,
+    ) -> None:
+        self._blockers = blockers or {}
+        self._failures = failures or set()
+
+    def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
+        if repo_path in self._failures:
+            raise GitError("not a git repository")
+        return self._blockers.get(repo_path, ())
+
+
 def test_remove_repo_by_url(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ManifestRepository().write(ws_path, empty_manifest())
     workspace = Workspace(name="prod", path=ws_path)
     AddRepo(ManifestRepository())(workspace, url="https://github.com/org/svc-a.git")
-    RemoveRepo(ManifestRepository(), fs=_FS)(workspace, ident="https://github.com/org/svc-a.git")
+    RemoveRepo(ManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
+        workspace, ident="https://github.com/org/svc-a.git"
+    )
     assert ManifestRepository().read(ws_path).repos == ()
 
 
@@ -27,7 +44,7 @@ def test_remove_repo_by_alias(tmp_path: Path) -> None:
     ManifestRepository().write(ws_path, empty_manifest())
     workspace = Workspace(name="prod", path=ws_path)
     AddRepo(ManifestRepository())(workspace, url="https://x/svc-a.git")
-    RemoveRepo(ManifestRepository(), fs=_FS)(workspace, ident="svc-a")
+    RemoveRepo(ManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(workspace, ident="svc-a")
     assert ManifestRepository().read(ws_path).repos == ()
 
 
@@ -36,7 +53,9 @@ def test_remove_repo_unknown_raises(tmp_path: Path) -> None:
     ManifestRepository().write(ws_path, empty_manifest())
     workspace = Workspace(name="prod", path=ws_path)
     with pytest.raises(WorkspaceError, match="not declared"):
-        RemoveRepo(ManifestRepository(), fs=_FS)(workspace, ident="nope")
+        RemoveRepo(ManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
+            workspace, ident="nope"
+        )
 
 
 def test_remove_repo_prune_deletes_clone_dir(tmp_path: Path) -> None:
@@ -49,11 +68,13 @@ def test_remove_repo_prune_deletes_clone_dir(tmp_path: Path) -> None:
     clone_dir.mkdir()
     (clone_dir / "data.txt").write_text("payload")
 
-    RemoveRepo(ManifestRepository(), fs=_FS)(workspace, ident="svc-a", prune=True)
+    RemoveRepo(ManifestRepository(), fs=_FS, prune_safety=_PruneSafety())(
+        workspace, ident="svc-a", prune=True
+    )
     assert not clone_dir.exists()
 
 
-def test_remove_repo_prune_refuses_dirty(tmp_path: Path) -> None:
+def test_remove_repo_prune_refuses_unsafe_local_state(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ManifestRepository().write(ws_path, empty_manifest())
     workspace = Workspace(name="prod", path=ws_path)
@@ -62,12 +83,14 @@ def test_remove_repo_prune_refuses_dirty(tmp_path: Path) -> None:
     clone_dir = ws_path / "svc-a"
     clone_dir.mkdir()
 
-    class _DirtyChecker:
-        def is_dirty(self, _: Path) -> bool:
-            return True
-
-    use_case = RemoveRepo(ManifestRepository(), fs=_FS, status=_DirtyChecker())
-    with pytest.raises(WorkspaceError, match="uncommitted changes"):
+    use_case = RemoveRepo(
+        ManifestRepository(),
+        fs=_FS,
+        prune_safety=_PruneSafety(
+            blockers={clone_dir: ("local commits not reachable from any remote-tracking ref",)}
+        ),
+    )
+    with pytest.raises(WorkspaceError, match="unsafe local state"):
         use_case(workspace, ident="svc-a", prune=True)
     assert clone_dir.exists()  # not pruned
     # manifest must not have been modified — both clone and entry stay
@@ -89,11 +112,11 @@ def test_remove_repo_prune_translates_giterror(tmp_path: Path) -> None:
     clone_dir = ws_path / "svc-a"
     clone_dir.mkdir()
 
-    class _ExplodingChecker:
-        def is_dirty(self, _: Path) -> bool:
-            raise GitError("not a git repository")
-
-    use_case = RemoveRepo(ManifestRepository(), fs=_FS, status=_ExplodingChecker())
+    use_case = RemoveRepo(
+        ManifestRepository(),
+        fs=_FS,
+        prune_safety=_PruneSafety(failures={clone_dir}),
+    )
     with pytest.raises(WorkspaceError, match="cannot inspect"):
         use_case(workspace, ident="svc-a", prune=True)
     assert clone_dir.exists()

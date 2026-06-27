@@ -12,6 +12,11 @@ import subprocess
 from pathlib import Path
 
 from untaped_workspace.domain import BareCacheEntry, RepoStatus
+from untaped_workspace.domain.prune_safety import (
+    DIRTY_WORKTREE_BLOCKER,
+    STASH_BLOCKER,
+    UNREACHABLE_COMMITS_BLOCKER,
+)
 from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure.bare_cache import cache_path_for
 
@@ -84,8 +89,25 @@ class GitRunner:
         out = self._run(["status", "--porcelain=v2", "--branch"], cwd=repo_path, capture=True)
         return _parse_status(out)
 
-    def is_dirty(self, repo_path: Path) -> bool:
-        return self.status(repo_path).dirty
+    def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
+        blockers: list[str] = []
+        if self.status(repo_path).dirty:
+            blockers.append(DIRTY_WORKTREE_BLOCKER)
+
+        stash = self._run(["stash", "list", "--format=%H"], cwd=repo_path, capture=True)
+        if stash.strip():
+            blockers.append(STASH_BLOCKER)
+
+        if self._ref_commit_exists(repo_path, "HEAD"):
+            out = self._run(
+                ["rev-list", "HEAD", "--branches", "--tags", "--not", "--remotes", "--count"],
+                cwd=repo_path,
+                capture=True,
+            )
+            if int(out.strip() or "0") > 0:
+                blockers.append(UNREACHABLE_COMMITS_BLOCKER)
+
+        return tuple(blockers)
 
     # update -------------------------------------------------------------
 

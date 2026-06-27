@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,22 @@ from untaped.testing import CliInvoker
 from untaped_workspace import app
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
+
+
+def _configure_identity(repo: Path) -> None:
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "commit.gpgsign", "false"], check=True)
+
+
+def _commit(repo: Path, filename: str, content: str, message: str) -> None:
+    (repo / filename).write_text(content)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--no-gpg-sign", "-m", message],
+        check=True,
+        capture_output=True,
+    )
 
 
 def test_add_then_remove(tmp_path: Path) -> None:
@@ -82,6 +99,31 @@ def test_remove_prune_with_yes(tmp_path: Path, upstream: Path, isolated_cache: P
     rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune", "--yes"])
     assert rm.exit_code == 0, rm.output
     assert not (target / "upstream").exists()
+
+
+def test_remove_prune_refuses_clean_local_commit(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+    clone = target / "upstream"
+    _configure_identity(clone)
+    _commit(clone, "local.txt", "local", "local-only")
+
+    rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune", "--yes"])
+
+    assert rm.exit_code == 1
+    assert "unsafe local state" in rm.output
+    assert "local commits not reachable from any remote-tracking ref" in rm.output
+    assert clone.is_dir()
+    shown = runner.invoke(
+        app,
+        ["show", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+    )
+    assert "upstream" in shown.stdout.splitlines()
 
 
 def test_remove_prune_aborts_on_no_at_prompt(

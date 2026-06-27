@@ -15,6 +15,28 @@ if shutil.which("git") is None:
     pytest.skip("git not on PATH", allow_module_level=True)
 
 
+def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=check,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _configure_identity(repo: Path) -> None:
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    _git(repo, "config", "commit.gpgsign", "false")
+    _git(repo, "config", "tag.gpgsign", "false")
+
+
+def _commit(repo: Path, filename: str, content: str, message: str) -> None:
+    (repo / filename).write_text(content)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--no-gpg-sign", "-m", message)
+
+
 @pytest.fixture
 def upstream(tmp_path: Path) -> Path:
     """Create a bare repo with one commit; return its path."""
@@ -353,6 +375,128 @@ def test_status_dirty_working_tree(tmp_path: Path, upstream: Path) -> None:
     assert status.dirty
     assert status.modified >= 1
     assert status.untracked >= 1
+
+
+def test_prune_blockers_clean_repo(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+
+    assert runner.prune_blockers(ws) == ()
+
+
+def test_prune_blockers_refuses_clean_unpushed_commit(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _configure_identity(ws)
+    _commit(ws, "local.txt", "local", "local")
+
+    assert runner.prune_blockers(ws) == (
+        "local commits not reachable from any remote-tracking ref",
+    )
+
+
+def test_prune_blockers_refuses_tag_only_local_commit(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _configure_identity(ws)
+    _git(ws, "checkout", "--detach", "HEAD")
+    _commit(ws, "tagged.txt", "tagged", "tagged-only")
+    _git(ws, "tag", "local-only")
+    _git(ws, "checkout", "main")
+
+    assert runner.prune_blockers(ws) == (
+        "local commits not reachable from any remote-tracking ref",
+    )
+
+
+def test_prune_blockers_refuses_stash(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _configure_identity(ws)
+    (ws / "README.md").write_text("stashed")
+    _git(ws, "stash", "push", "-m", "keep me")
+
+    assert runner.prune_blockers(ws) == ("stash entries present",)
+
+
+def test_prune_blockers_allows_local_branch_reachable_from_remote(
+    tmp_path: Path, upstream: Path
+) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _configure_identity(ws)
+    _git(ws, "checkout", "-b", "local-feature")
+    _commit(ws, "feature.txt", "feature", "feature")
+    _git(ws, "checkout", "main")
+    _git(ws, "merge", "--no-ff", "local-feature", "-m", "merge local feature")
+    _git(ws, "push", "origin", "main")
+
+    assert runner.prune_blockers(ws) == ()
+
+
+def test_prune_blockers_refuses_unreachable_detached_head(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _configure_identity(ws)
+    _git(ws, "checkout", "--detach", "HEAD")
+    _commit(ws, "detached.txt", "detached", "detached")
+
+    assert runner.prune_blockers(ws) == (
+        "local commits not reachable from any remote-tracking ref",
+    )
+
+
+def test_prune_blockers_refuses_repo_with_no_remote_refs(tmp_path: Path) -> None:
+    repo = tmp_path / "lonely"
+    repo.mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main", str(repo)], check=True)
+    _configure_identity(repo)
+    _commit(repo, "local.txt", "local", "local")
+
+    assert GitRunner().prune_blockers(repo) == (
+        "local commits not reachable from any remote-tracking ref",
+    )
+
+
+def test_prune_blockers_allows_unborn_empty_repo(tmp_path: Path) -> None:
+    repo = tmp_path / "empty"
+    repo.mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main", str(repo)], check=True)
+
+    assert GitRunner().prune_blockers(repo) == ()
+
+
+def test_prune_blockers_allows_ignored_files(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    (ws / ".git" / "info" / "exclude").write_text("ignored.txt\n")
+    (ws / "ignored.txt").write_text("ignored")
+
+    assert runner.prune_blockers(ws) == ()
+
+
+def test_prune_blockers_refuses_untracked_files(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    (ws / "new.txt").write_text("new")
+
+    assert runner.prune_blockers(ws) == ("dirty working tree",)
 
 
 def test_default_branch_reads_bare_head(tmp_path: Path, upstream: Path) -> None:

@@ -52,7 +52,11 @@ def sync_command(
     repo: RepoSelectorOption = None,
     prune: Annotated[
         bool,
-        Parameter(name="--prune", negative="", help="Remove local clones not in the manifest."),
+        Parameter(
+            name="--prune",
+            negative="",
+            help="Remove safe local clones not in the manifest; skips unsafe orphans.",
+        ),
     ] = False,
     timeout: Annotated[
         float | None,

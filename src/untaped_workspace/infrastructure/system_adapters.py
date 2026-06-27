@@ -89,6 +89,9 @@ class LocalFilesystem:
     def is_dir(self, path: Path) -> bool:
         return path.is_dir()
 
+    def is_symlink(self, path: Path) -> bool:
+        return path.is_symlink()
+
     def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None:
         path.mkdir(parents=parents, exist_ok=exist_ok)
 

@@ -111,7 +111,7 @@ def forget_command(
         Parameter(
             name="--prune",
             negative="",
-            help="Also delete the workspace directory (refuses if dirty).",
+            help="Also delete the workspace directory (refuses unsafe local state).",
         ),
     ] = False,
     yes: Annotated[
@@ -123,7 +123,7 @@ def forget_command(
 
     The on-disk manifest and clones are preserved by default. Pass
     `--prune` to also remove the workspace directory (refused if any
-    repo has uncommitted changes).
+    git clone that would be deleted has unsafe local state).
     """
     with report_errors():
         if prune and not confirm(f"prune workspace directory for {name!r}?", yes=yes):
@@ -133,7 +133,7 @@ def forget_command(
             WorkspaceRegistryRepository(),
             ManifestRepository(),
             fs=LocalFilesystem(),
-            status=GitRunner(),
+            prune_safety=GitRunner(),
         )(name, prune=prune)
         action = "forgot and pruned" if prune else "forgot"
         echo(f"{action} workspace {ws.name!r}", err=True)

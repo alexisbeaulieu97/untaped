@@ -5,8 +5,9 @@ from __future__ import annotations
 from untaped_workspace.application.ports import (
     Filesystem,
     ManifestRepository,
-    StatusInspector,
+    PruneSafetyInspector,
 )
+from untaped_workspace.application.prune_safety import format_all_prune_blockers
 from untaped_workspace.domain import Repo, Workspace
 from untaped_workspace.errors import GitError, WorkspaceError
 
@@ -17,11 +18,11 @@ class RemoveRepo:
         manifest_repo: ManifestRepository,
         *,
         fs: Filesystem,
-        status: StatusInspector | None = None,
+        prune_safety: PruneSafetyInspector,
     ) -> None:
         self._manifests = manifest_repo
         self._fs = fs
-        self._status = status
+        self._prune_safety = prune_safety
 
     def __call__(
         self,
@@ -40,17 +41,16 @@ class RemoveRepo:
 
         local = workspace.path / repo.name
         should_prune = prune and self._fs.is_dir(local)
-        if should_prune and self._status is not None:
+        if should_prune:
             try:
-                dirty = self._status.is_dirty(local)
+                blockers = self._prune_safety.prune_blockers(local)
             except GitError as exc:
                 raise WorkspaceError(
                     f"refusing to prune {local}: cannot inspect working tree ({exc})"
                 ) from exc
-            if dirty:
-                raise WorkspaceError(
-                    f"refusing to prune {local}: working tree has uncommitted changes"
-                )
+            if blockers:
+                detail = format_all_prune_blockers(blockers)
+                raise WorkspaceError(f"refusing to prune {local}: {detail}")
 
         self._manifests.write(workspace.path, new_manifest)
 

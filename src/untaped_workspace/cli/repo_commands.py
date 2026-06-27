@@ -120,7 +120,7 @@ def remove_command(
         Parameter(
             name="--prune",
             negative="",
-            help="Also delete the local clone (refuses if dirty).",
+            help="Also delete the local clone (refuses unsafe local state).",
         ),
     ] = False,
     yes: Annotated[
@@ -132,7 +132,11 @@ def remove_command(
     with report_errors():
         idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = resolve_workspace(workspace, path)
-        remove_repo = RemoveRepo(ManifestRepository(), fs=LocalFilesystem(), status=GitRunner())
+        remove_repo = RemoveRepo(
+            ManifestRepository(),
+            fs=LocalFilesystem(),
+            prune_safety=GitRunner(),
+        )
 
         def _remove_one(ident: str) -> None:
             if prune and not confirm(f"prune local clone for {ident!r} in {ws.name!r}?", yes=yes):

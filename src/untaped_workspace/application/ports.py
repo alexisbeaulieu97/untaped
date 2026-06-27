@@ -58,6 +58,7 @@ class WorkspaceRegistry(RegistryReader, Protocol):
 class Filesystem(Protocol):
     def exists(self, path: Path) -> bool: ...
     def is_dir(self, path: Path) -> bool: ...
+    def is_symlink(self, path: Path) -> bool: ...
     # `parents` / `exist_ok` are keyword-only with no defaults so call
     # sites read explicitly — `pathlib.Path.mkdir` defaults them to
     # ``False`` and a silent flip would be a debugging trap. No
@@ -69,11 +70,11 @@ class Filesystem(Protocol):
     def rmtree(self, path: Path) -> None: ...
 
 
-class StatusInspector(Protocol):
-    def is_dirty(self, repo_path: Path) -> bool: ...
+class PruneSafetyInspector(Protocol):
+    def prune_blockers(self, repo_path: Path) -> tuple[str, ...]: ...
 
 
-class GitInspector(StatusInspector, Protocol):
+class GitInspector(PruneSafetyInspector, Protocol):
     def status(self, repo_path: Path) -> RepoStatus: ...
     def read_remote_url(self, repo_path: Path, *, remote: str = "origin") -> str | None: ...
     def read_current_branch(self, repo_path: Path) -> str | None: ...
@@ -129,9 +130,9 @@ __all__ = [
     "GitOperations",
     "ManifestReader",
     "ManifestRepository",
+    "PruneSafetyInspector",
     "RegistryReader",
     "RepoDiscoverer",
     "ShellRunner",
-    "StatusInspector",
     "WorkspaceRegistry",
 ]

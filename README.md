@@ -51,6 +51,13 @@ workspace or `--all`. Missing clones still use the central bare cache plus
 `git clone --reference`; existing clones fetch and pull their own working
 remotes without touching the cache.
 
+Prune operations protect local git work before deleting clones. `sync --prune`
+skips unsafe orphan clones, while `remove --prune` and `forget --prune` refuse
+before mutating manifests, registry state, or files. The local-only safety check
+blocks dirty/untracked/staged work, stash entries, and commits or local tags not
+reachable from local remote-tracking refs. Because it does not fetch, stale
+remote-tracking refs are trusted as the offline safety boundary.
+
 ## Development
 
 ```bash

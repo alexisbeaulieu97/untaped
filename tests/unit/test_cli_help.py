@@ -76,3 +76,11 @@ def test_stdin_flags_do_not_expose_negative_aliases() -> None:
         assert result.exit_code == 0, result.output
         assert "--stdin" in result.output
         assert "--no-stdin" not in result.output
+
+
+def test_sync_help_describes_safe_prune_behavior() -> None:
+    result = CliInvoker().invoke(app, ["sync", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "safe local clones not in the manifest" in result.output
+    assert "skips unsafe" in result.output

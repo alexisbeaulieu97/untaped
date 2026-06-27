@@ -306,7 +306,83 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
         workspace, prune=True
     )
     assert outcomes[0].action == "skip"
+    assert outcomes[0].detail == "unsafe local state: dirty working tree"
     assert orphan.exists()
+
+
+def test_prune_skips_clean_orphan_with_unpushed_commits(tmp_path: Path) -> None:
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[]),
+    )
+    orphan = workspace.path / "svc-old"
+    orphan.mkdir()
+    (orphan / ".git").mkdir()
+
+    git = StubGit(
+        on_disk=["svc-old"],
+        prune_blockers={
+            "svc-old": ("local commits not reachable from any remote-tracking ref",),
+        },
+    )
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
+    assert outcomes[0].action == "skip"
+    assert outcomes[0].detail == (
+        "unsafe local state: local commits not reachable from any remote-tracking ref"
+    )
+    assert orphan.exists()
+
+
+def test_prune_formats_multiple_blockers(tmp_path: Path) -> None:
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[]),
+    )
+    orphan = workspace.path / "svc-old"
+    orphan.mkdir()
+    (orphan / ".git").mkdir()
+
+    git = StubGit(
+        on_disk=["svc-old"],
+        prune_blockers={
+            "svc-old": (
+                "dirty working tree",
+                "stash entries present",
+                "local commits not reachable from any remote-tracking ref",
+            ),
+        },
+    )
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
+    assert outcomes[0].action == "skip"
+    assert outcomes[0].detail == "unsafe local state: dirty working tree; +2 more"
+    assert orphan.exists()
+
+
+def test_prune_skips_symlinked_orphan(tmp_path: Path) -> None:
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[]),
+    )
+    target = tmp_path / "outside"
+    target.mkdir()
+    (target / ".git").mkdir()
+    link = workspace.path / "linked"
+    link.symlink_to(target, target_is_directory=True)
+
+    git = StubGit(on_disk=["linked"])
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
+        workspace, prune=True
+    )
+
+    assert outcomes[0].action == "skip"
+    assert outcomes[0].repo == "linked"
+    assert outcomes[0].detail == "symlinked git repo (refusing to prune)"
+    assert link.is_symlink()
+    assert target.is_dir()
 
 
 def test_clone_failure_yields_skip(tmp_path: Path) -> None:
@@ -502,8 +578,8 @@ def test_prune_skips_non_git_subdir(tmp_path: Path) -> None:
     assert not_a_clone.exists()  # untouched
 
 
-def test_prune_status_failure_yields_not_usable_skip(tmp_path: Path) -> None:
-    """``status()`` raising during prune → skip with ``not a usable git repo`` (no rmtree)."""
+def test_prune_inspection_failure_yields_not_usable_skip(tmp_path: Path) -> None:
+    """``prune_blockers()`` raising during prune → skip with ``not a usable git repo``."""
     workspace = _seed_workspace(
         tmp_path,
         WorkspaceManifest(repos=[]),
@@ -511,7 +587,7 @@ def test_prune_status_failure_yields_not_usable_skip(tmp_path: Path) -> None:
     orphan = workspace.path / "svc-old"
     orphan.mkdir()
     (orphan / ".git").mkdir()
-    git = StubGit(on_disk=["svc-old"], status_fail={"svc-old"})
+    git = StubGit(on_disk=["svc-old"], prune_fail={"svc-old"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, prune=True
     )

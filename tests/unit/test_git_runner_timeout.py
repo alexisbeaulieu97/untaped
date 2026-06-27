@@ -89,7 +89,7 @@ def test_ensure_bare_uses_slow_timeout_on_clone(
 
 _FAST_OPS: list[tuple[str, Callable[[GitRunner, Path], object]]] = [
     ("status", lambda r, p: r.status(p)),
-    ("is_dirty", lambda r, p: r.is_dirty(p)),
+    ("prune_blockers", lambda r, p: r.prune_blockers(p)),
     ("default_branch", lambda r, p: r.default_branch(p)),
     ("read_remote_url", lambda r, p: r.read_remote_url(p)),
     ("read_current_branch", lambda r, p: r.read_current_branch(p)),
@@ -118,7 +118,8 @@ def test_local_ops_use_default_timeout(
     recorded_timeouts: list[float | None],
 ) -> None:
     op(GitRunner(timeout=11.0, slow_timeout=99.0), tmp_path)
-    assert recorded_timeouts == [11.0], (
+    assert recorded_timeouts
+    assert set(recorded_timeouts) == {11.0}, (
         f"{op_name} should use the fast/local timeout, got {recorded_timeouts}"
     )
 

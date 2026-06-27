@@ -13,6 +13,7 @@ from untaped_workspace.application.ports import (
     GitOperations,
     ManifestReader,
 )
+from untaped_workspace.application.prune_safety import format_prune_blockers
 from untaped_workspace.application.repo_selector import select_repos
 from untaped_workspace.domain import (
     Repo,
@@ -160,7 +161,20 @@ class RepoSyncEngine:
         declared = {r.name for r in manifest.repos}
         outcomes: list[SyncOutcome] = []
         for entry in self._fs.iterdir(workspace.path):
-            if not self._fs.is_dir(entry) or entry.name in declared:
+            if entry.name in declared:
+                continue
+            if self._fs.is_symlink(entry):
+                if self._fs.exists(entry / ".git"):
+                    outcomes.append(
+                        SyncOutcome(
+                            workspace=workspace.name,
+                            repo=entry.name,
+                            action="skip",
+                            detail="symlinked git repo (refusing to prune)",
+                        )
+                    )
+                continue
+            if not self._fs.is_dir(entry):
                 continue
             if not self._fs.exists(entry / ".git"):
                 continue
@@ -169,7 +183,7 @@ class RepoSyncEngine:
 
     def _prune_orphan(self, workspace: Workspace, entry: Path) -> SyncOutcome:
         try:
-            status = self._git.status(entry)
+            blockers = self._git.prune_blockers(entry)
         except GitError:
             return SyncOutcome(
                 workspace=workspace.name,
@@ -177,12 +191,12 @@ class RepoSyncEngine:
                 action="skip",
                 detail="not a usable git repo",
             )
-        if status.dirty:
+        if blockers:
             return SyncOutcome(
                 workspace=workspace.name,
                 repo=entry.name,
                 action="skip",
-                detail="dirty working tree (refusing to prune)",
+                detail=format_prune_blockers(blockers),
             )
         self._fs.rmtree(entry)
         return SyncOutcome(
