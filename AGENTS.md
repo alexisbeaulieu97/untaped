@@ -69,8 +69,11 @@ pinned to a tag. In the tool's `pyproject.toml`:
 [project]
 dependencies = [
   "cyclopts>=4.16.0,<5",
-  "untaped @ git+https://github.com/alexisbeaulieu97/untaped.git@v1.0.0",
+  "untaped>=2.4.0,<3",
 ]
+
+[tool.uv.sources]
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }
 
 [project.scripts]
 untaped-github = "untaped_github.__main__:main"
@@ -276,7 +279,7 @@ file.
 | Reject bad usage with `error: ...` + exit 2 | `raise_usage` |
 | Wrap a command body so `UntapedError` → exit 1 | `report_errors` |
 | Read piped values from stdin               | `read_stdin` |
-| Read a `--format pipe` stream into typed envelopes | `read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind) |
+| Read a `--format pipe` stream into typed envelopes | `read_records` (`list[PipeEnvelope]`; `common_kind(...)` for the shared kind; `parse_envelope_line` / `is_envelope_line` for custom readers) |
 | Resolve identifiers from positionals or stdin (one source only) | `read_identifiers` (pass `id_field=` to also accept a `--format pipe` stream) |
 | Loop over identifiers with per-id `error: <id>: <exc>` rows | `resolve_each` |
 | Run a mutating verb over a resolved set (preview → confirm → progress) | `batch_apply` (`destructive`/`assume_yes`/`preview_only`; pass `render_generic_preview=False` only when the caller already rendered a richer preview; returns `BatchOutcome` with `(item, result)` pairs + `planned_rows` — caller renders the summary and sets the exit code) |
@@ -341,6 +344,15 @@ rows above.
   should route through `batch_apply` so the preview/confirm/`--yes`/progress UX
   is identical across tools; a destructive verb refuses a non-interactive stdin
   without `--yes` (the stream is the data, so there is nothing to confirm against).
+- **`target_path` is the generic filesystem target field.** If a pipe record
+  identifies a path that another tool may mutate, put the concrete absolute,
+  non-empty filesystem target in `record.target_path`. Omit `target_path` when
+  no concrete target exists; do not emit `""` or `null` as a target. Keep domain
+  fields such as `path`, `repo`, `workspace`, or `full_name` available for
+  display and templating, but do not require consumers to understand a
+  producer's domain-specific `kind` to find the filesystem target. Pipe records
+  whose `kind` ends in `.summary` are informational summaries, not filesystem
+  targets; consumers that need targets may skip them.
 
 ## Development Workflow
 
@@ -405,8 +417,9 @@ Cross-repo ordering for an SDK change that tools must adopt:
 
 - **SDK first.** Tools resolve `untaped` from a git tag, so a tool only picks
   up new SDK behaviour after the SDK tag exists.
-- **Bump each tool's `untaped @ git+...@vX.Y.Z` pin** to the new SDK release,
-  relock (`uv lock --upgrade-package untaped`), gate, and **release the tool
+- **Bump each tool's `untaped>=X.Y.Z,<3` floor and `tool.uv.sources.untaped`
+  tag** to the new SDK release, relock (`uv lock --upgrade-package untaped`),
+  gate, and **release the tool
   too** — the pin bump is itself a release-worthy dependency change.
 
 ## Decision Tree: Where does this code go?
