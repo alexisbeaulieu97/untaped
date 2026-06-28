@@ -40,6 +40,31 @@ def test_show_pipe_tags_repo(tmp_path: Path) -> None:
     envelope = json.loads(result.stdout.strip().splitlines()[0])
     assert envelope["kind"] == "workspace.repo"
     assert envelope["record"]["repo"] == "api"
+    assert envelope["record"]["path"] == str(target.resolve())
+    assert envelope["record"]["target_path"] == str((target / "api").resolve())
+
+
+def test_show_pipe_empty_workspace_tags_summary_and_omits_target_path(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
+
+    result = runner.invoke(app, ["show", "--workspace", "prod", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.strip())
+    assert envelope["kind"] == "workspace.summary"
+    assert envelope["record"] == {
+        "workspace": "prod",
+        "path": str(target.resolve()),
+        "default_branch": "main",
+        "repo_count": 0,
+        "repo": "",
+        "url": "",
+        "repo_branch": None,
+        "target_branch": None,
+    }
+    assert "target_path" not in envelope["record"]
 
 
 def test_path_stdin_consumes_list_pipe(tmp_path: Path) -> None:

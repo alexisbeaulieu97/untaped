@@ -23,7 +23,7 @@ from untaped_workspace.application import (
     WorkspacePath,
 )
 from untaped_workspace.cli.common import WorkspaceNameOption, WorkspacePathOption, resolve_workspace
-from untaped_workspace.domain import Workspace
+from untaped_workspace.domain import Workspace, WorkspaceDetailRow
 from untaped_workspace.infrastructure import (
     ManifestRepository,
     WorkspaceRegistryRepository,
@@ -73,8 +73,8 @@ def show_command(
     """Show manifest details for one workspace."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        rows = [row.model_dump() for row in ShowWorkspace(ManifestRepository())(ws)]
-        echo(render_rows(rows, fmt=fmt, columns=columns, kind="workspace.repo"))
+        rows = [_show_row(row) for row in ShowWorkspace(ManifestRepository())(ws)]
+        echo(render_rows(rows, fmt=fmt, columns=columns, kind=_show_kind(rows)))
 
 
 def path_command(
@@ -136,3 +136,21 @@ def _workspace_row(w: Workspace) -> dict[str, object]:
     # feed back into the next command. See root AGENTS.md '--format raw
     # default-column contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {"name": w.name, "path": str(w.path)}
+
+
+def _show_row(row: WorkspaceDetailRow) -> dict[str, object]:
+    data = row.model_dump()
+    if data.get("target_path") is None:
+        del data["target_path"]
+    return data
+
+
+def _show_kind(rows: list[dict[str, object]]) -> str:
+    if (
+        len(rows) == 1
+        and rows[0].get("repo_count") == 0
+        and rows[0].get("repo") == ""
+        and "target_path" not in rows[0]
+    ):
+        return "workspace.summary"
+    return "workspace.repo"

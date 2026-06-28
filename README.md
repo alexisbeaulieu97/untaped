@@ -8,7 +8,7 @@ a local registry.
 ## Install
 
 ```bash
-uv tool install untaped-workspace
+uv tool install git+https://github.com/alexisbeaulieu97/untaped-workspace.git
 ```
 
 `untaped-workspace` also ships the `untaped-workspace` agent skill for Codex

@@ -62,6 +62,7 @@ class WorkspaceDetailRow(BaseModel):
 
     workspace: str
     path: str
+    target_path: str | None = None
     default_branch: str | None
     repo_count: int
     repo: str

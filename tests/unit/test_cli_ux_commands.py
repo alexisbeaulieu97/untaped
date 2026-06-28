@@ -39,6 +39,7 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
         {
             "workspace": "prod",
             "path": str(target.resolve()),
+            "target_path": str((target / "api").resolve()),
             "default_branch": "main",
             "repo_count": 2,
             "repo": "api",
@@ -49,6 +50,7 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
         {
             "workspace": "prod",
             "path": str(target.resolve()),
+            "target_path": str((target / "ui").resolve()),
             "default_branch": "main",
             "repo_count": 2,
             "repo": "ui",
@@ -72,6 +74,7 @@ def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
         {
             "workspace": "prod",
             "path": str(target.resolve()),
+            "target_path": str((target / "api").resolve()),
             "default_branch": "main",
             "repo_count": 1,
             "repo": "api",

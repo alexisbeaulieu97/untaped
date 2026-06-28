@@ -1,6 +1,6 @@
 [project]
 name = "untaped-workspace"
-version = "0.8.0"
+version = "0.9.0"
 description = "Local git workspace management CLI built on the untaped SDK."
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }
@@ -10,7 +10,7 @@ dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
     "pyyaml>=6.0.3",
-    "untaped",
+    "untaped>=2.4.0,<3",
 ]
 
 [project.scripts]
@@ -108,4 +108,4 @@ exclude_also = [
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.2.0" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }

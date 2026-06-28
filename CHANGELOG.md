@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0 - 2026-06-28
+
+- Added `target_path` to repo-grain `show --format pipe` records so downstream
+  tools can consume the concrete repo checkout path without branching on
+  `workspace.repo`. Empty workspace summary rows are tagged
+  `workspace.summary` and omit `target_path`.
+
 ## 0.8.0 - 2026-06-27
 
 - Changed prune safety so `sync --prune` no longer deletes clean orphan
