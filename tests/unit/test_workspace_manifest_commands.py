@@ -35,6 +35,7 @@ def test_show_workspace_returns_repo_detail_rows(tmp_path: Path) -> None:
         {
             "workspace": "prod",
             "path": str(workspace.path),
+            "target_path": str(workspace.path / "api"),
             "default_branch": "main",
             "repo_count": 2,
             "repo": "api",
@@ -45,6 +46,7 @@ def test_show_workspace_returns_repo_detail_rows(tmp_path: Path) -> None:
         {
             "workspace": "prod",
             "path": str(workspace.path),
+            "target_path": str(workspace.path / "ui"),
             "default_branch": "main",
             "repo_count": 2,
             "repo": "ui",
@@ -63,6 +65,7 @@ def test_show_workspace_returns_summary_row_for_empty_manifest(tmp_path: Path) -
         {
             "workspace": "empty",
             "path": str(workspace.path),
+            "target_path": None,
             "default_branch": None,
             "repo_count": 0,
             "repo": "",

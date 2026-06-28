@@ -37,10 +37,9 @@ stdin helpers, HTTP/TLS primitives, profile selection, and shared errors.
    narrowest `Protocol`; concrete adapters satisfy ports structurally.
 6. **Use absolute imports.** `from untaped_workspace...` and
    `from untaped.api ...` (the supported SDK surface), never relative
-   imports. The only SDK imports outside `untaped.api` are
-   `untaped.config_file` (state read/write helpers; not part of the API
-   surface) in infrastructure, and test-only helpers (`untaped.testing`,
-   `untaped.main`, `untaped.settings`) in `tests/`.
+   imports. Tool state helpers such as `mutate_tool_state` and
+   `read_tool_state` come from `untaped.api`; test-only helpers
+   (`untaped.testing`, `untaped.main`, `untaped.settings`) may stay in `tests/`.
 7. **Every source module has a module docstring.** Re-export `__init__.py`
    files are exempt.
 8. **Cyclopts command signatures are explicit.** Use
@@ -60,10 +59,13 @@ stdin helpers, HTTP/TLS primitives, profile selection, and shared errors.
     `raw` output goes through a plain `UiContext()` so missing or bad themes
     do not break pipe-friendly output. Every producer also passes a `kind=`
     so `--format pipe` emits self-describing NDJSON: `list` →
-    `workspace.workspace`, `show` → `workspace.repo` (per-repo grain),
-    `sync` → `workspace.sync-outcome`, `status` → `workspace.status`,
-    `foreach` → `workspace.foreach-outcome`, `branch apply` →
-    `workspace.branch-outcome`. `path` consumes that stream via
+    `workspace.workspace`, `show` repo rows → `workspace.repo`, empty
+    `show` summary rows → `workspace.summary`, `sync` →
+    `workspace.sync-outcome`, `status` → `workspace.status`, `foreach` →
+    `workspace.foreach-outcome`, `branch apply` → `workspace.branch-outcome`.
+    `show` repo records keep `path` as the workspace root and include
+    `target_path` for the repo checkout; empty workspace summary rows omit
+    `target_path`. `path` consumes that stream via
     `read_identifiers(..., id_field="name")`, so
     `list --format pipe | path --stdin` works (bare names still work too).
 12. **Interactive prompts use the SDK's prompt primitives.** Destructive

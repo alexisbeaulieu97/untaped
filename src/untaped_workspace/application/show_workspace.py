@@ -33,6 +33,7 @@ class ShowWorkspace:
             WorkspaceDetailRow(
                 **base,
                 repo=repo.name,
+                target_path=str(workspace.path / repo.name),
                 url=repo.url,
                 repo_branch=repo.branch,
                 target_branch=manifest.target_branch_for(repo),

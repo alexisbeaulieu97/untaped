@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from untaped.config_file import mutate_tool_state, read_tool_state
+from untaped.api import mutate_tool_state, read_tool_state
 
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError
