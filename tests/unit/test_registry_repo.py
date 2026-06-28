@@ -94,6 +94,23 @@ def test_entries_raise_clean_error_on_missing_name(_isolate_config: Path, tmp_pa
         repo.entries()
 
 
+def test_entries_raise_clean_error_when_registry_is_not_list(_isolate_config: Path) -> None:
+    _isolate_config.write_text("workspace:\n  workspaces: bad\n")
+    repo = WorkspaceRegistryRepository()
+    with pytest.raises(
+        RegistryError,
+        match=r"invalid workspace registry: 'workspaces' must be a list",
+    ):
+        repo.entries()
+
+
+def test_entries_raise_clean_error_on_non_mapping_entry(_isolate_config: Path) -> None:
+    _isolate_config.write_text("workspace:\n  workspaces:\n    - bad\n")
+    repo = WorkspaceRegistryRepository()
+    with pytest.raises(RegistryError, match=r"invalid workspace registry entry at index 0"):
+        repo.entries()
+
+
 def test_register_preserves_other_top_level_settings(_isolate_config: Path, tmp_path: Path) -> None:
     _isolate_config.write_text("log_level: DEBUG\nawx:\n  base_url: https://x\n")
     repo = WorkspaceRegistryRepository()

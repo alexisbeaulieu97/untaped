@@ -9,10 +9,86 @@ runner's OS.
 
 from __future__ import annotations
 
+import os
+import shlex
+import signal
+import sys
+import time
+from pathlib import Path
+
 import pytest
 
 from untaped_workspace.errors import WorkspaceError
-from untaped_workspace.infrastructure.system_adapters import resolve_editor_argv
+from untaped_workspace.infrastructure.system_adapters import (
+    DEFAULT_FOREACH_TIMEOUT,
+    resolve_editor_argv,
+    shell_runner,
+)
+
+# -- shell runner ------------------------------------------------------------
+
+
+def test_default_foreach_timeout_matches_documented_default() -> None:
+    assert DEFAULT_FOREACH_TIMEOUT == 600.0
+
+
+def test_shell_runner_closes_stdin(tmp_path: Path) -> None:
+    script = "import sys; print('eof' if sys.stdin.read() == '' else 'open')"
+
+    result = shell_runner(
+        f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
+        tmp_path,
+        timeout=2.0,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "eof"
+
+
+def test_shell_runner_timeout_returns_failed_completed_process(tmp_path: Path) -> None:
+    script = "import time; print('started', flush=True); time.sleep(60)"
+
+    result = shell_runner(
+        f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}",
+        tmp_path,
+        timeout=0.1,
+    )
+
+    assert result.returncode == 124
+    assert result.stdout.strip() == "started"
+    assert "timed out after 0.1s" in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process group cleanup is POSIX-only")
+def test_shell_runner_timeout_kills_background_child_process(tmp_path: Path) -> None:
+    pidfile = tmp_path / "child.pid"
+    script = (
+        "import os, pathlib, time; "
+        f"pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid())); "
+        "time.sleep(60)"
+    )
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)} & wait"
+
+    result = shell_runner(command, tmp_path, timeout=0.2)
+
+    assert result.returncode == 124
+    deadline = time.monotonic() + 2.0
+    while not pidfile.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert pidfile.exists()
+
+    child_pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(child_pid, signal.SIGKILL)
+        pytest.fail(f"timed-out child process {child_pid} was not reaped")
+
 
 # ── editor selection precedence ────────────────────────────────────────────
 

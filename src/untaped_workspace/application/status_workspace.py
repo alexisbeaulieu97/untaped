@@ -15,7 +15,7 @@ from untaped_workspace.domain import (
     StatusEntry,
     Workspace,
 )
-from untaped_workspace.errors import GitError, UnmatchedRepoFilter
+from untaped_workspace.errors import GitError, ManifestError, UnmatchedRepoFilter
 
 
 class WorkspaceStatus:
@@ -35,8 +35,14 @@ class WorkspaceStatus:
         workspace: Workspace,
         *,
         only: Sequence[str] | None = None,
+        skip_manifest_errors: bool = False,
     ) -> list[StatusEntry]:
-        manifest = self._manifests.read(workspace.path)
+        try:
+            manifest = self._manifests.read(workspace.path)
+        except ManifestError as exc:
+            if skip_manifest_errors:
+                return [_unavailable_row(workspace, exc)]
+            raise
         repos, unmatched = select_repos(manifest, only)
         if unmatched:
             raise UnmatchedRepoFilter(unmatched)
@@ -60,3 +66,13 @@ class WorkspaceStatus:
             modified=status.modified,
             untracked=status.untracked,
         )
+
+
+def _unavailable_row(workspace: Workspace, exc: ManifestError) -> StatusEntry:
+    return StatusEntry(
+        workspace=workspace.name,
+        repo="",
+        action="unavailable",
+        detail=f"workspace manifest unavailable: {exc}",
+        cloned=False,
+    )

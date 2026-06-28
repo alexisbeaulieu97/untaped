@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -57,6 +58,25 @@ def test_read_invalid_schema(tmp_path: Path) -> None:
         ManifestRepository().read(tmp_path)
 
 
+def test_read_unreadable_manifest_wraps_os_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "untaped.yml"
+    path.write_text("name: prod\n")
+    original = Path.read_text
+
+    def _read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self == path:
+            raise PermissionError("denied")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    with pytest.raises(ManifestError, match=r"could not read manifest at .*untaped\.yml"):
+        ManifestRepository().read(tmp_path)
+
+
 def test_read_external(tmp_path: Path) -> None:
     src = tmp_path / "team-prod.yml"
     src.write_text(
@@ -76,6 +96,25 @@ def test_read_external(tmp_path: Path) -> None:
 def test_read_external_missing(tmp_path: Path) -> None:
     with pytest.raises(ManifestError, match="not found"):
         ManifestRepository().read_external(tmp_path / "absent.yml")
+
+
+def test_read_external_unreadable_manifest_wraps_os_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "team-prod.yml"
+    source.write_text("name: prod\n")
+    original = Path.read_text
+
+    def _read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self == source:
+            raise OSError("disk unavailable")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    with pytest.raises(ManifestError, match=r"could not read manifest at .*team-prod\.yml"):
+        ManifestRepository().read_external(source)
 
 
 def test_write_empty_defaults_omitted(tmp_path: Path) -> None:

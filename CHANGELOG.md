@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 - 2026-06-28
+
+- Changed `foreach` to close child stdin and apply a 600s default per-repo
+  timeout. Timed-out commands return `124` with a `timed out after <Ns>s`
+  stderr detail; use `--timeout N` for longer-running commands.
+- Changed `sync --all` and `status --all` to keep going when a valid registry
+  entry points at a workspace whose manifest is missing, unreadable,
+  YAML-invalid, or schema-invalid. These cases now emit workspace-level
+  `action="unavailable"` rows with `repo=""` and a detail message.
+- Added `action` and `detail` fields to `status` structured output. Normal
+  rows use `action="status"`.
+
 ## 0.9.0 - 2026-06-28
 
 - Added `target_path` to repo-grain `show --format pipe` records so downstream

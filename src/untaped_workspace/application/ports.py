@@ -109,6 +109,11 @@ class CompletedCommand(Protocol):
     are populated. :class:`Foreach` defensively coerces ``None`` to
     ``""`` regardless, so a custom runner returning ``None`` is
     handled at runtime even though it's a Protocol violation.
+
+    Shell timeouts are intentionally represented as ordinary failed
+    command results (return code ``124``) so ``foreach`` can keep
+    row-level outcome semantics. This differs from :class:`GitRunner`,
+    which raises for git invocation timeouts.
     """
 
     returncode: int
@@ -116,7 +121,10 @@ class CompletedCommand(Protocol):
     stderr: str
 
 
-ShellRunner = Callable[[str, Path], CompletedCommand]
+class ShellRunner(Protocol):
+    def __call__(self, cmd: str, cwd: Path, *, timeout: float) -> CompletedCommand: ...
+
+
 EditorRunner = Callable[[Sequence[str]], int]
 
 

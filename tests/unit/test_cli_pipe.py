@@ -109,6 +109,44 @@ def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_ca
     assert "sync complete:" not in result.stdout
 
 
+def test_sync_all_unavailable_manifest_pipe_row(
+    tmp_path: Path,
+    upstream: Path,
+    isolate_config: Path,
+    isolated_cache: Path,
+) -> None:
+    runner = CliInvoker()
+    alpha = tmp_path / "alpha"
+    alpha.mkdir()
+    ghost = tmp_path / "ghost"
+    (alpha / "untaped.yml").write_text(
+        f"name: alpha\nrepos:\n  - url: file://{upstream}\n    name: upstream\n",
+        encoding="utf-8",
+    )
+    isolate_config.write_text(
+        f"""
+        workspace:
+          workspaces:
+            - name: alpha
+              path: {alpha}
+            - name: ghost
+              path: {ghost}
+        """,
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["sync", "--all", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelopes = [json.loads(line) for line in result.stdout.splitlines()]
+    ghost = [e for e in envelopes if e["record"]["workspace"] == "ghost"]
+    assert len(ghost) == 1
+    assert ghost[0]["kind"] == "workspace.sync-outcome"
+    assert ghost[0]["record"]["repo"] == ""
+    assert ghost[0]["record"]["action"] == "unavailable"
+    assert "workspace manifest unavailable: no manifest at" in ghost[0]["record"]["detail"]
+
+
 def test_sync_prune_pipe_reports_unsafe_orphan_skip(tmp_path: Path, upstream: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
@@ -152,6 +190,42 @@ def test_status_pipe_tags_status(tmp_path: Path, upstream: Path, isolated_cache:
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
     assert envelope["kind"] == "workspace.status"
+
+
+def test_status_all_unavailable_manifest_pipe_row(
+    tmp_path: Path,
+    isolate_config: Path,
+) -> None:
+    runner = CliInvoker()
+    alpha = tmp_path / "alpha"
+    alpha.mkdir()
+    ghost = tmp_path / "ghost"
+    (alpha / "untaped.yml").write_text(
+        "name: alpha\nrepos:\n  - url: https://x/api.git\n    name: api\n",
+        encoding="utf-8",
+    )
+    isolate_config.write_text(
+        f"""
+        workspace:
+          workspaces:
+            - name: alpha
+              path: {alpha}
+            - name: ghost
+              path: {ghost}
+        """,
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["status", "--all", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelopes = [json.loads(line) for line in result.stdout.splitlines()]
+    ghost_rows = [e for e in envelopes if e["record"]["workspace"] == "ghost"]
+    assert len(ghost_rows) == 1
+    assert ghost_rows[0]["kind"] == "workspace.status"
+    assert ghost_rows[0]["record"]["repo"] == ""
+    assert ghost_rows[0]["record"]["action"] == "unavailable"
+    assert "workspace manifest unavailable: no manifest at" in ghost_rows[0]["record"]["detail"]
 
 
 def test_foreach_pipe_tags_foreach_outcome(

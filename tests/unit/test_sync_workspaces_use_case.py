@@ -19,7 +19,7 @@ from untaped_workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import UnmatchedRepoFilter, WorkspaceError
+from untaped_workspace.errors import ManifestError, UnmatchedRepoFilter, WorkspaceError
 
 
 class _Notify:
@@ -244,6 +244,68 @@ def test_strict_unmatched_raises_before_network_work(tmp_path: Path) -> None:
         use_case(workspaces, only=["ghost"], parallel=2)
 
     assert excinfo.value.unmatched == ("ghost",)
+    assert engine.calls == []
+
+
+def test_skip_manifest_errors_emits_unavailable_row_and_skips_prune(tmp_path: Path) -> None:
+    workspaces = [_ws(tmp_path, "alpha"), _ws(tmp_path, "missing")]
+    manifests = StubManifests({workspaces[0].path: _manifest("api")})
+    engine = _Engine(
+        prune_rows={
+            "alpha": [_outcome("alpha", "old-repo", "remove")],
+            "missing": [_outcome("missing", "old-repo", "remove")],
+        }
+    )
+
+    outcomes = SyncWorkspaces(manifests, engine)(
+        workspaces,
+        prune=True,
+        skip_manifest_errors=True,
+    )
+
+    assert [(o.workspace, o.repo, o.action) for o in outcomes] == [
+        ("alpha", "api", "up-to-date"),
+        ("missing", "", "unavailable"),
+        ("alpha", "old-repo", "remove"),
+    ]
+    assert "workspace manifest unavailable: no manifest at" in outcomes[1].detail
+    assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [("alpha", "api")]
+
+
+def test_skip_manifest_errors_emits_unavailable_for_invalid_manifest(tmp_path: Path) -> None:
+    alpha = _ws(tmp_path, "alpha")
+    broken = _ws(tmp_path, "broken")
+
+    class _InvalidManifests(StubManifests):
+        def read(self, workspace_dir: Path) -> WorkspaceManifest:
+            if workspace_dir == broken.path:
+                raise ManifestError(f"invalid manifest at {broken.path}/untaped.yml: repos")
+            return super().read(workspace_dir)
+
+    engine = _Engine()
+
+    outcomes = SyncWorkspaces(_InvalidManifests({alpha.path: _manifest("api")}), engine)(
+        [alpha, broken],
+        skip_manifest_errors=True,
+    )
+
+    assert [(o.workspace, o.repo, o.action) for o in outcomes] == [
+        ("alpha", "api", "up-to-date"),
+        ("broken", "", "unavailable"),
+    ]
+    assert outcomes[1].detail == (
+        f"workspace manifest unavailable: invalid manifest at {broken.path}/untaped.yml: repos"
+    )
+    assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [("alpha", "api")]
+
+
+def test_manifest_errors_stay_strict_by_default(tmp_path: Path) -> None:
+    workspaces = [_ws(tmp_path, "missing")]
+    engine = _Engine()
+
+    with pytest.raises(WorkspaceError, match="no manifest"):
+        SyncWorkspaces(StubManifests(), engine)(workspaces)
+
     assert engine.calls == []
 
 

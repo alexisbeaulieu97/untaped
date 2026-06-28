@@ -1,16 +1,17 @@
 from pathlib import Path
 
 import pytest
-from conftest import StubGit
+from conftest import StubGit, StubManifests
 
 from untaped_workspace.application import WorkspaceStatus
 from untaped_workspace.domain import (
     Repo,
     RepoStatus,
+    StatusEntry,
     Workspace,
     WorkspaceManifest,
 )
-from untaped_workspace.errors import WorkspaceError
+from untaped_workspace.errors import ManifestError, WorkspaceError
 from untaped_workspace.infrastructure import LocalFilesystem, ManifestRepository
 
 _FS = LocalFilesystem()
@@ -28,6 +29,7 @@ def test_reports_not_cloned_when_dir_missing(tmp_path: Path) -> None:
     git = StubGit()
     entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False
+    assert entries[0].action == "status"
 
 
 def test_reports_status_for_cloned_repos(tmp_path: Path) -> None:
@@ -78,3 +80,49 @@ def test_unknown_repo_filter_raises_before_git_status(tmp_path: Path) -> None:
         WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace, only=["ghost"])
 
     assert git.events == []
+
+
+def test_skip_manifest_errors_returns_unavailable_status_row(tmp_path: Path) -> None:
+    workspace = Workspace(name="ghost", path=tmp_path / "ghost")
+
+    entries = WorkspaceStatus(StubManifests(), StubGit(), fs=_FS)(
+        workspace,
+        skip_manifest_errors=True,
+    )
+
+    assert entries == [
+        StatusEntry(
+            workspace="ghost",
+            repo="",
+            action="unavailable",
+            detail=(f"workspace manifest unavailable: no manifest at {workspace.path}/untaped.yml"),
+            cloned=False,
+        )
+    ]
+
+
+def test_skip_manifest_errors_returns_unavailable_for_invalid_manifest(tmp_path: Path) -> None:
+    workspace = Workspace(name="ghost", path=tmp_path / "ghost")
+
+    class _InvalidManifests(StubManifests):
+        def read(self, workspace_dir: Path) -> WorkspaceManifest:
+            raise ManifestError(f"invalid manifest at {workspace_dir}/untaped.yml: repos")
+
+    entries = WorkspaceStatus(_InvalidManifests(), StubGit(), fs=_FS)(
+        workspace,
+        skip_manifest_errors=True,
+    )
+
+    assert entries[0].workspace == "ghost"
+    assert entries[0].repo == ""
+    assert entries[0].action == "unavailable"
+    assert entries[0].detail == (
+        f"workspace manifest unavailable: invalid manifest at {workspace.path}/untaped.yml: repos"
+    )
+
+
+def test_manifest_error_stays_strict_by_default(tmp_path: Path) -> None:
+    workspace = Workspace(name="ghost", path=tmp_path / "ghost")
+
+    with pytest.raises(WorkspaceError, match="no manifest"):
+        WorkspaceStatus(StubManifests(), StubGit(), fs=_FS)(workspace)

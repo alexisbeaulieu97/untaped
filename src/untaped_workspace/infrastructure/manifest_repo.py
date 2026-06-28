@@ -29,7 +29,7 @@ class ManifestRepository:
         if not path.is_file():
             raise ManifestError(f"no manifest at {path} — run `untaped workspace init` first")
         try:
-            raw = yaml.safe_load(path.read_text()) or {}
+            raw = yaml.safe_load(_read_manifest_text(path)) or {}
         except yaml.YAMLError as exc:
             raise ManifestError(f"invalid YAML in {path}: {exc}") from exc
         try:
@@ -60,7 +60,7 @@ class ManifestRepository:
         if not source.is_file():
             raise ManifestError(f"manifest not found: {source}")
         try:
-            raw = yaml.safe_load(source.read_text()) or {}
+            raw = yaml.safe_load(_read_manifest_text(source)) or {}
         except yaml.YAMLError as exc:
             raise ManifestError(f"invalid YAML in {source}: {exc}") from exc
         try:
@@ -77,3 +77,10 @@ def _dump(manifest: WorkspaceManifest) -> str:
     if not data.get("defaults"):
         data.pop("defaults", None)
     return yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+
+
+def _read_manifest_text(path: Path) -> str:
+    try:
+        return path.read_text()
+    except OSError as exc:
+        raise ManifestError(f"could not read manifest at {path}: {exc}") from exc

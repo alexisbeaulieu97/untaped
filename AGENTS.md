@@ -52,7 +52,8 @@ stdin helpers, HTTP/TLS primitives, profile selection, and shared errors.
    stderr via `echo(..., err=True)`.
 10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
     registry rows start with `name`; sync/status/foreach rows start with
-    `workspace`.
+    `workspace`. Workspace-level bulk failures use `repo=""` and
+    `action="unavailable"` instead of overloading repo-level skip rows.
 11. **Row-oriented CLI output uses the SDK's `untaped.render_rows`.** Human
     `--format table` output goes through the SDK `ui_context()` so profile
     `ui:` settings and SDK built-in themes apply. Structured `json`, `yaml`, and
@@ -272,6 +273,19 @@ Other side-effecting calls (shell-out for `foreach`, editor launch for
 `infrastructure.system_adapters`:
 
 - `shell_runner` — concrete factory satisfying `application.ports.ShellRunner`
+  for `foreach`. It runs user-authored command strings with `shell=True`,
+  `stdin=DEVNULL`, captured stdout/stderr, and `start_new_session=True` on
+  POSIX so timeouts can terminate the whole process group. The CLI exposes
+  `DEFAULT_FOREACH_TIMEOUT` (600s) as `foreach --timeout N` and rejects
+  non-positive values. On timeout the adapter sends SIGTERM, waits a short
+  grace period, sends SIGKILL if needed, drains pipes, and returns a
+  `CompletedProcess`-shaped value with `returncode=124` and stderr containing
+  `timed out after <Ns>s`. This intentionally differs from `GitRunner`, which
+  raises `GitError` on timeout; `foreach` needs row-level outcomes so
+  fail-fast / continue / ignore modes all work through the same `returncode`
+  path. This cleanup is process-group best effort: deliberately daemonized
+  descendants or OS-level uninterruptible waits can still delay the final pipe
+  drain after timeout.
 - `editor_runner` — concrete factory satisfying `application.ports.EditorRunner`
 - `resolve_editor_argv(editor, *, env=None, posix=None) -> tuple[str, ...]`
   — resolves the editor selection (`--editor` / `$VISUAL` / `$EDITOR` /
@@ -340,6 +354,12 @@ regardless of mode — failures aren't silent even when ignored. The
 summary is suppressed in `--format json|yaml|raw` since each row's
 `returncode` already conveys the same information.
 
+The runner closes child stdin, so interactive commands receive EOF
+instead of blocking the entire sweep. Each repo command has a timeout
+budget (`foreach --timeout`, default 600s). Timed-out commands are
+ordinary failed rows with `returncode=124`, so the same fail-fast /
+continue / ignore modes above apply unchanged.
+
 `--parallel` (`-j`) shares `untaped.clamp_parallel` with `sync
 --all` and `awx apply`: caps at `2 * os.cpu_count()` and emits a stderr
 `warning: --parallel N clamped to M (2 * os.cpu_count()).` when the
@@ -384,7 +404,10 @@ workspaces. The scheduler reads every selected manifest up front,
 validates strict `--repo` selectors before network work, builds
 `RepoSyncJob` records with explicit output ordinals, and dispatches
 those jobs through a `ThreadPoolExecutor` when `parallel > 1`. The CLI
-still clamps `-j` through `untaped.clamp_parallel` with
+passes two orthogonal flags derived from `--all`:
+`strict_only=not all_workspaces` controls repo-selector typos, while
+`skip_manifest_errors=all_workspaces` controls stale/broken workspace
+manifests. The CLI still clamps `-j` through `untaped.clamp_parallel` with
 `cap = 2 * os.cpu_count()` and raises usage errors for values `< 1`.
 The cap is global and intentionally not host-aware in v1.
 
@@ -396,9 +419,12 @@ fetch/status/clone/pull decision tree in `RepoSyncEngine` so the
 single-workspace facade and global scheduler cannot diverge.
 
 Output order is planned, not completion-derived: workspace input
-order, unmatched selector rows first, sync rows in manifest order, and
-prune rows last. Do not sort by repo name. `--prune` is a serial
-second phase after all repo jobs finish, which avoids racing directory
+order, workspace-level `unavailable` rows where manifest reads failed,
+unmatched selector rows first, sync rows in manifest order, and prune
+rows last. Do not sort by repo name. If a workspace manifest is skipped
+as unavailable, no repo jobs are planned and no prune target is added
+for that workspace. `--prune` is a serial second phase after all repo
+jobs finish, which avoids racing directory
 iteration/deletion against in-flight clones. It scans immediate child
 git clones not declared in the manifest and calls
 `GitOperations.prune_blockers()` before deletion. Safe orphans emit
@@ -608,6 +634,14 @@ Partial-miss is also visible: `--repo repo-x --repo typo` against
 `[repo-x, repo-y]` emits a sync row for `repo-x` AND an `unmatched`
 row for `typo` — the typo doesn't get silently swallowed because a
 sibling identifier matched.
+
+`sync --all` and `status --all` also tolerate valid registry entries
+whose workspace manifests are missing, unreadable, YAML-invalid, or
+schema-invalid. They emit one workspace-level row with
+`action="unavailable"`, `repo=""`, and a detail message, then continue
+with unaffected workspaces. Do not unregister those entries
+automatically. Malformed registry entries remain hard errors because
+the registry is the index that defines the sweep.
 
 ## Shared test stubs
 

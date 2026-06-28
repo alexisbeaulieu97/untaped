@@ -11,7 +11,7 @@ from untaped_workspace.application.ports import ManifestReader
 from untaped_workspace.application.repo_selector import select_repos
 from untaped_workspace.application.sync_workspace import BareFetchTracker, RepoSyncEngine
 from untaped_workspace.domain import Repo, SyncOutcome, Workspace, WorkspaceManifest
-from untaped_workspace.errors import UnmatchedRepoFilter, WorkspaceError
+from untaped_workspace.errors import ManifestError, UnmatchedRepoFilter, WorkspaceError
 
 
 class ProgressNotify(Protocol):
@@ -68,11 +68,18 @@ class SyncWorkspaces:
         only: Sequence[str] | None = None,
         prune: bool = False,
         strict_only: bool = True,
+        skip_manifest_errors: bool = False,
         parallel: int = 1,
         bare_tracker: BareFetchTracker | None = None,
     ) -> list[SyncOutcome]:
         tracker = bare_tracker if bare_tracker is not None else BareFetchTracker()
-        plan = self._build_plan(workspaces, only=only, prune=prune, strict_only=strict_only)
+        plan = self._build_plan(
+            workspaces,
+            only=only,
+            prune=prune,
+            strict_only=strict_only,
+            skip_manifest_errors=skip_manifest_errors,
+        )
         planned: list[_PlannedOutcome] = list(plan.rows)
         unexpected: list[tuple[RepoSyncJob, Exception]] = []
         if plan.jobs:
@@ -99,6 +106,7 @@ class SyncWorkspaces:
         only: Sequence[str] | None,
         prune: bool,
         strict_only: bool,
+        skip_manifest_errors: bool,
     ) -> _SyncPlan:
         rows: list[_PlannedOutcome] = []
         jobs: list[RepoSyncJob] = []
@@ -106,7 +114,19 @@ class SyncWorkspaces:
         unmatched_errors: list[str] = []
         ordinal = 0
         for workspace in workspaces:
-            manifest = self._manifests.read(workspace.path)
+            try:
+                manifest = self._manifests.read(workspace.path)
+            except ManifestError as exc:
+                if not skip_manifest_errors:
+                    raise
+                rows.append(
+                    _PlannedOutcome(
+                        ordinal=ordinal,
+                        outcome=_unavailable_outcome(workspace, exc),
+                    )
+                )
+                ordinal += 1
+                continue
             repos, unmatched = select_repos(manifest, only)
             if unmatched and strict_only:
                 unmatched_errors.extend(unmatched)
@@ -220,4 +240,13 @@ def _unexpected_sync_error(errors: Sequence[tuple[RepoSyncJob, Exception]]) -> W
         details.append(f"{len(errors) - 3} more")
     return WorkspaceError(
         f"sync failed with unexpected error{'s' if len(errors) != 1 else ''}: " + "; ".join(details)
+    )
+
+
+def _unavailable_outcome(workspace: Workspace, exc: ManifestError) -> SyncOutcome:
+    return SyncOutcome(
+        workspace=workspace.name,
+        repo="",
+        action="unavailable",
+        detail=f"workspace manifest unavailable: {exc}",
     )

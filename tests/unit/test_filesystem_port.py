@@ -182,7 +182,7 @@ def test_foreach_uses_port_to_short_circuit_uncloned_repos() -> None:
 
     runner_calls: list[str] = []
 
-    def runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    def runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
         runner_calls.append(cmd)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 

@@ -28,7 +28,7 @@ from untaped_workspace.cli.common import (
     target_workspaces,
     workspace_settings,
 )
-from untaped_workspace.domain import SyncAction, SyncOutcome
+from untaped_workspace.domain import DEFAULT_FOREACH_TIMEOUT, SyncAction, SyncOutcome
 from untaped_workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -120,6 +120,7 @@ def sync_command(
                 only=repo,
                 prune=prune,
                 strict_only=not all_workspaces,
+                skip_manifest_errors=all_workspaces,
                 parallel=workers,
             )
         ui.message("info", _sync_summary(outcomes))
@@ -159,6 +160,15 @@ def _sync_summary(outcomes: list[SyncOutcome]) -> str:
         ("unmatched", "unmatched"),
     )
     parts = [f"{counts[action]} {label}" for action, label in action_labels if counts[action]]
+    if counts["unavailable"]:
+        repo_total = total - counts["unavailable"]
+        repo_noun = "repo" if repo_total == 1 else "repos"
+        workspace_noun = "workspace" if counts["unavailable"] == 1 else "workspaces"
+        detail = f" ({', '.join(parts)})" if parts else ""
+        return (
+            f"sync complete: {repo_total} {repo_noun}, "
+            f"{counts['unavailable']} {workspace_noun} unavailable{detail}"
+        )
     return f"sync complete: {total} {noun} ({', '.join(parts)})"
 
 
@@ -181,7 +191,7 @@ def status_command(
         rows: list[dict[str, object]] = []
         with progress_ui().progress("Gathering workspace status…"):
             for ws in targets:
-                for entry in use_case(ws, only=repo):
+                for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
                     rows.append(entry.model_dump())
         rendered = render_rows(
             rows,
@@ -236,6 +246,16 @@ def foreach_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
     repo: RepoSelectorOption = None,
+    timeout: Annotated[
+        float,
+        Parameter(
+            name="--timeout",
+            help=(
+                "Per-repo command timeout in seconds. Commands that exceed "
+                f"this return 124. Defaults to {DEFAULT_FOREACH_TIMEOUT:g}s."
+            ),
+        ),
+    ] = DEFAULT_FOREACH_TIMEOUT,
 ) -> None:
     """Run a shell command in each repo of the workspace.
 
@@ -248,6 +268,8 @@ def foreach_command(
     rows after every repo finishes — suitable for piping into ``jq``
     / ``awk`` / another ``untaped`` command.
     """
+    if timeout <= 0:
+        raise_usage("--timeout must be positive")
     with report_errors():
         ws = resolve_workspace(workspace, path)
         workers = clamp_parallel(max(parallel, 1), cap=parallel_cap(), policy="2 * os.cpu_count()")
@@ -258,6 +280,7 @@ def foreach_command(
             parallel=workers,
             continue_on_error=keep_going,
             only=repo,
+            timeout=timeout,
         )
         failed = [o.repo for o in outcomes if o.returncode != 0]
         if fmt == "table":

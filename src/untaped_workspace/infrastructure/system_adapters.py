@@ -13,14 +13,20 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
+from untaped_workspace.domain import DEFAULT_FOREACH_TIMEOUT
 from untaped_workspace.errors import WorkspaceError
 
+_FOREACH_TIMEOUT_RETURN_CODE = 124
+_FOREACH_TERMINATE_GRACE_SECONDS = 0.2
+_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
-def shell_runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+
+def shell_runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
     """Default :data:`ShellRunner`: run ``cmd`` via the shell, capture output.
 
     ``shell=True`` is intentional: ``workspace foreach`` accepts user-authored
@@ -31,7 +37,67 @@ def shell_runner(cmd: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     sanitising / argv-quoting first; ``shell=True`` makes shell injection
     (CWE-78) trivial otherwise.
     """
-    return subprocess.run(cmd, shell=True, cwd=cwd, text=True, capture_output=True, check=False)
+    process = subprocess.Popen(
+        cmd,
+        shell=True,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=os.name != "nt",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _signal_process_group(process, signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(timeout=_FOREACH_TERMINATE_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            _signal_process_group(process, _KILL_SIGNAL)
+            stdout, stderr = process.communicate()
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=_FOREACH_TIMEOUT_RETURN_CODE,
+            stdout=stdout or "",
+            stderr=_append_timeout_message(stderr or "", timeout),
+        )
+    return subprocess.CompletedProcess(
+        args=cmd,
+        returncode=_completed_returncode(process),
+        stdout=stdout or "",
+        stderr=stderr or "",
+    )
+
+
+def _completed_returncode(process: subprocess.Popen[str]) -> int:
+    # `communicate()` has completed before this helper is called, but
+    # `Popen.returncode` remains typed as optional.
+    return process.returncode if process.returncode is not None else 0
+
+
+def _signal_process_group(process: subprocess.Popen[str], sig: signal.Signals | int) -> None:
+    if os.name == "nt":
+        if sig == signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
+        return
+    try:
+        pgid = os.getpgid(process.pid)
+    except ProcessLookupError:
+        return
+    try:
+        os.killpg(pgid, sig)
+    except ProcessLookupError:
+        return
+
+
+def _append_timeout_message(stderr: str, timeout: float) -> str:
+    message = f"timed out after {timeout:g}s"
+    if stderr and not stderr.endswith("\n"):
+        return f"{stderr}\n{message}"
+    return f"{stderr}{message}"
 
 
 def editor_runner(cmd: Sequence[str]) -> int:
@@ -103,6 +169,7 @@ class LocalFilesystem:
 
 
 __all__ = [
+    "DEFAULT_FOREACH_TIMEOUT",
     "LocalFilesystem",
     "editor_runner",
     "resolve_editor_argv",

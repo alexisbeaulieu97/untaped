@@ -19,14 +19,17 @@ from untaped_workspace.domain.payloads import (
     WorkspaceDetailRow,
 )
 from untaped_workspace.domain.state import (
+    DEFAULT_FOREACH_TIMEOUT,
     ForeachOutcome,
     RepoStatus,
+    StatusAction,
     StatusEntry,
     SyncAction,
     SyncOutcome,
 )
 
 __all__ = [
+    "DEFAULT_FOREACH_TIMEOUT",
     "BareCacheEntry",
     "BranchApplyAction",
     "BranchApplyOutcome",
@@ -41,6 +44,7 @@ __all__ = [
     "ManifestSource",
     "Repo",
     "RepoStatus",
+    "StatusAction",
     "StatusEntry",
     "SyncAction",
     "SyncOutcome",

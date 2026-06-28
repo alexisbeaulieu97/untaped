@@ -28,8 +28,10 @@ untaped-workspace branch set <branch> [--workspace <ws> | --path <dir>]
 untaped-workspace branch unset [--workspace <ws> | --path <dir>]
 untaped-workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
 untaped-workspace sync [--workspace <ws> | --path <dir> | --all] [--repo <repo>]... [-j N]
-untaped-workspace status [--workspace <ws> | --path <dir>] [--repo <repo>]...
+                   [--timeout N]
+untaped-workspace status [--workspace <ws> | --path <dir> | --all] [--repo <repo>]...
 untaped-workspace foreach <cmd> [--workspace <ws> | --path <dir>] [--repo <repo>]...
+                         [--timeout N]
 untaped-workspace path <name>...
 untaped-workspace shell-init zsh
 untaped-workspace edit [--workspace <ws> | --path <dir>]
@@ -50,6 +52,14 @@ details, registry behavior, and shell helper examples.
 workspace or `--all`. Missing clones still use the central bare cache plus
 `git clone --reference`; existing clones fetch and pull their own working
 remotes without touching the cache.
+
+`sync --all` and `status --all` keep going when a registered workspace has a
+missing or invalid manifest. They emit a workspace-level `unavailable` row with
+`repo=""` and a detail message; malformed registry entries remain hard errors.
+
+`foreach` closes stdin for child commands and applies a 600s per-repo timeout by
+default. Interactive commands receive EOF, and commands that exceed the timeout
+return `124` unless `--timeout N` is raised.
 
 Prune operations protect local git work before deleting clones. `sync --prune`
 skips unsafe orphan clones, while `remove --prune` and `forget --prune` refuse

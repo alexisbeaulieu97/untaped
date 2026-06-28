@@ -281,10 +281,17 @@ Reconcile each repo on disk with the manifest:
 | `skip`       | Repo exists but on a different branch (with a reason).    |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
+| `unavailable` | `--all` hit a registered workspace whose manifest could not be read — `repo` is empty and `detail` explains the manifest failure. |
 
 `--repo <repo>` / `-r <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
 a morning routine.
+
+Under `--all`, missing, unreadable, YAML-invalid, or schema-invalid
+workspace manifests are row-level `unavailable` outcomes, not command
+failures. The row uses `repo=""` because no repo was selected or
+inspected. Malformed registry entries still abort before the sweep; the
+registry is the index and is not repaired automatically.
 
 `--timeout <seconds>` caps every git invocation in this sync run, so a
 hung remote can't strand a `--all` sweep. Defaults are 60s for
@@ -347,7 +354,11 @@ untaped-workspace status [--workspace <ws> | --path <dir>] [--all]
 ```
 
 Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
-`untracked`, and a `cloned` flag. Pipe-friendly:
+`untracked`, a `cloned` flag, and `action="status"` for normal rows.
+Under `--all`, a registered workspace whose manifest cannot be read
+emits one `action="unavailable"` row with `repo=""`, `cloned=false`,
+and a `detail` message; single-workspace status remains strict.
+Pipe-friendly:
 
 ```bash
 # Repos with upstream commits you haven't pulled
@@ -361,6 +372,7 @@ untaped-workspace status --all --format raw \
 ```bash
 untaped-workspace foreach <cmd> [--workspace <ws> | --path <dir>]
                                 [--repo <repo>]...
+                                [--timeout <seconds>]
                                 [--parallel N]
                                 [--continue-on-error | --ignore-errors]
                                 [--format json|yaml|table|raw|pipe]
@@ -373,6 +385,16 @@ repo, so chatty commands won't interleave but you also won't see
 anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 `ForeachOutcome` row per repo (with `command` and `duration_s`) for
 piping into `jq` / `awk` or another command.
+
+Child commands run with stdin closed (`DEVNULL`), so interactive
+programs receive EOF instead of hanging the sweep. Each repo command
+has a 600s timeout by default; raise it with `--timeout <seconds>` for
+long builds or test suites. A timed-out command has return code `124`
+and stderr includes `timed out after <Ns>s`; it otherwise follows the
+same fail-fast / continue / ignore rules as any non-zero command.
+Timeout cleanup is process-group best effort: deliberately daemonized
+descendants or OS-level uninterruptible waits can delay the final pipe
+drain after the timeout fires.
 
 ```bash
 untaped-workspace foreach 'git status -s' --workspace prod

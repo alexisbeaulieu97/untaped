@@ -84,10 +84,19 @@ class WorkspaceRegistryRepository:
 
 
 def _existing(state: dict[str, Any]) -> list[dict[str, Any]]:
+    if _KEY not in state:
+        return []
     raw = state.get(_KEY)
     if not isinstance(raw, list):
-        return []
-    return [e for e in raw if isinstance(e, dict)]
+        raise RegistryError("invalid workspace registry: 'workspaces' must be a list")
+    entries: list[dict[str, Any]] = []
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            raise RegistryError(
+                f"invalid workspace registry entry at index {index}: expected mapping"
+            )
+        entries.append(entry)
+    return entries
 
 
 def _to_workspace(entry: dict[str, Any]) -> Workspace:

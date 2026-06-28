@@ -13,6 +13,7 @@ from untaped_workspace.infrastructure.registry_repo import (
 )
 from untaped_workspace.infrastructure.repo_discoverer import LocalRepoDiscoverer
 from untaped_workspace.infrastructure.system_adapters import (
+    DEFAULT_FOREACH_TIMEOUT,
     LocalFilesystem,
     editor_runner,
     resolve_editor_argv,
@@ -20,6 +21,7 @@ from untaped_workspace.infrastructure.system_adapters import (
 )
 
 __all__ = [
+    "DEFAULT_FOREACH_TIMEOUT",
     "DEFAULT_SLOW_TIMEOUT",
     "DEFAULT_TIMEOUT",
     "MANIFEST_FILENAME",

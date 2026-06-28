@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from untaped_workspace.application.ports import Filesystem, ManifestReader, ShellRunner
 from untaped_workspace.application.repo_selector import select_repos
-from untaped_workspace.domain import ForeachOutcome, Repo, Workspace
+from untaped_workspace.domain import DEFAULT_FOREACH_TIMEOUT, ForeachOutcome, Repo, Workspace
 from untaped_workspace.errors import UnmatchedRepoFilter
 
 
@@ -32,6 +32,7 @@ class Foreach:
         parallel: int = 1,
         continue_on_error: bool = False,
         only: Sequence[str] | None = None,
+        timeout: float = DEFAULT_FOREACH_TIMEOUT,
     ) -> list[ForeachOutcome]:
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = select_repos(manifest, only)
@@ -39,8 +40,8 @@ class Foreach:
             raise UnmatchedRepoFilter(unmatched)
 
         if parallel <= 1:
-            return self._run_serial(workspace, repos, command, continue_on_error)
-        return self._run_parallel(workspace, repos, command, parallel, continue_on_error)
+            return self._run_serial(workspace, repos, command, continue_on_error, timeout)
+        return self._run_parallel(workspace, repos, command, parallel, continue_on_error, timeout)
 
     def _run_serial(
         self,
@@ -48,10 +49,11 @@ class Foreach:
         repos: Sequence[Repo],
         command: str,
         continue_on_error: bool,
+        timeout: float,
     ) -> list[ForeachOutcome]:
         outcomes: list[ForeachOutcome] = []
         for repo in repos:
-            outcome = self._run_one(workspace, repo, command)
+            outcome = self._run_one(workspace, repo, command, timeout)
             outcomes.append(outcome)
             if outcome.returncode != 0 and not continue_on_error:
                 break
@@ -68,10 +70,14 @@ class Foreach:
         command: str,
         parallel: int,
         continue_on_error: bool,
+        timeout: float,
     ) -> list[ForeachOutcome]:
         outcomes: list[ForeachOutcome] = []
         with ThreadPoolExecutor(max_workers=parallel) as pool:
-            futures = {pool.submit(self._run_one, workspace, repo, command): repo for repo in repos}
+            futures = {
+                pool.submit(self._run_one, workspace, repo, command, timeout): repo
+                for repo in repos
+            }
             stopping = False
             for fut in as_completed(futures):
                 if fut.cancelled():
@@ -86,7 +92,9 @@ class Foreach:
         outcomes.sort(key=lambda o: order.get(o.repo, len(order)))
         return outcomes
 
-    def _run_one(self, workspace: Workspace, repo: Repo, command: str) -> ForeachOutcome:
+    def _run_one(
+        self, workspace: Workspace, repo: Repo, command: str, timeout: float
+    ) -> ForeachOutcome:
         local = workspace.path / repo.name
         if not self._fs.is_dir(local):
             return ForeachOutcome(
@@ -100,7 +108,7 @@ class Foreach:
             )
         start = time.perf_counter()
         try:
-            completed = self._runner(command, local)
+            completed = self._runner(command, local, timeout=timeout)
         except FileNotFoundError as exc:
             return ForeachOutcome(
                 workspace=workspace.name,
