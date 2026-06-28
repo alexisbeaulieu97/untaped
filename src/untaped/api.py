@@ -46,7 +46,7 @@ from untaped.http import (
     resolve_verify,
 )
 from untaped.output import OutputFormat
-from untaped.pipe import PipeEnvelope, common_kind
+from untaped.pipe import PipeEnvelope, common_kind, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.run import build_tool_app, run_tool
@@ -109,9 +109,11 @@ __all__ = [
     "get_core_settings",
     "get_settings",
     "invalidate_settings_cache",
+    "is_envelope_line",
     "mutate_tool_state",
     "paginate_offset",
     "paginate_pages",
+    "parse_envelope_line",
     "parse_kv_pairs",
     "raise_usage",
     "read_identifiers",

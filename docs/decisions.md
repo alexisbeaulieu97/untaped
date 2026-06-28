@@ -21,7 +21,8 @@ uv tool install git+https://github.com/alexisbeaulieu97/untaped-ansible.git
 PyPI publishing is deferred, so tools currently install and depend on the SDK
 via git links rather than PyPI package names.
 
-The suite is: `github`, `jira`, `awx`, `ansible`, `workspace`, `apple-health`.
+The suite is: `github`, `jira`, `awx`, `ansible`, `workspace`, `recipe`,
+`apple-health`.
 
 Tools are versioned, installed, and released independently — possibly against
 different SDK versions — but they **share two contracts**: the
@@ -50,6 +51,18 @@ Tools pipe across separate `uv tool` environments that may run different SDK
 versions, so the envelope is a cross-tool wire contract: this freeze is what
 guarantees `untaped-github | untaped-ansible` works regardless of which SDK
 version each tool was built against.
+
+Record fields remain producer-owned, but filesystem mutation consumers need a
+generic target contract that does not require understanding another tool's
+domain. When a pipe record names a concrete filesystem target, producers put it
+in `record.target_path` as an absolute, non-empty path. Producers omit
+`target_path` when no concrete target exists; they do not emit `""` or `null` as
+a target. Domain fields such as `path`, `workspace`, `repo`, or `full_name` may
+remain for display and templating, but consumers should not branch on a
+producer-specific `kind` just to locate the target. Pipe records whose `kind`
+ends in `.summary` are informational summaries rather than filesystem targets,
+and target consumers may skip them. This is a record-level convention and does
+**not** change the v1 envelope shape.
 
 ## 4. Config format — v1 (SDK 1.x) → v2 (SDK 2.x)
 
