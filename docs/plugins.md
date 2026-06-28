@@ -54,9 +54,12 @@ requires-python = ">=3.14"
 dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
-    # No PyPI yet: depend on the SDK via a git link, pinned to a tag.
-    "untaped @ git+https://github.com/alexisbeaulieu97/untaped.git@v1.0.0",
+    # No PyPI yet: declare the SDK range and pin the git tag below.
+    "untaped>=2.4.0,<3",
 ]
+
+[tool.uv.sources]
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }
 
 [project.scripts]
 untaped-acme = "untaped_acme.__main__:main"
@@ -66,13 +69,12 @@ requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 ```
 
-When you're iterating on the SDK and the tool at the same time, add a
-**dev-only** source override so `untaped` resolves to your local checkout
-editable. This is a local convenience that does not affect what installed users
-get (they get the git-pinned dependency above):
+When you're iterating on the SDK and the tool at the same time, temporarily
+replace the `untaped` source entry with a **dev-only** local checkout. Restore
+the git tag source before releasing the tool:
 
 ```toml
-# Dev-only: work on the SDK and the tool together. Drop / ignore at release.
+# Dev-only: work on the SDK and the tool together. Restore the git tag at release.
 [tool.uv.sources]
 untaped = { path = "../untaped", editable = true }
 ```
@@ -375,14 +377,23 @@ from untaped.api import read_identifiers, read_records
 # Pull one id field out of piped records (or bare lines):
 repos = read_identifiers([], stdin=True, id_field="full_name")
 # Or the full records:
-records = read_records(stdin=True)
+records = read_records()
 ```
 
 `id_field` + `kind` are how independently-installed tools chain:
 `untaped-github search repos --format pipe | untaped-acme import --stdin`. The
 envelope shape is versioned independently of the SDK and stable across SDK 1.x
 and 2.x, so the producer and consumer need not share an SDK version.
-`PipeEnvelope` and `common_kind` are exported if you parse envelopes yourself.
+`PipeEnvelope`, `common_kind`, `is_envelope_line`, and `parse_envelope_line` are
+exported if you parse envelopes yourself.
+
+When a pipe record names a filesystem target that another tool may mutate, put
+that absolute, non-empty path in `record.target_path`. Omit `target_path` when
+no concrete target exists; do not emit `""` or `null` as a target. Keep domain
+fields in the record as needed for display and templating, but consumers should
+not need to branch on a producer-specific `kind` just to find the filesystem
+target. Pipe records whose `kind` ends in `.summary` are informational summaries,
+not filesystem targets; target consumers may skip them.
 
 ## 8. Packaging agent skills
 

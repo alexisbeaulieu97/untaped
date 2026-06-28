@@ -47,9 +47,12 @@ def main() -> None:
 # pyproject.toml
 [project]
 dependencies = [
-    # Tools depend on the SDK via a git link (PyPI publishing is deferred).
-    "untaped @ git+https://github.com/alexisbeaulieu97/untaped.git@v1.0.0",
+    # Tools declare the supported SDK range; uv pins the git tag below.
+    "untaped>=2.4.0,<3",
 ]
+
+[tool.uv.sources]
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }
 
 [project.scripts]
 untaped-mytool = "my_tool.__main__:main"
