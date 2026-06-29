@@ -36,6 +36,11 @@ def _asset(source: Path) -> SkillAsset:
     )
 
 
+def test_skill_install_scope_vocabulary_is_not_profile_vocabulary() -> None:
+    assert SkillInstallScope.global_.value == "global"
+    assert SkillInstallScope.local.value == "local"
+
+
 def test_install_skills_installs_one_skill_and_returns_metadata(tmp_path: Path) -> None:
     source = _skill_dir(tmp_path)
     target = tmp_path / "codex-skills"

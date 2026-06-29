@@ -7,8 +7,9 @@ SDK, and ship an independent CLI.
 
 The SDK gives every tool, for free:
 
-- **Config** — a shared `~/.untaped/config.yml` with SDK-owned `active:`,
-  `profiles:`, `http:`, and `ui:` sections plus one section per tool.
+- **Config** — a shared `~/.untaped/config.yml` with top-level `active:` /
+  `profiles:`, per-profile SDK `http` / `ui` settings, and each tool's own
+  profile settings plus tool-managed top-level state.
 - **Profiles** — named overlays (`dev`, `prod`, `homelab`) and a `--profile`
   root option, built in.
 - **Themes** — built-in theme presets for consistent terminal styling.
@@ -48,11 +49,11 @@ def main() -> None:
 [project]
 dependencies = [
     # Tools declare the supported SDK range; uv pins the git tag below.
-    "untaped>=2.4.0,<3",
+    "untaped>=2.4.2,<3",
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.2" }
 
 [project.scripts]
 untaped-mytool = "my_tool.__main__:main"

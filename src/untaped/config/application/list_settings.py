@@ -122,14 +122,14 @@ def _iter_leaves(
 
 def _resolve_source(
     in_env: bool,
-    scope_name: str | None,
+    profile_name: str | None,
     descriptor: FieldDescriptor,
     current: Any,
 ) -> Source:
     if in_env:
         return Source(kind="env")
-    if scope_name is not None:
-        return Source(kind="profile", profile=scope_name)
+    if profile_name is not None:
+        return Source(kind="profile", profile=profile_name)
     if current is None and not (descriptor.has_default and descriptor.default is not None):
         return Source(kind="unset")
     return Source(kind="default")

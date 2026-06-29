@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from untaped import ConfigError
-from untaped.config.application import GetSetting
+from untaped.config.application import GetSetting, ToolConfigContext
 from untaped.config.infrastructure import SettingsFileRepository
 from untaped.settings import (
     get_settings,
@@ -17,6 +17,14 @@ from untaped.settings import (
 class DemoPluginSettings(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = None
+
+
+DEMO_CONTEXT = ToolConfigContext(
+    command="untaped-demo",
+    section="demo",
+    profile_fields=frozenset(DemoPluginSettings.model_fields),
+    state_fields=frozenset({"cursor"}),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -44,6 +52,33 @@ def test_get_returns_default_profile_source_for_scoped_value(_isolate_settings: 
     assert entry.default == "INFO"
     assert entry.source.label == "profile:default"
     assert entry.profile == "default"
+
+
+def test_get_resolves_bare_tool_key_through_context(_isolate_settings: Path) -> None:
+    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      base_url: https://demo\n")
+
+    entry = GetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("base_url")
+
+    assert entry.key == "demo.base_url"
+    assert entry.value == "https://demo"
+
+
+def test_context_leaves_qualified_profile_key_unchanged() -> None:
+    assert DEMO_CONTEXT.resolve_key("demo.token") == "demo.token"
+
+
+def test_get_sdk_root_key_wins_over_tool_field_collision(_isolate_settings: Path) -> None:
+    context = ToolConfigContext(
+        command="untaped-demo",
+        section="demo",
+        profile_fields=frozenset({"log_level"}),
+        state_fields=frozenset(),
+    )
+
+    entry = GetSetting(SettingsFileRepository(), context=context)("log_level")
+
+    assert entry.key == "log_level"
+    assert entry.value == "INFO"
 
 
 def test_get_profile_setting_returns_effective_value_source_and_profile(

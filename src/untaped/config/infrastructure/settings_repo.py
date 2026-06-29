@@ -66,19 +66,19 @@ class SettingsFileRepository:
             return {}
 
     def profile_names(self) -> list[str]:
-        return active_settings_layout().scope_names(self.yaml_dict())
+        return active_settings_layout().profile_names(self.yaml_dict())
 
     def profile_data(self, name: str) -> dict[str, Any] | None:
-        return active_settings_layout().scope_data(self.yaml_dict(), name)
+        return active_settings_layout().profile_data(self.yaml_dict(), name)
 
-    def scope_value_for(self, descriptor: FieldDescriptor, profile: str) -> Any:
+    def profile_value_for(self, descriptor: FieldDescriptor, profile: str) -> Any:
         """Raw value at ``descriptor.path`` in ``profile``'s effective view.
 
         Resolves through the layout's layering (e.g. ``profiles.default``
-        beneath ``profiles.<profile>``); returns ``None`` when the scope's
+        beneath ``profiles.<profile>``); returns ``None`` when the profile's
         view doesn't set the leaf.
         """
-        effective = active_settings_layout().effective(self.yaml_dict(), scope=profile)
+        effective = active_settings_layout().effective(self.yaml_dict(), profile=profile)
         cursor: Any = effective
         for segment in descriptor.path:
             if not isinstance(cursor, dict) or segment not in cursor:
@@ -104,9 +104,9 @@ class SettingsFileRepository:
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
-            target_data, resolved = active_settings_layout().write_scope(data, profile)
+            target_data, resolved = active_settings_layout().write_profile(data, profile)
             set_at_path(target_data, descriptor.path, coerced)
-            merged = _merge_for_validation(data, scope=resolved)
+            merged = _merge_for_validation(data, profile=resolved)
             try:
                 validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
@@ -116,7 +116,7 @@ class SettingsFileRepository:
 
         mutate_config(_apply)
         # ``mutate_config`` always runs ``_apply``, which sets ``resolved`` from
-        # ``write_scope`` (always a scope name).
+        # ``write_profile`` (always a profile name).
         assert resolved is not None
         return resolved
 
@@ -134,7 +134,7 @@ class SettingsFileRepository:
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
-            target_data, resolved = active_settings_layout().write_scope(data, profile)
+            target_data, resolved = active_settings_layout().write_profile(data, profile)
             if not unset_at_path(target_data, descriptor.path):
                 return
             removed = True
@@ -142,7 +142,7 @@ class SettingsFileRepository:
             # removal that would leave the scope in a state pydantic would
             # reject surfaces here (with the offending key in the message),
             # not at next-load with an opaque traceback.
-            merged = _merge_for_validation(data, scope=resolved)
+            merged = _merge_for_validation(data, profile=resolved)
             try:
                 validate_settings_isolated(merged, self._settings_cls)
             except ValidationError as exc:
@@ -152,21 +152,21 @@ class SettingsFileRepository:
                 ) from exc
 
         mutate_config(_apply)
-        # ``write_scope`` (run inside ``_apply``, before the early return) always
-        # sets ``resolved`` to a scope name.
+        # ``write_profile`` (run inside ``_apply``, before the early return) always
+        # sets ``resolved`` to a profile name.
         assert resolved is not None
         return removed, resolved
 
 
-def _merge_for_validation(data: dict[str, Any], *, scope: str | None) -> dict[str, Any]:
-    """Resolve the config as if ``scope`` were the live one.
+def _merge_for_validation(data: dict[str, Any], *, profile: str | None) -> dict[str, Any]:
+    """Resolve the config as if ``profile`` were the live one.
 
-    Used when writing to a scope that isn't the ambient active one — the
-    schema check has to validate the target scope's view, otherwise the
-    invalid value silently lands on disk and only fails when the scope is
+    Used when writing to a profile that isn't the ambient active one — the
+    schema check has to validate the target profile's view, otherwise the
+    invalid value silently lands on disk and only fails when the profile is
     later activated.
     """
-    effective = active_settings_layout().effective(data, scope=scope)
+    effective = active_settings_layout().effective(data, profile=profile)
     splice_registered_state(data, effective)
     return effective
 

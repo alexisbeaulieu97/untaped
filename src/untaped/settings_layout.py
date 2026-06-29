@@ -25,9 +25,9 @@ class ProfilesSettingsLayout:
     resolver it delegates to) lives in core.
     """
 
-    def effective(self, raw: dict[str, Any], *, scope: str | None = None) -> dict[str, Any]:
-        """Return the effective settings values for the active (or given) scope."""
-        effective, _ = self._resolve(raw, scope)
+    def effective(self, raw: dict[str, Any], *, profile: str | None = None) -> dict[str, Any]:
+        """Return the effective settings values for the active (or given) profile."""
+        effective, _ = self._resolve(raw, profile)
         return effective
 
     def provenance(self, raw: dict[str, Any]) -> dict[tuple[str, ...], str]:
@@ -36,18 +36,18 @@ class ProfilesSettingsLayout:
         return provenance
 
     def _resolve(
-        self, raw: dict[str, Any], scope: str | None = None
+        self, raw: dict[str, Any], profile: str | None = None
     ) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
-        """Resolve effective settings + provenance for the active (or given) scope."""
-        override = scope or effective_active_profile_name(raw)
+        """Resolve effective settings + provenance for the active (or given) profile."""
+        override = profile or effective_active_profile_name(raw)
         return resolve_profiles(raw, active_override=override)
 
-    def scope_names(self, raw: dict[str, Any]) -> list[str]:
+    def profile_names(self, raw: dict[str, Any]) -> list[str]:
         """Return the selectable profile names."""
         profiles = raw.get("profiles")
         return sorted(profiles) if isinstance(profiles, dict) else []
 
-    def scope_data(self, raw: dict[str, Any], name: str) -> dict[str, Any] | None:
+    def profile_data(self, raw: dict[str, Any], name: str) -> dict[str, Any] | None:
         """Return one profile's raw values, or ``None`` when undefined."""
         profiles = raw.get("profiles")
         if not isinstance(profiles, dict):
@@ -55,7 +55,9 @@ class ProfilesSettingsLayout:
         data = profiles.get(name)
         return data if isinstance(data, dict) else None
 
-    def write_scope(self, raw: dict[str, Any], requested: str | None) -> tuple[dict[str, Any], str]:
+    def write_profile(
+        self, raw: dict[str, Any], requested: str | None
+    ) -> tuple[dict[str, Any], str]:
         """Return the target profile's dict, creating only ``default``.
 
         Any other target must already exist — this is the guardrail that

@@ -40,6 +40,9 @@ from untaped.config.application import (
     ListAllProfilesSettings,
     ListSettings,
     SetSetting,
+    SettingsReader,
+    SettingsRepository,
+    ToolConfigContext,
     UnsetSetting,
 )
 from untaped.config.domain import SettingEntry
@@ -50,7 +53,7 @@ from untaped.errors import ConfigError
 from untaped.output import OutputFormat
 from untaped.profile_resolver import classify_active_profile
 from untaped.prompts import PromptChoice
-from untaped.settings import Settings, get_settings, legacy_flat_sections, resolve_config_path
+from untaped.settings import get_settings, legacy_flat_sections, resolve_config_path
 from untaped.theme import BUILTIN_THEMES
 from untaped.tool import ToolSpec
 from untaped.ui import UiContext, ui_context
@@ -60,26 +63,19 @@ from untaped.ui import UiContext, ui_context
 class _Ctx:
     """Per-tool context captured by the config command closures."""
 
-    command: str
-    section: str
-    section_fields: frozenset[str]
-    state_fields: frozenset[str]
+    config: ToolConfigContext
 
-    def repo(self) -> SettingsFileRepository:
+    @property
+    def command(self) -> str:
+        return self.config.command
+
+    def repo(self) -> SettingsRepository:
         return SettingsFileRepository()
 
 
 def build_config_app(spec: ToolSpec) -> Any:
     """Return the cyclopts ``config`` command group for ``spec``."""
-    state_fields = (
-        frozenset(spec.state_model.model_fields) if spec.state_model is not None else frozenset()
-    )
-    ctx = _Ctx(
-        command=spec.command,
-        section=spec.section,
-        section_fields=frozenset(spec.profile_model.model_fields),
-        state_fields=state_fields,
-    )
+    ctx = _Ctx(config=ToolConfigContext.from_spec(spec))
     app = create_app(name="config", help="Inspect and modify ``~/.untaped/config.yml``.")
 
     @app.command(name="list")
@@ -169,25 +165,6 @@ def build_config_app(spec: ToolSpec) -> Any:
     return app
 
 
-def _resolve_key(ctx: _Ctx, key: str) -> str:
-    """Map a user key to its fully-qualified config key.
-
-    Bare keys naming the tool's own section field are prefixed with the tool's
-    section; SDK-owned roots (``log_level``, ``http.*``, ``ui.*`` — the base
-    fields on :class:`~untaped.settings.Settings`) pass through, taking
-    precedence over a tool field of the same name. Keys naming a tool-managed
-    state field are rejected.
-    """
-    first = key.split(".", 1)[0]
-    if first in Settings.model_fields:
-        return key
-    if first in ctx.state_fields:
-        raise ConfigError(f"{key!r} is managed by {ctx.command} and is not a configurable setting")
-    if first in ctx.section_fields:
-        return f"{ctx.section}.{key}"
-    return key
-
-
 def _list(
     ctx: _Ctx,
     *,
@@ -208,8 +185,7 @@ def _list(
 
 def _get(ctx: _Ctx, key: str, *, fmt: OutputFormat, show_secrets: bool) -> None:
     with report_errors():
-        full = _resolve_key(ctx, key)
-        entry = GetSetting(ctx.repo())(full, reveal_secrets=show_secrets)
+        entry = GetSetting(ctx.repo(), context=ctx.config)(key, reveal_secrets=show_secrets)
         echo(_render_detail(_entry_to_row(entry), fmt=fmt))
 
 
@@ -223,26 +199,25 @@ def _set(
     prompt: bool,
 ) -> None:
     with report_errors():
-        full = _resolve_key(ctx, key)
         repo = ctx.repo()
+        full = ctx.config.resolve_key(key)
         resolved_value = _resolve_set_value(
             full, value, stdin=stdin, prompt=prompt, repo=repo, target_profile=target_profile
         )
-        target = SetSetting(repo)(full, resolved_value, profile=target_profile)
-        message = f"set {full} in profile {target} (config: {resolve_config_path()})"
+        result = SetSetting(repo, context=ctx.config)(key, resolved_value, profile=target_profile)
+        message = f"set {result.key} in profile {result.profile} (config: {resolve_config_path()})"
         ui_context(strict=False).message("success", message)
 
 
 def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
     with report_errors():
-        full = _resolve_key(ctx, key)
-        removed, target = UnsetSetting(ctx.repo())(full, profile=target_profile)
+        result = UnsetSetting(ctx.repo(), context=ctx.config)(key, profile=target_profile)
         ui = ui_context(strict=False)
-        where = f"in profile {target}"
-        if removed:
-            ui.message("success", f"unset {full} {where}")
+        where = f"in profile {result.profile}"
+        if result.removed:
+            ui.message("success", f"unset {result.key} {where}")
         else:
-            ui.message("info", f"{full} was not set {where}")
+            ui.message("info", f"{result.key} was not set {where}")
 
 
 def _warn_legacy_flat(ui: UiContext, raw: Mapping[str, Any]) -> None:
@@ -300,7 +275,7 @@ def _resolve_set_value(
     *,
     stdin: bool,
     prompt: bool,
-    repo: SettingsFileRepository,
+    repo: SettingsReader,
     target_profile: str | None,
 ) -> str:
     choices = (("VALUE", value is not None), ("--stdin", stdin), ("--prompt", prompt))
@@ -328,9 +303,7 @@ def _read_stdin_value() -> str:
     return value
 
 
-def _prompt_value(
-    full_key: str, repo: SettingsFileRepository, *, target_profile: str | None
-) -> str:
+def _prompt_value(full_key: str, repo: SettingsReader, *, target_profile: str | None) -> str:
     descriptor = repo.descriptor(full_key)
     message = f"Value for {full_key}"
     ui = ui_context(strict=False)
@@ -363,7 +336,7 @@ def _prompt_value(
 def _prompt_default(
     full_key: str,
     descriptor: FieldDescriptor,
-    repo: SettingsFileRepository,
+    repo: SettingsReader,
     *,
     target_profile: str | None,
 ) -> str | None:
@@ -372,7 +345,7 @@ def _prompt_default(
     entry = GetSetting(repo)(full_key)
     value = str(entry.value)
     if target_profile is not None and entry.source.kind != "env":
-        scoped = repo.scope_value_for(descriptor, target_profile)
+        scoped = repo.profile_value_for(descriptor, target_profile)
         value = (
             display_default(descriptor)
             if scoped is None

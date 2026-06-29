@@ -69,11 +69,11 @@ pinned to a tag. In the tool's `pyproject.toml`:
 [project]
 dependencies = [
   "cyclopts>=4.16.0,<5",
-  "untaped>=2.4.0,<3",
+  "untaped>=2.4.2,<3",
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.2" }
 
 [project.scripts]
 untaped-github = "untaped_github.__main__:main"
