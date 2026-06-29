@@ -36,10 +36,7 @@ from untaped.skills import (
     SkillStdinOption,
     SkillTargetDirOption,
     SkillTargetOption,
-    _install_skill,
-    _install_targets,
-    _plan_install,
-    _selected_skill_names,
+    install_skills,
     skill_rows,
 )
 from untaped.tool import ToolSpec
@@ -118,27 +115,20 @@ def _install(
     target_dir: Path | None,
 ) -> None:
     with report_errors():
-        selected_names = _selected_skill_names(
+        install_skills(
             skills,
             skill_names,
             stdin=stdin,
             all_skills=all_skills,
-        )
-        targets = _install_targets(
-            target,
+            target=target,
+            force=force,
             scope=scope,
             project_dir=project_dir,
             target_dir=target_dir,
+            on_installed=lambda result: ui_context(strict=False).message(
+                "success", f"installed skill: {result.name}"
+            ),
         )
-        install_plan = _plan_install(skills, selected_names, targets, force=force)
-        for asset, target_destination, destination in install_plan:
-            _install_skill(
-                asset,
-                target_destination=target_destination,
-                destination=destination,
-                force=force,
-            )
-            ui_context(strict=False).message("success", f"installed skill: {asset.name}")
 
 
 __all__ = ["build_skills_app"]

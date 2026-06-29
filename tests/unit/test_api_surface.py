@@ -126,3 +126,14 @@ def test_api_exposes_get_settings_for_root_option_handlers() -> None:
     api = importlib.import_module("untaped.api")
     assert callable(api.get_settings)
     assert callable(api.invalidate_settings_cache)
+
+
+def test_skills_install_transaction_stays_off_public_api() -> None:
+    """The install transaction is module-internal SDK plumbing, not tool API."""
+    import untaped
+
+    api = importlib.import_module("untaped.api")
+    assert "install_skills" not in api.__all__
+    assert not hasattr(api, "install_skills")
+    assert "install_skills" not in untaped.__all__
+    assert not hasattr(untaped, "install_skills")

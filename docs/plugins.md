@@ -402,7 +402,7 @@ Ship agent skills as `SkillAsset`s in your `ToolSpec` (each is a `name`,
 each tool ships its own. Users install yours with:
 
 ```bash
-untaped-acme skills install
+untaped-acme skills install untaped-acme --target codex
 ```
 
 `run_tool` mounts the `skills` group (`list` / `install`) onto your app

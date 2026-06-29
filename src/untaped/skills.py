@@ -11,11 +11,12 @@ import os
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Protocol
+from uuid import uuid4
 
 from cyclopts import Parameter
 
@@ -62,6 +63,17 @@ class SkillInstallDestination:
     target: str
     scope: SkillInstallScope
     root: Path
+
+
+@dataclass(frozen=True)
+class SkillInstallResult:
+    """One committed skill installation."""
+
+    name: str
+    target: str
+    scope: SkillInstallScope
+    root: Path
+    destination: Path
 
 
 SkillNamesArgument = Annotated[
@@ -121,6 +133,47 @@ def skill_rows(skills: Mapping[str, InstallableSkill]) -> list[dict[str, object]
         }
         for spec in sorted(skills.values(), key=lambda item: item.name)
     ]
+
+
+def install_skills(
+    skills: Mapping[str, InstallableSkill],
+    skill_names: list[str],
+    *,
+    stdin: bool,
+    all_skills: bool,
+    target: SkillInstallTarget,
+    force: bool,
+    scope: SkillInstallScope,
+    project_dir: Path | None,
+    target_dir: Path | None,
+    on_installed: Callable[[SkillInstallResult], None] | None = None,
+) -> list[SkillInstallResult]:
+    """Install selected skills after validating the full plan up front."""
+    selected_names = _selected_skill_names(
+        skills,
+        skill_names,
+        stdin=stdin,
+        all_skills=all_skills,
+    )
+    targets = _install_targets(
+        target,
+        scope=scope,
+        project_dir=project_dir,
+        target_dir=target_dir,
+    )
+    install_plan = _plan_install(skills, selected_names, targets, force=force)
+    results: list[SkillInstallResult] = []
+    for asset, target_destination, destination in install_plan:
+        result = _install_skill(
+            asset,
+            target_destination=target_destination,
+            destination=destination,
+            force=force,
+        )
+        results.append(result)
+        if on_installed is not None:
+            on_installed(result)
+    return results
 
 
 def _selected_skill_names(
@@ -223,14 +276,11 @@ def _install_skill(
     target_destination: SkillInstallDestination,
     destination: Path,
     force: bool,
-) -> None:
-    if destination.exists() and not force:
-        raise ConfigError(f"skill already exists: {spec.name}")
+) -> SkillInstallResult:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    # Stage the full copy beside the destination, then swap it in atomically:
-    # the old skill is removed only after the new one is fully built, so a
-    # mid-copy failure never destroys an existing install (mirrors the
-    # tmp + os.replace idiom in config_file.write_config_dict).
+    # Stage beside the final destination, then place by rename. Forced
+    # replacements move the old install aside first so an interrupted replace
+    # cannot leave a half-deleted destination.
     stage = Path(tempfile.mkdtemp(dir=destination.parent, prefix=f".{destination.name}.tmp-"))
     try:
         staged_skill = stage / destination.name
@@ -253,11 +303,43 @@ def _install_skill(
             )
             + "\n"
         )
-        if destination.exists():
-            shutil.rmtree(destination)
-        os.replace(staged_skill, destination)
+        _place_staged_skill(staged_skill, destination, force=force)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+    return SkillInstallResult(
+        name=spec.name,
+        target=target_destination.target,
+        scope=target_destination.scope,
+        root=target_destination.root,
+        destination=destination,
+    )
+
+
+def _place_staged_skill(staged_skill: Path, destination: Path, *, force: bool) -> None:
+    if not destination.exists():
+        os.replace(staged_skill, destination)
+        return
+    # Existing destinations only reach placement after _plan_install accepts
+    # force=True; non-force conflicts are a preflight ConfigError.
+    assert force
+    backup = _backup_path(destination)
+    os.replace(destination, backup)
+    try:
+        os.replace(staged_skill, destination)
+    except BaseException as placement_error:
+        # Catch BaseException so KeyboardInterrupt/SystemExit during the swap
+        # still attempt to restore the old install before being re-raised.
+        if not destination.exists() and backup.exists():
+            try:
+                os.replace(backup, destination)
+            except BaseException as restore_error:
+                raise placement_error from restore_error
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+
+
+def _backup_path(destination: Path) -> Path:
+    return destination.parent / f".{destination.name}.backup-{uuid4().hex}"
 
 
 def _codex_destination(
