@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from untaped.testing import CliInvoker
 from untaped.tool import SkillAsset, ToolSpec
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class _Profile(BaseModel):
@@ -52,6 +55,17 @@ def _spec(*assets: SkillAsset) -> ToolSpec:
     )
 
 
+def test_skills_app_does_not_import_private_skills_helpers() -> None:
+    source = REPO_ROOT.joinpath("src", "untaped", "skills_app.py").read_text()
+    tree = ast.parse(source)
+    private_imports: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "untaped.skills":
+            private_imports.extend(alias.name for alias in node.names if alias.name.startswith("_"))
+
+    assert private_imports == []
+
+
 def test_skills_list_raw_defaults_to_skill_names(tmp_path: Path) -> None:
     app = build_skills_app(_spec(_asset(_skill_dir(tmp_path))))
 
@@ -82,6 +96,8 @@ def test_skills_install_copies_skill_directory_and_marker(tmp_path: Path) -> Non
     )
 
     assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "installed skill: untaped-demo" in result.stderr
     installed = project / ".claude" / "skills" / "untaped-demo"
     assert installed.joinpath("SKILL.md").read_text() == source.joinpath("SKILL.md").read_text()
     assert installed.joinpath("references", "commands.md").read_text() == "# Commands\n"
@@ -93,7 +109,16 @@ def test_skills_install_copies_skill_directory_and_marker(tmp_path: Path) -> Non
         "source": str(source),
         "target": "claude",
     }
-    assert "installed skill: untaped-demo" in result.output
+
+
+def test_skills_install_without_selector_is_usage_error(tmp_path: Path) -> None:
+    app = build_skills_app(_spec(_asset(_skill_dir(tmp_path))))
+
+    result = CliInvoker().invoke(app, ["install"])
+
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "provide skill names, --stdin, or --all" in result.stderr
 
 
 def test_skills_install_all_installs_every_skill(tmp_path: Path) -> None:
@@ -108,8 +133,24 @@ def test_skills_install_all_installs_every_skill(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert result.stderr.count("installed skill:") == 2
     assert target.joinpath("untaped-one", "SKILL.md").is_file()
     assert target.joinpath("untaped-two", "SKILL.md").is_file()
+
+
+def test_skills_install_multiple_selectors_are_rejected(tmp_path: Path) -> None:
+    app = build_skills_app(_spec(_asset(_skill_dir(tmp_path))))
+    target = tmp_path / "codex-skills"
+
+    result = CliInvoker().invoke(
+        app,
+        ["install", "untaped-demo", "--all", "--target", "codex", "--target-dir", str(target)],
+    )
+
+    assert result.exit_code == 1
+    assert "provide skill names, --stdin, or --all; not more than one" in result.stderr
+    assert not target.exists()
 
 
 def test_skills_install_unknown_name_is_rejected(tmp_path: Path) -> None:
