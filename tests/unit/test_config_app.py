@@ -71,9 +71,9 @@ def app(_isolated_config: Path):
 
 @pytest.fixture
 def scoped_app(_isolated_config: Path):
-    """A github config app over the default scoped ``ProfilesSettingsLayout``.
+    """A github config app over the default profile-aware ``ProfilesSettingsLayout``.
 
-    The layout is scoped by default now, so named scopes work and
+    The layout is profile-aware by default now, so named profiles work and
     ``--target-profile`` / ``--all-profiles`` resolve against real profiles.
     """
     register_tool(GH_SPEC)
@@ -204,7 +204,7 @@ def test_set_target_profile_writes_named_profile(scoped_app, _isolated_config: P
     assert data["profiles"]["default"] == {}
 
 
-def test_set_target_profile_unknown_scope_errors(scoped_app, _isolated_config: Path) -> None:
+def test_set_target_profile_unknown_profile_errors(scoped_app, _isolated_config: Path) -> None:
     _isolated_config.write_text("profiles:\n  default: {}\n", encoding="utf-8")
     get_settings.cache_clear()
     result = CliInvoker().invoke(scoped_app, ["set", "token", "x", "--target-profile", "ghost"])
@@ -212,7 +212,7 @@ def test_set_target_profile_unknown_scope_errors(scoped_app, _isolated_config: P
     assert "ghost" in result.output
 
 
-def test_set_target_profile_unknown_scope_on_default_layout_errors(
+def test_set_target_profile_unknown_profile_on_default_layout_errors(
     app, _isolated_config: Path
 ) -> None:
     # The profiles layout is the SDK default, so --target-profile is always
