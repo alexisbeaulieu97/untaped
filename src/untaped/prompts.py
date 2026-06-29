@@ -223,62 +223,6 @@ def prompt_style_from_roles(color_roles: dict[str, str]) -> Style:
     )
 
 
-def confirm(message: str, *, default: bool = False) -> bool:
-    """Prompt for a yes/no response using the active UI context."""
-    from untaped.ui import ui_context  # noqa: PLC0415
-
-    return ui_context(strict=False).confirm(message, default=default)
-
-
-def text(message: str, *, default: str | None = None, required: bool = True) -> str:
-    """Prompt for visible text using the active UI context."""
-    from untaped.ui import ui_context  # noqa: PLC0415
-
-    return ui_context(strict=False).text(message, default=default, required=required)
-
-
-def secret(message: str, *, confirmation: bool = False, required: bool = True) -> str:
-    """Prompt for hidden text using the active UI context."""
-    from untaped.ui import ui_context  # noqa: PLC0415
-
-    return ui_context(strict=False).secret(
-        message,
-        confirmation=confirmation,
-        required=required,
-    )
-
-
-def select[T](
-    message: str,
-    choices: Sequence[PromptChoice[T]],
-    *,
-    default: T | None = None,
-    search: bool = False,
-) -> T:
-    """Prompt for one typed choice using the active UI context."""
-    from untaped.ui import ui_context  # noqa: PLC0415
-
-    return ui_context(strict=False).select(message, choices, default=default, search=search)
-
-
-def multiselect[T](
-    message: str,
-    choices: Sequence[PromptChoice[T]],
-    *,
-    defaults: Sequence[T] | None = None,
-    min_count: int = 0,
-) -> list[T]:
-    """Prompt for multiple typed choices using the active UI context."""
-    from untaped.ui import ui_context  # noqa: PLC0415
-
-    return ui_context(strict=False).multiselect(
-        message,
-        choices,
-        defaults=defaults,
-        min_count=min_count,
-    )
-
-
 def handle_prompt_exception(exc: BaseException) -> ConfigError:
     """Convert terminal prompt cancellation into a user-facing config error."""
     if isinstance(exc, (EOFError, KeyboardInterrupt)):

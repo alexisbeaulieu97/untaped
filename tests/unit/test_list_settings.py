@@ -199,7 +199,7 @@ def test_bare_write_lands_under_default_profile(
     """A scope-less write resolves to ``profiles.default`` under the default
     layout, and targeting a profile that doesn't exist is rejected.
 
-    (Rewritten from ``test_repo_rejects_write_scope_in_flat_mode``: the flat
+    (Rewritten from ``test_repo_rejects_write_profile_in_flat_mode``: the flat
     layout it relied on no longer exists, so its rejection assertion is
     obsolete. The remaining guardrail is that an unknown target profile is
     refused; the new default behaviour is that a bare key lands in
@@ -222,10 +222,10 @@ def test_bare_write_lands_under_default_profile(
     assert written == {"profiles": {"default": {"log_level": "DEBUG"}}}
 
 
-class TestScopedLayoutListing:
+class TestProfileLayoutListing:
     """Listing against the default scoped ``ProfilesSettingsLayout``."""
 
-    def test_value_from_active_scope_is_attributed_to_it(
+    def test_value_from_active_profile_is_attributed_to_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         cfg = tmp_path / "config.yml"
@@ -243,7 +243,7 @@ class TestScopedLayoutListing:
         assert entries["log_level"].source.label == "profile:prod"
         assert entries["log_level"].value == "WARNING"
 
-    def test_all_profiles_shows_one_row_per_scope_and_key(
+    def test_all_profiles_shows_one_row_per_profile_and_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         cfg = tmp_path / "config.yml"

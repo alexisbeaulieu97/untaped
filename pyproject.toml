@@ -1,6 +1,6 @@
 [project]
 name = "untaped"
-version = "2.4.1"
+version = "2.4.2"
 description = "A batteries-included CLI framework for building standalone DevOps tools."
 readme = "README.md"
 authors = [

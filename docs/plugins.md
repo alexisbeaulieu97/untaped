@@ -55,11 +55,11 @@ dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
     # No PyPI yet: declare the SDK range and pin the git tag below.
-    "untaped>=2.4.0,<3",
+    "untaped>=2.4.2,<3",
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.2" }
 
 [project.scripts]
 untaped-acme = "untaped_acme.__main__:main"

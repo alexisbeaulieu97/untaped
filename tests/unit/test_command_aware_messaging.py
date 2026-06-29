@@ -45,8 +45,8 @@ def test_missing_setting_error_without_tool_uses_placeholder(_isolated_config: P
     assert "untaped config set github.token" not in msg
 
 
-def test_write_scope_hint_names_tool_command(_isolated_config: Path) -> None:
+def test_write_profile_hint_names_tool_command(_isolated_config: Path) -> None:
     _register()
     with pytest.raises(ConfigError) as exc:
-        ProfilesSettingsLayout().write_scope({"profiles": {"default": {}}}, "nope")
+        ProfilesSettingsLayout().write_profile({"profiles": {"default": {}}}, "nope")
     assert "untaped-github profile create" in str(exc.value)
