@@ -213,8 +213,10 @@ def test_release_workflow_creates_github_release_only_after_production_smoke() -
     _, workflow = _load_release_workflow()
 
     release = _step(workflow, "Create GitHub release", job_name=GITHUB_RELEASE_JOB)
-    assert "gh release create" in str(release["run"])
-    assert "v$RELEASE_VERSION" in str(release["run"])
+    run = str(release["run"])
+    assert "gh release create" in run
+    assert ' --repo "$GITHUB_REPOSITORY"' in run
+    assert "v$RELEASE_VERSION" in run
 
 
 def test_release_workflow_reports_burn_recovery_after_upload_failures() -> None:
