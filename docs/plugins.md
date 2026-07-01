@@ -55,11 +55,11 @@ dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
     # No PyPI yet: declare the SDK range and pin the git tag below.
-    "untaped>=2.4.2,<3",
+    "untaped>=2.4.3,<3",
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.2" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.3" }
 
 [project.scripts]
 untaped-acme = "untaped_acme.__main__:main"
@@ -267,10 +267,12 @@ Key conventions, all from the github tool:
   cursor-style loop (`fetch` maps a cursor to `(items, next_cursor)`);
   `paginate_offset(http, "GET", path, item_key=..., limit=...)` walks
   `startAt`/`maxResults`-style offset envelopes. Both honor a `limit` and guard
-  against non-converging paginators. `paginate_offset` also forwards a per-call
-  `retry=` to each page fetch (default inherits the client's policy), so an
-  idempotent `POST` collection such as a JQL search can opt that one endpoint
-  into retry by passing a POST-inclusive `RetryPolicy`.
+  against non-converging paginators. Offset endpoints must return a JSON object
+  envelope for both `GET` and `POST`; a malformed array/scalar envelope raises
+  `HttpError` instead of being treated as an empty page. `paginate_offset` also
+  forwards a per-call `retry=` to each page fetch (default inherits the client's
+  policy), so an idempotent `POST` collection such as a JQL search can opt that
+  one endpoint into retry by passing a POST-inclusive `RetryPolicy`.
 
 - **Render with `render_rows`.** It takes `fmt` (`--format`), `columns`
   (`--columns`), an optional `empty` hint, and a `kind` tag for pipe records.

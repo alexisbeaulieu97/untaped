@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from untaped import (
     HttpError,
+    HttpTransportError,
     UntapedError,
     clamp_parallel,
     create_app,
@@ -464,6 +465,37 @@ def test_format_error_keeps_raw_body_under_verbose(monkeypatch: pytest.MonkeyPat
     output = result.output or result.stderr
     assert "— Bad credentials" in output
     assert "response:" in output
+
+
+def test_format_error_adds_transport_url_when_message_omits_it() -> None:
+    app = create_app(name="test")
+
+    @app.default
+    def boom() -> None:
+        with report_errors():
+            raise HttpTransportError("connection failed", url="https://api.example.test/x")
+
+    result = CliInvoker().invoke(app, [])
+    output = result.output or result.stderr
+    assert result.exit_code == 1
+    assert "error: connection failed for https://api.example.test/x" in output
+
+
+def test_format_error_does_not_duplicate_transport_url() -> None:
+    app = create_app(name="test")
+
+    @app.default
+    def boom() -> None:
+        with report_errors():
+            raise HttpTransportError(
+                "connection failed for https://api.example.test/x",
+                url="https://api.example.test/x",
+            )
+
+    result = CliInvoker().invoke(app, [])
+    output = result.output or result.stderr
+    assert result.exit_code == 1
+    assert output.count("https://api.example.test/x") == 1
 
 
 # ---- --columns ? discoverability -------------------------------------------

@@ -49,11 +49,11 @@ def main() -> None:
 [project]
 dependencies = [
     # Tools declare the supported SDK range; uv pins the git tag below.
-    "untaped>=2.4.2,<3",
+    "untaped>=2.4.3,<3",
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.2" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.3" }
 
 [project.scripts]
 untaped-mytool = "my_tool.__main__:main"

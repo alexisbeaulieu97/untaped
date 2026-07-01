@@ -275,15 +275,7 @@ class HttpClient:
         ``no-any-return`` at the seam.
         """
         response = self.request("GET", path, **kwargs)
-        body = _decode_json(response)
-        if not isinstance(body, dict):
-            raise HttpError(
-                f"expected JSON object from {response.request.url}, got {type(body).__name__}",
-                status_code=response.status_code,
-                url=str(response.request.url),
-                body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
-            )
-        return body
+        return _decode_json_dict(response)
 
     def get_json_list(self, path: str, **kwargs: Any) -> list[Any]:
         """GET ``path`` and assert the JSON body decodes to an array.
@@ -352,6 +344,18 @@ def _decode_json(response: httpx.Response) -> Any:
             url=str(response.request.url),
             body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
         ) from exc
+
+
+def _decode_json_dict(response: httpx.Response) -> dict[str, Any]:
+    body = _decode_json(response)
+    if not isinstance(body, dict):
+        raise HttpError(
+            f"expected JSON object from {response.request.url}, got {type(body).__name__}",
+            status_code=response.status_code,
+            url=str(response.request.url),
+            body=_body_snippet(response, _BODY_SNIPPET_LIMIT),
+        )
+    return body
 
 
 # --------------------------------------------------------------------------- #
@@ -530,7 +534,8 @@ def _fetch_offset_page(
 ) -> Any:
     if method == "GET":
         return http.get_json_dict(path, params={**(params or {}), **window}, retry=retry)
-    return http.request_json("POST", path, json={**(body or {}), **window}, retry=retry)
+    response = http.request("POST", path, json={**(body or {}), **window}, retry=retry)
+    return _decode_json_dict(response)
 
 
 def _offset_pages_exhausted(
