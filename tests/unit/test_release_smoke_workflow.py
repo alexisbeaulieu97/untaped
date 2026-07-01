@@ -17,7 +17,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-smoke.yml"
-WORKFLOWS = [CI_WORKFLOW, WORKFLOW]
+RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
+WORKFLOWS = [CI_WORKFLOW, WORKFLOW, RELEASE_WORKFLOW]
 FULL_SHA_ACTION_RE = re.compile(r"@[0-9a-f]{40}$")
 EXPECTED_UV_VERSION = "0.11.19"
 SMOKE_JOB = "sdk-wheel-smoke"

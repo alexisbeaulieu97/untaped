@@ -1,0 +1,255 @@
+name: Release
+
+"on":
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, without leading v.
+        required: true
+        type: string
+      index:
+        description: Package index to publish to.
+        required: true
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.index }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.19"
+          enable-cache: true
+
+      - name: Cache pre-commit hook envs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Guard production publish
+        if: inputs.index == 'pypi'
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Production PyPI publishes must run from refs/heads/main; got $GITHUB_REF."
+            exit 1
+          fi
+
+      - name: Sync workspace
+        run: uv sync --frozen --all-packages
+
+      - name: Verify release version
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          import os
+          import re
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          expected = os.environ["RELEASE_VERSION"]
+          if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z0-9][A-Za-z0-9._+-]*)?", expected) is None:
+              print(f"error: unsafe or invalid release version input: {expected!r}", file=sys.stderr)
+              sys.exit(1)
+
+          version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          if version != expected:
+              print(f"error: workflow input version {expected!r} does not match pyproject.toml {version!r}", file=sys.stderr)
+              sys.exit(1)
+          print(f"ok: package metadata version matches workflow input {expected}")
+          PY
+
+      - name: Verify production release target is unused
+        if: inputs.index == 'pypi'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "v$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "::error::GitHub release v$RELEASE_VERSION already exists."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "::error::Git tag v$RELEASE_VERSION already exists on origin."
+            exit 1
+          fi
+
+      - name: Pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
+      - name: mypy
+        run: uv run mypy
+
+      - name: Pytest
+        env:
+          TERM: dumb
+          NO_COLOR: "1"
+          COLUMNS: "200"
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build --no-sources
+
+      - name: Smoke local wheel
+        run: |
+          set -euo pipefail
+          uv venv --python 3.14 "$RUNNER_TEMP/local-wheel"
+          uv pip install --python "$RUNNER_TEMP/local-wheel/bin/python" dist/*.whl
+
+          if [ -e "$RUNNER_TEMP/local-wheel/bin/untaped" ]; then
+            echo "error: the SDK wheel installed an 'untaped' console script; the central command is retired" >&2
+            exit 1
+          fi
+
+          "$RUNNER_TEMP/local-wheel/bin/python" - <<'PY'
+          import untaped
+          import untaped.api
+
+          assert untaped.__all__ == untaped.api.__all__, "root/api surface drift"
+          for name in ("ToolSpec", "SkillAsset", "run_tool", "build_tool_app", "app_context"):
+              assert hasattr(untaped.api, name), f"missing SDK surface: {name}"
+          print(f"ok: {len(untaped.api.__all__)} public names, no console script")
+          PY
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: python-package-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.index }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish package to TestPyPI
+        if: inputs.index == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        with:
+          packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
+          print-hash: true
+          attestations: true
+
+      - name: Publish package to PyPI
+        if: inputs.index == 'pypi'
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        with:
+          packages-dir: dist/
+          print-hash: true
+          attestations: true
+
+  smoke-published:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      RELEASE_INDEX: ${{ inputs.index }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+        with:
+          version: "0.11.19"
+          enable-cache: true
+
+      - name: Smoke published package
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_INDEX" = "testpypi" ]; then
+            export UV_INDEX=https://test.pypi.org/simple/
+            export UV_INDEX_STRATEGY=unsafe-best-match
+          fi
+
+          published_venv="$RUNNER_TEMP/published-wheel"
+          installed=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            rm -rf "$published_venv"
+            uv venv --python 3.14 "$published_venv"
+            if uv pip install --python "$published_venv/bin/python" --refresh-package untaped "untaped==$RELEASE_VERSION"; then
+              installed=1
+              break
+            fi
+            echo "Package not visible on $RELEASE_INDEX yet; retry $attempt/12."
+            sleep 10
+          done
+
+          if [ "$installed" != "1" ]; then
+            echo "::error::Published package smoke failed. The version may be burned if upload succeeded; bump patch before retrying."
+            exit 1
+          fi
+
+          if [ -e "$published_venv/bin/untaped" ]; then
+            echo "::error::The published SDK installed an 'untaped' console script; the central command is retired."
+            echo "::error::The version may be burned if upload succeeded; bump patch before retrying."
+            exit 1
+          fi
+
+          "$published_venv/bin/python" - <<'PY'
+          import untaped
+          import untaped.api
+
+          assert untaped.__all__ == untaped.api.__all__, "root/api surface drift"
+          for name in ("ToolSpec", "SkillAsset", "run_tool", "build_tool_app", "app_context"):
+              assert hasattr(untaped.api, name), f"missing SDK surface: {name}"
+          print(f"ok: published SDK exposes {len(untaped.api.__all__)} public names")
+          PY
+
+  github-release:
+    needs: smoke-published
+    if: inputs.index == 'pypi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "v$RELEASE_VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "untaped v$RELEASE_VERSION" \
+            --notes "PyPI release for untaped $RELEASE_VERSION."
