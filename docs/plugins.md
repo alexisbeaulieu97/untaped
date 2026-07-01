@@ -54,12 +54,8 @@ requires-python = ">=3.14"
 dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
-    # No PyPI yet: declare the SDK range and pin the git tag below.
-    "untaped>=2.4.3,<3",
+    "untaped>=2.4.4,<3",
 ]
-
-[tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.3" }
 
 [project.scripts]
 untaped-acme = "untaped_acme.__main__:main"
@@ -70,11 +66,13 @@ build-backend = "uv_build"
 ```
 
 When you're iterating on the SDK and the tool at the same time, temporarily
-replace the `untaped` source entry with a **dev-only** local checkout. Restore
-the git tag source before releasing the tool:
+add a **dev-only** local checkout source. Suite repos may instead keep a git
+tag source that matches their declared SDK floor so CI exercises the exact SDK
+tag while package metadata still resolves from PyPI when built with
+`uv build --no-sources`:
 
 ```toml
-# Dev-only: work on the SDK and the tool together. Restore the git tag at release.
+# Dev-only: work on the SDK and the tool together. Remove before publishing.
 [tool.uv.sources]
 untaped = { path = "../untaped", editable = true }
 ```
@@ -412,11 +410,11 @@ automatically — you only provide the assets.
 
 ## 9. Install and run
 
-There is no central command and no PyPI yet. Install a tool straight from git
-into its own `uv tool` environment:
+There is no central command. Install each PyPI-backed tool into its own
+`uv tool` environment:
 
 ```bash
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-acme.git
+uv tool install untaped-acme
 untaped-acme config set token <token>
 untaped-acme whoami
 ```

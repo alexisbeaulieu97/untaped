@@ -14,12 +14,14 @@ Each tool is an **independent CLI** that depends on the `untaped` SDK and is
 installed in its own `uv tool` environment:
 
 ```bash
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-ansible.git
+uv tool install untaped-github
+uv tool install untaped-ansible
 ```
 
-PyPI publishing is deferred, so tools currently install and depend on the SDK
-via git links rather than PyPI package names.
+PyPI package metadata is the release contract. Suite repos may keep matching
+`[tool.uv.sources]` git tag pins for local development and CI, but release
+artifacts are built with `uv build --no-sources` so wheels declare only package
+ranges such as `untaped>=2.4.4,<3`.
 
 The suite is: `github`, `jira`, `awx`, `ansible`, `workspace`, `recipe`,
 `apple-health`.

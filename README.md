@@ -48,16 +48,16 @@ def main() -> None:
 # pyproject.toml
 [project]
 dependencies = [
-    # Tools declare the supported SDK range; uv pins the git tag below.
-    "untaped>=2.4.3,<3",
+    "untaped>=2.4.4,<3",
 ]
-
-[tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.3" }
 
 [project.scripts]
 untaped-mytool = "my_tool.__main__:main"
 ```
+
+Suite repos may keep a `[tool.uv.sources]` git tag while developing against an
+exact SDK release. Published wheels are built with `uv build --no-sources`, so
+package metadata resolves from the declared PyPI range.
 
 ## Requirements
 
@@ -66,17 +66,21 @@ Python 3.14 and [uv](https://docs.astral.sh/uv/).
 ## The suite
 
 Seven tools are built on the SDK. Each is an independent CLI installed into its
-own `uv tool` environment:
+own `uv tool` environment. As each PyPI-backed tool completes its first package
+release, install it by package name:
 
 ```bash
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-jira.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-awx.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-ansible.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-workspace.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-recipe.git
+uv tool install untaped-github
+uv tool install untaped-jira
+uv tool install untaped-awx
+uv tool install untaped-ansible
+uv tool install untaped-workspace
+uv tool install untaped-recipe
 uv tool install git+https://github.com/alexisbeaulieu97/untaped-apple-health.git
 ```
+
+`untaped-apple-health` is outside the current PyPI release wave; install it from
+git until that repo owns a package release workflow.
 
 Because every tool reads the same `~/.untaped/config.yml` and shares the same
 `--format pipe` envelope, independently installed tools interoperate and
@@ -98,6 +102,8 @@ User-facing docs live in [`docs/`](./docs/README.md):
   format, profiles, secrets, and TLS.
 - [Agent Skills](./docs/skills.md) — how each tool ships and installs
   Codex/Claude agent skills.
+- [Releasing](./docs/release.md) — PyPI/TestPyPI workflow, Trusted Publisher
+  setup, and recovery rules.
 - [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the
   SDK-only direction.
 

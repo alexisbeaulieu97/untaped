@@ -15,6 +15,8 @@ interoperate and compose.
   wire `run_tool`, and ship an independent CLI.
 - [Agent Skills](./skills.md) — list and install Codex/Claude skills that each
   tool ships.
+- [Releasing](./release.md) — PyPI/TestPyPI workflow, Trusted Publisher setup,
+  and recovery rules.
 - [Architecture decisions](./decisions.md) — the settled ADRs behind the
   SDK-only direction.
 

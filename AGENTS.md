@@ -24,7 +24,8 @@ top of* existing CLIs (`gh`, `awx-cli`) where that is the right abstraction.
 ## Repository Map
 
 The workspace root **is** the `untaped` SDK package. Tools live in separate
-repositories and depend on this SDK via a git link.
+repositories and depend on this SDK via its PyPI package metadata; suite repos
+may also keep a git source pin for development and CI.
 
 ```
 untaped/
@@ -62,18 +63,20 @@ Profiles **and** themes are built into the SDK; the standalone
 
 ## How a tool depends on and uses the SDK
 
-There is no PyPI release yet, so tools depend on the SDK via a **git link**
-pinned to a tag. In the tool's `pyproject.toml`:
+Tools depend on the SDK through a PyPI version range. Suite repos may keep a
+matching git source pin so local development and CI exercise the exact SDK tag
+while published wheels still expose only the package range via
+`uv build --no-sources`. In the tool's `pyproject.toml`:
 
 ```toml
 [project]
 dependencies = [
   "cyclopts>=4.16.0,<5",
-  "untaped>=2.4.3,<3",
+  "untaped>=2.4.4,<3",
 ]
 
 [tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.3" }
+untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.4" }
 
 [project.scripts]
 untaped-github = "untaped_github.__main__:main"
@@ -96,11 +99,11 @@ def main() -> None:
     ))
 ```
 
-Users install a tool directly from its repo:
+Users install PyPI-backed tools by package name:
 
 ```bash
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git@v0.5.0  # pin a tag
+uv tool install untaped-github
+uv tool install untaped-github==0.12.5  # pin a release
 ```
 
 ## SDK public surface (`untaped.api`)
@@ -402,25 +405,40 @@ SDK versioning: **adding** an `untaped.api` name is additive (patch/minor);
 **removing or renaming** one — or changing the v1 config/pipe contracts — is a
 **MAJOR** event.
 
-Releases go through PRs, not direct pushes — the environment blocks `git push`
-to `main` and tag pushes. The flow:
+Releases go through PRs, not direct pushes. Publishing is handled by
+`.github/workflows/release.yml` with Trusted Publishing, not by local
+`uv publish`, direct tag pushes, or manual package uploads. The flow:
 
 1. Branch; bump `version`; `uv lock`; gate (`ruff check` + `ruff format` +
-   `mypy` + `pytest`); open a PR.
-2. `gh pr merge --merge` once CI is green.
-3. `gh release create vX.Y.Z --target main --title ... --notes ...` — creates
-   the tag + release via the API (`gh` is not gated; plain `git tag` +
-   `git push <tag>` is). If 1Password GPG signing is flaky, sign with
-   `--no-gpg-sign`.
+   `mypy` + `pytest` + `uv build --no-sources`); open a PR.
+2. After review, merge only with explicit approval.
+3. After the merge is on `main`, dispatch the release workflow to `testpypi`
+   with the approved version.
+4. If the TestPyPI process succeeds, dispatch the same workflow to `pypi` from
+   `main`. The workflow publishes with OIDC, smoke-installs the published
+   package from the selected index, then creates the GitHub release/tag only
+   for `index = pypi`.
+
+If a publish succeeds but the post-upload smoke fails, the version may be
+burned on that index. Bump patch, update the lockfile, and restart the package's
+release cycle; never retry by attempting to overwrite the same version.
 
 Cross-repo ordering for an SDK change that tools must adopt:
 
-- **SDK first.** Tools resolve `untaped` from a git tag, so a tool only picks
-  up new SDK behaviour after the SDK tag exists.
-- **Bump each tool's `untaped>=X.Y.Z,<3` floor and `tool.uv.sources.untaped`
-  tag** to the new SDK release, relock (`uv lock --upgrade-package untaped`),
-  gate, and **release the tool
-  too** — the pin bump is itself a release-worthy dependency change.
+- **SDK first.** Tools can only raise their PyPI floor after that SDK version
+  exists on the target index.
+- **Bump each tool's `untaped>=X.Y.Z,<3` floor and
+  `tool.uv.sources.untaped.rev` tag together**, relock
+  (`uv lock --upgrade-package untaped`), gate, and release the tool too. The
+  source rev and the dependency floor must agree or `uv sync --frozen` becomes
+  unsatisfiable.
+- **Do not parallel-publish across dependency gates.** The release order is SDK,
+  leaf tools, `untaped-ansible` after `untaped-github`, then `untaped-recipe`
+  last.
+
+See [`docs/release.md`](docs/release.md) for Trusted Publisher setup, workflow
+dispatch rules, TestPyPI/PyPI sequencing, and the post-wave consolidation
+follow-up.
 
 ## Decision Tree: Where does this code go?
 
