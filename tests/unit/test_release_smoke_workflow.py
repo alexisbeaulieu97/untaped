@@ -20,7 +20,33 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release-smoke.yml"
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 WORKFLOWS = [CI_WORKFLOW, WORKFLOW, RELEASE_WORKFLOW]
 FULL_SHA_ACTION_RE = re.compile(r"@[0-9a-f]{40}$")
-EXPECTED_UV_VERSION = "0.11.19"
+EXPECTED_UV_VERSION = "0.11.26"
+EXPECTED_ACTION_REFS = {
+    "actions/cache": (
+        "v6.1.0",
+        "55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+    ),
+    "actions/checkout": (
+        "v7.0.0",
+        "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+    ),
+    "actions/download-artifact": (
+        "v8.0.1",
+        "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+    ),
+    "actions/upload-artifact": (
+        "v7.0.1",
+        "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    ),
+    "astral-sh/setup-uv": (
+        "v8.2.0",
+        "fac544c07dec837d0ccb6301d7b5580bf5edae39",
+    ),
+    "pypa/gh-action-pypi-publish": (
+        "v1.14.0",
+        "cef221092ed1bacb1cc03d23a2d87d1d172e277b",
+    ),
+}
 SMOKE_JOB = "sdk-wheel-smoke"
 
 
@@ -101,6 +127,29 @@ def test_workflow_actions_are_pinned_to_commit_shas() -> None:
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {uses}")
 
     assert not offenders, "GitHub Action refs must be pinned to full SHAs:\n" + "\n".join(offenders)
+
+
+def test_workflow_actions_use_latest_reviewed_release_shas() -> None:
+    offenders: list[str] = []
+    for path in WORKFLOWS:
+        _, workflow = _load_yaml(path)
+        for step in _steps(workflow):
+            uses = step.get("uses")
+            if not uses:
+                continue
+            action, ref = str(uses).rsplit("@", 1)
+            expected = EXPECTED_ACTION_REFS.get(action)
+            if expected is None:
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: unreviewed action {action}")
+                continue
+            latest_tag, latest_sha = expected
+            if ref != latest_sha:
+                offenders.append(
+                    f"{path.relative_to(REPO_ROOT)}: {action}@{ref} "
+                    f"does not match reviewed latest {latest_tag} ({latest_sha})"
+                )
+
+    assert not offenders, "GitHub Action pins are stale:\n" + "\n".join(offenders)
 
 
 def test_checkout_steps_do_not_persist_credentials() -> None:
