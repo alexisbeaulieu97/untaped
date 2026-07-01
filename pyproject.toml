@@ -1,8 +1,10 @@
 [project]
 name = "untaped"
-version = "2.4.3"
+version = "2.4.4"
 description = "A batteries-included CLI framework for building standalone DevOps tools."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" },
 ]
