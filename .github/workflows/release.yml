@@ -250,6 +250,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "v$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "untaped v$RELEASE_VERSION" \
             --notes "PyPI release for untaped $RELEASE_VERSION."
