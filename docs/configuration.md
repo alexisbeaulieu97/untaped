@@ -465,13 +465,15 @@ untaped-awx --profile prod ping
 
 ## Installing tools
 
-There is no PyPI release yet. Install each tool from its Git repository into its
-own `uv tool` environment:
+Install each PyPI-backed tool into its own `uv tool` environment:
 
 ```bash
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-github.git
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-awx.git
+uv tool install untaped-github
+uv tool install untaped-awx
 ```
+
+Tools that have not completed their first PyPI release remain installable from
+their Git repositories; each tool repo owns its current install command.
 
 ## See also
 
