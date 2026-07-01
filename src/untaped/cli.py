@@ -330,6 +330,8 @@ def report_errors() -> Iterator[None]:
 
 def _format_error(exc: UntapedError) -> str:
     message = str(exc)
+    if isinstance(exc, HttpError) and not exc.body and exc.url and exc.url not in message:
+        message = f"{message} for {exc.url}"
     if not isinstance(exc, HttpError) or not exc.body:
         return message
     friendly = _api_error_message(exc.body)

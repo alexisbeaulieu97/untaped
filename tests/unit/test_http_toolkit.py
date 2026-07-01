@@ -10,7 +10,7 @@ import pytest
 import respx
 from pydantic import BaseModel, SecretStr, ValidationError
 
-from untaped.errors import ConfigError, UntapedError
+from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
     missing_setting_error,
@@ -275,3 +275,58 @@ def test_paginate_offset_caps_at_limit_and_shrinks_request_size() -> None:
 
     assert len(items) == 2
     assert seen_sizes == ["2"]
+
+
+@respx.mock
+def test_paginate_offset_post_rejects_non_object_envelope() -> None:
+    route = respx.post("https://api.example.com/search").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo") as client,
+        pytest.raises(HttpError) as exc_info,
+    ):
+        list(
+            paginate_offset(
+                client,
+                "POST",
+                "/search",
+                item_key="issues",
+                body={"jql": "project = DEMO"},
+            )
+        )
+
+    assert "expected JSON object" in str(exc_info.value)
+    assert "list" in str(exc_info.value)
+    assert exc_info.value.status_code == 200
+    assert exc_info.value.url == "https://api.example.com/search"
+    assert exc_info.value.body == "[]"
+    assert route.call_count == 1
+    request_json = route.calls[0].request.content.decode()
+    assert '"jql":"project = DEMO"' in request_json
+    assert '"startAt":0' in request_json
+    assert '"maxResults":50' in request_json
+
+
+@respx.mock
+def test_paginate_offset_post_empty_object_envelope_is_empty_page() -> None:
+    route = respx.post("https://api.example.com/search").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(
+            paginate_offset(
+                client,
+                "POST",
+                "/search",
+                item_key="issues",
+                body={"jql": "project = DEMO"},
+            )
+        )
+
+    assert rows == []
+    assert route.call_count == 1
