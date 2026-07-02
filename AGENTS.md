@@ -440,6 +440,42 @@ See [`docs/release.md`](docs/release.md) for Trusted Publisher setup, workflow
 dispatch rules, TestPyPI/PyPI sequencing, and the post-wave consolidation
 follow-up.
 
+### Adopting the PyPI release pipeline in a tool (Option C)
+
+Trusted Publishing rejects a publish job that lives in a reusable workflow, so **every tool owns a
+full repo-local `.github/workflows/release.yml`** with a **top-level** OIDC `publish` job. The shared
+release checker is not copied — each tool checks it out from this repo at a pinned SHA
+(`.release-tool`) and invokes `.release-tool/.github/release/release.py`.
+
+Copy the two canonical templates; do not hand-write them:
+
+- `.github/release/templates/release.yml.tmpl` → the tool's `.github/workflows/release.yml`
+- `.github/release/templates/test_release_workflow.py.tmpl` → the tool's `tests/unit/test_release_workflow.py`
+
+**The pinned checker SHA is `07116cc11d4217283ad42badea4f5d5744542f2a`** (both `.release-tool`
+checkouts in the workflow, and `CORE_RELEASE_TOOL_SHA` in the test). Bump it only when the shared
+checker in `.github/release/` changes; re-pinning to a content-identical SHA needs no re-dispatch.
+
+**The only per-tool variance** — everything else must stay byte-identical to the templates:
+
+1. `release.yml`: the 8 sentinel sites — `__DIST_NAME__` (×6) and `__CONSOLE_SCRIPT__` (×2).
+2. `test_release_workflow.py`: the `PER-TOOL CONFIG` block — `DIST_NAME`, `CONSOLE_SCRIPT`,
+   `EXPECTED_VERSION`, `INTERNAL_DEPS` (each `(requirement, rev-or-None)`), `PYPI_INSTALL_DOCS`.
+
+`DIST_NAME` doubles as the GitHub repo slug and must equal `[project].name`; `CONSOLE_SCRIPT` must
+equal the `[project.scripts]` entry-point (confirm both from the tool's `pyproject.toml` — do not
+assume they match). For an internal dep installed from PyPI (no `[tool.uv.sources]` git pin), record
+its rev as `None`.
+
+**Drift check before merging a tool's release PR:** diff the tool's `release.yml` against the template
+ignoring the sentinel substitutions, and diff the tool's `test_release_workflow.py` body below the
+`PER-TOOL CONFIG` marker against the template — both must match byte-for-byte.
+
+**Before the first dispatch**, register the tool's Trusted Publisher on **each** index (PyPI and
+TestPyPI) with workflow filename `release.yml`, and create the `testpypi` and `pypi` GitHub
+environments. Then follow the dispatch discipline above: TestPyPI from a branch first, PyPI from
+`main`, burn-once (bump patch, never overwrite). See [`docs/release.md`](docs/release.md).
+
 ## Decision Tree: Where does this code go?
 
 1. **Reusable across multiple tools / part of the framework contract?** →
