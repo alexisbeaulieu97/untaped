@@ -41,6 +41,12 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
+      - name: Shared release helper tests
+        run: |
+          python3 .github/release/release.py verify-version --help
+          python3 .github/release/release.py verify-internal-dependencies-published --help
+          uv run --no-project --with pytest python -m pytest .github/release/tests -q -o addopts=
+
       - name: Sync workspace
         # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
         # pins, so a stale lock surfaces as a sync failure instead of a silent
