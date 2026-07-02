@@ -184,11 +184,6 @@ jobs:
       RELEASE_CONSOLE_SCRIPT: ${{ inputs.console-script }}
       RELEASE_PYTHON_VERSION: ${{ inputs.python-version }}
     steps:
-      - name: Checkout caller repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-        with:
-          persist-credentials: false
-
       - name: Checkout release tooling
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:

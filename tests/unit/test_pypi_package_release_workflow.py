@@ -152,19 +152,29 @@ def test_reusable_workflow_uses_latest_reviewed_action_shas() -> None:
 
 
 def test_checkout_steps_do_not_persist_credentials_and_include_release_tool_checkout() -> None:
-    for job_name in (BUILD_JOB, SMOKE_JOB):
-        checkouts = [
-            step for step in _workflow_steps(job_name) if _is_action(step, "actions/checkout")
-        ]
-        assert len(checkouts) == 2
-        for checkout in checkouts:
-            assert checkout["with"]["persist-credentials"] is False
+    build_checkouts = [
+        step for step in _workflow_steps(BUILD_JOB) if _is_action(step, "actions/checkout")
+    ]
+    smoke_checkouts = [
+        step for step in _workflow_steps(SMOKE_JOB) if _is_action(step, "actions/checkout")
+    ]
 
-        release_tool = next(
-            step
-            for step in checkouts
-            if step["with"].get("repository") == "alexisbeaulieu97/untaped"
-        )
+    assert len(build_checkouts) == 2
+    assert len(smoke_checkouts) == 1
+
+    for checkout in [*build_checkouts, *smoke_checkouts]:
+        assert checkout["with"]["persist-credentials"] is False
+
+    caller_checkout = next(
+        step for step in build_checkouts if "repository" not in step.get("with", {})
+    )
+    assert caller_checkout["name"] == "Checkout caller repository"
+
+    for release_tool in [
+        step
+        for step in [*build_checkouts, *smoke_checkouts]
+        if step["with"].get("repository") == "alexisbeaulieu97/untaped"
+    ]:
         assert release_tool["with"]["ref"] == "${{ inputs.release-tool-ref }}"
         assert release_tool["with"]["path"] == ".release-tool"
 
