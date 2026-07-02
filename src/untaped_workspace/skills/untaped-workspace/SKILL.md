@@ -9,7 +9,7 @@ Use this skill when the user wants an agent to operate `untaped-workspace` for l
 
 ## Setup
 
-- The command is `untaped-workspace`.
+- The command is `untaped-workspace`. Install it with `uv tool install untaped-workspace`. Until the first PyPI release is confirmed, use `uv tool install git+https://github.com/alexisbeaulieu97/untaped-workspace.git` as a temporary fallback.
 - A workspace has a local `untaped.yml` manifest and registry state.
 - Profile settings are `cache_dir` and `workspaces_dir`, addressed bare (e.g. `untaped-workspace config set cache_dir ...`); the `workspaces` name→path registry is tool-managed state written by `adopt`/`init`/`forget`, not a setting.
 - Use `untaped-workspace show --path PATH` or `--workspace NAME` to inspect a workspace before mutating it.

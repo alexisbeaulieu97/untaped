@@ -1,10 +1,13 @@
 [project]
 name = "untaped-workspace"
-version = "0.10.0"
+version = "0.10.1"
 description = "Local git workspace management CLI built on the untaped SDK."
+readme = "README.md"
 authors = [
     { name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }
 ]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.14"
 dependencies = [
     "cyclopts>=4.16.0,<5",
