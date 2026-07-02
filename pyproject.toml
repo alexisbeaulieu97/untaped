@@ -1,6 +1,6 @@
 [project]
 name = "untaped-workspace"
-version = "0.10.1"
+version = "0.10.2"
 description = "Local git workspace management CLI built on the untaped SDK."
 readme = "README.md"
 authors = [
@@ -109,6 +109,3 @@ exclude_also = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
 ]
-
-[tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.0" }

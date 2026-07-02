@@ -9,8 +9,6 @@ a local registry.
 
 ```bash
 uv tool install untaped-workspace
-# Temporary fallback until the first PyPI release is confirmed:
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-workspace.git
 ```
 
 `untaped-workspace` also ships the `untaped-workspace` agent skill for Codex
