@@ -24,8 +24,7 @@ top of* existing CLIs (`gh`, `awx-cli`) where that is the right abstraction.
 ## Repository Map
 
 The workspace root **is** the `untaped` SDK package. Tools live in separate
-repositories and depend on this SDK via its PyPI package metadata; suite repos
-may also keep a git source pin for development and CI.
+repositories and depend on this SDK via its PyPI package metadata.
 
 ```
 untaped/
@@ -63,10 +62,11 @@ Profiles **and** themes are built into the SDK; the standalone
 
 ## How a tool depends on and uses the SDK
 
-Tools depend on the SDK through a PyPI version range. Suite repos may keep a
-matching git source pin so local development and CI exercise the exact SDK tag
-while published wheels still expose only the package range via
-`uv build --no-sources`. In the tool's `pyproject.toml`:
+Tools depend on the SDK through a PyPI version range; development and CI
+resolve it from PyPI like any other dependency. (While co-developing the SDK
+and a tool, a dev-only `[tool.uv.sources]` entry is the escape hatch — see
+[`docs/plugins.md`](docs/plugins.md); remove it before merging.) In the
+tool's `pyproject.toml`:
 
 ```toml
 [project]
@@ -74,9 +74,6 @@ dependencies = [
   "cyclopts>=4.16.0,<5",
   "untaped>=2.4.4,<3",
 ]
-
-[tool.uv.sources]
-untaped = { git = "https://github.com/alexisbeaulieu97/untaped.git", rev = "v2.4.4" }
 
 [project.scripts]
 untaped-github = "untaped_github.__main__:main"
@@ -427,11 +424,8 @@ Cross-repo ordering for an SDK change that tools must adopt:
 
 - **SDK first.** Tools can only raise their PyPI floor after that SDK version
   exists on the target index.
-- **Bump each tool's `untaped>=X.Y.Z,<3` floor and
-  `tool.uv.sources.untaped.rev` tag together**, relock
-  (`uv lock --upgrade-package untaped`), gate, and release the tool too. The
-  source rev and the dependency floor must agree or `uv sync --frozen` becomes
-  unsatisfiable.
+- **Bump each tool's `untaped>=X.Y.Z,<3` floor**, relock
+  (`uv lock --upgrade-package untaped`), gate, and release the tool too.
 - **Do not parallel-publish across dependency gates.** The release order is SDK,
   leaf tools, `untaped-ansible` after `untaped-github`, then `untaped-recipe`
   last.

@@ -55,9 +55,9 @@ dependencies = [
 untaped-mytool = "my_tool.__main__:main"
 ```
 
-Suite repos may keep a `[tool.uv.sources]` git tag while developing against an
-exact SDK release. Published wheels are built with `uv build --no-sources`, so
-package metadata resolves from the declared PyPI range.
+Tools resolve the SDK from PyPI in development and CI alike. Published wheels
+are built with `uv build --no-sources` as defense in depth, so package
+metadata always resolves from the declared PyPI range.
 
 ## Requirements
 
