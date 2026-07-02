@@ -72,11 +72,12 @@ For the repo family, keep dependency gates strict:
 3. Release `untaped-ansible` after `untaped-github` is on production PyPI.
 4. Release `untaped-recipe` last.
 
-Downstream suite repos may keep git source pins for development and CI, but the
-source rev and package floor must move together. For example, a tool that
-requires `untaped>=2.4.4,<3` must pin `tool.uv.sources.untaped.rev = "v2.4.4"`.
-The release build must use `uv build --no-sources`, and release checks must
-prove internal dependency floors resolve from the target index before upload.
+Downstream suite repos carry no standing git source pins — internal
+dependencies resolve from PyPI in development and CI alike (a dev-only
+`[tool.uv.sources]` entry used while co-developing the SDK and a tool is
+removed before merging). The release build must use `uv build --no-sources`,
+and release checks must prove internal dependency floors resolve from the
+target index before upload.
 
 ## TestPyPI Caveat
 
