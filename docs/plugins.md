@@ -66,13 +66,10 @@ build-backend = "uv_build"
 ```
 
 When you're iterating on the SDK and the tool at the same time, temporarily
-add a **dev-only** local checkout source. Suite repos may instead keep a git
-tag source that matches their declared SDK floor so CI exercises the exact SDK
-tag while package metadata still resolves from PyPI when built with
-`uv build --no-sources`:
+add a **dev-only** local checkout source:
 
 ```toml
-# Dev-only: work on the SDK and the tool together. Remove before publishing.
+# Dev-only: work on the SDK and the tool together. Remove before merging.
 [tool.uv.sources]
 untaped = { path = "../untaped", editable = true }
 ```
