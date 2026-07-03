@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
-from untaped.api import echo, report_errors
+from untaped.api import batch_apply, echo, finish, report_errors, ui_context
 
 from untaped_workspace.application import (
     AdoptWorkspace,
@@ -16,7 +16,7 @@ from untaped_workspace.application import (
     SyncWorkspace,
     WorkspaceBootstrapper,
 )
-from untaped_workspace.cli.common import confirm, workspace_settings
+from untaped_workspace.cli.common import workspace_settings
 from untaped_workspace.cli.ops_commands import print_sync_outcomes
 from untaped_workspace.infrastructure import (
     GitRunner,
@@ -126,17 +126,31 @@ def forget_command(
     git clone that would be deleted has unsafe local state).
     """
     with report_errors():
-        if prune and not confirm(f"prune workspace directory for {name!r}?", yes=yes):
-            echo("aborted", err=True)
-            raise SystemExit(1)
-        ws = ForgetWorkspace(
+        forget_workspace = ForgetWorkspace(
             WorkspaceRegistryRepository(),
             ManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=GitRunner(),
-        )(name, prune=prune)
-        action = "forgot and pruned" if prune else "forgot"
-        echo(f"{action} workspace {ws.name!r}", err=True)
+        )
+
+        def _forget_one(workspace_name: str) -> str:
+            ws = forget_workspace(workspace_name, prune=prune)
+            action = "forgot and pruned" if prune else "forgot"
+            echo(f"{action} workspace {ws.name!r}", err=True)
+            return ws.name
+
+        outcome = batch_apply(
+            [name],
+            _forget_one,
+            verb="forget",
+            noun="workspace",
+            label=lambda workspace_name: workspace_name,
+            describe=lambda workspace_name: {"workspace": workspace_name},
+            ui=ui_context(strict=False),
+            destructive=prune,
+            assume_yes=yes,
+        )
+    finish(outcome)
 
 
 def import_command(

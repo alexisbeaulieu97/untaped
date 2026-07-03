@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from untaped.api import ConfigError
 from untaped.settings import get_settings
 
 from untaped_workspace.errors import RegistryError
@@ -98,8 +99,8 @@ def test_entries_raise_clean_error_when_registry_is_not_list(_isolate_config: Pa
     _isolate_config.write_text("workspace:\n  workspaces: bad\n")
     repo = WorkspaceRegistryRepository()
     with pytest.raises(
-        RegistryError,
-        match=r"invalid workspace registry: 'workspaces' must be a list",
+        ConfigError,
+        match=r"invalid state: `workspace\.workspaces` must be a list of mappings",
     ):
         repo.entries()
 
@@ -107,7 +108,7 @@ def test_entries_raise_clean_error_when_registry_is_not_list(_isolate_config: Pa
 def test_entries_raise_clean_error_on_non_mapping_entry(_isolate_config: Path) -> None:
     _isolate_config.write_text("workspace:\n  workspaces:\n    - bad\n")
     repo = WorkspaceRegistryRepository()
-    with pytest.raises(RegistryError, match=r"invalid workspace registry entry at index 0"):
+    with pytest.raises(ConfigError, match=r"`workspace\.workspaces` must be a list of mappings"):
         repo.entries()
 
 

@@ -9,8 +9,9 @@ from untaped.api import (
     ColumnsOption,
     FormatOption,
     echo,
+    emit,
+    finish,
     read_identifiers,
-    render_rows,
     report_errors,
     resolve_each,
 )
@@ -52,15 +53,13 @@ def list_command(
     with report_errors():
         use_case = ListWorkspaces(WorkspaceRegistryRepository())
         rows: list[dict[str, object]] = [_workspace_row(w) for w in use_case()]
-        rendered = render_rows(
+        emit(
             rows,
             fmt=fmt,
             columns=columns,
             kind="workspace.workspace",
             empty="No workspaces registered. Create one with `untaped workspace init <name>`.",
         )
-        if rendered:
-            echo(rendered)
 
 
 def show_command(
@@ -74,7 +73,7 @@ def show_command(
     with report_errors():
         ws = resolve_workspace(workspace, path)
         rows = [_show_row(row) for row in ShowWorkspace(ManifestRepository())(ws)]
-        echo(render_rows(rows, fmt=fmt, columns=columns, kind=_show_kind(rows)))
+        emit(rows, fmt=fmt, columns=columns, kind=_show_kind(rows))
 
 
 def path_command(
@@ -99,8 +98,7 @@ def path_command(
             echo(str(get_path(workspace_name)))
 
         _, any_failed = resolve_each(idents, _echo_path)
-    if any_failed:
-        raise SystemExit(1)
+    finish(any_failed)
 
 
 def shell_init_command(
@@ -152,5 +150,5 @@ def _show_kind(rows: list[dict[str, object]]) -> str:
         and rows[0].get("repo") == ""
         and "target_path" not in rows[0]
     ):
-        return "workspace.summary"
+        return "workspace.repo.summary"
     return "workspace.repo"

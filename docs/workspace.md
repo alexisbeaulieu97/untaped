@@ -159,7 +159,9 @@ untaped-workspace forget <name> [--prune] [--yes]
 Remove a workspace from the central registry. The on-disk manifest and
 clones are preserved by default — `forget` is the inverse of `init` /
 `adopt`, not of `sync --prune`. Pass `--prune` to also `rmtree` the
-workspace directory; pruning is refused (mirroring
+workspace directory; the command previews and confirms the destructive
+operation unless `--yes` / `-y` is passed. A declined prompt exits
+cleanly without changing registry state or files. Pruning is refused (mirroring
 `remove --prune`) when any git clone that would be deleted has unsafe
 local state. Before deleting the workspace directory, `forget --prune`
 inspects every existing declared repo path and every immediate child
@@ -209,15 +211,17 @@ untaped-workspace remove --stdin [--workspace <ws> | --path <dir>]
 ```
 
 Remove one or more repos from the manifest, identified by URL or
-alias. `--prune` also deletes the local clone after confirming the
-destructive action. The prune is refused if the clone has unsafe local
+alias. `--prune` also deletes the local clone after the SDK batch
+preview and confirmation, unless `--yes` / `-y` is passed. A declined
+prompt exits cleanly without changing the manifest or local clone. The
+prune is refused if the clone has unsafe local
 state: dirty/untracked/staged work, stash entries, or commits not
 reachable from local remote-tracking refs, including commits reachable
 only from local tags. The safety check is offline and does not fetch,
 inspect upstream config, or require an `origin` remote. Stale
 remote-tracking refs are trusted as the offline safety boundary; fetch
 the clone yourself first if you need the check to reflect current
-remote state. `--yes` skips the confirmation prompt for prune. With
+remote state. With
 `--stdin`, reads repo identifiers one per line — works
 nicely with `fzf`:
 

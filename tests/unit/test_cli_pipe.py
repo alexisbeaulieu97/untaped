@@ -53,7 +53,7 @@ def test_show_pipe_empty_workspace_tags_summary_and_omits_target_path(tmp_path: 
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
-    assert envelope["kind"] == "workspace.summary"
+    assert envelope["kind"] == "workspace.repo.summary"
     assert envelope["record"] == {
         "workspace": "prod",
         "path": str(target.resolve()),
@@ -102,7 +102,7 @@ def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_ca
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
-    assert envelope["kind"] == "workspace.sync-outcome"
+    assert envelope["kind"] == "workspace.sync_outcome"
     assert set(envelope["record"]) == {"workspace", "repo", "action", "detail"}
     assert envelope["record"]["action"] == "clone"
     assert "Syncing repos" not in result.stdout
@@ -141,7 +141,7 @@ def test_sync_all_unavailable_manifest_pipe_row(
     envelopes = [json.loads(line) for line in result.stdout.splitlines()]
     ghost = [e for e in envelopes if e["record"]["workspace"] == "ghost"]
     assert len(ghost) == 1
-    assert ghost[0]["kind"] == "workspace.sync-outcome"
+    assert ghost[0]["kind"] == "workspace.sync_outcome"
     assert ghost[0]["record"]["repo"] == ""
     assert ghost[0]["record"]["action"] == "unavailable"
     assert "workspace manifest unavailable: no manifest at" in ghost[0]["record"]["detail"]
@@ -168,7 +168,7 @@ def test_sync_prune_pipe_reports_unsafe_orphan_skip(tmp_path: Path, upstream: Pa
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
-    assert envelope["kind"] == "workspace.sync-outcome"
+    assert envelope["kind"] == "workspace.sync_outcome"
     assert envelope["record"] == {
         "workspace": "smoke",
         "repo": "scratch",
@@ -244,7 +244,7 @@ def test_foreach_pipe_tags_foreach_outcome(
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
-    assert envelope["kind"] == "workspace.foreach-outcome"
+    assert envelope["kind"] == "workspace.foreach_outcome"
 
 
 def test_branch_apply_pipe_tags_branch_outcome(tmp_path: Path) -> None:
@@ -257,4 +257,4 @@ def test_branch_apply_pipe_tags_branch_outcome(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
-    assert envelope["kind"] == "workspace.branch-outcome"
+    assert envelope["kind"] == "workspace.branch_outcome"

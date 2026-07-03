@@ -11,7 +11,7 @@ from untaped.api import (
     OutputFormat,
     create_app,
     echo,
-    render_rows,
+    emit,
     report_errors,
 )
 
@@ -136,12 +136,10 @@ def print_branch_apply_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows = [row.model_dump() for row in outcomes]
-    rendered = render_rows(
+    emit(
         rows,
         fmt=fmt,
         columns=columns,
-        kind="workspace.branch-outcome",
+        kind="workspace.branch_outcome",
         empty="No matching repos to checkout.",
     )
-    if rendered:
-        echo(rendered)

@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, ScriptedPromptBackend, assert_destructive_contract
 
 from untaped_workspace import app
 
@@ -126,11 +126,10 @@ def test_remove_prune_refuses_clean_local_commit(
     assert "upstream" in shown.stdout.splitlines()
 
 
-def test_remove_prune_aborts_on_no_at_prompt(
+def test_remove_prune_decline_exits_zero_without_mutation(
     tmp_path: Path,
     upstream: Path,
     isolated_cache: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
@@ -138,31 +137,30 @@ def test_remove_prune_aborts_on_no_at_prompt(
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
     runner.invoke(app, ["sync", "--workspace", "smoke"])
     assert (target / "upstream").is_dir()
-    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: True)
-
-    class _PromptUi:
-        def confirm(self, message: str, *, default: bool = False) -> bool:
-            assert "prune local clone" in message
-            assert default is False
-            return False
-
-    monkeypatch.setattr("untaped_workspace.cli.common.ui_context", lambda **_: _PromptUi())
+    backend = ScriptedPromptBackend(confirms=[False])
 
     rm = runner.invoke(
         app,
         ["remove", "upstream", "--workspace", "smoke", "--prune"],
+        interactive=True,
+        prompt_backend=backend,
     )
 
-    assert rm.exit_code == 1
-    assert "aborted" in rm.output
+    assert rm.exit_code == 0, rm.output
+    assert backend.calls == [("confirm", "Continue?")]
+    assert "aborted" not in rm.output
     assert (target / "upstream").is_dir()
+    shown = runner.invoke(
+        app,
+        ["show", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+    )
+    assert "upstream" in shown.stdout.splitlines()
 
 
 def test_remove_prune_requires_yes_when_non_interactive(
     tmp_path: Path,
     upstream: Path,
     isolated_cache: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
@@ -170,13 +168,37 @@ def test_remove_prune_requires_yes_when_non_interactive(
     runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
     runner.invoke(app, ["sync", "--workspace", "smoke"])
     assert (target / "upstream").is_dir()
-    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: False)
 
     rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune"])
 
     assert rm.exit_code == 1
     assert "--yes" in rm.output
     assert (target / "upstream").is_dir()
+
+
+def test_remove_prune_conforms_to_destructive_contract(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(app, ["sync", "--workspace", "smoke"])
+
+    def _clone_and_registration_survive() -> None:
+        assert (target / "upstream").is_dir()
+        shown = runner.invoke(
+            app,
+            ["show", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+        )
+        assert shown.exit_code == 0, shown.output
+        assert "upstream" in shown.stdout.splitlines()
+
+    assert_destructive_contract(
+        app,
+        ["remove", "upstream", "--workspace", "smoke", "--prune"],
+        assert_unchanged=_clone_and_registration_survive,
+    )
 
 
 def test_add_accepts_multiple_positional_urls(tmp_path: Path) -> None:
