@@ -60,7 +60,13 @@ from untaped.settings import (
     get_core_settings,
     get_settings,
 )
-from untaped.stdin import read_identifiers, read_records, read_stdin
+from untaped.stdin import (
+    read_identifiers,
+    read_records,
+    read_stdin,
+    read_stdin_text,
+    resolve_text_input,
+)
 from untaped.theme import ThemeSpec
 from untaped.tool import SkillAsset, ToolSpec, register_tool
 from untaped.ui import UiContext, ui_context
@@ -127,12 +133,14 @@ __all__ = [
     "read_identifiers",
     "read_records",
     "read_stdin",
+    "read_stdin_text",
     "read_structured_file",
     "read_tool_state",
     "register_tool",
     "render_rows",
     "report_errors",
     "resolve_each",
+    "resolve_text_input",
     "resolve_verify",
     "run_tool",
     "ui_context",

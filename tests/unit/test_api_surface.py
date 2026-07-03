@@ -66,6 +66,8 @@ EXPECTED_SURFACE = frozenset(
         "read_identifiers",
         "read_records",
         "read_stdin",
+        "read_stdin_text",
+        "resolve_text_input",
         # Pipe interchange
         "PipeEnvelope",
         "common_kind",

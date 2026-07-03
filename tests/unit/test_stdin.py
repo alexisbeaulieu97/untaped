@@ -1,13 +1,20 @@
 import io
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from untaped.errors import ConfigError
 from untaped.pipe import PIPE_MARKER_KEY
-from untaped.stdin import read_identifiers, read_records, read_stdin
+from untaped.stdin import (
+    read_identifiers,
+    read_records,
+    read_stdin,
+    read_stdin_text,
+    resolve_text_input,
+)
 
 
 def _feed(payload: str) -> object:
@@ -132,3 +139,62 @@ def test_read_identifiers_mixed_bare_then_envelope_raises() -> None:
     payload = "a/b\n" + _env({"full_name": "c/d"}) + "\n"
     with _feed(payload), pytest.raises(ConfigError, match="mixed bare/envelope input on stdin"):
         read_identifiers([], stdin=True, id_field="full_name")
+
+
+# ---- raw text input --------------------------------------------------------
+
+
+def test_read_stdin_text_preserves_interior_newlines(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("line one\n\nline three\n"))
+    assert read_stdin_text() == "line one\n\nline three"
+
+
+def test_read_stdin_text_trims_exactly_one_trailing_newline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("x\n\n"))
+    assert read_stdin_text() == "x\n"
+
+
+def test_read_stdin_text_handles_crlf_tail(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("x\r\n"))
+    assert read_stdin_text() == "x"
+
+
+def test_read_stdin_text_is_empty_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.testing import TtyStringIO
+
+    monkeypatch.setattr("sys.stdin", TtyStringIO("never read"))
+    assert read_stdin_text() == ""
+
+
+def test_resolve_text_input_flag_wins(tmp_path: Path) -> None:
+    assert resolve_text_input("inline", None) == "inline"
+
+
+def test_resolve_text_input_rejects_flag_plus_file(tmp_path: Path) -> None:
+    f = tmp_path / "body.txt"
+    f.write_text("filed", encoding="utf-8")
+    with pytest.raises(ConfigError, match="not both"):
+        resolve_text_input("inline", f)
+
+
+def test_resolve_text_input_reads_file_trimming_terminal_newline(tmp_path: Path) -> None:
+    f = tmp_path / "body.txt"
+    f.write_text("from file\n", encoding="utf-8")
+    assert resolve_text_input(None, f) == "from file"
+
+
+def test_resolve_text_input_falls_back_to_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("piped body\n"))
+    assert resolve_text_input(None, None) == "piped body"
+
+
+def test_resolve_text_input_empty_everything_is_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from untaped.testing import TtyStringIO
+
+    monkeypatch.setattr("sys.stdin", TtyStringIO())
+    with pytest.raises(ConfigError, match="no body provided"):
+        resolve_text_input(None, None)
