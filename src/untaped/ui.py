@@ -12,8 +12,12 @@ from untaped.progress import ProgressHandle, progress_reporter
 from untaped.prompts import (
     PromptBackend,
     PromptChoice,
+    PromptToolkitPromptBackend,
     handle_prompt_exception,
+    prompt_backend_override,
+    prompt_style_from_roles,
 )
+from untaped.quiet import is_quiet
 from untaped.render import (
     MessageKind,
     OutputFormat,
@@ -29,6 +33,7 @@ from untaped.theme import (
     UiSettings,
     resolve_theme_or_default,
 )
+from untaped.verbose import is_verbose
 
 
 class _HasUiSettings(Protocol):
@@ -73,15 +78,10 @@ class UiContext:
         backend = self._prompt_backend
         if backend is not None:
             return backend
-        from untaped.prompts import prompt_backend_override  # noqa: PLC0415
 
         override = prompt_backend_override()
         if override is not None:
             return override
-        from untaped.prompts import (  # noqa: PLC0415
-            PromptToolkitPromptBackend,
-            prompt_style_from_roles,
-        )
 
         backend = PromptToolkitPromptBackend(
             stdin=self.stdin,
@@ -274,10 +274,8 @@ def ui_context(
     read and the theme resolved from them; ``strict=False`` then degrades a
     settings :class:`ConfigError` to the default theme.
     """
-    from untaped.quiet import is_quiet  # noqa: PLC0415
-    from untaped.verbose import is_verbose  # noqa: PLC0415
-
     if theme is None:
+        # Keep settings lazy so render-only imports avoid the settings chain.
         from untaped.settings import get_settings  # noqa: PLC0415
 
         theme = resolve_theme_or_default(

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Literal, get_args, get_origin
 
 from untaped.cli import raise_usage
+from untaped.config.models import display_default, display_value
 from untaped.config.ports import SettingsReader
 from untaped.config.use_cases import GetSetting
 from untaped.config_schema import FieldDescriptor
@@ -87,8 +88,6 @@ def _prompt_default(
     *,
     target_profile: str | None,
 ) -> str | None:
-    from untaped.config.models import display_default, display_value  # noqa: PLC0415
-
     entry = GetSetting(repo)(full_key)
     value = str(entry.value)
     if target_profile is not None and entry.source.kind != "env":
