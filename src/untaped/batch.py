@@ -15,12 +15,12 @@ not a YAML applier, and its ``--yes`` means "skip the confirm" (not "write").
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from untaped.cli import echo
 from untaped.errors import ConfigError, UntapedError
+from untaped.render import stream_is_tty
 from untaped.ui import UiContext
 
 
@@ -47,13 +47,6 @@ class BatchOutcome[T, R]:
         return len(self.planned_rows)
 
 
-def _stdin_is_interactive() -> bool:
-    # Whether stdin is a real terminal we can prompt on. False when stdin is the
-    # data pipe (``list --format pipe | <verb> --stdin``), so the gate never
-    # tries to read a y/N from the data — it refuses with a --yes hint instead.
-    return sys.stdin.isatty()
-
-
 def batch_apply[T, R](
     items: Sequence[T],
     action: Callable[[T], R],
@@ -67,6 +60,7 @@ def batch_apply[T, R](
     assume_yes: bool = False,
     preview_only: bool = False,
     render_generic_preview: bool = True,
+    preview: Callable[[Sequence[dict[str, object]]], None] | None = None,
 ) -> BatchOutcome[T, R]:
     """Preview, optionally confirm, then run ``action`` over ``items``.
 
@@ -75,13 +69,16 @@ def batch_apply[T, R](
     lines; ``describe(item)`` is the row used for the preview and ``planned_rows``.
 
     A **destructive** verb gates execution: with ``assume_yes`` it proceeds; on an
-    interactive stdin it previews then prompts (decline → no action run);
+    interactive ``ui.stdin`` it previews then prompts (decline → no action run);
     otherwise it raises :class:`ConfigError` (stdin is the data pipe, so there is
-    nothing to confirm against — pass ``--yes``). Callers that already rendered a
-    richer preview can pass ``render_generic_preview=False`` to keep the
-    confirmation prompt without the generic tab-row preview. Benign verbs and
-    ``--yes`` skip straight to execution. ``preview_only`` (``--dry-run``) returns
-    ``planned_rows`` without running ``action``.
+    nothing to confirm against — pass ``--yes``). The context stream is the TTY
+    authority, matching production wiring and embedded tests. Callers can pass
+    ``preview`` to render the planned rows for the confirmation preview; the
+    generic delete-style row dump remains the default. Callers that already
+    rendered a richer preview can pass ``render_generic_preview=False`` to keep
+    the confirmation prompt without the generic tab-row preview. Benign verbs
+    and ``--yes`` skip straight to execution. ``preview_only`` (``--dry-run``)
+    returns ``planned_rows`` without running ``action``.
 
     Per-item :class:`UntapedError` is caught and counted; anything else
     propagates. The helper never renders the summary or raises ``SystemExit`` —
@@ -92,8 +89,10 @@ def batch_apply[T, R](
         return BatchOutcome(results=[], failed=0, planned_rows=planned_rows)
     total = len(planned_rows)
     if destructive and not assume_yes:
-        if _stdin_is_interactive():
-            if render_generic_preview:
+        if stream_is_tty(ui.stdin):
+            if preview is not None:
+                preview(planned_rows)
+            elif render_generic_preview:
                 echo(f"About to {verb} {total} {noun}(s):", err=True)
                 for row in planned_rows:
                     echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
