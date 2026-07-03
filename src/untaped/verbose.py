@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextvars import ContextVar
 
 _LOGGER_NAME = "untaped"
 
-_verbose = False
+_verbose: ContextVar[bool] = ContextVar("untaped_verbose", default=False)
 
 
 def enable(_value: str = "") -> None:
@@ -25,20 +26,18 @@ def enable(_value: str = "") -> None:
     Takes no value; the dispatcher passes a placeholder string that is ignored.
     Turns on verbose output for this invocation and routes DEBUG logs to stderr.
     """
-    global _verbose
-    _verbose = True
+    _verbose.set(True)
     configure_logging(logging.DEBUG)
 
 
 def is_verbose() -> bool:
     """Whether ``--verbose`` is active for the current invocation."""
-    return _verbose
+    return _verbose.get()
 
 
 def reset() -> None:
     """Clear verbose state and the DEBUG level so neither leaks past one invocation."""
-    global _verbose
-    _verbose = False
+    _verbose.set(False)
     logging.getLogger(_LOGGER_NAME).setLevel(logging.NOTSET)
 
 

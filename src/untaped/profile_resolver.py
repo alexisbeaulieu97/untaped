@@ -25,6 +25,7 @@ caller's responsibility.
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Any, Literal
 
 from untaped.errors import ConfigError
@@ -32,7 +33,19 @@ from untaped.errors import ConfigError
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 DEFAULT_PROFILE = "default"
 
-ProfileSource = Literal["env", "config", "fallback"]
+ProfileSource = Literal["flag", "env", "config", "fallback"]
+
+_profile_override: ContextVar[str | None] = ContextVar("untaped_profile_override", default=None)
+
+
+def set_profile_override(name: str | None) -> None:
+    """Set (or clear, with ``None``) the invocation-scoped ``--profile`` override."""
+    _profile_override.set(name)
+
+
+def profile_override() -> str | None:
+    """Return the active ``--profile`` override, if any."""
+    return _profile_override.get()
 
 
 def classify_active_profile(
@@ -46,6 +59,9 @@ def classify_active_profile(
     neither (fallback). Powers the ``profile current`` command
     and any other code path that needs to classify the layer.
     """
+    override = _profile_override.get()
+    if override:
+        return override, "flag"
     env_override = os.environ.get(ACTIVE_PROFILE_ENV)
     if env_override:
         return env_override, "env"

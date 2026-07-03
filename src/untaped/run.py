@@ -18,7 +18,6 @@ backed by direct handler callables.
 from __future__ import annotations
 
 import inspect
-import os
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -29,7 +28,7 @@ from cyclopts.exceptions import CycloptsError, UnknownOptionError
 from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
 from untaped.config import build_config_app
 from untaped.profile import build_profile_app
-from untaped.profile_resolver import ACTIVE_PROFILE_ENV
+from untaped.profile_resolver import profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import get_settings
@@ -43,7 +42,7 @@ _FLAG_PRESENT = ""
 
 _PROFILE_HELP = (
     "Override the active profile for this invocation only "
-    "(equivalent to setting the UNTAPED_PROFILE environment variable)."
+    "(scoped to the invocation; does not mutate UNTAPED_PROFILE)."
 )
 _VERBOSE_HELP = "Stream underlying tool output live and enable debug logging."
 _QUIET_HELP = "Suppress progress and success/info messages (errors still print)."
@@ -61,7 +60,7 @@ class _RootOption:
 
 
 def _apply_profile(value: str) -> None:
-    os.environ[ACTIVE_PROFILE_ENV] = value
+    set_profile_override(value)
     get_settings.cache_clear()
 
 
@@ -140,12 +139,9 @@ def _install_root_callback(app: App, root_options: dict[str, _RootOption]) -> No
     app.meta.version_flags = ()
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
-        # Root-option handlers mutate ambient process state (env vars, the
-        # settings cache) so the dispatched command resolves under the selected
-        # scope. Snapshot os.environ and restore it after dispatch so those
-        # effects stay scoped to this invocation only — for in-process callers
-        # (the CLI process exits anyway).
-        env_snapshot = dict(os.environ)
+        # Root-option handlers set invocation-scoped ContextVars (and clear the
+        # settings cache). Reset them after dispatch so no effect leaks across
+        # in-process callers (tests, embedding); the CLI process exits anyway.
         try:
             with report_errors():
                 command_tokens = _consume_leading_root_options(list(tokens), root_options)
@@ -153,9 +149,8 @@ def _install_root_callback(app: App, root_options: dict[str, _RootOption]) -> No
         finally:
             _reset_verbose()
             _reset_quiet()
-            if dict(os.environ) != env_snapshot:
-                os.environ.clear()
-                os.environ.update(env_snapshot)
+            if profile_override() is not None:
+                set_profile_override(None)
                 get_settings.cache_clear()
 
     signature = _root_callback_signature(root_options)

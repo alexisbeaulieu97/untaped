@@ -76,6 +76,25 @@ def test_profile_resolves_in_trailing_position(_isolated_config: Path, tmp_path:
     assert result.stdout.strip() == "WT"
 
 
+def test_profile_root_option_never_mutates_environ(_isolated_config: Path, tmp_path: Path) -> None:
+    """--profile must scope via the override ContextVar, not UNTAPED_PROFILE."""
+    import os
+
+    from untaped.profile_resolver import profile_override
+
+    _isolated_config.write_text(
+        "profiles:\n  work:\n    github:\n      token: WT\n", encoding="utf-8"
+    )
+    get_settings.cache_clear()
+    wired = _wired(tmp_path)
+    env_before = os.environ.get("UNTAPED_PROFILE")
+    result = CliInvoker().invoke(wired.meta, ["--profile", "work", "whoami"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "WT"
+    assert os.environ.get("UNTAPED_PROFILE") == env_before
+    assert profile_override() is None
+
+
 def test_config_group_is_mounted(_isolated_config: Path, tmp_path: Path) -> None:
     wired = _wired(tmp_path)
     result = CliInvoker().invoke(wired.meta, ["config", "set", "token", "ghp_x"])
