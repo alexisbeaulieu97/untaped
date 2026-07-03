@@ -20,10 +20,13 @@ EXPECTED_SURFACE = frozenset(
         "UntapedError",
         "ConfigError",
         "HttpError",
+        "HttpStatusError",
+        "HttpTransportError",
         "first_validation_error",
         # HTTP
         "HttpClient",
         "HttpSettings",
+        "RetryPolicy",
         "connected_client",
         "missing_setting_error",
         "paginate_link",
@@ -37,6 +40,7 @@ EXPECTED_SURFACE = frozenset(
         "clamp_parallel",
         "create_app",
         "echo",
+        "emit",
         "existing_directory",
         "existing_file",
         "parse_json_pairs",
@@ -99,10 +103,14 @@ def test_api_declares_explicit_all() -> None:
     assert sorted(api.__all__) == api.__all__, "untaped.api.__all__ must stay sorted"
 
 
-def test_api_surface_contains_sdk_names() -> None:
+def test_api_surface_matches_expected_sdk_names() -> None:
     api = importlib.import_module("untaped.api")
-    missing = EXPECTED_SURFACE - set(api.__all__)
-    assert not missing, f"untaped.api is missing SDK names: {sorted(missing)}"
+    actual = set(api.__all__)
+    assert actual == EXPECTED_SURFACE, (
+        "untaped.api surface drifted: "
+        f"missing={sorted(EXPECTED_SURFACE - actual)}, "
+        f"unexpected={sorted(actual - EXPECTED_SURFACE)}"
+    )
 
 
 def test_api_names_resolve() -> None:

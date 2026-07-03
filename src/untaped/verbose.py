@@ -42,8 +42,11 @@ def reset(token: Token[bool] | None = None) -> None:
         _verbose.set(False)
     else:
         _verbose.reset(token)
-    level = logging.DEBUG if _verbose.get() else logging.NOTSET
-    logging.getLogger(_LOGGER_NAME).setLevel(level)
+    enabled = _verbose.get()
+    level = logging.DEBUG if enabled else logging.NOTSET
+    logger = logging.getLogger(_LOGGER_NAME)
+    logger.setLevel(level)
+    logger.propagate = not enabled
 
 
 def configure_logging(level: int | str) -> None:

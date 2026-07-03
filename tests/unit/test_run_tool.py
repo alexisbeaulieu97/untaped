@@ -189,3 +189,21 @@ def test_nested_invocation_preserves_outer_verbose(_isolated_config: Path, tmp_p
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "True"
+
+
+def test_verbose_invocation_restores_logger_propagation(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    import logging
+
+    logger = logging.getLogger("untaped")
+    saved_propagate = logger.propagate
+    logger.propagate = True
+    try:
+        wired = _wired(tmp_path)
+        result = CliInvoker().invoke(wired.meta, ["--verbose", "whoami"])
+
+        assert result.exit_code == 0, result.output
+        assert logger.propagate is True
+    finally:
+        logger.propagate = saved_propagate
