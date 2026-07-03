@@ -328,9 +328,10 @@ then call `finish(outcome)` so partial failures exit 1.
 
 - `finish(outcome)` exits 1 for partial failures from a `BatchOutcome` or for
   an explicit `any_failed` boolean.
-- `bounded_map(fn, items, *, concurrency, on_each=None)` runs work serially for
+- `bounded_map(fn, items, *, concurrency, on_each)` runs work serially for
   `concurrency=1`, otherwise in a bounded thread pool with caller
-  `ContextVar`s visible to workers.
+  `ContextVar`s visible to workers. `on_each(item, result)` is required and
+  always runs on the calling thread.
 - `atomic_write(path, text)` writes text through a temporary file and atomic
   replace; `apply_file_changes([...])` applies a transaction of `FileChange`
   records and rolls back already-applied files if a later write fails.
@@ -358,9 +359,12 @@ Import test helpers from `untaped.testing`, not SDK internals:
   is the functional form and accepts `interactive=` and `prompt_backend=`.
 - `ScriptedPromptBackend` scripts prompt answers for interactive flows;
   `TtyStringIO` supplies fake TTY stdin for prompt tests.
-- `assert_destructive_contract(...)` checks the destructive-command contract:
-  piped stdin refuses without `--yes`, `--yes` skips confirmation, and partial
-  failure exits 1.
+- `assert_destructive_contract(...)` checks two legs of the destructive-command
+  contract: piped stdin without `--yes` refuses with the standard error, and an
+  interactive scripted decline prompts exactly once and exits cleanly. It never
+  runs the `--yes` leg (that would perform the destructive action); pass
+  `assert_unchanged=` to verify no effect occurred. Partial-failure exit codes
+  are `finish(outcome)`'s contract — test those directly.
 
 ## 6. Tool-managed state
 

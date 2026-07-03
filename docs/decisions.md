@@ -21,7 +21,7 @@ uv tool install untaped-ansible
 PyPI package metadata is the release contract. Suite repos carry no standing
 `[tool.uv.sources]` git pins (dropped 2026-07-02 once the suite was on PyPI);
 release artifacts are still built with `uv build --no-sources` so wheels
-declare only package ranges such as `untaped>=2.4.4,<3`.
+declare only package ranges such as `untaped>=3.0.0,<4`.
 
 The suite is: `github`, `jira`, `awx`, `ansible`, `workspace`, `recipe`,
 `apple-health`.
