@@ -12,7 +12,7 @@ are equivalent.
 from __future__ import annotations
 
 from untaped.app_context import AppContext, app_context
-from untaped.batch import BatchOutcome, batch_apply
+from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
@@ -104,6 +104,7 @@ __all__ = [
     "ensure_config",
     "existing_directory",
     "existing_file",
+    "finish",
     "first_validation_error",
     "get_config_section",
     "get_core_settings",

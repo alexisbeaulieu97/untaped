@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from untaped.cli import echo
 from untaped.errors import ConfigError, UntapedError
@@ -45,6 +46,19 @@ class BatchOutcome[T, R]:
     @property
     def total(self) -> int:
         return len(self.planned_rows)
+
+
+def finish(outcome: BatchOutcome[Any, Any] | bool) -> None:
+    """Turn a batch/aggregate outcome into the suite's exit-code contract.
+
+    Raises ``SystemExit(1)`` when any item failed ("3 of 5 deleted" is a
+    failure), returns otherwise. Accepts a :class:`BatchOutcome` or a bare
+    ``any_failed``-style bool so non-batch aggregate paths (``resolve_each``
+    callers, hand-rolled loops) share the same guarantee.
+    """
+    failed = outcome.any_failed if isinstance(outcome, BatchOutcome) else bool(outcome)
+    if failed:
+        raise SystemExit(1)
 
 
 def batch_apply[T, R](

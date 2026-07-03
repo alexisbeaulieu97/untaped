@@ -68,6 +68,7 @@ EXPECTED_SURFACE = frozenset(
         # Batch mutation
         "batch_apply",
         "BatchOutcome",
+        "finish",
     }
 )
 

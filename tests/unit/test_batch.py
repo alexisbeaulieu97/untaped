@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from untaped.batch import batch_apply
+from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.errors import ConfigError, HttpError
 from untaped.testing import ScriptedPromptBackend, TtyStringIO
 from untaped.ui import UiContext
@@ -258,3 +258,20 @@ def test_custom_preview_replaces_generic_rows(capsys: pytest.CaptureFixture[str]
     )
     assert seen == [[{"name": "a"}, {"name": "b"}]]
     assert "About to delete" not in capsys.readouterr().err
+
+
+def test_finish_exits_1_on_partial_failure() -> None:
+    outcome = BatchOutcome(results=[("a", "a")], failed=1, planned_rows=[{}, {}])
+    with pytest.raises(SystemExit) as excinfo:
+        finish(outcome)
+    assert excinfo.value.code == 1
+
+
+def test_finish_returns_on_success() -> None:
+    finish(BatchOutcome(results=[("a", "a")], failed=0, planned_rows=[{}]))
+
+
+def test_finish_accepts_any_failed_bool() -> None:
+    with pytest.raises(SystemExit):
+        finish(True)
+    finish(False)
