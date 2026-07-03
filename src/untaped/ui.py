@@ -66,21 +66,29 @@ class UiContext:
         Constructing the default backend imports ``prompt_toolkit``; deferring
         it here keeps that cost off any rendering-only or piped invocation that
         never prompts. An injected backend (tests, alternative frontends) is
-        returned as-is.
+        returned as-is. A ContextVar override (installed by the test harness
+        via ``untaped.testing``) wins over the lazy default so scripted prompts
+        reach contexts the test never constructed itself.
         """
         backend = self._prompt_backend
-        if backend is None:
-            from untaped.prompts import (  # noqa: PLC0415
-                PromptToolkitPromptBackend,
-                prompt_style_from_roles,
-            )
+        if backend is not None:
+            return backend
+        from untaped.prompts import prompt_backend_override  # noqa: PLC0415
 
-            backend = PromptToolkitPromptBackend(
-                stdin=self.stdin,
-                stderr=self.stderr,
-                style=prompt_style_from_roles(self.theme.color_roles),
-            )
-            self._prompt_backend = backend
+        override = prompt_backend_override()
+        if override is not None:
+            return override
+        from untaped.prompts import (  # noqa: PLC0415
+            PromptToolkitPromptBackend,
+            prompt_style_from_roles,
+        )
+
+        backend = PromptToolkitPromptBackend(
+            stdin=self.stdin,
+            stderr=self.stderr,
+            style=prompt_style_from_roles(self.theme.color_roles),
+        )
+        self._prompt_backend = backend
         return backend
 
     def collection(
