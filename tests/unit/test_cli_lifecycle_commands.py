@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, ScriptedPromptBackend, assert_destructive_contract
 
 from untaped_workspace import app
 
@@ -203,37 +203,32 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
     assert not target.exists()
 
 
-def test_forget_prune_aborts_on_no_at_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_forget_prune_decline_exits_zero_without_mutation(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
-    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: True)
+    backend = ScriptedPromptBackend(confirms=[False])
 
-    class _PromptUi:
-        def confirm(self, message: str, *, default: bool = False) -> bool:
-            assert "prune workspace directory" in message
-            assert default is False
-            return False
-
-    monkeypatch.setattr("untaped_workspace.cli.common.ui_context", lambda **_: _PromptUi())
-
-    forget = runner.invoke(app, ["forget", "scratch", "--prune"])
-    assert forget.exit_code == 1
-    assert "aborted" in forget.output
+    forget = runner.invoke(
+        app,
+        ["forget", "scratch", "--prune"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    assert forget.exit_code == 0, forget.output
+    assert backend.calls == [("confirm", "Continue?")]
+    assert "aborted" not in forget.output
     assert target.is_dir()  # files preserved
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert "scratch" in listed.stdout.splitlines()  # registry untouched
 
 
 def test_forget_prune_requires_yes_when_non_interactive(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "scratch", "--path", str(target)])
-    monkeypatch.setattr("untaped_workspace.cli.common._stdin_is_interactive", lambda: False)
 
     forget = runner.invoke(app, ["forget", "scratch", "--prune"])
 
@@ -242,6 +237,24 @@ def test_forget_prune_requires_yes_when_non_interactive(
     assert target.is_dir()
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
     assert "scratch" in listed.stdout.splitlines()
+
+
+def test_forget_prune_conforms_to_destructive_contract(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "scratch", "--path", str(target)])
+
+    def _workspace_and_registration_survive() -> None:
+        assert target.is_dir()
+        listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
+        assert listed.exit_code == 0, listed.output
+        assert "scratch" in listed.stdout.splitlines()
+
+    assert_destructive_contract(
+        app,
+        ["forget", "scratch", "--prune"],
+        assert_unchanged=_workspace_and_registration_survive,
+    )
 
 
 def test_forget_prune_refuses_dirty_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

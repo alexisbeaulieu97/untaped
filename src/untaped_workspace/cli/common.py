@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
-from untaped.api import ConfigError, UiContext, get_config_section, raise_usage, ui_context
+from untaped.api import UiContext, get_config_section, raise_usage, ui_context
 
 from untaped_workspace.application import WorkspaceResolver
 from untaped_workspace.domain import Workspace
@@ -85,18 +84,6 @@ def progress_ui() -> UiContext:
     theme resolution), so feedback must never fail an otherwise-valid command.
     """
     return ui_context(strict=False)
-
-
-def confirm(prompt: str, *, yes: bool) -> bool:
-    if yes:
-        return True
-    if not _stdin_is_interactive():
-        raise ConfigError("prune confirmation requires --yes when stdin is not interactive")
-    return ui_context(strict=False).confirm(prompt)
-
-
-def _stdin_is_interactive() -> bool:
-    return sys.stdin.isatty()
 
 
 def parallel_cap() -> int:

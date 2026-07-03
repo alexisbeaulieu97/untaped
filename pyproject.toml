@@ -1,6 +1,6 @@
 [project]
 name = "untaped-workspace"
-version = "0.10.2"
+version = "0.11.0"
 description = "Local git workspace management CLI built on the untaped SDK."
 readme = "README.md"
 authors = [
@@ -13,7 +13,7 @@ dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
     "pyyaml>=6.0.3",
-    "untaped>=2.4.0,<3",
+    "untaped>=3.0.0,<4",
 ]
 
 [project.scripts]

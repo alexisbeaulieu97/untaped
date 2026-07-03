@@ -4,10 +4,8 @@ The registry is the tool-managed ``workspace`` *state* section: a small
 ``name → path`` map under the top-level ``workspace.workspaces`` key. Repo
 lists live in the per-workspace manifest, not here.
 
-Writes go through the SDK's safe state surface (``mutate_tool_state`` /
-``read_tool_state``) rather than reaching into config-file internals: the
-shared config file is co-owned by every untaped tool, so a write must only
-touch this tool's section and never clobber another's.
+Writes go through the SDK's ``StateCollection`` helper, which keeps updates
+section-scoped, locked, and atomic.
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from untaped.api import mutate_tool_state, read_tool_state
+from untaped.api import StateCollection
 
 from untaped_workspace.domain import Workspace
 from untaped_workspace.errors import RegistryError
@@ -24,11 +22,15 @@ _SECTION = "workspace"
 _KEY = "workspaces"
 
 
+def _collection() -> StateCollection:
+    return StateCollection(_SECTION, _KEY, id_field="name")
+
+
 class WorkspaceRegistryRepository:
     """Adapter for the centralised ``name → path`` registry."""
 
     def entries(self) -> list[Workspace]:
-        return [_to_workspace(e) for e in _existing(read_tool_state(_SECTION))]
+        return [_to_workspace(e) for e in _collection().entries()]
 
     def get(self, name: str) -> Workspace:
         for ws in self.entries():
@@ -46,9 +48,8 @@ class WorkspaceRegistryRepository:
     def register(self, *, name: str, path: Path) -> Workspace:
         canonical = _canonical(path)
 
-        def _apply(state: dict[str, Any]) -> None:
-            existing = _existing(state)
-            for entry in existing:
+        def _register(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            for entry in entries:
                 if entry.get("name") == name:
                     raise RegistryError(
                         f"workspace name already registered: {name!r} → {entry.get('path')}"
@@ -58,45 +59,13 @@ class WorkspaceRegistryRepository:
                         f"workspace path already registered: {entry.get('path')} "
                         f"(as {entry.get('name')!r})"
                     )
-            state[_KEY] = [*existing, {"name": name, "path": str(path)}]
+            return [*entries, {"name": name, "path": str(path)}]
 
-        mutate_tool_state(_SECTION, _apply)
+        _collection().mutate(_register)
         return Workspace(name=name, path=canonical)
 
     def unregister(self, name: str) -> bool:
-        removed = False
-
-        def _apply(state: dict[str, Any]) -> None:
-            nonlocal removed
-            existing = _existing(state)
-            new_entries = [e for e in existing if e.get("name") != name]
-            if len(new_entries) == len(existing):
-                return
-            removed = True
-            if new_entries:
-                state[_KEY] = new_entries
-            else:
-                # Drop the key when empty so the section is removed entirely.
-                state.pop(_KEY, None)
-
-        mutate_tool_state(_SECTION, _apply)
-        return removed
-
-
-def _existing(state: dict[str, Any]) -> list[dict[str, Any]]:
-    if _KEY not in state:
-        return []
-    raw = state.get(_KEY)
-    if not isinstance(raw, list):
-        raise RegistryError("invalid workspace registry: 'workspaces' must be a list")
-    entries: list[dict[str, Any]] = []
-    for index, entry in enumerate(raw):
-        if not isinstance(entry, dict):
-            raise RegistryError(
-                f"invalid workspace registry entry at index {index}: expected mapping"
-            )
-        entries.append(entry)
-    return entries
+        return _collection().remove(name)
 
 
 def _to_workspace(entry: dict[str, Any]) -> Workspace:

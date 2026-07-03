@@ -1,90 +1,51 @@
 # AGENTS.md - `untaped-workspace`
 
-Single source of truth for this standalone CLI repo. If you change
-architecture, command behavior, settings behavior, or the development
-workflow, update this file in the same commit.
+Git-workspace companion to the suite-wide SDK guide and fleet conventions:
+[`docs/plugins.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/plugins.md)
+and
+[`docs/tool-conventions.md`](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/tool-conventions.md).
+This file keeps only `untaped-workspace` rules, contracts, and gotchas.
 
 ## Mission
 
-`untaped-workspace` is a standalone CLI built on the `untaped` SDK. It owns
-the `untaped-workspace` command tree for local git workspaces: per-workspace
-`untaped.yml` manifests, central registry state, git sync/status operations,
-and shell helpers. The `untaped` SDK provides config loading, output helpers,
-stdin helpers, HTTP/TLS primitives, profile selection, and shared errors.
+`untaped-workspace` is a standalone CLI built on the `untaped` SDK, invoked as
+`untaped-workspace`. It owns local git workspace manifests, central registry
+state, sync/status operations, branch metadata commands, shell helpers, and
+prune-safety behavior. The SDK owns shared config, profile, output, stdin, UI,
+prompt, HTTP/TLS, state, and error machinery.
 
 ## Hard Rules
 
-1. **Keep `AGENTS.md` and the packaged skill up to date.** Architecture
-   changes, new command patterns, settings changes, and major workspace
-   workflow changes must be documented here and in
+1. **Keep `AGENTS.md` and the packaged skill up to date.** Architecture changes,
+   command behavior, settings behavior, and major workspace workflows must be
+   documented here and in
    `src/untaped_workspace/skills/untaped-workspace/SKILL.md`.
-2. **Prefer `uv` commands over manual dependency edits.** Use `uv add` and
-   `uv add --group dev`; hand-edit tool config only.
-3. **Expose the CLI through the `untaped-workspace` console script.**
-   `untaped-workspace = "untaped_workspace.__main__:main"` in
-   `[project.scripts]` is the public entry point. `main()` hands the Cyclopts
-   `app` and a `ToolSpec(command="untaped-workspace", section="workspace",
-   profile_model=WorkspaceSettings, state_model=WorkspaceState, skills=...)` to
-   the SDK's `run_tool`, which mounts the shared `config` / `profile` /
-   `skills` command groups and runs under the SDK error contract. The package
-   `__init__.py` re-exports `app` lazily (PEP 562 `__getattr__`) so importing
-   `untaped_workspace` never drags the whole CLI tree onto the import path
-   before it is needed.
-4. **Use the 4-layer DDD layout.** `cli -> application -> domain`, with
-   `infrastructure -> domain`; `application` and `infrastructure` must not
-   import each other at runtime.
-5. **Declare ports in `application/ports.py`.** Use cases depend on the
-   narrowest `Protocol`; concrete adapters satisfy ports structurally.
-6. **Use absolute imports.** `from untaped_workspace...` and
-   `from untaped.api ...` (the supported SDK surface), never relative
-   imports. Tool state helpers such as `mutate_tool_state` and
-   `read_tool_state` come from `untaped.api`; test-only helpers
-   (`untaped.testing`, `untaped.main`, `untaped.settings`) may stay in `tests/`.
-7. **Every source module has a module docstring.** Re-export `__init__.py`
-   files are exempt.
-8. **Cyclopts command signatures are explicit.** Use
-   `Annotated[..., Parameter(...)]` and name documented commands/options
-   explicitly. Required inputs are required positional-only params
-   (`Parameter(help=...)` before `/`); a missing value renders
-   `error: ... requires an argument` (exit 2) automatically — never an
-   optional default plus a manual help dance.
-9. **stdout is data only.** Prompts, progress, and status messages go to
-   stderr via `echo(..., err=True)`.
-10. **Pipe-friendly commands keep stable raw identifiers.** Workspace
-    registry rows start with `name`; sync/status/foreach rows start with
-    `workspace`. Workspace-level bulk failures use `repo=""` and
-    `action="unavailable"` instead of overloading repo-level skip rows.
-11. **Row-oriented CLI output uses the SDK's `untaped.render_rows`.** Human
-    `--format table` output goes through the SDK `ui_context()` so profile
-    `ui:` settings and SDK built-in themes apply. Structured `json`, `yaml`, and
-    `raw` output goes through a plain `UiContext()` so missing or bad themes
-    do not break pipe-friendly output. Every producer also passes a `kind=`
-    so `--format pipe` emits self-describing NDJSON: `list` →
-    `workspace.workspace`, `show` repo rows → `workspace.repo`, empty
-    `show` summary rows → `workspace.summary`, `sync` →
-    `workspace.sync-outcome`, `status` → `workspace.status`, `foreach` →
-    `workspace.foreach-outcome`, `branch apply` → `workspace.branch-outcome`.
-    `show` repo records keep `path` as the workspace root and include
-    `target_path` for the repo checkout; empty workspace summary rows omit
-    `target_path`. `path` consumes that stream via
-    `read_identifiers(..., id_field="name")`, so
-    `list --format pipe | path --stdin` works (bare names still work too).
-12. **Interactive prompts use the SDK's prompt primitives.** Destructive
-    confirmations go through `ui_context(strict=False).confirm(...)`, render
-    on stderr, require TTY stdin, and keep `--yes` for automation.
-13. **Read typed settings through `get_config_section`.** Use
-    `get_config_section("workspace", WorkspaceSettings)` (via
-    `cli/common.py`'s `workspace_settings()`), not a global aggregate
-    `settings.workspace` attribute. `get_config_section` builds the one-off
-    section model directly, so the CLI app can be exercised in tests without
-    going through `run_tool`. Profile selection is owned by the built-in
-    `--profile` option, which works in any token position. Commands must not
-    declare a command-local `--profile`; they call `get_config_section` bare
-    and read whatever profile was selected.
-14. **All git subprocess calls live behind infrastructure ports.** New git
-    operations go in `GitRunner`; application code depends on Protocols.
-15. **Finish with verification.** Run `uv run ruff check --fix`,
-    `uv run ruff format`, `uv run mypy`, and `uv run pytest`.
+2. **Keep the workspace `ToolSpec` particulars stable.** The console script is
+   `untaped_workspace.__main__:main`; `ToolSpec` declares
+   `command="untaped-workspace"`, `section="workspace"`,
+   `profile_model=WorkspaceSettings`, `state_model=WorkspaceState`, and one
+   packaged skill named `untaped-workspace`. The root package re-exports `app`
+   lazily via PEP 562 `__getattr__` so importing `untaped_workspace` does not
+   import the command tree.
+3. **Keep workspace row identifiers and pipe kinds stable.** Registry rows start
+   with `name`; sync/status/foreach rows start with `workspace`; workspace-level
+   bulk failures use `repo=""` and `action="unavailable"`. Pipe kinds are:
+   `list` -> `workspace.workspace`, `show` repo rows -> `workspace.repo`, empty
+   `show` summary rows -> `workspace.repo.summary`, `sync` ->
+   `workspace.sync_outcome`, `status` -> `workspace.status`, `foreach` ->
+   `workspace.foreach_outcome`, and `branch apply` ->
+   `workspace.branch_outcome`.
+4. **Preserve the manifest/registry split.** Workspace manifests are local
+   source-of-truth files. The central registry is only the top-level
+   `workspace.workspaces` state collection used by `list`, `path`, and workspace
+   lookup.
+5. **Keep git and filesystem side effects behind ports.** Application code
+   depends on protocols in `application/ports.py`; concrete git, filesystem,
+   shell, editor, and `rmtree` behavior lives in `infrastructure/`.
+6. **Do not move the bespoke pools yet.** `application.foreach` and
+   `application.sync_workspaces` keep their local `ThreadPoolExecutor` code until
+   the SDK has a bounded-map primitive with the stop/cancel semantics these
+   flows need.
 
 ## Architecture
 
@@ -583,9 +544,9 @@ Repo mutation prune behavior: `workspace remove <repo> --prune` removes
 a repo from the manifest and deletes its local clone only after the
 shared `PruneSafetyInspector.prune_blockers()` check returns no blockers.
 Unsafe or uninspectable clones raise `WorkspaceError` before the
-manifest is written and before any filesystem deletion. The CLI still
-uses the shared destructive confirmation prompt, with `--yes` for
-automation.
+manifest is written and before any filesystem deletion. The CLI routes
+destructive prune UX through SDK `batch_apply`, with `--yes` / `-y` for
+automation and clean no-op exit on declined confirmation.
 
 ### `--sync` scope contract
 
@@ -662,37 +623,6 @@ StubManifests, empty_manifest` — `pyproject.toml` adds this repo's
 module is runtime-importable (pytest's `--import-mode=importlib` otherwise
 hides it). New shared scaffolding for this package belongs in the same
 module.
-
-## Development Workflow
-
-```bash
-uv sync
-uv run pre-commit install
-uv run pytest
-uv run mypy
-uv run ruff check --fix
-uv run ruff format
-uv run untaped-workspace --help
-```
-
-Use `pytest --no-cov` for tight local loops. Full `pytest` enforces the
-coverage gate.
-
-## Recipe: Add A Workspace Command
-
-1. Write a use-case test with a stub satisfying the narrowest port.
-2. Add or narrow a port in `application/ports.py` if the command needs new
-   service behavior.
-3. Add or adjust a domain model/value object only when the behavior has pure
-   workspace semantics.
-4. Add infrastructure adapter methods behind existing ports for git,
-   filesystem, manifest, or registry side effects.
-5. Wire the Cyclopts command in the matching `cli/*_commands.py` concern module
-   and register it from `cli/commands.py`; keep stdout data-only and expose
-   `--format`/`--columns` for data output.
-6. If the command emits rows, update `tests/unit/test_format_raw_first_key.py`.
-7. Run `uv run untaped-workspace <command> --help` plus the full verification
-   commands above.
 
 ## See Also
 

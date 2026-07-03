@@ -6,18 +6,20 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 from untaped.api import (
+    batch_apply,
     echo,
+    finish,
     raise_usage,
     read_identifiers,
     report_errors,
     resolve_each,
+    ui_context,
 )
 
 from untaped_workspace.application import AddRepo, RemoveRepo, SyncWorkspace
 from untaped_workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
-    confirm,
     resolve_workspace,
     workspace_settings,
 )
@@ -95,8 +97,7 @@ def add_command(
                 cache_dir=workspace_settings().cache_dir,
             )(ws, only=added)
             print_sync_outcomes(outcomes, fmt="table", columns=None)
-    if any_failed:
-        raise SystemExit(1)
+    finish(any_failed)
 
 
 def remove_command(
@@ -138,13 +139,20 @@ def remove_command(
             prune_safety=GitRunner(),
         )
 
-        def _remove_one(ident: str) -> None:
-            if prune and not confirm(f"prune local clone for {ident!r} in {ws.name!r}?", yes=yes):
-                echo("aborted", err=True)
-                raise SystemExit(1)
+        def _remove_one(ident: str) -> str:
             removed = remove_repo(ws, ident=ident, prune=prune)
             echo(f"removed {removed.name} from {ws.name!r}", err=True)
+            return removed.name
 
-        _, any_failed = resolve_each(idents, _remove_one)
-    if any_failed:
-        raise SystemExit(1)
+        outcome = batch_apply(
+            idents,
+            _remove_one,
+            verb="remove",
+            noun="repo",
+            label=lambda ident: ident,
+            describe=lambda ident: {"workspace": ws.name, "repo": ident},
+            ui=ui_context(strict=False),
+            destructive=prune,
+            assume_yes=yes,
+        )
+    finish(outcome)

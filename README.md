@@ -66,7 +66,9 @@ skips unsafe orphan clones, while `remove --prune` and `forget --prune` refuse
 before mutating manifests, registry state, or files. The local-only safety check
 blocks dirty/untracked/staged work, stash entries, and commits or local tags not
 reachable from local remote-tracking refs. Because it does not fetch, stale
-remote-tracking refs are trusted as the offline safety boundary.
+remote-tracking refs are trusted as the offline safety boundary. `remove --prune`
+and `forget --prune` preview targets and prompt once unless `--yes` / `-y` is
+passed; declining leaves manifests, registry state, and files unchanged.
 
 ## Development
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.0 - 2026-07-03
+
+- Adopted `untaped>=3.0.0,<4` and renamed pipe kinds rejected by SDK 3.0
+  validation: `workspace.summary` → `workspace.repo.summary`,
+  `workspace.sync-outcome` → `workspace.sync_outcome`,
+  `workspace.foreach-outcome` → `workspace.foreach_outcome`, and
+  `workspace.branch-outcome` → `workspace.branch_outcome`.
+- Changed `remove --prune` and `forget --prune` to use the SDK batch
+  preview/confirmation contract. Declining a prompt exits cleanly without
+  mutation, and noninteractive prune still requires `--yes` / `-y`.
+- Moved workspace registry storage to the SDK `StateCollection` helper; duplicate
+  workspace names and paths remain workspace-specific errors, while malformed
+  registry collection shape now uses SDK state wording.
+
 ## 0.10.0 - 2026-06-28
 
 - Changed `foreach` to close child stdin and apply a 600s default per-repo

@@ -12,8 +12,9 @@ from untaped.api import (
     OutputFormat,
     clamp_parallel,
     echo,
+    emit,
+    finish,
     raise_usage,
-    render_rows,
     report_errors,
 )
 
@@ -134,15 +135,13 @@ def print_sync_outcomes(
     columns: list[str] | None,
 ) -> None:
     rows: list[dict[str, object]] = [o.model_dump() for o in outcomes]
-    rendered = render_rows(
+    emit(
         rows,
         fmt=fmt,
         columns=columns,
-        kind="workspace.sync-outcome",
+        kind="workspace.sync_outcome",
         empty="Nothing to sync; clones already match the manifest.",
     )
-    if rendered:
-        echo(rendered)
 
 
 def _sync_summary(outcomes: list[SyncOutcome]) -> str:
@@ -193,15 +192,13 @@ def status_command(
             for ws in targets:
                 for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
                     rows.append(entry.model_dump())
-        rendered = render_rows(
+        emit(
             rows,
             fmt=fmt,
             columns=columns,
             kind="workspace.status",
             empty="No cloned repos. Run `untaped workspace sync` to clone from the manifest.",
         )
-        if rendered:
-            echo(rendered)
 
 
 def foreach_command(
@@ -297,8 +294,5 @@ def foreach_command(
                 echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
-            rendered = render_rows(rows, fmt=fmt, columns=columns, kind="workspace.foreach-outcome")
-            if rendered:
-                echo(rendered)
-        if failed and not ignore_errors:
-            raise SystemExit(1)
+            emit(rows, fmt=fmt, columns=columns, kind="workspace.foreach_outcome")
+        finish(bool(failed) and not ignore_errors)
