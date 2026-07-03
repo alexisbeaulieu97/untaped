@@ -16,7 +16,6 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 from __future__ import annotations
 
 import email.utils
-import re
 import ssl
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -474,14 +473,50 @@ def paginate_pages(
     raise UntapedError(f"pagination did not converge after {max_pages} pages")
 
 
-_NEXT_LINK_RE = re.compile(r'<(?P<url>[^>]+)>;\s*rel="next"')
-
-
 def _parse_link_next(link_header: str | None) -> str | None:
     if not link_header:
         return None
-    match = _NEXT_LINK_RE.search(link_header)
-    return match.group("url") if match else None
+    for value in _split_link_header(link_header):
+        url, params = _parse_link_value(value)
+        rel = params.get("rel")
+        if rel is not None and "next" in rel.split():
+            return url
+    return None
+
+
+def _split_link_header(link_header: str) -> list[str]:
+    values: list[str] = []
+    start = 0
+    in_angle = False
+    for index, char in enumerate(link_header):
+        if char == "<":
+            in_angle = True
+        elif char == ">":
+            in_angle = False
+        elif char == "," and not in_angle:
+            values.append(link_header[start:index].strip())
+            start = index + 1
+    values.append(link_header[start:].strip())
+    return [value for value in values if value]
+
+
+def _parse_link_value(value: str) -> tuple[str, dict[str, str]]:
+    if not value.startswith("<"):
+        return "", {}
+    end = value.find(">")
+    if end < 0:
+        return "", {}
+    params: dict[str, str] = {}
+    for raw_param in value[end + 1 :].split(";"):
+        raw_param = raw_param.strip()
+        if not raw_param or "=" not in raw_param:
+            continue
+        name, raw_value = raw_param.split("=", maxsplit=1)
+        param_value = raw_value.strip()
+        if len(param_value) >= 2 and param_value[0] == '"' and param_value[-1] == '"':
+            param_value = param_value[1:-1]
+        params[name.strip().lower()] = param_value
+    return value[1:end], params
 
 
 def paginate_link(

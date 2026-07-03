@@ -261,6 +261,33 @@ def test_paginate_link_follows_next_links_until_exhausted() -> None:
     assert [row["id"] for row in rows] == [1, 2, 3]
 
 
+@pytest.mark.parametrize(
+    "link_header",
+    [
+        '<https://api.example.com/things?page=2>; rel="next"',
+        '<https://api.example.com/things?page=2>; title="x"; rel="next"',
+        "<https://api.example.com/things?page=2>; rel=next",
+        '<https://api.example.com/things?page=2>; rel="prev next"',
+        '<https://api.example.com/things?page=2> ; rel="next"',
+    ],
+)
+@respx.mock
+def test_paginate_link_accepts_rfc_valid_next_link_forms(link_header: str) -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        if params.get("page") == "2":
+            return httpx.Response(200, json=[{"id": 2}])
+        return httpx.Response(200, json=[{"id": 1}], headers={"link": link_header})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_link(client, "/things"))
+
+    assert [row["id"] for row in rows] == [1, 2]
+
+
 @respx.mock
 def test_paginate_link_first_request_caps_page_size_to_limit() -> None:
     seen: list[str | None] = []
