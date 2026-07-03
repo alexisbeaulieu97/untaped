@@ -569,6 +569,7 @@ def paginate_offset(
     start_param: str = "offset",
     size_param: str = "limit",
     last_flag: str | None = None,
+    max_pages: int | None = 100,
     retry: RetryPolicy | None | _Inherit = _INHERIT,
 ) -> Iterator[dict[str, Any]]:
     """Walk offset/limit collection envelopes with neutral parameter names.
@@ -585,10 +586,14 @@ def paginate_offset(
         return
     emitted = 0
     start = 0
+    pages = 0
     while True:
         request_size = page_size if limit is None else min(page_size, limit - emitted)
         if request_size <= 0:
             return
+        if max_pages is not None and pages >= max_pages:
+            raise UntapedError(f"pagination did not converge after {max_pages} pages")
+        pages += 1
         window = {start_param: start, size_param: request_size}
         payload = _fetch_offset_page(
             http, method, path, params=params, body=body, window=window, retry=retry
@@ -632,9 +637,13 @@ def _fetch_offset_page(
 def _offset_pages_exhausted(
     payload: dict[str, Any], *, start: int, rows: int, requested: int, last_flag: str | None
 ) -> bool:
-    if last_flag is not None and payload.get(last_flag) is True:
-        return True
+    if last_flag is not None:
+        marker = payload.get(last_flag)
+        if marker is True:
+            return True
+        if marker is False:
+            return False
     total = payload.get("total")
-    if isinstance(total, int) and start + rows >= total:
-        return True
+    if isinstance(total, int):
+        return start + rows >= total
     return rows < requested
