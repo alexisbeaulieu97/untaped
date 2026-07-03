@@ -344,6 +344,46 @@ def test_render_rows_pipe_kind_defaults_to_null(_isolated_config: Path) -> None:
     assert json.loads(out)["kind"] is None
 
 
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "github.code_hit",
+        "awx.apply_outcome",
+        "profile.profile",
+        "jira.issue.summary",
+        "health.metric_source",
+    ],
+)
+def test_valid_kinds_are_accepted(kind: str) -> None:
+    assert render_rows([{"id": 1}], fmt="pipe", kind=kind).startswith("{")
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "github.codehit-x",
+        "awx.apply-outcome",
+        "Github.code_hit",
+        "code_hit",
+        "github.",
+        "github.code_hit.extra",
+        "github.code_hit.summary.x",
+    ],
+)
+def test_invalid_kinds_raise_value_error(kind: str) -> None:
+    with pytest.raises(ValueError, match="invalid pipe kind"):
+        render_rows([{"id": 1}], fmt="pipe", kind=kind)
+
+
+def test_emit_validates_kind_for_single_records() -> None:
+    with pytest.raises(ValueError, match="invalid pipe kind"):
+        emit({"id": 1}, fmt="json", kind="bad-kind")
+
+
+def test_kind_none_is_always_accepted() -> None:
+    assert render_rows([{"id": 1}], fmt="json", kind=None)
+
+
 # ---- emit ------------------------------------------------------------------
 
 

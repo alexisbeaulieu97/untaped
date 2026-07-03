@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -54,6 +55,31 @@ def raise_usage(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
+# <tool>.<snake_noun> with an optional ".summary" suffix. The suffix is
+# load-bearing for pipe consumers that skip informational records, so it is
+# the only third segment allowed.
+_KIND_RE = re.compile(
+    r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\.summary)?$"
+)
+
+
+def _validate_kind(kind: str | None) -> None:
+    """Reject emit kinds that break the documented ``<tool>.<noun>`` shape.
+
+    Raises ``ValueError`` (not ``UntapedError``): a bad kind is a programming
+    error that must surface at development time, not a user-facing condition
+    for ``report_errors`` to soften.
+    """
+    if kind is None:
+        return
+    if not _KIND_RE.match(kind):
+        raise ValueError(
+            f"invalid pipe kind {kind!r}: expected '<tool>.<noun>' in snake_case "
+            "with an optional '.summary' suffix, e.g. 'github.code_hit' or "
+            "'awx.apply_outcome.summary'"
+        )
+
+
 def render_rows(
     rows: Sequence[dict[str, object]],
     *,
@@ -71,6 +97,7 @@ def render_rows(
     ``kind`` tags ``--format pipe`` records with a producer hint (ignored by
     every other format).
     """
+    _validate_kind(kind)
     if columns == ["?"]:
         _print_available_columns(list(rows[0]) if rows else [])
         return ""
@@ -107,6 +134,7 @@ def emit(
     ``kind`` behave as in :func:`render_rows`; ``empty`` applies to a sequence
     only.
     """
+    _validate_kind(kind)
     if columns == ["?"]:
         _print_available_columns(_candidate_columns(records))
         return
