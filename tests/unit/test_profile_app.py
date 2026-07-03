@@ -118,6 +118,17 @@ def test_delete_interactive_decline_leaves_profile(app, _isolated_config: Path) 
     assert "stage" in _isolated_config.read_text(encoding="utf-8")
 
 
+def test_profile_delete_meets_destructive_contract(app, _isolated_config: Path) -> None:
+    from untaped.testing import assert_destructive_contract
+
+    _seed(_isolated_config)
+
+    def stage_still_exists() -> None:
+        assert "stage" in _isolated_config.read_text(encoding="utf-8")
+
+    assert_destructive_contract(app, ["delete", "stage"], assert_unchanged=stage_still_exists)
+
+
 def test_rename_updates_profiles(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
     result = CliInvoker().invoke(app, ["rename", "stage", "staging"])

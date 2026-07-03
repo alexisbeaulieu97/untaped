@@ -109,6 +109,54 @@ def invoke_cli(
     return CliResult(exit_code=0, stdout=stdout.getvalue(), stderr=stderr.getvalue())
 
 
+def assert_destructive_contract(
+    command: App | Callable[..., Any],
+    args: Sequence[str],
+    *,
+    assert_unchanged: Callable[[], None] | None = None,
+) -> None:
+    """Assert a destructive verb honours the SDK confirmation contract.
+
+    Invokes ``command`` twice with the same ``args`` (which must target the
+    verb *positionally* — not via ``--stdin``, whose data leg would starve on
+    the interactive run):
+
+    1. **Piped stdin, no ``--yes``** → must refuse with the standard
+       ``requires --yes`` error and a nonzero exit.
+    2. **Interactive stdin, scripted decline** → must prompt exactly one
+       confirm and honour the decline (no crash beyond ``SystemExit``).
+
+    ``assert_unchanged`` (recommended) runs after each leg to verify the
+    destructive effect did not happen — the helper cannot know what "no
+    effect" means for the tool.
+    """
+    piped = invoke_cli(command, list(args))
+    assert piped.exit_code != 0, (
+        f"piped stdin without --yes must refuse, got exit {piped.exit_code}; "
+        f"stderr: {piped.stderr!r}"
+    )
+    # The refusal surfaces either as a rendered `error: ... requires --yes`
+    # line (command wrapped in report_errors) or as a caught ConfigError on
+    # the result (bare command body) — accept both shapes.
+    combined = f"{piped.stderr}{piped.stdout}{piped.exception or ''}"
+    assert "requires --yes" in combined, (
+        f"expected the standard 'requires --yes' refusal, got: {combined!r}"
+    )
+    if assert_unchanged is not None:
+        assert_unchanged()
+
+    backend = ScriptedPromptBackend(confirms=[False])
+    interactive = invoke_cli(command, list(args), interactive=True, prompt_backend=backend)
+    assert backend.calls and backend.calls[0][0] == "confirm", (
+        "interactive path must prompt for confirmation before acting"
+    )
+    assert interactive.exception is None or isinstance(interactive.exception, SystemExit), (
+        f"decline must exit cleanly, got {interactive.exception!r}"
+    )
+    if assert_unchanged is not None:
+        assert_unchanged()
+
+
 class TtyStringIO(io.StringIO):
     """A ``StringIO`` that claims to be a terminal.
 

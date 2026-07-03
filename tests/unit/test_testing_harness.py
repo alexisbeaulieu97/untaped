@@ -57,3 +57,39 @@ def test_invoke_cli_default_stdin_is_not_a_tty() -> None:
         raise SystemExit(0 if sys.stdin.isatty() else 3)
 
     assert invoke_cli(command, []).exit_code == 3
+
+
+def test_destructive_contract_passes_for_a_conforming_command() -> None:
+    """A command wired through batch_apply(destructive=True) satisfies both legs."""
+    from untaped.batch import batch_apply
+    from untaped.testing import assert_destructive_contract
+    from untaped.ui import ui_context
+
+    executed: list[str] = []
+
+    def command(args, *, console=None, error_console=None):
+        ui = ui_context(strict=False)
+        outcome = batch_apply(
+            ["a"],
+            lambda item: executed.append(item),
+            verb="delete",
+            noun="thing",
+            label=str,
+            describe=lambda item: {"name": item},
+            ui=ui,
+            destructive=True,
+        )
+        raise SystemExit(1 if outcome.any_failed else 0)
+
+    assert_destructive_contract(command, [], assert_unchanged=lambda: None)
+    assert executed == []
+
+
+def test_destructive_contract_flags_a_missing_refusal() -> None:
+    from untaped.testing import assert_destructive_contract
+
+    def command(args, *, console=None, error_console=None):
+        raise SystemExit(0)
+
+    with pytest.raises(AssertionError, match="refuse"):
+        assert_destructive_contract(command, [])
