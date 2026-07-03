@@ -53,6 +53,10 @@ EXPECTED_SURFACE = frozenset(
         "get_settings",
         "invalidate_settings_cache",
         # Filesystem/input helpers
+        "FileChange",
+        "FileWriteError",
+        "apply_file_changes",
+        "atomic_write",
         "read_structured_file",
         # Diff helpers
         "DiffStats",

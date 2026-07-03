@@ -40,7 +40,13 @@ from untaped.errors import (
     UntapedError,
     first_validation_error,
 )
-from untaped.fs import read_structured_file
+from untaped.fs import (
+    FileChange,
+    FileWriteError,
+    apply_file_changes,
+    atomic_write,
+    read_structured_file,
+)
 from untaped.http import (
     HttpClient,
     RetryPolicy,
@@ -90,6 +96,8 @@ __all__ = [
     "ColumnsOption",
     "ConfigError",
     "DiffStats",
+    "FileChange",
+    "FileWriteError",
     "FormatOption",
     "HttpClient",
     "HttpError",
@@ -109,6 +117,8 @@ __all__ = [
     "UiContext",
     "UntapedError",
     "app_context",
+    "apply_file_changes",
+    "atomic_write",
     "batch_apply",
     "bounded_map",
     "build_tool_app",
