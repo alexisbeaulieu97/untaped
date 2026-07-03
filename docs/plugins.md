@@ -22,9 +22,9 @@ released independently — possibly against different SDK versions — but they
 - **Config v2** — the `~/.untaped/config.yml` format (one section per tool;
   top-level `active:`/`profiles:`; per-profile `http:`/`ui:`/`log_level` under
   `profiles.<name>`; the `UNTAPED_<SECTION>__<FIELD>` env-var override shape).
-  The layout changed v1→v2 at SDK 2.0 and is stable within SDK 2.x.
+  The layout changed v1→v2 at SDK 2.0 and is stable within SDK 2.x and 3.x.
 - **Pipe v1** — the `--format pipe` NDJSON envelope (see §7). Versioned
-  independently of the SDK and stable across SDK 1.x **and** 2.x.
+  independently of the SDK and stable across SDK 1.x, 2.x, and 3.x.
 
 These contracts are what let `untaped-github | untaped-ansible` interoperate and
 share one config file across independently installed tools. See decisions
@@ -35,7 +35,7 @@ names in that module's `__all__` are the SDK contract; reaching into SDK
 internals is not supported.
 
 ```python
-from untaped.api import app_context, connected_client, render_rows, run_tool
+from untaped.api import app_context, connected_client, emit, run_tool
 # `from untaped import ...` is equivalent.
 ```
 
@@ -54,7 +54,7 @@ requires-python = ">=3.14"
 dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
-    "untaped>=2.4.4,<3",
+    "untaped>=3.0.0,<4",
 ]
 
 [project.scripts]
@@ -318,10 +318,49 @@ For interactive input, use the UI context prompts:
 a TTY and render on stderr, keeping stdout clean for data.
 
 For destructive batch actions, use `batch_apply(...)` so piped and interactive
-mutations share the same `--yes`, confirmation, progress, and per-item failure
-behavior. When a command has already rendered a richer domain-specific preview,
-pass `render_generic_preview=False`; the helper still prompts, but it skips its
-generic `About to ...` row dump.
+mutations share the same `--yes`/`-y`, confirmation, progress, and per-item
+failure behavior. When a command has already rendered a richer domain-specific
+preview, pass `render_generic_preview=False`; the helper still prompts, but it
+skips its generic `About to ...` row dump. Return or render the `BatchOutcome`,
+then call `finish(outcome)` so partial failures exit 1.
+
+### SDK surface primitives
+
+- `finish(outcome)` exits 1 for partial failures from a `BatchOutcome` or for
+  an explicit `any_failed` boolean.
+- `bounded_map(fn, items, *, concurrency, on_each=None)` runs work serially for
+  `concurrency=1`, otherwise in a bounded thread pool with caller
+  `ContextVar`s visible to workers.
+- `atomic_write(path, text)` writes text through a temporary file and atomic
+  replace; `apply_file_changes([...])` applies a transaction of `FileChange`
+  records and rolls back already-applied files if a later write fails.
+- `read_structured_file(path)` reads JSON/YAML by suffix; `parse_json_pairs`
+  parses repeated `KEY=JSON` flags.
+- `read_stdin_text()` reads raw stdin text; `resolve_text_input` enforces the
+  one-source rule across direct value, file, and stdin. Its `what` argument
+  doubles as the flag stem: document paired flags as `--<what>` and
+  `--<what>-file`.
+- `paginate_link(...)` follows RFC Link-header `rel=next` pagination beside the
+  existing offset/page helpers.
+- `StateCollection` and `StateMap` provide strict list/map CRUD over
+  tool-managed state under the shared config lock.
+- `unified_diff_text(...)` returns normalized unified diff text, including
+  `/dev/null` headers for create/delete and no-newline markers; `diff_stats`
+  counts added and removed content lines.
+- `missing_setting_error(...)` builds the standard command-aware
+  "set it via `<tool> config set ...`" configuration error.
+
+### Testing helpers
+
+Import test helpers from `untaped.testing`, not SDK internals:
+
+- `CliInvoker`/`CliResult` invoke a cyclopts app in-process; `invoke_cli(...)`
+  is the functional form and accepts `interactive=` and `prompt_backend=`.
+- `ScriptedPromptBackend` scripts prompt answers for interactive flows;
+  `TtyStringIO` supplies fake TTY stdin for prompt tests.
+- `assert_destructive_contract(...)` checks the destructive-command contract:
+  piped stdin refuses without `--yes`, `--yes` skips confirmation, and partial
+  failure exits 1.
 
 ## 6. Tool-managed state
 
@@ -379,8 +418,8 @@ records = read_records()
 
 `id_field` + `kind` are how independently-installed tools chain:
 `untaped-github search repos --format pipe | untaped-acme import --stdin`. The
-envelope shape is versioned independently of the SDK and stable across SDK 1.x
-and 2.x, so the producer and consumer need not share an SDK version.
+envelope shape is versioned independently of the SDK and stable across SDK 1.x,
+2.x, and 3.x, so the producer and consumer need not share an SDK version.
 `PipeEnvelope`, `common_kind`, `is_envelope_line`, and `parse_envelope_line` are
 exported if you parse envelopes yourself.
 
@@ -455,5 +494,23 @@ Every row-emitting command accepts `--format/-f`:
 
 Column names support dotted paths (`a.b.c`) to address nested dict fields —
 missing intermediates resolve to `None` rather than erroring.
-</content>
-</invoke>
+
+## 3.0 migration notes
+
+The SDK 3.0.0 breaking set is: `format_output`/`output.py` deleted; emit kind
+validation rejects previously legal kinds, including 18 live kind renames in
+the adoption wave; `paginate_offset` neutral defaults replace the old
+Atlassian-specific parameter names; `batch_apply` is the TTY authority for
+destructive commands; profile delete uses the same TTY authority and adds the
+`-y` alias for `--yes`.
+
+For tools moving to 3.0:
+
+- Replace direct `format_output`/`output.py` usage with `emit(...)` for stdout
+  data or `render_rows(...)` only when the command needs a returned string.
+- Rename pipe kinds to `<tool>.<noun>` with snake_case nouns; reserve
+  `.summary` as a suffix only.
+- Pass Atlassian-style offset field names explicitly when calling
+  `paginate_offset(...)` against legacy endpoints.
+- Route every destructive verb through `batch_apply(destructive=True)` and add
+  an `assert_destructive_contract(...)` test.

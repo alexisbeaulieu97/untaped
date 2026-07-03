@@ -72,7 +72,7 @@ tool's `pyproject.toml`:
 [project]
 dependencies = [
   "cyclopts>=4.16.0,<5",
-  "untaped>=2.4.4,<3",
+  "untaped>=3.0.0,<4",
 ]
 
 [project.scripts]
@@ -137,7 +137,7 @@ Per-command settings are read via `app_context()`, which returns a frozen
 
 ## Config & state model
 
-Shared config lives at `~/.untaped/config.yml`. **Format = v2 (SDK 2.x)** —
+Shared config lives at `~/.untaped/config.yml`. **Format = v2 (SDK 2.x/3.x)** —
 independently installed tools all read/write this file, so it is a cross-tool
 contract; any change to its shape is a MAJOR SDK event. SDK 2.0 moved `http`
 and `ui` out of the top-level "globals" position into ordinary per-profile
@@ -295,10 +295,35 @@ file.
 `ThemeSpec`, `UiContext`, and `ProgressHandle` are the public types backing the
 rows above.
 
+## Command output contract (SDK 3.0)
+
+- **stdout is data**: rendered by `emit` (kind-tagged, machine-readable under
+  `--format json/raw/pipe`). `render_rows` exists only for need-the-string
+  cases. There is no other sanctioned stdout writer.
+- **stderr is chrome**: messages, progress, prompts — all through `UiContext`,
+  all quiet/verbose-gated. Raw `echo(..., err=True)` is reserved for data
+  intentionally addressed to stderr (diff bodies, previews), never messages.
+- **A typical command body**: do work → `ui` for chrome → `emit` for data →
+  `finish` for the exit code.
+- **Destructive verbs** route through `batch_apply(destructive=True)`:
+  preview → confirm (`--yes`/`-y` to skip; piped stdin without `--yes`
+  refuses) → progress → outcome. Every destructive verb ships a
+  `untaped.testing.assert_destructive_contract` conformance test.
+- **Exit codes**: partial failure exits 1 — call `finish(outcome)` (accepts a
+  `BatchOutcome` or an `any_failed` bool).
+- **Pipe kinds** are validated: `<tool>.<noun>` (snake_case, optional
+  `.summary` suffix). Invalid kinds raise at development time.
+- **Flags**: `-y` aliases `--yes`; `-f/--format`, `-c/--columns`, `-q/--quiet`,
+  `-v/--verbose` as before.
+
 ## Output & Piping Conventions
 
-- **stdout = data only.** Never print logs, prompts, or progress to stdout.
-- **stderr = everything else.** Logs, progress, prompts. Use `echo(msg, err=True)`.
+- **stdout = data only.** Never print logs, prompts, or progress to stdout;
+  command data goes through `emit` unless the command truly needs a rendered
+  string from `render_rows`.
+- **stderr = chrome plus intentional stderr data.** Messages, progress, and
+  prompts go through `UiContext`; reserve `echo(msg, err=True)` for raw stderr
+  data such as diff bodies or previews.
 - **`--verbose` / `-v`** is an SDK-injected root option (any token position).
   By default slow tool output is captured and shown only on failure;
   `--verbose` streams it live and raises the `untaped` logger to DEBUG.
@@ -334,7 +359,7 @@ rows above.
   one `{"untaped":"1","kind":<hint|null>,"record":{…}}` per line —
   meant to be read back by another tool (`read_records`, or
   `read_identifiers(..., id_field=…)`). The **v1 envelope is versioned
-  independently of the SDK and FROZEN across SDK 1.x AND 2.x**; it carries its
+  independently of the SDK and FROZEN across SDK 1.x, 2.x, AND 3.x**; it carries its
   own version (`"untaped":"1"`) and any change bumps the envelope version. This
   is what guarantees `untaped-github | untaped-ansible` works across
   independently-installed tools built on different SDK versions. `pipe` emits the
@@ -424,7 +449,7 @@ Cross-repo ordering for an SDK change that tools must adopt:
 
 - **SDK first.** Tools can only raise their PyPI floor after that SDK version
   exists on the target index.
-- **Bump each tool's `untaped>=X.Y.Z,<3` floor**, relock
+- **Bump each tool's `untaped>=X.Y.Z,<4` floor**, relock
   (`uv lock --upgrade-package untaped`), gate, and release the tool too.
 - **Do not parallel-publish across dependency gates.** The release order is SDK,
   leaf tools, `untaped-ansible` after `untaped-github`, then `untaped-recipe`

@@ -230,7 +230,7 @@ def test_release_workflow_reports_burn_recovery_after_upload_failures() -> None:
 def test_project_metadata_declares_pypi_release_fields() -> None:
     project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
 
-    assert project["version"] == "2.4.5"
+    assert project["version"] == "3.0.0"
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
     assert project.get("readme") == "README.md"
