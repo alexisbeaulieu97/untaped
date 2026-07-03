@@ -86,6 +86,38 @@ def test_delete_with_yes_removes_profile(app, _isolated_config: Path) -> None:
     assert "stage" not in read_config_dict(_isolated_config)["profiles"]
 
 
+def test_delete_accepts_dash_y_alias(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    result = CliInvoker().invoke(app, ["delete", "stage", "-y"])
+    assert result.exit_code == 0, result.output
+    assert "deleted profile: stage" in result.stderr
+
+
+def test_delete_tty_authority_is_the_context_stdin(
+    app, _isolated_config: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real-TTY process stdin must not bypass refusal when invocation stdin is a pipe."""
+    from untaped.testing import TtyStringIO, invoke_cli
+
+    _seed(_isolated_config)
+    monkeypatch.setattr("sys.stdin", TtyStringIO())
+    result = invoke_cli(app, ["delete", "stage"])
+    assert result.exit_code == 1
+    assert "requires --yes" in f"{result.stderr}{result.exception or ''}"
+
+
+def test_delete_interactive_decline_leaves_profile(app, _isolated_config: Path) -> None:
+    from untaped.testing import ScriptedPromptBackend, invoke_cli
+
+    _seed(_isolated_config)
+    backend = ScriptedPromptBackend(confirms=[False])
+    result = invoke_cli(app, ["delete", "stage"], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 1
+    assert backend.calls[0][0] == "confirm"
+    assert "delete cancelled" in result.stderr
+    assert "stage" in _isolated_config.read_text(encoding="utf-8")
+
+
 def test_rename_updates_profiles(app, _isolated_config: Path) -> None:
     _seed(_isolated_config)
     result = CliInvoker().invoke(app, ["rename", "stage", "staging"])

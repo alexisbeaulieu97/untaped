@@ -14,7 +14,6 @@ built through a small closure.
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
@@ -42,6 +41,7 @@ from untaped.profile.use_cases import (
     ShowProfile,
     UseProfile,
 )
+from untaped.render import stream_is_tty
 from untaped.settings import get_profile_settings_model, resolve_config_path
 from untaped.ui import ui_context
 
@@ -209,7 +209,9 @@ def _delete_command(
     *,
     yes: Annotated[
         bool,
-        Parameter(name="--yes", negative="", help="Delete without interactive confirmation."),
+        Parameter(
+            name=["--yes", "-y"], negative="", help="Delete without interactive confirmation."
+        ),
     ] = False,
 ) -> None:
     """Delete a profile. Refuses to delete the active profile."""
@@ -235,21 +237,17 @@ def _rename_command(
 
 
 def _confirm_delete(preview: ProfileDeletePreview) -> None:
-    if not _stdin_is_interactive():
+    ui = ui_context(strict=False)
+    if not stream_is_tty(ui.stdin):
         raise ConfigError("profile delete requires --yes when stdin is not interactive")
 
     top_level = ", ".join(preview.top_level_keys) or "(none)"
     echo(f"config: {resolve_config_path()}", err=True)
     echo(f"profile: {preview.name}", err=True)
     echo(f"top-level keys: {top_level}", err=True)
-    confirmed = ui_context(strict=False).confirm(f"Delete profile {preview.name!r}?")
-    if not confirmed:
+    if not ui.confirm(f"Delete profile {preview.name!r}?"):
         echo("delete cancelled", err=True)
         raise SystemExit(1)
-
-
-def _stdin_is_interactive() -> bool:
-    return sys.stdin.isatty()
 
 
 def _profile_row(p: Profile) -> dict[str, object]:
