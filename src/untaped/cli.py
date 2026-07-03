@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.errors import HttpError, UntapedError
-from untaped.output import OutputFormat
+from untaped.render import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.verbose import is_verbose
 

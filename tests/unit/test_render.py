@@ -1,10 +1,18 @@
+"""Format-convention tests for the render module (ex-test_output.py).
+
+These pin the cross-tool output conventions: json/yaml round-trip, raw
+first-key + tab rules, dotted-column resolution, COLUMNS-driven table
+width, Rich-markup safety, and the pipe envelope shape.
+"""
+
 import json
 import os
 
 import pytest
 import yaml
 
-from untaped.output import OutputFormat, format_output
+from untaped.render import OutputFormat
+from untaped.ui import UiContext
 
 
 @pytest.fixture
@@ -15,33 +23,37 @@ def rows() -> list[dict[str, object]]:
     ]
 
 
+def _render(rows, **kwargs) -> str:
+    return UiContext().collection(rows, **kwargs)
+
+
 def test_json_format_round_trips(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="json")
+    out = _render(rows, fmt="json")
     assert json.loads(out) == rows
 
 
 def test_yaml_format_round_trips(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="yaml")
+    out = _render(rows, fmt="yaml")
     assert yaml.safe_load(out) == rows
 
 
 def test_raw_single_column_one_per_line(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="raw", columns=["name"])
+    out = _render(rows, fmt="raw", columns=["name"])
     assert out.splitlines() == ["alpha", "beta"]
 
 
 def test_raw_multi_column_tab_separated(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="raw", columns=["name", "project_id"])
+    out = _render(rows, fmt="raw", columns=["name", "project_id"])
     assert out.splitlines() == ["alpha\t100", "beta\t200"]
 
 
 def test_raw_without_columns_picks_first_key(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="raw")
+    out = _render(rows, fmt="raw")
     assert out.splitlines() == ["1", "2"]
 
 
 def test_table_format_returns_renderable_string(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="table")
+    out = _render(rows, fmt="table")
     # Each row's name should appear somewhere in the rendered table.
     assert "alpha" in out
     assert "beta" in out
@@ -49,15 +61,15 @@ def test_table_format_returns_renderable_string(rows: list[dict[str, object]]) -
 
 def test_unknown_format_raises() -> None:
     with pytest.raises(ValueError, match="unknown format"):
-        format_output([], fmt="xml")  # type: ignore[arg-type]
+        _render([], fmt="xml")  # type: ignore[arg-type]
 
 
 def test_columns_filter_for_json(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="json", columns=["name"])
+    out = _render(rows, fmt="json", columns=["name"])
     assert json.loads(out) == [{"name": "alpha"}, {"name": "beta"}]
 
 
-def test_format_literal_type() -> None:
+def test_output_format_literal_type() -> None:
     # Ensures OutputFormat is exported and usable for type annotation.
     fmt: OutputFormat = "json"
     assert fmt == "json"
@@ -88,14 +100,14 @@ def nested_rows() -> list[dict[str, object]]:
 def test_dotted_column_resolves_nested_value(
     nested_rows: list[dict[str, object]],
 ) -> None:
-    out = format_output(nested_rows, fmt="raw", columns=["name", "summary_fields.project.name"])
+    out = _render(nested_rows, fmt="raw", columns=["name", "summary_fields.project.name"])
     assert out.splitlines() == ["alpha\tplaybooks", "beta\t"]
 
 
 def test_dotted_column_in_json_uses_full_dotted_key(
     nested_rows: list[dict[str, object]],
 ) -> None:
-    out = format_output(nested_rows, fmt="json", columns=["summary_fields.project.name"])
+    out = _render(nested_rows, fmt="json", columns=["summary_fields.project.name"])
     parsed = json.loads(out)
     assert parsed == [
         {"summary_fields.project.name": "playbooks"},
@@ -107,7 +119,7 @@ def test_dotted_column_resolves_for_table(
     nested_rows: list[dict[str, object]],
 ) -> None:
     """Table format must resolve dotted paths the same way raw/json/yaml do."""
-    out = format_output(nested_rows, fmt="table", columns=["name", "summary_fields.project.name"])
+    out = _render(nested_rows, fmt="table", columns=["name", "summary_fields.project.name"])
     # Resolved value present.
     assert "playbooks" in out
     # Column header is the full dotted path (lock in: not bare "name" twice
@@ -119,8 +131,8 @@ def test_dotted_column_resolves_for_table(
 
 def test_scalar_list_renders_comma_separated_for_human_formats() -> None:
     rows = [{"name": "alpha", "credentials": ["ssh", "vault"]}]
-    raw = format_output(rows, fmt="raw", columns=["credentials"])
-    table = format_output(rows, fmt="table", columns=["credentials"])
+    raw = _render(rows, fmt="raw", columns=["credentials"])
+    table = _render(rows, fmt="table", columns=["credentials"])
     # splitlines() matches the rest of this file — robust to trailing newlines.
     assert raw.splitlines() == ["ssh, vault"]
     assert "ssh, vault" in table
@@ -139,7 +151,7 @@ def test_table_render_width_tracks_columns_env_var(
 
     def render_width(cols: str) -> int:
         monkeypatch.setenv("COLUMNS", cols)
-        return max(len(line) for line in format_output(rows, fmt="table").splitlines())
+        return max(len(line) for line in _render(rows, fmt="table").splitlines())
 
     assert render_width("60") <= 60
     assert render_width("240") >= 200
@@ -160,7 +172,7 @@ def test_table_render_preserves_bracketed_content(
     """
     long_name = "JOB-commun-gerer-acls-nonprod-[v2.3.1-test-aap]"
     monkeypatch.setenv("COLUMNS", "200")
-    out = format_output([{"name": long_name}], fmt="table")
+    out = _render([{"name": long_name}], fmt="table")
     assert long_name in out
 
 
@@ -182,7 +194,7 @@ def test_table_render_uses_detected_terminal_width_when_columns_unset(
         lambda fallback=(80, 24): os.terminal_size((220, 50)),
     )
     rows = [{"name": "x" * 200}]
-    width = max(len(line) for line in format_output(rows, fmt="table").splitlines())
+    width = max(len(line) for line in _render(rows, fmt="table").splitlines())
     assert width >= 200
 
 
@@ -190,7 +202,7 @@ def test_nested_list_falls_back_to_repr() -> None:
     """Lists of dicts are not flattened — they're structured data the
     user probably wants to inspect via json/yaml, not collapse."""
     rows = [{"name": "alpha", "items": [{"id": 1}, {"id": 2}]}]
-    raw = format_output(rows, fmt="raw", columns=["items"])
+    raw = _render(rows, fmt="raw", columns=["items"])
     assert "id" in raw
     assert "{" in raw  # repr-shaped, not "id, id"
 
@@ -198,7 +210,7 @@ def test_nested_list_falls_back_to_repr() -> None:
 def test_pipe_emits_one_self_describing_envelope_per_line(
     rows: list[dict[str, object]],
 ) -> None:
-    out = format_output(rows, fmt="pipe")
+    out = _render(rows, fmt="pipe")
     lines = out.splitlines()
     assert len(lines) == 2
     assert json.loads(lines[0]) == {
@@ -211,15 +223,15 @@ def test_pipe_emits_one_self_describing_envelope_per_line(
 def test_pipe_ignores_columns_and_emits_full_record(
     rows: list[dict[str, object]],
 ) -> None:
-    out = format_output(rows, fmt="pipe", columns=["name"])
+    out = _render(rows, fmt="pipe", columns=["name"])
     record = json.loads(out.splitlines()[0])["record"]
     assert record == {"id": 1, "name": "alpha", "project_id": 100}
 
 
 def test_pipe_empty_rows_is_empty_string() -> None:
-    assert format_output([], fmt="pipe") == ""
+    assert _render([], fmt="pipe") == ""
 
 
 def test_pipe_tags_kind_when_supplied(rows: list[dict[str, object]]) -> None:
-    out = format_output(rows, fmt="pipe", kind="awx.job_template")
+    out = _render(rows, fmt="pipe", kind="awx.job_template")
     assert json.loads(out.splitlines()[0])["kind"] == "awx.job_template"

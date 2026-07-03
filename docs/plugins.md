@@ -436,5 +436,24 @@ work across tools the same way (`untaped-acme --profile work whoami`).
   reusable local recipe automation.
 - [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health) —
   Apple Health export sync and analysis.
+
+## Output format conventions
+
+Every row-emitting command accepts `--format/-f`:
+
+- `json` / `yaml` — structured output for downstream parsing.
+- `raw` — newline-separated rows, tab-separated columns; the format you pipe
+  into `fzf`, `cut`, or `awk`. With no `--columns`, the first key of each row
+  is emitted — so the first key of every row is the row's identifier
+  (workspace name, job id, login, …) for the `xargs`-into-the-next-command
+  pattern. The full default-column contract lives in the root `AGENTS.md`.
+- `table` — Rich-rendered table for humans. Width follows the `COLUMNS` env
+  var (or the inherited TTY size); no hard-coded cap.
+- `pipe` — the self-describing NDJSON interchange stream (one
+  `{"untaped": ..., "kind": ..., "record": {...}}` per line) for piping into
+  another untaped command. Ignores `--columns`.
+
+Column names support dotted paths (`a.b.c`) to address nested dict fields —
+missing intermediates resolve to `None` rather than erroring.
 </content>
 </invoke>

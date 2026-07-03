@@ -23,7 +23,7 @@ from untaped.cli import (
     render_rows,
     report_errors,
 )
-from untaped.output import OutputFormat
+from untaped.render import OutputFormat
 from untaped.skills import (
     AllSkillsOption,
     InstallableSkill,

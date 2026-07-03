@@ -50,9 +50,9 @@ from untaped.config.infrastructure import SettingsFileRepository
 from untaped.config_file import read_config_dict
 from untaped.config_schema import FieldDescriptor
 from untaped.errors import ConfigError
-from untaped.output import OutputFormat
 from untaped.profile_resolver import classify_active_profile
 from untaped.prompts import PromptChoice
+from untaped.render import OutputFormat
 from untaped.settings import get_settings, legacy_flat_sections, resolve_config_path
 from untaped.theme import BUILTIN_THEMES
 from untaped.tool import ToolSpec

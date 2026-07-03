@@ -45,10 +45,10 @@ from untaped.http import (
     paginate_pages,
     resolve_verify,
 )
-from untaped.output import OutputFormat
 from untaped.pipe import PipeEnvelope, common_kind, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
+from untaped.render import OutputFormat
 from untaped.run import build_tool_app, run_tool
 from untaped.settings import (
     HttpSettings,
