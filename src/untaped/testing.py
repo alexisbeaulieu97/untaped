@@ -22,6 +22,16 @@ from untaped.prompts import (
     set_prompt_backend_override,
 )
 
+__all__ = [
+    "CliInvoker",
+    "CliResult",
+    "PromptBackend",
+    "ScriptedPromptBackend",
+    "TtyStringIO",
+    "assert_destructive_contract",
+    "invoke_cli",
+]
+
 
 @dataclass(frozen=True)
 class CliResult:
