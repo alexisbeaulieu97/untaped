@@ -27,7 +27,7 @@ from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
-from untaped.config_app import build_config_app
+from untaped.config import build_config_app
 from untaped.profile import build_profile_app
 from untaped.profile_resolver import ACTIVE_PROFILE_ENV
 from untaped.quiet import enable as _enable_quiet

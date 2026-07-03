@@ -5,8 +5,7 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from untaped import ConfigError
-from untaped.config.application import GetSetting, ToolConfigContext
-from untaped.config.infrastructure import SettingsFileRepository
+from untaped.config import GetSetting, SettingsFileRepository, ToolConfigContext
 from untaped.settings import (
     get_settings,
     register_profile_settings,

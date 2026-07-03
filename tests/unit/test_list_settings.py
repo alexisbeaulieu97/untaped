@@ -6,9 +6,7 @@ import yaml
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped import ConfigError
-from untaped.config.application import ListAllProfilesSettings, ListSettings
-from untaped.config.domain import Source
-from untaped.config.infrastructure import SettingsFileRepository
+from untaped.config import ListAllProfilesSettings, ListSettings, SettingsFileRepository, Source
 from untaped.settings import (
     get_settings,
     register_profile_settings,

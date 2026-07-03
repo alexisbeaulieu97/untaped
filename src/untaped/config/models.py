@@ -1,11 +1,13 @@
-"""Domain entities for the config bounded context."""
+"""Models and display helpers for the per-tool config command group."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SecretStr
+
+from untaped.config_schema import FieldDescriptor
 
 
 @dataclass(frozen=True)
@@ -47,3 +49,22 @@ class SettingEntry(BaseModel):
     source: Source
     profile: str | None = None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
+
+
+def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> str:
+    """Format a setting value for table display."""
+    if value is None:
+        return "—"
+    if descriptor.is_secret and not reveal_secrets:
+        return "***"
+    if isinstance(value, SecretStr):
+        return value.get_secret_value() if reveal_secrets else "***"
+    return str(value)
+
+
+def display_default(descriptor: FieldDescriptor) -> str:
+    if not descriptor.has_default or descriptor.default is None:
+        return "—"
+    if isinstance(descriptor.default, SecretStr):
+        return descriptor.default.get_secret_value()
+    return str(descriptor.default)

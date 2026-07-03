@@ -1,4 +1,4 @@
-"""Adapter wiring schema introspection + YAML I/O + env detection together.
+"""Settings-file adapter wiring schema introspection + YAML I/O + env detection together.
 
 Scope (profile) awareness goes through the settings layout: every write —
 including ``http``/``ui``, which are ordinary per-profile settings now — lands

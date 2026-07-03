@@ -10,7 +10,7 @@ that lands in ``~/.untaped/config.yml`` read back from disk.
 
 Prompts (``--prompt``) can't run against a captured non-TTY stdin (the real
 ``UiContext`` refuses to prompt without a TTY), so prompt tests monkeypatch
-``untaped.config_app.ui_context`` with a recording fake. The fake serves both
+``untaped.config.app.ui_context`` with a recording fake. The fake serves both
 the prompt call (``text``/``secret``/``select``) and the success ``message``
 call that ``_set`` makes, so the behavioural surface (which prompt kind, which
 choices/default, what gets written, the success text) is still observed.
@@ -27,9 +27,10 @@ import pytest
 import yaml
 from pydantic import BaseModel, SecretStr
 
-import untaped.config_app as config_app
+import untaped.config.app as config_app
+import untaped.config.prompting as config_prompting
 from untaped import get_settings
-from untaped.config_app import build_config_app
+from untaped.config import build_config_app
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError
 from untaped.testing import CliInvoker
@@ -133,6 +134,7 @@ class _RecordingUi:
 
 def _patch_ui(monkeypatch: pytest.MonkeyPatch, ui: _RecordingUi) -> None:
     monkeypatch.setattr(config_app, "ui_context", lambda *a, **k: ui)
+    monkeypatch.setattr(config_prompting, "ui_context", lambda *a, **k: ui)
 
 
 # ── set: key routing ─────────────────────────────────────────────────────────
