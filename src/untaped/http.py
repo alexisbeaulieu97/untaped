@@ -531,18 +531,20 @@ def paginate_offset(
     body: dict[str, Any] | None = None,
     page_size: int = 50,
     limit: int | None = None,
-    start_param: str = "startAt",
-    size_param: str = "maxResults",
+    start_param: str = "offset",
+    size_param: str = "limit",
+    last_flag: str | None = None,
     retry: RetryPolicy | None | _Inherit = _INHERIT,
 ) -> Iterator[dict[str, Any]]:
-    """Walk offset/limit collection envelopes (Jira-style ``startAt`` pages).
+    """Walk offset/limit collection envelopes with neutral parameter names.
 
-    Rows live under ``item_key``; termination honours an ``isLast`` flag or a
-    ``total`` count when the server provides one, and otherwise stops at the
-    first short or empty page. ``retry`` is forwarded per page-fetch: the
-    default ``_INHERIT`` uses the client's policy, while a caller fetching an
-    idempotent ``POST`` collection (e.g. a JQL search) can pass a
-    POST-inclusive :class:`RetryPolicy` to make just that endpoint retry.
+    Rows live under ``item_key``; termination honours ``total`` when the server
+    provides one, or ``last_flag`` when named (a boolean is-last field such as
+    Jira's ``isLast``), and otherwise stops at the first short or empty page.
+    ``retry`` is forwarded per page-fetch: the default ``_INHERIT`` uses the
+    client's policy, while a caller fetching an idempotent ``POST`` collection
+    (e.g. a JQL search) can pass a POST-inclusive :class:`RetryPolicy` to make
+    just that endpoint retry.
     """
     if limit is not None and limit <= 0:
         return
@@ -565,7 +567,13 @@ def paginate_offset(
                 emitted += 1
                 if limit is not None and emitted >= limit:
                     return
-        if _offset_pages_exhausted(payload, start=start, rows=len(rows), requested=request_size):
+        if _offset_pages_exhausted(
+            payload,
+            start=start,
+            rows=len(rows),
+            requested=request_size,
+            last_flag=last_flag,
+        ):
             return
         start += len(rows)
 
@@ -587,9 +595,9 @@ def _fetch_offset_page(
 
 
 def _offset_pages_exhausted(
-    payload: dict[str, Any], *, start: int, rows: int, requested: int
+    payload: dict[str, Any], *, start: int, rows: int, requested: int, last_flag: str | None
 ) -> bool:
-    if payload.get("isLast") is True:
+    if last_flag is not None and payload.get(last_flag) is True:
         return True
     total = payload.get("total")
     if isinstance(total, int) and start + rows >= total:
