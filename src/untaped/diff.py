@@ -44,9 +44,11 @@ def diff_stats(before: str | None, after: str | None) -> DiffStats:
     """Count added/removed lines between ``before`` and ``after``."""
     added = 0
     removed = 0
-    for line in difflib.unified_diff(_split(before), _split(after), lineterm=""):
-        if line.startswith("+") and not line.startswith("+++"):
+    for index, line in enumerate(difflib.unified_diff(_split(before), _split(after), lineterm="")):
+        if index < 2:
+            continue
+        if line.startswith("+"):
             added += 1
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-"):
             removed += 1
     return DiffStats(added=added, removed=removed)
