@@ -53,6 +53,10 @@ EXPECTED_SURFACE = frozenset(
         "invalidate_settings_cache",
         # Filesystem/input helpers
         "read_structured_file",
+        # Diff helpers
+        "DiffStats",
+        "diff_stats",
+        "unified_diff_text",
         # Safe shared-config surface
         "ensure_config",
         "read_tool_state",

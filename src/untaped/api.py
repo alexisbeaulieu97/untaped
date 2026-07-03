@@ -31,6 +31,7 @@ from untaped.cli import (
 )
 from untaped.concurrency import bounded_map
 from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
+from untaped.diff import DiffStats, diff_stats, unified_diff_text
 from untaped.errors import (
     ConfigError,
     HttpError,
@@ -86,6 +87,7 @@ __all__ = [
     "BatchOutcome",
     "ColumnsOption",
     "ConfigError",
+    "DiffStats",
     "FormatOption",
     "HttpClient",
     "HttpError",
@@ -110,6 +112,7 @@ __all__ = [
     "common_kind",
     "connected_client",
     "create_app",
+    "diff_stats",
     "echo",
     "emit",
     "ensure_config",
@@ -144,4 +147,5 @@ __all__ = [
     "resolve_verify",
     "run_tool",
     "ui_context",
+    "unified_diff_text",
 ]
