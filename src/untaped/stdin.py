@@ -43,23 +43,29 @@ def read_stdin_text() -> str:
     return _trim_terminal_newline(sys.stdin.read())
 
 
-def resolve_text_input(value: str | None, file: Path | None, *, what: str = "body") -> str:
+def resolve_text_input(*, value: str | None, file: Path | None, what: str = "body") -> str:
     """Resolve one text input from flag value > file > piped stdin.
 
-    ``value`` and ``file`` together are refused; a file read trims its
-    terminal newline like :func:`read_stdin_text`. Empty everything raises
-    :class:`ConfigError` naming ``what``.
+    ``value`` and ``file`` together are refused; by convention ``what`` is
+    also the flag stem (``--<what>`` / ``--<what>-file``). A file read trims
+    its terminal newline like :func:`read_stdin_text`. Empty resolved text
+    raises :class:`ConfigError` naming ``what``.
     """
     if value is not None and file is not None:
         raise ConfigError(f"provide --{what} or --{what}-file, not both")
     if value is not None:
-        return value
+        return _require_text(value, what=what)
     if file is not None:
         try:
-            return _trim_terminal_newline(file.read_text(encoding="utf-8"))
+            with open(file, encoding="utf-8", newline="") as handle:
+                return _require_text(_trim_terminal_newline(handle.read()), what=what)
         except OSError as exc:
             raise ConfigError(f"could not read {file}: {exc}") from exc
     text = read_stdin_text()
+    return _require_text(text, what=what)
+
+
+def _require_text(text: str, *, what: str) -> str:
     if not text.strip():
         raise ConfigError(f"no {what} provided (use --{what}, --{what}-file, or pipe it on stdin)")
     return text

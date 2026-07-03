@@ -169,25 +169,48 @@ def test_read_stdin_text_is_empty_on_tty(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_resolve_text_input_flag_wins(tmp_path: Path) -> None:
-    assert resolve_text_input("inline", None) == "inline"
+    assert resolve_text_input(value="inline", file=None) == "inline"
+
+
+def test_resolve_text_input_sources_are_keyword_only() -> None:
+    with pytest.raises(TypeError):
+        resolve_text_input("inline", None)
+
+
+def test_resolve_text_input_empty_flag_is_config_error() -> None:
+    with pytest.raises(ConfigError, match="no body provided"):
+        resolve_text_input(value="", file=None)
 
 
 def test_resolve_text_input_rejects_flag_plus_file(tmp_path: Path) -> None:
     f = tmp_path / "body.txt"
     f.write_text("filed", encoding="utf-8")
     with pytest.raises(ConfigError, match="not both"):
-        resolve_text_input("inline", f)
+        resolve_text_input(value="inline", file=f)
 
 
 def test_resolve_text_input_reads_file_trimming_terminal_newline(tmp_path: Path) -> None:
     f = tmp_path / "body.txt"
     f.write_text("from file\n", encoding="utf-8")
-    assert resolve_text_input(None, f) == "from file"
+    assert resolve_text_input(value=None, file=f) == "from file"
+
+
+def test_resolve_text_input_empty_file_is_config_error(tmp_path: Path) -> None:
+    f = tmp_path / "body.txt"
+    f.write_text("", encoding="utf-8")
+    with pytest.raises(ConfigError, match="no body provided"):
+        resolve_text_input(value=None, file=f)
+
+
+def test_resolve_text_input_reads_file_newlines_verbatim(tmp_path: Path) -> None:
+    f = tmp_path / "body.txt"
+    f.write_bytes(b"one\r\ntwo\r\n")
+    assert resolve_text_input(value=None, file=f) == "one\r\ntwo"
 
 
 def test_resolve_text_input_falls_back_to_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("piped body\n"))
-    assert resolve_text_input(None, None) == "piped body"
+    assert resolve_text_input(value=None, file=None) == "piped body"
 
 
 def test_resolve_text_input_empty_everything_is_config_error(
@@ -197,4 +220,4 @@ def test_resolve_text_input_empty_everything_is_config_error(
 
     monkeypatch.setattr("sys.stdin", TtyStringIO())
     with pytest.raises(ConfigError, match="no body provided"):
-        resolve_text_input(None, None)
+        resolve_text_input(value=None, file=None)
