@@ -43,6 +43,8 @@ EXPECTED_SURFACE = frozenset(
         "render_rows",
         "report_errors",
         "resolve_each",
+        # Concurrency
+        "bounded_map",
         # Settings access
         "get_config_section",
         "get_core_settings",

@@ -28,6 +28,7 @@ from untaped.cli import (
     report_errors,
     resolve_each,
 )
+from untaped.concurrency import bounded_map
 from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
 from untaped.errors import (
     ConfigError,
@@ -95,6 +96,7 @@ __all__ = [
     "UntapedError",
     "app_context",
     "batch_apply",
+    "bounded_map",
     "build_tool_app",
     "clamp_parallel",
     "common_kind",
