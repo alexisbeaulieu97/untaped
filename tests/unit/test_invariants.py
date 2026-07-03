@@ -16,8 +16,7 @@ own copies of plugin-specific invariants.
 Each detector is factored into a pure helper (``_credential_offenders``,
 ``_verify_offenders``); the positive tests at the bottom feed the live workspace state through
 those helpers, and parametrised negative self-tests feed synthetic
-known-bad inputs so each detector is provably wired (sibling pattern to
-``test_layering.py::_BYPASS_SOURCES``). Without the negative tests, a
+known-bad inputs so each detector is provably wired. Without the negative tests, a
 detector silently broken to always-return-empty would still report
 "all rules pass" — defeating the pin.
 
@@ -195,7 +194,7 @@ def test_httpclient_construction_passes_verify() -> None:
 #
 # Without these, a detector silently broken to always-return-empty would
 # still report "all rules pass" and the positive tests above would not
-# catch it. Sibling shape to ``test_layering.py``'s ``_BYPASS_SOURCES``.
+# catch it.
 
 
 # (a) Credential-named leaves typed as plain ``str`` (or any non-``SecretStr``).
