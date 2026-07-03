@@ -14,9 +14,9 @@ built through a small closure.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from cyclopts import Parameter
+from cyclopts import App, Parameter
 
 from untaped.cli import (
     ColumnsOption,
@@ -49,7 +49,7 @@ from untaped.ui import ui_context
 ShowFormat = Literal["yaml", "json"]
 
 
-def build_profile_app(command: str) -> Any:
+def build_profile_app(command: str) -> App:
     """Return the cyclopts ``profile`` command group for tool ``command``."""
     app = create_app(
         name="profile",

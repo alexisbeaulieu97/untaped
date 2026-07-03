@@ -12,7 +12,8 @@ renders/exits.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+
+from cyclopts import App
 
 from untaped.cli import (
     ColumnsOption,
@@ -42,7 +43,7 @@ from untaped.tool import ToolSpec
 from untaped.ui import ui_context
 
 
-def build_skills_app(spec: ToolSpec) -> Any:
+def build_skills_app(spec: ToolSpec) -> App:
     """Return the cyclopts ``skills`` command group for ``spec``."""
     skills_map: dict[str, InstallableSkill] = {asset.name: asset for asset in spec.skills}
     app = create_app(

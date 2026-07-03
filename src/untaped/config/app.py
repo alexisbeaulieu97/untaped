@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated
 
-from cyclopts import Parameter
+from cyclopts import App, Parameter
 
 from untaped.cli import (
     ColumnsOption,
@@ -48,7 +48,7 @@ class _Ctx:
         return SettingsFileRepository()
 
 
-def build_config_app(spec: ToolSpec) -> Any:
+def build_config_app(spec: ToolSpec) -> App:
     """Return the cyclopts ``config`` command group for ``spec``."""
     ctx = _Ctx(config=ToolConfigContext.from_spec(spec))
     app = create_app(name="config", help="Inspect and modify ``~/.untaped/config.yml``.")
