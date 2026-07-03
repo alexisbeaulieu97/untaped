@@ -70,15 +70,15 @@ def apply_file_changes(changes: Sequence[FileChange]) -> None:
     staged = _stage_replacements(changes)
     applied: list[FileChange] = []
     try:
-        for change in changes:
+        for index, change in enumerate(changes):
             if change.after is None:
                 if change.path.exists():
                     change.path.unlink()
                 applied.append(change)
                 continue
-            os.replace(staged[change], change.path)
+            os.replace(staged[index], change.path)
             applied.append(change)
-    except OSError as exc:
+    except BaseException as exc:
         _remove_staged(staged.values())
         rollback_errors = _rollback(applied)
         if rollback_errors:
@@ -86,7 +86,9 @@ def apply_file_changes(changes: Sequence[FileChange]) -> None:
             raise FileWriteError(
                 f"{exc}; rollback incomplete: {details}", rollback_incomplete=True
             ) from exc
-        raise FileWriteError(str(exc)) from exc
+        if isinstance(exc, OSError):
+            raise FileWriteError(str(exc)) from exc
+        raise
     finally:
         _remove_staged(staged.values())
 
@@ -106,20 +108,27 @@ def _verify_current_content(changes: Sequence[FileChange]) -> None:
             raise FileWriteError(f"{change.path} changed since planning")
 
 
-def _stage_replacements(changes: Sequence[FileChange]) -> dict[FileChange, Path]:
-    staged: dict[FileChange, Path] = {}
+def _stage_replacements(changes: Sequence[FileChange]) -> dict[int, Path]:
+    staged: dict[int, Path] = {}
+    tmp: Path | None = None
     try:
-        for change in changes:
+        for index, change in enumerate(changes):
             if change.after is None:
                 continue
             change.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = change.path.with_name(f".{change.path.name}.{uuid.uuid4().hex}.untaped.tmp")
             with open(tmp, "w", encoding="utf-8", newline="") as handle:
                 handle.write(change.after)
-            staged[change] = tmp
-    except OSError as exc:
-        _remove_staged(staged.values())
-        raise FileWriteError(str(exc)) from exc
+            staged[index] = tmp
+            tmp = None
+    except BaseException as exc:
+        pending = [*staged.values()]
+        if tmp is not None:
+            pending.append(tmp)
+        _remove_staged(pending)
+        if isinstance(exc, OSError):
+            raise FileWriteError(str(exc)) from exc
+        raise
     return staged
 
 

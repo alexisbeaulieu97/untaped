@@ -1,9 +1,11 @@
 """Behavioral tests for filesystem input helpers."""
 
+import os
 from pathlib import Path
 
 import pytest
 
+import untaped.fs as fs_module
 from untaped.fs import FileChange, FileWriteError, apply_file_changes, atomic_write
 
 
@@ -110,3 +112,44 @@ def test_apply_file_changes_rolls_back_applied_changes_on_failure(tmp_path: Path
             ]
         )
     assert ok.read_text(encoding="utf-8") == "v1"  # rolled back
+
+
+def test_apply_file_changes_allows_duplicate_identical_changes(tmp_path: Path) -> None:
+    target = tmp_path / "same.txt"
+    target.write_text("v1", encoding="utf-8")
+    change = FileChange(path=target, before="v1", after="v2")
+
+    apply_file_changes([change, change])
+
+    assert target.read_text(encoding="utf-8") == "v2"
+
+
+def test_apply_file_changes_rolls_back_non_oserror_apply_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "first.txt"
+    first.write_text("v1", encoding="utf-8")
+    second = tmp_path / "second.txt"
+    second.write_text("old", encoding="utf-8")
+    real_replace = os.replace
+    calls = 0
+
+    def replace_then_interrupt(src: Path, dst: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise KeyboardInterrupt("stop")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(fs_module.os, "replace", replace_then_interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        apply_file_changes(
+            [
+                FileChange(path=first, before="v1", after="v2"),
+                FileChange(path=second, before="old", after="new"),
+            ]
+        )
+
+    assert first.read_text(encoding="utf-8") == "v1"
+    assert second.read_text(encoding="utf-8") == "old"
