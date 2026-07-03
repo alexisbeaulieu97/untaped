@@ -6,6 +6,7 @@ this is the standalone primitive for callers that manage their own loop.
 
 from __future__ import annotations
 
+import contextvars
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -27,13 +28,17 @@ def bounded_map[ItemT, ResultT](
     instead of drained, so Ctrl-C stops large runs promptly rather than
     hanging while the executor's default shutdown runs every queued task.
     """
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
     if len(items) <= 1 or concurrency == 1:
         for item in items:
             on_each(item, fn(item))
         return
     with ThreadPoolExecutor(max_workers=min(concurrency, len(items))) as executor:
         try:
-            futures = {executor.submit(fn, item): item for item in items}
+            futures = {
+                executor.submit(contextvars.copy_context().run, fn, item): item for item in items
+            }
             for future in as_completed(futures):
                 on_each(futures[future], future.result())
         except BaseException:

@@ -1,5 +1,6 @@
 """Behavioral tests for bounded_map (lifted from the ansible canonical form)."""
 
+import contextvars
 import threading
 
 import pytest
@@ -47,3 +48,19 @@ def test_worker_exception_propagates() -> None:
 
     with pytest.raises(RuntimeError, match="worker failed"):
         bounded_map(boom, [1, 2, 3, 4], concurrency=2, on_each=lambda i, r: None)
+
+
+def test_worker_sees_caller_contextvars() -> None:
+    marker = contextvars.ContextVar("marker", default="missing")
+    marker.set("caller")
+    seen: list[str] = []
+
+    bounded_map(lambda x: marker.get(), [1, 2], concurrency=2, on_each=lambda i, r: seen.append(r))
+
+    assert seen == ["caller", "caller"]
+
+
+@pytest.mark.parametrize("items", [[], [1]])
+def test_concurrency_must_be_positive_before_fast_path(items: list[int]) -> None:
+    with pytest.raises(ValueError, match="concurrency must be positive"):
+        bounded_map(lambda x: x, items, concurrency=0, on_each=lambda i, r: None)
