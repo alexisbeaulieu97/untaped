@@ -25,6 +25,24 @@ def test_upsert_appends_then_replaces_by_id(collection: StateCollection) -> None
     assert collection.entries() == [{"name": "b", "value": 2}, {"name": "a", "value": 9}]
 
 
+def test_insert_appends_but_rejects_duplicate_id(collection: StateCollection) -> None:
+    collection.insert({"name": "a", "value": 1})
+
+    with pytest.raises(ConfigError, match="already exists"):
+        collection.insert({"name": "a", "value": 2})
+
+    assert collection.entries() == [{"name": "a", "value": 1}]
+
+
+def test_mutate_replaces_rows_and_returns_replacement(collection: StateCollection) -> None:
+    collection.upsert({"name": "a", "value": 1})
+
+    replacement = collection.mutate(lambda rows: [*rows, {"name": "b", "value": len(rows) + 1}])
+
+    assert replacement == [{"name": "a", "value": 1}, {"name": "b", "value": 2}]
+    assert collection.entries() == replacement
+
+
 def test_get_returns_record_or_none(collection: StateCollection) -> None:
     collection.upsert({"name": "a", "value": 1})
     assert collection.get("a") == {"name": "a", "value": 1}
@@ -64,3 +82,31 @@ def test_state_map_set_get_remove(_isolated_config: Path) -> None:
     assert aliases.remove("web") is False
     data = yaml.safe_load(_isolated_config.read_text(encoding="utf-8")) or {}
     assert "demo" not in data
+
+
+def test_state_map_rejects_malformed_mapping(_isolated_config: Path) -> None:
+    _isolated_config.write_text("demo:\n  aliases: not-a-map\n")
+    aliases = StateMap("demo", "aliases")
+
+    with pytest.raises(ConfigError, match="must be a mapping"):
+        aliases.entries()
+
+
+def test_state_map_rejects_non_string_entries(_isolated_config: Path) -> None:
+    _isolated_config.write_text("demo:\n  aliases:\n    web: 123\n")
+    aliases = StateMap("demo", "aliases")
+
+    with pytest.raises(ConfigError, match="must be a string map"):
+        aliases.entries()
+
+
+def test_state_map_set_does_not_replace_malformed_state(_isolated_config: Path) -> None:
+    _isolated_config.write_text("demo:\n  aliases: not-a-map\n")
+    aliases = StateMap("demo", "aliases")
+
+    with pytest.raises(ConfigError, match="must be a mapping"):
+        aliases.set("web", "org/web-repo")
+
+    assert yaml.safe_load(_isolated_config.read_text(encoding="utf-8")) == {
+        "demo": {"aliases": "not-a-map"}
+    }

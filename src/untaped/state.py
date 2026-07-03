@@ -10,7 +10,7 @@ section can collapse.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from untaped.config_file import mutate_tool_state, read_tool_state
@@ -38,18 +38,43 @@ class StateCollection:
 
     def upsert(self, record: Mapping[str, Any]) -> None:
         """Insert ``record``, replacing any existing record with the same id."""
-        ident = record.get(self._id_field)
-        if not isinstance(ident, str) or not ident:
-            raise ConfigError(
-                f"state record for `{self._section}.{self._key}` must include {self._id_field!r}"
-            )
+        ident = self._record_id(record)
+        self.mutate(
+            lambda rows: [
+                *[row for row in rows if row.get(self._id_field) != ident],
+                dict(record),
+            ]
+        )
+
+    def insert(self, record: Mapping[str, Any]) -> None:
+        """Insert ``record``; raise ConfigError when the id already exists."""
+        ident = self._record_id(record)
+
+        def _replace(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            if any(row.get(self._id_field) == ident for row in rows):
+                raise ConfigError(
+                    f"state record {ident!r} already exists in `{self._section}.{self._key}`"
+                )
+            return [*rows, dict(record)]
+
+        self.mutate(_replace)
+
+    def mutate(
+        self, fn: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+    ) -> list[dict[str, Any]]:
+        """Replace rows under the config-file lock and return the replacement."""
+        replacement: list[dict[str, Any]] = []
 
         def _apply(state: dict[str, Any]) -> None:
-            rows = [row for row in self._rows(state) if row.get(self._id_field) != ident]
-            rows.append(dict(record))
-            state[self._key] = rows
+            nonlocal replacement
+            replacement = self._validate_rows(fn(self._rows(state)))
+            if replacement:
+                state[self._key] = [dict(row) for row in replacement]
+            else:
+                state.pop(self._key, None)
 
         mutate_tool_state(self._section, _apply)
+        return [dict(row) for row in replacement]
 
     def remove(self, ident: str) -> bool:
         """Remove the record with id ``ident``; report whether one existed."""
@@ -80,6 +105,22 @@ class StateCollection:
             )
         return [dict(row) for row in raw]
 
+    def _record_id(self, record: Mapping[str, Any]) -> str:
+        ident = record.get(self._id_field)
+        if not isinstance(ident, str) or not ident:
+            raise ConfigError(
+                f"state record for `{self._section}.{self._key}` must include {self._id_field!r}"
+            )
+        return ident
+
+    def _validate_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise ConfigError(
+                f"invalid state mutation: `{self._section}.{self._key}` replacement "
+                "must be a list of mappings"
+            )
+        return [dict(row) for row in rows]
+
 
 class StateMap:
     """A flat ``str → str`` tool-state map."""
@@ -89,19 +130,15 @@ class StateMap:
         self._key = key
 
     def entries(self) -> dict[str, str]:
-        """The whole map; ``{}`` when unset or malformed rows are non-str."""
-        raw = read_tool_state(self._section).get(self._key)
-        if not isinstance(raw, dict):
-            return {}
-        return {str(k): str(v) for k, v in raw.items()}
+        """The whole map; ``{}`` when unset. Malformed state raises ConfigError."""
+        return self._mapping(read_tool_state(self._section))
 
     def get(self, key: str) -> str | None:
         return self.entries().get(key)
 
     def set(self, key: str, value: str) -> None:
         def _apply(state: dict[str, Any]) -> None:
-            raw = state.get(self._key)
-            mapping = dict(raw) if isinstance(raw, dict) else {}
+            mapping = self._mapping(state)
             mapping[key] = value
             state[self._key] = mapping
 
@@ -112,8 +149,7 @@ class StateMap:
 
         def _apply(state: dict[str, Any]) -> None:
             nonlocal removed
-            raw = state.get(self._key)
-            mapping = dict(raw) if isinstance(raw, dict) else {}
+            mapping = self._mapping(state)
             if key not in mapping:
                 return
             del mapping[key]
@@ -125,3 +161,13 @@ class StateMap:
 
         mutate_tool_state(self._section, _apply)
         return removed
+
+    def _mapping(self, state: dict[str, Any]) -> dict[str, str]:
+        if self._key not in state:
+            return {}
+        raw = state.get(self._key)
+        if not isinstance(raw, dict):
+            raise ConfigError(f"invalid state: `{self._section}.{self._key}` must be a mapping")
+        if not all(isinstance(key, str) and isinstance(value, str) for key, value in raw.items()):
+            raise ConfigError(f"invalid state: `{self._section}.{self._key}` must be a string map")
+        return dict(raw)
