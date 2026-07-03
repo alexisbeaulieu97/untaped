@@ -16,6 +16,7 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 from __future__ import annotations
 
 import email.utils
+import re
 import ssl
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -471,6 +472,53 @@ def paginate_pages(
         seen_cursors.add(next_cursor)
         cursor = next_cursor
     raise UntapedError(f"pagination did not converge after {max_pages} pages")
+
+
+_NEXT_LINK_RE = re.compile(r'<(?P<url>[^>]+)>;\s*rel="next"')
+
+
+def _parse_link_next(link_header: str | None) -> str | None:
+    if not link_header:
+        return None
+    match = _NEXT_LINK_RE.search(link_header)
+    return match.group("url") if match else None
+
+
+def paginate_link(
+    http: HttpClient,
+    path: str,
+    *,
+    params: Mapping[str, str] | None = None,
+    page_size: int = 100,
+    size_param: str = "per_page",
+    limit: int | None = None,
+    item_key: str | None = None,
+    max_pages: int = 100,
+) -> Iterator[dict[str, Any]]:
+    """Walk an RFC 5988 ``Link``-header paginated endpoint (GitHub-style).
+
+    The first request asks for ``min(page_size, limit)`` rows via
+    ``size_param``; each ``rel="next"`` URL is absolute and carries its own
+    cursor parameters, so it is followed verbatim with no extra params.
+    ``item_key`` unwraps an envelope (e.g. search's ``items``); ``None``
+    means the payload body is the row array. A 200 with a non-list body
+    short-circuits gracefully. Loop mechanics (limit, cursor-cycle guard,
+    ``max_pages``) are :func:`paginate_pages`.
+    """
+    first_page = min(page_size, limit) if limit is not None else page_size
+    first_params = {**dict(params or {}), size_param: str(first_page)}
+
+    def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
+        response = http.get(cursor or path, params=first_params if cursor is None else None)
+        payload = response.json()
+        items = (
+            payload.get(item_key) if item_key is not None and isinstance(payload, dict) else payload
+        )
+        if not isinstance(items, list):
+            return [], None
+        return items, _parse_link_next(response.headers.get("link"))
+
+    yield from paginate_pages(fetch, limit=limit, max_pages=max_pages)
 
 
 def paginate_offset(

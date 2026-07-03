@@ -14,6 +14,7 @@ from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
     missing_setting_error,
+    paginate_link,
     paginate_offset,
     paginate_pages,
 )
@@ -237,6 +238,68 @@ def test_paginate_pages_errors_when_not_converging() -> None:
 
     with pytest.raises(UntapedError, match="did not converge"):
         list(paginate_pages(fetch, limit=None, max_pages=5))
+
+
+@respx.mock
+def test_paginate_link_follows_next_links_until_exhausted() -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        if params.get("page") == "2":
+            return httpx.Response(200, json=[{"id": 3}])
+        return httpx.Response(
+            200,
+            json=[{"id": 1}, {"id": 2}],
+            headers={"link": '<https://api.example.com/things?page=2>; rel="next"'},
+        )
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_link(client, "/things"))
+
+    assert [row["id"] for row in rows] == [1, 2, 3]
+
+
+@respx.mock
+def test_paginate_link_first_request_caps_page_size_to_limit() -> None:
+    seen: list[str | None] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        seen.append(httpx.QueryParams(request.url.query).get("per_page"))
+        return httpx.Response(200, json=[{"id": 1}])
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        list(paginate_link(client, "/things", limit=5, page_size=100))
+
+    assert seen == ["5"]
+
+
+@respx.mock
+def test_paginate_link_extracts_items_envelope() -> None:
+    respx.get(url__startswith="https://api.example.com/search/code").mock(
+        return_value=httpx.Response(200, json={"total_count": 1, "items": [{"id": 42}]})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_link(client, "/search/code", item_key="items"))
+
+    assert rows == [{"id": 42}]
+
+
+@respx.mock
+def test_paginate_link_non_list_payload_short_circuits() -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(200, json={"message": "weird error envelope"})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        assert list(paginate_link(client, "/things")) == []
 
 
 @respx.mock

@@ -26,6 +26,7 @@ EXPECTED_SURFACE = frozenset(
         "HttpSettings",
         "connected_client",
         "missing_setting_error",
+        "paginate_link",
         "paginate_offset",
         "paginate_pages",
         "resolve_verify",
