@@ -5,6 +5,8 @@ This is a practical, code-forward guide to building a new standalone CLI on the
 command, frozen contracts — read [`docs/decisions.md`](./decisions.md). This
 page is the how-to; that page is the rationale.
 
+If you are contributing inside an existing suite tool repo, start with the shared [fleet tool conventions](./tool-conventions.md) before applying that tool's local rules.
+
 ## 1. What the SDK is
 
 `untaped` is a batteries-included CLI **framework** built on cyclopts. It gives
