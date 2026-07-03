@@ -25,7 +25,7 @@ caller's responsibility.
 from __future__ import annotations
 
 import os
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from typing import Any, Literal
 
 from untaped.errors import ConfigError
@@ -38,9 +38,14 @@ ProfileSource = Literal["flag", "env", "config", "fallback"]
 _profile_override: ContextVar[str | None] = ContextVar("untaped_profile_override", default=None)
 
 
-def set_profile_override(name: str | None) -> None:
+def set_profile_override(name: str | None) -> Token[str | None]:
     """Set (or clear, with ``None``) the invocation-scoped ``--profile`` override."""
-    _profile_override.set(name)
+    return _profile_override.set(name)
+
+
+def reset_profile_override(token: Token[str | None]) -> None:
+    """Restore the invocation-scoped ``--profile`` override from ``token``."""
+    _profile_override.reset(token)
 
 
 def profile_override() -> str | None:

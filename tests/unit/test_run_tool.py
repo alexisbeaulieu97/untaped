@@ -163,3 +163,29 @@ def test_quiet_mutes_profile_create_success(_isolated_config: Path, tmp_path: Pa
     result = CliInvoker().invoke(wired.meta, ["--quiet", "profile", "create", "p1"])
     assert result.exit_code == 0, result.output
     assert "created profile" not in result.stderr
+
+
+def test_nested_invocation_preserves_outer_verbose(_isolated_config: Path, tmp_path: Path) -> None:
+    from untaped import verbose
+
+    inner = create_app(name="inner", help="Inner app.")
+
+    @inner.command(name="noop")
+    def noop() -> None:
+        echo("inner")
+
+    inner_wired = build_tool_app(inner, _make_spec(tmp_path / "inner"))
+    outer = create_app(name="outer", help="Outer app.")
+
+    @outer.command(name="outer")
+    def outer_command() -> None:
+        result = CliInvoker().invoke(inner_wired.meta, ["noop"])
+        assert result.exit_code == 0, result.output
+        echo(str(verbose.is_verbose()))
+
+    outer_wired = build_tool_app(outer, _make_spec(tmp_path / "outer"))
+
+    result = CliInvoker().invoke(outer_wired.meta, ["--verbose", "outer"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "True"
