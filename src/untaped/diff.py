@@ -24,14 +24,20 @@ def unified_diff_text(before: str | None, after: str | None, *, path: str) -> st
     ``None`` on either side means the file does not exist there (created /
     deleted). Identical content renders as the empty string.
     """
-    return "".join(
-        difflib.unified_diff(
-            _split(before),
-            _split(after),
-            fromfile=f"a/{path}",
-            tofile=f"b/{path}",
-        )
+    lines = difflib.unified_diff(
+        _split(before),
+        _split(after),
+        fromfile="/dev/null" if before is None else f"a/{path}",
+        tofile="/dev/null" if after is None else f"b/{path}",
     )
+    out: list[str] = []
+    for line in lines:
+        if line.endswith("\n"):
+            out.append(line)
+        else:
+            out.append(f"{line}\n")
+            out.append("\\ No newline at end of file\n")
+    return "".join(out)
 
 
 def diff_stats(before: str | None, after: str | None) -> DiffStats:
