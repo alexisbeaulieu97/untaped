@@ -10,7 +10,8 @@ that lands in ``~/.untaped/config.yml`` read back from disk.
 
 Prompts (``--prompt``) can't run against a captured non-TTY stdin (the real
 ``UiContext`` refuses to prompt without a TTY), so prompt tests monkeypatch
-``untaped.config.app.ui_context`` with a recording fake. The fake serves both
+both ``untaped.config.app.ui_context`` and
+``untaped.config.prompting.ui_context`` with a recording fake. The fake serves
 the prompt call (``text``/``secret``/``select``) and the success ``message``
 call that ``_set`` makes, so the behavioural surface (which prompt kind, which
 choices/default, what gets written, the success text) is still observed.

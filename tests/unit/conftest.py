@@ -52,6 +52,7 @@ def _neutral_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Point the flattened config/profile stack at a temp config file."""
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     reset_config_registry_for_tests()
