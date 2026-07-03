@@ -57,14 +57,14 @@ def raise_usage(message: str) -> NoReturn:
 
 # <tool>.<snake_noun> with an optional ".summary" suffix. The suffix is
 # load-bearing for pipe consumers that skip informational records, so it is
-# the only third segment allowed.
+# the only third segment allowed and is reserved for suffix use only.
 _KIND_RE = re.compile(
     r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\.summary)?$"
 )
 
 
 def _validate_kind(kind: str | None) -> None:
-    """Reject emit kinds that break the documented ``<tool>.<noun>`` shape.
+    """Reject emit kinds that break the documented ``<tool>.<noun>[.summary]`` shape.
 
     Raises ``ValueError`` (not ``UntapedError``): a bad kind is a programming
     error that must surface at development time, not a user-facing condition
@@ -72,11 +72,11 @@ def _validate_kind(kind: str | None) -> None:
     """
     if kind is None:
         return
-    if not _KIND_RE.match(kind):
+    if not _KIND_RE.match(kind) or (kind.endswith(".summary") and kind.count(".") == 1):
         raise ValueError(
             f"invalid pipe kind {kind!r}: expected '<tool>.<noun>' in snake_case "
-            "with an optional '.summary' suffix, e.g. 'github.code_hit' or "
-            "'awx.apply_outcome.summary'"
+            "with an optional '<tool>.<noun>.summary' suffix, e.g. "
+            "'github.code_hit' or 'awx.apply_outcome.summary'"
         )
 
 

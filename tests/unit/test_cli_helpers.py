@@ -391,11 +391,17 @@ def test_valid_kinds_are_accepted(kind: str) -> None:
         "github.",
         "github.code_hit.extra",
         "github.code_hit.summary.x",
+        "github.summary",
     ],
 )
 def test_invalid_kinds_raise_value_error(kind: str) -> None:
     with pytest.raises(ValueError, match="invalid pipe kind"):
         render_rows([{"id": 1}], fmt="pipe", kind=kind)
+
+
+def test_summary_kind_is_reserved_as_suffix_only() -> None:
+    with pytest.raises(ValueError, match="<tool>\\.<noun>\\.summary"):
+        render_rows([{"id": 1}], fmt="pipe", kind="github.summary")
 
 
 def test_emit_validates_kind_for_single_records() -> None:
