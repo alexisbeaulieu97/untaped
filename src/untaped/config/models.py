@@ -51,6 +51,17 @@ class SettingEntry(BaseModel):
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
 
 
+def setting_entry_row(entry: SettingEntry) -> dict[str, object]:
+    """Render a setting entry as the config list/get row contract."""
+    return {
+        "key": entry.key,
+        "value": entry.value,
+        "default": entry.default,
+        "source": entry.source.label,
+        "profile": entry.profile or "",
+    }
+
+
 def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> str:
     """Format a setting value for table display."""
     if value is None:

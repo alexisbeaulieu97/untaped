@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from untaped.cli import echo, render_rows, report_errors
-from untaped.config.models import SettingEntry
+from untaped.cli import emit, report_errors
+from untaped.config.models import setting_entry_row
 from untaped.config.ports import SettingsRepository
 from untaped.config.use_cases import ListSettings
 from untaped.config_file import read_config_dict
@@ -41,14 +41,4 @@ def run_config_doctor(repo: SettingsRepository) -> None:
         get_settings.cache_clear()
         get_settings()  # raises ConfigError (-> clean error, exit 1) if invalid
         ui.message("success", "config loaded OK")
-        echo(render_rows([_entry_to_row(e) for e in ListSettings(repo)()], fmt="table"))
-
-
-def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
-    return {
-        "key": entry.key,
-        "value": entry.value,
-        "default": entry.default,
-        "source": entry.source.label,
-        "profile": entry.profile or "",
-    }
+        emit([setting_entry_row(e) for e in ListSettings(repo)()], fmt="table")

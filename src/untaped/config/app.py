@@ -11,13 +11,12 @@ from untaped.cli import (
     ColumnsOption,
     FormatOption,
     create_app,
-    echo,
-    render_rows,
+    emit,
     report_errors,
 )
 from untaped.config.doctor import run_config_doctor
 from untaped.config.editor import run_config_editor
-from untaped.config.models import SettingEntry
+from untaped.config.models import setting_entry_row
 from untaped.config.ports import SettingsRepository
 from untaped.config.prompting import resolve_set_value
 from untaped.config.repository import SettingsFileRepository
@@ -32,7 +31,7 @@ from untaped.config.use_cases import (
 from untaped.render import OutputFormat
 from untaped.settings import resolve_config_path
 from untaped.tool import ToolSpec
-from untaped.ui import UiContext, ui_context
+from untaped.ui import ui_context
 
 
 @dataclass(frozen=True)
@@ -155,14 +154,15 @@ def _list(
             entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
         else:
             entries = ListSettings(repo)(reveal_secrets=show_secrets)
-        rows = [_entry_to_row(e) for e in entries]
-        echo(render_rows(rows, fmt=fmt, columns=columns))
+        rows = [setting_entry_row(e) for e in entries]
+        emit(rows, fmt=fmt, columns=columns)
 
 
 def _get(ctx: _Ctx, key: str, *, fmt: OutputFormat, show_secrets: bool) -> None:
     with report_errors():
         entry = GetSetting(ctx.repo(), context=ctx.config)(key, reveal_secrets=show_secrets)
-        echo(_render_detail(_entry_to_row(entry), fmt=fmt))
+        columns = ["value"] if fmt == "raw" else None
+        emit(setting_entry_row(entry), fmt=fmt, columns=columns)
 
 
 def _set(
@@ -194,23 +194,6 @@ def _unset(ctx: _Ctx, key: str, *, target_profile: str | None) -> None:
             ui.message("success", f"unset {result.key} {where}")
         else:
             ui.message("info", f"{result.key} was not set {where}")
-
-
-def _entry_to_row(entry: SettingEntry) -> dict[str, object]:
-    return {
-        "key": entry.key,
-        "value": entry.value,
-        "default": entry.default,
-        "source": entry.source.label,
-        "profile": entry.profile or "",
-    }
-
-
-def _render_detail(record: dict[str, object], *, fmt: OutputFormat) -> str:
-    columns = ["value"] if fmt == "raw" else None
-    if fmt == "table":
-        return ui_context().detail(record, fmt=fmt, columns=columns)
-    return UiContext().detail(record, fmt=fmt, columns=columns)
 
 
 __all__ = ["build_config_app"]

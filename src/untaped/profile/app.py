@@ -13,11 +13,9 @@ built through a small closure.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
 
-import yaml
 from cyclopts import Parameter
 
 from untaped.cli import (
@@ -25,7 +23,7 @@ from untaped.cli import (
     FormatOption,
     create_app,
     echo,
-    render_rows,
+    emit,
     report_errors,
 )
 from untaped.config_schema import redact_secrets, secret_field_paths
@@ -78,15 +76,13 @@ def _make_list_command(empty_hint: str) -> Callable[..., None]:
         with report_errors():
             profiles = ListProfiles(ProfileFileRepository())()
             rows: list[dict[str, object]] = [_profile_row(p) for p in profiles]
-            rendered = render_rows(
+            emit(
                 rows,
                 fmt=fmt,
                 columns=columns,
                 kind="profile.profile",
                 empty=empty_hint,
             )
-            if rendered:
-                echo(rendered)
 
     return list_command
 
@@ -156,9 +152,9 @@ def _show_command(
                 "raw": raw,
                 "data": data,
             }
-            echo(json.dumps(envelope))
+            emit(envelope, fmt="json")
         else:
-            echo(yaml.safe_dump(data, sort_keys=False, default_flow_style=False).rstrip())
+            emit(data, fmt="yaml")
 
 
 def _use_command(

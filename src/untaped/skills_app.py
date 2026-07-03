@@ -18,9 +18,8 @@ from untaped.cli import (
     ColumnsOption,
     FormatOption,
     create_app,
-    echo,
+    emit,
     raise_usage,
-    render_rows,
     report_errors,
 )
 from untaped.render import OutputFormat
@@ -97,9 +96,7 @@ def _list(
     columns: list[str] | None,
 ) -> None:
     with report_errors():
-        rendered = render_rows(skill_rows(skills), fmt=fmt, columns=columns)
-        if rendered:
-            echo(rendered)
+        emit(skill_rows(skills), fmt=fmt, columns=columns)
 
 
 def _install(
