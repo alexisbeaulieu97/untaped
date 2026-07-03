@@ -19,7 +19,7 @@ This page covers what's in the file, how the values are resolved, and how to
 manage profiles and keys without hand-editing YAML. Examples use
 `untaped-github`; substitute any other tool.
 
-## Config format v2 (SDK 2.x)
+## Config format v2 (SDK 2.x/3.x)
 
 Independent tool environments all read and write this one file, so its format is
 a shared contract. The previous **v1** format was frozen across all SDK 1.x
@@ -80,7 +80,7 @@ things out without touching your real config.
 
 Profile-scoped configuration lives under `profiles.<name>`. This includes each
 tool's own section plus `http:` and `ui:`, which are per-profile settings in
-SDK 2.x. A couple of things live *outside* the `profiles` block:
+SDK 2.x and unchanged in 3.x. A couple of things live *outside* the `profiles` block:
 
 - `active: <name>` — selects which profile is on top. Optional.
 - Tool-owned top-level **state**, such as `workspace.workspaces` or
@@ -155,7 +155,7 @@ profiles:
 inherits its values; when it doesn't, the active profile is layered alone and
 the schema's built-in defaults sit beneath everything.
 
-`ui:` is a per-profile setting in SDK 2.x, but it still only affects human
+`ui:` has been a per-profile setting since SDK 2.0, but it still only affects human
 terminal rendering for semantic collections, details, and status messages. It
 does not change `--format json`, `--format yaml`, or `--format raw`; those
 structured formats ignore theme presets entirely.

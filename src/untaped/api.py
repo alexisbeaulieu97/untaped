@@ -12,7 +12,7 @@ are equivalent.
 from __future__ import annotations
 
 from untaped.app_context import AppContext, app_context
-from untaped.batch import BatchOutcome, batch_apply
+from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
@@ -22,13 +22,16 @@ from untaped.cli import (
     emit,
     existing_directory,
     existing_file,
+    parse_json_pairs,
     parse_kv_pairs,
     raise_usage,
     render_rows,
     report_errors,
     resolve_each,
 )
+from untaped.concurrency import bounded_map
 from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
+from untaped.diff import DiffStats, diff_stats, unified_diff_text
 from untaped.errors import (
     ConfigError,
     HttpError,
@@ -37,18 +40,27 @@ from untaped.errors import (
     UntapedError,
     first_validation_error,
 )
+from untaped.fs import (
+    FileChange,
+    FileWriteError,
+    apply_file_changes,
+    atomic_write,
+    read_structured_file,
+)
 from untaped.http import (
     HttpClient,
     RetryPolicy,
     connected_client,
+    missing_setting_error,
+    paginate_link,
     paginate_offset,
     paginate_pages,
     resolve_verify,
 )
-from untaped.output import OutputFormat
 from untaped.pipe import PipeEnvelope, common_kind, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
+from untaped.render import OutputFormat
 from untaped.run import build_tool_app, run_tool
 from untaped.settings import (
     HttpSettings,
@@ -56,7 +68,14 @@ from untaped.settings import (
     get_core_settings,
     get_settings,
 )
-from untaped.stdin import read_identifiers, read_records, read_stdin
+from untaped.state import StateCollection, StateMap
+from untaped.stdin import (
+    read_identifiers,
+    read_records,
+    read_stdin,
+    read_stdin_text,
+    resolve_text_input,
+)
 from untaped.theme import ThemeSpec
 from untaped.tool import SkillAsset, ToolSpec, register_tool
 from untaped.ui import UiContext, ui_context
@@ -76,6 +95,9 @@ __all__ = [
     "BatchOutcome",
     "ColumnsOption",
     "ConfigError",
+    "DiffStats",
+    "FileChange",
+    "FileWriteError",
     "FormatOption",
     "HttpClient",
     "HttpError",
@@ -88,43 +110,57 @@ __all__ = [
     "PromptChoice",
     "RetryPolicy",
     "SkillAsset",
+    "StateCollection",
+    "StateMap",
     "ThemeSpec",
     "ToolSpec",
     "UiContext",
     "UntapedError",
     "app_context",
+    "apply_file_changes",
+    "atomic_write",
     "batch_apply",
+    "bounded_map",
     "build_tool_app",
     "clamp_parallel",
     "common_kind",
     "connected_client",
     "create_app",
+    "diff_stats",
     "echo",
     "emit",
     "ensure_config",
     "existing_directory",
     "existing_file",
+    "finish",
     "first_validation_error",
     "get_config_section",
     "get_core_settings",
     "get_settings",
     "invalidate_settings_cache",
     "is_envelope_line",
+    "missing_setting_error",
     "mutate_tool_state",
+    "paginate_link",
     "paginate_offset",
     "paginate_pages",
     "parse_envelope_line",
+    "parse_json_pairs",
     "parse_kv_pairs",
     "raise_usage",
     "read_identifiers",
     "read_records",
     "read_stdin",
+    "read_stdin_text",
+    "read_structured_file",
     "read_tool_state",
     "register_tool",
     "render_rows",
     "report_errors",
     "resolve_each",
+    "resolve_text_input",
     "resolve_verify",
     "run_tool",
     "ui_context",
+    "unified_diff_text",
 ]

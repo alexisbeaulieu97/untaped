@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from untaped.errors import ConfigError
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
@@ -19,6 +20,55 @@ def read_stdin() -> list[str]:
     if sys.stdin.isatty():
         return []
     return [stripped for line in sys.stdin if (stripped := line.strip())]
+
+
+def _trim_terminal_newline(text: str) -> str:
+    if text.endswith("\r\n"):
+        return text[:-2]
+    if text.endswith("\n"):
+        return text[:-1]
+    return text
+
+
+def read_stdin_text() -> str:
+    """Read stdin as one raw text block (the dual of line-oriented ``read_stdin``).
+
+    Returns ``""`` on a TTY (never blocks). Interior blank lines and
+    formatting survive verbatim — this is for multi-line bodies that
+    ``read_stdin``'s strip-and-split would mangle. Exactly one terminal
+    newline (LF or CRLF) is trimmed: it belongs to the pipe, not the text.
+    """
+    if sys.stdin.isatty():
+        return ""
+    return _trim_terminal_newline(sys.stdin.read())
+
+
+def resolve_text_input(*, value: str | None, file: Path | None, what: str = "body") -> str:
+    """Resolve one text input from flag value > file > piped stdin.
+
+    ``value`` and ``file`` together are refused; by convention ``what`` is
+    also the flag stem (``--<what>`` / ``--<what>-file``). A file read trims
+    its terminal newline like :func:`read_stdin_text`. Empty resolved text
+    raises :class:`ConfigError` naming ``what``.
+    """
+    if value is not None and file is not None:
+        raise ConfigError(f"provide --{what} or --{what}-file, not both")
+    if value is not None:
+        return _require_text(value, what=what)
+    if file is not None:
+        try:
+            with open(file, encoding="utf-8", newline="") as handle:
+                return _require_text(_trim_terminal_newline(handle.read()), what=what)
+        except OSError as exc:
+            raise ConfigError(f"could not read {file}: {exc}") from exc
+    text = read_stdin_text()
+    return _require_text(text, what=what)
+
+
+def _require_text(text: str, *, what: str) -> str:
+    if not text.strip():
+        raise ConfigError(f"no {what} provided (use --{what}, --{what}-file, or pipe it on stdin)")
+    return text
 
 
 def _read_raw_lines() -> list[tuple[int, str]]:

@@ -20,11 +20,16 @@ EXPECTED_SURFACE = frozenset(
         "UntapedError",
         "ConfigError",
         "HttpError",
+        "HttpStatusError",
+        "HttpTransportError",
         "first_validation_error",
         # HTTP
         "HttpClient",
         "HttpSettings",
+        "RetryPolicy",
         "connected_client",
+        "missing_setting_error",
+        "paginate_link",
         "paginate_offset",
         "paginate_pages",
         "resolve_verify",
@@ -35,22 +40,39 @@ EXPECTED_SURFACE = frozenset(
         "clamp_parallel",
         "create_app",
         "echo",
+        "emit",
         "existing_directory",
         "existing_file",
+        "parse_json_pairs",
         "parse_kv_pairs",
         "raise_usage",
         "render_rows",
         "report_errors",
         "resolve_each",
+        # Concurrency
+        "bounded_map",
         # Settings access
         "get_config_section",
         "get_core_settings",
         "get_settings",
         "invalidate_settings_cache",
+        # Filesystem/input helpers
+        "FileChange",
+        "FileWriteError",
+        "apply_file_changes",
+        "atomic_write",
+        "read_structured_file",
+        # Diff helpers
+        "DiffStats",
+        "diff_stats",
+        "unified_diff_text",
         # Safe shared-config surface
         "ensure_config",
         "read_tool_state",
         "mutate_tool_state",
+        # Tool-state helpers
+        "StateCollection",
+        "StateMap",
         # Interactive UI
         "ProgressHandle",
         "PromptChoice",
@@ -60,6 +82,8 @@ EXPECTED_SURFACE = frozenset(
         "read_identifiers",
         "read_records",
         "read_stdin",
+        "read_stdin_text",
+        "resolve_text_input",
         # Pipe interchange
         "PipeEnvelope",
         "common_kind",
@@ -68,6 +92,7 @@ EXPECTED_SURFACE = frozenset(
         # Batch mutation
         "batch_apply",
         "BatchOutcome",
+        "finish",
     }
 )
 
@@ -78,10 +103,14 @@ def test_api_declares_explicit_all() -> None:
     assert sorted(api.__all__) == api.__all__, "untaped.api.__all__ must stay sorted"
 
 
-def test_api_surface_contains_sdk_names() -> None:
+def test_api_surface_matches_expected_sdk_names() -> None:
     api = importlib.import_module("untaped.api")
-    missing = EXPECTED_SURFACE - set(api.__all__)
-    assert not missing, f"untaped.api is missing SDK names: {sorted(missing)}"
+    actual = set(api.__all__)
+    assert actual == EXPECTED_SURFACE, (
+        "untaped.api surface drifted: "
+        f"missing={sorted(EXPECTED_SURFACE - actual)}, "
+        f"unexpected={sorted(actual - EXPECTED_SURFACE)}"
+    )
 
 
 def test_api_names_resolve() -> None:

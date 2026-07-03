@@ -10,24 +10,27 @@ across in-process callers (tests, embedding).
 
 from __future__ import annotations
 
-_quiet = False
+from contextvars import ContextVar, Token
+
+_quiet: ContextVar[bool] = ContextVar("untaped_quiet", default=False)
 
 
-def enable(_value: str = "") -> None:
+def enable(_value: str = "") -> Token[bool]:
     """Root-option handler for ``--quiet``/``-q``.
 
     Takes no value; the dispatcher passes a placeholder string that is ignored.
     """
-    global _quiet
-    _quiet = True
+    return _quiet.set(True)
 
 
 def is_quiet() -> bool:
     """Whether ``--quiet`` is active for the current invocation."""
-    return _quiet
+    return _quiet.get()
 
 
-def reset() -> None:
-    """Clear quiet state so it doesn't leak past one invocation."""
-    global _quiet
-    _quiet = False
+def reset(token: Token[bool] | None = None) -> None:
+    """Clear or restore quiet state after one invocation."""
+    if token is None:
+        _quiet.set(False)
+    else:
+        _quiet.reset(token)

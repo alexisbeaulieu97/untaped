@@ -205,6 +205,27 @@ def test_classify_active_profile_prefers_env_var(monkeypatch: pytest.MonkeyPatch
     assert classify_active_profile({"active": "prod"}) == ("stage", "env")
 
 
+def test_profile_override_beats_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.profile_resolver import (
+        classify_active_profile,
+        set_profile_override,
+    )
+
+    monkeypatch.setenv("UNTAPED_PROFILE", "env-prof")
+    set_profile_override("flag-prof")
+    try:
+        assert classify_active_profile({}) == ("flag-prof", "flag")
+    finally:
+        set_profile_override(None)
+
+
+def test_no_override_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from untaped.profile_resolver import classify_active_profile
+
+    monkeypatch.setenv("UNTAPED_PROFILE", "env-prof")
+    assert classify_active_profile({}) == ("env-prof", "env")
+
+
 def test_classify_active_profile_reads_persisted_active(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

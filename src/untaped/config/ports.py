@@ -1,4 +1,4 @@
-"""Application-layer protocols (ports) for the config bounded context."""
+"""Protocols (ports) for the per-tool config command group."""
 
 from __future__ import annotations
 

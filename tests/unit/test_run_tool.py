@@ -76,6 +76,25 @@ def test_profile_resolves_in_trailing_position(_isolated_config: Path, tmp_path:
     assert result.stdout.strip() == "WT"
 
 
+def test_profile_root_option_never_mutates_environ(_isolated_config: Path, tmp_path: Path) -> None:
+    """--profile must scope via the override ContextVar, not UNTAPED_PROFILE."""
+    import os
+
+    from untaped.profile_resolver import profile_override
+
+    _isolated_config.write_text(
+        "profiles:\n  work:\n    github:\n      token: WT\n", encoding="utf-8"
+    )
+    get_settings.cache_clear()
+    wired = _wired(tmp_path)
+    env_before = os.environ.get("UNTAPED_PROFILE")
+    result = CliInvoker().invoke(wired.meta, ["--profile", "work", "whoami"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "WT"
+    assert os.environ.get("UNTAPED_PROFILE") == env_before
+    assert profile_override() is None
+
+
 def test_config_group_is_mounted(_isolated_config: Path, tmp_path: Path) -> None:
     wired = _wired(tmp_path)
     result = CliInvoker().invoke(wired.meta, ["config", "set", "token", "ghp_x"])
@@ -144,3 +163,47 @@ def test_quiet_mutes_profile_create_success(_isolated_config: Path, tmp_path: Pa
     result = CliInvoker().invoke(wired.meta, ["--quiet", "profile", "create", "p1"])
     assert result.exit_code == 0, result.output
     assert "created profile" not in result.stderr
+
+
+def test_nested_invocation_preserves_outer_verbose(_isolated_config: Path, tmp_path: Path) -> None:
+    from untaped import verbose
+
+    inner = create_app(name="inner", help="Inner app.")
+
+    @inner.command(name="noop")
+    def noop() -> None:
+        echo("inner")
+
+    inner_wired = build_tool_app(inner, _make_spec(tmp_path / "inner"))
+    outer = create_app(name="outer", help="Outer app.")
+
+    @outer.command(name="outer")
+    def outer_command() -> None:
+        result = CliInvoker().invoke(inner_wired.meta, ["noop"])
+        assert result.exit_code == 0, result.output
+        echo(str(verbose.is_verbose()))
+
+    outer_wired = build_tool_app(outer, _make_spec(tmp_path / "outer"))
+
+    result = CliInvoker().invoke(outer_wired.meta, ["--verbose", "outer"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "True"
+
+
+def test_verbose_invocation_restores_logger_propagation(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    import logging
+
+    logger = logging.getLogger("untaped")
+    saved_propagate = logger.propagate
+    logger.propagate = True
+    try:
+        wired = _wired(tmp_path)
+        result = CliInvoker().invoke(wired.meta, ["--verbose", "whoami"])
+
+        assert result.exit_code == 0, result.output
+        assert logger.propagate is True
+    finally:
+        logger.propagate = saved_propagate

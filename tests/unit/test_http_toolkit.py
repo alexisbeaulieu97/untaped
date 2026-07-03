@@ -14,6 +14,7 @@ from untaped.errors import ConfigError, HttpError, UntapedError
 from untaped.http import (
     connected_client,
     missing_setting_error,
+    paginate_link,
     paginate_offset,
     paginate_pages,
 )
@@ -240,6 +241,95 @@ def test_paginate_pages_errors_when_not_converging() -> None:
 
 
 @respx.mock
+def test_paginate_link_follows_next_links_until_exhausted() -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        if params.get("page") == "2":
+            return httpx.Response(200, json=[{"id": 3}])
+        return httpx.Response(
+            200,
+            json=[{"id": 1}, {"id": 2}],
+            headers={"link": '<https://api.example.com/things?page=2>; rel="next"'},
+        )
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_link(client, "/things"))
+
+    assert [row["id"] for row in rows] == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    "link_header",
+    [
+        '<https://api.example.com/things?page=2>; rel="next"',
+        '<https://api.example.com/things?page=2>; title="x"; rel="next"',
+        "<https://api.example.com/things?page=2>; rel=next",
+        '<https://api.example.com/things?page=2>; rel="prev next"',
+        '<https://api.example.com/things?page=2> ; rel="next"',
+    ],
+)
+@respx.mock
+def test_paginate_link_accepts_rfc_valid_next_link_forms(link_header: str) -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        if params.get("page") == "2":
+            return httpx.Response(200, json=[{"id": 2}])
+        return httpx.Response(200, json=[{"id": 1}], headers={"link": link_header})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_link(client, "/things"))
+
+    assert [row["id"] for row in rows] == [1, 2]
+
+
+@respx.mock
+def test_paginate_link_first_request_caps_page_size_to_limit() -> None:
+    seen: list[str | None] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        seen.append(httpx.QueryParams(request.url.query).get("per_page"))
+        return httpx.Response(200, json=[{"id": 1}])
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        list(paginate_link(client, "/things", limit=5, page_size=100))
+
+    assert seen == ["5"]
+
+
+@respx.mock
+def test_paginate_link_extracts_items_envelope() -> None:
+    respx.get(url__startswith="https://api.example.com/search/code").mock(
+        return_value=httpx.Response(200, json={"total_count": 1, "items": [{"id": 42}]})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_link(client, "/search/code", item_key="items"))
+
+    assert rows == [{"id": 42}]
+
+
+@respx.mock
+def test_paginate_link_non_list_payload_short_circuits() -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(200, json={"message": "weird error envelope"})
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        assert list(paginate_link(client, "/things")) == []
+
+
+@respx.mock
 def test_paginate_offset_walks_start_at_envelopes() -> None:
     def responder(request: httpx.Request) -> httpx.Response:
         start = int(httpx.QueryParams(request.url.query)["startAt"])
@@ -251,7 +341,18 @@ def test_paginate_offset_walks_start_at_envelopes() -> None:
     config = DemoSettings(token=SecretStr("sekret"))
 
     with connected_client(config, section="demo") as client:
-        items = list(paginate_offset(client, "GET", "/board", item_key="values", page_size=2))
+        items = list(
+            paginate_offset(
+                client,
+                "GET",
+                "/board",
+                item_key="values",
+                page_size=2,
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
+        )
 
     assert [item["n"] for item in items] == [1, 2, 3]
 
@@ -270,7 +371,17 @@ def test_paginate_offset_caps_at_limit_and_shrinks_request_size() -> None:
 
     with connected_client(config, section="demo") as client:
         items = list(
-            paginate_offset(client, "GET", "/board", item_key="values", page_size=50, limit=2)
+            paginate_offset(
+                client,
+                "GET",
+                "/board",
+                item_key="values",
+                page_size=50,
+                limit=2,
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
         )
 
     assert len(items) == 2
@@ -295,6 +406,9 @@ def test_paginate_offset_post_rejects_non_object_envelope() -> None:
                 "/search",
                 item_key="issues",
                 body={"jql": "project = DEMO"},
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
             )
         )
 
@@ -325,8 +439,150 @@ def test_paginate_offset_post_empty_object_envelope_is_empty_page() -> None:
                 "/search",
                 item_key="issues",
                 body={"jql": "project = DEMO"},
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
             )
         )
 
     assert rows == []
     assert route.call_count == 1
+
+
+@respx.mock
+def test_paginate_offset_neutral_defaults_send_offset_and_limit() -> None:
+    seen: list[tuple[str | None, str | None]] = []
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        params = httpx.QueryParams(request.url.query)
+        seen.append((params.get("offset"), params.get("limit")))
+        return httpx.Response(200, json={"rows": []})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        list(paginate_offset(client, "GET", "/things", item_key="rows"))
+
+    assert seen == [("0", "50")]
+
+
+@respx.mock
+def test_paginate_offset_ignores_islast_unless_opted_in() -> None:
+    """A payload with isLast=true must NOT stop the walk when last_flag is unset
+    (the page was full, so a next page is requested)."""
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(
+                200, json={"rows": [{"id": i} for i in range(50)], "isLast": True}
+            )
+        return httpx.Response(200, json={"rows": []})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_offset(client, "GET", "/things", item_key="rows"))
+
+    assert len(rows) == 50
+    assert calls["n"] == 2  # isLast ignored → second fetch happened
+
+
+@respx.mock
+def test_paginate_offset_honors_last_flag_when_named() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"rows": [{"id": i} for i in range(50)], "isLast": True})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_offset(client, "GET", "/things", item_key="rows", last_flag="isLast"))
+
+    assert len(rows) == 50
+    assert calls["n"] == 1
+
+
+@respx.mock
+def test_paginate_offset_total_continues_past_server_capped_short_page() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        offset = int(httpx.QueryParams(request.url.query)["offset"])
+        if offset == 0:
+            return httpx.Response(200, json={"rows": [{"id": 1}, {"id": 2}], "total": 3})
+        return httpx.Response(200, json={"rows": [{"id": 3}], "total": 3})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(paginate_offset(client, "GET", "/things", item_key="rows", page_size=50))
+
+    assert [row["id"] for row in rows] == [1, 2, 3]
+    assert calls["n"] == 2
+
+
+@respx.mock
+def test_paginate_offset_last_flag_false_continues_past_short_page() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(200, json={"rows": [{"id": 1}], "isLast": False})
+        return httpx.Response(200, json={"rows": [{"id": 2}], "isLast": True})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        rows = list(
+            paginate_offset(
+                client,
+                "GET",
+                "/things",
+                item_key="rows",
+                page_size=50,
+                last_flag="isLast",
+            )
+        )
+
+    assert [row["id"] for row in rows] == [1, 2]
+    assert calls["n"] == 2
+
+
+@respx.mock
+def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
+    calls = {"n": 0}
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"rows": [{"id": calls["n"]}]})
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo") as client,
+        pytest.raises(UntapedError, match="did not converge after 2 pages"),
+    ):
+        list(
+            paginate_offset(
+                client,
+                "GET",
+                "/things",
+                item_key="rows",
+                page_size=1,
+                max_pages=2,
+            )
+        )
+
+    assert calls["n"] == 2

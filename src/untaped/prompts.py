@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
@@ -56,6 +57,28 @@ class PromptBackend(Protocol):
         *,
         defaults: Sequence[T],
     ) -> list[T]: ...
+
+
+_backend_override: ContextVar[PromptBackend | None] = ContextVar(
+    "untaped_prompt_backend_override", default=None
+)
+
+
+def prompt_backend_override() -> PromptBackend | None:
+    """The invocation-scoped prompt-backend override, if any (test harness)."""
+    return _backend_override.get()
+
+
+def set_prompt_backend_override(
+    backend: PromptBackend | None,
+) -> Token[PromptBackend | None]:
+    """Install a prompt-backend override; returns the token for reset."""
+    return _backend_override.set(backend)
+
+
+def reset_prompt_backend_override(token: Token[PromptBackend | None]) -> None:
+    """Undo :func:`set_prompt_backend_override`."""
+    _backend_override.reset(token)
 
 
 class PromptToolkitPromptBackend:

@@ -14,6 +14,7 @@ from untaped import (
     create_app,
     emit,
     get_settings,
+    parse_json_pairs,
     parse_kv_pairs,
     render_rows,
     report_errors,
@@ -181,6 +182,28 @@ def test_parse_kv_pairs_later_entries_overwrite_earlier() -> None:
     assert parse_kv_pairs(["k=first", "k=second"], flag="--filter") == {"k": "second"}
 
 
+# ---- parse_json_pairs -----------------------------------------------------
+
+
+def test_parse_json_pairs_decodes_values() -> None:
+    out = parse_json_pairs(['labels=["a","b"]', "count=3", 'name="x"'], flag="--json-field")
+    assert out == {"labels": ["a", "b"], "count": 3, "name": "x"}
+
+
+def test_parse_json_pairs_none_is_empty() -> None:
+    assert parse_json_pairs(None, flag="--json-field") == {}
+
+
+def test_parse_json_pairs_rejects_missing_equals() -> None:
+    with pytest.raises(SystemExit):
+        parse_json_pairs(["notapair"], flag="--json-field")
+
+
+def test_parse_json_pairs_rejects_invalid_json() -> None:
+    with pytest.raises(SystemExit):
+        parse_json_pairs(["k={broken"], flag="--json-field")
+
+
 # ---- resolve_each --------------------------------------------------------
 
 
@@ -342,6 +365,52 @@ def test_render_rows_pipe_tags_each_record_with_kind(_isolated_config: Path) -> 
 def test_render_rows_pipe_kind_defaults_to_null(_isolated_config: Path) -> None:
     out = render_rows([{"x": 1}], fmt="pipe")
     assert json.loads(out)["kind"] is None
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "github.code_hit",
+        "awx.apply_outcome",
+        "profile.profile",
+        "jira.issue.summary",
+        "health.metric_source",
+    ],
+)
+def test_valid_kinds_are_accepted(kind: str) -> None:
+    assert render_rows([{"id": 1}], fmt="pipe", kind=kind).startswith("{")
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "github.codehit-x",
+        "awx.apply-outcome",
+        "Github.code_hit",
+        "code_hit",
+        "github.",
+        "github.code_hit.extra",
+        "github.code_hit.summary.x",
+        "github.summary",
+    ],
+)
+def test_invalid_kinds_raise_value_error(kind: str) -> None:
+    with pytest.raises(ValueError, match="invalid pipe kind"):
+        render_rows([{"id": 1}], fmt="pipe", kind=kind)
+
+
+def test_summary_kind_is_reserved_as_suffix_only() -> None:
+    with pytest.raises(ValueError, match="<tool>\\.<noun>\\.summary"):
+        render_rows([{"id": 1}], fmt="pipe", kind="github.summary")
+
+
+def test_emit_validates_kind_for_single_records() -> None:
+    with pytest.raises(ValueError, match="invalid pipe kind"):
+        emit({"id": 1}, fmt="json", kind="bad-kind")
+
+
+def test_kind_none_is_always_accepted() -> None:
+    assert render_rows([{"id": 1}], fmt="json", kind=None)
 
 
 # ---- emit ------------------------------------------------------------------

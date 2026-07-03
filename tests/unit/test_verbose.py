@@ -16,11 +16,13 @@ def _reset_verbose() -> Iterator[None]:
     logger = logging.getLogger("untaped")
     saved_handlers = list(logger.handlers)
     saved_level = logger.level
+    saved_propagate = logger.propagate
     verbose.reset()
     yield
     verbose.reset()
     logger.handlers[:] = saved_handlers
     logger.setLevel(saved_level)
+    logger.propagate = saved_propagate
 
 
 def test_verbose_defaults_off() -> None:

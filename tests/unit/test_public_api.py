@@ -35,6 +35,30 @@ def test_http_error_subclasses_are_re_exported() -> None:
     assert {"HttpStatusError", "HttpTransportError"} <= set(untaped.__all__)
 
 
+def test_three_oh_primitives_are_re_exported() -> None:
+    for name in (
+        "atomic_write",
+        "apply_file_changes",
+        "bounded_map",
+        "diff_stats",
+        "finish",
+        "missing_setting_error",
+        "paginate_link",
+        "parse_json_pairs",
+        "read_structured_file",
+        "read_stdin_text",
+        "resolve_text_input",
+        "unified_diff_text",
+        "DiffStats",
+        "FileChange",
+        "FileWriteError",
+        "StateCollection",
+        "StateMap",
+    ):
+        assert hasattr(untaped, name), name
+        assert name in untaped.__all__, name
+
+
 def test_retired_names_are_not_exposed() -> None:
     """The retired plugin/profile-shim/logging names stay off the surface."""
     for name in (

@@ -40,7 +40,7 @@ def _reset_tool_command() -> Iterator[None]:
 def _neutral_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip ambient ``NO_COLOR``/``FORCE_COLOR`` so color assertions are stable.
 
-    These are honoured at runtime (see ``untaped.ui._should_colorize``), so a
+    These are honoured at runtime (see ``untaped.render.should_colorize``), so a
     developer who exports ``FORCE_COLOR=3`` would otherwise leak color into the
     plain-stream tests. Clearing them here makes the suite deterministic without
     the ``env -u FORCE_COLOR`` wrapper; tests that exercise the env behaviour set
@@ -52,6 +52,7 @@ def _neutral_color_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def _isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Point the flattened config/profile stack at a temp config file."""
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     reset_config_registry_for_tests()

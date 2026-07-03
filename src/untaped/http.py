@@ -473,6 +473,89 @@ def paginate_pages(
     raise UntapedError(f"pagination did not converge after {max_pages} pages")
 
 
+def _parse_link_next(link_header: str | None) -> str | None:
+    if not link_header:
+        return None
+    for value in _split_link_header(link_header):
+        url, params = _parse_link_value(value)
+        rel = params.get("rel")
+        if rel is not None and "next" in rel.split():
+            return url
+    return None
+
+
+def _split_link_header(link_header: str) -> list[str]:
+    values: list[str] = []
+    start = 0
+    in_angle = False
+    for index, char in enumerate(link_header):
+        if char == "<":
+            in_angle = True
+        elif char == ">":
+            in_angle = False
+        elif char == "," and not in_angle:
+            values.append(link_header[start:index].strip())
+            start = index + 1
+    values.append(link_header[start:].strip())
+    return [value for value in values if value]
+
+
+def _parse_link_value(value: str) -> tuple[str, dict[str, str]]:
+    if not value.startswith("<"):
+        return "", {}
+    end = value.find(">")
+    if end < 0:
+        return "", {}
+    params: dict[str, str] = {}
+    for raw_param in value[end + 1 :].split(";"):
+        raw_param = raw_param.strip()
+        if not raw_param or "=" not in raw_param:
+            continue
+        name, raw_value = raw_param.split("=", maxsplit=1)
+        param_value = raw_value.strip()
+        if len(param_value) >= 2 and param_value[0] == '"' and param_value[-1] == '"':
+            param_value = param_value[1:-1]
+        params[name.strip().lower()] = param_value
+    return value[1:end], params
+
+
+def paginate_link(
+    http: HttpClient,
+    path: str,
+    *,
+    params: Mapping[str, str] | None = None,
+    page_size: int = 100,
+    size_param: str = "per_page",
+    limit: int | None = None,
+    item_key: str | None = None,
+    max_pages: int = 100,
+) -> Iterator[dict[str, Any]]:
+    """Walk an RFC 5988 ``Link``-header paginated endpoint (GitHub-style).
+
+    The first request asks for ``min(page_size, limit)`` rows via
+    ``size_param``; each ``rel="next"`` URL is absolute and carries its own
+    cursor parameters, so it is followed verbatim with no extra params.
+    ``item_key`` unwraps an envelope (e.g. search's ``items``); ``None``
+    means the payload body is the row array. A 200 with a non-list body
+    short-circuits gracefully. Loop mechanics (limit, cursor-cycle guard,
+    ``max_pages``) are :func:`paginate_pages`.
+    """
+    first_page = min(page_size, limit) if limit is not None else page_size
+    first_params = {**dict(params or {}), size_param: str(first_page)}
+
+    def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
+        response = http.get(cursor or path, params=first_params if cursor is None else None)
+        payload = response.json()
+        items = (
+            payload.get(item_key) if item_key is not None and isinstance(payload, dict) else payload
+        )
+        if not isinstance(items, list):
+            return [], None
+        return items, _parse_link_next(response.headers.get("link"))
+
+    yield from paginate_pages(fetch, limit=limit, max_pages=max_pages)
+
+
 def paginate_offset(
     http: HttpClient,
     method: Literal["GET", "POST"],
@@ -483,27 +566,34 @@ def paginate_offset(
     body: dict[str, Any] | None = None,
     page_size: int = 50,
     limit: int | None = None,
-    start_param: str = "startAt",
-    size_param: str = "maxResults",
+    start_param: str = "offset",
+    size_param: str = "limit",
+    last_flag: str | None = None,
+    max_pages: int | None = 100,
     retry: RetryPolicy | None | _Inherit = _INHERIT,
 ) -> Iterator[dict[str, Any]]:
-    """Walk offset/limit collection envelopes (Jira-style ``startAt`` pages).
+    """Walk offset/limit collection envelopes with neutral parameter names.
 
-    Rows live under ``item_key``; termination honours an ``isLast`` flag or a
-    ``total`` count when the server provides one, and otherwise stops at the
-    first short or empty page. ``retry`` is forwarded per page-fetch: the
-    default ``_INHERIT`` uses the client's policy, while a caller fetching an
-    idempotent ``POST`` collection (e.g. a JQL search) can pass a
-    POST-inclusive :class:`RetryPolicy` to make just that endpoint retry.
+    Rows live under ``item_key``; termination honours ``total`` when the server
+    provides one, or ``last_flag`` when named (a boolean is-last field such as
+    Jira's ``isLast``), and otherwise stops at the first short or empty page.
+    ``retry`` is forwarded per page-fetch: the default ``_INHERIT`` uses the
+    client's policy, while a caller fetching an idempotent ``POST`` collection
+    (e.g. a JQL search) can pass a POST-inclusive :class:`RetryPolicy` to make
+    just that endpoint retry.
     """
     if limit is not None and limit <= 0:
         return
     emitted = 0
     start = 0
+    pages = 0
     while True:
         request_size = page_size if limit is None else min(page_size, limit - emitted)
         if request_size <= 0:
             return
+        if max_pages is not None and pages >= max_pages:
+            raise UntapedError(f"pagination did not converge after {max_pages} pages")
+        pages += 1
         window = {start_param: start, size_param: request_size}
         payload = _fetch_offset_page(
             http, method, path, params=params, body=body, window=window, retry=retry
@@ -517,7 +607,13 @@ def paginate_offset(
                 emitted += 1
                 if limit is not None and emitted >= limit:
                     return
-        if _offset_pages_exhausted(payload, start=start, rows=len(rows), requested=request_size):
+        if _offset_pages_exhausted(
+            payload,
+            start=start,
+            rows=len(rows),
+            requested=request_size,
+            last_flag=last_flag,
+        ):
             return
         start += len(rows)
 
@@ -539,11 +635,15 @@ def _fetch_offset_page(
 
 
 def _offset_pages_exhausted(
-    payload: dict[str, Any], *, start: int, rows: int, requested: int
+    payload: dict[str, Any], *, start: int, rows: int, requested: int, last_flag: str | None
 ) -> bool:
-    if payload.get("isLast") is True:
-        return True
+    if last_flag is not None:
+        marker = payload.get(last_flag)
+        if marker is True:
+            return True
+        if marker is False:
+            return False
     total = payload.get("total")
-    if isinstance(total, int) and start + rows >= total:
-        return True
+    if isinstance(total, int):
+        return start + rows >= total
     return rows < requested

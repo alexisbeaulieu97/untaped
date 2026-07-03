@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.errors import HttpError, UntapedError
-from untaped.output import OutputFormat
+from untaped.render import OutputFormat
 from untaped.ui import UiContext, ui_context
 from untaped.verbose import is_verbose
 
@@ -54,6 +55,31 @@ def raise_usage(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
+# <tool>.<snake_noun> with an optional ".summary" suffix. The suffix is
+# load-bearing for pipe consumers that skip informational records, so it is
+# the only third segment allowed and is reserved for suffix use only.
+_KIND_RE = re.compile(
+    r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\.summary)?$"
+)
+
+
+def _validate_kind(kind: str | None) -> None:
+    """Reject emit kinds that break the documented ``<tool>.<noun>[.summary]`` shape.
+
+    Raises ``ValueError`` (not ``UntapedError``): a bad kind is a programming
+    error that must surface at development time, not a user-facing condition
+    for ``report_errors`` to soften.
+    """
+    if kind is None:
+        return
+    if not _KIND_RE.match(kind) or (kind.endswith(".summary") and kind.count(".") == 1):
+        raise ValueError(
+            f"invalid pipe kind {kind!r}: expected '<tool>.<noun>' in snake_case "
+            "with an optional '<tool>.<noun>.summary' suffix, e.g. "
+            "'github.code_hit' or 'awx.apply_outcome.summary'"
+        )
+
+
 def render_rows(
     rows: Sequence[dict[str, object]],
     *,
@@ -71,6 +97,7 @@ def render_rows(
     ``kind`` tags ``--format pipe`` records with a producer hint (ignored by
     every other format).
     """
+    _validate_kind(kind)
     if columns == ["?"]:
         _print_available_columns(list(rows[0]) if rows else [])
         return ""
@@ -107,6 +134,7 @@ def emit(
     ``kind`` behave as in :func:`render_rows`; ``empty`` applies to a sequence
     only.
     """
+    _validate_kind(kind)
     if columns == ["?"]:
         _print_available_columns(_candidate_columns(records))
         return
@@ -258,6 +286,28 @@ def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]
         if not sep or not key:
             raise_usage(f"{flag} expects KEY=VALUE (got {entry!r})")
         out[key] = value
+    return out
+
+
+def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, Any]:
+    """Parse repeated ``KEY=<json>`` flag entries into a dict.
+
+    Sibling of :func:`parse_kv_pairs` for typed values: the part after the
+    first ``=`` must be valid JSON (``labels=["a"]``, ``count=3``,
+    ``name="x"``). Malformed entries are usage errors.
+    """
+    if not values:
+        return {}
+    out: dict[str, Any] = {}
+    for entry in values:
+        key, sep, raw = entry.partition("=")
+        key = key.strip()
+        if not sep or not key:
+            raise_usage(f"{flag} expects KEY=JSON (got {entry!r})")
+        try:
+            out[key] = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise_usage(f"{flag} {key} contains invalid JSON: {exc}")
     return out
 
 

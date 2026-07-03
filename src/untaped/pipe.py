@@ -15,7 +15,7 @@ strings and do **not** round-trip to their original type — fidelity is
 JSON-native types only.
 
 Pipe envelope **v1** — frozen and stable across every ``untaped`` SDK release
-(1.x and 2.x alike). The envelope is versioned independently of the SDK: any
+(1.x, 2.x, and 3.x alike). The envelope is versioned independently of the SDK: any
 change to its shape is a major *envelope* event, not tied to the SDK major. This
 freeze is what lets independently-installed tools interoperate: each tool may
 ship its own SDK version, but ``untaped-github | untaped-ansible`` is guaranteed
@@ -44,7 +44,7 @@ class PipeEnvelope:
     """One decoded ``--format pipe`` line: a record plus its metadata.
 
     This is the **v1** envelope, versioned independently of the SDK and frozen
-    across SDK 1.x and 2.x; any change to its shape would bump the envelope
+    across SDK 1.x, 2.x, and 3.x; any change to its shape would bump the envelope
     version (not the SDK major) so independently-installed tools on different
     SDK versions interoperate. See the module docstring and ``docs/decisions.md``.
     """

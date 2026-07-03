@@ -1,44 +1,45 @@
-"""Pin SDK ``--format raw`` first-key row contracts."""
+"""Pin SDK ``--format raw`` first-key row contracts behaviorally."""
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
-from untaped.config.domain.models import SettingEntry, Source
-from untaped.config_app import _entry_to_row
+from pydantic import BaseModel, SecretStr
 
-_CONTRACT_REF = "see AGENTS.md '--format raw default-column contract'"
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def test_config_list_row_first_key_is_key() -> None:
-    row = _entry_to_row(
-        SettingEntry(
-            key="log_level",
-            value="INFO",
-            default="INFO",
-            source=Source(kind="default"),
-        )
-    )
-
-    assert next(iter(row.keys())) == "key"
+from untaped.config import build_config_app
+from untaped.testing import CliInvoker
+from untaped.tool import ToolSpec, register_tool
 
 
-def test_config_list_command_calls_row_helper() -> None:
-    source = _REPO_ROOT / "src/untaped/config_app.py"
-    tree = ast.parse(source.read_text())
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "_list":
-            callees = {
-                sub.func.id
-                for sub in ast.walk(node)
-                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
-            }
-            assert "_entry_to_row" in callees, (
-                "config list no longer calls '_entry_to_row' — the helper-level "
-                f"pin would point at dead code. Restore the call or update the catalogue "
-                f"({_CONTRACT_REF})."
-            )
-            return
-    raise AssertionError(f"function '_list' not found in {source}")
+class _Settings(BaseModel):
+    token: SecretStr | None = None
+    base_url: str = "https://api.example.test"
+
+
+SPEC = ToolSpec(
+    command="untaped-demo",
+    section="demo",
+    profile_model=_Settings,
+)
+
+
+def _app():
+    register_tool(SPEC)
+    return build_config_app(SPEC)
+
+
+def test_config_list_raw_defaults_to_key_column(_isolated_config: Path) -> None:
+    result = CliInvoker().invoke(_app(), ["list", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    assert "demo.token" in lines
+    assert "demo.base_url" in lines
+    assert "https://api.example.test" not in lines
+
+
+def test_config_list_all_profiles_empty_outputs_nothing(_isolated_config: Path) -> None:
+    result = CliInvoker().invoke(_app(), ["list", "--all-profiles", "--format", "raw"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""

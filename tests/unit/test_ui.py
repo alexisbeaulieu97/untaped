@@ -11,7 +11,6 @@ import pytest
 import yaml
 
 from untaped.errors import ConfigError
-from untaped.output import format_output
 from untaped.theme import BUILTIN_THEMES, ThemeSpec, UiSettings, resolve_theme
 from untaped.ui import UiContext, ui_context
 
@@ -201,11 +200,10 @@ def test_empty_force_color_does_not_force_color_on_non_tty(
     assert not _has_ansi(rendered)
 
 
-def test_format_output_accepts_explicit_theme_for_compatibility() -> None:
-    rendered = format_output(
+def test_collection_accepts_explicit_theme() -> None:
+    rendered = UiContext(theme=ThemeSpec(collection_view="list")).collection(
         [{"id": 1, "name": "alpha"}],
         fmt="table",
-        theme=ThemeSpec(collection_view="list"),
     )
 
     assert "id: 1" in rendered

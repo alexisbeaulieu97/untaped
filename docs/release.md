@@ -11,7 +11,7 @@ change repository settings without explicit approval for that exact action.
 ## Package Metadata
 
 - Package name: `untaped`
-- Current release target: `2.4.4`
+- Current release target: `3.0.0`
 - License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
 - Build command: `uv build --no-sources`
 - SDK smoke: install the wheel, import `untaped.api`, and assert no `untaped`
