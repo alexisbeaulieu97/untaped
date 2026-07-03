@@ -130,7 +130,7 @@ class ListAllProfilesSettings:
                     SettingEntry(
                         key=descriptor.key,
                         value=display_value(descriptor, value, reveal_secrets=reveal_secrets),
-                        default=display_default(descriptor),
+                        default=display_default(descriptor, reveal_secrets=reveal_secrets),
                         source=Source(kind="profile", profile=profile_name),
                         profile=profile_name,
                     )
@@ -167,7 +167,7 @@ def setting_entry_for_descriptor(
     return SettingEntry(
         key=descriptor.key,
         value=display_value(descriptor, current, reveal_secrets=reveal_secrets),
-        default=display_default(descriptor),
+        default=display_default(descriptor, reveal_secrets=reveal_secrets),
         source=source,
         profile=source.profile if include_profile else None,
     )

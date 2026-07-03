@@ -73,9 +73,11 @@ def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bo
     return str(value)
 
 
-def display_default(descriptor: FieldDescriptor) -> str:
+def display_default(descriptor: FieldDescriptor, *, reveal_secrets: bool = False) -> str:
     if not descriptor.has_default or descriptor.default is None:
         return "—"
+    if descriptor.is_secret and not reveal_secrets:
+        return "***"
     if isinstance(descriptor.default, SecretStr):
-        return descriptor.default.get_secret_value()
+        return descriptor.default.get_secret_value() if reveal_secrets else "***"
     return str(descriptor.default)

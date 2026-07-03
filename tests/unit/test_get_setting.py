@@ -16,6 +16,7 @@ from untaped.settings import (
 class DemoPluginSettings(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = None
+    default_token: SecretStr = SecretStr("default-secret")
 
 
 DEMO_CONTEXT = ToolConfigContext(
@@ -128,6 +129,16 @@ def test_get_show_secrets_reveals_secret(_isolate_settings: Path) -> None:
     entry = GetSetting(SettingsFileRepository())("demo.token", reveal_secrets=True)
 
     assert entry.value == "secret-token"
+
+
+def test_get_secret_default_follows_reveal_gate(_isolate_settings: Path) -> None:
+    hidden = GetSetting(SettingsFileRepository())("demo.default_token")
+    assert hidden.value == "***"
+    assert hidden.default == "***"
+
+    revealed = GetSetting(SettingsFileRepository())("demo.default_token", reveal_secrets=True)
+    assert revealed.value == "default-secret"
+    assert revealed.default == "default-secret"
 
 
 def test_get_unknown_profile_setting_is_rejected(_isolate_settings: Path) -> None:
