@@ -48,7 +48,7 @@ def main() -> None:
 # pyproject.toml
 [project]
 dependencies = [
-    "untaped>=2.4.4,<3",
+    "untaped>=3.0.0,<4",
 ]
 
 [project.scripts]

@@ -6,9 +6,7 @@ import yaml
 from pydantic import BaseModel, Field, SecretStr
 
 from untaped import ConfigError
-from untaped.config.application import ListAllProfilesSettings, ListSettings
-from untaped.config.domain import Source
-from untaped.config.infrastructure import SettingsFileRepository
+from untaped.config import ListAllProfilesSettings, ListSettings, SettingsFileRepository, Source
 from untaped.settings import (
     get_settings,
     register_profile_settings,
@@ -27,6 +25,10 @@ class DemoProfileSettings(BaseModel):
 
 class DemoStateSettings(BaseModel):
     entries: list[str] = Field(default_factory=list)
+
+
+class SecretDefaultSettings(BaseModel):
+    token: SecretStr = SecretStr("default-secret")
 
 
 @pytest.fixture(autouse=True)
@@ -104,6 +106,18 @@ def test_secrets_revealed_when_requested(tmp_path: Path, monkeypatch: pytest.Mon
 
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())(reveal_secrets=True)}
     assert entries["demo.token"].value == "super-secret-value"
+
+
+def test_secret_defaults_follow_reveal_gate() -> None:
+    register_profile_settings("secret_default", SecretDefaultSettings)
+
+    hidden = {e.key: e for e in ListSettings(SettingsFileRepository())()}
+    assert hidden["secret_default.token"].value == "***"
+    assert hidden["secret_default.token"].default == "***"
+
+    revealed = {e.key: e for e in ListSettings(SettingsFileRepository())(reveal_secrets=True)}
+    assert revealed["secret_default.token"].value == "default-secret"
+    assert revealed["secret_default.token"].default == "default-secret"
 
 
 def test_collection_fields_skipped() -> None:

@@ -8,25 +8,27 @@ through every call site.
 
 ``None`` means no tool has registered (e.g. the SDK used without ``run_tool``),
 where guidance falls back to a neutral ``<tool>`` placeholder.
+Stored in a ``ContextVar`` so the effect is scoped to the current execution
+context rather than truly process-global.
 """
 
 from __future__ import annotations
 
-_command: str | None = None
+from contextvars import ContextVar
+
+_command: ContextVar[str | None] = ContextVar("untaped_tool_command", default=None)
 
 
 def set_tool_command(command: str | None) -> None:
     """Record the command of the tool running in this process."""
-    global _command
-    _command = command
+    _command.set(command)
 
 
 def current_tool_command() -> str | None:
     """Return the running tool's command, or ``None`` when no tool is registered."""
-    return _command
+    return _command.get()
 
 
 def reset_tool_command() -> None:
     """Clear the recorded tool command. Public for test isolation."""
-    global _command
-    _command = None
+    _command.set(None)

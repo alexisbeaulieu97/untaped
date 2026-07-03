@@ -2,37 +2,16 @@
 
 from __future__ import annotations
 
+import io
 from collections.abc import Callable
-from contextlib import contextmanager
 from typing import Any
 
 import pytest
 
-from untaped.batch import batch_apply
+from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.errors import ConfigError, HttpError
-
-
-class _Handle:
-    def update(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
-    ) -> None:
-        pass
-
-
-class _FakeUi:
-    """Stub UiContext: records confirm calls, no-op progress."""
-
-    def __init__(self, *, answer: bool = True) -> None:
-        self.answer = answer
-        self.confirms: list[dict[str, Any]] = []
-
-    def confirm(self, message: str, *, default: bool = False) -> bool:
-        self.confirms.append({"message": message, "default": default})
-        return self.answer
-
-    @contextmanager
-    def progress(self, label: str):  # type: ignore[no-untyped-def]
-        yield _Handle()
+from untaped.testing import ScriptedPromptBackend, TtyStringIO
+from untaped.ui import UiContext
 
 
 def _describe(item: str) -> dict[str, object]:
@@ -50,40 +29,46 @@ def _recorder() -> tuple[Callable[[str], str], list[str]]:
     return action, calls
 
 
-def _run(monkeypatch: pytest.MonkeyPatch, *, interactive: bool, **kwargs: Any) -> Any:
-    monkeypatch.setattr("untaped.batch._stdin_is_interactive", lambda: interactive)
+def _ui(*, interactive: bool, confirms: list[bool] | None = None) -> UiContext:
+    return UiContext(
+        stdin=TtyStringIO() if interactive else io.StringIO(),
+        stdout=io.StringIO(),
+        stderr=io.StringIO(),
+        prompt_backend=ScriptedPromptBackend(confirms=confirms or []),
+    )
+
+
+def _run(*, interactive: bool, confirms: list[bool] | None = None, **kwargs: Any) -> Any:
     kwargs.setdefault("verb", "delete")
     kwargs.setdefault("noun", "Widget")
     kwargs.setdefault("label", lambda item: item)
     kwargs.setdefault("describe", _describe)
     kwargs.setdefault("destructive", True)
+    kwargs.setdefault("ui", _ui(interactive=interactive, confirms=confirms))
     return batch_apply(**kwargs)
 
 
-def test_interactive_destructive_previews_and_confirms(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_interactive_destructive_previews_and_confirms(capsys: pytest.CaptureFixture[str]) -> None:
     action, calls = _recorder()
-    ui = _FakeUi()
-    outcome = _run(monkeypatch, interactive=True, items=["a", "b"], action=action, ui=ui)
+    ui = _ui(interactive=True, confirms=[True])
+    outcome = _run(interactive=True, items=["a", "b"], action=action, ui=ui)
 
     captured = capsys.readouterr()
     assert "About to delete 2 Widget(s):" in captured.err
     assert "name-a" in captured.err and "name-b" in captured.err
     assert captured.out == ""  # preview/progress stay off stdout
-    assert ui.confirms == [{"message": "Continue?", "default": False}]
+    assert ui.prompt_backend.calls == [("confirm", "Continue?")]
     assert calls == ["a", "b"]
     assert outcome.failed == 0
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
 
 
 def test_interactive_destructive_can_skip_generic_preview(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
-    ui = _FakeUi()
+    ui = _ui(interactive=True, confirms=[True])
     outcome = _run(
-        monkeypatch,
         interactive=True,
         items=["a", "b"],
         action=action,
@@ -96,17 +81,15 @@ def test_interactive_destructive_can_skip_generic_preview(
     assert "name-a" not in captured.err
     assert "name-b" not in captured.err
     assert captured.out == ""
-    assert ui.confirms == [{"message": "Continue?", "default": False}]
+    assert ui.prompt_backend.calls == [("confirm", "Continue?")]
     assert calls == ["a", "b"]
     assert outcome.failed == 0
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
 
 
-def test_decline_runs_no_action(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_decline_runs_no_action() -> None:
     action, calls = _recorder()
-    outcome = _run(
-        monkeypatch, interactive=True, items=["a", "b"], action=action, ui=_FakeUi(answer=False)
-    )
+    outcome = _run(interactive=True, confirms=[False], items=["a", "b"], action=action)
 
     assert calls == []
     assert outcome.results == []
@@ -115,27 +98,24 @@ def test_decline_runs_no_action(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_assume_yes_skips_gate_and_preview(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
-    ui = _FakeUi()
-    outcome = _run(
-        monkeypatch, interactive=True, items=["a", "b"], action=action, ui=ui, assume_yes=True
-    )
+    ui = _ui(interactive=True)
+    outcome = _run(interactive=True, items=["a", "b"], action=action, ui=ui, assume_yes=True)
 
     assert "About to delete" not in capsys.readouterr().err
-    assert ui.confirms == []
+    assert ui.prompt_backend.calls == []
     assert calls == ["a", "b"]
     assert outcome.failed == 0
 
 
 def test_assume_yes_skips_generic_preview_even_when_enabled(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
-    ui = _FakeUi()
+    ui = _ui(interactive=True)
     outcome = _run(
-        monkeypatch,
         interactive=True,
         items=["a", "b"],
         action=action,
@@ -145,20 +125,18 @@ def test_assume_yes_skips_generic_preview_even_when_enabled(
     )
 
     assert "About to delete" not in capsys.readouterr().err
-    assert ui.confirms == []
+    assert ui.prompt_backend.calls == []
     assert calls == ["a", "b"]
     assert outcome.failed == 0
 
 
-def test_benign_verb_skips_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_benign_verb_skips_gate() -> None:
     action, calls = _recorder()
     # Non-interactive + no --yes would refuse a destructive verb; benign runs.
     outcome = _run(
-        monkeypatch,
         interactive=False,
         items=["a", "b"],
         action=action,
-        ui=_FakeUi(),
         destructive=False,
     )
 
@@ -166,44 +144,40 @@ def test_benign_verb_skips_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     assert outcome.results == [("a", "done-a"), ("b", "done-b")]
 
 
-def test_destructive_non_interactive_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_destructive_non_interactive_refuses() -> None:
     action, calls = _recorder()
     with pytest.raises(ConfigError, match="requires --yes when stdin is not interactive"):
-        _run(monkeypatch, interactive=False, items=["a", "b"], action=action, ui=_FakeUi())
+        _run(interactive=False, items=["a", "b"], action=action)
     assert calls == []
 
 
 def test_destructive_non_interactive_refuses_before_generic_preview(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     action, calls = _recorder()
     with pytest.raises(ConfigError, match="requires --yes when stdin is not interactive"):
         _run(
-            monkeypatch,
             interactive=False,
             items=["a", "b"],
             action=action,
-            ui=_FakeUi(),
             render_generic_preview=False,
         )
     assert calls == []
     assert "About to delete" not in capsys.readouterr().err
 
 
-def test_preview_only_returns_plan_without_acting(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_preview_only_returns_plan_without_acting() -> None:
     action, calls = _recorder()
-    ui = _FakeUi()
-    outcome = _run(
-        monkeypatch, interactive=True, items=["a", "b"], action=action, ui=ui, preview_only=True
-    )
+    ui = _ui(interactive=True)
+    outcome = _run(interactive=True, items=["a", "b"], action=action, ui=ui, preview_only=True)
 
     assert calls == []
-    assert ui.confirms == []
+    assert ui.prompt_backend.calls == []
     assert outcome.planned_rows == [_describe("a"), _describe("b")]
 
 
 def test_partial_failure_counts_and_continues(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     def action(item: str) -> str:
         if item == "a":
@@ -211,11 +185,10 @@ def test_partial_failure_counts_and_continues(
         return f"done-{item}"
 
     outcome = _run(
-        monkeypatch,
         interactive=True,
+        confirms=[True],
         items=["a", "b"],
         action=action,
-        ui=_FakeUi(),
         label=lambda item: f"id={item}",
     )
 
@@ -225,28 +198,80 @@ def test_partial_failure_counts_and_continues(
     assert outcome.any_failed
 
 
-def test_empty_items_is_a_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_empty_items_is_a_noop() -> None:
     action, calls = _recorder()
-    ui = _FakeUi()
-    outcome = _run(monkeypatch, interactive=True, items=[], action=action, ui=ui)
+    ui = _ui(interactive=True)
+    outcome = _run(interactive=True, items=[], action=action, ui=ui)
 
     assert calls == []
-    assert ui.confirms == []
+    assert ui.prompt_backend.calls == []
     assert outcome.total == 0
     assert outcome.results == []
     assert outcome.planned_rows == []
 
 
-def test_non_untaped_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_non_untaped_error_propagates() -> None:
     def action(item: str) -> str:
         raise ValueError("bug")
 
     with pytest.raises(ValueError, match="bug"):
         _run(
-            monkeypatch,
             interactive=False,
             items=["a"],
             action=action,
-            ui=_FakeUi(),
             assume_yes=True,
         )
+
+
+def test_tty_authority_is_the_context_stdin_not_sys_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real-TTY process stdin must not open the gate when context stdin is a pipe."""
+    monkeypatch.setattr("sys.stdin", TtyStringIO())
+    ui = _ui(interactive=False)
+    with pytest.raises(ConfigError, match="requires --yes"):
+        batch_apply(
+            ["a"],
+            lambda item: item,
+            verb="delete",
+            noun="thing",
+            label=str,
+            describe=lambda item: {"name": item},
+            ui=ui,
+            destructive=True,
+        )
+
+
+def test_custom_preview_replaces_generic_rows(capsys: pytest.CaptureFixture[str]) -> None:
+    seen: list[list[dict[str, object]]] = []
+    ui = _ui(interactive=True, confirms=[True])
+    batch_apply(
+        ["a", "b"],
+        lambda item: item,
+        verb="delete",
+        noun="thing",
+        label=str,
+        describe=lambda item: {"name": item},
+        ui=ui,
+        destructive=True,
+        preview=seen.append,
+    )
+    assert seen == [[{"name": "a"}, {"name": "b"}]]
+    assert "About to delete" not in capsys.readouterr().err
+
+
+def test_finish_exits_1_on_partial_failure() -> None:
+    outcome = BatchOutcome(results=[("a", "a")], failed=1, planned_rows=[{}, {}])
+    with pytest.raises(SystemExit) as excinfo:
+        finish(outcome)
+    assert excinfo.value.code == 1
+
+
+def test_finish_returns_on_success() -> None:
+    finish(BatchOutcome(results=[("a", "a")], failed=0, planned_rows=[{}]))
+
+
+def test_finish_accepts_any_failed_bool() -> None:
+    with pytest.raises(SystemExit):
+        finish(True)
+    finish(False)

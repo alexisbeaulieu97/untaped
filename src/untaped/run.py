@@ -18,18 +18,18 @@ backed by direct handler callables.
 from __future__ import annotations
 
 import inspect
-import os
 from collections.abc import Callable, Iterable
+from contextvars import Token
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
-from untaped.config_app import build_config_app
+from untaped.config import build_config_app
 from untaped.profile import build_profile_app
-from untaped.profile_resolver import ACTIVE_PROFILE_ENV
+from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import get_settings
@@ -43,7 +43,7 @@ _FLAG_PRESENT = ""
 
 _PROFILE_HELP = (
     "Override the active profile for this invocation only "
-    "(equivalent to setting the UNTAPED_PROFILE environment variable)."
+    "(scoped to the invocation; does not mutate UNTAPED_PROFILE)."
 )
 _VERBOSE_HELP = "Stream underlying tool output live and enable debug logging."
 _QUIET_HELP = "Suppress progress and success/info messages (errors still print)."
@@ -55,14 +55,29 @@ class _RootOption:
 
     name: str
     help: str
-    handler: Callable[[str], None]
+    handler: Callable[[str], object]
+    resetter: Callable[[object], None]
     aliases: tuple[str, ...] = ()
     takes_value: bool = False
 
 
-def _apply_profile(value: str) -> None:
-    os.environ[ACTIVE_PROFILE_ENV] = value
+def _apply_profile(value: str) -> object:
+    token = set_profile_override(value)
     get_settings.cache_clear()
+    return token
+
+
+def _reset_profile(token: object) -> None:
+    reset_profile_override(cast(Token[str | None], token))
+    get_settings.cache_clear()
+
+
+def _reset_verbose_option(token: object) -> None:
+    _reset_verbose(cast(Token[bool], token))
+
+
+def _reset_quiet_option(token: object) -> None:
+    _reset_quiet(cast(Token[bool], token))
 
 
 def _root_options() -> dict[str, _RootOption]:
@@ -71,6 +86,7 @@ def _root_options() -> dict[str, _RootOption]:
             name="--profile",
             help=_PROFILE_HELP,
             handler=_apply_profile,
+            resetter=_reset_profile,
             takes_value=True,
         ),
         "--verbose": _RootOption(
@@ -78,12 +94,14 @@ def _root_options() -> dict[str, _RootOption]:
             aliases=("-v",),
             help=_VERBOSE_HELP,
             handler=_enable_verbose,
+            resetter=_reset_verbose_option,
         ),
         "--quiet": _RootOption(
             name="--quiet",
             aliases=("-q",),
             help=_QUIET_HELP,
             handler=_enable_quiet,
+            resetter=_reset_quiet_option,
         ),
     }
 
@@ -140,23 +158,21 @@ def _install_root_callback(app: App, root_options: dict[str, _RootOption]) -> No
     app.meta.version_flags = ()
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
-        # Root-option handlers mutate ambient process state (env vars, the
-        # settings cache) so the dispatched command resolves under the selected
-        # scope. Snapshot os.environ and restore it after dispatch so those
-        # effects stay scoped to this invocation only — for in-process callers
-        # (the CLI process exits anyway).
-        env_snapshot = dict(os.environ)
+        # Root-option handlers set invocation-scoped ContextVars (and clear the
+        # settings cache). Reset only options this invocation applied so nested
+        # in-process callers restore the outer invocation's ContextVars.
+        applied_tokens: list[tuple[_RootOption, object]] = []
         try:
             with report_errors():
-                command_tokens = _consume_leading_root_options(list(tokens), root_options)
-                return _dispatch_with_root_options(app, command_tokens, root_options)
+                command_tokens = _consume_leading_root_options(
+                    list(tokens), root_options, applied_tokens
+                )
+                return _dispatch_with_root_options(
+                    app, command_tokens, root_options, applied_tokens
+                )
         finally:
-            _reset_verbose()
-            _reset_quiet()
-            if dict(os.environ) != env_snapshot:
-                os.environ.clear()
-                os.environ.update(env_snapshot)
-                get_settings.cache_clear()
+            for option, token in reversed(applied_tokens):
+                option.resetter(token)
 
     signature = _root_callback_signature(root_options)
     _root_callback.__signature__ = signature  # type: ignore[attr-defined]
@@ -233,7 +249,9 @@ def _root_callback_signature(root_options: dict[str, _RootOption]) -> inspect.Si
 
 
 def _consume_leading_root_options(
-    tokens: list[str], root_options: dict[str, _RootOption]
+    tokens: list[str],
+    root_options: dict[str, _RootOption],
+    applied_tokens: list[tuple[_RootOption, object]],
 ) -> list[str]:
     """Apply and strip root options preceding the command, returning the rest."""
     while tokens:
@@ -242,12 +260,15 @@ def _consume_leading_root_options(
         if spec is None:
             break
         value, tokens = _consume_option_at(tokens, 0, spec, name)
-        _apply_root_option(spec, value)
+        _apply_root_option(spec, value, applied_tokens)
     return tokens
 
 
 def _dispatch_with_root_options(
-    app: App, command_tokens: list[str], root_options: dict[str, _RootOption]
+    app: App,
+    command_tokens: list[str],
+    root_options: dict[str, _RootOption],
+    applied_tokens: list[tuple[_RootOption, object]],
 ) -> object:
     """Dispatch optimistically; on unknown root option, strip, apply, retry.
 
@@ -275,7 +296,7 @@ def _dispatch_with_root_options(
             applied.add(name)
             spec = root_options[name]
             value, remaining = _strip_trailing_root_option(remaining, spec)
-            _apply_root_option(spec, value)
+            _apply_root_option(spec, value, applied_tokens)
         except CycloptsError as exc:
             echo(f"error: {exc}", err=True)
             raise SystemExit(2) from exc
@@ -315,8 +336,10 @@ def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tupl
     return tokens[index + 1], tokens[:index] + tokens[index + 2 :]
 
 
-def _apply_root_option(spec: _RootOption, value: str) -> None:
-    spec.handler(value)
+def _apply_root_option(
+    spec: _RootOption, value: str, applied_tokens: list[tuple[_RootOption, object]]
+) -> None:
+    applied_tokens.append((spec, spec.handler(value)))
 
 
 __all__ = ["build_tool_app", "run_tool"]
