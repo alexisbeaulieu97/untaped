@@ -38,6 +38,7 @@ EXPECTED_SURFACE = frozenset(
         "echo",
         "existing_directory",
         "existing_file",
+        "parse_json_pairs",
         "parse_kv_pairs",
         "raise_usage",
         "render_rows",
@@ -50,6 +51,8 @@ EXPECTED_SURFACE = frozenset(
         "get_core_settings",
         "get_settings",
         "invalidate_settings_cache",
+        # Filesystem/input helpers
+        "read_structured_file",
         # Safe shared-config surface
         "ensure_config",
         "read_tool_state",

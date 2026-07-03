@@ -289,6 +289,28 @@ def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]
     return out
 
 
+def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, Any]:
+    """Parse repeated ``KEY=<json>`` flag entries into a dict.
+
+    Sibling of :func:`parse_kv_pairs` for typed values: the part after the
+    first ``=`` must be valid JSON (``labels=["a"]``, ``count=3``,
+    ``name="x"``). Malformed entries are usage errors.
+    """
+    if not values:
+        return {}
+    out: dict[str, Any] = {}
+    for entry in values:
+        key, sep, raw = entry.partition("=")
+        key = key.strip()
+        if not sep or not key:
+            raise_usage(f"{flag} expects KEY=JSON (got {entry!r})")
+        try:
+            out[key] = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise_usage(f"{flag} {key} contains invalid JSON: {exc}")
+    return out
+
+
 def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bool]:
     """Resolve each identifier via ``fn``; aggregate per-id failures.
 

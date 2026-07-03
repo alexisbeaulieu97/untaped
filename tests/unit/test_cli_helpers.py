@@ -14,6 +14,7 @@ from untaped import (
     create_app,
     emit,
     get_settings,
+    parse_json_pairs,
     parse_kv_pairs,
     render_rows,
     report_errors,
@@ -179,6 +180,28 @@ def test_parse_kv_pairs_error_uses_provided_flag_name() -> None:
 
 def test_parse_kv_pairs_later_entries_overwrite_earlier() -> None:
     assert parse_kv_pairs(["k=first", "k=second"], flag="--filter") == {"k": "second"}
+
+
+# ---- parse_json_pairs -----------------------------------------------------
+
+
+def test_parse_json_pairs_decodes_values() -> None:
+    out = parse_json_pairs(['labels=["a","b"]', "count=3", 'name="x"'], flag="--json-field")
+    assert out == {"labels": ["a", "b"], "count": 3, "name": "x"}
+
+
+def test_parse_json_pairs_none_is_empty() -> None:
+    assert parse_json_pairs(None, flag="--json-field") == {}
+
+
+def test_parse_json_pairs_rejects_missing_equals() -> None:
+    with pytest.raises(SystemExit):
+        parse_json_pairs(["notapair"], flag="--json-field")
+
+
+def test_parse_json_pairs_rejects_invalid_json() -> None:
+    with pytest.raises(SystemExit):
+        parse_json_pairs(["k={broken"], flag="--json-field")
 
 
 # ---- resolve_each --------------------------------------------------------

@@ -22,6 +22,7 @@ from untaped.cli import (
     emit,
     existing_directory,
     existing_file,
+    parse_json_pairs,
     parse_kv_pairs,
     raise_usage,
     render_rows,
@@ -38,6 +39,7 @@ from untaped.errors import (
     UntapedError,
     first_validation_error,
 )
+from untaped.fs import read_structured_file
 from untaped.http import (
     HttpClient,
     RetryPolicy,
@@ -119,11 +121,13 @@ __all__ = [
     "paginate_offset",
     "paginate_pages",
     "parse_envelope_line",
+    "parse_json_pairs",
     "parse_kv_pairs",
     "raise_usage",
     "read_identifiers",
     "read_records",
     "read_stdin",
+    "read_structured_file",
     "read_tool_state",
     "register_tool",
     "render_rows",
