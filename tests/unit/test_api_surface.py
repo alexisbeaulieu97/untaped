@@ -61,6 +61,9 @@ EXPECTED_SURFACE = frozenset(
         "ensure_config",
         "read_tool_state",
         "mutate_tool_state",
+        # Tool-state helpers
+        "StateCollection",
+        "StateMap",
         # Interactive UI
         "ProgressHandle",
         "PromptChoice",

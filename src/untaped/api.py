@@ -61,6 +61,7 @@ from untaped.settings import (
     get_core_settings,
     get_settings,
 )
+from untaped.state import StateCollection, StateMap
 from untaped.stdin import (
     read_identifiers,
     read_records,
@@ -100,6 +101,8 @@ __all__ = [
     "PromptChoice",
     "RetryPolicy",
     "SkillAsset",
+    "StateCollection",
+    "StateMap",
     "ThemeSpec",
     "ToolSpec",
     "UiContext",
