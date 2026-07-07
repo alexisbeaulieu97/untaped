@@ -2,7 +2,8 @@
 
 This page is for agents and contributors working inside an `untaped-<tool>`
 repo. It captures the suite-wide conventions that should not be recopied into
-each tool's `AGENTS.md`.
+each tool's `AGENTS.md`. How a repo structures its documentation is governed
+by the [fleet documentation standard](./documentation.md).
 
 ## Layering
 
