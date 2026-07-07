@@ -15,6 +15,10 @@ interoperate and compose.
   wire `run_tool`, and ship an independent CLI.
 - [Agent Skills](./skills.md) — list and install Codex/Claude skills that each
   tool ships.
+- [Fleet tool conventions](./tool-conventions.md) — suite-wide layering, code
+  norms, and output conventions for agents working inside a tool repo.
+- [Fleet documentation standard](./documentation.md) — how every repo in the
+  family documents itself: single-source rule, surfaces, concept pages.
 - [Releasing](./release.md) — PyPI/TestPyPI workflow, Trusted Publisher setup,
   and recovery rules.
 - [Architecture decisions](./decisions.md) — the settled ADRs behind the
