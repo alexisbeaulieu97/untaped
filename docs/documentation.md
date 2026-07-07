@@ -129,6 +129,29 @@ Rules:
   boundary of two features — that is the signal to give it an explicit home,
   not to let it fall into neither.
 
+## Page style: example-first, scannable
+
+Concept pages are read by humans; write them to be scanned, not studied.
+
+- **Example-first.** A behavior section opens with a fenced example — recipe
+  YAML, a command, sample output — and the prose after it states only what the
+  example cannot show. Rule-first prose with the example as an afterthought is
+  the anti-pattern.
+- **No walls of text.** Paragraphs stay short (roughly four lines). A paragraph
+  that packs several rules becomes a bullet list, one rule per bullet.
+- **Tables for enumerable facts** — field lists, option sets, statuses,
+  defaults.
+- **Small sections with descriptive headings.** Renderers build the page TOC
+  from headings; a reader should be able to jump straight to the rule they
+  need. Headings are link targets — rename them only when updating every
+  inbound link.
+- Normative precision still wins: pinned error strings, defaults, and
+  precedence rules must be stated exactly, in prose or table, even when an
+  example already implies them.
+
+This applies to `docs/` concept pages. The packaged SKILL.md is agent-facing
+and token-budgeted: it stays dense, and this section does not apply to it.
+
 ## The documentation contract
 
 Each repo's `AGENTS.md` carries a normative **Documentation contract** section
