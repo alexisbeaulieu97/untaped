@@ -471,15 +471,20 @@ Copy the two canonical templates; do not hand-write them:
 - `.github/release/templates/release.yml.tmpl` → the tool's `.github/workflows/release.yml`
 - `.github/release/templates/test_release_workflow.py.tmpl` → the tool's `tests/unit/test_release_workflow.py`
 
-**The pinned checker SHA is `07116cc11d4217283ad42badea4f5d5744542f2a`** (both `.release-tool`
-checkouts in the workflow, and `CORE_RELEASE_TOOL_SHA` in the test). Bump it only when the shared
-checker in `.github/release/` changes; re-pinning to a content-identical SHA needs no re-dispatch.
+Select a reviewed, merged 40-character commit SHA from this repo that contains the shared checker
+version the tool should use. Replace every `__CHECKER_SHA__` sentinel with that same SHA: both
+`.release-tool` checkouts in the workflow and `CORE_RELEASE_TOOL_SHA` in the test. Never substitute
+a branch or tag. Bump the SHA only when the shared checker in `.github/release/` changes;
+re-pinning to a content-identical SHA needs no re-dispatch.
 
-**The only per-tool variance** — everything else must stay byte-identical to the templates:
+**The only template substitutions and per-tool variance** — everything else must stay
+byte-identical to the templates:
 
-1. `release.yml`: the 8 sentinel sites — `__DIST_NAME__` (×6) and `__CONSOLE_SCRIPT__` (×2).
-2. `test_release_workflow.py`: the `PER-TOOL CONFIG` block — `DIST_NAME`, `CONSOLE_SCRIPT`,
-   `EXPECTED_VERSION`, `INTERNAL_DEPS` (each `(requirement, rev-or-None)`), `PYPI_INSTALL_DOCS`.
+1. `release.yml`: the 10 sentinel sites — `__DIST_NAME__` (×6), `__CONSOLE_SCRIPT__` (×2),
+   and `__CHECKER_SHA__` (×2).
+2. `test_release_workflow.py`: `__CHECKER_SHA__` (×1), plus the `PER-TOOL CONFIG` block —
+   `DIST_NAME`, `CONSOLE_SCRIPT`, `EXPECTED_VERSION`, `INTERNAL_DEPS` (each
+   `(requirement, rev-or-None)`), `PYPI_INSTALL_DOCS`.
 
 `DIST_NAME` doubles as the GitHub repo slug and must equal `[project].name`; `CONSOLE_SCRIPT` must
 equal the `[project.scripts]` entry-point (confirm both from the tool's `pyproject.toml` — do not

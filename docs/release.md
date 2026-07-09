@@ -79,6 +79,20 @@ removed before merging). The release build must use `uv build --no-sources`,
 and release checks must prove internal dependency floors resolve from the
 target index before upload.
 
+## Adopting the release pipeline in a tool
+
+Start from the two reusable templates in `.github/release/templates/`. Before committing the
+tool copies, choose a reviewed, merged 40-character commit SHA from this repo that contains the
+shared release checker version the tool should run. Substitute that same SHA for all three
+`__CHECKER_SHA__` sites: the two `.release-tool` checkout refs in `release.yml.tmpl` and
+`CORE_RELEASE_TOOL_SHA` in `test_release_workflow.py.tmpl`. A branch or tag is not an acceptable
+substitute because the checker must remain immutable and reviewable.
+
+Also replace the distribution and console-script sentinels and complete the test template's
+`PER-TOOL CONFIG` block from the tool's `pyproject.toml`. After substitution, the workflow has no
+template sentinels left, both checkout refs equal `CORE_RELEASE_TOOL_SHA`, and every action remains
+pinned to a full commit SHA.
+
 ## TestPyPI Caveat
 
 TestPyPI validates the release process and OIDC path, not reusable bytes.
