@@ -493,18 +493,20 @@ byte-identical to the templates:
 
 1. `release.yml`: the 10 sentinel sites — `__DIST_NAME__` (×6), `__CONSOLE_SCRIPT__` (×2),
    and `__CHECKER_SHA__` (×2).
-2. `test_release_workflow.py`: `__CHECKER_SHA__` (×1), plus the `PER-TOOL CONFIG` block —
-   `DIST_NAME`, `CONSOLE_SCRIPT`, `EXPECTED_VERSION`, `INTERNAL_DEPS` (each
-   `(requirement, rev-or-None)`), `PYPI_INSTALL_DOCS`.
+2. `test_release_workflow.py`: the `PER-TOOL CONFIG` block — `DIST_NAME`, `CONSOLE_SCRIPT`,
+   `EXPECTED_VERSION`, `INTERNAL_DEPS` (each `(requirement, rev-or-None)`),
+   `PYPI_INSTALL_DOCS`, and `CORE_RELEASE_TOOL_SHA` (`__CHECKER_SHA__` ×1).
 
 `DIST_NAME` doubles as the GitHub repo slug and must equal `[project].name`; `CONSOLE_SCRIPT` must
 equal the `[project.scripts]` entry-point (confirm both from the tool's `pyproject.toml` — do not
 assume they match). For an internal dep installed from PyPI (no `[tool.uv.sources]` git pin), record
 its rev as `None`.
 
-**Drift check before merging a tool's release PR:** diff the tool's `release.yml` against the template
-ignoring the sentinel substitutions, and diff the tool's `test_release_workflow.py` body below the
-`PER-TOOL CONFIG` marker against the template — both must match byte-for-byte.
+**Drift check before merging a tool's release PR:** diff the tool's `release.yml` against the
+template ignoring only the documented sentinel substitutions. In
+`test_release_workflow.py`, only the content between the `PER-TOOL CONFIG` opening line and its
+closing divider may vary; everything below the closing divider must match the template
+byte-for-byte.
 
 **Before the first dispatch**, register the tool's Trusted Publisher on **each** index (PyPI and
 TestPyPI) with workflow filename `release.yml`, and create the `testpypi` and `pypi` GitHub

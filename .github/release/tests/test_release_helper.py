@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import runpy
 import subprocess
 import urllib.error
 from pathlib import Path
@@ -461,3 +462,41 @@ def test_reusable_release_templates_require_checker_sha_substitution() -> None:
     assert test_template.count(CHECKER_SHA_SENTINEL) == 1
     assert OLD_CHECKER_SHA not in workflow_template
     assert OLD_CHECKER_SHA not in test_template
+
+
+def test_reusable_release_test_template_keeps_checker_sha_in_editable_block() -> None:
+    template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
+    config_start = template.index("# ============================ PER-TOOL CONFIG")
+    config_end = template.index(
+        "# ========================================================================",
+        config_start,
+    )
+    checker_assignment = template.index('CORE_RELEASE_TOOL_SHA = "__CHECKER_SHA__"')
+
+    assert config_start < checker_assignment < config_end
+    assert "Everything below the closing divider must stay byte-identical" in template
+
+
+def test_reusable_release_test_template_keeps_immutable_checker_ref_contract() -> None:
+    template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
+    namespace = runpy.run_path(str(RELEASE_TEST_TEMPLATE))
+    validator = namespace["_is_immutable_core_sha"]
+
+    invalid_refs = [
+        "main",
+        "v3.1.0",
+        "__CHECKER_SHA__",
+        "A" * 40,
+        "a" * 39,
+        "a" * 41,
+        "a" * 40 + "\n",
+    ]
+    for invalid in invalid_refs:
+        assert validator(invalid) is False
+    assert validator("a" * 40) is True
+
+    assert "assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)" in template
+    assert "def test_core_release_tool_sha_validator_rejects_mutable_or_malformed_refs" in template
+    immutable_assertion = template.index("assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)")
+    checkout_comparison = template.index('assert step["with"]["ref"] == CORE_RELEASE_TOOL_SHA')
+    assert immutable_assertion < checkout_comparison
