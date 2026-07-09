@@ -2,8 +2,9 @@
 
 A standalone tool built on the untaped SDK declares a :class:`ToolSpec` and runs
 ``run_tool(app, spec)``. ``ToolSpec`` carries everything the SDK needs to wire a
-tool's config, profile, and skills surfaces and to render command-aware
-messages; ``SkillAsset`` describes one packaged agent skill the tool ships.
+tool's config, profile, skills, and installed-version surfaces and to render
+command-aware messages; ``SkillAsset`` describes one packaged agent skill the
+tool ships.
 """
 
 from __future__ import annotations
@@ -42,7 +43,8 @@ class ToolSpec:
     command-aware help and error text. ``section`` is the tool's config section.
     ``profile_model`` is its profile-scoped settings model; ``state_model`` (when
     present) is its disjoint, tool-managed state model. ``skills`` are the tool's
-    packaged agent skills.
+    packaged agent skills. ``distribution`` is the installed package name used
+    for lazy ``--version`` lookup and defaults operationally to ``command``.
     """
 
     command: str

@@ -56,7 +56,7 @@ requires-python = ">=3.14"
 dependencies = [
     "cyclopts>=4.16.0,<5",
     "pydantic>=2.13.3",
-    "untaped>=3.0.0,<4",
+    "untaped>=3.1.0,<4",
 ]
 
 [project.scripts]
@@ -157,6 +157,11 @@ if __name__ == "__main__":
     main()
 ```
 
+`ToolSpec.distribution` names the installed package that owns the executable.
+It defaults to `command`, so the example above needs no extra field. When the
+names differ, set it explicitly, such as
+`ToolSpec(command="acme", ..., distribution="acme-cli")`.
+
 `run_tool(app, spec)` is your `main()`. For free, it:
 
 - registers your section(s) and the built-in profiles layout,
@@ -166,7 +171,14 @@ if __name__ == "__main__":
   any token position),
 - renames the program to `spec.command` so help/usage/errors read
   `untaped-acme`, and
+- wires `--version` to the installed `spec.distribution` metadata (or
+  `spec.command` by default), and
 - runs everything under the SDK's error-reporting contract.
+
+The distribution lookup is lazy: building or starting the app does not query
+package metadata, and only `--version` resolves it. Cyclopts' version-only
+output is preserved, so `untaped-acme --version` prints exactly the installed
+version plus its trailing newline (for example, `0.1.0`).
 
 (`build_tool_app(app, spec)` is the wiring half — it returns the configured app
 without running it, handy for tests that drive `app.meta` directly.)

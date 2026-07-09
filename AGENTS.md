@@ -72,7 +72,7 @@ tool's `pyproject.toml`:
 [project]
 dependencies = [
   "cyclopts>=4.16.0,<5",
-  "untaped>=3.0.0,<4",
+  "untaped>=3.1.0,<4",
 ]
 
 [project.scripts]
@@ -96,6 +96,12 @@ def main() -> None:
     ))
 ```
 
+`run_tool` wires `--version` to installed package metadata lazily. The
+distribution name defaults to `ToolSpec.command`; set
+`distribution="package-name"` only when the executable and installed package
+names differ. Cyclopts keeps ownership of rendering, so stdout is the version
+alone plus its trailing newline.
+
 Users install PyPI-backed tools by package name:
 
 ```bash
@@ -115,8 +121,12 @@ supported. `__all__` in `src/untaped/api.py` is the contract:
 
 The composition contract a tool builds on:
 
-- `ToolSpec(command, section, profile_model, state_model=None, skills=())` —
-  everything the SDK needs to run a tool, as data.
+- `ToolSpec(command: str, section: str, profile_model: type[BaseModel],
+  state_model: type[BaseModel] | None = None,
+  skills: Sequence[SkillAsset] = (), distribution: str | None = None)` —
+  everything the SDK needs to run a tool, as data. `distribution` defaults
+  operationally to `command` and identifies the installed package used for
+  lazy `--version` metadata lookup.
 - `SkillAsset(name, source, description)` — one packaged agent skill.
 - `register_tool(spec)` — registers the tool's settings section(s) for the
   process (validates profile/state models as disjoint).
@@ -127,8 +137,9 @@ The composition contract a tool builds on:
 `run_tool` mounts per-tool command groups `<tool> config`, `<tool> profile`,
 and `<tool> skills`; injects position-independent `--profile` / `--verbose`
 root options (usable in any token position via leading-consume +
-strip-on-unknown-option retry); and overrides the cyclopts app's display name
-to the tool command.
+strip-on-unknown-option retry); overrides the cyclopts app's display name to
+the tool command; and wires Cyclopts' version-only `--version` output to the
+tool's installed distribution metadata.
 
 Per-command settings are read via `app_context()`, which returns a frozen
 `AppContext` with `.section(name, model)`, `.http`, and `.ui(strict=...)`.

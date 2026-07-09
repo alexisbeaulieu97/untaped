@@ -11,11 +11,14 @@ change repository settings without explicit approval for that exact action.
 ## Package Metadata
 
 - Package name: `untaped`
-- Current release target: `3.0.0`
+- Current release target: `3.1.0`
 - License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
 - Build command: `uv build --no-sources`
 - SDK smoke: install the wheel, import `untaped.api`, and assert no `untaped`
   console script exists.
+- Tool-package smoke: when a package declares a console script, invoke its real
+  installed `<script> --version` and require stdout to equal the distribution
+  version plus one trailing newline before checking `--help`.
 
 ## Trusted Publishers
 

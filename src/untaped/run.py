@@ -4,8 +4,9 @@
 settings and the built-in profiles layout, mounts the ``config`` / ``profile``
 / ``skills`` command groups, wires position-independent ``--profile`` /
 ``--verbose`` root options (usable in any token position, like the retired
-hub), overrides the program name to the tool's command, registers shell
-completion, and runs under untaped's error-reporting contract.
+hub), overrides the program name to the tool's command, wires ``--version`` to
+lazy installed-distribution metadata, registers shell completion, and runs
+under untaped's error-reporting contract.
 
 ``build_tool_app`` is the wiring half — it returns the configured app so
 callers (and tests) can drive ``app.meta`` directly without running it.
@@ -109,7 +110,7 @@ def _root_options() -> dict[str, _RootOption]:
 
 
 def build_tool_app(app: App, spec: ToolSpec) -> App:
-    """Wire ``spec`` onto ``app`` and return it ready to run via ``app.meta``."""
+    """Wire ``spec`` and lazy version lookup onto ``app`` for ``app.meta``."""
     first_wiring = "config" not in app
     register_tool(spec)
     _mount(app, build_config_app(spec), name="config")
