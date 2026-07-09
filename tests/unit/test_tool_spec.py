@@ -26,6 +26,29 @@ def test_toolspec_holds_command_section_and_model() -> None:
     assert spec.profile_model is _Settings
     assert spec.state_model is None
     assert spec.skills == ()
+    assert spec.distribution is None
+
+
+def test_toolspec_accepts_explicit_distribution() -> None:
+    spec = ToolSpec(
+        command="untaped-health",
+        section="health",
+        profile_model=_Settings,
+        distribution="untaped-apple-health",
+    )
+
+    assert spec.distribution == "untaped-apple-health"
+
+
+@pytest.mark.parametrize("distribution", ["", " ", "\t\n"])
+def test_toolspec_rejects_blank_distribution(distribution: str) -> None:
+    with pytest.raises(ConfigError, match="distribution"):
+        ToolSpec(
+            command="untaped-health",
+            section="health",
+            profile_model=_Settings,
+            distribution=distribution,
+        )
 
 
 def test_toolspec_accepts_state_model_and_normalizes_skills_to_tuple() -> None:

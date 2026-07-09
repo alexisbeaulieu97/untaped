@@ -21,6 +21,7 @@ import inspect
 from collections.abc import Callable, Iterable
 from contextvars import Token
 from dataclasses import dataclass
+from importlib import metadata
 from typing import Annotated, Any, cast
 
 from cyclopts import App, Parameter
@@ -28,6 +29,7 @@ from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
 from untaped.config import build_config_app
+from untaped.errors import ConfigError
 from untaped.profile import build_profile_app
 from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
@@ -117,6 +119,18 @@ def build_tool_app(app: App, spec: ToolSpec) -> App:
     # property over the ``_name`` backing field). A tool hands us its own app,
     # so override the backing field to make help/usage read the tool command.
     app._name = (spec.command,)
+    distribution = spec.distribution or spec.command
+
+    def resolve_version() -> str:
+        try:
+            return metadata.version(distribution)
+        except metadata.PackageNotFoundError as exc:
+            raise ConfigError(
+                f"tool {spec.command!r} could not resolve version from "
+                f"distribution {distribution!r}"
+            ) from exc
+
+    app.version = resolve_version
     if first_wiring:
         # The meta default callback and the completion command can each only be
         # registered once; the mounts above are del-if-present so they re-wire
