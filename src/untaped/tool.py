@@ -2,8 +2,9 @@
 
 A standalone tool built on the untaped SDK declares a :class:`ToolSpec` and runs
 ``run_tool(app, spec)``. ``ToolSpec`` carries everything the SDK needs to wire a
-tool's config, profile, and skills surfaces and to render command-aware
-messages; ``SkillAsset`` describes one packaged agent skill the tool ships.
+tool's config, profile, skills, and installed-version surfaces and to render
+command-aware messages; ``SkillAsset`` describes one packaged agent skill the
+tool ships.
 """
 
 from __future__ import annotations
@@ -42,7 +43,8 @@ class ToolSpec:
     command-aware help and error text. ``section`` is the tool's config section.
     ``profile_model`` is its profile-scoped settings model; ``state_model`` (when
     present) is its disjoint, tool-managed state model. ``skills`` are the tool's
-    packaged agent skills.
+    packaged agent skills. ``distribution`` is the installed package name used
+    for lazy ``--version`` lookup and defaults operationally to ``command``.
     """
 
     command: str
@@ -50,12 +52,15 @@ class ToolSpec:
     profile_model: type[BaseModel]
     state_model: type[BaseModel] | None = None
     skills: Sequence[SkillAsset] = ()
+    distribution: str | None = None
 
     def __post_init__(self) -> None:
         if not self.command.strip():
             raise ConfigError("tool command must not be empty")
         if not self.section.strip():
             raise ConfigError("tool section must not be empty")
+        if self.distribution is not None and not self.distribution.strip():
+            raise ConfigError(f"tool {self.command!r} distribution must not be empty")
         _require_model(self.profile_model, f"tool {self.command!r} profile_model")
         if self.state_model is not None:
             _require_model(self.state_model, f"tool {self.command!r} state_model")

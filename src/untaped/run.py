@@ -4,8 +4,9 @@
 settings and the built-in profiles layout, mounts the ``config`` / ``profile``
 / ``skills`` command groups, wires position-independent ``--profile`` /
 ``--verbose`` root options (usable in any token position, like the retired
-hub), overrides the program name to the tool's command, registers shell
-completion, and runs under untaped's error-reporting contract.
+hub), overrides the program name to the tool's command, wires ``--version`` to
+lazy installed-distribution metadata, registers shell completion, and runs
+under untaped's error-reporting contract.
 
 ``build_tool_app`` is the wiring half — it returns the configured app so
 callers (and tests) can drive ``app.meta`` directly without running it.
@@ -21,6 +22,7 @@ import inspect
 from collections.abc import Callable, Iterable
 from contextvars import Token
 from dataclasses import dataclass
+from importlib import metadata
 from typing import Annotated, Any, cast
 
 from cyclopts import App, Parameter
@@ -28,6 +30,7 @@ from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
 from untaped.cli import echo, raise_usage, report_errors, run_cyclopts_app
 from untaped.config import build_config_app
+from untaped.errors import ConfigError
 from untaped.profile import build_profile_app
 from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
@@ -107,7 +110,7 @@ def _root_options() -> dict[str, _RootOption]:
 
 
 def build_tool_app(app: App, spec: ToolSpec) -> App:
-    """Wire ``spec`` onto ``app`` and return it ready to run via ``app.meta``."""
+    """Wire ``spec`` and lazy version lookup onto ``app`` for ``app.meta``."""
     first_wiring = "config" not in app
     register_tool(spec)
     _mount(app, build_config_app(spec), name="config")
@@ -117,6 +120,18 @@ def build_tool_app(app: App, spec: ToolSpec) -> App:
     # property over the ``_name`` backing field). A tool hands us its own app,
     # so override the backing field to make help/usage read the tool command.
     app._name = (spec.command,)
+    distribution = spec.distribution or spec.command
+
+    def resolve_version() -> str:
+        try:
+            return metadata.version(distribution)
+        except metadata.PackageNotFoundError as exc:
+            raise ConfigError(
+                f"tool {spec.command!r} could not resolve version from "
+                f"distribution {distribution!r}"
+            ) from exc
+
+    app.version = resolve_version
     if first_wiring:
         # The meta default callback and the completion command can each only be
         # registered once; the mounts above are del-if-present so they re-wire

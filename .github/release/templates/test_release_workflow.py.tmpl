@@ -1,7 +1,7 @@
 """Contract tests for the PyPI/TestPyPI release workflow (Option-C canonical).
 
 Adopting a tool: copy this file to tests/unit/test_release_workflow.py and edit ONLY the
-PER-TOOL CONFIG block. Everything below the marker must stay byte-identical to
+PER-TOOL CONFIG block. Everything below the closing divider must stay byte-identical to
 core .github/release/templates/test_release_workflow.py.tmpl — diff before merging a release PR.
 """
 
@@ -28,9 +28,10 @@ INTERNAL_DEPS: list[tuple[str, str | None]] = [
 PYPI_INSTALL_DOCS: list[str] = [
     "README.md",                      # REPLACE list
 ]
+# REPLACE — reviewed, merged 40-character core commit SHA containing the shared checker.
+CORE_RELEASE_TOOL_SHA = "__CHECKER_SHA__"
 # ========================================================================
 
-CORE_RELEASE_TOOL_SHA = "07116cc11d4217283ad42badea4f5d5744542f2a"
 EXPECTED_UV_VERSION = "0.11.26"
 EXPECTED_ACTION_REFS = {
     "actions/checkout": "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
@@ -47,6 +48,10 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 USES_RE = re.compile(r"^\s*(?:-\s+)?uses:\s+([^\s#]+)(?:\s+#.*)?\s*$", re.MULTILINE)
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _is_immutable_core_sha(ref: str) -> bool:
+    return FULL_SHA_RE.fullmatch(ref) is not None
 
 
 def _workflow_text() -> str:
@@ -194,6 +199,22 @@ def test_action_ref_parser_catches_mutable_and_missing_refs() -> None:
     assert _unpinned_action_refs(workflow) == ["astral-sh/setup-uv@v8", "actions/cache"]
 
 
+def test_core_release_tool_sha_validator_rejects_mutable_or_malformed_refs() -> None:
+    untouched_sentinel = "__CHECKER_" + "SHA__"
+    invalid_refs = [
+        "main",
+        "v3.1.0",
+        untouched_sentinel,
+        "A" * 40,
+        "a" * 39,
+        "a" * 41,
+        "a" * 40 + "\n",
+    ]
+
+    assert not any(_is_immutable_core_sha(ref) for ref in invalid_refs)
+    assert _is_immutable_core_sha("a" * 40)
+
+
 def test_release_checkout_does_not_persist_credentials() -> None:
     checkouts = [
         step for _job_name, step in _workflow_steps_by_job() if _is_action(step, "actions/checkout")
@@ -208,6 +229,9 @@ def test_release_checkout_does_not_persist_credentials() -> None:
 def test_release_tooling_is_sourced_from_pinned_core_checkout() -> None:
     workflow = _workflow()
 
+    assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA), (
+        "CORE_RELEASE_TOOL_SHA must be a reviewed, merged 40-character lowercase core commit SHA"
+    )
     assert "uses" not in workflow["jobs"]["publish"]
     assert workflow["jobs"]["publish"]["steps"]
 
