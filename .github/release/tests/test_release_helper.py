@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
-import runpy
+import re
 import subprocess
 import urllib.error
 from pathlib import Path
@@ -479,8 +480,31 @@ def test_reusable_release_test_template_keeps_checker_sha_in_editable_block() ->
 
 def test_reusable_release_test_template_keeps_immutable_checker_ref_contract() -> None:
     template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
-    namespace = runpy.run_path(str(RELEASE_TEST_TEMPLATE))
+    module = ast.parse(template, filename=str(RELEASE_TEST_TEMPLATE))
+    contract_nodes = [
+        node
+        for node in module.body
+        if (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "FULL_SHA_RE"
+                for target in node.targets
+            )
+        )
+        or (isinstance(node, ast.FunctionDef) and node.name == "_is_immutable_core_sha")
+    ]
+    assert len(contract_nodes) == 2
+    namespace: dict[str, object] = {"re": re}
+    exec(
+        compile(
+            ast.Module(body=contract_nodes, type_ignores=[]),
+            str(RELEASE_TEST_TEMPLATE),
+            "exec",
+        ),
+        namespace,
+    )
     validator = namespace["_is_immutable_core_sha"]
+    assert callable(validator)
 
     invalid_refs = [
         "main",
