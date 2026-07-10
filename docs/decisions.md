@@ -21,7 +21,7 @@ uv tool install untaped-ansible
 PyPI package metadata is the release contract. Suite repos carry no standing
 `[tool.uv.sources]` git pins (dropped 2026-07-02 once the suite was on PyPI);
 release artifacts are still built with `uv build --no-sources` so wheels
-declare only package ranges such as `untaped>=3.0.0,<4`.
+declare only package ranges such as `untaped>=3.1.0,<4`.
 
 The suite is: `github`, `jira`, `awx`, `ansible`, `workspace`, `recipe`,
 `apple-health`.
@@ -157,3 +157,18 @@ override it. It now takes a `retry=` (default `_INHERIT`) and forwards it to eve
 page fetch, so a tool can make just its idempotent search endpoint retry without
 making any other `POST` (e.g. a create) retryable. Additive; existing callers that
 omit `retry=` are unchanged.
+
+## 7. Tool versions come from installed distribution metadata (SDK 3.1)
+
+Each tool is independently packaged and installed, so its CLI reports the
+version of its own distribution rather than the version of the shared SDK.
+`ToolSpec.distribution` identifies that package and defaults to `command`; an
+explicit override covers executables whose name differs from their package.
+`run_tool` gives Cyclopts a callable so metadata resolution is lazy and happens
+only when `--version` is requested, not during ordinary startup or app wiring.
+
+Cyclopts' existing version-only output remains the contract: stdout is exactly
+the installed version plus a trailing newline. The shared release smoke invokes
+the real installed console script with `--version` and requires that exact
+output before checking help, so packaging metadata, entry-point wiring, and the
+public CLI behavior are verified together.

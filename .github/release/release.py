@@ -204,7 +204,7 @@ def smoke_console(
     console_script: Path,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
-    """Smoke a package install by checking metadata, console script, and help."""
+    """Smoke a package install by checking metadata, version output, and help."""
     if not python_path.exists():
         raise ReleaseCheckError(f"expected Python interpreter was missing: {python_path}")
     if not console_script.exists():
@@ -230,6 +230,23 @@ def smoke_console(
     if actual != version:
         raise ReleaseCheckError(
             f"installed {package_name} version {actual!r} did not match {version!r}"
+        )
+
+    console_version_check = runner(
+        [str(console_script), "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if console_version_check.returncode != 0:
+        detail = console_version_check.stderr.strip() or console_version_check.stdout.strip()
+        raise ReleaseCheckError(f"{console_script.name} --version failed: {detail}")
+
+    expected_console_version = f"{version}\n"
+    if console_version_check.stdout != expected_console_version:
+        raise ReleaseCheckError(
+            f"{console_script.name} --version output {console_version_check.stdout!r} "
+            f"did not match {expected_console_version!r}"
         )
 
     help_check = runner(

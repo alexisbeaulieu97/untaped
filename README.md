@@ -23,6 +23,8 @@ The SDK gives every tool, for free:
 - **Config tooling** — `<tool> config doctor` diagnoses the shared file and
   `<tool> config edit` opens it in `$VISUAL`/`$EDITOR`; a `--quiet` root option
   mutes progress and `success`/`info` chatter.
+- **Installed version reporting** — `<tool> --version` prints the tool's own
+  installed distribution version, not the SDK version.
 
 You import the surface from `untaped.api` (re-exported from the `untaped`
 package root), declare a `ToolSpec`, and call `run_tool(app, spec)` from your
@@ -48,12 +50,19 @@ def main() -> None:
 # pyproject.toml
 [project]
 dependencies = [
-    "untaped>=3.0.0,<4",
+    "untaped>=3.1.0,<4",
 ]
 
 [project.scripts]
 untaped-mytool = "my_tool.__main__:main"
 ```
+
+`run_tool` wires `--version` to installed package metadata. By default,
+`ToolSpec.distribution` uses `command`; when the executable and distribution
+names differ, set the package explicitly, for example
+`ToolSpec(command="acme", ..., distribution="acme-cli")`. Metadata lookup is
+lazy, so it happens only for `--version`, whose stdout remains the version
+alone (for example, `0.4.2`).
 
 Tools resolve the SDK from PyPI in development and CI alike. Published wheels
 are built with `uv build --no-sources` as defense in depth, so package

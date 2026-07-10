@@ -9,8 +9,10 @@ drive its meta app directly.
 
 from __future__ import annotations
 
+from importlib import metadata
 from pathlib import Path
 
+import pytest
 from pydantic import BaseModel
 
 from untaped.app_context import app_context
@@ -25,15 +27,24 @@ class _GithubSettings(BaseModel):
     token: str | None = None
 
 
-def _make_spec(tmp_path: Path) -> ToolSpec:
+def _make_spec(tmp_path: Path, *, distribution: str | None = None) -> ToolSpec:
     skill_dir = tmp_path / "skill-src" / "gh"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("# gh skill\n", encoding="utf-8")
+    skill = SkillAsset(name="gh", source=skill_dir, description="The gh skill.")
+    if distribution is None:
+        return ToolSpec(
+            command="untaped-github",
+            section="github",
+            profile_model=_GithubSettings,
+            skills=[skill],
+        )
     return ToolSpec(
         command="untaped-github",
         section="github",
         profile_model=_GithubSettings,
-        skills=[SkillAsset(name="gh", source=skill_dir, description="The gh skill.")],
+        skills=[skill],
+        distribution=distribution,
     )
 
 
@@ -128,6 +139,90 @@ def test_program_name_is_tool_command(_isolated_config: Path, tmp_path: Path) ->
     assert "untaped-github" in result.output
 
 
+def test_version_lookup_is_lazy_for_non_version_command(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    looked_up: list[str] = []
+
+    def fake_version(distribution: str) -> str:
+        looked_up.append(distribution)
+        return "9.8.7"
+
+    monkeypatch.setattr(metadata, "version", fake_version)
+
+    wired = _wired(tmp_path)
+    assert looked_up == []
+
+    result = CliInvoker().invoke(wired.meta, ["whoami"])
+
+    assert result.exit_code == 0, result.output
+    assert looked_up == []
+
+
+def test_version_prints_only_resolved_default_distribution_version(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    looked_up: list[str] = []
+
+    def fake_version(distribution: str) -> str:
+        looked_up.append(distribution)
+        return "9.8.7"
+
+    monkeypatch.setattr(metadata, "version", fake_version)
+    wired = _wired(tmp_path)
+
+    result = CliInvoker().invoke(wired.meta, ["--version"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "9.8.7\n"
+    assert result.stderr == ""
+    assert looked_up == ["untaped-github"]
+
+
+def test_version_uses_explicit_distribution_override(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    looked_up: list[str] = []
+
+    def fake_version(distribution: str) -> str:
+        looked_up.append(distribution)
+        return "1.2.3"
+
+    monkeypatch.setattr(metadata, "version", fake_version)
+    app = create_app(name="health", help="Work with Apple Health.")
+    wired = build_tool_app(
+        app,
+        _make_spec(tmp_path, distribution="untaped-apple-health"),
+    )
+
+    result = CliInvoker().invoke(wired.meta, ["--version"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "1.2.3\n"
+    assert looked_up == ["untaped-apple-health"]
+
+
+def test_missing_version_metadata_reports_command_and_distribution(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def missing(distribution: str) -> str:
+        raise metadata.PackageNotFoundError(distribution)
+
+    monkeypatch.setattr(metadata, "version", missing)
+    app = create_app(name="health", help="Work with Apple Health.")
+    wired = build_tool_app(
+        app,
+        _make_spec(tmp_path, distribution="untaped-apple-health"),
+    )
+
+    result = CliInvoker().invoke(wired.meta, ["--version"])
+
+    assert result.exit_code == 1, result.output
+    assert "untaped-github" in result.stderr
+    assert "untaped-apple-health" in result.stderr
+    assert isinstance(result.exception, SystemExit)
+
+
 def test_run_tool_surface_is_exported_from_api() -> None:
     from untaped.api import build_tool_app, run_tool  # noqa: F401
 
@@ -147,6 +242,30 @@ def test_build_tool_app_is_idempotent(_isolated_config: Path, tmp_path: Path) ->
     result = CliInvoker().invoke(wired.meta, ["whoami"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "(none)"
+
+
+def test_idempotent_rewiring_updates_version_distribution(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    looked_up: list[str] = []
+
+    def fake_version(distribution: str) -> str:
+        looked_up.append(distribution)
+        return "2.0.0"
+
+    monkeypatch.setattr(metadata, "version", fake_version)
+    app = create_app(name="github", help="Work with GitHub.")
+
+    build_tool_app(app, _make_spec(tmp_path / "first", distribution="first-package"))
+    wired = build_tool_app(
+        app,
+        _make_spec(tmp_path / "second", distribution="second-package"),
+    )
+    result = CliInvoker().invoke(wired.meta, ["--version"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "2.0.0\n"
+    assert looked_up == ["second-package"]
 
 
 def test_profile_create_success_shown_without_quiet(_isolated_config: Path, tmp_path: Path) -> None:

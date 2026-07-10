@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
+import re
 import subprocess
 import urllib.error
 from pathlib import Path
@@ -13,6 +15,12 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / ".github" / "release" / "release.py"
+RELEASE_WORKFLOW_TEMPLATE = REPO_ROOT / ".github" / "release" / "templates" / "release.yml.tmpl"
+RELEASE_TEST_TEMPLATE = (
+    REPO_ROOT / ".github" / "release" / "templates" / "test_release_workflow.py.tmpl"
+)
+CHECKER_SHA_SENTINEL = "__CHECKER_SHA__"
+OLD_CHECKER_SHA = "07116cc11d4217283ad42badea4f5d5744542f2a"
 
 
 def _load_helper() -> ModuleType:
@@ -338,7 +346,7 @@ def test_smoke_console_checks_version_script_and_help(
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "0.12.5", "")
+        return subprocess.CompletedProcess(command, 0, "0.12.5\n", "")
 
     release.smoke_console(
         package_name="untaped-github",
@@ -350,7 +358,86 @@ def test_smoke_console_checks_version_script_and_help(
 
     assert calls[0][0] == str(python_path)
     assert "metadata.version('untaped-github')" in " ".join(calls[0])
-    assert calls[1] == [str(console_script), "--help"]
+    assert calls[1] == [str(console_script), "--version"]
+    assert calls[2] == [str(console_script), "--help"]
+
+
+def test_smoke_console_fails_when_version_command_fails(tmp_path: Path) -> None:
+    release = _load_helper()
+    python_path = tmp_path / "venv" / "bin" / "python"
+    console_script = tmp_path / "venv" / "bin" / "untaped-github"
+    console_script.parent.mkdir(parents=True)
+    python_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    console_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    console_script.chmod(0o755)
+
+    def runner(
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        if command == [str(console_script), "--version"]:
+            return subprocess.CompletedProcess(command, 2, "", "version exploded")
+        return subprocess.CompletedProcess(command, 0, "0.12.5\n", "")
+
+    with pytest.raises(
+        release.ReleaseCheckError,
+        match=r"untaped-github --version failed: version exploded",
+    ):
+        release.smoke_console(
+            package_name="untaped-github",
+            version="0.12.5",
+            python_path=python_path,
+            console_script=console_script,
+            runner=runner,
+        )
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "0.12.5",
+        "0.12.6\n",
+        "0.12.5 extra\n",
+        "0.12.5\n\n",
+        "untaped-github 0.12.5\n",
+    ],
+)
+def test_smoke_console_rejects_wrong_or_extra_version_stdout(
+    tmp_path: Path,
+    stdout: str,
+) -> None:
+    release = _load_helper()
+    python_path = tmp_path / "venv" / "bin" / "python"
+    console_script = tmp_path / "venv" / "bin" / "untaped-github"
+    console_script.parent.mkdir(parents=True)
+    python_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    console_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    console_script.chmod(0o755)
+
+    def runner(
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        output = stdout if command == [str(console_script), "--version"] else "0.12.5\n"
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    with pytest.raises(
+        release.ReleaseCheckError,
+        match=r"untaped-github --version output .* did not match '0.12.5\\n'",
+    ):
+        release.smoke_console(
+            package_name="untaped-github",
+            version="0.12.5",
+            python_path=python_path,
+            console_script=console_script,
+            runner=runner,
+        )
 
 
 def test_smoke_console_fails_when_console_script_missing(tmp_path: Path) -> None:
@@ -366,3 +453,74 @@ def test_smoke_console_fails_when_console_script_missing(tmp_path: Path) -> None
             python_path=python_path,
             console_script=tmp_path / "venv" / "bin" / "untaped-github",
         )
+
+
+def test_reusable_release_templates_require_checker_sha_substitution() -> None:
+    workflow_template = RELEASE_WORKFLOW_TEMPLATE.read_text(encoding="utf-8")
+    test_template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
+
+    assert workflow_template.count(CHECKER_SHA_SENTINEL) == 2
+    assert test_template.count(CHECKER_SHA_SENTINEL) == 1
+    assert OLD_CHECKER_SHA not in workflow_template
+    assert OLD_CHECKER_SHA not in test_template
+
+
+def test_reusable_release_test_template_keeps_checker_sha_in_editable_block() -> None:
+    template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
+    config_start = template.index("# ============================ PER-TOOL CONFIG")
+    config_end = template.index(
+        "# ========================================================================",
+        config_start,
+    )
+    checker_assignment = template.index('CORE_RELEASE_TOOL_SHA = "__CHECKER_SHA__"')
+
+    assert config_start < checker_assignment < config_end
+    assert "Everything below the closing divider must stay byte-identical" in template
+
+
+def test_reusable_release_test_template_keeps_immutable_checker_ref_contract() -> None:
+    template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
+    module = ast.parse(template, filename=str(RELEASE_TEST_TEMPLATE))
+    contract_nodes = [
+        node
+        for node in module.body
+        if (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "FULL_SHA_RE"
+                for target in node.targets
+            )
+        )
+        or (isinstance(node, ast.FunctionDef) and node.name == "_is_immutable_core_sha")
+    ]
+    assert len(contract_nodes) == 2
+    namespace: dict[str, object] = {"re": re}
+    exec(
+        compile(
+            ast.Module(body=contract_nodes, type_ignores=[]),
+            str(RELEASE_TEST_TEMPLATE),
+            "exec",
+        ),
+        namespace,
+    )
+    validator = namespace["_is_immutable_core_sha"]
+    assert callable(validator)
+
+    invalid_refs = [
+        "main",
+        "v3.1.0",
+        "__CHECKER_SHA__",
+        "A" * 40,
+        "a" * 39,
+        "a" * 41,
+        "a" * 40 + "\n",
+    ]
+    for invalid in invalid_refs:
+        assert validator(invalid) is False
+    assert validator("a" * 40) is True
+
+    assert "assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)" in template
+    assert "def test_core_release_tool_sha_validator_rejects_mutable_or_malformed_refs" in template
+    immutable_assertion = template.index("assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)")
+    checkout_comparison = template.index('assert step["with"]["ref"] == CORE_RELEASE_TOOL_SHA')
+    assert immutable_assertion < checkout_comparison

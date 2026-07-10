@@ -72,7 +72,7 @@ tool's `pyproject.toml`:
 [project]
 dependencies = [
   "cyclopts>=4.16.0,<5",
-  "untaped>=3.0.0,<4",
+  "untaped>=3.1.0,<4",
 ]
 
 [project.scripts]
@@ -96,6 +96,12 @@ def main() -> None:
     ))
 ```
 
+`run_tool` wires `--version` to installed package metadata lazily. The
+distribution name defaults to `ToolSpec.command`; set
+`distribution="package-name"` only when the executable and installed package
+names differ. Cyclopts keeps ownership of rendering, so stdout is the version
+alone plus its trailing newline.
+
 Users install PyPI-backed tools by package name:
 
 ```bash
@@ -115,8 +121,12 @@ supported. `__all__` in `src/untaped/api.py` is the contract:
 
 The composition contract a tool builds on:
 
-- `ToolSpec(command, section, profile_model, state_model=None, skills=())` —
-  everything the SDK needs to run a tool, as data.
+- `ToolSpec(command: str, section: str, profile_model: type[BaseModel],
+  state_model: type[BaseModel] | None = None,
+  skills: Sequence[SkillAsset] = (), distribution: str | None = None)` —
+  everything the SDK needs to run a tool, as data. `distribution` defaults
+  operationally to `command` and identifies the installed package used for
+  lazy `--version` metadata lookup.
 - `SkillAsset(name, source, description)` — one packaged agent skill.
 - `register_tool(spec)` — registers the tool's settings section(s) for the
   process (validates profile/state models as disjoint).
@@ -127,8 +137,9 @@ The composition contract a tool builds on:
 `run_tool` mounts per-tool command groups `<tool> config`, `<tool> profile`,
 and `<tool> skills`; injects position-independent `--profile` / `--verbose`
 root options (usable in any token position via leading-consume +
-strip-on-unknown-option retry); and overrides the cyclopts app's display name
-to the tool command.
+strip-on-unknown-option retry); overrides the cyclopts app's display name to
+the tool command; and wires Cyclopts' version-only `--version` output to the
+tool's installed distribution metadata.
 
 Per-command settings are read via `app_context()`, which returns a frozen
 `AppContext` with `.section(name, model)`, `.http`, and `.ui(strict=...)`.
@@ -471,24 +482,31 @@ Copy the two canonical templates; do not hand-write them:
 - `.github/release/templates/release.yml.tmpl` → the tool's `.github/workflows/release.yml`
 - `.github/release/templates/test_release_workflow.py.tmpl` → the tool's `tests/unit/test_release_workflow.py`
 
-**The pinned checker SHA is `07116cc11d4217283ad42badea4f5d5744542f2a`** (both `.release-tool`
-checkouts in the workflow, and `CORE_RELEASE_TOOL_SHA` in the test). Bump it only when the shared
-checker in `.github/release/` changes; re-pinning to a content-identical SHA needs no re-dispatch.
+Select a reviewed, merged 40-character commit SHA from this repo that contains the shared checker
+version the tool should use. Replace every `__CHECKER_SHA__` sentinel with that same SHA: both
+`.release-tool` checkouts in the workflow and `CORE_RELEASE_TOOL_SHA` in the test. Never substitute
+a branch or tag. Bump the SHA only when the shared checker in `.github/release/` changes;
+re-pinning to a content-identical SHA needs no re-dispatch.
 
-**The only per-tool variance** — everything else must stay byte-identical to the templates:
+**The only template substitutions and per-tool variance** — everything else must stay
+byte-identical to the templates:
 
-1. `release.yml`: the 8 sentinel sites — `__DIST_NAME__` (×6) and `__CONSOLE_SCRIPT__` (×2).
+1. `release.yml`: the 10 sentinel sites — `__DIST_NAME__` (×6), `__CONSOLE_SCRIPT__` (×2),
+   and `__CHECKER_SHA__` (×2).
 2. `test_release_workflow.py`: the `PER-TOOL CONFIG` block — `DIST_NAME`, `CONSOLE_SCRIPT`,
-   `EXPECTED_VERSION`, `INTERNAL_DEPS` (each `(requirement, rev-or-None)`), `PYPI_INSTALL_DOCS`.
+   `EXPECTED_VERSION`, `INTERNAL_DEPS` (each `(requirement, rev-or-None)`),
+   `PYPI_INSTALL_DOCS`, and `CORE_RELEASE_TOOL_SHA` (`__CHECKER_SHA__` ×1).
 
 `DIST_NAME` doubles as the GitHub repo slug and must equal `[project].name`; `CONSOLE_SCRIPT` must
 equal the `[project.scripts]` entry-point (confirm both from the tool's `pyproject.toml` — do not
 assume they match). For an internal dep installed from PyPI (no `[tool.uv.sources]` git pin), record
 its rev as `None`.
 
-**Drift check before merging a tool's release PR:** diff the tool's `release.yml` against the template
-ignoring the sentinel substitutions, and diff the tool's `test_release_workflow.py` body below the
-`PER-TOOL CONFIG` marker against the template — both must match byte-for-byte.
+**Drift check before merging a tool's release PR:** diff the tool's `release.yml` against the
+template ignoring only the documented sentinel substitutions. In
+`test_release_workflow.py`, only the content between the `PER-TOOL CONFIG` opening line and its
+closing divider may vary; everything below the closing divider must match the template
+byte-for-byte.
 
 **Before the first dispatch**, register the tool's Trusted Publisher on **each** index (PyPI and
 TestPyPI) with workflow filename `release.yml`, and create the `testpypi` and `pypi` GitHub
