@@ -1,0 +1,6 @@
+schema = "untaped.orchestration.decision/v1"
+id = "dec_019f68b6b3da73acb58a68dffdc85adc"
+kind = "decision"
+title = "Profiles and themes are absorbed into the SDK"
+created_at = "2026-07-10T00:30:02.000Z"
+tags = []

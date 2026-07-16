@@ -564,6 +564,14 @@ environments. Then follow the dispatch discipline above: TestPyPI from a branch 
 - **Removing or renaming an `untaped.api` name without a MAJOR bump.** That
   breaks every installed tool pinned to a 1.x tag.
 
+## Orchestration store
+
+The repository has a public decision-only orchestration store; it contains no tasks.
+Use `untaped-orchestration` for canonical reads and mutations, including revision guards
+on every mutation. Agents never use `--force-current`. The committed views are
+human-only generated state, not canonical agent input. After hand recovery, run
+`untaped-orchestration check --local` and `untaped-orchestration render --check`.
+
 ## See also
 
 - **Decisions (ADRs):** [`docs/decisions.md`](docs/decisions.md) — the

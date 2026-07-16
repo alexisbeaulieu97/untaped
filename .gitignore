@@ -206,3 +206,14 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Orchestration runtime and editor artifacts (canonical store remains tracked)
+.untaped/orchestration/**/.lock
+.untaped/orchestration/**/.DS_Store
+.untaped/orchestration/**/.*.untaped-tmp-*
+.untaped/orchestration/**/*~
+.untaped/orchestration/**/*.swp
+.untaped/orchestration/**/*.swo
+.untaped/orchestration/**/*.tmp
+.untaped/orchestration/**/.#*
+.untaped/orchestration/**/#*
