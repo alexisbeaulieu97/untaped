@@ -624,6 +624,17 @@ module is runtime-importable (pytest's `--import-mode=importlib` otherwise
 hides it). New shared scaffolding for this package belongs in the same
 module.
 
+## Orchestration decisions
+
+Architecture decisions belong in this repository's initially empty, public,
+decision-only orchestration store; active tasks are disabled. Use
+`untaped-orchestration` for canonical reads and mutations, preserve revision guards,
+and never use `--force-current`.
+
+The committed decision view is generated human-readable output and never tool input.
+Run `check --local`, `fmt --check --local`, and `render --check`; recover through
+`check` and `render`, not hand edits. See [`docs/decisions.md`](docs/decisions.md).
+
 ## See Also
 
 - [`untaped` core](https://github.com/alexisbeaulieu97/untaped) - SDK
