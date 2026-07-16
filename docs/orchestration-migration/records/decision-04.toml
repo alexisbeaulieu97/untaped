@@ -1,0 +1,6 @@
+schema = "untaped.orchestration.decision/v1"
+id = "dec_019f68b6b5ea758190f84ea79ed1cfbf"
+kind = "decision"
+title = "Config format — v1 (SDK 1.x) → v2 (SDK 2.x)"
+created_at = "2026-07-10T00:30:02.000Z"
+tags = []

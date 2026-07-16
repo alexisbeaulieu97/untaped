@@ -1,0 +1,120 @@
+schema = "untaped.orchestration.coverage/v1"
+source_repository = "untaped"
+source_oid = "80bb8411cd0017f3e0cde818656aaf6fd0233368"
+original_path = "docs/decisions.md"
+source_sha256 = "597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+source_bytes = 9748
+source_lines = 174
+created_at_provenance = "Source commit author timestamp 2026-07-09T20:30:02-04:00, converted to 2026-07-10T00:30:02.000Z; shared by all records because the source has no per-decision dates."
+
+[[blocks]]
+line_range = "1-5"
+source_bytes = 155
+block_sha256 = "678151ac26af0d46d952921728fb966744002bc4b6bb559e25014318948112a5"
+disposition = "replaced-by-pointer"
+destination = "docs/decisions.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "6-33"
+source_bytes = 1229
+block_sha256 = "e6a6cf30d79cca55aff4228c9b80462a3cb3b2df95adf44f49affd3e05aab619"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b2cb75a9a7cb908963b4b59c-untaped-is-an-sdk-not-an-app-plugins-retired.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "34-34"
+source_bytes = 1
+block_sha256 = "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+disposition = "source-separator-omitted"
+destination = "none"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "35-41"
+source_bytes = 401
+block_sha256 = "d622f0234e32a3d448631e4fdda18b41a3d39b6decc7cd19055ad495e3a0b35e"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b3da73acb58a68dffdc85adc-profiles-and-themes-are-absorbed-into-the-sdk.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "42-42"
+source_bytes = 1
+block_sha256 = "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+disposition = "source-separator-omitted"
+destination = "none"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "43-67"
+source_bytes = 1618
+block_sha256 = "783974364b14b1db77a346e16a982a10451c026e36b9696114faf277f7750c9f"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b4e475179664a514f3771211-pipe-envelope-v1-versioned-independently-of-the-sdk.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "68-68"
+source_bytes = 1
+block_sha256 = "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+disposition = "source-separator-omitted"
+destination = "none"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "69-105"
+source_bytes = 2245
+block_sha256 = "ddcd1fa8cf3708bf2654c10dce0dd0be6639c9e4d0e5432160924e07097c485a"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b5ea758190f84ea79ed1cfbf-config-format-v1-sdk-1-x-v2-sdk-2-x.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "106-106"
+source_bytes = 1
+block_sha256 = "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+disposition = "source-separator-omitted"
+destination = "none"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "107-114"
+source_bytes = 446
+block_sha256 = "e81081bf56586374deaf707d081d49e32d236a5495041eeb4a5126e1b991f047"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b6f0748b8a01f0cbe11b7f12-the-sdk-ships-no-core-agent-skill.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "115-115"
+source_bytes = 1
+block_sha256 = "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+disposition = "source-separator-omitted"
+destination = "none"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "116-159"
+source_bytes = 2755
+block_sha256 = "c0e4664748b35199c428c903bba1a7683c7fa095a0b56ed3b4bdfee72c0ef957"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b7f87484ae84f7b788f38138-emit-detail-routing-and-safe-http-retries-sdk-2-1.md"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "160-160"
+source_bytes = 1
+block_sha256 = "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+disposition = "source-separator-omitted"
+destination = "none"
+review_status = "pending-review"
+
+[[blocks]]
+line_range = "161-174"
+source_bytes = 893
+block_sha256 = "442773a5e7a9141903dd7467c258a7603f2a853d0795f7ea94a5cede47cfbcea"
+disposition = "migrated"
+destination = "decisions/dec_019f68b6b8fe72f49640813dd3240a0c-tool-versions-come-from-installed-distribution-metadata-sdk-3-1.md"
+review_status = "pending-review"
