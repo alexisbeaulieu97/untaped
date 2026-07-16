@@ -77,7 +77,7 @@ BODY_HASHES = (
 
 
 def load_toml(path: Path) -> dict[str, object]:
-    return tomllib.loads(path.read_text())
+    return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
 def parse_item(path: Path) -> tuple[dict[str, object], bytes]:
@@ -116,7 +116,7 @@ def test_exact_decisions_preserve_bodies_and_evidence() -> None:
         assert frontmatter["created_at"] == "2026-07-10T00:30:02.000Z"
         assert frontmatter["evidence"] == [{"relation": "tracked-by", "reference": SOURCE_REF}]
         assert hashlib.sha256(body).hexdigest() == body_hash
-    view = (STORE / "views/decisions.md").read_text()
+    view = (STORE / "views/decisions.md").read_text(encoding="utf-8")
     assert all(decision_id in view for decision_id in DECISION_IDS)
     assert "batteries-included CLI *framework*" not in view
 
@@ -139,7 +139,7 @@ def test_migration_coverage_is_exact_gapless_and_independently_accepted() -> Non
     assert all(block["disposition"] and block["destination"] for block in blocks)
     lines = [line for block in blocks for line in range(*_inclusive(block["line_range"]))]
     assert lines == list(range(1, 175))
-    review = (MIGRATION / "review.md").read_text()
+    review = (MIGRATION / "review.md").read_text(encoding="utf-8")
     assert "Verdict: **ACCEPT**" in review
     assert f"{SOURCE_OID}..f67b3d7abf98db7e5e1bbbc81546bedebbec83b8" in review
     assert SOURCE_SHA in review
@@ -172,12 +172,12 @@ def test_import_manifest_has_guarded_unique_records() -> None:
 
 
 def test_pointer_agent_rules_ignore_rules_and_workflow() -> None:
-    pointer = (ROOT / "docs/decisions.md").read_text()
+    pointer = (ROOT / "docs/decisions.md").read_text(encoding="utf-8")
     assert "../.untaped/orchestration/views/decisions.md" in pointer
     assert "untaped-orchestration brief --format json" in pointer
     assert "canonical" in pointer and "generated" in pointer
     assert "orchestration-migration" in pointer
-    agents = (ROOT / "AGENTS.md").read_text()
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for phrase in (
         "public decision-only",
         "revision guard",
@@ -188,7 +188,7 @@ def test_pointer_agent_rules_ignore_rules_and_workflow() -> None:
         "render --check",
     ):
         assert phrase in agents
-    ignores = set((ROOT / ".gitignore").read_text().splitlines())
+    ignores = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
     assert {
         ".untaped/orchestration/**/.lock",
         ".untaped/orchestration/**/.DS_Store",
@@ -200,7 +200,7 @@ def test_pointer_agent_rules_ignore_rules_and_workflow() -> None:
         ".untaped/orchestration/**/.#*",
         ".untaped/orchestration/**/#*",
     } <= ignores
-    workflow = (ROOT / ".github/workflows/orchestration.yml").read_text()
+    workflow = (ROOT / ".github/workflows/orchestration.yml").read_text(encoding="utf-8")
     assert "permissions:\n  contents: read" in workflow
     assert "persist-credentials: false" in workflow
     assert "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0" in workflow
