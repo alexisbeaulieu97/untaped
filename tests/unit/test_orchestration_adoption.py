@@ -121,7 +121,7 @@ def test_exact_decisions_preserve_bodies_and_evidence() -> None:
     assert "batteries-included CLI *framework*" not in view
 
 
-def test_migration_coverage_is_exact_gapless_and_pending_review() -> None:
+def test_migration_coverage_is_exact_gapless_and_independently_accepted() -> None:
     coverage = load_toml(MIGRATION / "coverage.toml")
     assert coverage["schema"] == "untaped.orchestration.coverage/v1"
     assert coverage["source_repository"] == "untaped"
@@ -134,11 +134,20 @@ def test_migration_coverage_is_exact_gapless_and_pending_review() -> None:
     assert [block["line_range"] for block in blocks] == list(RANGES)
     assert [block["source_bytes"] for block in blocks] == list(BYTE_COUNTS)
     assert [block["block_sha256"] for block in blocks] == list(BLOCK_HASHES)
-    assert {block["review_status"] for block in blocks} == {"pending-review"}
+    assert {block["review_status"] for block in blocks} == {"accepted"}
+    assert {block["review_reference"] for block in blocks} == {"review.md"}
     assert all(block["disposition"] and block["destination"] for block in blocks)
     lines = [line for block in blocks for line in range(*_inclusive(block["line_range"]))]
     assert lines == list(range(1, 175))
-    assert not (MIGRATION / "review.md").exists()
+    review = (MIGRATION / "review.md").read_text()
+    assert "Verdict: **ACCEPT**" in review
+    assert f"{SOURCE_OID}..f67b3d7abf98db7e5e1bbbc81546bedebbec83b8" in review
+    assert SOURCE_SHA in review
+    assert "9,748 bytes and 174 LF-terminated lines" in review
+    assert BLOCK_HASHES[0] in review
+    assert "seven decisions" in review
+    assert "ORC009" in review
+    assert "/private/tmp" not in review
 
 
 def _inclusive(value: str) -> tuple[int, int]:
