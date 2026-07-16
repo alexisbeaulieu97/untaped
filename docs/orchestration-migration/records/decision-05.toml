@@ -1,0 +1,6 @@
+schema = "untaped.orchestration.decision/v1"
+id = "dec_019f68b6b6f0748b8a01f0cbe11b7f12"
+kind = "decision"
+title = "The SDK ships no core agent skill"
+created_at = "2026-07-10T00:30:02.000Z"
+tags = []

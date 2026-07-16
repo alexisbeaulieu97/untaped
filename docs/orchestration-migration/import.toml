@@ -1,0 +1,46 @@
+schema = "untaped.orchestration.import/v1"
+target_store_id = "sto_019f68b6af9e721e970126ca31dbfde1"
+expected_store_revision = "sha256:c9ac9be1de6f7317de14a290a8f703cbb090868eb0937c24b8d5dec23fe79117"
+require_empty_items = true
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-01.toml"
+body_file = "records/decision-01.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-02.toml"
+body_file = "records/decision-02.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-03.toml"
+body_file = "records/decision-03.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-04.toml"
+body_file = "records/decision-04.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-05.toml"
+body_file = "records/decision-05.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-06.toml"
+body_file = "records/decision-06.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
+
+[[records]]
+destination = "decisions"
+frontmatter_file = "records/decision-07.toml"
+body_file = "records/decision-07.md"
+source_ref = "git:80bb8411cd0017f3e0cde818656aaf6fd0233368:docs/decisions.md#sha256:597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
