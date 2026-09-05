@@ -12,8 +12,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.registry import CapabilitySpec, SkillAsset
 from untaped.capabilities.workspace.settings import WorkspaceSettings, WorkspaceState
+from untaped.capability_api import CapabilitySpec, SkillAsset
 
 if TYPE_CHECKING:
     from cyclopts import App

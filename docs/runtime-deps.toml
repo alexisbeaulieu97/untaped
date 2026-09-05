@@ -10,8 +10,26 @@ version = 1
 [[dep]]
 name = "cyclopts"
 owner = "workspace"
-reason = "workspace CLI command tree (app composition and per-command options)"
+reason = "workspace and management command trees via kernel CLI helpers (create_app/App)"
 requirement = "cyclopts>=4.16.0,<5"
+
+[[dep]]
+name = "filelock"
+owner = "workspace"
+reason = "atomic config-file writes via kernel config_file FileLock"
+requirement = "filelock>=3.29.0"
+
+[[dep]]
+name = "httpx"
+owner = "workspace"
+reason = "outbound HTTPS via kernel HTTP client backing capability network calls"
+requirement = "httpx>=0.28.1"
+
+[[dep]]
+name = "prompt-toolkit"
+owner = "workspace"
+reason = "interactive prompts via kernel prompt primitives"
+requirement = "prompt-toolkit>=3.0.52"
 
 [[dep]]
 name = "pydantic"
@@ -20,13 +38,25 @@ reason = "workspace profile/state models and manifest validation"
 requirement = "pydantic>=2.13.3"
 
 [[dep]]
+name = "pydantic-settings"
+owner = "workspace"
+reason = "layered profile/settings resolution via kernel settings sources"
+requirement = "pydantic-settings>=2.14.0"
+
+[[dep]]
 name = "pyyaml"
 owner = "workspace"
 reason = "read/write per-workspace untaped.yml manifests"
 requirement = "pyyaml>=6.0.3"
 
 [[dep]]
-name = "untaped"
+name = "rich"
 owner = "workspace"
-reason = "SDK surface the standalone tool depended on; provided in-process by the unified distribution itself (no separate install)"
-requirement = "untaped>=3.0.0,<4"
+reason = "table/console output rendering via kernel render helpers"
+requirement = "rich>=15.0.0"
+
+[[dep]]
+name = "truststore"
+owner = "workspace"
+reason = "OS trust-store TLS verification for the kernel HTTP client"
+requirement = "truststore>=0.10.4"
