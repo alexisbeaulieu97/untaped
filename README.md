@@ -101,6 +101,26 @@ untaped-awx job-templates list --format raw --columns name \
   | untaped-awx job-templates get --stdin --format json
 ```
 
+## Built-in capabilities
+
+The unified `untaped` shell composes built-in capabilities under one
+executable. Wave 1.5 ships the first one:
+
+- **`workspace`** — manage local git workspaces (collections of repos)
+  declared in per-workspace `untaped.yml` manifests with a central
+  name→path registry:
+
+```bash
+untaped workspace init prod
+untaped workspace add git@github.com:acme/api.git --workspace prod
+untaped workspace sync --workspace prod
+untaped workspace status --workspace prod
+untaped workspace list --format pipe | untaped workspace path --stdin
+```
+
+See [docs/workspace/usage.md](./docs/workspace/usage.md) for the manifest
+shape, command reference, and shell helper examples.
+
 ## Documentation
 
 User-facing docs live in [`docs/`](./docs/README.md):
