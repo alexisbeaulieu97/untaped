@@ -11,10 +11,10 @@ Wave 1.3 scope: the root owns position-independent ``--profile`` /
 ``--verbose`` / ``--quiet`` options (token-reset exactly like the retired
 per-tool root), lazy ``--version`` from the ``untaped`` distribution,
 shell-completion wiring, invocation-scoped identity, and capability-mount
-plumbing with zero built-ins mounted yet. Management commands (``config`` /
-``profile`` / ``skills`` / ``doctor`` / ``capabilities``) land in later
-waves: the minimal root below mounts whatever validates and lists zero
-capabilities when nothing does.
+plumbing with zero built-ins mounted yet. Wave 1.4 mounts the five root
+management commands (``config`` / ``profile`` / ``skills`` / ``doctor`` /
+``capabilities``, see :mod:`untaped.management`); no built-in capability
+subtrees ship yet (workspace mounts in 1.5).
 """
 
 from __future__ import annotations
@@ -45,6 +45,13 @@ from untaped.capabilities.registry import (
 )
 from untaped.cli import create_app, echo, report_errors, run_cyclopts_app
 from untaped.errors import ConfigError
+from untaped.management import (
+    build_root_capabilities_app,
+    build_root_config_app,
+    build_root_doctor_app,
+    build_root_profile_app,
+    build_root_skills_app,
+)
 from untaped.profile_resolver import set_profile_override
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import (
@@ -202,14 +209,29 @@ def build_root_app(
 ) -> App:
     """Compose the shell plus capabilities and return the root app.
 
-    Mounts each validated capability's sub-app under its capability name
-    (capability-mount plumbing; zero built-ins mount in Wave 1.3), wires
-    ``--version`` to lazy installed-distribution metadata, installs the
-    position-independent root options, and registers shell completion. Drive
-    ``app.meta`` directly in tests; run via :func:`run_root` in production.
+    Mounts the five root management commands plus each validated
+    capability's sub-app under its capability name (zero built-ins mount in
+    Wave 1.4), wires ``--version`` to lazy installed-distribution metadata,
+    installs the position-independent root options, and registers shell
+    completion. Drive ``app.meta`` directly in tests; run via :func:`run_root`
+    in production.
     """
-    result = compose_root(builtins=builtins, externals=externals)
+    candidates = list(externals) if externals is not None else list(discover_external_providers())
+    result = compose_root(builtins=builtins, externals=candidates)
     root = create_app(name=SHELL_NAME, help="Unified untaped developer CLI.")
+    _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
+    _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
+    _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
+    _mount(root, build_root_doctor_app(shell=SHELL_SPEC, result=result), name="doctor")
+    _mount(
+        root,
+        build_root_capabilities_app(
+            result=result,
+            candidates=candidates,
+            shell_distribution=SHELL_DISTRIBUTION,
+        ),
+        name="capabilities",
+    )
     for capability in result.capabilities:
         _mount(root, capability.spec.app_factory(), name=capability.spec.name)
     root.version = _resolve_version
