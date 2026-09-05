@@ -1,0 +1,217 @@
+import pytest
+from pydantic import ValidationError
+
+from untaped.capabilities.workspace.domain import (
+    ManifestDefaults,
+    Repo,
+    WorkspaceManifest,
+    derive_repo_name,
+)
+
+
+def test_repo_name_derived_from_https_url() -> None:
+    repo = Repo(url="https://github.com/org/svc-a.git")
+    assert repo.name == "svc-a"
+
+
+def test_repo_name_derived_from_ssh_url() -> None:
+    repo = Repo(url="git@github.com:org/svc-bee.git")
+    assert repo.name == "svc-bee"
+
+
+def test_repo_name_explicit_overrides_derivation() -> None:
+    repo = Repo(url="https://github.com/org/svc-a.git", name="custom")
+    assert repo.name == "custom"
+
+
+def test_repo_url_without_dot_git_suffix() -> None:
+    repo = Repo(url="https://github.com/org/svc-a")
+    assert repo.name == "svc-a"
+
+
+def test_repo_branch_optional() -> None:
+    repo = Repo(url="https://github.com/org/svc-a.git")
+    assert repo.branch is None
+
+
+def test_repo_rejects_empty_url() -> None:
+    with pytest.raises(ValidationError):
+        Repo(url="")
+    with pytest.raises(ValidationError):
+        Repo(url="   ")
+
+
+def test_manifest_target_branch_per_repo_wins() -> None:
+    m = WorkspaceManifest(
+        defaults=ManifestDefaults(branch="main"),
+        repos=[Repo(url="https://x/a.git", branch="develop")],
+    )
+    assert m.target_branch_for(m.repos[0]) == "develop"
+
+
+def test_manifest_target_branch_falls_back_to_workspace_default() -> None:
+    m = WorkspaceManifest(
+        defaults=ManifestDefaults(branch="main"),
+        repos=[Repo(url="https://x/a.git")],
+    )
+    assert m.target_branch_for(m.repos[0]) == "main"
+
+
+def test_manifest_target_branch_none_when_no_default() -> None:
+    m = WorkspaceManifest(repos=[Repo(url="https://x/a.git")])
+    assert m.target_branch_for(m.repos[0]) is None
+
+
+def test_manifest_with_default_branch_sets_and_unsets() -> None:
+    original = WorkspaceManifest(
+        name="prod",
+        defaults=ManifestDefaults(branch="main"),
+        repos=[Repo(url="https://x/api.git")],
+    )
+
+    updated = original.with_default_branch("develop")
+    cleared = updated.with_default_branch(None)
+
+    assert updated.defaults.branch == "develop"
+    assert updated.repos == original.repos
+    assert cleared.defaults.branch is None
+    assert cleared.repos == original.repos
+    assert original.defaults.branch == "main"
+
+
+def test_manifest_with_repo_branch_sets_and_unsets_by_name_preserving_order() -> None:
+    original = WorkspaceManifest(
+        name="prod",
+        defaults=ManifestDefaults(branch="main"),
+        repos=[
+            Repo(url="https://x/api.git", name="api"),
+            Repo(url="https://x/ui.git", name="ui", branch="release"),
+        ],
+    )
+
+    updated, repo = original.with_repo_branch("api", "develop")
+    cleared, cleared_repo = updated.with_repo_branch("api", None)
+
+    assert repo.name == "api"
+    assert updated.repos[0].branch == "develop"
+    assert updated.repos[1] == original.repos[1]
+    assert [r.name for r in updated.repos] == ["api", "ui"]
+    assert cleared_repo.name == "api"
+    assert cleared.repos[0].branch is None
+    assert original.repos[0].branch is None
+
+
+def test_manifest_with_repo_branch_accepts_url_and_errors_on_unknown_repo() -> None:
+    original = WorkspaceManifest(repos=[Repo(url="https://x/api.git", name="api")])
+
+    updated, repo = original.with_repo_branch("https://x/api.git", "main")
+
+    assert repo.name == "api"
+    assert updated.repos[0].branch == "main"
+    with pytest.raises(ValueError, match="no repo matches 'ghost'"):
+        original.with_repo_branch("ghost", "main")
+
+
+def test_manifest_find_by_name_or_url() -> None:
+    m = WorkspaceManifest(
+        repos=[
+            Repo(url="https://github.com/org/svc-a.git", name="alpha"),
+            Repo(url="https://github.com/org/svc-b.git"),
+        ]
+    )
+    assert m.find_repo("alpha") is m.repos[0]
+    assert m.find_repo("https://github.com/org/svc-a.git") is m.repos[0]
+    assert m.find_repo("svc-b") is m.repos[1]
+    assert m.find_repo("nonexistent") is None
+
+
+def test_manifest_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        WorkspaceManifest.model_validate({"repos": [], "unknown_field": True})
+
+
+def test_repo_rejects_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        Repo.model_validate({"url": "https://x/a.git", "wat": 1})
+
+
+def test_derive_repo_name_edge_cases() -> None:
+    assert derive_repo_name("https://github.com/org/svc.git") == "svc"
+    assert derive_repo_name("https://github.com/org/svc.git/") == "svc"
+    assert derive_repo_name("git@github.com:org/svc.git") == "svc"
+    assert derive_repo_name("file:///tmp/foo.git") == "foo"
+
+
+# ---- duplicate-repo invariants ---------------------------------------------
+
+
+def test_manifest_rejects_duplicate_repo_names() -> None:
+    """Two explicit names colliding break ``sync`` (both repos map to the
+    same working-tree path) and make ``remove`` ambiguous."""
+    with pytest.raises(ValidationError, match="duplicate"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://x/a.git", name="alpha"),
+                Repo(url="https://x/b.git", name="alpha"),
+            ]
+        )
+
+
+def test_manifest_rejects_duplicate_derived_repo_names() -> None:
+    """Two URLs that derive to the same name still collide on disk, so the
+    manifest must reject them even when ``name`` is omitted."""
+    with pytest.raises(ValidationError, match="duplicate"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://github.com/org/svc.git"),
+                Repo(url="https://gitlab.com/team/svc.git"),
+            ]
+        )
+
+
+def test_manifest_rejects_duplicate_repo_urls() -> None:
+    """Same URL twice (even with different names) is meaningless and
+    indicates a hand-edit or import bug."""
+    with pytest.raises(ValidationError, match="duplicate"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://x/a.git", name="alpha"),
+                Repo(url="https://x/a.git", name="beta"),
+            ]
+        )
+
+
+def test_manifest_allows_distinct_repos() -> None:
+    """Sanity: distinct URLs and distinct names still load."""
+    m = WorkspaceManifest(
+        repos=[
+            Repo(url="https://x/a.git", name="alpha"),
+            Repo(url="https://x/b.git", name="beta"),
+        ]
+    )
+    assert {r.name for r in m.repos} == {"alpha", "beta"}
+
+
+# ---- repos container is structurally immutable -----------------------------
+
+
+def test_manifest_repos_coerces_list_to_tuple_preserving_order() -> None:
+    """List inputs (the common call shape) coerce to tuple in field order."""
+    repos_list = [Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]
+    m = WorkspaceManifest(repos=repos_list)
+    assert isinstance(m.repos, tuple)
+    assert [r.url for r in m.repos] == [r.url for r in repos_list]
+
+
+def test_manifest_repos_in_place_append_raises() -> None:
+    """``manifest.repos.append(...)`` must fail loudly."""
+    m = WorkspaceManifest(repos=[Repo(url="https://x/a.git")])
+    with pytest.raises(AttributeError):
+        m.repos.append(Repo(url="https://x/b.git"))  # type: ignore[attr-defined]
+
+
+def test_manifest_repos_in_place_setitem_raises() -> None:
+    """``manifest.repos[0] = ...`` must fail loudly."""
+    m = WorkspaceManifest(repos=[Repo(url="https://x/a.git")])
+    with pytest.raises(TypeError):
+        m.repos[0] = Repo(url="https://x/b.git")  # type: ignore[index]

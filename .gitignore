@@ -138,6 +138,9 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+
+# Editor noise (folded from the workspace capability import, Wave 1.5)
+.DS_Store
 .venv
 env/
 venv/

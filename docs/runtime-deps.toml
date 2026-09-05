@@ -1,0 +1,32 @@
+# Distribution runtime dependencies per capability (spec §6(a)).
+#
+# Each in-repo capability's runtime dependencies (`pyproject.toml`
+# `dependencies`) MUST be recorded here, one entry per direct dependency
+# naming the owning capability, a rationale, and the exact requirement
+# string as declared in `pyproject.toml`.
+
+version = 1
+
+[[dep]]
+name = "cyclopts"
+owner = "workspace"
+reason = "workspace CLI command tree (app composition and per-command options)"
+requirement = "cyclopts>=4.16.0,<5"
+
+[[dep]]
+name = "pydantic"
+owner = "workspace"
+reason = "workspace profile/state models and manifest validation"
+requirement = "pydantic>=2.13.3"
+
+[[dep]]
+name = "pyyaml"
+owner = "workspace"
+reason = "read/write per-workspace untaped.yml manifests"
+requirement = "pyyaml>=6.0.3"
+
+[[dep]]
+name = "untaped"
+owner = "workspace"
+reason = "SDK surface the standalone tool depended on; provided in-process by the unified distribution itself (no separate install)"
+requirement = "untaped>=3.0.0,<4"

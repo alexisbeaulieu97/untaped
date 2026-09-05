@@ -13,8 +13,8 @@ per-tool root), lazy ``--version`` from the ``untaped`` distribution,
 shell-completion wiring, invocation-scoped identity, and capability-mount
 plumbing with zero built-ins mounted yet. Wave 1.4 mounts the five root
 management commands (``config`` / ``profile`` / ``skills`` / ``doctor`` /
-``capabilities``, see :mod:`untaped.management`); no built-in capability
-subtrees ship yet (workspace mounts in 1.5).
+``capabilities``, see :mod:`untaped.management`); Wave 1.5 mounts the
+workspace built-in capability subtree (``untaped workspace ...``).
 """
 
 from __future__ import annotations
@@ -74,9 +74,16 @@ SHELL_SECTION = "shell"
 #: Distribution owning the unified product version (spec §7.1).
 SHELL_DISTRIBUTION = "untaped"
 
-#: Built-in capabilities composed ahead of externals (zero in Wave 1.3;
-#: workspace mounts in a later wave).
-BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = ()
+def _workspace_builtins() -> tuple[CapabilitySpec, ...]:
+    """Return the workspace built-in without importing its CLI tree at module load."""
+    from untaped.capabilities.workspace import SPEC  # noqa: PLC0415
+
+    return (SPEC,)
+
+
+#: Built-in capabilities composed ahead of externals (Wave 1.5 mounts the
+#: workspace capability; further capabilities append in declaration order).
+BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = _workspace_builtins()
 
 #: Active capability name for the current invocation (spec §4). Set at
 #: dispatch time to the selected capability (or the shell name when dispatch
@@ -210,8 +217,9 @@ def build_root_app(
     """Compose the shell plus capabilities and return the root app.
 
     Mounts the five root management commands plus each validated
-    capability's sub-app under its capability name (zero built-ins mount in
-    Wave 1.4), wires ``--version`` to lazy installed-distribution metadata,
+    capability's sub-app under its capability name (Wave 1.5 default mounts
+    the workspace built-in), wires ``--version`` to lazy installed-distribution
+    metadata,
     installs the position-independent root options, and registers shell
     completion. Drive ``app.meta`` directly in tests; run via :func:`run_root`
     in production.

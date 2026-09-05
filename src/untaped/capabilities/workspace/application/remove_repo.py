@@ -1,0 +1,59 @@
+"""Use case: remove a repo from a workspace's manifest (and optionally prune the clone)."""
+
+from __future__ import annotations
+
+from untaped.capabilities.workspace.application.ports import (
+    Filesystem,
+    ManifestRepository,
+    PruneSafetyInspector,
+)
+from untaped.capabilities.workspace.application.prune_safety import format_all_prune_blockers
+from untaped.capabilities.workspace.domain import Repo, Workspace
+from untaped.capabilities.workspace.errors import GitError, WorkspaceError
+
+
+class RemoveRepo:
+    def __init__(
+        self,
+        manifest_repo: ManifestRepository,
+        *,
+        fs: Filesystem,
+        prune_safety: PruneSafetyInspector,
+    ) -> None:
+        self._manifests = manifest_repo
+        self._fs = fs
+        self._prune_safety = prune_safety
+
+    def __call__(
+        self,
+        workspace: Workspace,
+        *,
+        ident: str,
+        prune: bool = False,
+    ) -> Repo:
+        manifest = self._manifests.read(workspace.path)
+        try:
+            new_manifest, repo = manifest.remove_repo(ident)
+        except ValueError as exc:
+            raise WorkspaceError(
+                f"repo {ident!r} not declared in workspace {workspace.name!r}"
+            ) from exc
+
+        local = workspace.path / repo.name
+        should_prune = prune and self._fs.is_dir(local)
+        if should_prune:
+            try:
+                blockers = self._prune_safety.prune_blockers(local)
+            except GitError as exc:
+                raise WorkspaceError(
+                    f"refusing to prune {local}: cannot inspect working tree ({exc})"
+                ) from exc
+            if blockers:
+                detail = format_all_prune_blockers(blockers)
+                raise WorkspaceError(f"refusing to prune {local}: {detail}")
+
+        self._manifests.write(workspace.path, new_manifest)
+
+        if should_prune:
+            self._fs.rmtree(local)
+        return repo
