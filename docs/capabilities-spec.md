@@ -90,14 +90,43 @@ raises, violates the return contract and is quarantined with the exception
 text recorded.
 
 `untaped.capability_api` is the stable import surface for provider authors.
-Its `__all__` membership rule is exact: `__all__` contains precisely the
-names a provider may import — `ApplicationSpec`, `CapabilitySpec`,
-`CapabilityProvider`, `CAPABILITY_API_VERSION`, `SkillAsset`, `DoctorCheck`,
-`DoctorResult`, `CapabilityContext` — plus re-exports that already belong to
-the `untaped.api` contract and nothing else. Adding a name to
-`untaped.capability_api` without adding it to this rule's list is a CI
+Its v1 export set is exactly these eight names — `ApplicationSpec`,
+`CapabilitySpec`, `CapabilityProvider`, `CAPABILITY_API_VERSION`,
+`SkillAsset`, `DoctorCheck`, `DoctorResult`, `CapabilityContext` — and its
+`__all__` MUST contain precisely these eight names and nothing else. Adding
+a name to `untaped.capability_api` without amending this list is a CI
 failure; importing anything from `untaped` outside `capability_api` inside a
 provider package is unsupported and may break without a major-version event.
+
+The v1 `untaped.api` surface is exactly the 68 names below. The legacy
+composition names `ToolSpec`, `register_tool`, `build_tool_app`, and
+`run_tool` — all verified present today in `src/untaped/api.py` lines
+64–163 — are explicitly EXCLUDED from the v1 surface and MUST NOT appear in
+`__all__`, in any import, or behind any alias once §9 gate 3 passes:
+
+```python
+__all__ = [
+    "AppContext", "BatchOutcome", "ColumnsOption", "ConfigError",
+    "DiffStats", "FileChange", "FileWriteError", "FormatOption",
+    "HttpClient", "HttpError", "HttpSettings", "HttpStatusError",
+    "HttpTransportError", "OutputFormat", "PipeEnvelope", "ProgressHandle",
+    "PromptChoice", "RetryPolicy", "SkillAsset", "StateCollection",
+    "StateMap", "ThemeSpec", "UiContext", "UntapedError", "app_context",
+    "apply_file_changes", "atomic_write", "batch_apply", "bounded_map",
+    "clamp_parallel", "common_kind", "connected_client", "create_app",
+    "diff_stats", "echo", "emit", "ensure_config", "existing_directory",
+    "existing_file", "finish", "first_validation_error",
+    "get_config_section", "get_core_settings", "get_settings",
+    "invalidate_settings_cache", "is_envelope_line", "missing_setting_error",
+    "mutate_tool_state", "paginate_link", "paginate_offset",
+    "paginate_pages", "parse_envelope_line", "parse_json_pairs",
+    "parse_kv_pairs", "raise_usage", "read_identifiers", "read_records",
+    "read_stdin", "read_stdin_text", "read_structured_file",
+    "read_tool_state", "render_rows", "report_errors", "resolve_each",
+    "resolve_text_input", "resolve_verify", "ui_context",
+    "unified_diff_text",
+]
+```
 
 ## 3. Typed records
 
@@ -166,9 +195,16 @@ class QuarantineRecord:
 
 `reason` MUST be one of the codes in §5. `detail` MUST name the colliding
 value (the duplicate name, reserved section, overlapping field, or API
-range) so `config doctor` can print it without further lookup.
+range) so `doctor` can print it without further lookup.
 
 ## 4. Invocation-scoped identity, reset, and error/help context
+
+Root command surface: the unified shell owns exactly five root command
+groups — `config` (section-scoped settings read/write), `profile` (profile
+selection and inspection), `skills` (skill install/list planning), `doctor`
+(health checks for the shell and all capabilities), and `capabilities`
+(listing and status of composed capabilities, §7.3). No capability may mount
+a root-level command under any of these names (reserved roots, §5 row 1).
 
 Today `src/untaped/identity.py` holds a single `ContextVar`
 (`untaped_tool_command`) set by `register_tool` and read for command-aware
@@ -200,87 +236,206 @@ block. The unified root generalizes both to N capabilities:
   invoked capability's command path (`untaped <name> …`), and `--version`
   resolves the owning distribution lazily per capability, preserving the
   `build_tool_app` rule that only `--version` touches package metadata.
+- Root config resolution is direct, not delegated per tool: a fully
+  qualified `section.key` selects its schema by `section` — shell-owned
+  sections resolve against the shell models, any other section against the
+  owning capability's `profile_model`. A `config set` targeting a
+  state-managed field is rejected per that section's `state_model` with the
+  "managed by" error and never writes. Once the section has selected the
+  capability, the per-capability precedence above applies unchanged.
+- Legacy per-tool management commands are classified exactly once.
+  Replaced (prefix change — the capability becomes a section/name argument
+  instead of the executable): `<tool> config …` → `untaped config …`,
+  `<tool> profile …` → `untaped profile …`, `<tool> skills …` →
+  `untaped skills …`, `<tool> doctor …` → `untaped doctor …`. Removed with
+  mechanism: per-tool `uv tool` install environments and standalone per-tool
+  `--version` (mechanism: single-distribution packaging change, §8 uninstall
+  notices, and the `docs/plugins.md` rewrite gated by §9).
+- Failure isolation (normative acceptance case): invalid Jira settings —
+  unparseable, missing, or schema-rejected Jira profile values — MUST NOT
+  block `workspace`, `--help`, `capabilities` listing, or config repair
+  (`config set` / `ensure_config` paths that fix the breakage). `doctor`
+  MUST still report the Jira failure as a failed row. The mechanism (lazy
+  per-capability settings resolution, dispatch-time error boundaries, or
+  equivalent) is the implementer's choice; the case itself is normative and
+  blocks retirement until covered by test.
 
 ## 5. Provider validation and transactional quarantine
 
-Every candidate `CapabilitySpec` — built-in or external — passes the full
-table below at compose time, in row order. Outcome "built-in fatal" means a
-violating built-in raises `ConfigError` and the process exits before
-dispatch: built-ins ship with the SDK, so a built-in violation is an SDK
-bug, never a runtime condition. Outcome "external quarantine" means the
-provider is excluded, a `QuarantineRecord` is appended, and composition
-continues with the remaining providers. Transactional-quarantine guarantee:
-validation of each external provider is side-effect free until that
-provider fully passes; a provider that fails any row registers no settings
-sections, mounts no apps, installs no skills, contributes no doctor checks,
-and leaves previously composed providers untouched. A failed provider can
-therefore never half-register. Quarantine records are surfaced by
-`config doctor` and by a one-line stderr warning per quarantined
-distribution at startup.
+Composition runs in four explicit phases per provider, in phase order.
+Deterministic ordering: built-in capabilities compose first, in
+spec-declaration order; external providers follow sorted by `(distribution,
+entry-point name)`. Built-ins take precedence: an external candidate that
+collides with an already-composed built-in fails the colliding row (and is
+quarantined) rather than displacing it.
 
-| # | Check | Rule | reason code | Built-in outcome | External outcome |
-|---|-------|------|-------------|------------------|------------------|
-| 1 | Reserved roots | `name` and `config_section` MUST NOT be in `Settings.model_fields` (`log_level`, `http`, `ui`) and MUST NOT be `profiles`, `active`, `config`, `profile`, or `skills`. Extends `_reject_reserved_section` (`src/untaped/settings.py`), which today covers only model fields, to the layout/command roots the unified shell owns. | `reserved-root` | fatal | quarantine |
-| 2 | Duplicate capability names | `name` MUST be unique across the composition including the shell name. Comparison is exact and case-sensitive. | `duplicate-name` | fatal | quarantine |
-| 3 | Duplicate config sections | `config_section` MUST be unique across the composition including `ApplicationSpec.config_section`. | `duplicate-section` | fatal | quarantine |
-| 4 | Profile/state overlap | `profile_model` and `state_model` field sets MUST be disjoint (same `validate_disjoint_settings_sections` predicate as `src/untaped/settings.py`); overlap raises naming the sorted overlapping fields. | `profile-state-overlap` | fatal | quarantine |
-| 5 | Cross-capability state shadowing | No capability's `state_model` field set may intersect another registered section's profile field set under the same section name; state fields are never exposed to `config set`, per `resolve_key`'s state-first rejection. | `state-shadow` | fatal | quarantine |
-| 6 | Skill name collisions | Every `SkillAsset.name` MUST be unique across the whole composition (shell plus all capabilities), extending the per-`ToolSpec` duplicate check in `src/untaped/tool.py` to the union. | `duplicate-skill` | fatal | quarantine |
-| 7 | Skill asset shape | Each asset's `name`/`description` MUST be non-empty after strip (existing `SkillAsset.__post_init__` rule, unchanged). | `bad-skill-asset` | fatal | quarantine |
-| 8 | DoctorCheck ID collisions | Every `DoctorCheck.id` MUST be unique across the composition; empty ids and empty titles are rejected. | `duplicate-doctor-check` | fatal | quarantine |
-| 9 | DoctorResult id match | Each check body MUST return a `DoctorResult` whose `id` equals its own `DoctorCheck.id`; a mismatch is recorded, not raised, so one bad check cannot fail the whole `doctor` run. | `doctor-id-mismatch` | fatal at self-test | quarantine + result marked failed |
-| 10 | API range | The provider's `api_requires` `(lo, hi)` MUST satisfy `lo <= CAPABILITY_API_VERSION < hi` with `lo < hi` and both finite numbers; a missing, non-pair, non-numeric, or inverted range fails this row, not row 11. | `api-range` | fatal | quarantine |
-| 11 | Malformed entry points | The entry-point target MUST resolve to a nullary callable returning a `CapabilitySpec`. Unresolvable targets, non-callables, callables requiring arguments, callables returning a non-`CapabilitySpec`, and callables that raise all fail here with the exception text in `detail`. | `malformed-entry-point` | n/a (no entry point) | quarantine |
-| 12 | Bad factories | A resolved `app_factory` that requires arguments or returns a non-`cyclopts.App` fails here (entry-point callables that never return a spec fail row 11 instead). | `bad-app-factory` | fatal | quarantine |
+- Phase A — discovery and API pre-checks: enumerate entry-point targets in
+  the order above, resolve each target to a provider object, and check its
+  `api_requires` range (row 10). Unresolvable targets and non-callables fail
+  the resolution part of row 11 here.
+- Phase B — resolve provider to obtain spec: call the provider nullary. A
+  provider that raises, requires arguments, or returns a non-`CapabilitySpec`
+  fails row 11 with the exception text in `detail`. Resolution is
+  side-effect free per the §2 return contract.
+- Phase C — validate declarations and stage app construction: rows 1–8 and
+  13 (declaration shape only), then row 12, which invokes `app_factory` with
+  zero arguments to stage construction. Doctor-check BODIES never run in
+  this phase.
+- Phase D — commit registration: only after every applicable row passes, the
+  provider registers its settings sections, mounts its app, installs its
+  skills, and contributes its doctor checks.
 
-Rows run in order per provider and stop at the first failure for that
-provider; section registration for the provider happens only after row 12
-passes. Built-in candidates run the same rows 1–10 and 12 (row 11 does not
-apply: there is no entry point to resolve).
+Outcome "built-in fatal" means a violating built-in raises `ConfigError`
+and the process exits before dispatch: built-ins ship with the SDK, so a
+built-in violation is an SDK bug, never a runtime condition. Outcome
+"external quarantine" means the provider is excluded, a `QuarantineRecord`
+is appended, and composition continues with the remaining providers.
+Transactional-quarantine guarantee: validation of each external provider is
+side-effect free until that provider fully passes; a provider that fails any
+row registers no settings sections, mounts no apps, installs no skills,
+contributes no doctor checks, and leaves previously composed providers
+untouched. A failed provider can therefore never half-register. Quarantine
+records are surfaced by `doctor` and by a one-line stderr warning per
+quarantined distribution at startup.
 
-## 6. Dependency-policy artifact and CI validator
+Doctor-check execution lives OUTSIDE composition: check bodies run only at
+doctor-execution time (the root `doctor` command, row 9). A body that
+raises, returns a non-`DoctorResult`, or returns a `DoctorResult` whose `id`
+differs from its `DoctorCheck.id` produces a failed diagnostic row carrying
+reason `doctor-check-failed`, while all other checks still run. Quarantine
+never happens post-execution: execution-time failures mount, register, or
+unregister nothing, so the never-mounted/never-registered guarantee holds
+for every provider that passed Phase D.
 
-Cross-capability imports are forbidden by default: a capability MUST NOT
-import another capability's implementation package. The narrow exception is
-an explicit allow-list carried in-repo as `docs/dependency-policy.toml`:
+| # | Phase | Check | Rule | reason code | Built-in outcome | External outcome |
+|---|-------|-------|------|-------------|------------------|------------------|
+| 1 | C | Reserved roots | `name` and `config_section` MUST NOT be in `Settings.model_fields` (`log_level`, `http`, `ui`) and MUST NOT be `profiles`, `active`, `config`, `profile`, `skills`, `doctor`, or `capabilities` — the full reserved root command surface (§4). Extends `_reject_reserved_section` (`src/untaped/settings.py`), which today covers only model fields, to the layout/command roots the unified shell owns. | `reserved-root` | fatal | quarantine |
+| 2 | C | Duplicate capability names | `name` MUST be unique across the composition including the shell name. Comparison is exact and case-sensitive. | `duplicate-name` | fatal | quarantine |
+| 3 | C | Duplicate config sections | `config_section` MUST be unique across the composition including `ApplicationSpec.config_section`. | `duplicate-section` | fatal | quarantine |
+| 4 | C | Profile/state overlap | `profile_model` and `state_model` field sets MUST be disjoint (same `validate_disjoint_settings_sections` predicate as `src/untaped/settings.py`); overlap raises naming the sorted overlapping fields. | `profile-state-overlap` | fatal | quarantine |
+| 5 | C | Cross-capability state shadowing | No capability's `state_model` field set may intersect another registered section's profile field set under the same section name; state fields are never exposed to `config set`, per `resolve_key`'s state-first rejection. | `state-shadow` | fatal | quarantine |
+| 6 | C | Skill name collisions | Every `SkillAsset.name` MUST be unique across the whole composition (shell plus all capabilities), extending the per-`ToolSpec` duplicate check in `src/untaped/tool.py` to the union. | `duplicate-skill` | fatal | quarantine |
+| 7 | C | Skill asset shape | Each asset's `name`/`description` MUST be non-empty after strip (existing `SkillAsset.__post_init__` rule, unchanged). | `bad-skill-asset` | fatal | quarantine |
+| 8 | C | DoctorCheck ID collisions | Every `DoctorCheck.id` MUST be unique across the composition; empty ids and empty titles are rejected. Bodies are not executed. | `duplicate-doctor-check` | fatal | quarantine |
+| 9 | — (execution) | Doctor execution failures | Check BODIES run at doctor-execution time, never at compose time. A body that raises, returns a non-`DoctorResult`, or returns an id-mismatched result yields a failed diagnostic row with this reason while other checks continue; quarantine never happens post-execution. | `doctor-check-failed` | fails self-test | failed diagnostic row only |
+| 10 | A | API range | The provider's `api_requires` `(lo, hi)` MUST satisfy `lo <= CAPABILITY_API_VERSION < hi` with `lo < hi` and both finite numbers; a missing, non-pair, non-numeric, or inverted range fails this row, not row 11. | `api-range` | fatal | quarantine |
+| 11 | A/B | Malformed entry points | The entry-point target MUST resolve to a nullary callable returning a `CapabilitySpec`. Unresolvable targets, non-callables (Phase A), callables requiring arguments, callables returning a non-`CapabilitySpec`, and callables that raise (Phase B) all fail here with the exception text in `detail`. | `malformed-entry-point` | n/a (no entry point) | quarantine |
+| 12 | C | Bad factories | A resolved `app_factory` that requires arguments or returns a non-`cyclopts.App` fails here (entry-point callables that never return a spec fail row 11 instead). | `bad-app-factory` | fatal | quarantine |
+| 13 | C | Distribution metadata | External distribution metadata checks (§7.2) — entry-point group and naming, `Requires-Dist` admission, closed loader mapping — run here at compose time. | `bad-metadata` | fatal | quarantine |
+
+Phases run in order A→D per provider and stop at the first failure for that
+provider; section registration for the provider happens only in Phase D
+after every applicable row passes. Built-in candidates run rows 1–8, 10, 12,
+and 13 (row 11 does not apply: there is no entry point to resolve; row 9 is
+diagnostic-only and a failing built-in body fails the self-test run, never
+composition). This table is the single home of every `reason` code: §3
+`QuarantineRecord` reasons and §7 compose-mode records MUST use a code from
+this table and no other value.
+
+## 6. Dependency-policy artifacts and CI validators
+
+Two independent checks run in CI on every pull request.
+
+(a) Distribution runtime dependencies. Each in-repo capability's runtime
+dependencies (`pyproject.toml` `dependencies`) MUST be recorded in
+`docs/runtime-deps.toml`, one entry per direct dependency naming the owning
+capability and a rationale:
+
+```toml
+version = 1
+[[dep]]
+name = "httpx"
+owner = "github"
+reason = "paginated REST calls from github commands"
+```
+
+`name` is the depended-on distribution, `owner` the owning capability, and
+`reason` a non-empty human justification. CI (`tools/validate_deps.py`)
+fails the build on any unrecorded direct-dependency addition, any recorded
+specifier broadening (widened bounds, loosened pins, added extras) without
+an updated record, or any record matching no current dependency (stale
+records must be removed, not left to rot).
+
+(b) Internal cross-capability imports. A capability MUST NOT import another
+capability's implementation modules, matched against explicit capability
+module prefixes of the form `untaped.capabilities.<name>.*`. The narrow
+exception is an explicit allow-list carried in-repo as
+`docs/dependency-policy.toml`:
 
 ```toml
 version = 1
 [[allow]]
-importer = "untaped_github"
-imported = "untaped_http_helpers"
+importer = "untaped.capabilities.ansible.*"
+imported = "untaped.capabilities.github.pagination"
 reason = "shared paginator; no settings access"
 ```
 
-`importer` and `imported` are top-level distribution package names;
-`reason` is a non-empty human justification naming what is shared and
-confirming no settings/registry access crosses the boundary. Unknown
-top-level keys, a `version` other than `1`, an `allow` entry missing any of
-the three keys, an empty `reason`, or a duplicate `(importer, imported)`
-pair makes the artifact itself invalid and fails the validator closed.
+`importer` and `imported` are dotted module prefixes; `reason` is a
+non-empty human justification naming what is shared and confirming no
+settings/registry access crosses the boundary. The ansible→github exception
+is scoped to the named API module above — blanket imports of another
+capability's implementation package remain forbidden. Unknown top-level
+keys, a `version` other than `1`, an `allow` entry missing any of the three
+keys, an empty `reason`, a prefix matching no capability module, or a
+duplicate `(importer, imported)` pair makes the artifact itself invalid and
+fails the validator closed.
 
 The CI validator (`tools/validate_deps.py`, run on every pull request)
 statically scans each capability package's imports and fails the build when
-(1) the TOML artifact is invalid per above, (2) any cross-capability import
-lacks a matching `allow` entry, or (3) any `allow` entry matches no observed
-import (stale entries must be removed, not left to rot). The validator reads
-only source; it never imports capability packages. Its failure message names
-the file, the offending import, and the missing `(importer, imported)` pair.
+(1) either TOML artifact is invalid per above, (2) any cross-capability
+import lacks a matching `allow` entry, or (3) any `allow` entry matches no
+observed import (stale entries must be removed, not left to rot). The
+validator reads only source; it never imports capability packages. Its
+failure message names the file, the offending import, and the missing
+`(importer, imported)` pair.
 
-## 7. Metadata validator
+## 7. Metadata validator and capabilities listing
+
+### 7.1 Built-in metadata
+
+Built-in capabilities declare no entry points: their `CapabilitySpec`
+objects are constructed directly in-process, their `ProviderRef` uses
+`kind = "built-in"`, `distribution = "untaped"`, and `entry_point = ""`
+with `api_requires = (1.0, 2.0)`, and their version is always the unified
+product version — never a per-capability version.
+
+### 7.2 External distribution metadata
 
 The metadata validator (`tools/validate_metadata.py`, run on every pull
 request and at compose time for externals in lenient mode) checks each
-capability's packaging metadata without importing it: the distribution MUST
-declare the `untaped.capabilities` entry-point group exactly once; the
-distribution name MUST equal the provider's `ProviderRef.distribution`; the
-entry-point name MUST equal the capability `name`; `Requires-Dist` on
-`untaped` MUST admit the running SDK version; and any loader mapping that
-carries unknown `CapabilitySpec`/`ApplicationSpec` fields is rejected
-(closed-shape rule from §1). CI mode fails the build on the first violation
-with the distribution, the violated rule, and the offending value. Compose
-mode never raises for externals: it records a `QuarantineRecord` with
-`reason = "bad-metadata"` and the validator message as `detail`.
+external capability's packaging metadata without importing it: the
+distribution MUST declare its capabilities in the `untaped.capabilities`
+entry-point group — one distribution MAY expose multiple entry points, one
+per capability it provides; each entry-point name MUST equal its capability
+`name`; the distribution name MUST equal the provider's
+`ProviderRef.distribution`; `Requires-Dist` on `untaped` MUST admit the
+running SDK version; and any loader mapping that carries unknown
+`CapabilitySpec`/`ApplicationSpec` fields is rejected (closed-shape rule
+from §1). CI mode fails the build on the first violation with the
+distribution, the violated rule, and the offending value. Compose mode never
+raises for externals: it records a `QuarantineRecord` with
+`reason = "bad-metadata"` (defined in §5, row 13) and the validator message
+as `detail`. All reason codes — quarantine and diagnostic — are defined in
+the single §5 table; no other `reason` value is valid anywhere.
+
+### 7.3 Capabilities-listing record
+
+The root `capabilities` command reports one record per candidate provider:
+
+```python
+@dataclass(frozen=True)
+class CapabilityListing:
+    name: str                          # capability name (entry-point name when quarantined pre-spec)
+    status: str                        # exactly "ready" or "quarantined"
+    version: str                       # product version for built-ins; distribution version for externals
+    api_requires: tuple[float, float]  # declared SDK range; (0.0, 0.0) when unresolvable
+    provider_ref: ProviderRef | None   # None only when the provider never resolved
+    quarantine: QuarantineRecord | None  # set iff status is "quarantined"
+```
+
+`status` derives from the composition outcome; a `quarantined` listing MUST
+still carry its `QuarantineRecord` with the §5 reason code so `doctor` can
+print the cause without further lookup.
 
 ## 8. Legacy-install ownership detection
 
@@ -298,7 +453,7 @@ managed installs:
 - Behavior: detection is advisory only. It never quarantines, never
   reorders `PATH`, never uninstalls, and never fails startup or CI. Notices
   render once per process as stderr warnings and appear in full under
-  `config doctor` as non-failing informational rows.
+  `doctor` as non-failing informational rows.
 - Precedence: when both exist, in-process dispatch always uses the composed
   capability; the notice tells the user how to remove the shadow
   (`uv tool uninstall <command>`) but takes no action itself.
@@ -325,8 +480,11 @@ additive until then and changes no runtime behavior on its own.
    the negative CI proof below.
 3. Negative CI proof: a CI job (`tools/no_legacy_composition.py`) fails the
    build when `src/untaped/tool.py` or `src/untaped/run.py` still defines
-   `ToolSpec`/`register_tool`/`build_tool_app`/`run_tool`, or when any
-   non-test source imports them. Only after this job passes may the two
+   `ToolSpec`/`register_tool`/`build_tool_app`/`run_tool`, when any
+   non-test source imports them, when `untaped.api.__all__` (or the package
+   root re-export) still exports any of the four names, or when any alias
+   re-exports them under another name (`as` imports, wrapper assignments,
+   or equivalent). Only after this job passes may the two
    modules be deleted and `docs/plugins.md` rewritten to the capability
    authoring guide. `docs/plugins.md` remains the standalone-tool guide
    until that rewrite lands.
