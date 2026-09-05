@@ -74,6 +74,45 @@ def discover_capabilities(src: Path = CAPABILITIES_SRC) -> list[str]:
     )
 
 
+def _package_of(py_file: Path, own_prefix: str, capability_dir: Path) -> str:
+    """Containing package of a capability file (itself for ``__init__.py``)."""
+    rel = py_file.relative_to(capability_dir).with_suffix("")
+    parts = list(rel.parts)
+    if parts:
+        parts.pop()
+    if not parts:
+        return own_prefix
+    return own_prefix + "." + ".".join(parts)
+
+
+def _resolve_import_from(
+    package: str, level: int, module: str | None, names: list[ast.alias]
+) -> list[str]:
+    """Resolve an ``ImportFrom`` to absolute dotted paths.
+
+    Level 0 returns ``[module]``; level > 0 resolves from the containing
+    package. ``from . import name`` binds the submodule ``base.name``.
+    Unresolvable levels (beyond top-level) return ``[]``.
+    """
+    if level == 0:
+        return [module] if module else []
+    base = package
+    for _ in range(level - 1):
+        if "." in base:
+            base = base.rpartition(".")[0]
+        else:
+            return []
+    if module:
+        return [f"{base}.{module}"]
+    resolved: list[str] = []
+    for alias in names:
+        if alias.name == "*":
+            resolved.append(base)
+        else:
+            resolved.append(f"{base}.{alias.name}")
+    return resolved
+
+
 def surface_violations(src: Path = CAPABILITIES_SRC) -> list[str]:
     """Flag capability files importing outside the kernel-only surface."""
     violations: list[str] = []
@@ -81,19 +120,21 @@ def surface_violations(src: Path = CAPABILITIES_SRC) -> list[str]:
         capability_dir = src / capability
         own_prefix = f"untaped.capabilities.{capability}"
         for py_file in sorted(capability_dir.rglob("*.py")):
-            violations.extend(_file_violations(py_file, own_prefix))
+            package = _package_of(py_file, own_prefix, capability_dir)
+            violations.extend(_file_violations(py_file, own_prefix, package))
     return violations
 
 
-def _file_violations(py_file: Path, own_prefix: str) -> list[str]:
+def _file_violations(py_file: Path, own_prefix: str, package: str) -> list[str]:
     found: list[str] = []
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            problem = _from_violation(node.module, own_prefix)
-            if problem is not None:
-                where = f"{_rel(py_file)}:{node.lineno}"
-                found.append(f"{where}: from {node.module} import …: {problem}")
+        if isinstance(node, ast.ImportFrom):
+            for absolute in _resolve_import_from(package, node.level, node.module, node.names):
+                problem = _from_violation(absolute, own_prefix)
+                if problem is not None:
+                    where = f"{_rel(py_file)}:{node.lineno}"
+                    found.append(f"{where}: from {absolute} import …: {problem}")
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 problem = _import_violation(alias.name, own_prefix)
@@ -229,3 +270,60 @@ def test_stable_surface_and_own_subtree_pass(tmp_path: Path) -> None:
         },
     )
     assert surface_violations(src) == []
+
+
+# ── relative-import regressions (Wave 1.6 fix) ───────────────────────────────
+
+
+def test_relative_own_subtree_passes(tmp_path: Path) -> None:
+    src = _probe_tree(
+        tmp_path,
+        {
+            "atlas/__init__.py": "",
+            "atlas/sub/__init__.py": "",
+            "atlas/mod.py": "from . import sibling\nfrom .inner import thing\n",
+            "atlas/sub/mod.py": "from ..inner import thing\n",
+        },
+    )
+    assert surface_violations(src) == []
+
+
+def test_relative_sibling_escape_fails(tmp_path: Path) -> None:
+    src = _probe_tree(
+        tmp_path,
+        {
+            "atlas/__init__.py": "",
+            "other/__init__.py": "",
+            "atlas/mod.py": "from ..other.engine import run\n",
+        },
+    )
+    violations = surface_violations(src)
+    assert len(violations) == 1
+    assert "untaped.capabilities.other.engine" in violations[0]
+
+
+def test_relative_bare_import_escape_fails(tmp_path: Path) -> None:
+    src = _probe_tree(
+        tmp_path,
+        {
+            "atlas/__init__.py": "",
+            "other/__init__.py": "",
+            "atlas/mod.py": "from .. import other\n",
+        },
+    )
+    violations = surface_violations(src)
+    assert len(violations) == 1
+    assert "untaped.capabilities.other" in violations[0]
+
+
+def test_relative_kernel_escape_fails(tmp_path: Path) -> None:
+    src = _probe_tree(
+        tmp_path,
+        {
+            "atlas/__init__.py": "",
+            "atlas/mod.py": "from ...settings import get_settings\n",
+        },
+    )
+    violations = surface_violations(src)
+    assert len(violations) == 1
+    assert "untaped.settings" in violations[0]
