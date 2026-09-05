@@ -140,7 +140,6 @@ def make_external(
     distribution_version: str = "",
     entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP,
     requires_dist: tuple[str, ...] | list[str] = (),
-    loader_fields: tuple[str, ...] | list[str] = (),
     **kwargs: Any,
 ) -> ExternalProvider:
     return ExternalProvider(
@@ -150,7 +149,6 @@ def make_external(
         distribution_version=distribution_version,
         entry_point_group=entry_point_group,
         requires_dist=tuple(requires_dist),
-        loader_fields=tuple(loader_fields),
     )
 
 

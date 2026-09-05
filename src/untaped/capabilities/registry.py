@@ -16,7 +16,6 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from dataclasses import fields as dataclass_fields
 from importlib import import_module
 from importlib import metadata as importlib_metadata
 from pathlib import Path
@@ -161,14 +160,6 @@ class CapabilitySpec:
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
 
-#: Field names a mapping-based loader may carry (spec §§1, 7.2).
-#: ``CapabilitySpec`` and ``ApplicationSpec`` share the same closed shape,
-#: so one set covers both.
-_KNOWN_SPEC_FIELDS = frozenset(
-    field.name for cls in (ApplicationSpec, CapabilitySpec) for field in dataclass_fields(cls)
-)
-
-
 @dataclass(frozen=True)
 class ProviderRef:
     """How a composed capability arrived (spec §3)."""
@@ -234,10 +225,15 @@ class QuarantineRecord:
 class ExternalProvider:
     """One discovered external candidate awaiting composition.
 
-    ``distribution_version``, ``entry_point_group``, ``requires_dist``, and
-    ``loader_fields`` are captured at discovery via :mod:`importlib.metadata`
-    without importing provider code (spec §7.2); the §7.3 listing reports
+    ``distribution_version``, ``entry_point_group``, and ``requires_dist``
+    are captured at discovery via :mod:`importlib.metadata` without importing
+    provider code (spec §7.2); the §7.3 listing reports
     ``distribution_version`` for externals.
+
+    Rationale (Wave 1.2 round 2): the former mapping-loader ``loader_fields``
+    gate was removed as YAGNI — no producer ever populated it
+    (``discover_external_providers`` never set it), so its check was
+    unreachable on the real path.
     """
 
     distribution: str
@@ -246,11 +242,9 @@ class ExternalProvider:
     distribution_version: str = ""
     entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP
     requires_dist: tuple[str, ...] = ()
-    loader_fields: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "requires_dist", tuple(self.requires_dist))
-        object.__setattr__(self, "loader_fields", tuple(self.loader_fields))
 
 
 @dataclass(frozen=True)
@@ -491,17 +485,6 @@ def _check_requires_dist(candidate: ExternalProvider) -> None:
             )
 
 
-def _check_loader_fields(candidate: ExternalProvider) -> None:
-    for field in candidate.loader_fields:
-        if not isinstance(field, str) or field not in _KNOWN_SPEC_FIELDS:
-            raise _Quarantine(
-                "bad-metadata",
-                f"loader mapping of distribution {candidate.distribution!r} "
-                f"carries unknown field {field!r}; expected one of "
-                f"{sorted(_KNOWN_SPEC_FIELDS)}",
-            )
-
-
 def discover_external_providers(
     *, group: str = CAPABILITIES_ENTRY_POINT_GROUP
 ) -> tuple[ExternalProvider, ...]:
@@ -717,6 +700,11 @@ def compose(
     ordered = sorted(externals, key=lambda candidate: (candidate.distribution, candidate.name))
     for candidate in ordered:
         try:
+            # Metadata-only gates precede any import: group and Requires-Dist
+            # admission are decided from distribution metadata without
+            # executing provider code (spec §5 Phase A).
+            _check_entry_point_group(candidate)
+            _check_requires_dist(candidate)
             try:
                 provider = _resolve_target(candidate.target)
             except Exception as exc:
@@ -761,9 +749,6 @@ def compose(
                     "bad-metadata",
                     f"provider {candidate.name!r} declares an empty distribution name",
                 )
-            _check_entry_point_group(candidate)
-            _check_requires_dist(candidate)
-            _check_loader_fields(candidate)
             _check_factory(spec)
         except _Quarantine as failed:
             quarantined.append(failed.to_record(candidate))
