@@ -269,6 +269,38 @@ def _module_of(py_file: Path, capability_dir: Path, capability: str) -> str:
     return base if not parts else base + "." + ".".join(parts)
 
 
+def _resolve_import_from(
+    importer: str, is_init: bool, level: int, module: str | None, names: Sequence[ast.alias]
+) -> list[str]:
+    """Resolve an ``ImportFrom`` to absolute dotted paths.
+
+    Level 0 returns ``[module]``; level > 0 resolves from the containing
+    package (the importer itself for ``__init__.py``, else its parent).
+    ``from . import name`` binds the submodule ``base.name`` per alias.
+    Unresolvable levels (beyond top-level) return ``[]``.
+    """
+    if level == 0:
+        return [module] if module else []
+    package = importer if is_init else importer.rpartition(".")[0]
+    if not package:
+        return []
+    base = package
+    for _ in range(level - 1):
+        if "." in base:
+            base = base.rpartition(".")[0]
+        else:
+            return []
+    if module:
+        return [f"{base}.{module}"]
+    resolved: list[str] = []
+    for alias in names:
+        if alias.name == "*":
+            resolved.append(base)
+        else:
+            resolved.append(f"{base}.{alias.name}")
+    return resolved
+
+
 def scan_cross_capability_imports(
     src: Path = CAPABILITIES_SRC,
 ) -> tuple[list[str], list[tuple[str, str, str, int]]]:
@@ -283,6 +315,7 @@ def scan_cross_capability_imports(
         capability_dir = src / capability
         for py_file in sorted(capability_dir.rglob("*.py")):
             importer = _module_of(py_file, capability_dir, capability)
+            is_init = py_file.name == "__init__.py"
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -290,15 +323,14 @@ def scan_cross_capability_imports(
                         target = _sibling_target(alias.name, capability, capabilities)
                         if target is not None:
                             observed.append((_rel(py_file), importer, target, node.lineno))
-                elif (
-                    isinstance(node, ast.ImportFrom)
-                    and node.level == 0
-                    and node.module
-                    and node.module.startswith("untaped.capabilities.")
-                ):
-                    target = _sibling_target(node.module, capability, capabilities)
-                    if target is not None:
-                        observed.append((_rel(py_file), importer, target, node.lineno))
+                elif isinstance(node, ast.ImportFrom):
+                    for absolute in _resolve_import_from(
+                        importer, is_init, node.level, node.module, node.names
+                    ):
+                        if absolute.startswith("untaped.capabilities."):
+                            target = _sibling_target(absolute, capability, capabilities)
+                            if target is not None:
+                                observed.append((_rel(py_file), importer, target, node.lineno))
     return capabilities, observed
 
 
@@ -559,3 +591,68 @@ def test_policy_shape_rejects_empty_reason_and_duplicates() -> None:
     )
     assert allows == [("untaped.capabilities.alpha", "untaped.capabilities.beta")]
     assert any("duplicate" in error for error in errors)
+
+
+# ── relative-import regressions (Wave 1.6 fix) ───────────────────────────────
+
+
+def test_relative_dot_imports_stay_own_subtree(tmp_path: Path) -> None:
+    src = _cap_tree(
+        tmp_path,
+        {
+            "alpha/__init__.py": "",
+            "beta/__init__.py": "",
+            "alpha/mod.py": "from . import helper\n",
+            "alpha/other.py": "from .inner import thing\n",
+        },
+    )
+    _, observed = scan_cross_capability_imports(src)
+    assert observed == []
+
+
+def test_relative_double_dot_imports_reach_sibling(tmp_path: Path) -> None:
+    src = _cap_tree(
+        tmp_path,
+        {
+            "alpha/__init__.py": "",
+            "beta/__init__.py": "",
+            "alpha/mod.py": "from ..beta.engine import run\n",
+            "alpha/other.py": "from .. import beta\n",
+        },
+    )
+    _, observed = scan_cross_capability_imports(src)
+    assert len(observed) == 2
+    assert {imported for _, _, imported, _ in observed} == {
+        "untaped.capabilities.beta.engine",
+        "untaped.capabilities.beta",
+    }
+    errors = check_cross_imports(observed, [])
+    assert len(errors) == 2
+
+
+def test_relative_nested_double_dot_stays_own(tmp_path: Path) -> None:
+    src = _cap_tree(
+        tmp_path,
+        {
+            "alpha/__init__.py": "",
+            "alpha/sub/__init__.py": "",
+            "alpha/sub/mod.py": "from ..inner import thing\n",
+        },
+    )
+    _, observed = scan_cross_capability_imports(src)
+    assert observed == []
+
+
+def test_relative_nested_triple_dot_reaches_sibling(tmp_path: Path) -> None:
+    src = _cap_tree(
+        tmp_path,
+        {
+            "alpha/__init__.py": "",
+            "beta/__init__.py": "",
+            "alpha/sub/__init__.py": "",
+            "alpha/sub/mod.py": "from ...beta.engine import run\n",
+        },
+    )
+    _, observed = scan_cross_capability_imports(src)
+    assert len(observed) == 1
+    assert observed[0][2] == "untaped.capabilities.beta.engine"
