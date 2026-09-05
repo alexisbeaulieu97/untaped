@@ -575,7 +575,7 @@ human-only generated state, not canonical agent input. After hand recovery, run
 ## See also
 
 - **Decisions (ADRs):** [`docs/decisions.md`](docs/decisions.md) — the
-  authoritative record of the SDK-only direction.
+  authoritative record of the single `untaped` application composing built-in capabilities, with the standalone `untaped-*` tools retired at the v4 cutover.
 - **User-facing docs:** [`docs/`](docs/README.md) — configuration, profiles,
   themes, piping.
 - **Tools:**

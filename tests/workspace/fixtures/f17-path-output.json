@@ -1,0 +1,13 @@
+{
+  "id": "f17-path-output",
+  "covers": "P47",
+  "stdout": "<abs-path-1>\n<abs-path-2>\n",
+  "stderr": "",
+  "exit": 0,
+  "partial_failure": {
+    "stdout": "<abs-path-1>\n",
+    "stderr": "<error for unknown-name>",
+    "exit": 1,
+    "note": "resolve_each continues past failures; finish(any_failed) sets exit"
+  }
+}

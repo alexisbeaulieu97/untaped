@@ -1,0 +1,1 @@
+{"domain_error":{"exit":1,"via":"report_errors"},"edit_forwards_editor_rc":{"via":"SystemExit(rc)"},"foreach_fail":{"exit":1},"foreach_ignore_errors":{"exit":0},"success":{"exit":0},"usage_error":{"exit":2,"stderr_prefix":"error: ","stdout":""}}
