@@ -321,7 +321,7 @@ for every provider that passed Phase D.
 | 10 | A | API range | The provider's `api_requires` `(lo, hi)` MUST satisfy `lo <= CAPABILITY_API_VERSION < hi` with `lo < hi` and both finite numbers; a missing, non-pair, non-numeric, or inverted range fails this row, not row 11. | `api-range` | fatal | quarantine |
 | 11 | A/B | Malformed entry points | The entry-point target MUST resolve to a nullary callable returning a `CapabilitySpec`. Unresolvable targets, non-callables (Phase A), callables requiring arguments, callables returning a non-`CapabilitySpec`, and callables that raise (Phase B) all fail here with the exception text in `detail`. | `malformed-entry-point` | n/a (no entry point) | quarantine |
 | 12 | C | Bad factories | A resolved `app_factory` that requires arguments or returns a non-`cyclopts.App` fails here (entry-point callables that never return a spec fail row 11 instead). | `bad-app-factory` | fatal | quarantine |
-| 13 | C | Distribution metadata | External distribution metadata checks (§7.2) — entry-point group and naming, `Requires-Dist` admission, closed loader mapping — run here at compose time. | `bad-metadata` | fatal | quarantine |
+| 13 | C | Distribution metadata | Metadata checks run here at compose time: built-ins verify the §7.1 invariants (`distribution == "untaped"`, `entry_point == ""`, version == product version — a mismatch is an SDK bug); externals run the §7.2 checks (entry-point group and naming, `Requires-Dist` admission, closed loader mapping). | `bad-metadata` | fatal | quarantine |
 
 Phases run in order A→D per provider and stop at the first failure for that
 provider; section registration for the provider happens only in Phase D
