@@ -90,10 +90,23 @@ raises, violates the return contract and is quarantined with the exception
 text recorded.
 
 `untaped.capability_api` is the stable import surface for provider authors.
-Its v1 export set is exactly these eight names — `ApplicationSpec`,
-`CapabilitySpec`, `CapabilityProvider`, `CAPABILITY_API_VERSION`,
-`SkillAsset`, `DoctorCheck`, `DoctorResult`, `CapabilityContext` — and its
-`__all__` MUST contain precisely these eight names and nothing else. Adding
+Its v1 composition set is closed at exactly these eight names —
+`ApplicationSpec`, `CapabilitySpec`, `CapabilityProvider`,
+`CAPABILITY_API_VERSION`, `SkillAsset`, `DoctorCheck`, `DoctorResult`,
+`CapabilityContext`. In addition, `untaped.capability_api` re-exports
+exactly these sixteen supported helpers — `ColumnsOption`, `ConfigError`,
+`FormatOption`, `StateCollection`, `UiContext`, `UntapedError`,
+`app_context`, `create_app`, `echo`, `emit`, `finish`,
+`first_validation_error`, `get_config_section`, `raise_usage`,
+`read_identifiers`, `report_errors` — the exact helper surface the in-repo
+private capabilities import from `untaped.api` today (verified against
+`untaped-market` and `untaped-apple-health`; `SkillAsset` is already in the
+composition set above, and the retired composition names `ToolSpec`,
+`register_tool`, `build_tool_app`, `run_tool` stay excluded). Provider
+packages MUST obtain helpers only via `untaped.capability_api`; anything not
+re-exported there is out of contract. The `__all__` of
+`untaped.capability_api` MUST contain precisely the eight composition names
+plus the sixteen supported helpers and nothing else. Adding
 a name to `untaped.capability_api` without amending this list is a CI
 failure; importing anything from `untaped` outside `capability_api` inside a
 provider package is unsupported and may break without a major-version event.
@@ -282,8 +295,8 @@ quarantined) rather than displacing it.
   zero arguments to stage construction. Doctor-check BODIES never run in
   this phase.
 - Phase D — commit registration: only after every applicable row passes, the
-  provider registers its settings sections, mounts its app, installs its
-  skills, and contributes its doctor checks.
+  provider registers its settings sections, mounts its app, registers skill assets for discovery and install planning,
+  and contributes its doctor checks. Filesystem installation belongs exclusively to `untaped skills install`.
 
 Outcome "built-in fatal" means a violating built-in raises `ConfigError`
 and the process exits before dispatch: built-ins ship with the SDK, so a
@@ -292,7 +305,7 @@ built-in violation is an SDK bug, never a runtime condition. Outcome
 is appended, and composition continues with the remaining providers.
 Transactional-quarantine guarantee: validation of each external provider is
 side-effect free until that provider fully passes; a provider that fails any
-row registers no settings sections, mounts no apps, installs no skills,
+row registers no settings sections, mounts no apps, registers no skill assets,
 contributes no doctor checks, and leaves previously composed providers
 untouched. A failed provider can therefore never half-register. Quarantine
 records are surfaced by `doctor` and by a one-line stderr warning per
@@ -339,7 +352,7 @@ Two independent checks run in CI on every pull request.
 (a) Distribution runtime dependencies. Each in-repo capability's runtime
 dependencies (`pyproject.toml` `dependencies`) MUST be recorded in
 `docs/runtime-deps.toml`, one entry per direct dependency naming the owning
-capability and a rationale:
+capability, a rationale, and the exact requirement string:
 
 ```toml
 version = 1
@@ -347,14 +360,21 @@ version = 1
 name = "httpx"
 owner = "github"
 reason = "paginated REST calls from github commands"
+requirement = "httpx>=0.27,<0.29"
 ```
 
-`name` is the depended-on distribution, `owner` the owning capability, and
-`reason` a non-empty human justification. CI (`tools/validate_deps.py`)
-fails the build on any unrecorded direct-dependency addition, any recorded
-specifier broadening (widened bounds, loosened pins, added extras) without
-an updated record, or any record matching no current dependency (stale
-records must be removed, not left to rot).
+`name` is the depended-on distribution, `owner` the owning capability,
+`reason` a non-empty human justification, and `requirement` the exact
+normalized requirement string for that dependency as declared in
+`pyproject.toml` (normalized name plus version specifier, extras, and
+markers). CI (`tools/validate_deps.py`) fails the build on any unrecorded
+direct-dependency addition, any mismatch between a record's `requirement`
+and the normalized `pyproject.toml` requirement for the same dependency —
+widened or narrowed bounds, changed pins, added or removed extras, renames,
+or any other difference, with the differing value named — or any record
+matching no current dependency (stale records must be removed, not left to
+rot). Exact-normalized-match subsumes broadening detection: any specifier
+change without an updated record fails.
 
 (b) Internal cross-capability imports. A capability MUST NOT import another
 capability's implementation modules, matched against explicit capability
