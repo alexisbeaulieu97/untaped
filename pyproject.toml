@@ -1,6 +1,6 @@
 [project]
 name = "untaped"
-version = "3.1.0"
+version = "4.0.0rc1"
 description = "A batteries-included CLI framework for building standalone DevOps tools."
 readme = "README.md"
 license = "MIT"
@@ -20,6 +20,9 @@ dependencies = [
     "rich>=15.0.0",
     "truststore>=0.10.4",
 ]
+
+[project.scripts]
+untaped = "untaped.__main__:main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
