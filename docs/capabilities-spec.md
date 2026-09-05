@@ -20,8 +20,7 @@ unknown fields.
 `ApplicationSpec` describes the whole unified CLI. `CapabilitySpec`
 describes one composable unit (one former standalone tool). Both are frozen
 dataclasses. Neither accepts any field beyond the ones listed here; passing
-an unknown keyword is a `TypeError`, and a mapping-based loader that carries
-an unknown key fails the metadata validator (§7).
+an unknown keyword is a `TypeError`.
 
 ```python
 @dataclass(frozen=True)
@@ -283,15 +282,17 @@ collides with an already-composed built-in fails the colliding row (and is
 quarantined) rather than displacing it.
 
 - Phase A — discovery and API pre-checks: enumerate entry-point targets in
-  the order above, resolve each target to a provider object, and check its
-  `api_requires` range (row 10). Unresolvable targets and non-callables fail
+  the order above, run the row-13 metadata gates (entry-point group and
+  `Requires-Dist` admission) BEFORE resolving any target, then resolve each
+  surviving target to a provider object and check its `api_requires` range
+  (row 10). Unresolvable targets and non-callables fail
   the resolution part of row 11 here.
 - Phase B — resolve provider to obtain spec: call the provider nullary. A
   provider that raises, requires arguments, or returns a non-`CapabilitySpec`
   fails row 11 with the exception text in `detail`. Resolution is
   side-effect free per the §2 return contract.
-- Phase C — validate declarations and stage app construction: rows 1–8 and
-  13 (declaration shape only), then row 12, which invokes `app_factory` with
+- Phase C — validate declarations and stage app construction: rows 1–8
+  (declaration shape only), then row 12, which invokes `app_factory` with
   zero arguments to stage construction. Doctor-check BODIES never run in
   this phase.
 - Phase D — commit registration: only after every applicable row passes, the
@@ -334,7 +335,7 @@ for every provider that passed Phase D.
 | 10 | A | API range | The provider's `api_requires` `(lo, hi)` MUST satisfy `lo <= CAPABILITY_API_VERSION < hi` with `lo < hi` and both finite numbers; a missing, non-pair, non-numeric, or inverted range fails this row, not row 11. | `api-range` | fatal | quarantine |
 | 11 | A/B | Malformed entry points | The entry-point target MUST resolve to a nullary callable returning a `CapabilitySpec`. Unresolvable targets, non-callables (Phase A), callables requiring arguments, callables returning a non-`CapabilitySpec`, and callables that raise (Phase B) all fail here with the exception text in `detail`. | `malformed-entry-point` | n/a (no entry point) | quarantine |
 | 12 | C | Bad factories | A resolved `app_factory` that requires arguments or returns a non-`cyclopts.App` fails here (entry-point callables that never return a spec fail row 11 instead). | `bad-app-factory` | fatal | quarantine |
-| 13 | C | Distribution metadata | Metadata checks run here at compose time: built-ins verify the §7.1 invariants (`distribution == "untaped"`, `entry_point == ""`, version == product version — a mismatch is an SDK bug); externals run the §7.2 checks (entry-point group and naming, `Requires-Dist` admission, closed loader mapping). | `bad-metadata` | fatal | quarantine |
+| 13 | A | Distribution metadata | Metadata gates run in Phase A before any import: built-ins verify the §7.1 invariants (`distribution == "untaped"`, `entry_point == ""`, version == product version — a mismatch is an SDK bug); externals run the §7.2 checks (entry-point group and naming, `Requires-Dist` admission). | `bad-metadata` | fatal | quarantine |
 
 Phases run in order A→D per provider and stop at the first failure for that
 provider; section registration for the provider happens only in Phase D
@@ -429,14 +430,15 @@ entry-point group — one distribution MAY expose multiple entry points, one
 per capability it provides; each entry-point name MUST equal its capability
 `name`; the distribution name MUST equal the provider's
 `ProviderRef.distribution`; `Requires-Dist` on `untaped` MUST admit the
-running SDK version; and any loader mapping that carries unknown
-`CapabilitySpec`/`ApplicationSpec` fields is rejected (closed-shape rule
-from §1). CI mode fails the build on the first violation with the
-distribution, the violated rule, and the offending value. Compose mode never
-raises for externals: it records a `QuarantineRecord` with
-`reason = "bad-metadata"` (defined in §5, row 13) and the validator message
-as `detail`. All reason codes — quarantine and diagnostic — are defined in
-the single §5 table; no other `reason` value is valid anywhere.
+running SDK version. (Former loader-mapping closed-shape check removed as
+YAGNI: no producer ever populated `loader_fields`, so the check was
+unreachable on the real discovery path.) CI mode fails the build on the
+first violation with the distribution, the violated rule, and the offending
+value. Compose mode never raises for externals: it records a
+`QuarantineRecord` with `reason = "bad-metadata"` (defined in §5, row 13)
+and the validator message as `detail`. All reason codes — quarantine and
+diagnostic — are defined in the single §5 table; no other `reason` value is
+valid anywhere.
 
 ### 7.3 Capabilities-listing record
 
