@@ -10,6 +10,7 @@ from cyclopts import App
 from pydantic import BaseModel
 
 from untaped.capabilities.registry import (
+    CAPABILITIES_ENTRY_POINT_GROUP,
     ApplicationSpec,
     CapabilitySpec,
     DoctorCheck,
@@ -135,12 +136,21 @@ def make_external(
     spec: CapabilitySpec,
     distribution: str = "example-dist",
     name: str | None = None,
+    *,
+    distribution_version: str = "",
+    entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP,
+    requires_dist: tuple[str, ...] | list[str] = (),
+    loader_fields: tuple[str, ...] | list[str] = (),
     **kwargs: Any,
 ) -> ExternalProvider:
     return ExternalProvider(
         distribution=distribution,
         name=name or spec.name,
         target=Provider(spec, **kwargs),
+        distribution_version=distribution_version,
+        entry_point_group=entry_point_group,
+        requires_dist=tuple(requires_dist),
+        loader_fields=tuple(loader_fields),
     )
 
 

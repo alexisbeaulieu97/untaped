@@ -13,9 +13,12 @@ stable surface from :mod:`untaped.capability_api` instead.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from dataclasses import fields as dataclass_fields
 from importlib import import_module
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -33,6 +36,9 @@ _BUILTIN_API_REQUIRES: tuple[float, float] = (1.0, 2.0)
 
 #: Distribution label used for built-in provider references (spec §7.1).
 _BUILTIN_DISTRIBUTION = "untaped"
+
+#: Entry-point group external capabilities are discovered from (spec §7.2).
+CAPABILITIES_ENTRY_POINT_GROUP = "untaped.capabilities"
 
 #: Reserved root command/layout names no capability may claim (spec §5 row 1).
 _RESERVED_COMMAND_ROOTS = frozenset(
@@ -155,6 +161,14 @@ class CapabilitySpec:
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
 
+#: Field names a mapping-based loader may carry (spec §§1, 7.2).
+#: ``CapabilitySpec`` and ``ApplicationSpec`` share the same closed shape,
+#: so one set covers both.
+_KNOWN_SPEC_FIELDS = frozenset(
+    field.name for cls in (ApplicationSpec, CapabilitySpec) for field in dataclass_fields(cls)
+)
+
+
 @dataclass(frozen=True)
 class ProviderRef:
     """How a composed capability arrived (spec §3)."""
@@ -218,11 +232,25 @@ class QuarantineRecord:
 
 @dataclass(frozen=True)
 class ExternalProvider:
-    """One discovered external candidate awaiting composition."""
+    """One discovered external candidate awaiting composition.
+
+    ``distribution_version``, ``entry_point_group``, ``requires_dist``, and
+    ``loader_fields`` are captured at discovery via :mod:`importlib.metadata`
+    without importing provider code (spec §7.2); the §7.3 listing reports
+    ``distribution_version`` for externals.
+    """
 
     distribution: str
     name: str
     target: object
+    distribution_version: str = ""
+    entry_point_group: str = CAPABILITIES_ENTRY_POINT_GROUP
+    requires_dist: tuple[str, ...] = ()
+    loader_fields: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "requires_dist", tuple(self.requires_dist))
+        object.__setattr__(self, "loader_fields", tuple(self.loader_fields))
 
 
 @dataclass(frozen=True)
@@ -305,6 +333,208 @@ def check_api_range(requires: object, version: float) -> tuple[float, float]:
             f"api_requires {(lo_f, hi_f)!r} does not admit SDK version {version}",
         )
     return (lo_f, hi_f)
+
+
+_REQUIREMENT_NAME_RE = re.compile(
+    r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(\[[^\]]*\])?\s*(.*?)\s*$",
+    re.DOTALL,
+)
+_SPECIFIER_RE = re.compile(r"^(===|==|~=|!=|>=|<=|>|<)\s*(\S+)\s*$")
+
+
+def _normalize_distribution_name(value: str) -> str:
+    return re.sub(r"[-_.]+", "-", value).lower()
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    """Numeric dot-tuple for a release string (minimal PEP 440 subset)."""
+    key: list[int] = []
+    for chunk in value.strip().split("."):
+        digits = ""
+        for char in chunk:
+            if char.isdigit():
+                digits += char
+            else:
+                break
+        key.append(int(digits) if digits else 0)
+    return tuple(key)
+
+
+def _compare_versions(left: str, right: str) -> int:
+    left_key = _version_key(left)
+    right_key = _version_key(right)
+    width = max(len(left_key), len(right_key))
+    left_key += (0,) * (width - len(left_key))
+    right_key += (0,) * (width - len(right_key))
+    return (left_key > right_key) - (left_key < right_key)
+
+
+def _specifier_admits(operator: str, wanted: str, actual: str) -> bool:
+    if operator == "===":
+        return actual == wanted
+    if operator == "==":
+        if wanted.endswith(".*"):
+            prefix = _version_key(wanted[:-2])
+            return _version_key(actual)[: len(prefix)] == prefix
+        return _compare_versions(actual, wanted) == 0
+    if operator == "!=":
+        if wanted.endswith(".*"):
+            prefix = _version_key(wanted[:-2])
+            return _version_key(actual)[: len(prefix)] != prefix
+        return _compare_versions(actual, wanted) != 0
+    if operator == ">=":
+        return _compare_versions(actual, wanted) >= 0
+    if operator == "<=":
+        return _compare_versions(actual, wanted) <= 0
+    if operator == ">":
+        return _compare_versions(actual, wanted) > 0
+    if operator == "<":
+        return _compare_versions(actual, wanted) < 0
+    if operator == "~=":
+        release = wanted.split(".")
+        if len(release) < 2:
+            return False
+        prefix = _version_key(".".join(release[:-1]))
+        return _compare_versions(actual, wanted) >= 0 and (
+            _version_key(actual)[: len(prefix)] == prefix
+        )
+    return False
+
+
+def _requirement_name(requirement: object) -> str | None:
+    if not isinstance(requirement, str):
+        return None
+    match = _REQUIREMENT_NAME_RE.match(requirement.split(";", 1)[0])
+    if match is None:
+        return None
+    return _normalize_distribution_name(match.group(1))
+
+
+def _requirement_admits(requirement: str, sdk_version: str) -> bool:
+    """Whether one Requires-Dist string admits ``sdk_version``.
+
+    Raises :class:`ValueError` when the string is not a requirement.
+    """
+    match = _REQUIREMENT_NAME_RE.match(requirement.split(";", 1)[0])
+    if match is None:
+        raise ValueError(f"malformed Requires-Dist entry {requirement!r}")
+    specifiers = match.group(3)
+    if not specifiers.strip():
+        return True
+    if specifiers.strip().startswith("@"):
+        # Direct reference (PEP 508 URL): a pinned source, not a version
+        # range, so admission cannot be disproved.
+        return True
+    for specifier in specifiers.split(","):
+        part = _SPECIFIER_RE.match(specifier.strip())
+        if part is None:
+            raise ValueError(f"malformed Requires-Dist entry {requirement!r}")
+        if not _specifier_admits(part.group(1), part.group(2), sdk_version):
+            return False
+    return True
+
+
+def _running_sdk_version() -> str | None:
+    """Running SDK version via importlib.metadata; None when unresolvable."""
+    try:
+        return importlib_metadata.version(_BUILTIN_DISTRIBUTION)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+
+def _check_entry_point_group(candidate: ExternalProvider) -> None:
+    if candidate.entry_point_group != CAPABILITIES_ENTRY_POINT_GROUP:
+        raise _Quarantine(
+            "bad-metadata",
+            f"entry-point group {candidate.entry_point_group!r} of distribution "
+            f"{candidate.distribution!r} is not the capabilities group "
+            f"{CAPABILITIES_ENTRY_POINT_GROUP!r}",
+        )
+
+
+def _check_requires_dist(candidate: ExternalProvider) -> None:
+    untaped_requirements: list[str] = []
+    for requirement in candidate.requires_dist:
+        name = _requirement_name(requirement)
+        if name is None:
+            raise _Quarantine(
+                "bad-metadata",
+                f"malformed Requires-Dist entry {requirement!r} of distribution "
+                f"{candidate.distribution!r}",
+            )
+        if name == _BUILTIN_DISTRIBUTION and isinstance(requirement, str):
+            untaped_requirements.append(requirement)
+    if not untaped_requirements:
+        return
+    sdk_version = _running_sdk_version()
+    if sdk_version is None:
+        raise _Quarantine(
+            "bad-metadata",
+            f"could not resolve running SDK version to check Requires-Dist "
+            f"of distribution {candidate.distribution!r}",
+        )
+    for requirement in untaped_requirements:
+        try:
+            admits = _requirement_admits(requirement, sdk_version)
+        except ValueError:
+            raise _Quarantine(
+                "bad-metadata",
+                f"malformed Requires-Dist entry {requirement!r} of distribution "
+                f"{candidate.distribution!r}",
+            ) from None
+        if not admits:
+            raise _Quarantine(
+                "bad-metadata",
+                f"Requires-Dist {requirement!r} of distribution "
+                f"{candidate.distribution!r} does not admit running SDK "
+                f"version {sdk_version}",
+            )
+
+
+def _check_loader_fields(candidate: ExternalProvider) -> None:
+    for field in candidate.loader_fields:
+        if not isinstance(field, str) or field not in _KNOWN_SPEC_FIELDS:
+            raise _Quarantine(
+                "bad-metadata",
+                f"loader mapping of distribution {candidate.distribution!r} "
+                f"carries unknown field {field!r}; expected one of "
+                f"{sorted(_KNOWN_SPEC_FIELDS)}",
+            )
+
+
+def discover_external_providers(
+    *, group: str = CAPABILITIES_ENTRY_POINT_GROUP
+) -> tuple[ExternalProvider, ...]:
+    """Discover external candidates from entry points (spec §7.2).
+
+    Reads distribution version, entry-point group, and Requires-Dist strings
+    via :mod:`importlib.metadata` without importing any provider code.
+    """
+    found: list[ExternalProvider] = []
+    for entry_point in importlib_metadata.entry_points(group=group):
+        dist = entry_point.dist
+        if dist is None:
+            found.append(
+                ExternalProvider(
+                    distribution="unknown",
+                    name=entry_point.name,
+                    target=entry_point.value,
+                    entry_point_group=entry_point.group,
+                )
+            )
+            continue
+        dist_name = dist.metadata.get("Name") or "unknown"
+        found.append(
+            ExternalProvider(
+                distribution=str(dist_name),
+                name=entry_point.name,
+                target=entry_point.value,
+                distribution_version=dist.version,
+                entry_point_group=entry_point.group,
+                requires_dist=tuple(dist.requires or ()),
+            )
+        )
+    return tuple(found)
 
 
 def check_builtin_metadata(ref: ProviderRef) -> None:
@@ -531,6 +761,9 @@ def compose(
                     "bad-metadata",
                     f"provider {candidate.name!r} declares an empty distribution name",
                 )
+            _check_entry_point_group(candidate)
+            _check_requires_dist(candidate)
+            _check_loader_fields(candidate)
             _check_factory(spec)
         except _Quarantine as failed:
             quarantined.append(failed.to_record(candidate))
