@@ -1276,9 +1276,14 @@ def test_p46_runtime_deps() -> None:
 
     expected = {
         "cyclopts>=4.16.0,<5",
+        "filelock>=3.29.0",
+        "httpx>=0.28.1",
+        "prompt-toolkit>=3.0.52",
         "pydantic>=2.13.3",
+        "pydantic-settings>=2.14.0",
         "pyyaml>=6.0.3",
-        "untaped>=3.0.0,<4",
+        "rich>=15.0.0",
+        "truststore>=0.10.4",
     }
     declared = (REPO_ROOT / "pyproject.toml").read_text()
     data = tomllib.loads(declared)
