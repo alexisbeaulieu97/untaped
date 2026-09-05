@@ -1,0 +1,1 @@
+{"add_stdin":"one URL per line; --stdin has no --no-stdin alias","path_stdin":{"id_field":"name","inputs":["bare names one per line","pipe envelopes (record.name extracted)"],"roundtrip":"list --format pipe | path --stdin"},"remove_stdin":"one identifier per line","repo_name_rule":"--repo-name applies to a single URL; drop --repo-name or pass URLs one at a time."}

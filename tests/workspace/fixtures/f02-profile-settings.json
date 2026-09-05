@@ -1,0 +1,1 @@
+{"bare_keys":["cache_dir","workspaces_dir"],"defaults":{"cache_dir":"~/.untaped/repositories","workspaces_dir":"~/.untaped/workspaces"},"expanduser_at_use":true,"layering":"profiles.default beneath profiles.<active>","profile_flag":"--profile (any token position)"}

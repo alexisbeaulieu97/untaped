@@ -1,11 +1,6 @@
 # `untaped` — documentation
 
-`untaped` is a batteries-included CLI **framework** (an SDK) for building
-standalone DevOps tools. There is no central `untaped` command: each tool is an
-independent CLI (`untaped-github`, `untaped-awx`, …) that depends on the SDK and
-is installed in its own `uv tool` environment. Tools share two frozen contracts
-— the `~/.untaped/config.yml` format and the `--format pipe` envelope — so they
-interoperate and compose.
+`untaped` is a single `untaped` application composing built-in capabilities; the standalone `untaped-*` tools are retired at the v4 cutover. Capabilities share two frozen contracts — the `~/.untaped/config.yml` format and the `--format pipe` envelope — so they interoperate and compose.
 
 ## Pages
 
@@ -21,10 +16,9 @@ interoperate and compose.
   family documents itself: single-source rule, surfaces, concept pages.
 - [Releasing](./release.md) — PyPI/TestPyPI workflow, Trusted Publisher setup,
   and recovery rules.
-- [Architecture decisions](./decisions.md) — the settled ADRs behind the
-  SDK-only direction.
+- [Architecture decisions](./decisions.md) — the settled ADRs behind the single `untaped` application composing built-in capabilities, with the standalone `untaped-*` tools retired at the v4 cutover.
 
-Command references live in each tool's own repo:
+Retired standalone `untaped-*` tool repos, now built-in capabilities of the single `untaped` application retired at the v4 cutover:
 
 - [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
 - [Jira](https://github.com/alexisbeaulieu97/untaped-jira)

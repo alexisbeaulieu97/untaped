@@ -1,9 +1,6 @@
 # untaped
 
-**untaped** is a batteries-included CLI framework for building standalone
-DevOps tools on [cyclopts](https://cyclopts.readthedocs.io/). It is an SDK, not
-an app: there is no central `untaped` command. You build a tool, depend on the
-SDK, and ship an independent CLI.
+**untaped** is a single `untaped` application composing built-in capabilities on [cyclopts](https://cyclopts.readthedocs.io/); the standalone `untaped-*` tools are retired at the v4 cutover.
 
 The SDK gives every tool, for free:
 
@@ -133,10 +130,9 @@ User-facing docs live in [`docs/`](./docs/README.md):
   Codex/Claude agent skills.
 - [Releasing](./docs/release.md) — PyPI/TestPyPI workflow, Trusted Publisher
   setup, and recovery rules.
-- [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the
-  SDK-only direction.
+- [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the single `untaped` application composing built-in capabilities, with the standalone `untaped-*` tools retired at the v4 cutover.
 
-Per-tool command references live in each tool's own repo:
+Retired standalone `untaped-*` tool repos, now built-in capabilities of the single `untaped` application retired at the v4 cutover:
 
 - [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
 - [Jira](https://github.com/alexisbeaulieu97/untaped-jira)

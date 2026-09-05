@@ -60,8 +60,8 @@ from untaped.pipe import (
 from untaped.settings import get_settings, resolve_config_path
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 
-FIXTURES = Path("/tmp/v4-20260904-01/evidence/wave15/fixtures")
 REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURES = REPO_ROOT / "tests" / "workspace" / "fixtures"
 
 # test name -> P-rows it pins. Union must be exactly {P1..P48}.
 COVERS: dict[str, list[str]] = {
