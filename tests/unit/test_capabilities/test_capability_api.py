@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 import sys
+
+import pytest
 
 import untaped.capability_api as capi
 from untaped import api as sdk_api

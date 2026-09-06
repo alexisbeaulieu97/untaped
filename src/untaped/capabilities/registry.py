@@ -1,4 +1,4 @@
-"""Internal capability composition kernel (spec §§1–5).
+"""Internal capability composition kernel (spec §§1-5).
 
 Implements the four-phase provider pipeline: discovery/API pre-checks,
 provider resolution, declaration validation plus app-factory staging, and
@@ -551,35 +551,42 @@ def _is_reserved(value: str) -> bool:
     return value in Settings.model_fields or value in _RESERVED_COMMAND_ROOTS
 
 
-def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
+def _check_reserved_and_names(spec: CapabilitySpec, state: _CompositionState) -> None:
     if _is_reserved(spec.name):
         raise _Quarantine("reserved-root", f"reserved capability name: {spec.name!r}")
     if _is_reserved(spec.config_section):
         raise _Quarantine("reserved-root", f"reserved config section: {spec.config_section!r}")
     if spec.name in state.names:
         raise _Quarantine("duplicate-name", f"duplicate capability name: {spec.name!r}")
-    if spec.state_model is not None:
-        try:
-            validate_disjoint_settings_sections(
-                spec.config_section, spec.profile_model, spec.state_model
-            )
-        except ConfigError as exc:
-            raise _Quarantine("profile-state-overlap", str(exc)) from None
-        # Before duplicate-section so a same-section state collision reports
-        # the specific diagnosis rather than the generic duplicate.
-        claimed = state.profile_fields.get(spec.config_section, set())
-        shadowed = sorted(set(spec.state_model.model_fields) & claimed)
-        if shadowed:
-            joined = ", ".join(shadowed)
-            raise _Quarantine(
-                "state-shadow",
-                f"state fields shadow profile fields of section "
-                f"{spec.config_section!r}: {joined}",
-            )
+
+
+def _check_duplicate_section(spec: CapabilitySpec, state: _CompositionState) -> None:
     if spec.config_section in state.sections:
-        raise _Quarantine(
-            "duplicate-section", f"duplicate config section: {spec.config_section!r}"
+        raise _Quarantine("duplicate-section", f"duplicate config section: {spec.config_section!r}")
+
+
+def _check_state_model(spec: CapabilitySpec, state: _CompositionState) -> None:
+    if spec.state_model is None:
+        return
+    try:
+        validate_disjoint_settings_sections(
+            spec.config_section, spec.profile_model, spec.state_model
         )
+    except ConfigError as exc:
+        raise _Quarantine("profile-state-overlap", str(exc)) from None
+    # Before duplicate-section so a same-section state collision reports
+    # the specific diagnosis rather than the generic duplicate.
+    claimed = state.profile_fields.get(spec.config_section, set())
+    shadowed = sorted(set(spec.state_model.model_fields) & claimed)
+    if shadowed:
+        joined = ", ".join(shadowed)
+        raise _Quarantine(
+            "state-shadow",
+            f"state fields shadow profile fields of section {spec.config_section!r}: {joined}",
+        )
+
+
+def _check_skills(spec: CapabilitySpec, state: _CompositionState) -> None:
     # Shape before collision: a collision needs a valid name to report.
     seen_skills: set[str] = set()
     for index, skill in enumerate(spec.skills):
@@ -590,12 +597,18 @@ def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
         ):
             raise _Quarantine(
                 "bad-skill-asset",
-                f"malformed skill asset at index {index} of capability "
-                f"{spec.name!r}: {skill!r}",
+                f"malformed skill asset at index {index} of capability {spec.name!r}: {skill!r}",
             )
         if skill.name in state.skill_names or skill.name in seen_skills:
             raise _Quarantine("duplicate-skill", f"duplicate skill name: {skill.name!r}")
         seen_skills.add(skill.name)
+
+
+def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
+    _check_reserved_and_names(spec, state)
+    _check_state_model(spec, state)
+    _check_duplicate_section(spec, state)
+    _check_skills(spec, state)
     seen_checks: set[str] = set()
     for check in spec.doctor_checks:
         if (
@@ -632,9 +645,7 @@ def _check_factory(spec: CapabilitySpec) -> None:
 def _commit(
     spec: CapabilitySpec, ref: ProviderRef, state: _CompositionState
 ) -> RegisteredCapability:
-    registered = RegisteredCapability(
-        spec=spec, provider_ref=ref, skills=tuple(spec.skills)
-    )
+    registered = RegisteredCapability(spec=spec, provider_ref=ref, skills=tuple(spec.skills))
     state.names.add(spec.name)
     state.sections.add(spec.config_section)
     state.profile_fields[spec.config_section] = set(spec.profile_model.model_fields)
@@ -760,15 +771,11 @@ def compose(
                     kind="external",
                     distribution=candidate.distribution,
                     entry_point=(
-                        candidate.target
-                        if isinstance(candidate.target, str)
-                        else candidate.name
+                        candidate.target if isinstance(candidate.target, str) else candidate.name
                     ),
                     api_requires=api_requires,
                 ),
                 state,
             )
         )
-    return CompositionResult(
-        capabilities=tuple(capabilities), quarantine=tuple(quarantined)
-    )
+    return CompositionResult(capabilities=tuple(capabilities), quarantine=tuple(quarantined))

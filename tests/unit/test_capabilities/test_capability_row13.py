@@ -6,18 +6,17 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from untaped.capabilities.registry import (
-    CAPABILITIES_ENTRY_POINT_GROUP,
-    ExternalProvider,
-    compose,
-    discover_external_providers,
-)
-
 from test_capabilities.capharness import (
     Provider,
     make_external,
     make_shell,
     make_spec,
+)
+from untaped.capabilities.registry import (
+    CAPABILITIES_ENTRY_POINT_GROUP,
+    ExternalProvider,
+    compose,
+    discover_external_providers,
 )
 
 
@@ -90,12 +89,8 @@ def test_row13_direct_reference_requires_dist_passes() -> None:
 
 
 def test_row13_multi_entry_point_distribution_passes() -> None:
-    first = make_external(
-        make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3"
-    )
-    second = make_external(
-        make_spec(name="beta"), "multi-dist", distribution_version="1.2.3"
-    )
+    first = make_external(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
+    second = make_external(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")
     result = compose(make_shell(), [], [second, first])
     assert [cap.spec.name for cap in result.capabilities] == ["alpha", "beta"]
     assert result.quarantine == ()
@@ -206,9 +201,7 @@ def test_row13_live_discovery_composes_without_loader_fields(
     monkeypatch.setattr(
         registry.importlib_metadata,
         "entry_points",
-        lambda group=None: [fake_entry_point]
-        if group == "untaped.capabilities"
-        else [],
+        lambda group=None: [fake_entry_point] if group == "untaped.capabilities" else [],
     )
     providers = registry.discover_external_providers()
     assert len(providers) == 1

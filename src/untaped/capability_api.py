@@ -33,7 +33,7 @@ from untaped.state import StateCollection
 from untaped.stdin import read_identifiers
 from untaped.ui import UiContext
 
-__all__ = [
+__all__ = [  # noqa: RUF022 — grouped 8 core + 16 helpers, order pinned by test_all_contains_exactly_eight_plus_sixteen
     "ApplicationSpec",
     "CapabilitySpec",
     "CapabilityProvider",
