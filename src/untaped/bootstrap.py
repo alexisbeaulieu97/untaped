@@ -14,7 +14,8 @@ shell-completion wiring, invocation-scoped identity, and capability-mount
 plumbing with zero built-ins mounted yet. Wave 1.4 mounts the five root
 management commands (``config`` / ``profile`` / ``skills`` / ``doctor`` /
 ``capabilities``, see :mod:`untaped.management`); Wave 1.5 mounts the
-workspace built-in capability subtree (``untaped workspace ...``).
+workspace built-in capability subtree (``untaped workspace ...``); Wave 2
+slice 1 appends the github subtree (``untaped github ...``).
 """
 
 from __future__ import annotations
@@ -74,6 +75,7 @@ SHELL_SECTION = "shell"
 #: Distribution owning the unified product version (spec §7.1).
 SHELL_DISTRIBUTION = "untaped"
 
+
 def _workspace_builtins() -> tuple[CapabilitySpec, ...]:
     """Return the workspace built-in without importing its CLI tree at module load."""
     from untaped.capabilities.workspace import SPEC  # noqa: PLC0415
@@ -81,9 +83,22 @@ def _workspace_builtins() -> tuple[CapabilitySpec, ...]:
     return (SPEC,)
 
 
+def _github_builtins() -> tuple[CapabilitySpec, ...]:
+    """Return the github built-in without importing its CLI tree at module load."""
+    from untaped.capabilities.github import SPEC  # noqa: PLC0415
+
+    return (SPEC,)
+
+
+def _default_builtins() -> tuple[CapabilitySpec, ...]:
+    """Return the built-in capabilities in declaration order (workspace, github)."""
+    return (*_workspace_builtins(), *_github_builtins())
+
+
 #: Built-in capabilities composed ahead of externals (Wave 1.5 mounts the
-#: workspace capability; further capabilities append in declaration order).
-BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = _workspace_builtins()
+#: workspace capability, Wave 2 slice 1 appends github; further capabilities
+#: append in declaration order).
+BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = _default_builtins()
 
 #: Active capability name for the current invocation (spec §4). Set at
 #: dispatch time to the selected capability (or the shell name when dispatch
@@ -218,7 +233,8 @@ def build_root_app(
 
     Mounts the five root management commands plus each validated
     capability's sub-app under its capability name (Wave 1.5 default mounts
-    the workspace built-in), wires ``--version`` to lazy installed-distribution
+    the workspace built-in, Wave 2 slice 1 appends github), wires
+    ``--version`` to lazy installed-distribution
     metadata,
     installs the position-independent root options, and registers shell
     completion. Drive ``app.meta`` directly in tests; run via :func:`run_root`
