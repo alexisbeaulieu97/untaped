@@ -1,4 +1,4 @@
-"""Tests for composition records and the happy-path pipeline (spec §§1–5)."""
+"""Tests for composition records and the happy-path pipeline (spec §§1-5)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from test_capabilities.capharness import (
+    OtherProfile,
+    Profile,
+    State,
+    exploding_check,
+    function_provider,
+    make_check,
+    make_external,
+    make_shell,
+    make_skill,
+    make_spec,
+)
 from untaped.capabilities.registry import (
     CAPABILITY_API_VERSION,
     ApplicationSpec,
@@ -23,19 +35,6 @@ from untaped.capabilities.registry import (
     compose,
 )
 from untaped.errors import ConfigError
-
-from test_capabilities.capharness import (
-    OtherProfile,
-    Profile,
-    State,
-    exploding_check,
-    function_provider,
-    make_check,
-    make_external,
-    make_shell,
-    make_skill,
-    make_spec,
-)
 
 
 def test_api_version_is_one() -> None:
@@ -76,12 +75,19 @@ def test_closed_shape_rejects_unknown_fields() -> None:
         )
     with pytest.raises(TypeError):
         ProviderRef(  # type: ignore[call-arg]
-            kind="built-in", distribution="u", entry_point="", api_requires=(1.0, 2.0),
+            kind="built-in",
+            distribution="u",
+            entry_point="",
+            api_requires=(1.0, 2.0),
             extra=1,
         )
     with pytest.raises(TypeError):
         QuarantineRecord(  # type: ignore[call-arg]
-            distribution="d", entry_point="e", reason="api-range", detail="x", extra=1,
+            distribution="d",
+            entry_point="e",
+            reason="api-range",
+            detail="x",
+            extra=1,
         )
 
 
@@ -112,9 +118,7 @@ def test_records_are_frozen() -> None:
     )
     with pytest.raises(FrozenInstanceError):
         ref.kind = "external"  # type: ignore[misc]
-    record = QuarantineRecord(
-        distribution="d", entry_point="e", reason="api-range", detail="x"
-    )
+    record = QuarantineRecord(distribution="d", entry_point="e", reason="api-range", detail="x")
     with pytest.raises(FrozenInstanceError):
         record.reason = "other"  # type: ignore[misc]
 
@@ -158,9 +162,7 @@ def test_spec_normalizes_sequences_to_tuples() -> None:
 
 def test_provider_ref_rejects_unknown_kind() -> None:
     with pytest.raises(ConfigError):
-        ProviderRef(
-            kind="sidecar", distribution="d", entry_point="m:a", api_requires=(1.0, 2.0)
-        )
+        ProviderRef(kind="sidecar", distribution="d", entry_point="m:a", api_requires=(1.0, 2.0))
 
 
 def test_quarantine_record_rejects_unknown_reason() -> None:
@@ -175,12 +177,8 @@ def test_quarantine_record_rejects_empty_detail() -> None:
 
 def test_compose_happy_path() -> None:
     shell = make_shell()
-    builtin = make_spec(
-        name="github", profile=Profile, skills=(make_skill("gh-skill"),)
-    )
-    ext_spec = make_spec(
-        name="jira", profile=OtherProfile, checks=(make_check("jira.auth"),)
-    )
+    builtin = make_spec(name="github", profile=Profile, skills=(make_skill("gh-skill"),))
+    ext_spec = make_spec(name="jira", profile=OtherProfile, checks=(make_check("jira.auth"),))
     result = compose(shell, [builtin], [make_external(ext_spec, "example-jira")])
     assert isinstance(result, CompositionResult)
     assert result.quarantine == ()
@@ -259,9 +257,7 @@ def test_failed_provider_registers_nothing() -> None:
     assert [cap.spec.name for cap in result.capabilities] == ["good", "later"]
     assert [q.reason for q in result.quarantine] == ["duplicate-section"]
     assert "good" in [cap.spec.name for cap in result.capabilities]
-    registered_skills = [
-        skill.name for cap in result.capabilities for skill in cap.skills
-    ]
+    registered_skills = [skill.name for cap in result.capabilities for skill in cap.skills]
     assert registered_skills == ["good-skill"]
     registered_checks = [
         check.id for cap in result.capabilities for check in cap.spec.doctor_checks
@@ -304,9 +300,7 @@ def test_builtins_keep_declaration_order_before_externals() -> None:
 
 def test_quarantine_record_names_colliding_value() -> None:
     clash = make_spec(name="dup")
-    result = compose(
-        make_shell(), [make_spec(name="dup")], [make_external(clash, "ext-dist")]
-    )
+    result = compose(make_shell(), [make_spec(name="dup")], [make_external(clash, "ext-dist")])
     (record,) = result.quarantine
     assert record.distribution == "ext-dist"
     assert record.reason == "duplicate-name"

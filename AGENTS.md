@@ -124,6 +124,14 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 (`ban-relative-imports = "all"`, tests included). Secrets are
 `pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`.
 
+## Orchestration store
+
+The repository has a public decision-only orchestration store; it contains no tasks.
+Use `untaped-orchestration` for canonical reads and mutations, including revision guards
+on every mutation. Agents never use `--force-current`. The committed views are
+human-only generated state, not canonical agent input. After hand recovery, run
+`untaped-orchestration check --local` and `untaped-orchestration render --check`.
+
 ## Wave gates
 
 Capability slices land serialized, one at a time, each gated before the

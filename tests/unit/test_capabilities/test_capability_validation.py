@@ -9,6 +9,15 @@ import pytest
 from pydantic import BaseModel
 
 import untaped.capabilities.registry as registry
+from test_capabilities.capharness import (
+    OtherProfile,
+    function_provider,
+    make_check,
+    make_external,
+    make_shell,
+    make_skill,
+    make_spec,
+)
 from untaped.capabilities.registry import (
     CapabilitySpec,
     DoctorCheck,
@@ -20,16 +29,6 @@ from untaped.capabilities.registry import (
     compose,
 )
 from untaped.errors import ConfigError
-
-from test_capabilities.capharness import (
-    OtherProfile,
-    function_provider,
-    make_check,
-    make_external,
-    make_shell,
-    make_skill,
-    make_spec,
-)
 
 
 class TokenProfile(BaseModel):
@@ -325,9 +324,6 @@ def test_api_range_covering_ranges_compose(rng: Any, expected: Any) -> None:
     assert result.quarantine == ()
 
 
-
-
-
 BAD_RANGES = [
     ((1.0, 1.0), "inverted"),
     ((2.0, 1.0), "inverted"),
@@ -375,7 +371,7 @@ def test_api_range_missing_attribute_quarantine() -> None:
 
 
 def test_api_range_boundary_lo_inclusive() -> None:
-    lo, hi = check_api_range((1.0, 1.0 + 1e-9), 1.0)
+    lo, _hi = check_api_range((1.0, 1.0 + 1e-9), 1.0)
     assert lo == 1.0
 
 
@@ -397,9 +393,7 @@ def test_malformed_unresolvable_target() -> None:
 
 
 def test_malformed_target_without_colon() -> None:
-    candidate = ExternalProvider(
-        distribution="ghost", name="ghost", target="not-a-module-ref"
-    )
+    candidate = ExternalProvider(distribution="ghost", name="ghost", target="not-a-module-ref")
     result = compose(make_shell(), [], [candidate])
     (record,) = result.quarantine
     assert record.reason == "malformed-entry-point"
@@ -407,9 +401,7 @@ def test_malformed_target_without_colon() -> None:
 
 
 def test_resolved_non_callable_keeps_target_label() -> None:
-    candidate = ExternalProvider(
-        distribution="mod-dist", name="mod", target="json:decoder"
-    )
+    candidate = ExternalProvider(distribution="mod-dist", name="mod", target="json:decoder")
     result = compose(make_shell(), [], [candidate])
     (record,) = result.quarantine
     assert record.reason == "malformed-entry-point"
@@ -527,7 +519,9 @@ def test_builtin_metadata_helper_rejects_bad_ref() -> None:
     with pytest.raises(ConfigError, match="bad-metadata"):
         check_builtin_metadata(
             ProviderRef(
-                kind="external", distribution="evil", entry_point="m:a",
+                kind="external",
+                distribution="evil",
+                entry_point="m:a",
                 api_requires=(1.0, 2.0),
             )
         )
