@@ -4,6 +4,14 @@ Exposes a nullary :func:`build_app` factory plus a static ``SPEC:
 CapabilitySpec`` (spec §9 gate 1). The lazy ``app`` PEP-562 re-export from
 the standalone tool is retired: importing this package never constructs
 the CLI tree; :func:`build_app` imports it on demand at mount time.
+
+The ansible capability consumes a narrow slice of this capability through
+:mod:`untaped.capabilities.github.ansible` (Wave 2 prerequisite,
+import-plan amendment 1): repository inventory, ref probing, client
+operations, settings, and result/error types, exactly as consumed from
+``untaped-ansible/src``. That module is the only supported
+ansible→github import path; the sixteen ``untaped.capability_api``
+provider helpers are NOT the inter-capability interface.
 """
 
 from __future__ import annotations
