@@ -1,4 +1,4 @@
-# Wave 2 import plan (APPROVED 2026-09-05, revised per review)
+# Wave 2 import plan (APPROVED 2026-09-05, revised per review; REV 2 2026-09-06)
 
 Status: APPROVED. Slices: github → jira → awx → ansible → recipe → orchestration.
 Stop at R1. No remote publication authorized.
@@ -35,9 +35,13 @@ before any slice agent was dispatched.
 2. Caller inventory timing: caller maps recorded BEFORE implementation from
    the CURRENT tool sources named per slice (4–6 repos pulled, never scanned),
    so no "truncated inventory" fix cycle recurs.
-3. Branch freshness: each slice opens by fetching `origin/codex/unified-app-v4`
-   from the PUBLIC destination remote and diffing `HEAD..FETCH_HEAD` for
-   conflicts; stale-branch language removed.
+3. Branch freshness (REV 2, 2026-09-06 — supersedes the remote-fetch
+   procedure, which is void: `origin` in the control setup is a local bundle
+   with no unified-app ref): each slice opens with a CONTINUITY check —
+   `HEAD` must equal the last accepted slice OID, `git status` must be
+   clean, and the last checkpoint branch must point at that OID; otherwise
+   STOP and report. Upstream drift verification against the public
+   destination is a SEPARATE check performed at rc1 freeze, not per slice.
 4. Stale scan artifacts: fixture-token files already deleted in Wave 1 review —
    no freeze on non-existent paths; slices re-scan and fix what exists.
 5. Recovery: `git reset` is explicitly NOT the recovery procedure. Each
