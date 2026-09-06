@@ -26,6 +26,12 @@ reason = "outbound HTTPS via kernel HTTP client backing capability network calls
 requirement = "httpx>=0.28.1"
 
 [[dep]]
+name = "jinja2"
+owner = "awx"
+reason = "strict-variable test-suite template rendering in the awx test parser"
+requirement = "jinja2>=3.1.6"
+
+[[dep]]
 name = "prompt-toolkit"
 owner = "workspace"
 reason = "interactive prompts via kernel prompt primitives"

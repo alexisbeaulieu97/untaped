@@ -1,0 +1,177 @@
+"""Spec-driven membership sub-apps: ``<parent> <sub_endpoint> add/remove``.
+
+For every ``FkRef(multi=True, sub_endpoint=…)`` on a kind's spec, the
+factory loop in :func:`make_resource_app` calls
+:func:`register_membership_subapp` to attach a nested Cyclopts sub-app
+named after the sub-endpoint with ``add`` and ``remove`` verbs.
+
+Pipeline shape::
+
+    untaped awx hosts list --filter inventory__name=prod \\
+        --columns name --format raw \\
+      | untaped awx groups hosts add prod-web --stdin
+
+Members are resolved per identifier via
+:meth:`untaped.capabilities.awx.application.GetResource.by_identifier` (names by
+default, ids when ``--by-id`` is passed).
+AWX's associate/disassociate POSTs are idempotent (re-adding or
+re-removing returns 204), so ``add`` and ``remove`` are safe to run
+repeatedly.
+"""
+
+from typing import Annotated, Any, Literal
+
+from cyclopts import App, Parameter
+
+from untaped.api import (
+    create_app,
+    finish,
+    read_identifiers,
+    report_errors,
+    resolve_each,
+)
+from untaped.capabilities.awx.application import GetResource, ManageMembership
+from untaped.capabilities.awx.cli._context import open_context, scope_for_command
+from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.capabilities.awx.cli.options import (
+    ByIdOption,
+    InventoryOption,
+    InventoryOrganizationOption,
+    OrganizationOption,
+)
+from untaped.capabilities.awx.domain import FkRef
+from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+
+
+def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRef) -> None:
+    """Attach ``<ref.sub_endpoint> add/remove`` under ``parent_app``."""
+    if not (ref.multi and ref.sub_endpoint and ref.kind):
+        return
+
+    sub = create_app(
+        name=ref.sub_endpoint,
+        help=f"Manage {ref.kind} membership on {spec.kind}.{ref.field}.",
+    )
+
+    _add_membership_verb(sub, spec, ref, action="associate", verb="add")
+    _add_membership_verb(sub, spec, ref, action="disassociate", verb="remove")
+    parent_app.command(sub)
+
+
+def _add_membership_verb(
+    sub: App,
+    spec: AwxResourceSpec,
+    ref: FkRef,
+    *,
+    action: Literal["associate", "disassociate"],
+    verb: str,
+) -> None:
+    preposition = "to" if action == "associate" else "from"
+    verb_doc = "Associate" if action == "associate" else "Disassociate"
+    help_text = f"{verb_doc} {ref.kind}(s) {preposition} a {spec.kind}."
+
+    @sub.command(name=verb, help=help_text)
+    def cmd(
+        parent: Annotated[str, Parameter(help=f"{spec.kind} name.")],
+        members: Annotated[list[str] | None, Parameter(help=f"{ref.kind} name(s).")] = None,
+        *,
+        stdin: Annotated[
+            bool,
+            Parameter(
+                name="--stdin",
+                negative="",
+                help="Read member names from stdin (one per line).",
+            ),
+        ] = False,
+        by_id: ByIdOption = False,
+        organization: OrganizationOption = None,
+        inventory: InventoryOption = None,
+        inventory_organization: InventoryOrganizationOption = None,
+    ) -> None:
+        any_failed = False
+        with report_errors(), open_context() as ctx:
+            assert ref.kind is not None  # guarded by register_membership_subapp
+            member_spec = ctx.catalog.get(ref.kind)
+            member_ids_input = read_identifiers(
+                list(members or []),
+                stdin=stdin,
+                id_field=id_field_for(member_spec, by_id=by_id),
+            )
+            parent_scope = scope_for_command(
+                ctx,
+                organization,
+                spec,
+                inventory=inventory,
+                inventory_organization=inventory_organization,
+            )
+            getter = GetResource(ctx.repo)
+            parent_rec = getter.by_identifier(spec, parent, scope=parent_scope, by_id=by_id)
+            parent_id = int(parent_rec["id"])
+
+            member_scope = _member_scope(parent_rec, ref)
+            resolved_ids, any_failed = resolve_each(
+                member_ids_input,
+                lambda n: int(
+                    getter.by_identifier(member_spec, n, scope=member_scope, by_id=by_id)["id"]
+                ),
+            )
+
+            ManageMembership(ctx.repo)(
+                spec,
+                parent_id=parent_id,
+                ref=ref,
+                member_ids=resolved_ids,
+                action=action,
+            )
+        finish(any_failed)
+
+
+def _member_scope(parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str] | None:
+    """Derive the scope dict for member name lookups from the parent record.
+
+    For ``scope_field="organization"`` refs (JobTemplate ``credentials``),
+    members live in the same organization as the parent template.
+
+    For ``scope_field="inventory"`` refs (Group's ``hosts`` / ``children``),
+    members live in the same inventory as the parent and we pull both
+    ``name`` and ``organization_name`` out of ``summary_fields.inventory``
+    so cross-org disambiguation (same-named inventories across orgs)
+    matches the convention ``scope_for_spec`` uses. ``--by-id`` bypasses
+    name lookup entirely so a missing scope only matters when the user
+    pipes names.
+    """
+    if ref.scope_field == "organization":
+        organization = _organization_name(parent_rec)
+        if organization:
+            return {"organization": organization}
+        return None
+    if ref.scope_field != "inventory":
+        return None
+    summary = parent_rec.get("summary_fields")
+    if not isinstance(summary, dict):
+        return None
+    inv = summary.get("inventory")
+    if not isinstance(inv, dict):
+        return None
+    name = inv.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    scope: dict[str, str] = {"inventory": name}
+    org_name = inv.get("organization_name")
+    if isinstance(org_name, str) and org_name:
+        scope["inventory__organization"] = org_name
+    return scope
+
+
+def _organization_name(parent_rec: dict[str, Any]) -> str | None:
+    value = parent_rec.get("organization_name")
+    if isinstance(value, str) and value:
+        return value
+    summary = parent_rec.get("summary_fields")
+    if not isinstance(summary, dict):
+        return None
+    org = summary.get("organization")
+    if not isinstance(org, dict):
+        return None
+    name = org.get("name")
+    return name if isinstance(name, str) and name else None
