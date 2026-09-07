@@ -436,7 +436,12 @@ def _inspect_github_prefix(
 ) -> tuple[GitHubRelease, set[str]]:
     """Inspect the exact release/tag/asset prefix shared by every transition."""
     release = _require_release(transport.inspect_github_release(tag=candidate.tag), candidate)
-    _verify_release_identity(release, candidate, transport=transport)
+    _verify_release_identity(
+        release,
+        candidate,
+        transport=transport,
+        allow_missing_tag=release.draft,
+    )
     missing = _verify_hash_map(
         expected=candidate.artifact_hashes,
         actual=transport.inspect_github_assets(release),
@@ -525,6 +530,7 @@ def _verify_release_identity(
     candidate: ReleaseCandidate,
     *,
     transport: PublicationTransport | None = None,
+    allow_missing_tag: bool = False,
 ) -> None:
     if release.tag != candidate.tag:
         raise ReleaseCheckError(
@@ -537,6 +543,8 @@ def _verify_release_identity(
         )
     if transport is not None:
         actual_target = transport.inspect_tag_target(tag=candidate.tag)
+        if actual_target is None and allow_missing_tag and release.draft:
+            return
         if actual_target != candidate.candidate_oid:
             raise ReleaseCheckError(
                 f"Git tag {candidate.tag} resolves to {actual_target!r}, expected "
