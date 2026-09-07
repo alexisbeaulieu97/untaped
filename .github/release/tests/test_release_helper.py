@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import re
 import subprocess
 import urllib.error
@@ -455,6 +456,59 @@ def test_smoke_console_fails_when_console_script_missing(tmp_path: Path) -> None
         )
 
 
+def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
+    release = _load_helper()
+    python_path = tmp_path / "venv" / "bin" / "python"
+    console_script = tmp_path / "venv" / "bin" / "untaped"
+    console_script.parent.mkdir(parents=True)
+    python_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    console_script.write_text("#!/bin/sh\n", encoding="utf-8")
+    console_script.chmod(0o755)
+    root_commands = (
+        "config profile skills doctor capabilities workspace github jira awx ansible recipe "
+        "orchestration"
+    )
+    rows = [
+        {
+            "name": command,
+            "origin": "built-in",
+            "status": "ready",
+            "distribution": "untaped",
+            "version": "4.0.0rc1",
+            "api": ">=1.0,<2.0",
+        }
+        for command in release.BUILTIN_CAPABILITIES
+    ]
+
+    def runner(
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        metadata_command = (
+            "import importlib.metadata as metadata; print(metadata.version('untaped'))"
+        )
+        if command == [str(python_path), "-c", metadata_command]:
+            return subprocess.CompletedProcess(command, 0, "4.0.0rc1\n", "")
+        if command == [str(console_script), "--version"]:
+            return subprocess.CompletedProcess(command, 0, "4.0.0rc1\n", "")
+        if command == [str(console_script), "--help"]:
+            return subprocess.CompletedProcess(command, 0, root_commands, "")
+        if command == [str(console_script), "capabilities", "--format", "json"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps(rows), "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    release.smoke_unified_app(
+        package_name="untaped",
+        version="4.0.0rc1",
+        python_path=python_path,
+        console_script=console_script,
+        runner=runner,
+    )
+
+
 def test_reusable_release_templates_require_checker_sha_substitution() -> None:
     workflow_template = RELEASE_WORKFLOW_TEMPLATE.read_text(encoding="utf-8")
     test_template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
@@ -524,3 +578,342 @@ def test_reusable_release_test_template_keeps_immutable_checker_ref_contract() -
     immutable_assertion = template.index("assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)")
     checkout_comparison = template.index('assert step["with"]["ref"] == CORE_RELEASE_TOOL_SHA')
     assert immutable_assertion < checkout_comparison
+
+
+class _FakePublicationTransport:
+    def __init__(self, release: Any = None, index_files: dict[str, str] | None = None) -> None:
+        self.release = release
+        self.assets: dict[str, str] = dict(release.assets) if release is not None else {}
+        self.index_files = index_files
+        self.calls: list[str] = []
+        self.fail_after: str | None = None
+        self.tag_target: str | None = None
+
+    def _fail(self, operation: str) -> None:
+        if self.fail_after == operation:
+            self.fail_after = None
+            raise release_module.ReleaseCheckError(f"injected {operation} failure")
+
+    def inspect_github_release(self, *, tag: str) -> Any:
+        self.calls.append(f"inspect-release:{tag}")
+        return self.release
+
+    def inspect_tag_target(self, *, tag: str) -> str | None:
+        if self.tag_target is not None:
+            return self.tag_target
+        return None if self.release is None else self.release.target_oid
+
+    def create_github_draft(self, candidate: Any) -> Any:
+        self.calls.append("create-draft")
+        self.release = release_module.GitHubRelease(
+            release_id="1",
+            tag=candidate.tag,
+            target_oid=candidate.candidate_oid,
+            draft=True,
+            assets={},
+        )
+        self._fail("create-draft")
+        return self.release
+
+    def inspect_github_assets(self, release: Any) -> dict[str, str]:
+        self.calls.append("inspect-assets")
+        return dict(self.assets)
+
+    def upload_github_asset(self, release: Any, artifact: Any) -> None:
+        self.calls.append(f"upload-asset:{artifact.filename}")
+        self.assets[artifact.filename] = artifact.sha256
+        self._fail("upload-asset")
+
+    def inspect_index(self, *, index: str, candidate: Any) -> dict[str, str] | None:
+        self.calls.append(f"inspect-index:{index}")
+        return None if self.index_files is None else dict(self.index_files)
+
+    def upload_index(self, *, index: str, candidate: Any) -> None:
+        self.calls.append(f"upload-index:{index}")
+        self.index_files = candidate.artifact_hashes
+        self._fail("upload-index")
+
+    def smoke_published(self, *, index: str, candidate: Any) -> None:
+        self.calls.append(f"smoke:{index}")
+        self._fail("smoke")
+
+    def publish_github_release(self, release: Any) -> Any:
+        self.calls.append("publish-release")
+        self.release = release_module.GitHubRelease(
+            release_id=release.release_id,
+            tag=release.tag,
+            target_oid=release.target_oid,
+            draft=False,
+            assets=dict(self.assets),
+        )
+        self._fail("publish-release")
+        return self.release
+
+
+def _candidate(tmp_path: Path) -> Any:
+    wheel = tmp_path / "untaped-4.0.0rc1-py3-none-any.whl"
+    sdist = tmp_path / "untaped-4.0.0rc1.tar.gz"
+    wheel.write_bytes(b"wheel")
+    sdist.write_bytes(b"sdist")
+    artifact_type = release_module.ReleaseArtifact
+    artifacts = tuple(
+        artifact_type(path.name, __import__("hashlib").sha256(path.read_bytes()).hexdigest(), path)
+        for path in (wheel, sdist)
+    )
+    return release_module.ReleaseCandidate("untaped", "4.0.0rc1", "a" * 40, artifacts)
+
+
+release_module: ModuleType = _load_helper()
+
+
+def test_manifest_matches_package_and_lock() -> None:
+    release_module.validate_release_manifest(lock_path=REPO_ROOT / "uv.lock")
+
+
+def test_manifest_rejects_mutated_core_source_provenance(tmp_path: Path) -> None:
+    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
+    altered = text.replace(
+        "oid = \"2283bfc51ea2cdcd4195e76eec4f3fa985479ced\"",
+        f'oid = "{"b" * 40}"',
+        1,
+    )
+    path = tmp_path / "release-manifest.toml"
+    path.write_text(altered, encoding="utf-8")
+    with pytest.raises(release_module.ReleaseCheckError, match="core source oid"):
+        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
+
+
+def test_manifest_rejects_broadened_source_intersection(tmp_path: Path) -> None:
+    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
+    altered = text.replace('filelock = ">=3.29.7,<4"', 'filelock = ">=3.29.0,<4"', 1)
+    path = tmp_path / "release-manifest.toml"
+    path.write_text(altered, encoding="utf-8")
+    with pytest.raises(release_module.ReleaseCheckError, match="source dependency intersections"):
+        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
+
+
+@pytest.mark.parametrize(
+    ("needle", "message"),
+    [
+        ("capabilities = [", "capability order"),
+        ("version = \"4.0.0rc1\"", "version"),
+        ("requires-python = \">=3.14\"", "Python floor"),
+    ],
+)
+def test_manifest_rejects_stale_public_identity(
+    tmp_path: Path, needle: str, message: str
+) -> None:
+    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
+    if needle == "capabilities = [":
+        altered = re.sub(
+            r"^capabilities = .*?$",
+            'capabilities = ["workspace"]',
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        replacement = None
+    elif needle == 'requires-python = ">=3.14"':
+        replacement = 'requires-python = ">=3.13"'
+    else:
+        replacement = needle.replace("4.0.0rc1", "4.0.0")
+    if replacement is not None:
+        altered = text.replace(needle, replacement, 1)
+    path = tmp_path / "release-manifest.toml"
+    path.write_text(altered, encoding="utf-8")
+    with pytest.raises(release_module.ReleaseCheckError, match=message):
+        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
+
+
+def test_release_candidate_requires_exact_commit_and_wheel_sdist_set(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "untaped-4.0.0rc1-py3-none-any.whl").write_bytes(b"wheel")
+    (dist / "untaped-4.0.0rc1.tar.gz").write_bytes(b"sdist")
+    pyproject = REPO_ROOT / "pyproject.toml"
+    candidate = release_module.collect_release_candidate(
+        version="4.0.0rc1",
+        candidate_oid="a" * 40,
+        current_oid="a" * 40,
+        dist_dir=dist,
+        pyproject_path=pyproject,
+    )
+    assert candidate.artifact_hashes == {
+        "untaped-4.0.0rc1-py3-none-any.whl": __import__("hashlib").sha256(b"wheel").hexdigest(),
+        "untaped-4.0.0rc1.tar.gz": __import__("hashlib").sha256(b"sdist").hexdigest(),
+    }
+    with pytest.raises(release_module.ReleaseCheckError, match="does not match reviewed"):
+        release_module.collect_release_candidate(
+            version="4.0.0rc1",
+            candidate_oid="b" * 40,
+            current_oid="a" * 40,
+            dist_dir=dist,
+            pyproject_path=pyproject,
+        )
+
+
+def test_publication_fresh_run_follows_draft_index_smoke_publish(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+
+    assert (
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+        == release_module.PublicationState.GITHUB_PUBLISHED
+    )
+    assert transport.calls.count("create-draft") == 1
+    assert transport.calls.count("upload-index:pypi") == 1
+    assert transport.calls[-3:] == ["smoke:pypi", "inspect-release:v4.0.0rc1", "publish-release"]
+
+
+def test_publication_resume_skips_exact_draft_assets_and_index_upload(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=True,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+
+    release_module.run_publication(candidate, index="pypi", transport=transport)
+
+    assert "create-draft" not in transport.calls
+    assert not any(call.startswith("upload-asset:") for call in transport.calls)
+    assert "upload-index:pypi" not in transport.calls
+    assert transport.calls[-3:] == ["smoke:pypi", "inspect-release:v4.0.0rc1", "publish-release"]
+
+
+def test_publication_complete_matching_release_is_verified_noop(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=False,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+
+    assert (
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+        == release_module.PublicationState.GITHUB_PUBLISHED
+    )
+    assert "publish-release" not in transport.calls
+    assert transport.calls[-1] == "smoke:pypi"
+
+
+def test_publication_injected_upload_failure_resumes_without_duplicate(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+    transport.fail_after = "upload-index"
+    with pytest.raises(release_module.ReleaseCheckError, match="injected upload-index"):
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+
+    before = transport.calls.count("upload-index:pypi")
+    release_module.run_publication(candidate, index="pypi", transport=transport)
+    assert before == 1
+    assert transport.calls.count("upload-index:pypi") == 1
+
+
+@pytest.mark.parametrize("conflict", ["target", "tag", "asset", "extra", "index"])
+def test_publication_conflicts_fail_closed_before_next_mutation(
+    tmp_path: Path, conflict: str
+) -> None:
+    candidate = _candidate(tmp_path)
+    target = "b" * 40 if conflict == "target" else candidate.candidate_oid
+    assets = dict(candidate.artifact_hashes)
+    index = dict(candidate.artifact_hashes)
+    if conflict == "asset":
+        assets[next(iter(assets))] = "0" * 64
+    elif conflict == "extra":
+        assets["unexpected.txt"] = "0" * 64
+    elif conflict == "index":
+        index[next(iter(index))] = "0" * 64
+    release = release_module.GitHubRelease(
+        release_id="1", tag=candidate.tag, target_oid=target, draft=True, assets=assets
+    )
+    transport = _FakePublicationTransport(release, index if conflict == "index" else None)
+    if conflict == "tag":
+        transport.tag_target = "b" * 40
+    with pytest.raises(release_module.ReleaseCheckError):
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+    assert "upload-index:pypi" not in transport.calls
+    assert "publish-release" not in transport.calls
+
+
+def test_testpypi_resume_omits_github_draft_leg(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+
+    assert (
+        release_module.run_publication(candidate, index="testpypi", transport=transport)
+        == release_module.PublicationState.PUBLISHED_SMOKE
+    )
+    assert not any(
+        call.endswith("-draft") or call.startswith("upload-asset")
+        for call in transport.calls
+    )
+    assert "upload-index:testpypi" in transport.calls
+
+
+def test_simple_index_rejects_unexpected_same_version_file(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    hashes = candidate.artifact_hashes
+    html = "".join(
+        f'<a href="{name}#sha256={digest}">{name}</a>'
+        for name, digest in hashes.items()
+    )
+    html += '<a href="untaped-4.0.0rc1-extra.whl#sha256=' + "0" * 64 + '">extra</a>'
+
+    class HtmlResponse(_Response):
+        def read(self) -> bytes:
+            return html.encode("utf-8")
+
+    transport = release_module.SimpleIndexTransport(
+        urlopen=lambda _request, timeout: HtmlResponse()
+    )
+    with pytest.raises(release_module.ReleaseCheckError, match="unexpected files"):
+        release_module.verify_index_artifacts(candidate, index="pypi", transport=transport)
+
+
+def test_prepare_index_upload_copies_only_missing_artifacts(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    existing = {
+        next(iter(candidate.artifact_hashes)): next(iter(candidate.artifact_hashes.values()))
+    }
+    transport = _FakePublicationTransport(index_files=existing)
+    upload_dir = tmp_path / "upload"
+
+    assert not release_module.prepare_index_upload(
+        candidate,
+        index="pypi",
+        transport=transport,
+        output_dir=upload_dir,
+    )
+    assert [path.name for path in upload_dir.iterdir()] == [
+        "untaped-4.0.0rc1.tar.gz"
+    ]
+
+
+def test_github_transport_peels_annotated_tag_to_commit() -> None:
+    release = release_module.GitHubReleaseTransport
+    tag_object = "b" * 40
+    commit_object = "a" * 40
+
+    class JsonResponse(_Response):
+        def __init__(self, payload: dict[str, Any]) -> None:
+            super().__init__()
+            self.payload = payload
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode("utf-8")
+
+    def urlopen(request: Any, timeout: int) -> JsonResponse:
+        if request.full_url.endswith("/git/ref/tags/v4.0.0rc1"):
+            return JsonResponse({"object": {"type": "tag", "sha": tag_object}})
+        assert request.full_url.endswith(f"/git/tags/{tag_object}")
+        return JsonResponse({"object": {"type": "commit", "sha": commit_object}})
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    assert transport.inspect_tag_target(tag="v4.0.0rc1") == commit_object

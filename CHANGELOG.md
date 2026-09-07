@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased (Wave 1.5)
+## Unreleased (Wave 2)
+
+- Completed the unified v4 release boundary: one `untaped` wheel and source
+  archive, a public source-provenance manifest, and shared local/published
+  executable smoke coverage for all seven built-in capabilities.
+- Added a restartable, exact-identity release path that validates the reviewed
+  candidate, GitHub draft assets, package-index hashes, published smoke, and
+  final GitHub draft publication without overwriting immutable release state.
+- Preserved imported standalone source history and stable skill IDs while
+  documenting the seven root capability commands.
+
+## Historical imports (Wave 1.5)
 
 - Imported `untaped-workspace` (approved OID `f9c2fd6`) as the built-in
   `untaped workspace` capability with history preserved. Standalone

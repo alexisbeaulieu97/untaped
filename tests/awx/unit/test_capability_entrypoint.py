@@ -57,7 +57,7 @@ def test_spec_is_awx_capability() -> None:
     }
     (skill,) = SPEC.skills
     assert skill.name == "untaped-awx"
-    assert skill.description == "Use the untaped-awx CLI."
+    assert skill.description == "Use the built-in `untaped awx` capability for AWX/AAP workflows."
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 

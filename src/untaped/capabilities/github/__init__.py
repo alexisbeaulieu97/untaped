@@ -47,7 +47,7 @@ SPEC = CapabilitySpec(
             source=Path(
                 str(files("untaped.capabilities.github").joinpath("skills", "untaped-github"))
             ),
-            description="Use the untaped-github CLI.",
+            description="Use the built-in `untaped github` capability for GitHub workflows.",
         ),
     ),
     doctor_checks=(),

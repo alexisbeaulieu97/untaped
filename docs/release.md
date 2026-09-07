@@ -1,9 +1,10 @@
 # Releasing `untaped` to PyPI/TestPyPI
 
-The SDK releases through `.github/workflows/release.yml`. The workflow is
-manual-only, publishes with PyPI Trusted Publishing, smoke-installs the
-published package from the selected index, and creates the GitHub release/tag
-only after a production PyPI smoke succeeds.
+The unified `untaped` application releases through
+`.github/workflows/release.yml`. The workflow is manual-only, builds one wheel
+and one source archive, uses PyPI Trusted Publishing, smoke-installs the
+published package from the selected index, and publishes an exact GitHub draft
+only after the production smoke succeeds.
 
 Do not publish, dispatch release workflows, create tags/releases, merge PRs, or
 change repository settings without explicit approval for that exact action.
@@ -11,14 +12,17 @@ change repository settings without explicit approval for that exact action.
 ## Package Metadata
 
 - Package name: `untaped`
-- Current release target: `3.1.0`
+- Current release target: `4.0.0rc1`
 - License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
 - Build command: `uv build --no-sources`
-- SDK smoke: install the wheel, import `untaped.api`, and assert no `untaped`
-  console script exists.
-- Tool-package smoke: when a package declares a console script, invoke its real
-  installed `<script> --version` and require stdout to equal the distribution
-  version plus one trailing newline before checking `--help`.
+- Public manifest: [`release-manifest.toml`](../release-manifest.toml), which
+  records the package identity, Python floor, seven built-ins, direct
+  requirements, and imported source OIDs.
+- Unified smoke: install the wheel, invoke the executable `untaped`, require
+  exact metadata and `untaped --version`, check the five management and seven
+  capability roots in root help, then resolve every capability's `--help`
+  command offline. Local and published jobs call the same
+  `.github/release/release.py smoke-unified` implementation.
 
 ## Trusted Publishers
 
@@ -44,6 +48,8 @@ them deliberately, and record what changed in the release PR or release notes.
 Inputs:
 
 - `version`: release version without a leading `v`.
+- `candidate_oid`: full 40-character reviewed commit SHA. It must equal the
+  checkout's `GITHUB_SHA`.
 - `index`: `testpypi` or `pypi`.
 
 Rules:
@@ -54,33 +60,49 @@ Rules:
 - After `release.yml` exists on `main`, later TestPyPI rehearsals may target a
   reviewed release branch via the dispatch `ref`.
 - Production PyPI must run from `refs/heads/main`; the workflow fails otherwise.
-- Build/test/smoke runs in a read-only build job.
+- Candidate identity and the package manifest are checked before any remote
+  mutation. Build/test/local smoke run in a read-only job.
+- A production run creates or resumes a GitHub draft targeted at the exact
+  candidate and containing exactly the wheel and source archive. Existing
+  drafts and assets are accepted only after their tag, target, and SHA-256
+  values match.
 - The publish job only downloads the built distributions and calls
   `pypa/gh-action-pypi-publish`; it has `id-token: write` but no write access
   to repository contents.
-- The published-package smoke runs after upload in a read-only job.
-- The GitHub release/tag job runs only for `index = pypi` after the published
-  smoke passes, and it is the only job with `contents: write`.
+- The published-package job verifies the exact index filename-to-SHA-256 set
+  and runs the shared unified smoke in a read-only job.
+- The final GitHub job runs only for `index = pypi` after the published smoke
+  passes, and publishes the already validated draft. It never creates a
+  replacement release or overwrites an asset.
 - Action refs are pinned to full commit SHAs.
 - `pypa/gh-action-pypi-publish` performs the upload; do not use `uv publish`
   for this workflow because the PyPA action emits provenance attestations under
   Trusted Publishing.
 
+## Restartable state machine
+
+Production publication is an ordered prefix:
+
+1. validate the reviewed candidate, package metadata, wheel, source archive,
+   and local smoke;
+2. create or inspect the exact GitHub draft and upload only missing exact
+   assets;
+3. inspect the selected index for the exact immutable filename/hash set and
+   upload through Trusted Publishing when absent;
+4. install and smoke the published package;
+5. publish the matching GitHub draft.
+
+Retries inspect every completed prefix before continuing. Missing, conflicting,
+ambiguous, or unverifiable remote state fails closed. A fully matching
+published release is a verified no-op after the published smoke. TestPyPI
+rehearsals omit the GitHub draft/publish states but retain immutable-file and
+smoke verification.
+
 ## Release Order
 
-For the repo family, keep dependency gates strict:
-
-1. Release `untaped` first.
-2. Release leaf tools after `untaped` is on production PyPI.
-3. Release `untaped-ansible` after `untaped-github` is on production PyPI.
-4. Release `untaped-recipe` last.
-
-Downstream suite repos carry no standing git source pins — internal
-dependencies resolve from PyPI in development and CI alike (a dev-only
-`[tool.uv.sources]` entry used while co-developing the SDK and a tool is
-removed before merging). The release build must use `uv build --no-sources`,
-and release checks must prove internal dependency floors resolve from the
-target index before upload.
+The v4 package is the release unit. The imported source OIDs and dependency
+intersections are recorded in the public manifest; standalone source history
+remains provenance for review.
 
 ## Adopting the release pipeline in a tool
 
@@ -109,17 +131,20 @@ upstream untaped packages during the release wave.
 
 ## Burn Recovery
 
-If upload succeeds but the post-upload smoke fails, the version may be burned on
-that index. Do not retry by overwriting the same version. Bump patch, relock,
-open or update the PR, and repeat the TestPyPI/PyPI cycle.
+Before publication, abort and restore the verified checkpoint in a fresh
+checkout. Rehearse that restore and the draft/index boundaries with a local
+fake transport before an authorized run.
+
+After any public upload, files and tags are immutable. If smoke or GitHub
+publication fails, reconcile the exact published state and fix forward under a
+new approved version; never overwrite a filename, delete/reuse a tag, or retry
+an ambiguous upload. Restore standalone operational paths from accepted source
+bundles without destroying live checkouts, and preserve restricted config,
+state, and expected skill manifests. Laptop cutover and later private
+retirement checks are separate gates.
 
 ## Follow-Up
 
-After all active packages have completed one TestPyPI and one PyPI cycle, run a
-consolidation review:
-
-- Compare duplicated release workflow blocks across repos.
-- Keep repo-local workflows unless a shared helper removes real maintenance
-  cost without hiding package-specific safety checks.
-- Re-check whether contract tests should stay in pytest or move security
-  hygiene checks to `zizmor`/`actionlint`.
+The external freeze receipt binds the final local candidate OID and artifact
+hashes. It is separate from the public manifest and from any later runtime
+attestation or cutover record.

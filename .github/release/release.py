@@ -1,9 +1,7 @@
 """Shared release workflow checks for untaped packages."""
 
-from __future__ import annotations
-
 import argparse
-import ast
+import json
 import os
 import re
 import subprocess
@@ -20,34 +18,196 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised by monkeypatch.
     tomllib = None  # type: ignore[assignment]
 
-ROOT = Path(__file__).resolve().parents[2]
-PYPROJECT = ROOT / "pyproject.toml"
-VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z0-9][A-Za-z0-9._+-]*)?")
-TESTPYPI_INDEX = "https://test.pypi.org/simple/"
+_RELEASE_DIR = Path(__file__).resolve().parent
+if str(_RELEASE_DIR) not in sys.path:
+    sys.path.insert(0, str(_RELEASE_DIR))
+
+from _publication import (  # noqa: E402
+    GitHubRelease,
+    PublicationState,
+    PublicationTransport,
+    ReleaseArtifact,
+    ReleaseCandidate,
+    collect_release_candidate,
+    ensure_github_draft,
+    prepare_index_upload,
+    publish_github_draft,
+    run_publication,
+    validate_release_manifest,
+    verify_candidate_oid,
+    verify_index_artifacts,
+)
+from _release_core import (  # noqa: E402
+    BUILTIN_CAPABILITIES,
+    FULL_SHA_RE,
+    MANAGEMENT_COMMANDS,
+    MANIFEST,
+    PYPI_INDEX,
+    PYPROJECT,
+    ROOT,
+    SHA256_RE,
+    SOURCE_EVIDENCE_PATH,
+    TESTPYPI_INDEX,
+    VERSION_RE,
+    ReleaseCheckError,
+    dependency_name,
+    normalize_package_name,
+    parse_project_metadata,
+    project_metadata,
+    requirement_specifier,
+    verify_version,
+)
+from _release_transport import GitHubReleaseTransport, SimpleIndexTransport  # noqa: E402
+
+__all__ = [
+    "BUILTIN_CAPABILITIES",
+    "FULL_SHA_RE",
+    "MANAGEMENT_COMMANDS",
+    "MANIFEST",
+    "PYPI_INDEX",
+    "PYPROJECT",
+    "ROOT",
+    "SHA256_RE",
+    "SOURCE_EVIDENCE_PATH",
+    "TESTPYPI_INDEX",
+    "VERSION_RE",
+    "GitHubRelease",
+    "GitHubReleaseTransport",
+    "PublicationState",
+    "PublicationTransport",
+    "ReleaseArtifact",
+    "ReleaseCandidate",
+    "ReleaseCheckError",
+    "SimpleIndexTransport",
+    "collect_release_candidate",
+    "ensure_github_draft",
+    "prepare_index_upload",
+    "publish_github_draft",
+    "run_publication",
+    "validate_release_manifest",
+    "verify_candidate_oid",
+    "verify_index_artifacts",
+]
 
 
-class ReleaseCheckError(RuntimeError):
-    """A release precondition failed."""
+_dependency_name = dependency_name
+_normalize_package_name = normalize_package_name
+_parse_project_metadata = parse_project_metadata
+_requirement_specifier = requirement_specifier
+_core_verify_version = verify_version
 
 
-def verify_version(version: str, *, pyproject_path: Path = PYPROJECT) -> None:
-    """Verify the requested release version is safe and matches project metadata."""
-    if VERSION_RE.fullmatch(version) is None:
-        raise ReleaseCheckError(f"unsafe or invalid release version input: {version!r}")
-
-    project = _project_metadata(pyproject_path)
-    actual = str(project["version"])
-    if actual != version:
+def smoke_unified_app(
+    *,
+    package_name: str,
+    version: str,
+    python_path: Path,
+    console_script: Path,
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> None:
+    """Run the single installed-app smoke used by local and published jobs."""
+    smoke_console(
+        package_name=package_name,
+        version=version,
+        python_path=python_path,
+        console_script=console_script,
+        runner=runner,
+    )
+    root_help = _run_smoke_command([str(console_script), "--help"], runner=runner)
+    root_output = f"{root_help.stdout}\n{root_help.stderr}"
+    for command in (*MANAGEMENT_COMMANDS, *BUILTIN_CAPABILITIES):
+        if re.search(rf"(?<![a-z0-9_-]){re.escape(command)}(?![a-z0-9_-])", root_output) is None:
+            raise ReleaseCheckError(f"root help is missing command {command!r}")
+    capability_listing = _run_smoke_command(
+        [str(console_script), "capabilities", "--format", "json"],
+        runner=runner,
+    )
+    try:
+        capability_rows = json.loads(capability_listing.stdout)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ReleaseCheckError("capabilities metadata was not valid JSON") from error
+    expected_rows = [
+        {
+            "name": command,
+            "origin": "built-in",
+            "status": "ready",
+            "distribution": package_name,
+            "version": version,
+            "api": ">=1.0,<2.0",
+        }
+        for command in BUILTIN_CAPABILITIES
+    ]
+    if capability_rows != expected_rows:
         raise ReleaseCheckError(
-            f"workflow input version {version!r} does not match pyproject.toml {actual!r}"
+            "capabilities metadata did not contain the exact seven ready built-ins"
         )
-    print(f"ok: package metadata version matches workflow input {version}")
+    for command in BUILTIN_CAPABILITIES:
+        _run_smoke_command([str(console_script), command, "--help"], runner=runner)
+    print(
+        "ok: unified app smoke passed for "
+        f"{package_name} {version} ({len(MANAGEMENT_COMMANDS)} management, "
+        f"{len(BUILTIN_CAPABILITIES)} capabilities)"
+    )
 
 
-def verify_target_unused(version: str) -> None:
-    """Fail closed if the production GitHub release or tag already exists."""
-    check_github_release_absent(version)
-    check_git_tag_absent(version)
+def _run_smoke_command(
+    command: list[str],
+    *,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    completed = runner(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise ReleaseCheckError(f"{' '.join(command)} failed: {detail}")
+    return completed
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    if tomllib is None:
+        raise ReleaseCheckError("TOML validation requires Python 3.11 or newer")
+    try:
+        parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ReleaseCheckError(f"could not read TOML file {path}: {error}") from error
+    return parsed
+
+
+def verify_target_unused(
+    version: str,
+    *,
+    candidate_oid: str | None = None,
+    current_oid: str | None = None,
+) -> None:
+    """Fail closed on conflicts, while allowing an exact resumable prefix."""
+    if candidate_oid is None:
+        check_github_release_absent(version)
+        check_git_tag_absent(version)
+        return
+    if current_oid is None:
+        raise ReleaseCheckError("current OID is required when checking an existing release prefix")
+    verify_candidate_oid(candidate_oid, current_oid)
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not repo or not token:
+        raise ReleaseCheckError(
+            "could not verify existing release prefix: repository/token missing"
+        )
+    transport = GitHubReleaseTransport(repo=repo, token=token)
+    release = transport.inspect_github_release(tag=f"v{version}")
+    if release is None:
+        check_git_tag_absent(version)
+        print(f"ok: GitHub release v{version} and its tag are absent")
+        return
+    if release.tag != f"v{version}" or release.target_oid != candidate_oid:
+        raise ReleaseCheckError(
+            f"existing GitHub release v{version} does not match reviewed candidate state"
+        )
+    if transport.inspect_tag_target(tag=release.tag) != candidate_oid:
+        raise ReleaseCheckError(
+            f"existing Git tag v{version} does not resolve to the reviewed candidate"
+        )
+    state = "draft" if release.draft else "published"
+    print(f"ok: existing GitHub {state} v{version} targets reviewed candidate")
 
 
 def check_github_release_absent(
@@ -261,58 +421,127 @@ def smoke_console(
     print(f"ok: {package_name} {version} console script smoke passed")
 
 
-def _dependency_name(requirement: str) -> str:
-    match = re.match(r"([A-Za-z0-9_.-]+)", requirement)
-    if match is None:
-        return ""
-    return _normalize_package_name(match.group(1))
-
-
-def _normalize_package_name(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()
-
-
 def _project_metadata(pyproject_path: Path) -> dict[str, Any]:
-    text = pyproject_path.read_text(encoding="utf-8")
-    if tomllib is not None:
-        return tomllib.loads(text)["project"]
-    return _parse_project_metadata(text)
+    """Read project metadata, retaining the legacy tomllib fallback seam."""
+    return project_metadata(pyproject_path, tomllib_module=tomllib)
 
 
-def _parse_project_metadata(text: str) -> dict[str, Any]:
-    """Parse the project metadata subset needed by pre-sync release checks."""
-    project_lines: list[str] = []
-    in_project = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped == "[project]":
-            in_project = True
-            continue
-        if in_project and stripped.startswith("[") and stripped.endswith("]"):
-            break
-        if in_project:
-            project_lines.append(line)
+def verify_version(version: str, *, pyproject_path: Path = PYPROJECT) -> None:
+    """Verify the requested release version against project metadata."""
+    _core_verify_version(version, pyproject_path=pyproject_path, tomllib_module=tomllib)
 
-    project: dict[str, Any] = {}
-    index = 0
-    while index < len(project_lines):
-        stripped = project_lines[index].strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            index += 1
-            continue
 
-        key, raw_value = [part.strip() for part in stripped.split("=", maxsplit=1)]
-        if key in {"name", "version"}:
-            project[key] = ast.literal_eval(raw_value)
-        elif key == "dependencies":
-            value_lines = [raw_value]
-            while "]" not in value_lines[-1]:
-                index += 1
-                value_lines.append(project_lines[index].strip())
-            project[key] = ast.literal_eval("\n".join(value_lines))
-        index += 1
+def _collect_cli_candidate(args: argparse.Namespace) -> ReleaseCandidate:
+    return collect_release_candidate(
+        version=args.version,
+        candidate_oid=args.candidate_oid,
+        current_oid=args.current_oid,
+        dist_dir=args.dist,
+        pyproject_path=args.pyproject,
+    )
 
-    return project
+
+def _handle_verify_version(args: argparse.Namespace) -> None:
+    verify_version(args.version, pyproject_path=args.pyproject)
+
+
+def _handle_verify_target(args: argparse.Namespace) -> None:
+    verify_target_unused(
+        args.version,
+        candidate_oid=args.candidate_oid,
+        current_oid=args.current_oid,
+    )
+
+
+def _handle_verify_candidate_oid(args: argparse.Namespace) -> None:
+    verify_candidate_oid(args.candidate_oid, args.current_oid)
+
+
+def _handle_verify_internal_dependencies(args: argparse.Namespace) -> None:
+    verify_internal_dependencies_published(args.index, pyproject_path=args.pyproject)
+
+
+def _handle_smoke_console(args: argparse.Namespace) -> None:
+    smoke_console(
+        package_name=args.package,
+        version=args.version,
+        python_path=args.venv / "bin" / "python",
+        console_script=args.venv / "bin" / args.console_script,
+    )
+
+
+def _handle_smoke_unified(args: argparse.Namespace) -> None:
+    smoke_unified_app(
+        package_name=args.package,
+        version=args.version,
+        python_path=args.venv / "bin" / "python",
+        console_script=args.venv / "bin" / args.console_script,
+    )
+
+
+def _handle_verify_candidate(args: argparse.Namespace) -> None:
+    validate_release_manifest(
+        args.manifest,
+        pyproject_path=args.pyproject,
+        lock_path=ROOT / "uv.lock",
+    )
+    candidate = _collect_cli_candidate(args)
+    print(f"ok: candidate {candidate.candidate_oid} has {len(candidate.artifacts)} exact artifacts")
+
+
+def _handle_ensure_github_draft(args: argparse.Namespace) -> None:
+    candidate = _collect_cli_candidate(args)
+    transport = GitHubReleaseTransport(repo=args.repo, token=args.token or "")
+    release = ensure_github_draft(candidate, transport=transport)
+    print(f"ok: GitHub draft {release.tag} contains the exact candidate assets")
+
+
+def _handle_verify_index_artifacts(args: argparse.Namespace) -> None:
+    candidate = _collect_cli_candidate(args)
+    verify_index_artifacts(candidate, index=args.index, transport=SimpleIndexTransport())
+    print(f"ok: {args.index} contains the exact candidate assets")
+
+
+def _handle_prepare_index_upload(args: argparse.Namespace) -> None:
+    candidate = _collect_cli_candidate(args)
+    prepare_index_upload(
+        candidate,
+        index=args.index,
+        transport=SimpleIndexTransport(),
+        output_dir=args.output_dist,
+    )
+
+
+def _handle_publish_github_draft(args: argparse.Namespace) -> None:
+    candidate = _collect_cli_candidate(args)
+    transport = GitHubReleaseTransport(repo=args.repo, token=args.token or "")
+    release = publish_github_draft(candidate, transport=transport)
+    print(f"ok: GitHub release {release.tag} is published")
+
+
+def _handle_verify_manifest(args: argparse.Namespace) -> None:
+    validate_release_manifest(
+        args.manifest,
+        pyproject_path=args.pyproject,
+        lock_path=args.lock,
+    )
+    print(f"ok: release manifest {args.manifest} matches package metadata and lockfile")
+
+
+_COMMAND_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
+    "verify-version": _handle_verify_version,
+    "verify-target-unused": _handle_verify_target,
+    "verify-candidate-oid": _handle_verify_candidate_oid,
+    "verify-internal-dependencies-published": _handle_verify_internal_dependencies,
+    "smoke-console": _handle_smoke_console,
+    "smoke-unified": _handle_smoke_unified,
+    "verify-candidate": _handle_verify_candidate,
+    "ensure-github-draft": _handle_ensure_github_draft,
+    "verify-index-artifacts": _handle_verify_index_artifacts,
+    "prepare-index-upload": _handle_prepare_index_upload,
+    "publish-github-draft": _handle_publish_github_draft,
+    "verify-manifest": _handle_verify_manifest,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -326,6 +555,12 @@ def main(argv: list[str] | None = None) -> int:
 
     verify_target_parser = subparsers.add_parser("verify-target-unused")
     verify_target_parser.add_argument("version")
+    verify_target_parser.add_argument("--candidate-oid")
+    verify_target_parser.add_argument("--current-oid")
+
+    candidate_oid_parser = subparsers.add_parser("verify-candidate-oid")
+    candidate_oid_parser.add_argument("--candidate-oid", required=True)
+    candidate_oid_parser.add_argument("--current-oid", required=True)
 
     verify_internal_deps_parser = subparsers.add_parser("verify-internal-dependencies-published")
     verify_internal_deps_parser.add_argument("--index", choices=["testpypi", "pypi"], required=True)
@@ -337,28 +572,65 @@ def main(argv: list[str] | None = None) -> int:
     smoke_console_parser.add_argument("--venv", type=Path, required=True)
     smoke_console_parser.add_argument("--console-script", required=True)
 
+    smoke_unified_parser = subparsers.add_parser("smoke-unified")
+    smoke_unified_parser.add_argument("--package", required=True)
+    smoke_unified_parser.add_argument("--version", required=True)
+    smoke_unified_parser.add_argument("--venv", type=Path, required=True)
+    smoke_unified_parser.add_argument("--console-script", required=True)
+
+    candidate_parser = subparsers.add_parser("verify-candidate")
+    candidate_parser.add_argument("--version", required=True)
+    candidate_parser.add_argument("--candidate-oid", required=True)
+    candidate_parser.add_argument("--current-oid", required=True)
+    candidate_parser.add_argument("--dist", type=Path, required=True)
+    candidate_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
+    candidate_parser.add_argument("--manifest", type=Path, default=MANIFEST)
+
+    draft_parser = subparsers.add_parser("ensure-github-draft")
+    draft_parser.add_argument("--version", required=True)
+    draft_parser.add_argument("--candidate-oid", required=True)
+    draft_parser.add_argument("--current-oid", required=True)
+    draft_parser.add_argument("--dist", type=Path, required=True)
+    draft_parser.add_argument("--repo", required=True)
+    draft_parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
+    draft_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
+
+    index_parser = subparsers.add_parser("verify-index-artifacts")
+    index_parser.add_argument("--index", choices=["testpypi", "pypi"], required=True)
+    index_parser.add_argument("--version", required=True)
+    index_parser.add_argument("--candidate-oid", required=True)
+    index_parser.add_argument("--current-oid", required=True)
+    index_parser.add_argument("--dist", type=Path, required=True)
+    index_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
+
+    prepare_index_parser = subparsers.add_parser("prepare-index-upload")
+    prepare_index_parser.add_argument("--index", choices=["testpypi", "pypi"], required=True)
+    prepare_index_parser.add_argument("--version", required=True)
+    prepare_index_parser.add_argument("--candidate-oid", required=True)
+    prepare_index_parser.add_argument("--current-oid", required=True)
+    prepare_index_parser.add_argument("--dist", type=Path, required=True)
+    prepare_index_parser.add_argument("--output-dist", type=Path, required=True)
+    prepare_index_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
+
+    publish_parser = subparsers.add_parser("publish-github-draft")
+    publish_parser.add_argument("--version", required=True)
+    publish_parser.add_argument("--candidate-oid", required=True)
+    publish_parser.add_argument("--current-oid", required=True)
+    publish_parser.add_argument("--dist", type=Path, required=True)
+    publish_parser.add_argument("--repo", required=True)
+    publish_parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
+    publish_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
+
+    manifest_parser = subparsers.add_parser("verify-manifest")
+    manifest_parser.add_argument("--manifest", type=Path, default=MANIFEST)
+    manifest_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
+    manifest_parser.add_argument("--lock", type=Path, default=ROOT / "uv.lock")
+
     args = parser.parse_args(argv)
+    handler = _COMMAND_HANDLERS[args.command]
     try:
-        if args.command == "verify-version":
-            verify_version(args.version, pyproject_path=args.pyproject)
-        elif args.command == "verify-target-unused":
-            verify_target_unused(args.version)
-        elif args.command == "verify-internal-dependencies-published":
-            verify_internal_dependencies_published(args.index, pyproject_path=args.pyproject)
-        elif args.command == "smoke-console":
-            smoke_console(
-                package_name=args.package,
-                version=args.version,
-                python_path=args.venv / "bin" / "python",
-                console_script=args.venv / "bin" / args.console_script,
-            )
-        else:  # pragma: no cover - argparse enforces choices.
-            parser.error(f"unknown command: {args.command}")
+        handler(args)
     except ReleaseCheckError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

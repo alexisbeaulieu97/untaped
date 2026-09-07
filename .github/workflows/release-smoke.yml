@@ -14,9 +14,11 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  sdk-wheel-smoke:
+  unified-app-wheel-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      HOME: ${{ runner.temp }}/untaped-smoke-home
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -29,57 +31,20 @@ jobs:
           version: "0.11.26"
           enable-cache: true
 
-      # untaped is an SDK, not an app: the wheel must build, install cleanly,
-      # ship NO `untaped` console script (the central command is retired), and
-      # expose the exact public surface tools depend on. Tools live in their
-      # own repos and run their own install smokes; this gate proves the SDK
-      # boundary a tool builds against.
-      - name: Build the SDK wheel
-        run: uv build --wheel
+      - name: Build the unified app wheel
+        run: uv build --wheel --no-sources
 
       - name: Install the built wheel into an isolated venv
         run: |
-          uv venv --python 3.14 "$RUNNER_TEMP/venv"
-          uv pip install --python "$RUNNER_TEMP/venv/bin/python" dist/*.whl
+          set -euo pipefail
+          uv venv --python 3.14 "$RUNNER_TEMP/untaped-wheel"
+          uv pip install --python "$RUNNER_TEMP/untaped-wheel/bin/python" dist/*.whl
 
-      - name: Assert the SDK ships no console script
+      - name: Run the unified app smoke
         run: |
-          if [ -e "$RUNNER_TEMP/venv/bin/untaped" ]; then
-            echo "error: the SDK wheel installed an 'untaped' console script; the central command is retired" >&2
-            exit 1
-          fi
-
-      - name: Assert the public API surface resolves
-        run: |
-          "$RUNNER_TEMP/venv/bin/python" - <<'PY'
-          import untaped
-          import untaped.api
-
-          # The package root re-exports api.py verbatim.
-          assert untaped.__all__ == untaped.api.__all__, "root/api surface drift"
-
-          # The composition contract a tool builds against.
-          from untaped.api import (
-              ToolSpec,
-              SkillAsset,
-              register_tool,
-              run_tool,
-              build_tool_app,
-              app_context,
-          )
-
-          # A sampling of the frozen contract surface (config + pipe + http).
-          required = (
-              "ensure_config",
-              "mutate_tool_state",
-              "read_tool_state",
-              "get_config_section",
-              "PipeEnvelope",
-              "common_kind",
-              "connected_client",
-          )
-          missing = [name for name in required if not hasattr(untaped.api, name)]
-          assert not missing, f"missing SDK surface: {missing}"
-
-          print(f"ok: {len(untaped.api.__all__)} public names, no console script")
-          PY
+          set -euo pipefail
+          python3 .github/release/release.py smoke-unified \
+            --package untaped \
+            --version "$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" \
+            --venv "$RUNNER_TEMP/untaped-wheel" \
+            --console-script untaped

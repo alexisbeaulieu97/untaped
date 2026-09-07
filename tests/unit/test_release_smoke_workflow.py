@@ -1,9 +1,8 @@
 """Contract tests for the release smoke GitHub Actions workflow.
 
-The release smoke proves the SDK *boundary*: the wheel builds, installs clean,
-ships no central console script (the umbrella command is retired), and exposes
-the exact public surface tools depend on. These tests pin that intent so the
-workflow can't silently drift back into testing something else.
+The release smoke proves the unified application boundary: the wheel builds,
+installs clean, exposes the executable, and resolves every root and built-in
+capability command through the shared checked-in smoke helper.
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ EXPECTED_ACTION_REFS = {
         "cef221092ed1bacb1cc03d23a2d87d1d172e277b",
     ),
 }
-SMOKE_JOB = "sdk-wheel-smoke"
+SMOKE_JOB = "unified-app-wheel-smoke"
 
 
 def _load_yaml(path: Path) -> tuple[str, dict[str, Any]]:
@@ -87,10 +86,10 @@ def test_release_smoke_workflow_runs_on_pr_main_push_and_manual_dispatch() -> No
     assert job["runs-on"] == "ubuntu-latest"
 
 
-def test_release_smoke_workflow_builds_and_installs_the_sdk_wheel() -> None:
+def test_release_smoke_workflow_builds_and_installs_the_unified_app_wheel() -> None:
     _, workflow = _load_workflow()
 
-    assert "uv build --wheel" in _step_run(workflow, "Build the SDK wheel")
+    assert "uv build --wheel" in _step_run(workflow, "Build the unified app wheel")
 
     install = _step_run(workflow, "Install the built wheel into an isolated venv")
     assert "uv venv" in install
@@ -98,23 +97,19 @@ def test_release_smoke_workflow_builds_and_installs_the_sdk_wheel() -> None:
     assert "dist/*.whl" in install
 
 
-def test_release_smoke_workflow_asserts_no_console_script() -> None:
+def test_release_smoke_workflow_uses_the_shared_unified_smoke() -> None:
     _, workflow = _load_workflow()
-    run = _step_run(workflow, "Assert the SDK ships no console script")
+    run = _step_run(workflow, "Run the unified app smoke")
+    assert "release.py smoke-unified" in run
+    assert "--package untaped" in run
+    assert "--console-script untaped" in run
 
-    # The retired umbrella command must never reappear as an installed script.
-    assert "bin/untaped" in run
-    assert "exit 1" in run
 
-
-def test_release_smoke_workflow_asserts_public_api_surface_resolves() -> None:
+def test_release_smoke_workflow_has_no_legacy_sdk_surface_assertions() -> None:
     _, workflow = _load_workflow()
-    run = _step_run(workflow, "Assert the public API surface resolves")
-
-    # Root re-exports api.py verbatim, and the composition contract is present.
-    assert "untaped.__all__ == untaped.api.__all__" in run
-    for name in ("ToolSpec", "run_tool", "app_context"):
-        assert name in run
+    run = "\n".join(str(step.get("run", "")) for step in _steps(workflow))
+    assert "untaped.__all__ == untaped.api.__all__" not in run
+    assert "ToolSpec" not in run
 
 
 def test_workflow_actions_are_pinned_to_commit_shas() -> None:

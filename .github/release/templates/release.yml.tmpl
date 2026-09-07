@@ -7,6 +7,10 @@ name: Release
         description: Version to publish, without leading v.
         required: true
         type: string
+      candidate_oid:
+        description: Full reviewed commit SHA checked out by this dispatch.
+        required: true
+        type: string
       index:
         description: Package index to publish to.
         required: true
@@ -31,6 +35,7 @@ jobs:
     env:
       RELEASE_INDEX: ${{ inputs.index }}
       RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -50,6 +55,11 @@ jobs:
         with:
           version: "0.11.26"
           enable-cache: true
+
+      - name: Bind reproducible build timestamp
+        run: |
+          set -euo pipefail
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$GITHUB_SHA")" >> "$GITHUB_ENV"
 
       - name: Cache pre-commit hook envs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -74,13 +84,22 @@ jobs:
           python3 .release-tool/.github/release/release.py verify-version "$RELEASE_VERSION" \
             --pyproject "$GITHUB_WORKSPACE/pyproject.toml"
 
-      - name: Verify production release target is unused
+      - name: Verify reviewed candidate identity
+        run: |
+          set -euo pipefail
+          python3 .release-tool/.github/release/release.py verify-candidate-oid \
+            --candidate-oid "$RELEASE_CANDIDATE_OID" \
+            --current-oid "$GITHUB_SHA"
+
+      - name: Verify production release prefix
         if: inputs.index == 'pypi'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          python3 .release-tool/.github/release/release.py verify-target-unused "$RELEASE_VERSION"
+          python3 .release-tool/.github/release/release.py verify-target-unused "$RELEASE_VERSION" \
+            --candidate-oid "$RELEASE_CANDIDATE_OID" \
+            --current-oid "$GITHUB_SHA"
 
       - name: Verify internal dependencies resolve from selected index
         run: |
@@ -169,6 +188,7 @@ jobs:
     env:
       RELEASE_INDEX: ${{ inputs.index }}
       RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
     steps:
       - name: Checkout release tooling
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0

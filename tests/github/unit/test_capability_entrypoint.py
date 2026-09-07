@@ -51,7 +51,7 @@ def test_spec_is_github_capability() -> None:
     assert set(GithubSettings.model_fields) == {"base_url", "token", "corpus_path", "sweep"}
     (skill,) = SPEC.skills
     assert skill.name == "untaped-github"
-    assert skill.description == "Use the untaped-github CLI."
+    assert skill.description == "Use the built-in `untaped github` capability for GitHub workflows."
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 

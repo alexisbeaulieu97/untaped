@@ -19,6 +19,9 @@ See [`docs/capabilities-spec.md`](docs/capabilities-spec.md) for the
 authoritative composition contract and [`docs/decisions.md`](docs/decisions.md)
 for the ADRs behind the v4 direction.
 
+The built-in command order is fixed: `workspace`, `github`, `jira`, `awx`,
+`ansible`, `recipe`, and `orchestration`.
+
 ## Repository Map
 
 ```
@@ -33,10 +36,10 @@ untaped/  (repo root IS the app; version 4.0.0rc1, requires-python >=3.14)
 │   ├── capability_api.py         # STABLE provider import surface (spec §2)
 │   ├── capabilities/
 │   │   ├── registry.py           # internal composition kernel (NOT re-exported)
-│   │   └── <name>/               # one dir per built-in capability (only `workspace` today)
+│   │   └── <name>/               # one dir per built-in capability
 │   ├── management/               # root commands: config, profile, skills, doctor, capabilities
 │   └── <core>/                   # config, profile, cli, api, settings, http, ui, … (shared framework)
-└── tests/                        # app tests
+└── tests/                        # app and release contract tests
 ```
 
 A capability owns its directory end to end:
@@ -127,10 +130,10 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 ## Orchestration store
 
 The repository has a public decision-only orchestration store; it contains no tasks.
-Use `untaped-orchestration` for canonical reads and mutations, including revision guards
+Use the unified `untaped orchestration` capability for canonical reads and mutations, including revision guards
 on every mutation. Agents never use `--force-current`. The committed views are
 human-only generated state, not canonical agent input. After hand recovery, run
-`untaped-orchestration check --local` and `untaped-orchestration render --check`.
+`untaped orchestration check --local` and `untaped orchestration render --check`.
 
 ## Wave gates
 

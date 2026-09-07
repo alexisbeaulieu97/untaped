@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 BUILD_JOB = "build"
+DRAFT_JOB = "github-draft"
 PUBLISH_JOB = "publish"
 SMOKE_JOB = "smoke-published"
 GITHUB_RELEASE_JOB = "github-release"
@@ -65,13 +66,24 @@ def test_release_workflow_dispatch_contract_and_permissions() -> None:
         "type": "choice",
         "options": ["testpypi", "pypi"],
     }
+    assert dispatch["candidate_oid"] == {
+        "description": "Full reviewed commit SHA checked out by this dispatch.",
+        "required": True,
+        "type": "string",
+    }
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow["concurrency"] == {
         "group": "${{ github.workflow }}-${{ inputs.index }}-${{ inputs.version }}",
         "cancel-in-progress": False,
     }
 
-    assert set(workflow["jobs"]) == {BUILD_JOB, PUBLISH_JOB, SMOKE_JOB, GITHUB_RELEASE_JOB}
+    assert set(workflow["jobs"]) == {
+        BUILD_JOB,
+        DRAFT_JOB,
+        PUBLISH_JOB,
+        SMOKE_JOB,
+        GITHUB_RELEASE_JOB,
+    }
 
 
 def test_release_workflow_uses_least_privilege_jobs() -> None:
@@ -82,7 +94,8 @@ def test_release_workflow_uses_least_privilege_jobs() -> None:
     assert "environment" not in build
 
     publish = _job(workflow, PUBLISH_JOB)
-    assert publish["needs"] == BUILD_JOB
+    assert publish["needs"] == [BUILD_JOB, DRAFT_JOB]
+    assert "always()" in publish["if"]
     assert publish["environment"] == "${{ inputs.index }}"
     assert publish["permissions"] == {"contents": "read", "id-token": "write"}
 
@@ -92,10 +105,16 @@ def test_release_workflow_uses_least_privilege_jobs() -> None:
     assert "environment" not in smoke
 
     github_release = _job(workflow, GITHUB_RELEASE_JOB)
-    assert github_release["needs"] == SMOKE_JOB
-    assert github_release["if"] == "inputs.index == 'pypi'"
+    assert github_release["needs"] == [SMOKE_JOB, DRAFT_JOB]
+    assert "inputs.index == 'pypi'" in github_release["if"]
+    assert "needs.smoke-published.result == 'success'" in github_release["if"]
     assert github_release["permissions"] == {"contents": "write"}
     assert "id-token" not in github_release["permissions"]
+
+    draft = _job(workflow, DRAFT_JOB)
+    assert draft["needs"] == BUILD_JOB
+    assert draft["if"] == "inputs.index == 'pypi'"
+    assert draft["permissions"] == {"contents": "write"}
 
 
 def test_release_workflow_guards_production_publish_to_main() -> None:
@@ -116,17 +135,21 @@ def test_release_workflow_validates_version_builds_without_sources_and_smokes_wh
     assert "uv run pre-commit run --all-files --show-diff-on-failure" in run_text
     assert "uv run mypy" in run_text
     assert "uv run pytest" in run_text
-    assert "pyproject.toml" in run_text
+    assert "verify-version" in run_text
     assert "RELEASE_VERSION" in run_text
-    assert "re.fullmatch" in run_text
     assert "uv build --no-sources" in run_text
 
     smoke = str(_step(workflow, "Smoke local wheel", job_name=BUILD_JOB)["run"])
     assert "uv venv" in smoke
     assert "uv pip install" in smoke
     assert "dist/*.whl" in smoke
-    assert "untaped.__all__ == untaped.api.__all__" in smoke
-    assert "bin/untaped" in smoke
+    assert "smoke-unified" in smoke
+    assert "--console-script untaped" in smoke
+    candidate = str(
+        _step(workflow, "Validate candidate identity and artifacts", job_name=BUILD_JOB)["run"]
+    )
+    assert "verify-candidate" in candidate
+    assert "RELEASE_CANDIDATE_OID" in candidate
 
 
 def test_release_workflow_avoids_direct_input_interpolation_in_shell() -> None:
@@ -165,11 +188,15 @@ def test_publish_job_only_downloads_and_publishes_artifacts() -> None:
 
     publish_steps = _steps(workflow, PUBLISH_JOB)
     assert [step["name"] for step in publish_steps] == [
+        "Checkout",
         "Download package artifacts",
+        "Prepare only missing index artifacts",
         "Publish package to TestPyPI",
         "Publish package to PyPI",
     ]
-    assert all("run" not in step for step in publish_steps)
+    prepare = _step(workflow, "Prepare only missing index artifacts", job_name=PUBLISH_JOB)
+    assert prepare["id"] == "index-prefix"
+    assert "prepare-index-upload" in prepare["run"]
 
 
 def test_release_workflow_uses_trusted_publishing_action_with_attestations() -> None:
@@ -187,14 +214,20 @@ def test_release_workflow_uses_trusted_publishing_action_with_attestations() -> 
         assert "user" not in step.get("with", {})
 
     testpypi = _step(workflow, "Publish package to TestPyPI", job_name=PUBLISH_JOB)
-    assert testpypi["if"] == "inputs.index == 'testpypi'"
+    assert testpypi["if"] == (
+        "inputs.index == 'testpypi' && steps.index-prefix.outputs.present != 'true'"
+    )
     assert testpypi["with"]["repository-url"] == "https://test.pypi.org/legacy/"
     assert testpypi["with"]["attestations"] is True
+    assert testpypi["with"]["packages-dir"] == "dist-upload/"
 
     pypi = _step(workflow, "Publish package to PyPI", job_name=PUBLISH_JOB)
-    assert pypi["if"] == "inputs.index == 'pypi'"
+    assert pypi["if"] == (
+        "inputs.index == 'pypi' && steps.index-prefix.outputs.present != 'true'"
+    )
     assert "repository-url" not in pypi.get("with", {})
     assert pypi["with"]["attestations"] is True
+    assert pypi["with"]["packages-dir"] == "dist-upload/"
 
 
 def test_release_workflow_smokes_published_package_from_selected_index() -> None:
@@ -205,18 +238,18 @@ def test_release_workflow_smokes_published_package_from_selected_index() -> None
     assert "UV_INDEX_STRATEGY=unsafe-best-match" in smoke
     assert "uv pip install" in smoke
     assert "untaped==$RELEASE_VERSION" in smoke
-    assert "untaped.__all__ == untaped.api.__all__" in smoke
-    assert "bin/untaped" in smoke
+    assert "smoke-unified" in smoke
+    assert "verify-index-artifacts" in smoke
 
 
 def test_release_workflow_creates_github_release_only_after_production_smoke() -> None:
     _, workflow = _load_release_workflow()
 
-    release = _step(workflow, "Create GitHub release", job_name=GITHUB_RELEASE_JOB)
+    release = _step(workflow, "Publish the matching GitHub draft", job_name=GITHUB_RELEASE_JOB)
     run = str(release["run"])
-    assert "gh release create" in run
-    assert ' --repo "$GITHUB_REPOSITORY"' in run
-    assert "v$RELEASE_VERSION" in run
+    assert "publish-github-draft" in run
+    assert '--repo "$GITHUB_REPOSITORY"' in run
+    assert '"$RELEASE_VERSION"' in run
 
 
 def test_release_workflow_reports_burn_recovery_after_upload_failures() -> None:

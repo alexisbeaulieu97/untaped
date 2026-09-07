@@ -1,6 +1,6 @@
 ---
 name: untaped-jira
-description: Use the untaped-jira CLI.
+description: Use the built-in `untaped jira` capability for Jira workflows.
 ---
 
 # Untaped Jira

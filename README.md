@@ -1,8 +1,8 @@
 # untaped
 
-**untaped** is a single `untaped` application composing built-in capabilities on [cyclopts](https://cyclopts.readthedocs.io/); the standalone `untaped-*` tools are retired at the v4 cutover.
+**untaped** is one `untaped` application built on [cyclopts](https://cyclopts.readthedocs.io/). It provides the shared shell, five management command groups, and seven built-in capabilities from one install.
 
-The SDK gives every tool, for free:
+The root shell provides:
 
 - **Config** — a shared `~/.untaped/config.yml` with top-level `active:` /
   `profiles:`, per-profile SDK `http` / `ui` settings, and each tool's own
@@ -17,102 +17,65 @@ The SDK gives every tool, for free:
 - **HTTP / UI helpers** — an `HttpClient` with profile-aware TLS, automatic
   retries for transient failures (`RetryPolicy`), and pagination helpers, plus a
   `UiContext` for messages, prompts, and progress.
-- **Config tooling** — `<tool> config doctor` diagnoses the shared file and
-  `<tool> config edit` opens it in `$VISUAL`/`$EDITOR`; a `--quiet` root option
+- **Config tooling** — `untaped doctor` diagnoses the shared file and
+  `untaped config edit` opens it in `$VISUAL`/`$EDITOR`; a `--quiet` root option
   mutes progress and `success`/`info` chatter.
-- **Installed version reporting** — `<tool> --version` prints the tool's own
-  installed distribution version, not the SDK version.
+- **Installed version reporting** — `untaped --version` prints the installed
+  distribution version.
 
-You import the surface from `untaped.api` (re-exported from the `untaped`
-package root), declare a `ToolSpec`, and call `run_tool(app, spec)` from your
-tool's `main()`. The contract surface is the `__all__` list in
-[`src/untaped/api.py`](./src/untaped/api.py).
+Capability providers use the stable surface in
+[`src/untaped/capability_api.py`](./src/untaped/capability_api.py). Built-ins
+are composed by [`src/untaped/bootstrap.py`](./src/untaped/bootstrap.py), and
+each capability owns its commands, settings, state, and packaged skill.
 
-```python
-# my_tool/__main__.py
-from untaped.api import create_app, run_tool, ToolSpec
-from my_tool.settings import MyProfile
-
-app = create_app(...)
-
-def main() -> None:
-    run_tool(app, ToolSpec(
-        command="untaped-mytool",
-        section="mytool",
-        profile_model=MyProfile,
-    ))
-```
-
-```toml
-# pyproject.toml
-[project]
-dependencies = [
-    "untaped>=3.1.0,<4",
-]
-
-[project.scripts]
-untaped-mytool = "my_tool.__main__:main"
-```
-
-`run_tool` wires `--version` to installed package metadata. By default,
-`ToolSpec.distribution` uses `command`; when the executable and distribution
-names differ, set the package explicitly, for example
-`ToolSpec(command="acme", ..., distribution="acme-cli")`. Metadata lookup is
-lazy, so it happens only for `--version`, whose stdout remains the version
-alone (for example, `0.4.2`).
-
-Tools resolve the SDK from PyPI in development and CI alike. Published wheels
-are built with `uv build --no-sources` as defense in depth, so package
-metadata always resolves from the declared PyPI range.
+The public package is built with `uv build --no-sources`; the release manifest
+records the supported Python floor, capability order, direct requirements, and
+selected source OIDs in [`release-manifest.toml`](./release-manifest.toml).
 
 ## Requirements
 
 Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
-## The suite
-
-Seven tools are built on the SDK. Each is an independent CLI installed into its
-own `uv tool` environment. As each PyPI-backed tool completes its first package
-release, install it by package name:
+## Install and use
 
 ```bash
-uv tool install untaped-github
-uv tool install untaped-jira
-uv tool install untaped-awx
-uv tool install untaped-ansible
-uv tool install untaped-workspace
-uv tool install untaped-recipe
-uv tool install git+https://github.com/alexisbeaulieu97/untaped-apple-health.git
+uv tool install untaped==4.0.0rc1
+untaped --help
+untaped --version
 ```
 
-`untaped-apple-health` is outside the current PyPI release wave; install it from
-git until that repo owns a package release workflow.
-
-Because every tool reads the same `~/.untaped/config.yml` and shares the same
-`--format pipe` envelope, independently installed tools interoperate and
-compose:
+Every command reads the shared `~/.untaped/config.yml` and uses the same
+`--format json|yaml|table|raw|pipe` output contract. A typical offline check is:
 
 ```bash
-untaped-awx job-templates list --format raw --columns name \
-  | fzf \
-  | untaped-awx job-templates get --stdin --format json
+untaped config list --format yaml
+untaped capabilities --format json
+untaped doctor
 ```
 
 ## Built-in capabilities
 
-The unified `untaped` shell composes built-in capabilities under one
-executable. Wave 1.5 ships the first one:
+The unified shell composes these capabilities under one executable:
 
-- **`workspace`** — manage local git workspaces (collections of repos)
-  declared in per-workspace `untaped.yml` manifests with a central
-  name→path registry:
+- **`workspace`** — local git workspaces and repo sync.
+- **`github`** — authenticated GitHub inventory, search, and corpus workflows.
+- **`jira`** — Jira Data Center issue and sprint workflows.
+- **`awx`** — AWX/AAP resource inspection and guarded reconciliation.
+- **`ansible`** — Ansible dependency graph and impact analysis.
+- **`recipe`** — local recipe pack planning, backup, and application.
+- **`orchestration`** — typed repository decision and task orchestration stores.
+
+All seven command roots resolve without network access when invoked with
+`--help`:
 
 ```bash
-untaped workspace init prod
-untaped workspace add git@github.com:acme/api.git --workspace prod
-untaped workspace sync --workspace prod
-untaped workspace status --workspace prod
-untaped workspace list --format pipe | untaped workspace path --stdin
+untaped workspace --help
+untaped github --help
+untaped jira --help
+untaped awx --help
+untaped ansible --help
+untaped recipe --help
+untaped orchestration --help
 ```
 
 See [docs/workspace/usage.md](./docs/workspace/usage.md) for the manifest
@@ -122,17 +85,18 @@ shape, command reference, and shell helper examples.
 
 User-facing docs live in [`docs/`](./docs/README.md):
 
-- [Building a tool with the untaped SDK](./docs/plugins.md) — the guide to
-  declaring a `ToolSpec`, wiring `run_tool`, and packaging an independent CLI.
+- [Capability authoring](./docs/plugins.md) — the stable provider surface and
+  composition rules for built-in capabilities.
 - [Configuration](./docs/configuration.md) — the `~/.untaped/config.yml`
   format, profiles, secrets, and TLS.
 - [Agent Skills](./docs/skills.md) — how each tool ships and installs
   Codex/Claude agent skills.
 - [Releasing](./docs/release.md) — PyPI/TestPyPI workflow, Trusted Publisher
   setup, and recovery rules.
-- [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the single `untaped` application composing built-in capabilities, with the standalone `untaped-*` tools retired at the v4 cutover.
+- [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the
+  single application and its capability boundaries.
 
-Retired standalone `untaped-*` tool repos, now built-in capabilities of the single `untaped` application retired at the v4 cutover:
+Historical source repositories imported into the built-in capabilities:
 
 - [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
 - [Jira](https://github.com/alexisbeaulieu97/untaped-jira)
@@ -142,6 +106,10 @@ Retired standalone `untaped-*` tool repos, now built-in capabilities of the sing
 - [Recipe](https://github.com/alexisbeaulieu97/untaped-recipe)
 - [Apple Health](https://github.com/alexisbeaulieu97/untaped-apple-health)
 
+The imported source history remains available for provenance and review. The
+public v4 application owns the installed command surface; private retirement
+and cutover work are tracked separately from this release documentation.
+
 ## Security
 
 Please report suspected vulnerabilities privately. See
@@ -150,8 +118,7 @@ Please report suspected vulnerabilities privately. See
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md) for the
-local workflow, architecture rules, and recipes for extending the SDK and its
-tools.
+local workflow, architecture rules, and recipes for extending the app.
 
 ## License
 

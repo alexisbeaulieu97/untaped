@@ -1,6 +1,6 @@
 ---
 name: untaped-awx
-description: Use the untaped-awx CLI.
+description: Use the built-in `untaped awx` capability for AWX/AAP workflows.
 ---
 
 # Untaped AWX/AAP
