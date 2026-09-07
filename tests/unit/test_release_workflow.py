@@ -138,6 +138,7 @@ def test_release_workflow_validates_version_builds_without_sources_and_smokes_wh
     assert "verify-version" in run_text
     assert "RELEASE_VERSION" in run_text
     assert "uv build --no-sources" in run_text
+    assert "rm -f dist/.gitignore" in run_text
 
     smoke = str(_step(workflow, "Smoke local wheel", job_name=BUILD_JOB)["run"])
     assert "uv venv" in smoke

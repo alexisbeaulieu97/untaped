@@ -317,6 +317,7 @@ def test_release_workflow_validates_build_and_tool_local_wheel_smoke() -> None:
     assert "uv run mypy" in text
     assert "uv run pytest" in text
     assert "uv build --no-sources" in text
+    assert "rm -f dist/.gitignore" in text
 
     smoke = _step_block("Smoke local wheel")
     assert "uv venv" in smoke
