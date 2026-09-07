@@ -17,7 +17,7 @@ requirement = "cyclopts>=4.16.0,<5"
 name = "filelock"
 owner = "workspace"
 reason = "atomic config-file writes via kernel config_file FileLock"
-requirement = "filelock>=3.29.0"
+requirement = "filelock>=3.29.7,<4"
 
 [[dep]]
 name = "httpx"
@@ -29,7 +29,7 @@ requirement = "httpx>=0.28.1"
 name = "jinja2"
 owner = "awx"
 reason = "strict-variable test-suite template rendering in the awx test parser"
-requirement = "jinja2>=3.1.6"
+requirement = "jinja2>=3.1.6,<4"
 
 [[dep]]
 name = "packaging"
@@ -47,7 +47,7 @@ requirement = "prompt-toolkit>=3.0.52"
 name = "pydantic"
 owner = "workspace"
 reason = "workspace profile/state models and manifest validation"
-requirement = "pydantic>=2.13.3"
+requirement = "pydantic>=2.13.3,<3"
 
 [[dep]]
 name = "pydantic-settings"

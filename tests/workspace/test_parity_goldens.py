@@ -1276,10 +1276,10 @@ def test_p46_runtime_deps() -> None:
 
     expected = {
         "cyclopts>=4.16.0,<5",
-        "filelock>=3.29.0",
+        "filelock>=3.29.7,<4",
         "httpx>=0.28.1",
         "prompt-toolkit>=3.0.52",
-        "pydantic>=2.13.3",
+        "pydantic>=2.13.3,<3",
         "pydantic-settings>=2.14.0",
         "pyyaml>=6.0.3",
         "rich>=15.0.0",
@@ -1289,7 +1289,7 @@ def test_p46_runtime_deps() -> None:
     data = tomllib.loads(declared)
     assert data["project"]["requires-python"] == ">=3.14"
     shipped = set(data["project"]["dependencies"])
-    assert {"cyclopts>=4.16.0,<5", "pydantic>=2.13.3", "pyyaml>=6.0.3"} <= shipped
+    assert {"cyclopts>=4.16.0,<5", "pydantic>=2.13.3,<3", "pyyaml>=6.0.3"} <= shipped
 
     records = tomllib.loads((REPO_ROOT / "docs" / "runtime-deps.toml").read_text())
     assert records["version"] == 1

@@ -18,6 +18,17 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.12"
+            supported: false
+          - python-version: "3.13"
+            supported: false
+          - python-version: "3.14"
+            supported: true
+    name: CI (Python ${{ matrix.python-version }})
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -29,9 +40,8 @@ jobs:
         with:
           version: "0.11.26"
           enable-cache: true
-          # No `python-version` here on purpose: `uv sync` reads
-          # `.python-version` directly and installs that interpreter,
-          # so duplicating the pin in the action is just drift surface.
+          # The matrix keeps unsupported-floor rejection visible beside the
+          # supported 3.14 job.
 
       - name: Cache pre-commit hook envs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -42,24 +52,45 @@ jobs:
             pre-commit-${{ runner.os }}-
 
       - name: Shared release helper tests
+        if: matrix.supported == true
         run: |
           python3 .github/release/release.py verify-version --help
           python3 .github/release/release.py verify-internal-dependencies-published --help
           uv run --no-project --with pytest python -m pytest .github/release/tests -q --confcutdir=.github/release -o addopts=
 
+      - name: Install unsupported interpreter
+        if: matrix.supported == false
+        run: uv python install "${{ matrix.python-version }}"
+
+      - name: Reject unsupported Python floor
+        if: matrix.supported == false
+        run: |
+          set +e
+          uv sync --frozen --python "${{ matrix.python-version }}" --all-packages >"$RUNNER_TEMP/uv-sync.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/uv-sync.log"
+          test "$status" -ne 0
+          grep -F 'incompatible with the project' "$RUNNER_TEMP/uv-sync.log"
+          grep -F '>=3.14' "$RUNNER_TEMP/uv-sync.log"
+
       - name: Sync workspace
+        if: matrix.supported == true
         # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
         # pins, so a stale lock surfaces as a sync failure instead of a silent
         # in-CI resolve that diverges from local installs.
-        run: uv sync --frozen --all-packages
+        run: uv sync --frozen --python "${{ matrix.python-version }}" --all-packages
 
       - name: Pre-commit hooks
+        if: matrix.supported == true
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
       - name: mypy
+        if: matrix.supported == true
         run: uv run mypy
 
       - name: Pytest
+        if: matrix.supported == true
         # In CI, Rich force-enables styling (it detects the GA `CI=true`
         # env). Even when emphasizing a flag like `--verbosity`, Rich
         # splits it into two SGR-styled spans —
