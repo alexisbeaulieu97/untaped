@@ -73,6 +73,13 @@ workspace:
       path: ~/work/prod
 ```
 
+Profile-scoped sections accidentally placed at the YAML top level are ignored
+by profile resolution and produce a warning. This applies to `log_level`,
+`http`, `ui`, and registered capability sections; move them under
+`profiles.default.<section>`. Capability-managed state, such as
+`workspace.workspaces`, remains top-level and is not treated as a misplaced
+profile setting.
+
 The profile model and state model for a capability must have disjoint field
 sets. State is written by the owning capability and is not writable through
 `untaped config set`.
@@ -85,9 +92,11 @@ UNTAPED_<SECTION>__<FIELD>
 
 For example, `UNTAPED_GITHUB__TOKEN`, `UNTAPED_AWX__BASE_URL`,
 `UNTAPED_HTTP__VERIFY_SSL`, and `UNTAPED_UI__THEME` override one process's
-resolved values. Environment values take precedence over the active profile,
-which takes precedence over `default`, which takes precedence over schema
-defaults.
+resolved values. The root scalar `log_level` is addressed as `log_level` and
+can be overridden with `UNTAPED_LOG_LEVEL`; capability fields still require
+their fully qualified section key. For a setting value, precedence is the
+environment override, the selected active profile, `profiles.default`, and
+then the schema default.
 
 ## Profiles
 
@@ -111,6 +120,12 @@ untaped config list --profile stage
 untaped --profile prod awx ping
 ```
 
+Active-profile selection follows this order: root `--profile`,
+`UNTAPED_PROFILE`, the persisted `active:` key, and the `default` profile
+fallback. The first three sources must name an existing profile. When a
+non-default profile is selected, its values overlay `profiles.default` per
+field; `default` is the shared base layer.
+
 `profile show` emits YAML by default and accepts `--format json`. Secrets are
 redacted unless `--show-secrets` is passed. `profile current` writes only the
 profile name to stdout; its source is reported on stderr, so it is safe in a
@@ -126,8 +141,9 @@ must exist before a write targets them.
 ## Settings
 
 The root config command lists every composed section and requires a fully
-qualified key for reads and writes. Bare keys are never expanded to a
-capability section.
+qualified key for capability reads and writes. Root keys are the documented
+exceptions: `log_level` is a root scalar, and `http.*` and `ui.*` are shared
+profile fields. Bare keys are never expanded to a capability section.
 
 ```bash
 untaped config list
@@ -142,6 +158,7 @@ untaped config set awx.base_url https://aap.example.com --target-profile default
 untaped config unset awx.token --target-profile prod
 untaped config set ui.theme quiet
 untaped config set http.verify_ssl false
+untaped config set log_level DEBUG
 untaped config edit
 ```
 
