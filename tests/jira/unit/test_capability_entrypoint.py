@@ -60,7 +60,7 @@ def test_spec_is_jira_capability() -> None:
     }
     (skill,) = SPEC.skills
     assert skill.name == "untaped-jira"
-    assert skill.description == "Use the untaped-jira CLI."
+    assert skill.description == "Use the built-in `untaped jira` capability for Jira workflows."
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 

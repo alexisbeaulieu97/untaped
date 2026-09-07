@@ -40,7 +40,7 @@ SPEC = CapabilitySpec(
             source=Path(
                 str(files("untaped.capabilities.workspace").joinpath("skills", "untaped-workspace"))
             ),
-            description="Use the untaped-workspace CLI.",
+            description="Use the built-in `untaped workspace` capability for local git workspaces.",
         ),
     ),
     doctor_checks=(),

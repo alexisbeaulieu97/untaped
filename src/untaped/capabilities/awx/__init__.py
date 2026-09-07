@@ -37,7 +37,7 @@ SPEC = CapabilitySpec(
         SkillAsset(
             name="untaped-awx",
             source=Path(str(files("untaped.capabilities.awx").joinpath("skills", "untaped-awx"))),
-            description="Use the untaped-awx CLI.",
+            description="Use the built-in `untaped awx` capability for AWX/AAP workflows.",
         ),
     ),
     doctor_checks=(),

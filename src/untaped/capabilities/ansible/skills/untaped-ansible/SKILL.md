@@ -1,6 +1,6 @@
 ---
 name: untaped-ansible
-description: Use the untaped-ansible CLI.
+description: Use the built-in `untaped ansible` capability for Ansible analysis.
 ---
 
 # Untaped Ansible

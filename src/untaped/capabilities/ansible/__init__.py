@@ -46,7 +46,7 @@ SPEC = CapabilitySpec(
             source=Path(
                 str(files("untaped.capabilities.ansible").joinpath("skills", "untaped-ansible"))
             ),
-            description="Use the untaped-ansible CLI.",
+            description="Use the built-in `untaped ansible` capability for Ansible analysis.",
         ),
     ),
     doctor_checks=(),

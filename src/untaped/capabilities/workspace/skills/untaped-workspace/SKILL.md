@@ -1,6 +1,6 @@
 ---
 name: untaped-workspace
-description: Use the untaped-workspace CLI.
+description: Use the built-in `untaped workspace` capability for local git workspaces.
 ---
 
 # Untaped Workspace

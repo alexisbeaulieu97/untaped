@@ -37,7 +37,7 @@ SPEC = CapabilitySpec(
         SkillAsset(
             name="untaped-jira",
             source=Path(str(files("untaped.capabilities.jira").joinpath("skills", "untaped-jira"))),
-            description="Use the untaped-jira CLI.",
+            description="Use the built-in `untaped jira` capability for Jira workflows.",
         ),
     ),
     doctor_checks=(),

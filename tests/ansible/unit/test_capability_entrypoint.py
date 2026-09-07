@@ -67,7 +67,9 @@ def test_spec_is_ansible_capability() -> None:
     assert set(AnsibleState.model_fields) == {"aliases", "sources"}
     (skill,) = SPEC.skills
     assert skill.name == "untaped-ansible"
-    assert skill.description == "Use the untaped-ansible CLI."
+    assert skill.description == (
+        "Use the built-in `untaped ansible` capability for Ansible analysis."
+    )
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 

@@ -417,13 +417,20 @@ def test_f05_skill() -> None:
     fix = fixture("f05-skill.json")
     (skill,) = SPEC.skills
     assert skill.name == fix["name"] == "untaped-workspace"
-    assert skill.description == fix["description"] == "Use the untaped-workspace CLI."
+    assert (
+        skill.description
+        == fix["description"]
+        == "Use the built-in `untaped workspace` capability for local git workspaces."
+    )
     assert str(skill.source).endswith("skills/untaped-workspace")
     assert fix["source"] == "<pkg>/skills/untaped-workspace/SKILL.md"
     assert skill.source.joinpath("SKILL.md").is_file()
     header = (skill.source / "SKILL.md").read_text().splitlines()
     assert header[1] == "name: untaped-workspace"
-    assert header[2] == "description: Use the untaped-workspace CLI."
+    assert (
+        header[2]
+        == "description: Use the built-in `untaped workspace` capability for local git workspaces."
+    )
 
 
 # ── f06: pipe envelope + kinds (P13-P14) ─────────────────────────────────
@@ -1251,7 +1258,7 @@ def test_p45_capability_statics() -> None:
     (skill,) = SPEC.skills
     assert (skill.name, skill.description) == (
         "untaped-workspace",
-        "Use the untaped-workspace CLI.",
+        "Use the built-in `untaped workspace` capability for local git workspaces.",
     )
     assert SPEC.doctor_checks == ()
 

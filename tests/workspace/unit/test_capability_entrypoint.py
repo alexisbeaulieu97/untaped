@@ -52,7 +52,9 @@ def test_spec_is_workspace_capability() -> None:
     assert set(WorkspaceState.model_fields) == {"workspaces"}
     (skill,) = SPEC.skills
     assert skill.name == "untaped-workspace"
-    assert skill.description == "Use the untaped-workspace CLI."
+    assert skill.description == (
+        "Use the built-in `untaped workspace` capability for local git workspaces."
+    )
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 
