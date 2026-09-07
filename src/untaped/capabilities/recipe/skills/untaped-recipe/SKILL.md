@@ -1,6 +1,6 @@
 ---
 name: untaped-recipe
-description: Use the untaped-recipe CLI to apply local recipe packs across directories.
+description: Use the untaped recipe capability to apply local recipe packs across directories.
 ---
 
 # Untaped Recipe
@@ -13,7 +13,7 @@ no control flow in recipes, and no state or inventory.
 
 ## Applying recipes
 
-- `untaped-recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
+- `untaped recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
   backs up, then writes. The recipe argument is a bare name (unique across
   installed packs), a `pack/recipe` ref, an explicit path to a `recipe.yml`, or
   a local pack path plus `--recipe <name>`. A value is a path only when it
@@ -163,8 +163,8 @@ no control flow in recipes, and no state or inventory.
   anchors for structural reuse in recipes.
 - A hook module exports `transform()`, `validate()`, or both — the exported
   name is the contract; manifest rows declare only `module`. Keep
-  `untaped-recipe` as a dev-only dependency (the floor tracks the hook API,
-  currently `>=0.10`); runtime hook dependencies go in `[project].dependencies`.
+  `untaped>=4.0.0rc1,<5` as a dev-only dependency; runtime hook dependencies go
+  in `[project].dependencies`.
   Hooks must stay pure at planning time: read only the target tree and their
   own pack, never write or reach the network.
 - Validate verdicts are `helpers.pass_()`, `helpers.fail(msg)`, and
@@ -205,5 +205,5 @@ no control flow in recipes, and no state or inventory.
 - Installing a pack is installing code (same trust model as `pip install`, no
   sandbox). Evaluate before trusting: the `add` preview, `show`, `check`'s
   no-import scan, and the golden test harness.
-- Run `untaped-recipe skills install --all` (or `skills install untaped-recipe`)
+- Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.

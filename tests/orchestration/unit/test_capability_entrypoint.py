@@ -55,7 +55,9 @@ def test_spec_is_orchestration_capability() -> None:
     assert OrchestrationSettings.model_validate({"future": "ignored"}) == OrchestrationSettings()
     (skill,) = SPEC.skills
     assert skill.name == "untaped-orchestration"
-    assert skill.description == "Use the untaped-orchestration CLI."
+    assert skill.description == (
+        "Use typed repository orchestration stores with untaped orchestration."
+    )
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 

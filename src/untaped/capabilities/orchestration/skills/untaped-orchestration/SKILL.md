@@ -1,21 +1,21 @@
 ---
 name: untaped-orchestration
-description: Use typed repository orchestration stores safely.
+description: Use typed repository orchestration stores with untaped orchestration.
 ---
 
 # Untaped Orchestration
 
-Use `untaped-orchestration` as the only agent interface to canonical tasks and
+Use `untaped orchestration` as the only agent interface to canonical tasks and
 decisions. Do not scan `.untaped/orchestration` to bootstrap context and do not
 use generated views as machine input.
 
 ## Start bounded
 
-1. Run `brief --format json` before orchestration work.
+1. Run `untaped orchestration brief --format json` before orchestration work.
 2. Check `complete` and `truncated`. If `complete=false` or `truncated=true`,
    do not infer omitted readiness; narrow the query, repair federation, or stop.
 3. Use returned IDs instead of scanning files.
-4. Load only needed bodies with `show`.
+4. Load only needed bodies with `untaped orchestration show`.
 
 ## Mutate safely
 
@@ -27,9 +27,14 @@ use generated views as machine input.
 3. Never use `--force-current`. Do not use `--force-current` even when a guard
    is stale; reread and reconsider the mutation.
 4. Never read or edit generated views. Use parsed CLI reads and regenerate
-   views with `render --write` when an authorized human workflow requires it.
-5. Run `check` after hand edits or recovery, followed by `fmt --check` and
-   `render --check` as applicable.
+   views with `untaped orchestration render --write` when an authorized human
+   workflow requires it.
+5. Run `untaped orchestration check` after hand edits or recovery, followed by
+   `untaped orchestration fmt --check` and `untaped orchestration render --check`
+   as applicable. Use `untaped orchestration check --local` and
+   `untaped orchestration fmt --check --local` when checking or formatting only
+   the selected store; unresolved cross-store navigation remains an ORC005
+   warning until recursive validation resolves its target.
 6. Supply only regular nonsymlink files for import manifests, replacement front
    matter, and body-file inputs. Keep front matter within 64 KiB and bodies
    within 1 MiB.
@@ -53,5 +58,6 @@ acknowledged changed paths whose writer calls returned. A typed view-finalizatio
 failure lists only acknowledged canonical and view paths and carries the durable
 post-canonical revisions; it never guesses the failed view path. False/empty
 means no write was acknowledged, not that an interrupted writer definitely left
-disk unchanged. Any receipt with `views_current=false` requires `check`; after
-confirmed canonical success use `render --write` to repair derived views.
+disk unchanged. Any receipt with `views_current=false` requires
+`untaped orchestration check`; after confirmed canonical success use
+`untaped orchestration render --write` to repair derived views.
