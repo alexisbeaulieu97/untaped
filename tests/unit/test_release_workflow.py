@@ -222,9 +222,7 @@ def test_release_workflow_uses_trusted_publishing_action_with_attestations() -> 
     assert testpypi["with"]["packages-dir"] == "dist-upload/"
 
     pypi = _step(workflow, "Publish package to PyPI", job_name=PUBLISH_JOB)
-    assert pypi["if"] == (
-        "inputs.index == 'pypi' && steps.index-prefix.outputs.present != 'true'"
-    )
+    assert pypi["if"] == ("inputs.index == 'pypi' && steps.index-prefix.outputs.present != 'true'")
     assert "repository-url" not in pypi.get("with", {})
     assert pypi["with"]["attestations"] is True
     assert pypi["with"]["packages-dir"] == "dist-upload/"
