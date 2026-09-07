@@ -387,110 +387,132 @@ def run_publication(
         raise ReleaseCheckError(f"unknown release index: {index}")
     release: GitHubRelease | None = None
     if index == "pypi":
-        release = transport.inspect_github_release(tag=candidate.tag)
-        if release is None:
-            _verify_existing_tag_target(transport, candidate)
-            release = transport.create_github_draft(candidate)
-        _verify_release_identity(release, candidate, transport=transport)
-        actual_assets = dict(transport.inspect_github_assets(release))
-        missing = _verify_hash_map(
-            expected=candidate.artifact_hashes,
-            actual=actual_assets,
-            label="GitHub assets",
-        )
-        if not release.draft:
-            if missing:
-                raise ReleaseCheckError("published GitHub release is missing an expected asset")
-            index_hashes = transport.inspect_index(index=index, candidate=candidate)
-            _require_exact_hash_map(index_hashes, candidate.artifact_hashes, "PyPI files")
-            transport.smoke_published(index=index, candidate=candidate)
-            return PublicationState.GITHUB_PUBLISHED
-        for artifact in candidate.artifacts:
-            if artifact.filename in missing:
-                transport.upload_github_asset(release, artifact)
-        # Re-read after each upload boundary so a partial/ambiguous response
-        # cannot be treated as a complete draft.
-        release = _require_release(transport.inspect_github_release(tag=candidate.tag), candidate)
-        _verify_release_identity(release, candidate, transport=transport)
-        _require_exact_hash_map(
-            transport.inspect_github_assets(release), candidate.artifact_hashes, "GitHub assets"
-        )
+        release = _ensure_github_prefix(candidate, transport=transport)
 
-    index_hashes = transport.inspect_index(index=index, candidate=candidate)
-    if index_hashes is None:
+    missing = _index_missing(candidate, index=index, transport=transport)
+    if missing:
         transport.upload_index(index=index, candidate=candidate)
-        index_hashes = transport.inspect_index(index=index, candidate=candidate)
-    _require_exact_hash_map(index_hashes, candidate.artifact_hashes, f"{index} files")
+        _require_index_prefix(candidate, index=index, transport=transport)
     transport.smoke_published(index=index, candidate=candidate)
     if index == "testpypi":
         return PublicationState.PUBLISHED_SMOKE
 
     assert release is not None
-    latest = _require_release(transport.inspect_github_release(tag=candidate.tag), candidate)
-    _verify_release_identity(latest, candidate, transport=transport)
-    if not latest.draft:
-        return PublicationState.GITHUB_PUBLISHED
-    published = transport.publish_github_release(latest)
-    _verify_release_identity(published, candidate, transport=transport)
-    if published.draft:
-        raise ReleaseCheckError("GitHub release publish did not clear the draft state")
+    _publish_github_release(candidate, transport=transport, index=index)
     return PublicationState.GITHUB_PUBLISHED
 
 
 def ensure_github_draft(
     candidate: ReleaseCandidate, *, transport: PublicationTransport
 ) -> GitHubRelease:
-    """Create or resume the exact GitHub draft prefix for a candidate."""
-    release = transport.inspect_github_release(tag=candidate.tag)
-    if release is None:
-        _verify_existing_tag_target(transport, candidate)
-        release = transport.create_github_draft(candidate)
-    _verify_release_identity(release, candidate, transport=transport)
-    actual = dict(transport.inspect_github_assets(release))
-    missing = _verify_hash_map(
-        expected=candidate.artifact_hashes,
-        actual=actual,
-        label="GitHub assets",
-    )
-    if not release.draft:
-        if missing:
-            raise ReleaseCheckError("published GitHub release is missing an expected asset")
-        raise ReleaseCheckError("GitHub release is already published; draft repair is forbidden")
-    for artifact in candidate.artifacts:
-        if artifact.filename in missing:
-            transport.upload_github_asset(release, artifact)
-    complete = _require_release(transport.inspect_github_release(tag=candidate.tag), candidate)
-    _verify_release_identity(complete, candidate, transport=transport)
-    if not complete.draft:
-        raise ReleaseCheckError("GitHub release changed from draft during asset upload")
-    _require_exact_hash_map(
-        transport.inspect_github_assets(complete), candidate.artifact_hashes, "GitHub assets"
-    )
-    return complete
+    """Create or resume the exact GitHub prefix for a candidate.
+
+    A completed, exact release is a valid resumable prefix. Returning it as a
+    no-op lets a rerun continue through index verification and published smoke
+    without attempting to repair an immutable release.
+    """
+    return _ensure_github_prefix(candidate, transport=transport)
 
 
 def verify_index_artifacts(
     candidate: ReleaseCandidate, *, index: str, transport: PublicationTransport
 ) -> None:
     """Verify the immutable index filename-to-SHA set after a trusted upload."""
-    _require_exact_hash_map(
-        transport.inspect_index(index=index, candidate=candidate),
-        candidate.artifact_hashes,
-        f"{index} files",
-    )
+    _require_index_prefix(candidate, index=index, transport=transport)
 
 
 def publish_github_draft(
-    candidate: ReleaseCandidate, *, transport: PublicationTransport
+    candidate: ReleaseCandidate,
+    *,
+    transport: PublicationTransport,
+    index: str = "pypi",
 ) -> GitHubRelease:
-    """Publish only an exact, still-draft release after package smoke."""
+    """Publish one exact draft, or verify an exact completed prefix as a no-op."""
+    return _publish_github_release(candidate, transport=transport, index=index)
+
+
+def _inspect_github_prefix(
+    candidate: ReleaseCandidate, *, transport: PublicationTransport
+) -> tuple[GitHubRelease, set[str]]:
+    """Inspect the exact release/tag/asset prefix shared by every transition."""
     release = _require_release(transport.inspect_github_release(tag=candidate.tag), candidate)
     _verify_release_identity(release, candidate, transport=transport)
-    if not release.draft:
-        raise ReleaseCheckError("GitHub release is already published; no mutation is needed")
-    _require_exact_hash_map(
-        transport.inspect_github_assets(release), candidate.artifact_hashes, "GitHub assets"
+    missing = _verify_hash_map(
+        expected=candidate.artifact_hashes,
+        actual=transport.inspect_github_assets(release),
+        label="GitHub assets",
     )
+    if not release.draft and missing:
+        raise ReleaseCheckError("published GitHub release is missing an expected asset")
+    return release, missing
+
+
+def _ensure_github_prefix(
+    candidate: ReleaseCandidate, *, transport: PublicationTransport
+) -> GitHubRelease:
+    """Create or repair a draft until its exact immutable prefix is visible."""
+    existing = transport.inspect_github_release(tag=candidate.tag)
+    if existing is None:
+        _verify_existing_tag_target(transport, candidate)
+        transport.create_github_draft(candidate)
+
+    release, missing = _inspect_github_prefix(candidate, transport=transport)
+    if not release.draft:
+        return release
+
+    for artifact in candidate.artifacts:
+        if artifact.filename in missing:
+            transport.upload_github_asset(release, artifact)
+    complete, remaining = _inspect_github_prefix(candidate, transport=transport)
+    if not complete.draft:
+        raise ReleaseCheckError("GitHub release changed from draft during asset upload")
+    if remaining:
+        raise ReleaseCheckError(f"GitHub assets are missing: {', '.join(sorted(remaining))}")
+    return complete
+
+
+def _index_missing(
+    candidate: ReleaseCandidate,
+    *,
+    index: str,
+    transport: PublicationTransport,
+) -> set[str]:
+    """Return missing index files after rejecting extras and conflicting hashes."""
+    actual = transport.inspect_index(index=index, candidate=candidate)
+    if actual is None:
+        return set(candidate.artifact_hashes)
+    return _verify_hash_map(
+        expected=candidate.artifact_hashes,
+        actual=actual,
+        label=f"{index} files",
+    )
+
+
+def _require_index_prefix(
+    candidate: ReleaseCandidate,
+    *,
+    index: str,
+    transport: PublicationTransport,
+) -> None:
+    """Require one exact index prefix after a trusted upload or on resume."""
+    actual = transport.inspect_index(index=index, candidate=candidate)
+    _require_exact_hash_map(actual, candidate.artifact_hashes, f"{index} files")
+
+
+def _publish_github_release(
+    candidate: ReleaseCandidate,
+    *,
+    transport: PublicationTransport,
+    index: str,
+) -> GitHubRelease:
+    """Publish an exact draft, with an exact published prefix as a no-op."""
+    release, missing = _inspect_github_prefix(candidate, transport=transport)
+    if missing:
+        raise ReleaseCheckError(f"GitHub assets are missing: {', '.join(sorted(missing))}")
+    _require_index_prefix(candidate, index=index, transport=transport)
+    if not release.draft:
+        return release
+
     published = transport.publish_github_release(release)
     _verify_release_identity(published, candidate, transport=transport)
     if published.draft:
@@ -582,14 +604,7 @@ def prepare_index_upload(
     output_dir: Path,
 ) -> bool:
     """Copy only files proven missing from an index prefix into ``output_dir``."""
-    actual = transport.inspect_index(index=index, candidate=candidate)
-    missing = set(candidate.artifact_hashes)
-    if actual is not None:
-        missing = _verify_hash_map(
-            expected=candidate.artifact_hashes,
-            actual=actual,
-            label=f"{index} files",
-        )
+    missing = _index_missing(candidate, index=index, transport=transport)
     if not missing:
         print("index-prefix-exact=true")
         return True
