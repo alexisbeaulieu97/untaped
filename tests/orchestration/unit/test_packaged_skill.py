@@ -13,14 +13,14 @@ SKILL_PATH = Path(
 def test_packaged_skill_contains_all_agent_safety_rules() -> None:
     skill = SKILL_PATH.read_text(encoding="utf-8")
     required_rules = (
-        "Run `brief --format json`",
+        "Run `untaped orchestration brief --format json`",
         "Use returned IDs instead of scanning files",
         "Allocate one ID before init/create and reuse it through every retry",
-        "Load only needed bodies with `show`",
+        "Load only needed bodies with `untaped orchestration show`",
         "Pass revisions on every guarded mutation",
         "Never use `--force-current`",
         "Never read or edit generated views",
-        "Run `check` after hand edits or recovery",
+        "Run `untaped orchestration check` after hand edits or recovery",
         "Verify external evidence before recording it",
         "Never place tasks in a public store",
         "Stop readiness and delivery work on incomplete federation",
@@ -42,3 +42,5 @@ def test_packaged_skill_operationalizes_safe_retries_and_readiness() -> None:
     assert "Do not scan" in skill
     assert "Do not use `--force-current`" in skill
     assert "Do not create or move tasks into a public store" in skill
+    assert "untaped orchestration check --local" in skill
+    assert "untaped orchestration fmt --check --local" in skill

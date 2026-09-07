@@ -223,26 +223,8 @@ def test_hook_resolver_rejects_missing_lockfile(tmp_path: Path) -> None:
         HookResolver().resolve("check", recipe_dir)
 
 
-def test_hook_resolver_rejects_runtime_untaped_recipe_dependency(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        dependencies=["untaped-recipe>=0.7"],
-    )
-
-    with pytest.raises(ValueError, match="must not depend on untaped-recipe"):
-        HookResolver().resolve("check", recipe_dir)
-
-
-@pytest.mark.parametrize(
-    "dependency",
-    [
-        "Untaped_Recipe[hooks]>=0.7; python_version >= '3.14'",
-        "untaped-recipe @ git+https://example.invalid/untaped-recipe.git",
-    ],
-)
-def test_hook_resolver_rejects_pep508_runtime_untaped_recipe_dependencies(
+@pytest.mark.parametrize("dependency", ["untaped>=4.0.0rc1,<5", "untaped-recipe>=0.7"])
+def test_hook_resolver_rejects_runtime_cli_dependency(
     tmp_path: Path,
     dependency: str,
 ) -> None:
@@ -253,7 +235,38 @@ def test_hook_resolver_rejects_pep508_runtime_untaped_recipe_dependencies(
         dependencies=[dependency],
     )
 
-    with pytest.raises(ValueError, match="must not depend on untaped-recipe"):
+    with pytest.raises(
+        ValueError,
+        match=r"must not depend on (?:untaped|untaped-recipe) at runtime",
+    ) as exc_info:
+        HookResolver().resolve("check", recipe_dir)
+    assert "dependency-groups.dev" in str(exc_info.value)
+    assert "untaped>=4.0.0rc1,<5" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "dependency",
+    [
+        "Untaped_Recipe[hooks]>=0.7; python_version >= '3.14'",
+        "untaped-recipe @ git+https://example.invalid/untaped-recipe.git",
+        "untaped[recipe]>=4.0.0rc1,<5",
+    ],
+)
+def test_hook_resolver_rejects_pep508_runtime_cli_dependencies(
+    tmp_path: Path,
+    dependency: str,
+) -> None:
+    recipe_dir = tmp_path / "recipe"
+    _write_hook_project(
+        recipe_dir,
+        hooks={"check": "project_hooks.hooks.check"},
+        dependencies=[dependency],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"must not depend on (?:untaped|untaped-recipe) at runtime",
+    ):
         HookResolver().resolve("check", recipe_dir)
 
 
@@ -283,7 +296,10 @@ def test_hook_resolver_rejects_newer_required_hook_api(tmp_path: Path) -> None:
         requires_hook_api=">=99",
     )
 
-    with pytest.raises(ValueError, match="requires hook API >=99"):
+    with pytest.raises(
+        ValueError,
+        match=r"requires hook API >=99, but the untaped recipe capability provides 0\.10\.0",
+    ):
         HookResolver().resolve("check", recipe_dir)
 
 

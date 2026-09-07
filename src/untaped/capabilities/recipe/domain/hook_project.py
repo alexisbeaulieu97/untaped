@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
 
 _DOTTED_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
+_UNTAPED_DEV_REQUIREMENT = "untaped>=4.0.0rc1,<5"
 HookKind = Literal["transform", "validate"]
 
 
@@ -184,10 +185,12 @@ def require_pack_lock(project_root: Path, *, has_hooks: bool) -> None:
 def validate_hook_project_contract(project_root: Path, metadata: HookApiContract) -> None:
     """Require hook projects to be compatible with the running helper API."""
     for dependency in metadata.runtime_dependencies:
-        if dependency_name(dependency) == "untaped-recipe":
+        dependency_distribution = dependency_name(dependency)
+        if dependency_distribution in {"untaped", "untaped-recipe"}:
             raise ValueError(
-                "hook project must not depend on untaped-recipe at runtime; "
-                "add untaped-recipe to dependency-groups.dev instead: "
+                f"hook project must not depend on {dependency_distribution} at runtime; "
+                "add the unified requirement to dependency-groups.dev instead: "
+                f"{_UNTAPED_DEV_REQUIREMENT}; "
                 f"{project_root}"
             )
     if metadata.requires_hook_api is None:
@@ -196,7 +199,7 @@ def validate_hook_project_contract(project_root: Path, metadata: HookApiContract
     if Version(HOOK_API_VERSION) not in specifier:
         raise ValueError(
             f"hook project requires hook API {metadata.requires_hook_api}, "
-            f"but untaped-recipe provides {HOOK_API_VERSION}: {project_root}"
+            f"but the untaped recipe capability provides {HOOK_API_VERSION}: {project_root}"
         )
 
 

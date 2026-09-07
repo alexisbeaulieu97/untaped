@@ -58,7 +58,9 @@ def test_spec_is_recipe_capability() -> None:
     }
     (skill,) = SPEC.skills
     assert skill.name == "untaped-recipe"
-    assert skill.description == "Use the untaped-recipe CLI."
+    assert skill.description == (
+        "Use the untaped recipe capability to apply local recipe packs across directories."
+    )
     assert skill.source.joinpath("SKILL.md").is_file()
     assert SPEC.doctor_checks == ()
 

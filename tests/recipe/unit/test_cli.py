@@ -3343,7 +3343,7 @@ def test_recipe_check_validates_unreferenced_local_hook_project_lockfile(tmp_pat
     assert "missing uv.lock" in rows[0]["error"]
 
 
-def test_recipe_check_rejects_runtime_untaped_recipe_hook_dependency(tmp_path: Path) -> None:
+def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipe"
     recipe_dir.mkdir()
     (recipe_dir / "recipe.yml").write_text("version: 1\nsteps: []\n")
@@ -3357,7 +3357,7 @@ def test_recipe_check_rejects_runtime_untaped_recipe_hook_dependency(tmp_path: P
     pyproject.write_text(
         pyproject.read_text().replace(
             "dependencies = []",
-            'dependencies = ["untaped-recipe>=0.7"]',
+            'dependencies = ["untaped>=4.0.0rc1,<5"]',
         )
     )
 
@@ -3366,7 +3366,9 @@ def test_recipe_check_rejects_runtime_untaped_recipe_hook_dependency(tmp_path: P
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
     assert rows[0]["status"] == "error"
-    assert "must not depend on untaped-recipe at runtime" in rows[0]["error"]
+    assert "must not depend on untaped at runtime" in rows[0]["error"]
+    assert "dependency-groups.dev" in rows[0]["error"]
+    assert "untaped>=4.0.0rc1,<5" in rows[0]["error"]
 
 
 def test_recipe_check_validates_unreferenced_local_hook_project_modules(tmp_path: Path) -> None:

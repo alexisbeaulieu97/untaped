@@ -39,7 +39,9 @@ SPEC = CapabilitySpec(
             source=Path(
                 str(files("untaped.capabilities.recipe").joinpath("skills", "untaped-recipe"))
             ),
-            description="Use the untaped-recipe CLI.",
+            description=(
+                "Use the untaped recipe capability to apply local recipe packs across directories."
+            ),
         ),
     ),
     doctor_checks=(),

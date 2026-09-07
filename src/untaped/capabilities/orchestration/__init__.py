@@ -43,7 +43,7 @@ SPEC = CapabilitySpec(
                     )
                 )
             ),
-            description="Use the untaped-orchestration CLI.",
+            description="Use typed repository orchestration stores with untaped orchestration.",
         ),
     ),
     doctor_checks=(),

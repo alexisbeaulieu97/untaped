@@ -60,7 +60,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(
         "dependencies = []\n"
         "\n"
         "[dependency-groups]\n"
-        'dev = ["untaped-recipe>=0.10", "pytest"]\n'
+        'dev = ["untaped>=4.0.0rc1,<5", "pytest"]\n'
         "\n"
         "[tool.pytest.ini_options]\n"
         'pythonpath = ["src"]\n'
@@ -122,6 +122,7 @@ def test_scaffold_recipe_creates_starter_test_case(
     assert (case_dir / "given").is_dir()
     case_yml = (case_dir / "case.yml").read_text(encoding="utf-8")
     assert case_yml.startswith("#")
+    assert "untaped recipe test <pack>/<recipe>" in case_yml
     from untaped.capabilities.recipe.application.harness import load_case_spec
 
     assert load_case_spec(case_dir).expect == "success"
@@ -180,7 +181,7 @@ def test_scaffold_hook_writes_exporting_stub_and_manifest_row(
         "from typing import TYPE_CHECKING\n"
         "\n"
         "if TYPE_CHECKING:\n"
-        "    from untaped_recipe.hook_api import HookHelpers\n"
+        "    from untaped.capabilities.recipe.hook_api import HookHelpers\n"
         "\n"
         "\n"
         "def transform(\n"
@@ -215,7 +216,7 @@ def test_scaffold_hook_can_write_validate_stub(
         "from typing import TYPE_CHECKING\n"
         "\n"
         "if TYPE_CHECKING:\n"
-        "    from untaped_recipe.hook_api import HookHelpers\n"
+        "    from untaped.capabilities.recipe.hook_api import HookHelpers\n"
         "\n"
         "\n"
         "def validate(\n"
@@ -242,7 +243,7 @@ def test_scaffold_hook_writes_direct_pytest(
     content = test_path.read_text(encoding="utf-8")
     compile(content, str(test_path), "exec")
     assert "from pathlib import Path" in content
-    assert "from untaped_recipe.hook_worker import HookHelpers" in content
+    assert "from untaped.capabilities.recipe.hook_worker import HookHelpers" in content
     assert "from ansible_pack.hooks.set_owner import transform" in content
     assert 'target=Path(".")' in content
     assert 'file=Path("example.txt")' in content

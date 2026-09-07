@@ -11,7 +11,6 @@ import tomlkit
 from packaging.version import Version
 from tomlkit import TOMLDocument
 
-from untaped.capabilities.recipe._version import PACKAGE_VERSION
 from untaped.capabilities.recipe.domain.hook_project import HookKind, normalize_hook_name
 from untaped.capabilities.recipe.domain.pack import PackManifest
 from untaped.capabilities.recipe.domain.paths import safe_library_name
@@ -22,20 +21,17 @@ from untaped.capabilities.recipe.infrastructure.uv_project import lock_project
 
 def hook_api_requirements(
     *,
-    package_version: str = PACKAGE_VERSION,
     hook_api_version: str = HOOK_API_VERSION,
 ) -> tuple[str, str]:
-    """Return the hook API project floor and type-discovery dependency.
+    """Return the hook API project floor and unified dev dependency.
 
-    The dev dependency exists only so hook authors get editor access to the
-    public hook API. Its floor tracks the helper API contract, which changes
-    rarely, rather than the CLI release cadence.
+    The hook API requirement is a protocol compatibility check. The dev
+    dependency is the shipped unified distribution and therefore has its own
+    product compatibility range.
     """
-    Version(package_version)
     hook_api = Version(hook_api_version)
     project_requirement = f">={hook_api.major}.{hook_api.minor},<{hook_api.major + 1}"
-    dev_requirement = f"untaped-recipe>={hook_api.major}.{hook_api.minor}"
-    return project_requirement, dev_requirement
+    return project_requirement, "untaped>=4.0.0rc1,<5"
 
 
 _HOOK_API_PROJECT_REQUIREMENT, _HOOK_API_DEV_REQUIREMENT = hook_api_requirements()
@@ -46,7 +42,7 @@ class ScaffoldLockError(ValueError):
 
 
 _CASE_YML_TEMPLATE = """\
-# Golden test case for this recipe (run with: untaped-recipe test <pack>/<recipe>).
+# Golden test case for this recipe (run with: untaped recipe test <pack>/<recipe>).
 # Sibling directories:
 #   given/    - fixture target directory the plan runs against
 #   expected/ - full expected tree after the plan; omit to assert no changes
@@ -228,7 +224,7 @@ _HOOK_STUB_PREAMBLE = (
     "from typing import TYPE_CHECKING\n"
     "\n"
     "if TYPE_CHECKING:\n"
-    "    from untaped_recipe.hook_api import HookHelpers\n"
+    "    from untaped.capabilities.recipe.hook_api import HookHelpers\n"
     "\n"
     "\n"
 )
@@ -265,7 +261,7 @@ def _hook_test_stub(kind: Literal["transform", "validate"], module: str) -> str:
         return (
             "from pathlib import Path\n"
             "\n"
-            "from untaped_recipe.hook_worker import HookHelpers\n"
+            "from untaped.capabilities.recipe.hook_worker import HookHelpers\n"
             "\n"
             f"from {module} import validate\n"
             "\n"
@@ -278,7 +274,7 @@ def _hook_test_stub(kind: Literal["transform", "validate"], module: str) -> str:
     return (
         "from pathlib import Path\n"
         "\n"
-        "from untaped_recipe.hook_worker import HookHelpers\n"
+        "from untaped.capabilities.recipe.hook_worker import HookHelpers\n"
         "\n"
         f"from {module} import transform\n"
         "\n"
