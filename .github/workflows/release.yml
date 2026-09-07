@@ -102,7 +102,10 @@ jobs:
         run: uv run pytest
 
       - name: Build package
-        run: uv build --no-sources
+        run: |
+          set -euo pipefail
+          uv build --no-sources
+          rm -f dist/.gitignore
 
       - name: Smoke local wheel
         run: |
