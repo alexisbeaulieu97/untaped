@@ -32,6 +32,12 @@ reason = "strict-variable test-suite template rendering in the awx test parser"
 requirement = "jinja2>=3.1.6"
 
 [[dep]]
+name = "packaging"
+owner = "recipe"
+reason = "version/requirement parsing for hook-API floor derivation in recipe pack scaffolding"
+requirement = "packaging>=26.2,<27"
+
+[[dep]]
 name = "prompt-toolkit"
 owner = "workspace"
 reason = "interactive prompts via kernel prompt primitives"
@@ -60,6 +66,18 @@ name = "rich"
 owner = "workspace"
 reason = "table/console output rendering via kernel render helpers"
 requirement = "rich>=15.0.0"
+
+[[dep]]
+name = "ruamel.yaml"
+owner = "recipe"
+reason = "round-trip YAML load/dump preserving hook formatting and comments in recipes"
+requirement = "ruamel-yaml>=0.18.16"
+
+[[dep]]
+name = "tomlkit"
+owner = "recipe"
+reason = "pyproject manifest read/edit preserving pack formatting in recipe projects"
+requirement = "tomlkit>=0.13,<1"
 
 [[dep]]
 name = "truststore"

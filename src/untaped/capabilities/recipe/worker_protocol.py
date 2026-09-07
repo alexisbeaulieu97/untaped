@@ -1,0 +1,18 @@
+"""Stdlib-only constants for the external hook worker protocol."""
+
+ID = "id"
+KIND = "kind"
+READY = "ready"
+MODULE = "module"
+CONTENT = "content"
+INPUTS = "inputs"
+TARGET = "target"
+FILE = "file"
+ARGS = "args"
+OK = "ok"
+RESULT = "result"
+WARNINGS = "warnings"
+ERROR = "error"
+
+TRANSFORM = "transform"
+VALIDATE = "validate"

@@ -14,11 +14,14 @@ dependencies = [
     "filelock>=3.29.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    "packaging>=26.2,<27",
     "prompt-toolkit>=3.0.52",
     "pydantic>=2.13.3",
     "pydantic-settings>=2.14.0",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
+    "ruamel.yaml>=0.18.16",
+    "tomlkit>=0.13,<1",
     "truststore>=0.10.4",
 ]
 

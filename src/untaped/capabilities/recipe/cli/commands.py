@@ -1,0 +1,1060 @@
+"""Cyclopts app composition root and apply command."""
+
+from __future__ import annotations
+
+import tempfile
+from collections.abc import Sequence
+from contextlib import ExitStack
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Annotated, Literal
+
+from cyclopts import Parameter
+
+from untaped.api import (
+    BatchOutcome,
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    UntapedError,
+    batch_apply,
+    clamp_parallel,
+    create_app,
+    echo,
+    emit,
+    finish,
+    parse_kv_pairs,
+    read_stdin,
+    render_rows,
+    ui_context,
+)
+from untaped.capabilities.recipe.application import RunBulkApply
+from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
+from untaped.capabilities.recipe.application.check_pack import check_library, check_ref
+from untaped.capabilities.recipe.application.inputs import PromptFunc
+from untaped.capabilities.recipe.application.resolution import (
+    existing_path_hint,
+    resolve_apply_recipe,
+)
+from untaped.capabilities.recipe.application.run_bulk import ApplyWriteError, flush_changes
+from untaped.capabilities.recipe.application.targets import Target, resolve_target_lines
+from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
+from untaped.capabilities.recipe.cli.backup_commands import app as backup_app
+from untaped.capabilities.recipe.cli.common import (
+    edit_path,
+    hook_startup_notice,
+    hook_timeout_seconds,
+    library_root,
+    load_yaml_mapping_file,
+    report_config_errors,
+    settings,
+)
+from untaped.capabilities.recipe.cli.detail import hook_detail, pack_detail, recipe_detail
+from untaped.capabilities.recipe.cli.hook_commands import app as hook_app
+from untaped.capabilities.recipe.cli.preview import PreviewMode, preview_summary, render_preview
+from untaped.capabilities.recipe.cli.test_commands import test_command
+from untaped.capabilities.recipe.domain.hook_exports import hook_exports
+from untaped.capabilities.recipe.domain.hook_project import (
+    hook_module_file,
+)
+from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest, RecipeEntry, parse_ref
+from untaped.capabilities.recipe.domain.paths import safe_library_name
+from untaped.capabilities.recipe.domain.plan import TargetPlan
+from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capabilities.recipe.infrastructure import (
+    BackupStore,
+    HookExecutor,
+    HookResolver,
+    pack_scaffold,
+)
+from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
+from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+from untaped.capabilities.recipe.infrastructure.pack_store import (
+    InstalledPack,
+    fetch_pack_source,
+    is_git_url,
+    local_edits_message,
+    validate_pack,
+)
+from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary as UnifiedPackLibrary
+from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
+
+app = create_app(name="recipe", help="Apply reusable local recipes to plain directories.")
+new_app = create_app(name="new", help="Scaffold recipe packs, recipes, and hooks.")
+app.command(new_app, name="new")
+app.command(hook_app, name="hook")
+app.command(backup_app, name="backup")
+app.command(test_command, name="test")
+
+MessageKind = Literal["success", "warning", "error", "info"]
+_NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running."
+
+
+@dataclass(frozen=True)
+class _ResolvedTarget:
+    """A pack/recipe/hook/builtin ref resolved for `show` and `edit`."""
+
+    pack: InstalledPack | None = None
+    name: str | None = None
+    recipe: RecipeEntry | None = None
+    hook: HookEntry | None = None
+    builtin: str | None = None
+
+
+@dataclass(frozen=True)
+class ApplyContext:
+    """Prepared apply state."""
+
+    root: Path
+    recipe: Recipe
+    recipe_ref: str
+    plans: list[TargetPlan]
+
+
+@dataclass(frozen=True)
+class ApplyExecution:
+    """Executed apply state used for stable row rendering."""
+
+    outcome: BatchOutcome[TargetPlan, TargetPlan]
+    applied: frozenset[int]
+    failed: dict[int, str]
+    backup_id: str | None = None
+    cancelled: bool = False
+
+
+@dataclass(frozen=True)
+class TargetInput:
+    """Resolved target records plus whether stdin supplied nonblank lines."""
+
+    targets: list[Target]
+    stdin_records: bool = False
+
+
+@new_app.command(name="pack")
+def new_pack_command(
+    name: Annotated[str, Parameter(help="Pack name.")],
+    /,
+    *,
+    no_lock: Annotated[
+        bool,
+        Parameter(name="--no-lock", negative="", help="Skip refreshing uv.lock."),
+    ] = False,
+) -> None:
+    """Scaffold a recipe pack."""
+    with report_config_errors():
+        pack_name = safe_library_name(name, field="pack")
+        path = pack_scaffold.scaffold_pack(Path.cwd() / pack_name, pack_name, lock=not no_lock)
+        if no_lock:
+            _warn_no_lock(path)
+        echo(str(path))
+
+
+@new_app.command(name="recipe")
+def new_recipe_command(
+    ref: Annotated[str, Parameter(help="PACK/RECIPE reference.")],
+    /,
+    *,
+    no_lock: Annotated[
+        bool,
+        Parameter(name="--no-lock", negative="", help="Skip refreshing uv.lock."),
+    ] = False,
+) -> None:
+    """Scaffold a recipe inside a pack."""
+    with report_config_errors():
+        pack_dir, name = _new_pack_child(ref)
+        path = pack_scaffold.scaffold_recipe(pack_dir, name, lock=not no_lock)
+        if no_lock:
+            _warn_no_lock(pack_dir)
+        echo(str(path))
+
+
+@new_app.command(name="hook")
+def new_hook_command(
+    ref: Annotated[str, Parameter(help="PACK/HOOK reference.")],
+    /,
+    *,
+    kind: Annotated[
+        Literal["transform", "validate"],
+        Parameter(name="--kind", help="Hook callable stub kind."),
+    ] = "transform",
+    force: Annotated[
+        bool,
+        Parameter(
+            name="--force",
+            negative="",
+            help="Replace an existing hook's stub and paired test (e.g. wrong --kind).",
+        ),
+    ] = False,
+    no_lock: Annotated[
+        bool,
+        Parameter(name="--no-lock", negative="", help="Skip refreshing uv.lock."),
+    ] = False,
+) -> None:
+    """Scaffold a hook inside a pack."""
+    with report_config_errors():
+        pack_dir, name = _new_pack_child(ref)
+        path = pack_scaffold.scaffold_hook(pack_dir, name, kind=kind, lock=not no_lock, force=force)
+        if no_lock:
+            _warn_no_lock(pack_dir)
+        echo(
+            f"scaffolded {kind} hook (choose with --kind transform|validate; "
+            "replace an existing hook with --force)",
+            err=True,
+        )
+        echo(str(path))
+
+
+def _warn_no_lock(project_root: Path) -> None:
+    echo(_NO_LOCK_NOTE.format(path=project_root), err=True)
+
+
+@app.command(name="apply")
+def apply_command(
+    recipe_ref: Annotated[str, Parameter(help="Recipe id, pack/recipe ref, or path.")],
+    dirs: Annotated[list[Path] | None, Parameter(help="Target directories.")] = None,
+    *,
+    recipe_id: Annotated[
+        str | None,
+        Parameter(name="--recipe", help="Recipe id when applying a local pack path."),
+    ] = None,
+    stdin: Annotated[
+        bool,
+        Parameter(
+            name="--stdin",
+            negative="",
+            help="Read target paths or pipe records from stdin.",
+        ),
+    ] = False,
+    var: Annotated[
+        list[str] | None,
+        Parameter(name="--var", help="Input override as key=value.", consume_multiple=False),
+    ] = None,
+    vars_file: Annotated[
+        Path | None,
+        Parameter(name="--vars", help="YAML file containing input overrides."),
+    ] = None,
+    input_from: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--input-from",
+            help="Derive one input from a per-target Jinja expression as key=template.",
+            consume_multiple=False,
+        ),
+    ] = None,
+    interactive: Annotated[
+        bool,
+        Parameter(name="--interactive", negative="", help="Prompt for unresolved inputs."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        Parameter(name="--dry-run", negative="", help="Preview without writing."),
+    ] = False,
+    check: Annotated[
+        bool,
+        Parameter(
+            name="--check",
+            negative="",
+            help="Preview and exit non-zero when changes would be made.",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
+    ] = False,
+    backup: Annotated[
+        bool,
+        Parameter(name="--backup", negative="--no-backup", help="Create backups before writing."),
+    ] = True,
+    parallel: Annotated[
+        int,
+        Parameter(name=["--parallel", "-j"], help="Target planning workers."),
+    ] = 1,
+    hook_timeout: Annotated[
+        float | None,
+        Parameter(name="--hook-timeout", help="Per-hook timeout in seconds; 0 disables."),
+    ] = None,
+    preview: Annotated[
+        PreviewMode | None,
+        Parameter(
+            name="--preview",
+            help=(
+                "Preview style: table, diff, or none. "
+                "Defaults to none with --check, table otherwise."
+            ),
+        ),
+    ] = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Apply a recipe to target directories."""
+    with report_config_errors():
+        if interactive and check:
+            raise ConfigError("--interactive cannot be used with --check")
+        if stdin and not yes and not dry_run and not check:
+            raise ConfigError(
+                "apply requires --yes with --stdin unless --dry-run or --check is used"
+            )
+        with ExitStack() as stack:
+            prompt = _interactive_prompt(stdin=stdin, interactive=interactive, stack=stack)
+            context = _apply_context(
+                recipe_ref,
+                dirs=list(dirs or []),
+                stdin=stdin,
+                raw_vars=var or [],
+                vars_file=vars_file,
+                raw_input_from=input_from or [],
+                interactive=interactive,
+                prompt=prompt,
+                parallel=parallel,
+                hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
+                recipe_id=recipe_id,
+            )
+            effective_preview = _effective_preview(preview, check=check)
+            render_preview(
+                context.recipe,
+                context.plans,
+                preview=effective_preview,
+                preview_max_rows=settings().preview_max_rows,
+            )
+            outcome = _execute_plans(
+                context,
+                backup=backup and not check,
+                yes=yes or check,
+                dry_run=dry_run or check,
+            )
+        rows = _outcome_rows(
+            context.plans,
+            outcome,
+            recipe_ref=context.recipe_ref,
+            preview_status=_preview_status(dry_run, check),
+        )
+        if fmt == "table":
+            # Human view: key=value pairs instead of a dict repr. Structured
+            # formats keep the real mapping for pipe/json consumers.
+            rows = [{**row, "inputs": _inputs_cell(row["inputs"])} for row in rows]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.outcome")
+        if rendered:
+            echo(rendered)
+        _render_result_summary(context.plans, outcome, check=check, dry_run=dry_run)
+        has_errors = any(plan.status == "error" for plan in context.plans)
+        has_drift = check and any(plan.status != "error" and plan.changes for plan in context.plans)
+        finish(has_errors or outcome.outcome.any_failed or has_drift)
+
+
+@app.command(name="add")
+def add_command(
+    source: Annotated[str, Parameter(help="Pack project path or git URL.")],
+    /,
+    *,
+    rev: Annotated[str | None, Parameter(name="--rev", help="Git revision to install.")] = None,
+    name: Annotated[
+        str | None,
+        Parameter(name="--name", help="Installed pack identity override."),
+    ] = None,
+    force: Annotated[
+        bool,
+        Parameter(name="--force", negative="", help="Replace an existing installed pack."),
+    ] = False,
+    discard_edits: Annotated[
+        bool,
+        Parameter(
+            name="--discard-edits",
+            negative="",
+            help="With --force, overwrite local edits made to the library copy.",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
+    ] = False,
+) -> None:
+    """Install a recipe pack from a path or git URL."""
+    with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
+        source_dir = (
+            fetch_pack_source(source, rev=rev, dest=Path(temp_root) / "pack")
+            if is_git_url(source)
+            else Path(source).expanduser()
+        )
+        manifest = PackManifest.from_pyproject(source_dir)
+        # Validate before printing the pack summary: error output leads, and
+        # the summary follows only on a pack that will actually install.
+        validate_pack(source_dir, manifest)
+        installed_name = name or manifest.name
+        library = UnifiedPackLibrary(library_root=library_root())
+        edited = force and library.local_edits(installed_name)
+        if edited and not discard_edits:
+            raise ConfigError(local_edits_message(installed_name))
+        _render_pack_add_preview(installed_name, manifest, local_edits=edited)
+
+        def _install(item: str) -> PackManifest:
+            del item
+            return library.add(
+                source_dir,
+                source=source,
+                rev=rev,
+                name=name,
+                force=force,
+                discard_edits=discard_edits,
+            )
+
+        outcome = batch_apply(
+            [source],
+            _install,
+            verb="add",
+            noun="pack",
+            label=lambda item: installed_name,
+            describe=lambda item: {"name": installed_name, "source": item},
+            ui=ui_context(strict=False),
+            destructive=True,
+            assume_yes=yes,
+        )
+        if outcome.results:
+            echo(installed_name)
+
+
+@app.command(name="list")
+def list_command(
+    *,
+    hooks: Annotated[
+        bool,
+        Parameter(name="--hooks", negative="", help="List hooks instead of recipes."),
+    ] = False,
+    packs: Annotated[
+        bool,
+        Parameter(name="--packs", negative="", help="List installed packs."),
+    ] = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """List installed recipes, hooks, or packs."""
+    with report_config_errors():
+        if hooks and packs:
+            raise ConfigError("choose one of --hooks or --packs")
+        installed = UnifiedPackLibrary(library_root=library_root()).packs()
+        if packs:
+            rows = [_pack_row(pack) for pack in installed]
+            kind = "recipe.pack"
+        elif hooks:
+            rows = [
+                _hook_row(pack, name, entry) for pack in installed for name, entry in _hooks(pack)
+            ]
+            rows.extend(_builtin_hook_row(name) for name in sorted(BUILTIN_HOOKS))
+            kind = "recipe.hook"
+        else:
+            rows = [
+                _recipe_row(pack, name, entry)
+                for pack in installed
+                for name, entry in _recipes(pack)
+            ]
+            kind = "recipe.recipe"
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind=kind)
+        if rendered:
+            echo(rendered)
+        if not installed and not (hooks and BUILTIN_HOOKS):
+            ui_context(strict=False).message(
+                "info",
+                "no packs installed; scaffold one with `new pack` or install with `add`",
+            )
+
+
+@app.command(name="show")
+def show_command(
+    ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook ref.")],
+    /,
+    *,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Show an installed pack, recipe, or hook."""
+    with report_config_errors():
+        library = UnifiedPackLibrary(library_root=library_root())
+        target = _resolve_target(library, ref_text)
+        if target.builtin is not None:
+            builtin = BUILTIN_HOOKS[target.builtin]
+            emit(
+                hook_detail(
+                    target.builtin,
+                    HookEntry(module=builtin.module.__name__),
+                    builtin.exports,
+                    Path(builtin.module.__file__ or ""),
+                ),
+                fmt=fmt,
+                columns=columns,
+                kind="recipe.hook",
+            )
+            return
+        assert target.pack is not None
+        if target.recipe is not None:
+            recipe_path = target.pack.root / target.recipe.path
+            emit(
+                recipe_detail(
+                    f"{target.pack.name}/{target.name}",
+                    _load_recipe(recipe_path),
+                    recipe_path,
+                ),
+                fmt=fmt,
+                columns=columns,
+                kind="recipe.recipe",
+            )
+        elif target.hook is not None:
+            module_file = hook_module_file(target.pack.root, target.hook.module)
+            emit(
+                hook_detail(
+                    f"{target.pack.name}/{target.name}",
+                    target.hook,
+                    hook_exports(module_file),
+                    module_file,
+                ),
+                fmt=fmt,
+                columns=columns,
+                kind="recipe.hook",
+            )
+        else:
+            emit(
+                pack_detail(target.pack.name, target.pack.manifest, target.pack.root),
+                fmt=fmt,
+                columns=columns,
+                kind="recipe.pack",
+            )
+
+
+@app.command(name="check")
+def check_command(
+    ref_text: Annotated[
+        str | None,
+        Parameter(help="Installed pack, recipe ref, or explicit path."),
+    ] = None,
+    /,
+    *,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Validate a pack, recipe, or the whole installed library."""
+    with report_config_errors():
+        root = library_root()
+        rows = check_library(root) if ref_text is None else [check_ref(root, ref_text)]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.check")
+        if rendered:
+            echo(rendered)
+        if ref_text is None and not rows:
+            ui_context(strict=False).message(
+                "info",
+                "no packs installed; scaffold one with `new pack` or install with `add`",
+            )
+        finish(any(row["status"] == "error" for row in rows))
+
+
+@app.command(name="remove")
+def remove_command(
+    name: Annotated[str, Parameter(help="Installed pack identity.")],
+    /,
+    *,
+    yes: Annotated[
+        bool,
+        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
+    ] = False,
+) -> None:
+    """Remove an installed pack."""
+    with report_config_errors():
+        library = UnifiedPackLibrary(library_root=library_root())
+
+        def _remove(item: str) -> str:
+            library.remove(item)
+            return item
+
+        def _preview(rows: Sequence[dict[str, object]]) -> None:
+            echo(f"About to remove {len(rows)} pack(s):", err=True)
+            for row in rows:
+                echo(f"  - {row['name']}", err=True)
+            if library.local_edits(name):
+                echo(
+                    f"Warning: pack '{name}' has local edits in the library "
+                    "(via edit or new recipe/hook); removing discards them.",
+                    err=True,
+                )
+
+        batch_apply(
+            [name],
+            _remove,
+            verb="remove",
+            noun="pack",
+            label=str,
+            describe=lambda item: {"name": item},
+            ui=ui_context(strict=False),
+            destructive=True,
+            assume_yes=yes,
+            preview=_preview,
+        )
+
+
+@app.command(name="edit")
+def edit_command(ref_text: Annotated[str, Parameter(help="Pack, recipe, or hook ref.")], /) -> None:
+    """Open a pack pyproject, recipe file, or hook module in $VISUAL or $EDITOR."""
+    with report_config_errors():
+        library = UnifiedPackLibrary(library_root=library_root())
+        target = _resolve_target(library, ref_text)
+        if target.builtin is not None:
+            raise ConfigError(
+                f"built-in hooks are engine-owned and cannot be edited: {target.builtin}"
+            )
+        assert target.pack is not None
+        if target.recipe is not None:
+            edit_path(target.pack.root / target.recipe.path)
+        elif target.hook is not None:
+            edit_path(hook_module_file(target.pack.root, target.hook.module))
+        else:
+            edit_path(target.pack.root / "pyproject.toml")
+
+
+def _apply_context(
+    recipe: str,
+    *,
+    dirs: list[Path],
+    stdin: bool,
+    raw_vars: list[str],
+    vars_file: Path | None,
+    raw_input_from: list[str],
+    interactive: bool,
+    prompt: PromptFunc | None,
+    parallel: int,
+    hook_timeout_seconds: float,
+    recipe_id: str | None = None,
+) -> ApplyContext:
+    root = library_root()
+    recipe_resolution = resolve_apply_recipe(root, recipe, recipe_id=recipe_id)
+    recipe_path = recipe_resolution.path
+    loaded = _load_recipe(recipe_path)
+    target_input = _targets(dirs, stdin=stdin)
+    targets = target_input.targets
+    if not targets:
+        if target_input.stdin_records:
+            return ApplyContext(
+                root=root,
+                recipe=loaded,
+                recipe_ref=recipe_resolution.ref,
+                plans=[],
+            )
+        raise ConfigError("at least one target directory is required (or use --stdin)")
+    inputs = _input_values(raw_vars, vars_file)
+    input_from = _input_sources(raw_input_from)
+    workers = clamp_parallel(max(parallel, 1), cap=32, policy="recipe planning cap")
+    ui = ui_context(strict=False)
+    with UvHookWorkerPool(
+        max_workers_per_project=workers,
+        hook_timeout_seconds=hook_timeout_seconds,
+        startup_timeout_seconds=settings().hook_startup_timeout_seconds,
+        startup_notice=hook_startup_notice(ui),
+    ) as hook_workers:
+        runner = RunBulkApply(
+            ApplyRecipe(
+                HookExecutor(
+                    HookResolver(library_root=root),
+                    workers=hook_workers,
+                )
+            )
+        )
+        with ui.progress("Planning targets") as progress:
+            try:
+                plans = runner.plan(
+                    recipe=loaded,
+                    recipe_dir=recipe_path.parent,
+                    local_hook_project=recipe_resolution.local_hook_project,
+                    targets=targets,
+                    inputs=inputs,
+                    input_from=input_from,
+                    interactive=interactive,
+                    prompt=prompt,
+                    parallel=workers,
+                    on_progress=lambda done, total: progress.update(
+                        f"{done}/{total}",
+                        fraction=done / total if total else None,
+                    ),
+                )
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+    return ApplyContext(
+        root=root,
+        recipe=loaded,
+        recipe_ref=recipe_resolution.ref,
+        plans=plans,
+    )
+
+
+def _resolve_target(library: UnifiedPackLibrary, ref_text: str) -> _ResolvedTarget:
+    """Resolve a ref to a pack, recipe, or hook, preferring recipes' not-found error."""
+    pack = library.find_pack(ref_text)
+    if pack is not None:
+        return _ResolvedTarget(pack=pack)
+    ref = parse_ref(ref_text)
+    try:
+        recipe_pack, recipe = library.find_recipe(ref)
+    except ValueError as recipe_error:
+        try:
+            hook_pack, hook = library.find_hook(ref)
+        except ValueError:
+            if "/" not in ref_text and ref_text in BUILTIN_HOOKS:
+                return _ResolvedTarget(name=ref_text, builtin=ref_text)
+            if str(recipe_error).startswith("recipe not found"):
+                raise ValueError(f"{recipe_error}{existing_path_hint(ref_text)}") from None
+            raise recipe_error from None
+        return _ResolvedTarget(pack=hook_pack, name=ref.name, hook=hook)
+    return _ResolvedTarget(pack=recipe_pack, name=ref.name, recipe=recipe)
+
+
+def _recipes(pack: InstalledPack) -> list[tuple[str, RecipeEntry]]:
+    return sorted(pack.manifest.recipes.items())
+
+
+def _hooks(pack: InstalledPack) -> list[tuple[str, HookEntry]]:
+    return sorted(pack.manifest.hooks.items())
+
+
+def _pack_row(pack: InstalledPack) -> dict[str, object]:
+    return {
+        "name": pack.name,
+        "version": pack.installed_version,
+        "path": str(pack.root),
+        "source": pack.source,
+        "rev": pack.rev,
+        "recipes": len(pack.manifest.recipes),
+        "hooks": len(pack.manifest.hooks),
+    }
+
+
+def _recipe_row(pack: InstalledPack, name: str, entry: RecipeEntry) -> dict[str, object]:
+    return {
+        "pack": pack.name,
+        "name": name,
+        "ref": f"{pack.name}/{name}",
+        "path": str(pack.root / entry.path),
+    }
+
+
+def _hook_row(pack: InstalledPack, name: str, entry: HookEntry) -> dict[str, object]:
+    return {
+        "pack": pack.name,
+        "name": name,
+        "ref": f"{pack.name}/{name}",
+        "module": entry.module,
+        "path": str(hook_module_file(pack.root, entry.module)),
+    }
+
+
+def _builtin_hook_row(name: str) -> dict[str, object]:
+    module = BUILTIN_HOOKS[name].module
+    return {
+        "pack": "(builtin)",
+        "name": name,
+        "ref": name,
+        "module": module.__name__,
+        "path": module.__file__ or "",
+    }
+
+
+def _render_pack_add_preview(
+    installed_name: str,
+    manifest: PackManifest,
+    *,
+    local_edits: bool = False,
+) -> None:
+    echo(f"Pack: {installed_name}", err=True)
+    recipes = ", ".join(sorted(manifest.recipes)) or "(none)"
+    hooks = ", ".join(sorted(manifest.hooks)) or "(none)"
+    echo(f"Recipes: {recipes}", err=True)
+    echo(f"Hooks: {hooks}", err=True)
+    if local_edits:
+        echo(
+            "Warning: library copy has local edits; --discard-edits will overwrite them.",
+            err=True,
+        )
+
+
+def _new_pack_child(ref_text: str) -> tuple[Path, str]:
+    if _is_explicit_new_path(ref_text):
+        path = Path(ref_text).expanduser()
+        if not path.name or path.parent == Path("."):
+            raise ValueError("qualified refs must use <pack>/<name>")
+        return path.parent, path.name
+    ref = parse_ref(ref_text)
+    if ref.pack is None:
+        raise ValueError("qualified refs must use <pack>/<name>")
+    installed_name = safe_library_name(ref.pack, field="pack")
+    for installed in UnifiedPackLibrary(library_root=library_root()).packs():
+        if installed.name == installed_name:
+            return installed.root, ref.name
+    raise ValueError(f"pack not found: {ref.pack}{_new_pack_child_hint(ref.pack, ref.name)}")
+
+
+def _is_explicit_new_path(value: str) -> bool:
+    return value.startswith(("/", "./", "../", "~"))
+
+
+def _new_pack_child_hint(pack: str, name: str) -> str:
+    if Path(pack).is_dir():
+        return (
+            f" (a directory named '{pack}' exists — use ./{pack}/{name}, "
+            f"or install it with add ./{pack})"
+        )
+    return ""
+
+
+def _load_recipe(recipe_path: Path) -> Recipe:
+    try:
+        return load_recipe_file(recipe_path)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _effective_preview(preview: PreviewMode | None, *, check: bool) -> PreviewMode:
+    if preview is not None:
+        return preview
+    if check:
+        return "none"
+    return "table"
+
+
+def _execute_plans(
+    context: ApplyContext,
+    *,
+    backup: bool,
+    yes: bool,
+    dry_run: bool,
+) -> ApplyExecution:
+    actionable = [plan for plan in context.plans if plan.status != "error" and plan.changes]
+    store = BackupStore(context.root / "backups")
+    draft: BackupDraft | None = None
+    applied: set[int] = set()
+    failed: dict[int, str] = {}
+
+    def _apply(plan: TargetPlan) -> TargetPlan:
+        nonlocal draft
+        reservation = None
+        try:
+            if backup:
+                if draft is None:
+                    draft = store.start(
+                        recipe_name=context.recipe_ref,
+                        inputs={},
+                    )
+                reservation = draft.stage(plan.changes, inputs=plan.display_inputs)
+            flush_changes(plan.changes)
+            if reservation is not None and draft is not None:
+                draft.commit(reservation)
+            applied.add(id(plan))
+            return plan
+        except UntapedError as exc:
+            if (
+                reservation is not None
+                and draft is not None
+                and isinstance(exc, ApplyWriteError)
+                and exc.rollback_incomplete
+            ):
+                draft.commit(reservation)
+            failed[id(plan)] = str(exc)
+            raise
+
+    def _confirm_preview(rows: Sequence[dict[str, object]]) -> None:
+        del rows
+        ui_context(strict=False).message("info", preview_summary(context.plans))
+
+    outcome = batch_apply(
+        actionable,
+        _apply,
+        verb="apply",
+        noun="target",
+        label=lambda plan: str(plan.target),
+        describe=_row,
+        ui=ui_context(strict=False),
+        destructive=True,
+        assume_yes=yes,
+        preview_only=dry_run,
+        render_generic_preview=False,
+        preview=_confirm_preview,
+    )
+    backup_id = draft.id if draft is not None and draft.entries else None
+    if draft is not None:
+        draft.discard_if_empty()
+    cancelled = bool(actionable) and not dry_run and not outcome.results and not outcome.failed
+    return ApplyExecution(
+        outcome=outcome,
+        applied=frozenset(applied),
+        failed=failed,
+        backup_id=backup_id,
+        cancelled=cancelled,
+    )
+
+
+def _outcome_rows(
+    plans: list[TargetPlan],
+    execution: ApplyExecution,
+    *,
+    recipe_ref: str,
+    preview_status: str | None,
+) -> list[dict[str, object]]:
+    rows = [{**_row(plan), "recipe": recipe_ref} for plan in plans]
+    if preview_status is not None:
+        return [
+            {**row, "status": preview_status} if row["status"] == "planned" else row for row in rows
+        ]
+    if execution.cancelled:
+        # Declined confirmation: nothing ran, so rows honestly stay "planned".
+        # (An executed run where every target was already conformant is NOT
+        # cancelled and falls through to report "unchanged" per target.)
+        return rows
+    rendered: list[dict[str, object]] = []
+    for plan, row in zip(plans, rows, strict=True):
+        plan_id = id(plan)
+        if plan.status == "skipped":
+            # Not applicable: keep the honest "skipped" status through execution.
+            rendered.append(row)
+        elif plan_id in execution.failed:
+            rendered.append({**row, "status": "error", "error": execution.failed[plan_id]})
+        elif plan_id in execution.applied:
+            rendered.append({**row, "status": "applied"})
+        else:
+            # Nothing to write for this target — say "unchanged", matching the
+            # summary line's vocabulary, instead of leaking planner state.
+            rendered.append({**row, "status": "unchanged"})
+    return rendered
+
+
+def _targets(positional: list[Path], *, stdin: bool) -> TargetInput:
+    if stdin and positional:
+        raise ConfigError("provide targets as positional args or via --stdin, not both")
+    if not stdin:
+        return TargetInput([Target(path=path) for path in positional])
+    lines = read_stdin()
+    if not lines:
+        raise ConfigError("no targets received on stdin")
+    try:
+        return TargetInput(
+            resolve_target_lines(list(enumerate(lines, start=1))),
+            stdin_records=True,
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _input_values(raw_vars: list[str], vars_file: Path | None) -> dict[str, object]:
+    values: dict[str, object] = {}
+    if vars_file is not None:
+        values.update(load_yaml_mapping_file(vars_file, flag="--vars"))
+    values.update(parse_kv_pairs(raw_vars, flag="--var"))
+    return values
+
+
+def _input_sources(raw_sources: list[str]) -> dict[str, str]:
+    parsed = parse_kv_pairs(raw_sources, flag="--input-from")
+    return {name: str(template) for name, template in parsed.items()}
+
+
+def _interactive_prompt(
+    *,
+    stdin: bool,
+    interactive: bool,
+    stack: ExitStack,
+) -> PromptFunc | None:
+    if not interactive:
+        return None
+    if stdin:
+        try:
+            tty = stack.enter_context(
+                Path("/dev/tty").open("r+", encoding="utf-8")  # noqa: SIM115
+            )
+        except OSError as exc:
+            raise ConfigError("interactive input requires a terminal") from exc
+        ui = ui_context(stdin=tty, stderr=tty, strict=True)
+    else:
+        ui = ui_context(strict=True)
+
+    def ask(
+        message: str,
+        *,
+        sensitive: bool,
+        default: object | None = None,
+        required: bool = True,
+    ) -> object:
+        if sensitive:
+            return ui.secret(message, required=required)
+        text_default = None if default is None else str(default)
+        return ui.text(message, default=text_default, required=required)
+
+    return ask
+
+
+def _preview_status(dry_run: bool, check: bool) -> str | None:
+    if check:
+        return "check"
+    if dry_run:
+        return "dry-run"
+    return None
+
+
+def _render_result_summary(
+    plans: list[TargetPlan],
+    execution: ApplyExecution,
+    *,
+    check: bool,
+    dry_run: bool,
+) -> None:
+    non_terminal = {"error", "skipped"}
+    failed = sum(1 for plan in plans if plan.status == "error") + len(execution.failed)
+    skipped = sum(1 for plan in plans if plan.status == "skipped")
+    changed = sum(1 for plan in plans if plan.status not in non_terminal and plan.changes)
+    unchanged = sum(1 for plan in plans if plan.status not in non_terminal and not plan.changes)
+    applied = len(execution.applied)
+    skipped_note = f", {skipped} skipped" if skipped else ""
+    ui = ui_context(strict=False)
+    if check:
+        kind: MessageKind = "warning" if failed or changed else "info"
+        ui.message(
+            kind,
+            f"Recipe check: {changed} would change, {unchanged} unchanged"
+            f"{skipped_note}, {failed} failed",
+        )
+        return
+    if dry_run:
+        kind = "warning" if failed else "info"
+        ui.message(
+            kind,
+            f"Recipe dry run: {changed} would change, {unchanged} unchanged"
+            f"{skipped_note}, {failed} failed",
+        )
+        return
+    if execution.cancelled:
+        ui.message(
+            "warning",
+            "Recipe apply cancelled: "
+            f"{_plural(changed, 'changing target')} not applied, "
+            f"{unchanged} unchanged{skipped_note}, {failed} failed",
+        )
+        return
+    kind = "warning" if failed else "info"
+    backup = f", backup {execution.backup_id}" if execution.backup_id else ""
+    ui.message(
+        kind,
+        f"Recipe apply: {applied} applied, {unchanged} unchanged"
+        f"{skipped_note}, {failed} failed{backup}",
+    )
+
+
+def _plural(count: int, noun: str) -> str:
+    suffix = "" if count == 1 else "s"
+    return f"{count} {noun}{suffix}"
+
+
+def _inputs_cell(inputs: object) -> str:
+    if not isinstance(inputs, dict) or not inputs:
+        return ""
+    return ", ".join(f"{key}={value}" for key, value in inputs.items())
+
+
+def _row(plan: TargetPlan) -> dict[str, object]:
+    return {
+        "target": str(plan.target),
+        "status": plan.status,
+        "files_changed": plan.files_changed,
+        "warnings": "; ".join(plan.warnings),
+        "error": plan.error,
+        "inputs": plan.display_inputs,
+    }

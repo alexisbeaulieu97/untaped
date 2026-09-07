@@ -1,0 +1,359 @@
+"""Hook library commands."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Annotated, Literal
+
+import yaml
+from cyclopts import Parameter
+
+from untaped.api import (
+    ColumnsOption,
+    ConfigError,
+    create_app,
+    echo,
+    emit,
+    finish,
+    parse_kv_pairs,
+    ui_context,
+)
+from untaped.capabilities.recipe.application.run_hook import (
+    AmbiguousHookVerbError,
+    RunHook,
+    TransformHookRun,
+    ValidateHookRun,
+    select_verb,
+)
+from untaped.capabilities.recipe.cli.common import (
+    hook_startup_notice,
+    hook_timeout_seconds,
+    library_root,
+    load_yaml_mapping_file,
+    report_config_errors,
+    settings,
+)
+from untaped.capabilities.recipe.domain.hook_project import HookKind, read_hook_metadata
+from untaped.capabilities.recipe.domain.plan import FileChange, Verdict
+from untaped.capabilities.recipe.infrastructure.diff import unified_diff
+from untaped.capabilities.recipe.infrastructure.hook_executor import (
+    HookExecutionError,
+    HookExecutor,
+)
+from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
+from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+
+app = create_app(name="hook", help="Run installed recipe hooks.")
+HookRunFormat = Literal["json", "yaml", "table", "pipe"]
+
+
+@app.command(name="run")
+def run_command(
+    name: Annotated[str, Parameter(help="Hook name or PACK/HOOK reference.")],
+    /,
+    *,
+    target: Annotated[Path, Parameter(name="--target", help="Target directory.")],
+    project: Annotated[
+        Path | None,
+        Parameter(name="--project", help="Hook project to search before installed packs."),
+    ] = None,
+    kind: Annotated[
+        Literal["transform", "validate"] | None,
+        Parameter(name="--kind", help="Hook callable kind for dual-export hooks."),
+    ] = None,
+    file: Annotated[
+        Path | None,
+        Parameter(name="--file", help="Target-relative file path for transform hooks."),
+    ] = None,
+    content: Annotated[
+        str | None,
+        Parameter(
+            name="--content",
+            help="Transform fixture content, or '-' for stdin.",
+            allow_leading_hyphen=True,
+        ),
+    ] = None,
+    content_file: Annotated[
+        Path | None,
+        Parameter(name="--content-file", help="Read transform fixture content from a file."),
+    ] = None,
+    inputs_file: Annotated[
+        Path | None,
+        Parameter(name="--inputs", help="YAML mapping of hook inputs."),
+    ] = None,
+    args_file: Annotated[
+        Path | None,
+        Parameter(name="--args", help="YAML mapping of hook args."),
+    ] = None,
+    raw_inputs: Annotated[
+        list[str] | None,
+        Parameter(name="--input", help="Input override as key=YAML.", consume_multiple=False),
+    ] = None,
+    raw_args: Annotated[
+        list[str] | None,
+        Parameter(name="--arg", help="Arg override as key=YAML.", consume_multiple=False),
+    ] = None,
+    diff: Annotated[
+        bool,
+        Parameter(name="--diff", negative="", help="Emit a unified diff for transform hooks."),
+    ] = False,
+    hook_timeout: Annotated[
+        float | None,
+        Parameter(name="--hook-timeout", help="Per-hook timeout in seconds; 0 disables."),
+    ] = None,
+    fmt: Annotated[
+        HookRunFormat | None,
+        Parameter(name=("--format", "-f"), help="Structured output format."),
+    ] = None,
+    columns: ColumnsOption = None,
+) -> None:
+    """Run one hook once against explicit fixture context without writing files."""
+    with report_config_errors():
+        root = library_root()
+        project, name = _split_project_hook_ref(name, project)
+        local_hook_project = _local_hook_project(project)
+        resolver = HookResolver(library_root=root)
+        ref = resolver.resolve(name, local_hook_project)
+        try:
+            verb = select_verb(ref.exports, file_given=file is not None, kind=kind)
+        except AmbiguousHookVerbError as exc:
+            raise ConfigError(
+                f"hook {name!r} exports both transform() and validate(); pass --kind or --file"
+            ) from exc
+        if verb == "validate" and diff:
+            raise ConfigError("validate hooks do not accept --file or content options")
+        RunHook.validate_context(
+            kind=verb,
+            target=target,
+            file=file,
+            content=content,
+            content_file=content_file,
+        )
+        inputs = _fixture_mapping(
+            inputs_file,
+            raw_inputs or [],
+            file_flag="--inputs",
+            kv_flag="--input",
+        )
+        args = _fixture_mapping(args_file, raw_args or [], file_flag="--args", kv_flag="--arg")
+        prepared_content = _content_value(content)
+        with UvHookWorkerPool(
+            hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
+            startup_timeout_seconds=settings().hook_startup_timeout_seconds,
+            startup_notice=hook_startup_notice(ui_context(strict=False)),
+        ) as workers:
+            executor = HookExecutor(
+                resolver,
+                workers=workers,
+            )
+            try:
+                execution = RunHook(executor).run(
+                    name,
+                    kind=verb,
+                    local_hook_project=local_hook_project,
+                    target=target,
+                    file=file,
+                    content=prepared_content,
+                    content_file=content_file,
+                    inputs=inputs,
+                    args=args,
+                )
+            except HookExecutionError as exc:
+                _print_hook_failure(str(exc))
+                raise SystemExit(1) from exc
+            if isinstance(execution, TransformHookRun):
+                _render_hook_run_context(
+                    execution.hook,
+                    kind=execution.kind,
+                    target=execution.target,
+                    file=execution.relative_file,
+                    inputs=inputs,
+                    args=args,
+                )
+                _run_transform(
+                    execution,
+                    diff=diff,
+                    fmt=fmt,
+                    columns=columns,
+                )
+            else:
+                _render_hook_run_context(
+                    execution.hook,
+                    kind=execution.kind,
+                    target=execution.target,
+                    file=None,
+                    inputs=inputs,
+                    args=args,
+                )
+                _run_validate(
+                    execution,
+                    fmt=fmt,
+                    columns=columns,
+                )
+
+
+def _run_transform(
+    execution: TransformHookRun,
+    *,
+    diff: bool,
+    fmt: HookRunFormat | None,
+    columns: list[str] | None,
+) -> None:
+    _print_hook_diagnostics(execution.diagnostics)
+    _print_hook_warnings(execution.warnings)
+    diff_text = (
+        unified_diff(
+            FileChange(
+                target=execution.target,
+                relative_path=execution.relative_file,
+                before=execution.before,
+                after=execution.content,
+            )
+        )
+        if diff
+        else None
+    )
+    if fmt is not None:
+        record: dict[str, object] = {
+            "hook": execution.hook,
+            "kind": "transform",
+            "target": str(execution.target),
+            "file": str(execution.relative_file),
+            "status": "ok",
+            "content": execution.content,
+        }
+        if diff_text is not None:
+            record["diff"] = diff_text
+        emit(record, fmt=fmt, columns=columns, kind="recipe.hook_run")
+        return
+    echo(diff_text if diff_text is not None else execution.content, nl=False)
+
+
+def _run_validate(
+    execution: ValidateHookRun,
+    *,
+    fmt: HookRunFormat | None,
+    columns: list[str] | None,
+) -> None:
+    _print_hook_diagnostics(execution.diagnostics)
+    _print_hook_warnings(execution.warnings)
+    record = _validate_record(execution.hook, target=execution.target, verdict=execution.verdict)
+    emit(record, fmt=fmt or "table", columns=columns, kind="recipe.hook_run")
+    finish(execution.verdict.failed)
+
+
+def _split_project_hook_ref(name: str, project: Path | None) -> tuple[Path | None, str]:
+    """Accept the ``./pack/hook`` form ``new hook`` accepts for ``hook run``.
+
+    A path-shaped ref resolves as ``--project <parent>`` plus the trailing hook
+    name; an explicit ``--project`` keeps precedence and the two forms may not
+    be combined.
+    """
+    if not name.startswith(("/", "./", "../", "~")):
+        return project, name
+    if project is not None:
+        raise ConfigError("pass the hook as a ./pack/hook path or with --project, not both")
+    path = Path(name)
+    if not path.name or path.parent in (Path("."), Path("")):
+        raise ConfigError("path hook refs must use <project>/<hook>")
+    return path.parent, path.name
+
+
+def _local_hook_project(project: Path | None) -> Path | None:
+    if project is not None:
+        resolved = project.expanduser().resolve()
+        if not resolved.is_dir():
+            raise ConfigError(f"hook project not found: {project}")
+        if not (resolved / "pyproject.toml").is_file():
+            raise ConfigError(f"hook project has no pyproject.toml: {project}")
+        metadata = read_hook_metadata(resolved)
+        if not metadata.hooks:
+            raise ConfigError(f"hook project has no hook metadata: {project}")
+        return resolved
+    cwd = Path.cwd()
+    if not (cwd / "pyproject.toml").is_file():
+        return None
+    metadata = read_hook_metadata(cwd)
+    if not metadata.hooks:
+        return None
+    return cwd
+
+
+def _fixture_mapping(
+    path: Path | None,
+    raw_pairs: list[str],
+    *,
+    file_flag: str,
+    kv_flag: str,
+) -> dict[str, object]:
+    values: dict[str, object] = {}
+    if path is not None:
+        values.update(load_yaml_mapping_file(path, flag=file_flag))
+    values.update(_yaml_kv_pairs(raw_pairs, flag=kv_flag))
+    return values
+
+
+def _content_value(content: str | None) -> str | None:
+    if content == "-":
+        return sys.stdin.read()
+    return content
+
+
+def _yaml_kv_pairs(raw_pairs: list[str], *, flag: str) -> dict[str, object]:
+    parsed = parse_kv_pairs(raw_pairs, flag=flag)
+    values: dict[str, object] = {}
+    for key, value in parsed.items():
+        try:
+            values[key] = yaml.safe_load(str(value))
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"{flag} value for {key!r} is invalid YAML: {exc}") from exc
+    return values
+
+
+def _render_hook_run_context(
+    hook: str,
+    *,
+    kind: HookKind,
+    target: Path,
+    file: Path | None,
+    inputs: dict[str, object],
+    args: dict[str, object],
+) -> None:
+    ui = ui_context(strict=False)
+    ui.message("info", f"Hook run: {hook} ({kind})")
+    ui.message("info", f"target: {target}")
+    if file is not None:
+        ui.message("info", f"file: {file}")
+    ui.message("info", f"inputs: {_json_context(inputs)}")
+    ui.message("info", f"args: {_json_context(args)}")
+
+
+def _validate_record(hook: str, *, target: Path, verdict: Verdict) -> dict[str, object]:
+    return {
+        "hook": hook,
+        "kind": "validate",
+        "target": str(target),
+        "status": verdict.status,
+        "message": verdict.message,
+    }
+
+
+def _json_context(value: dict[str, object]) -> str:
+    return json.dumps(value, default=str, sort_keys=True)
+
+
+def _print_hook_diagnostics(diagnostics: str) -> None:
+    if diagnostics:
+        echo(diagnostics.rstrip(), err=True)
+
+
+def _print_hook_warnings(warnings: tuple[str, ...]) -> None:
+    ui = ui_context(strict=False)
+    for warning in warnings:
+        ui.message("warning", warning)
+
+
+def _print_hook_failure(message: str) -> None:
+    echo(message.rstrip(), err=True)
