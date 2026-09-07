@@ -7,6 +7,7 @@ import importlib.util
 import json
 import re
 import subprocess
+import sys
 import urllib.error
 from pathlib import Path
 from types import ModuleType
@@ -668,6 +669,24 @@ release_module: ModuleType = _load_helper()
 
 def test_manifest_matches_package_and_lock() -> None:
     release_module.validate_release_manifest(lock_path=REPO_ROOT / "uv.lock")
+
+
+def test_release_cli_executes_when_invoked_as_a_script() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(HELPER),
+            "verify-version",
+            "4.0.0rc1",
+            "--pyproject",
+            str(REPO_ROOT / "pyproject.toml"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok: package metadata version matches workflow input 4.0.0rc1" in result.stdout
 
 
 def test_manifest_rejects_mutated_core_source_provenance(tmp_path: Path) -> None:
