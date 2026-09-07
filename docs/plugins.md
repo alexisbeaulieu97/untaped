@@ -1,534 +1,288 @@
-# Building a tool with the untaped SDK
+# Building a capability provider
 
-This is a practical, code-forward guide to building a new standalone CLI on the
-`untaped` SDK. For *why* the project is shaped this way — SDK-only, no central
-command, frozen contracts — read [`docs/decisions.md`](./decisions.md). This
-page is the how-to; that page is the rationale.
+`untaped` is a single application. Built-in capabilities are composed into the
+root shell, and external capabilities are discovered from the
+`untaped.capabilities` entry-point group. This page shows the current provider
+contract; the complete validation and quarantine rules live in
+[the composition specification](./capabilities-spec.md).
 
-If you are contributing inside an existing suite tool repo, start with the shared [fleet tool conventions](./tool-conventions.md) before applying that tool's local rules.
+A capability contributes one command subtree, one config section, optional
+state, optional doctor checks, and optional packaged skills. It runs as
+`untaped <capability> ...`. A provider distribution does not add another
+console script and does not own a second config or profile command group.
 
-## 1. What the SDK is
+The supported provider import surface is `untaped.capability_api`. Its closed
+composition set and helper exports are intentional; provider code must not
+import the internal registry or rely on other `untaped` modules as an API.
 
-`untaped` is a batteries-included CLI **framework** built on cyclopts. It gives
-you config + profiles, themed output, `--format` rendering, NDJSON piping, and
-HTTP/UI helpers. It is **not** an app: there is no central `untaped` command, no
-plugin platform, no managed virtual environment, no install script. You don't
-register an entry point or ship a manifest — you write a normal cyclopts app and
-hand it to the SDK.
+## 1. Provider package
 
-Each tool is an independent CLI named `untaped-<x>` that depends on the SDK and
-installs into its own `uv tool` environment. Tools are versioned, installed, and
-released independently — possibly against different SDK versions — but they
-**share two interop contracts** so independently installed tools cooperate:
+An external provider is an ordinary Python distribution with one entry point
+and no `[project.scripts]` section:
 
-- **Config v2** — the `~/.untaped/config.yml` format (one section per tool;
-  top-level `active:`/`profiles:`; per-profile `http:`/`ui:`/`log_level` under
-  `profiles.<name>`; the `UNTAPED_<SECTION>__<FIELD>` env-var override shape).
-  The layout changed v1→v2 at SDK 2.0 and is stable within SDK 2.x and 3.x.
-- **Pipe v1** — the `--format pipe` NDJSON envelope (see §7). Versioned
-  independently of the SDK and stable across SDK 1.x, 2.x, and 3.x.
-
-These contracts are what let `untaped-github | untaped-ansible` interoperate and
-share one config file across independently installed tools. See decisions
-[#3](./decisions.md) and [#4](./decisions.md).
-
-You import everything you need from `untaped.api` (equivalently `untaped`). The
-names in that module's `__all__` are the SDK contract; reaching into SDK
-internals is not supported.
-
-```python
-from untaped.api import app_context, connected_client, emit, run_tool
-# `from untaped import ...` is equivalent.
+```text
+acme-provider/
+├── pyproject.toml
+└── src/acme_provider/
+    ├── __init__.py
+    └── skills/
+        └── untaped-acme/
+            └── SKILL.md
 ```
 
-## 2. Project skeleton
-
-A tool is an ordinary `uv` package. The one thing that makes it a CLI is the
-console script pointing at your `main()`:
+The package requires the current v4 product and declares the entry-point group:
 
 ```toml
-# pyproject.toml
 [project]
-name = "untaped-acme"
+name = "acme-provider"
 version = "0.1.0"
-description = "Acme workflows built on the untaped SDK."
+description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
-    "cyclopts>=4.16.0,<5",
-    "pydantic>=2.13.3",
-    "untaped>=3.1.0,<4",
+    "pydantic>=2.13.3,<3",
+    "untaped>=4.0.0rc1,<5",
 ]
 
-[project.scripts]
-untaped-acme = "untaped_acme.__main__:main"
+[project.entry-points."untaped.capabilities"]
+acme = "acme_provider:provider"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 ```
 
-When you're iterating on the SDK and the tool at the same time, temporarily
-add a **dev-only** local checkout source:
+The entry-point name must equal the `CapabilitySpec.name`. The resolved object
+must be callable, expose an `api_requires` tuple, and return one
+`CapabilitySpec` when called without arguments. The current capability API
+version is `1.0`; a provider built against v1 declares the compatible range
+`(1.0, 2.0)`.
 
-```toml
-# Dev-only: work on the SDK and the tool together. Remove before merging.
-[tool.uv.sources]
-untaped = { path = "../untaped", editable = true }
-```
+A built-in capability follows the same `SPEC` and `build_app()` shape but is
+constructed in the `untaped` source tree and listed in the root composition.
+It does not need an external entry point.
 
-Lay the package out however you like; a thin `__main__.py`, a `cli/` package of
-cyclopts commands, and a `settings.py` is the shape the suite tools use.
+## 2. Settings and the capability app
 
-## 3. Define your settings model(s)
+A capability owns one config section. Profile fields are user-tunable; a
+separate state model is required when the capability writes managed data. The
+field sets must be disjoint.
 
-A tool owns one config **section** (its name, e.g. `acme`). Declare a
-profile-scoped pydantic model for the user-tunable fields. Use
-`extra="ignore"` so your tool validates only its own keys and never chokes on
-keys another tool (or a newer build) wrote into the shared file:
+The following is a complete provider module. It uses only the stable
+`untaped.capability_api` surface for untaped imports, returns a real Cyclopts
+app from a nullary factory, packages one skill, and exposes a callable provider
+for the entry point above:
 
 ```python
-# untaped_acme/settings.py
+# src/acme_provider/__init__.py
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict
+
+from untaped.capability_api import (
+    CAPABILITY_API_VERSION,
+    CapabilitySpec,
+    SkillAsset,
+    create_app,
+    echo,
+    get_config_section,
+    read_identifiers,
+)
+
+if TYPE_CHECKING:
+    from cyclopts import App
 
 
 class AcmeSettings(BaseModel):
-    """Acme API settings (profile-scoped)."""
+    """Profile-scoped Acme settings."""
 
     model_config = ConfigDict(extra="ignore")
 
-    base_url: str = "https://api.acme.example"
-    token: SecretStr | None = None
-```
+    greeting: str = "hello from acme"
 
-If your tool keeps **tool-managed state** (data the tool writes itself, not
-something the user sets), declare a second, **disjoint** model. The SDK's
-registry validates that the profile and state field sets do not overlap; state
-fields are never exposed to `config set`.
 
-```python
-class AcmeState(BaseModel):
-    """Tool-managed state (the tool writes this, the user doesn't)."""
+def build_app() -> App:
+    """Return the capability command subtree without building it at import time."""
+    app = create_app(name="acme", help="Acme capability commands.")
 
-    model_config = ConfigDict(extra="ignore")
+    @app.command(name="hello")
+    def hello_command() -> None:
+        """Print the configured Acme greeting."""
+        settings = get_config_section("acme", AcmeSettings)
+        echo(settings.greeting)
 
-    last_sync: str | None = None
-```
+    @app.command(name="import")
+    def import_command(*, stdin: bool = False) -> None:
+        """Echo identifiers received as arguments or an untaped pipe."""
+        for identifier in read_identifiers([], stdin=stdin, id_field="full_name"):
+            echo(identifier)
 
-## 4. Build the app and `main()`
+    return app
 
-Build a cyclopts app with `create_app`, hang your commands off it, and make
-`main()` call `run_tool(app, ToolSpec(...))`. That's the whole composition root.
 
-```python
-# untaped_acme/__main__.py
-from __future__ import annotations
-
-from importlib.resources import files
-from pathlib import Path
-
-from untaped.api import SkillAsset, ToolSpec, run_tool
-
-from untaped_acme.cli import app
-from untaped_acme.settings import AcmeSettings, AcmeState
-
-SPEC = ToolSpec(
-    command="untaped-acme",   # executable name; used in help + error text
-    section="acme",           # config section this tool owns
+SPEC = CapabilitySpec(
+    name="acme",
+    app_factory=build_app,
+    config_section="acme",
     profile_model=AcmeSettings,
-    state_model=AcmeState,    # omit (defaults to None) if you keep no state
     skills=(
         SkillAsset(
             name="untaped-acme",
-            source=Path(str(files("untaped_acme").joinpath("skills", "untaped-acme"))),
-            description="Use the untaped-acme CLI.",
+            source=Path(__file__).parent / "skills" / "untaped-acme",
+            description="Use the Acme capability from the unified untaped CLI.",
         ),
     ),
 )
 
 
-def main() -> object:
-    """Run the untaped-acme CLI."""
-    return run_tool(app, SPEC)
+class AcmeProvider:
+    """Entry-point provider discovered by the unified shell."""
+
+    api_requires = (CAPABILITY_API_VERSION, 2.0)
+
+    def __call__(self) -> CapabilitySpec:
+        return SPEC
 
 
-if __name__ == "__main__":
-    main()
+provider = AcmeProvider()
 ```
 
-`ToolSpec.distribution` names the installed package that owns the executable.
-It defaults to `command`, so the example above needs no extra field. When the
-names differ, set it explicitly, such as
-`ToolSpec(command="acme", ..., distribution="acme-cli")`.
+`CapabilitySpec` validates the name, section, Pydantic models, and normalized
+asset tuples. Composition invokes `build_app()` only after provider validation.
+The provider callable must have no registration, filesystem, network, or
+`ContextVar` side effects; the root owns registration and mounting.
 
-`run_tool(app, spec)` is your `main()`. For free, it:
+## 3. Commands and configuration
 
-- registers your section(s) and the built-in profiles layout,
-- mounts the shared `config`, `profile`, and `skills` command groups onto your
-  app,
-- wires position-independent `--profile` and `--verbose` root options (usable in
-  any token position),
-- renames the program to `spec.command` so help/usage/errors read
-  `untaped-acme`, and
-- wires `--version` to the installed `spec.distribution` metadata (or
-  `spec.command` by default), and
-- runs everything under the SDK's error-reporting contract.
+The root mounts the capability app beneath its name and keeps management at the
+root:
 
-The distribution lookup is lazy: building or starting the app does not query
-package metadata, and only `--version` resolves it. Cyclopts' version-only
-output is preserved, so `untaped-acme --version` prints exactly the installed
-version plus its trailing newline (for example, `0.1.0`).
+```bash
+untaped acme hello
+untaped config set acme.greeting "hello from staging" --target-profile staging
+untaped profile create staging --copy-from default
+untaped --profile staging acme hello
+untaped capabilities
+untaped doctor
+```
 
-(`build_tool_app(app, spec)` is the wiring half — it returns the configured app
-without running it, handy for tests that drive `app.meta` directly.)
+Config reads and writes use fully qualified `section.key` names. A capability
+must not read or write another capability's section. Root `http.*` and `ui.*`
+settings are shared profile fields; capability state is managed by the owning
+capability and is rejected by `untaped config set`.
 
-Your command module is plain cyclopts plus SDK helpers:
+The root supplies position-independent `--profile`, `--verbose`, and `--quiet`
+options. Use `report_errors()` for user-facing configuration, input, and domain
+errors so the root preserves its standard diagnostics and exit codes.
+
+## 4. Stable helper surface
+
+Provider imports come from `untaped.capability_api` only. The module exports the
+composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`, and related
+records), `CAPABILITY_API_VERSION`, and the supported helpers including
+`create_app`, `app_context`, `get_config_section`, `emit`, `read_identifiers`,
+`report_errors`, `FormatOption`, and `ColumnsOption`.
+
+Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
+do not reach into `untaped` internals to obtain an unexported helper. Shared
+settings, UI, error, and output behavior should use the stable exports. For
+example, a row-producing command can use `FormatOption`, `ColumnsOption`, and
+`emit` while retaining the capability namespace in its pipe kind:
 
 ```python
-# untaped_acme/cli/__init__.py
-from untaped.api import create_app
+from untaped.capability_api import ColumnsOption, FormatOption, emit
 
-app = create_app(name="acme", help="Acme workflows.")
+
+@app.command(name="items")
+def items_command(
+    *, fmt: FormatOption = "table", columns: ColumnsOption = None
+) -> None:
+    rows = [{"id": "one", "label": "Example"}]
+    emit(rows, fmt=fmt, columns=columns, kind="acme.item")
 ```
 
-## 5. Writing command bodies
+## 5. Piping
 
-Resolve settings **once** per invocation via `app_context()`, then pull what you
-need off the frozen context: your section, cross-cutting HTTP settings, and the
-themed UI.
-
-```python
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    app_context,
-    emit,
-    report_errors,
-)
-
-from untaped_acme.settings import AcmeSettings
-
-
-@app.command(name="whoami")
-def whoami_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) -> None:
-    """Show the authenticated Acme user."""
-    with report_errors():
-        ctx = app_context()
-        config = ctx.section("acme", AcmeSettings)   # typed, profile-resolved
-        ui = ctx.ui(strict=False)                    # themed UI; never fail data on a bad theme
-        with AcmeClient(config, http=ctx.http) as client:  # see connected_client below
-            with ui.progress("Fetching authenticated user…"):
-                user = client.me()
-        emit(user, fmt=fmt, columns=columns, kind="acme.user")  # single entity → detail view
-```
-
-Key conventions, all from the github tool:
-
-- **HTTP clients go through `connected_client(...)`.** It validates required
-  settings, applies bearer auth + TLS, and — crucially — raises the standard
-  *command-aware* `ConfigError` for a missing setting:
-  `acme.token is not configured (set it via untaped-acme config set token <token> …)`.
-  Don't hand-roll that message.
-
-  ```python
-  from untaped.api import HttpSettings, connected_client
-
-  class AcmeClient:
-      def __init__(self, config: AcmeSettings, *, http: HttpSettings | None = None) -> None:
-          self._http = connected_client(
-              config,
-              section="acme",
-              headers={"Accept": "application/json"},
-              http=http,
-          )
-
-      def me(self) -> dict[str, object]:
-          return self._http.get_json_dict("/user")
-  ```
-
-  `connected_client(...)` enables a safe default `RetryPolicy()` automatically,
-  so transient HTTP failures (connect errors, and `429`/`503` on idempotent
-  methods) are retried with backoff. Pass `retry=None` to disable retries or a
-  custom `RetryPolicy(...)` to override. Defaults:
-  `max_attempts=3`, `backoff_base=0.5`, `backoff_max=30.0`,
-  `retry_after_max=60.0`, `retry_statuses=(429, 503)`, `honor_retry_after=True`,
-  `retry_on_transport=True`, and
-  `idempotent_methods=frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})`.
-
-  Two rules keep retries safe:
-
-  - **Transport failures retry by phase.** A pre-send connect failure
-    (`ConnectError`/`ConnectTimeout`/`PoolTimeout`/`ProxyError`) never reached
-    the server, so it is retried for *any* method; a post-send read/write error
-    may already have been processed, so it is retried only for
-    `idempotent_methods`.
-  - **`429`/`503` retry only for `idempotent_methods`.** A caller whose POST is
-    genuinely idempotent (e.g. a search endpoint) opts in with
-    `RetryPolicy(idempotent_methods=frozenset({"POST", "GET", ...}))`.
-
-  `Retry-After` (integer seconds or HTTP-date) is honored, capped at
-  `retry_after_max`; otherwise the delay is exponential backoff capped at
-  `backoff_max`. A per-call override exists on `HttpClient.request(..., retry=…)`
-  — a policy overrides, `None` disables, omitted inherits the client's policy.
-
-- **Paginate with the SDK loops.** `paginate_pages(fetch, limit=...)` drives a
-  cursor-style loop (`fetch` maps a cursor to `(items, next_cursor)`);
-  `paginate_offset(http, "GET", path, item_key=..., limit=...)` walks
-  `startAt`/`maxResults`-style offset envelopes. Both honor a `limit` and guard
-  against non-converging paginators. Offset endpoints must return a JSON object
-  envelope for both `GET` and `POST`; a malformed array/scalar envelope raises
-  `HttpError` instead of being treated as an empty page. `paginate_offset` also
-  forwards a per-call `retry=` to each page fetch (default inherits the client's
-  policy), so an idempotent `POST` collection such as a JQL search can opt that
-  one endpoint into retry by passing a POST-inclusive `RetryPolicy`.
-
-- **Render with `render_rows`.** It takes `fmt` (`--format`), `columns`
-  (`--columns`), an optional `empty` hint, and a `kind` tag for pipe records.
-  Use the `FormatOption` / `ColumnsOption` annotated types so every command
-  exposes the same flags.
-
-- **Prefer `emit(...)` for single-entity commands.** `emit` dispatches by shape
-  and writes stdout itself, so you don't wrap it in `echo(...)` or call
-  `.model_dump()` by hand:
-
-  ```python
-  from untaped.api import emit
-
-  emit(user, fmt=fmt, columns=columns, kind="acme.user")
-  ```
-
-  A single model or dict renders as a vertical `key: value` **detail** view (a
-  bare object `{...}` under `--format json`/`yaml`); a sequence renders as a
-  **collection** (themed table, or a JSON array). It honors `empty=` for an
-  empty sequence and emits the same `--format pipe` NDJSON envelope as
-  `render_rows`. Prefer `emit(x, ...)` over
-  `echo(render_rows([x.model_dump()], ...))` for `whoami`/`get`/`show`/`status`
-  commands that return one entity — it gives them the proper detail view and
-  removes the "forgot to `echo`" silent-no-output trap. `render_rows` is
-  unchanged and still the right call for explicit row collections.
-
-- **Wrap bodies in `report_errors()`** so `ConfigError`/`HttpError`/usage errors
-  render as clean `error: …` lines with the right exit codes instead of
-  tracebacks.
-
-- **Reject bad usage with `raise_usage("…")`** (exit 2) for argument
-  combinations cyclopts can't express on its own.
-
-- **Required inputs are required positional-only parameters** declared before
-  the `/` separator. A missing one renders
-  `error: … requires an argument` on stderr with exit 2 automatically — never
-  emulate that with an optional default plus a manual help dance.
-
-  ```python
-  @app.command(name="get")
-  def get_command(repo: str, /, *, fmt: FormatOption = "table") -> None:
-      """`repo` is required: omit it and cyclopts exits 2 with a usage error."""
-      ...
-  ```
-
-For interactive input, use the UI context prompts:
-`ctx.ui(strict=False).confirm/text/secret/select/multiselect(...)`. They require
-a TTY and render on stderr, keeping stdout clean for data.
-
-For destructive batch actions, use `batch_apply(...)` so piped and interactive
-mutations share the same `--yes`/`-y`, confirmation, progress, and per-item
-failure behavior. When a command has already rendered a richer domain-specific
-preview, pass `render_generic_preview=False`; the helper still prompts, but it
-skips its generic `About to ...` row dump. Return or render the `BatchOutcome`,
-then call `finish(outcome)` so partial failures exit 1.
-
-### SDK surface primitives
-
-- `finish(outcome)` exits 1 for partial failures from a `BatchOutcome` or for
-  an explicit `any_failed` boolean.
-- `bounded_map(fn, items, *, concurrency, on_each)` runs work serially for
-  `concurrency=1`, otherwise in a bounded thread pool with caller
-  `ContextVar`s visible to workers. `on_each(item, result)` is required and
-  always runs on the calling thread.
-- `atomic_write(path, text)` writes text through a temporary file and atomic
-  replace; `apply_file_changes([...])` applies a transaction of `FileChange`
-  records and rolls back already-applied files if a later write fails.
-- `read_structured_file(path)` reads JSON/YAML by suffix; `parse_json_pairs`
-  parses repeated `KEY=JSON` flags.
-- `read_stdin_text()` reads raw stdin text; `resolve_text_input` enforces the
-  one-source rule across direct value, file, and stdin. Its `what` argument
-  doubles as the flag stem: document paired flags as `--<what>` and
-  `--<what>-file`.
-- `paginate_link(...)` follows RFC Link-header `rel=next` pagination beside the
-  existing offset/page helpers.
-- `StateCollection` and `StateMap` provide strict list/map CRUD over
-  tool-managed state under the shared config lock.
-- `unified_diff_text(...)` returns normalized unified diff text, including
-  `/dev/null` headers for create/delete and no-newline markers; `diff_stats`
-  counts added and removed content lines.
-- `missing_setting_error(...)` builds the standard command-aware
-  "set it via `<tool> config set ...`" configuration error.
-
-### Testing helpers
-
-Import test helpers from `untaped.testing`, not SDK internals:
-
-- `CliInvoker`/`CliResult` invoke a cyclopts app in-process; `invoke_cli(...)`
-  is the functional form and accepts `interactive=` and `prompt_backend=`.
-- `ScriptedPromptBackend` scripts prompt answers for interactive flows;
-  `TtyStringIO` supplies fake TTY stdin for prompt tests.
-- `assert_destructive_contract(...)` checks two legs of the destructive-command
-  contract: piped stdin without `--yes` refuses with the standard error, and an
-  interactive scripted decline prompts exactly once and exits cleanly. It never
-  runs the `--yes` leg (that would perform the destructive action); pass
-  `assert_unchanged=` to verify no effect occurred. Partial-failure exit codes
-  are `finish(outcome)`'s contract — test those directly.
-
-## 6. Tool-managed state
-
-If you declared a `state_model`, write state through the SDK's safe state
-surface — never reach into the config file. `mutate_tool_state(section, fn)`
-mutates only your section's dict under the shared config lock; every other
-section, and any keys in yours that `fn` doesn't touch, are preserved. The
-section is removed when `fn` leaves it empty. `read_tool_state(section)` returns
-a copy.
-
-```python
-from typing import Any
-
-from untaped.api import mutate_tool_state, read_tool_state
-
-
-def remember_last_sync(stamp: str) -> None:
-    def _apply(state: dict[str, Any]) -> None:
-        state["last_sync"] = stamp
-
-    mutate_tool_state("acme", _apply)
-
-
-def last_sync() -> str | None:
-    return read_tool_state("acme").get("last_sync")
-```
-
-State fields are **not** exposed to `config set` — only profile fields are. The
-two field sets must stay disjoint (the registry enforces this). Because the
-config file is co-owned by every installed tool, going through these helpers is
-what guarantees an older tool never clobbers a newer tool's data.
-
-## 7. Piping
-
-`--format pipe` emits the **v1** NDJSON envelope — one self-describing JSON
-object per line:
+`--format pipe` emits the stable v1 NDJSON envelope, one object per line:
 
 ```json
-{"untaped": "1", "kind": "acme.user", "record": {"login": "octocat"}}
+{"untaped": "1", "kind": "acme.item", "record": {"full_name": "octocat/Hello-World"}}
 ```
 
-You get this for free from `render_rows(...)` when the user passes
-`--format pipe`. Set `kind` to a stable, namespaced tag (`acme.repo`,
-`acme.user`) so a downstream tool can recognize what it's receiving. On the
-consumer side, the stdin helpers read these envelopes:
+Kinds use the lowercase capability namespace and a snake-case noun, with an
+optional `.summary` suffix for informational records. `read_identifiers()` can
+consume bare identifiers or an untaped pipe stream when a command accepts
+`--stdin`:
 
 ```python
-from untaped.api import read_identifiers, read_records
+from untaped.capability_api import read_identifiers
 
-# Pull one id field out of piped records (or bare lines):
-repos = read_identifiers([], stdin=True, id_field="full_name")
-# Or the full records:
-records = read_records()
+identifiers = read_identifiers([], stdin=True, id_field="full_name")
 ```
 
-`id_field` + `kind` are how independently-installed tools chain:
-`untaped-github search repos --format pipe | untaped-acme import --stdin`. The
-envelope shape is versioned independently of the SDK and stable across SDK 1.x,
-2.x, and 3.x, so the producer and consumer need not share an SDK version.
-`PipeEnvelope`, `common_kind`, `is_envelope_line`, and `parse_envelope_line` are
-exported if you parse envelopes yourself.
-
-When a pipe record names a filesystem target that another tool may mutate, put
-that absolute, non-empty path in `record.target_path`. Omit `target_path` when
-no concrete target exists; do not emit `""` or `null` as a target. Keep domain
-fields in the record as needed for display and templating, but consumers should
-not need to branch on a producer-specific `kind` just to find the filesystem
-target. Pipe records whose `kind` ends in `.summary` are informational summaries,
-not filesystem targets; target consumers may skip them.
-
-## 8. Packaging agent skills
-
-Ship agent skills as `SkillAsset`s in your `ToolSpec` (each is a `name`,
-`source` directory, and `description`). The SDK does not bundle a core skill;
-each tool ships its own. Users install yours with:
+A composed capability can participate in a root pipeline without another
+executable:
 
 ```bash
-untaped-acme skills install untaped-acme --target codex
+untaped github search repos --format pipe | untaped acme import --stdin
 ```
 
-`run_tool` mounts the `skills` group (`list` / `install`) onto your app
-automatically — you only provide the assets.
+Keep filesystem destinations in an absolute, non-empty `record.target_path`.
+Consumers should not need producer-specific branching just to find that path.
 
-## 9. Install and run
+## 6. Packaged skills
 
-There is no central command. Install each PyPI-backed tool into its own
-`uv tool` environment:
+Declare skill assets on `CapabilitySpec.skills`. The root discovers the union and
+owns installation:
 
 ```bash
-uv tool install untaped-acme
-untaped-acme config set token <token>
-untaped-acme whoami
+untaped skills list
+untaped skills install acme --target codex
+untaped skills install --all --target all
 ```
 
-Configure shared globals once and every tool sees them
-(`untaped-acme config set http.verify_ssl false`, `… ui.theme dark`); profiles
-work across tools the same way (`untaped-acme --profile work whoami`).
+The short selector `acme` resolves the existing `untaped-acme` asset ID. The
+installed directory and `.untaped-skill.json` marker retain the full asset ID.
+See [Agent skills](./skills.md) for targets, scopes, overwrite behavior, and
+marker paths.
 
-## Tools in the suite
+## 7. Managed state
 
-- [`untaped-github`](https://github.com/alexisbeaulieu97/untaped-github) —
-  authenticated user and GitHub search commands.
-- [`untaped-jira`](https://github.com/alexisbeaulieu97/untaped-jira) —
-  Jira Data Center ticket workflows.
-- [`untaped-awx`](https://github.com/alexisbeaulieu97/untaped-awx) —
-  Ansible Automation Platform / AWX workflows.
-- [`untaped-ansible`](https://github.com/alexisbeaulieu97/untaped-ansible) —
-  Ansible dependency graph and impact-analysis workflows.
-- [`untaped-workspace`](https://github.com/alexisbeaulieu97/untaped-workspace) —
-  local git workspace manifests and registry state.
-- [`untaped-recipe`](https://github.com/alexisbeaulieu97/untaped-recipe) —
-  reusable local recipe automation.
-- [`untaped-apple-health`](https://github.com/alexisbeaulieu97/untaped-apple-health) —
-  Apple Health export sync and analysis.
+When a capability writes structured state, declare a disjoint `state_model` and
+use the stable state helper for the owning section. For example:
 
-## Output format conventions
+```python
+from untaped.capability_api import StateCollection
 
-Every row-emitting command accepts `--format/-f`:
+_items = StateCollection("acme", "items", id_field="id")
+_items.upsert({"id": "one", "label": "Example"})
+```
 
-- `json` / `yaml` — structured output for downstream parsing.
-- `raw` — newline-separated rows, tab-separated columns; the format you pipe
-  into `fzf`, `cut`, or `awk`. With no `--columns`, the first key of each row
-  is emitted — so the first key of every row is the row's identifier
-  (workspace name, job id, login, …) for the `xargs`-into-the-next-command
-  pattern. The full default-column contract lives in the root `AGENTS.md`.
-- `table` — Rich-rendered table for humans. Width follows the `COLUMNS` env
-  var (or the inherited TTY size); no hard-coded cap.
-- `pipe` — the self-describing NDJSON interchange stream (one
-  `{"untaped": ..., "kind": ..., "record": {...}}` per line) for piping into
-  another untaped command. Ignores `--columns`.
+State is outside profile overlays and is never exposed as a user setting. The
+root preserves other capabilities' sections under the shared config lock.
 
-Column names support dotted paths (`a.b.c`) to address nested dict fields —
-missing intermediates resolve to `None` rather than erroring.
+## 8. Validation and checks
 
-## 3.0 migration notes
+Before committing a provider:
 
-The SDK 3.0.0 breaking set is: `format_output`/`output.py` deleted; emit kind
-validation rejects previously legal kinds, including 18 live kind renames in
-the adoption wave; `paginate_offset` neutral defaults replace the old
-Atlassian-specific parameter names; `batch_apply` is the TTY authority for
-destructive commands; profile delete uses the same TTY authority and adds the
-`-y` alias for `--yes`.
+```bash
+uv sync
+uv run untaped --help
+uv run untaped acme --help
+uv run untaped capabilities
+uv run untaped doctor
+uv run pytest
+uv run mypy
+uv run ruff check
+```
 
-For tools moving to 3.0:
+Test the provider callable and `SPEC.app_factory()` in isolation, assert that
+its entry-point name matches `SPEC.name`, and exercise root config, profile,
+skill, pipe, and error paths. A malformed external provider is quarantined so
+other capabilities can still boot; a built-in provider violation is fatal.
 
-- Replace direct `format_output`/`output.py` usage with `emit(...)` for stdout
-  data or `render_rows(...)` only when the command needs a returned string.
-- Rename pipe kinds to `<tool>.<noun>` with snake_case nouns; reserve
-  `.summary` as a suffix only.
-- Pass Atlassian-style offset field names explicitly when calling
-  `paginate_offset(...)` against legacy endpoints.
-- Route every destructive verb through `batch_apply(destructive=True)` and add
-  an `assert_destructive_contract(...)` test.
+See [the composition specification](./capabilities-spec.md) for the exact API
+range, reserved roots, duplicate detection, provider metadata, quarantine, and
+provider side-effect rules.

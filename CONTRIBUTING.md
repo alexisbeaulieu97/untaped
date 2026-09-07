@@ -2,7 +2,7 @@
 
 Thanks for contributing to `untaped`.
 
-## Local Setup
+## Local setup
 
 ```bash
 uv sync
@@ -13,17 +13,23 @@ uv run ruff format
 uv run pre-commit run --all-files
 ```
 
-## Documentation
+## Documentation and capabilities
 
-Update `README.md`, `AGENTS.md`, and the relevant files under `docs/` when a
-change affects the SDK surface, configuration behavior, command wiring,
-profiles, themes, output, stdin, HTTP/TLS helpers, or agent-facing workflows.
-The SDK ships no packaged skill; repo-owned packaged skills live with the
-standalone tools and should be updated in those repos when their workflows
-change.
+Update the owning concept page under `docs/` when a change affects the root
+shell, capability composition, configuration, profiles, themes, output, stdin,
+HTTP/TLS helpers, or agent workflows. Keep capability-specific command and
+settings guidance with the capability that owns it, and link to the core pages
+for shared mechanics.
 
-## Sensitive Data
+Built-in capability skills are source artifacts in
+`src/untaped/capabilities/<name>/skills/<full-id>/`. Update the owning
+`SKILL.md` in the same change when its command behavior, settings, workflow,
+or contract changes. Preserve the full skill ID; root installation accepts a
+short selector but writes the stable full ID and marker. An external provider
+owns the packaged skills shipped in its own distribution.
+
+## Sensitive data
 
 Do not include secrets, real customer configurations, production logs, private
-workspace data, health exports, or private data in issues, tests, fixtures, or
-examples. Use synthetic data for tests and examples.
+workspace data, health exports, or other private data in issues, tests, fixtures,
+or examples. Use synthetic data for tests and examples.
