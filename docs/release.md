@@ -131,17 +131,60 @@ upstream untaped packages during the release wave.
 
 ## Burn Recovery
 
-Before publication, abort and restore the verified checkpoint in a fresh
-checkout. Rehearse that restore and the draft/index boundaries with a local
-fake transport before an authorized run.
+Use the following procedure when a release run needs to be resumed. Replace
+the placeholders with the externally recorded checkpoint bundle and reviewed
+candidate; do not use a working checkout as the recovery source.
 
-After any public upload, files and tags are immutable. If smoke or GitHub
-publication fails, reconcile the exact published state and fix forward under a
-new approved version; never overwrite a filename, delete/reuse a tag, or retry
-an ambiguous upload. Restore standalone operational paths from accepted source
-bundles without destroying live checkouts, and preserve restricted config,
-state, and expected skill manifests. Laptop cutover and later private
-retirement checks are separate gates.
+```bash
+CHECKPOINT_BUNDLE=/secure/path/to/untaped-checkpoint.bundle
+CHECKPOINT_OID=<40-character-reviewed-checkpoint-oid>
+RESTORE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/untaped-release-restore.XXXXXX")"
+
+git clone --no-hardlinks "$CHECKPOINT_BUNDLE" "$RESTORE_DIR"
+git -C "$RESTORE_DIR" checkout --detach "$CHECKPOINT_OID"
+test "$(git -C "$RESTORE_DIR" rev-parse HEAD)" = "$CHECKPOINT_OID"
+test -z "$(git -C "$RESTORE_DIR" status --porcelain)"
+git -C "$RESTORE_DIR" fsck --full --strict
+```
+
+Before an authorized run, run the focused release tests from that clean
+checkout. The fake transport covers draft creation, partial asset/index
+prefixes, smoke failure, publication failure, exact completed no-op, and
+conflicts; it performs no network or publish operation:
+
+```bash
+cd "$RESTORE_DIR"
+UV_CACHE_DIR=/path/to/writable/uv-cache \
+  uv run --locked pytest -o addopts='' \
+  .github/release/tests/test_release_helper.py \
+  tests/unit/test_release_workflow.py \
+  tests/unit/test_release_smoke_workflow.py
+```
+
+After an interrupted run, inspect the exact public prefix before choosing the
+next transition. Resume only when every observed identity is provable:
+
+- an existing release has tag `v<version>`, its target and resolved tag point
+  to the reviewed candidate, and every visible asset has the expected SHA-256;
+- an index contains only the candidate's exact wheel and source archive for
+  that version, with matching SHA-256 values; and
+- a draft may be missing a tag until publication, while a published release
+  must have a resolved matching tag.
+
+An exact draft receives only its missing assets. An exact partial index
+receives only its missing files. An exact published release is a verified
+no-op after the published smoke. A timeout, non-404 response, conflicting
+hash, unexpected file, target mismatch, or unresolved published tag stops the
+run until the state is reconciled; never retry an ambiguous upload.
+
+Use a new approved version only after reconciliation proves that an immutable
+public filename or tag contains bytes or identity for another candidate, or
+when the original candidate can no longer be proven. Never overwrite a
+filename, delete/reuse a tag, or silently switch candidate OIDs. Restore
+standalone operational paths from accepted source bundles without destroying
+live checkouts, and preserve restricted config, state, and expected skill
+manifests. Laptop cutover and later private retirement checks are separate
+gates.
 
 ## Follow-Up
 

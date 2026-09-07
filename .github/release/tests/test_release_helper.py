@@ -589,6 +589,8 @@ class _FakePublicationTransport:
         self.calls: list[str] = []
         self.fail_after: str | None = None
         self.tag_target: str | None = None
+        self.tag_missing = False
+        self.missing_after_publish = False
 
     def _fail(self, operation: str) -> None:
         if self.fail_after == operation:
@@ -600,6 +602,8 @@ class _FakePublicationTransport:
         return self.release
 
     def inspect_tag_target(self, *, tag: str) -> str | None:
+        if self.tag_missing:
+            return None
         if self.tag_target is not None:
             return self.tag_target
         return None if self.release is None else self.release.target_oid
@@ -647,6 +651,8 @@ class _FakePublicationTransport:
             draft=False,
             assets=dict(self.assets),
         )
+        if self.missing_after_publish:
+            self.tag_missing = True
         self._fail("publish-release")
         return self.release
 
@@ -769,6 +775,58 @@ def test_release_candidate_requires_exact_commit_and_wheel_sdist_set(tmp_path: P
         )
 
 
+@pytest.mark.parametrize(
+    "filenames",
+    [
+        (
+            "untaped-4.0.0rc1-py3-none-any.whl",
+            "untaped-4.0.0rc1.tar.gz",
+            "notes.txt",
+        ),
+        (
+            "other-4.0.0rc1-py3-none-any.whl",
+            "untaped-4.0.0rc1.tar.gz",
+        ),
+        (
+            "untaped-4.0.0rc10-py3-none-any.whl",
+            "untaped-4.0.0rc1.tar.gz",
+        ),
+        (
+            "untaped-4.0.0rc1-py3-none-any.whl",
+            "untaped-4.0.0rc1-py3.14-none-any.whl",
+            "untaped-4.0.0rc1.tar.gz",
+        ),
+        (
+            "untaped-4.0.0rc1-py3-none-any.whl",
+            "untaped-4.0.0rc1.tar",
+        ),
+    ],
+    ids=[
+        "extra-file",
+        "wrong-distribution",
+        "suffix-adjacent-version",
+        "duplicate-wheel",
+        "malformed-archive",
+    ],
+)
+def test_release_candidate_rejects_non_exact_distribution_sets(
+    tmp_path: Path, filenames: tuple[str, ...]
+) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for filename in filenames:
+        (dist / filename).write_bytes(filename.encode())
+
+    with pytest.raises(release_module.ReleaseCheckError):
+        release_module.collect_release_candidate(
+            version="4.0.0rc1",
+            candidate_oid="a" * 40,
+            current_oid="a" * 40,
+            dist_dir=dist,
+            pyproject_path=REPO_ROOT / "pyproject.toml",
+        )
+
+
 def test_publication_fresh_run_follows_draft_index_smoke_publish(tmp_path: Path) -> None:
     candidate = _candidate(tmp_path)
     transport = _FakePublicationTransport()
@@ -839,6 +897,59 @@ def test_production_draft_helper_resumes_exact_published_prefix_as_noop(tmp_path
     assert result == release
     assert "create-draft" not in transport.calls
     assert not any(call.startswith("upload-asset:") for call in transport.calls)
+
+
+def test_production_draft_helper_allows_uncreated_tag_until_publish(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=True,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+    transport.tag_missing = True
+
+    assert release_module.ensure_github_draft(candidate, transport=transport) == release
+
+
+@pytest.mark.parametrize("operation", ["ensure", "publish"])
+def test_production_helpers_reject_missing_tag_for_published_release(
+    tmp_path: Path, operation: str
+) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=False,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+    transport.tag_missing = True
+
+    with pytest.raises(release_module.ReleaseCheckError, match="resolves to None"):
+        if operation == "ensure":
+            release_module.ensure_github_draft(candidate, transport=transport)
+        else:
+            release_module.publish_github_draft(candidate, transport=transport)
+
+
+def test_production_publish_rechecks_tag_after_publish(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=True,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+    transport.missing_after_publish = True
+
+    with pytest.raises(release_module.ReleaseCheckError, match="resolves to None"):
+        release_module.publish_github_draft(candidate, transport=transport)
 
 
 def test_production_publish_helper_uses_exact_shared_prefix_and_noops_when_complete(
@@ -926,6 +1037,66 @@ def test_publication_injected_upload_failure_resumes_without_duplicate(tmp_path:
     release_module.run_publication(candidate, index="pypi", transport=transport)
     assert before == 1
     assert transport.calls.count("upload-index:pypi") == 1
+
+
+def test_production_create_failure_after_response_resumes_existing_draft(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+    transport.fail_after = "create-draft"
+
+    with pytest.raises(release_module.ReleaseCheckError, match="injected create-draft"):
+        release_module.ensure_github_draft(candidate, transport=transport)
+
+    release_module.ensure_github_draft(candidate, transport=transport)
+    assert transport.calls.count("create-draft") == 1
+    assert transport.calls.count("upload-asset:" + candidate.artifacts[0].filename) == 1
+    assert transport.calls.count("upload-asset:" + candidate.artifacts[1].filename) == 1
+
+
+def test_production_partial_asset_upload_resumes_missing_suffix(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+    transport.fail_after = "upload-asset"
+
+    with pytest.raises(release_module.ReleaseCheckError, match="injected upload-asset"):
+        release_module.ensure_github_draft(candidate, transport=transport)
+
+    release_module.ensure_github_draft(candidate, transport=transport)
+    assert transport.calls.count("create-draft") == 1
+    assert transport.calls.count("upload-asset:" + candidate.artifacts[0].filename) == 1
+    assert transport.calls.count("upload-asset:" + candidate.artifacts[1].filename) == 1
+
+
+def test_publication_smoke_failure_resumes_without_reupload(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+    transport.fail_after = "smoke"
+
+    with pytest.raises(release_module.ReleaseCheckError, match="injected smoke"):
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+
+    assert (
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+        == release_module.PublicationState.GITHUB_PUBLISHED
+    )
+    assert transport.calls.count("create-draft") == 1
+    assert transport.calls.count("upload-index:pypi") == 1
+    assert transport.calls.count("publish-release") == 1
+
+
+def test_publication_failure_after_publish_response_resumes_as_noop(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    transport = _FakePublicationTransport()
+    transport.fail_after = "publish-release"
+
+    with pytest.raises(release_module.ReleaseCheckError, match="injected publish-release"):
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+
+    assert (
+        release_module.run_publication(candidate, index="pypi", transport=transport)
+        == release_module.PublicationState.GITHUB_PUBLISHED
+    )
+    assert transport.calls.count("publish-release") == 1
 
 
 @pytest.mark.parametrize("conflict", ["target", "tag", "asset", "extra", "index"])
