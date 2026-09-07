@@ -1,0 +1,77 @@
+[evidence]
+schema = "untaped.release-source-evidence.v1"
+requires-python = ">=3.14"
+
+[evidence.core-source]
+repository = "untaped"
+oid = "2283bfc51ea2cdcd4195e76eec4f3fa985479ced"
+requires-python = ">=3.14"
+dependencies = [
+    "cyclopts>=4.16.0,<5",
+    "filelock>=3.29.0",
+    "httpx>=0.28.1",
+    "prompt-toolkit>=3.0.52",
+    "pydantic>=2.13.3",
+    "pydantic-settings>=2.14.0",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
+    "truststore>=0.10.4",
+]
+
+[[evidence.sources]]
+capability = "workspace"
+repository = "untaped-workspace"
+oid = "f9c2fd618f5447fcb86734d6cba5e741b3841c4b"
+dependencies = ["cyclopts>=4.16.0,<5", "pydantic>=2.13.3", "pyyaml>=6.0.3", "untaped>=3.0.0,<4"]
+
+[[evidence.sources]]
+capability = "github"
+repository = "untaped-github"
+oid = "f49cc94c2c65fa1ea7688d08a4badecb2a2a517e"
+dependencies = ["cyclopts>=4.16.0,<5", "pathspec>=1.1.1,<2", "pydantic>=2.13.3", "untaped>=3.0.0,<4"]
+
+[[evidence.sources]]
+capability = "jira"
+repository = "untaped-jira"
+oid = "701888abd30c197e7193253aa32b8a3e5dfea623"
+dependencies = ["cyclopts>=4.16.0,<5", "pydantic>=2.13.3", "pyyaml>=6.0.3", "untaped>=3.0.0,<4"]
+
+[[evidence.sources]]
+capability = "awx"
+repository = "untaped-awx"
+oid = "293076e16914f13f29eecc7651facb6e16179b85"
+dependencies = ["cyclopts>=4.16.0,<5", "jinja2>=3.1.6", "pydantic>=2.13.3", "pyyaml>=6.0.3", "untaped>=3.0.0,<4"]
+
+[[evidence.sources]]
+capability = "ansible"
+repository = "untaped-ansible"
+oid = "806c4bca72280072e1a25509fbbedf14438d34bf"
+dependencies = ["cyclopts>=4.16.0,<5", "pydantic>=2.13.3", "pyyaml>=6.0.3", "untaped>=3.0.0,<4", "untaped-github>=0.13.0"]
+
+[[evidence.sources]]
+capability = "recipe"
+repository = "untaped-recipe"
+oid = "dbbd512336d227043aaa99b3bc10efe9a2d7219c"
+dependencies = ["cyclopts>=4.16.0,<5", "jinja2>=3.1.6,<4", "packaging>=26.2,<27", "pydantic>=2.13.3", "pyyaml>=6.0.3", "ruamel.yaml>=0.18.16", "tomlkit>=0.13,<1", "untaped>=3.0.0,<4"]
+
+[[evidence.sources]]
+capability = "orchestration"
+repository = "untaped-orchestration"
+oid = "8633e594ebe381ac7e3e58a5b57707ae9b691369"
+dependencies = ["cyclopts>=4.16,<5", "filelock>=3.29.7,<4", "pydantic>=2.13.3,<3", "tomli-w>=1.2,<2", "untaped>=3.1.0,<4"]
+
+[evidence.intersections]
+filelock = ">=3.29.7,<4"
+jinja2 = ">=3.1.6,<4"
+pydantic = ">=2.13.3,<3"
+
+[evidence.removed-edges]
+core-self = "omitted"
+ansible-github = "builtin-capability:github"
+
+[evidence.approved-orchestration-fixes]
+status = "approved-not-integrated"
+source-oids = [
+    "d68e6a9007d11f50ce9c4e0a21296322975ec0ca",
+    "f6359b0678ea61e969ff164a57b7ab6858f3fef4",
+]
