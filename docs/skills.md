@@ -1,116 +1,123 @@
-# Agent Skills
+# Agent skills
 
-Each untaped tool can ship packaged **agent skills**: directories with a
-`SKILL.md` file plus optional resources such as `references/`, `scripts/`, or
-`assets/`. These teach Codex, Claude, and compatible agents how to use that
-tool's CLI surface.
+A capability may ship a packaged agent skill: a directory containing `SKILL.md`
+and optional `references/`, `scripts/`, or `assets/` resources. The capability
+adds each asset to its `CapabilitySpec.skills` tuple. The unified root discovers
+the union of shell and capability assets, so one command can list or install
+skills from the whole composed application.
 
-Skills are **per tool**. A tool declares its skills as `SkillAsset`s in its
-`ToolSpec`, and the SDK mounts a `skills` command group on the tool that lists
-and installs *only that tool's* skills. There is no central `untaped skills`
-command and no SDK-level skill — install each tool's skills from that tool.
+The stable asset ID remains the `SkillAsset.name` value. Existing IDs such as
+`untaped-github`, `untaped-awx`, and `untaped-workspace` are not renamed when
+the command moves to the root.
 
 ```python
-from untaped.api import SkillAsset, ToolSpec
+from pathlib import Path
 
-ToolSpec(
-    command="untaped-github",
-    section="github",
-    profile_model=GithubProfile,
+from untaped.capability_api import CapabilitySpec, SkillAsset
+
+SPEC = CapabilitySpec(
+    name="acme",
+    app_factory=build_app,
+    config_section="acme",
+    profile_model=AcmeSettings,
     skills=(
         SkillAsset(
-            name="untaped-github",
-            source=Path(__file__).parent / "skills" / "untaped-github",
-            description="Drive the untaped-github CLI from an agent.",
+            name="untaped-acme",
+            source=Path(__file__).parent / "skills" / "untaped-acme",
+            description="Use the acme capability from the unified untaped CLI.",
         ),
     ),
 )
 ```
 
-## List Available Skills
+## List available skills
 
-Each tool exposes its own `skills list`:
-
-```bash
-untaped-github skills list
-untaped-github skills list --format raw
-untaped-github skills list --format json
-```
-
-The list shows only the skills that tool ships (the `SkillAsset`s in its
-`ToolSpec`). Other tools, such as `untaped-awx` or `untaped-workspace`, list and
-install their own skills from their own `skills` group.
-
-## Install Skills
-
-Install selected skills by name from the owning tool:
+The root list includes every skill accepted by the current composition:
 
 ```bash
-untaped-github skills install untaped-github --target codex
-untaped-workspace skills install untaped-workspace --target claude
-untaped-awx skills install untaped-awx --target all --scope local
+untaped skills list
+untaped skills list --format raw
+untaped skills list --format json
 ```
 
-Install every skill the tool ships with `--all`:
+The normal display uses each asset's full installed ID. Use the short selector
+as the primary form when installing a built-in skill; the root resolves
+`github` to the existing `untaped-github` asset, for example. The full ID is
+also accepted when a script already has it.
+
+## Install skills
+
+Choose a skill by its short selector, or use `--all` for the composed set:
 
 ```bash
-untaped-github skills install --all --target all
+untaped skills install github --target codex
+untaped skills install workspace --target claude
+untaped skills install awx --target all --scope local
+untaped skills install --all --target all
 ```
 
-Batch selection also works through stdin:
+The selector source is exactly one of positional names, `--stdin`, or `--all`.
+A raw list emits the stable full IDs, which can be fed back to the root:
 
 ```bash
-untaped-github skills list --format raw | untaped-github skills install --stdin --target codex
+untaped skills list --format raw | untaped skills install --stdin --target codex
 ```
 
-Exactly one selector source is allowed: positional names, `--stdin`, or
-`--all`. There is no cross-tool `skills --all`; each tool installs only its own
-skills, so run the command once per tool you want installed.
+A bare `untaped skills install` is a usage error. It must receive names,
+`--stdin`, or `--all`.
 
-## Targets And Scopes
+## Targets and scopes
 
-`--target codex` installs Codex-readable skills (the default). `--target claude`
-installs Claude Code-readable skills. `--target all` installs into both target
-roots for the selected scope.
+`--target codex` is the default and installs into the Codex skill root.
+`--target claude` installs into the Claude Code skill root. `--target all`
+installs into both target roots.
 
-`--scope global` is the default. It means user/personal, not admin or
-enterprise-wide:
+`--scope global` is the default:
 
-- Codex global: `~/.agents/skills`
-- Claude global: `~/.claude/skills`
+- Codex: `~/.agents/skills`
+- Claude: `~/.claude/skills`
 
-`--scope local` installs into a project directory:
+`--scope local` installs beneath a project root:
 
-- Codex local: `<project-root>/.agents/skills`
-- Claude local: `<project-root>/.claude/skills`
+- Codex: `<project-root>/.agents/skills`
+- Claude: `<project-root>/.claude/skills`
 
-When `--project-dir PATH` is provided, `PATH` is the project root (it requires
-`--scope local`). Without `--project-dir`, local installs use the current git
-repository root when available, otherwise the current working directory.
+Use `--project-dir PATH` with `--scope local` to select the project root. When
+it is omitted, the current git repository root is used when available,
+otherwise the current working directory is used. Use `--target-dir PATH` to
+select a target directory directly; it cannot be combined with `--target all`
+or `--project-dir`.
 
-Local installs create project files that can be committed if the skill should
-travel with the repository. Keep them uncommitted for machine-local
-experiments.
+Local installs create project files that can be committed when a skill should
+travel with the repository. Keep machine-local experiments uncommitted.
 
-Use `--target-dir PATH` to override the skills directory for one selected
-target. It cannot be combined with `--target all` or `--project-dir`.
+## Overwrite policy and markers
 
-Codex and Claude usually discover skill changes automatically. If a newly
-created skills directory does not appear, restart the target agent so it
-reloads its skill catalog.
-
-## Overwrite Policy
-
-`skills install` refuses to replace an existing skill directory unless
-`--force` is passed:
+Installation refuses to replace an existing skill directory unless `--force`
+is passed:
 
 ```bash
-untaped-awx skills install untaped-awx --target codex --force
+untaped skills install awx --target codex --force
 ```
 
-## Skill Marker
+Codex installs land in `.agents/skills/<full-id>/`; Claude installs land in
+`.claude/skills/<full-id>/`. Each installed directory contains a
+`.untaped-skill.json` marker recording the asset name, source, target, scope,
+and resolved install root. The full ID in the directory and marker remains
+stable even when the short selector was used.
 
-Each installed skill lands in `.claude/skills/<name>/` (Claude) and/or
-`.agents/skills/<name>/` (Codex), and every installed directory includes a
-`.untaped-skill.json` marker so future tooling can identify the skill's `name`,
-`source`, installation `target`, `scope`, and resolved `install_root`.
+Agents usually discover changed skills automatically. Restart the target agent
+if a newly created directory does not appear in its skill catalog.
+
+## Authoring rules
+
+A built-in capability owns its skill source under
+`src/untaped/capabilities/<name>/skills/<full-id>/` and declares that directory
+in `SPEC.skills`. An external provider packages the same asset with its
+provider distribution. Update the owning skill when its capability command,
+settings, workflow, or contract changes; do not duplicate the shared install
+mechanics in a capability-specific skill.
+
+See [Capability authoring](./plugins.md) for the provider entry-point contract
+and [the composition specification](./capabilities-spec.md) for validation and
+collision rules.
