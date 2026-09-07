@@ -493,7 +493,8 @@ def _handle_ensure_github_draft(args: argparse.Namespace) -> None:
     candidate = _collect_cli_candidate(args)
     transport = GitHubReleaseTransport(repo=args.repo, token=args.token or "")
     release = ensure_github_draft(candidate, transport=transport)
-    print(f"ok: GitHub draft {release.tag} contains the exact candidate assets")
+    state = "draft" if release.draft else "published"
+    print(f"ok: GitHub {state} {release.tag} contains the exact candidate assets")
 
 
 def _handle_verify_index_artifacts(args: argparse.Namespace) -> None:

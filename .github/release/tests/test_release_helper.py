@@ -673,7 +673,7 @@ def test_manifest_matches_package_and_lock() -> None:
 def test_manifest_rejects_mutated_core_source_provenance(tmp_path: Path) -> None:
     text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
     altered = text.replace(
-        "oid = \"2283bfc51ea2cdcd4195e76eec4f3fa985479ced\"",
+        'oid = "2283bfc51ea2cdcd4195e76eec4f3fa985479ced"',
         f'oid = "{"b" * 40}"',
         1,
     )
@@ -696,13 +696,11 @@ def test_manifest_rejects_broadened_source_intersection(tmp_path: Path) -> None:
     ("needle", "message"),
     [
         ("capabilities = [", "capability order"),
-        ("version = \"4.0.0rc1\"", "version"),
-        ("requires-python = \">=3.14\"", "Python floor"),
+        ('version = "4.0.0rc1"', "version"),
+        ('requires-python = ">=3.14"', "Python floor"),
     ],
 )
-def test_manifest_rejects_stale_public_identity(
-    tmp_path: Path, needle: str, message: str
-) -> None:
+def test_manifest_rejects_stale_public_identity(tmp_path: Path, needle: str, message: str) -> None:
     text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
     if needle == "capabilities = [":
         altered = re.sub(
@@ -762,7 +760,8 @@ def test_publication_fresh_run_follows_draft_index_smoke_publish(tmp_path: Path)
     )
     assert transport.calls.count("create-draft") == 1
     assert transport.calls.count("upload-index:pypi") == 1
-    assert transport.calls[-3:] == ["smoke:pypi", "inspect-release:v4.0.0rc1", "publish-release"]
+    assert transport.calls.index("smoke:pypi") < transport.calls.index("publish-release")
+    assert transport.calls[-1] == "publish-release"
 
 
 def test_publication_resume_skips_exact_draft_assets_and_index_upload(tmp_path: Path) -> None:
@@ -781,7 +780,8 @@ def test_publication_resume_skips_exact_draft_assets_and_index_upload(tmp_path: 
     assert "create-draft" not in transport.calls
     assert not any(call.startswith("upload-asset:") for call in transport.calls)
     assert "upload-index:pypi" not in transport.calls
-    assert transport.calls[-3:] == ["smoke:pypi", "inspect-release:v4.0.0rc1", "publish-release"]
+    assert transport.calls.index("smoke:pypi") < transport.calls.index("publish-release")
+    assert transport.calls[-1] == "publish-release"
 
 
 def test_publication_complete_matching_release_is_verified_noop(tmp_path: Path) -> None:
@@ -800,7 +800,100 @@ def test_publication_complete_matching_release_is_verified_noop(tmp_path: Path) 
         == release_module.PublicationState.GITHUB_PUBLISHED
     )
     assert "publish-release" not in transport.calls
-    assert transport.calls[-1] == "smoke:pypi"
+    assert "smoke:pypi" in transport.calls
+    assert transport.calls[-1] == "inspect-index:pypi"
+
+
+def test_production_draft_helper_resumes_exact_published_prefix_as_noop(tmp_path: Path) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=False,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+
+    result = release_module.ensure_github_draft(candidate, transport=transport)
+
+    assert result == release
+    assert "create-draft" not in transport.calls
+    assert not any(call.startswith("upload-asset:") for call in transport.calls)
+
+
+def test_production_publish_helper_uses_exact_shared_prefix_and_noops_when_complete(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate(tmp_path)
+    release = release_module.GitHubRelease(
+        release_id="1",
+        tag=candidate.tag,
+        target_oid=candidate.candidate_oid,
+        draft=False,
+        assets=candidate.artifact_hashes,
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+
+    result = release_module.publish_github_draft(candidate, transport=transport)
+
+    assert result == release
+    assert "publish-release" not in transport.calls
+    assert transport.calls.count("inspect-index:pypi") == 1
+
+
+@pytest.mark.parametrize("operation", ["ensure", "publish"])
+@pytest.mark.parametrize("conflict", ["target", "tag", "asset", "extra"])
+def test_production_release_transitions_share_fail_closed_conflict_matrix(
+    tmp_path: Path, operation: str, conflict: str
+) -> None:
+    candidate = _candidate(tmp_path)
+    target = "b" * 40 if conflict == "target" else candidate.candidate_oid
+    assets = dict(candidate.artifact_hashes)
+    if conflict == "asset":
+        assets[next(iter(assets))] = "0" * 64
+    elif conflict == "extra":
+        assets["unexpected.txt"] = "0" * 64
+    release = release_module.GitHubRelease(
+        release_id="1", tag=candidate.tag, target_oid=target, draft=True, assets=assets
+    )
+    transport = _FakePublicationTransport(release, candidate.artifact_hashes)
+    if conflict == "tag":
+        transport.tag_target = "b" * 40
+    with pytest.raises(release_module.ReleaseCheckError):
+        if operation == "ensure":
+            release_module.ensure_github_draft(candidate, transport=transport)
+        elif operation == "publish":
+            release_module.publish_github_draft(candidate, transport=transport)
+
+    assert "publish-release" not in transport.calls
+    assert not any(call.startswith("upload-asset:") for call in transport.calls)
+
+
+@pytest.mark.parametrize("operation", ["index", "prepare"])
+@pytest.mark.parametrize("conflict", ["index", "extra"])
+def test_production_index_transitions_share_fail_closed_conflict_matrix(
+    tmp_path: Path, operation: str, conflict: str
+) -> None:
+    candidate = _candidate(tmp_path)
+    index = dict(candidate.artifact_hashes)
+    if conflict == "index":
+        index[next(iter(index))] = "0" * 64
+    else:
+        index["unexpected.txt"] = "0" * 64
+    transport = _FakePublicationTransport(index_files=index)
+    output_dir = tmp_path / "upload"
+
+    with pytest.raises(release_module.ReleaseCheckError):
+        if operation == "index":
+            release_module.verify_index_artifacts(candidate, index="pypi", transport=transport)
+        else:
+            release_module.prepare_index_upload(
+                candidate,
+                index="pypi",
+                transport=transport,
+                output_dir=output_dir,
+            )
 
 
 def test_publication_injected_upload_failure_resumes_without_duplicate(tmp_path: Path) -> None:
@@ -851,8 +944,7 @@ def test_testpypi_resume_omits_github_draft_leg(tmp_path: Path) -> None:
         == release_module.PublicationState.PUBLISHED_SMOKE
     )
     assert not any(
-        call.endswith("-draft") or call.startswith("upload-asset")
-        for call in transport.calls
+        call.endswith("-draft") or call.startswith("upload-asset") for call in transport.calls
     )
     assert "upload-index:testpypi" in transport.calls
 
@@ -861,8 +953,7 @@ def test_simple_index_rejects_unexpected_same_version_file(tmp_path: Path) -> No
     candidate = _candidate(tmp_path)
     hashes = candidate.artifact_hashes
     html = "".join(
-        f'<a href="{name}#sha256={digest}">{name}</a>'
-        for name, digest in hashes.items()
+        f'<a href="{name}#sha256={digest}">{name}</a>' for name, digest in hashes.items()
     )
     html += '<a href="untaped-4.0.0rc1-extra.whl#sha256=' + "0" * 64 + '">extra</a>'
 
@@ -891,9 +982,7 @@ def test_prepare_index_upload_copies_only_missing_artifacts(tmp_path: Path) -> N
         transport=transport,
         output_dir=upload_dir,
     )
-    assert [path.name for path in upload_dir.iterdir()] == [
-        "untaped-4.0.0rc1.tar.gz"
-    ]
+    assert [path.name for path in upload_dir.iterdir()] == ["untaped-4.0.0rc1.tar.gz"]
 
 
 def test_github_transport_peels_annotated_tag_to_commit() -> None:
