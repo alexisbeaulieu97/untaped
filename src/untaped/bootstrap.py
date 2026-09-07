@@ -19,7 +19,8 @@ slice 1 appends the github subtree (``untaped github ...``); Wave 2 slice 2
 appends the jira subtree (``untaped jira ...``); Wave 2 slice 3 appends
 the awx subtree (``untaped awx ...``); Wave 2 slice 4 appends
 the ansible subtree (``untaped ansible ...``); Wave 2 slice 5 appends
-the recipe subtree (``untaped recipe ...``).
+the recipe subtree (``untaped recipe ...``); Wave 2 slice 6 appends
+the orchestration subtree (``untaped orchestration ...``).
 """
 
 from __future__ import annotations
@@ -122,8 +123,15 @@ def _recipe_builtins() -> tuple[CapabilitySpec, ...]:
     return (SPEC,)
 
 
+def _orchestration_builtins() -> tuple[CapabilitySpec, ...]:
+    """Return the orchestration built-in without importing its CLI tree at module load."""
+    from untaped.capabilities.orchestration import SPEC  # noqa: PLC0415
+
+    return (SPEC,)
+
+
 def _default_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the built-ins in declaration order (workspace, github, jira, awx, ansible, recipe)."""
+    """Return the built-ins in declaration order (workspace through orchestration)."""
     return (
         *_workspace_builtins(),
         *_github_builtins(),
@@ -131,14 +139,15 @@ def _default_builtins() -> tuple[CapabilitySpec, ...]:
         *_awx_builtins(),
         *_ansible_builtins(),
         *_recipe_builtins(),
+        *_orchestration_builtins(),
     )
 
 
 #: Built-in capabilities composed ahead of externals (Wave 1.5 mounts the
 #: workspace capability, Wave 2 slice 1 appends github, Wave 2 slice 2 appends
 #: jira, Wave 2 slice 3 appends awx, Wave 2 slice 4 appends ansible,
-#: Wave 2 slice 5 appends recipe; further capabilities append in
-#: declaration order).
+#: Wave 2 slice 5 appends recipe, Wave 2 slice 6 appends orchestration;
+#: further capabilities append in declaration order).
 BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = _default_builtins()
 
 #: Active capability name for the current invocation (spec §4). Set at
@@ -276,7 +285,7 @@ def build_root_app(
     capability's sub-app under its capability name (Wave 1.5 default mounts
     the workspace built-in, Wave 2 slice 1 appends github, Wave 2 slice 2
     appends jira, Wave 2 slice 3 appends awx, Wave 2 slice 4 appends ansible,
-    Wave 2 slice 5 appends recipe), wires
+    Wave 2 slice 5 appends recipe, Wave 2 slice 6 appends orchestration), wires
     ``--version`` to lazy installed-distribution
     metadata,
     installs the position-independent root options, and registers shell
