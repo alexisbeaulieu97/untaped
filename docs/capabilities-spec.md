@@ -386,7 +386,7 @@ exception is an explicit allow-list carried in-repo as
 ```toml
 version = 1
 [[allow]]
-importer = "untaped.capabilities.ansible.*"
+importer = "untaped.capabilities.ansible"
 imported = "untaped.capabilities.github.pagination"
 reason = "shared paginator; no settings access"
 ```

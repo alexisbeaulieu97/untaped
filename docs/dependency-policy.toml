@@ -1,0 +1,14 @@
+# Internal cross-capability import allow-list (spec §6(b)).
+#
+# A capability MUST NOT import another capability's implementation
+# modules except through an entry here. Each entry names the importing
+# and imported dotted module prefixes plus a human justification naming
+# what is shared and confirming no settings/registry access crosses
+# the boundary outside the named module.
+
+version = 1
+
+[[allow]]
+importer = "untaped.capabilities.ansible"
+imported = "untaped.capabilities.github.ansible"
+reason = "Wave 2 slice 4: ansible consumes github behavior only through the reviewed closed API module (client, repository inventory, ref-probe outcome types, settings models); no github implementation-module imports"

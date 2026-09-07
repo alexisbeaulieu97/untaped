@@ -62,6 +62,13 @@ SIXTEEN_HELPERS = frozenset(
 
 _KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api", "untaped.api"})
 
+#: Wave 2 amendment 1 (import plan): the single sanctioned cross-capability
+#: import — ansible consumes GitHub behavior only through this closed API
+#: module, also recorded as the [[allow]] entry in
+#: ``docs/dependency-policy.toml``. Blanket sibling imports stay forbidden.
+ANSIBLE_PREFIX = "untaped.capabilities.ansible"
+ANSIBLE_GITHUB_API = "untaped.capabilities.github.ansible"
+
 
 def discover_capabilities(src: Path = CAPABILITIES_SRC) -> list[str]:
     """Names of in-repo capabilities: subpackages of ``capabilities/``."""
@@ -150,6 +157,8 @@ def _from_violation(module: str, own_prefix: str) -> str | None:
         return None
     if module == own_prefix or module.startswith(own_prefix + "."):
         return None
+    if module == ANSIBLE_GITHUB_API and own_prefix == ANSIBLE_PREFIX:
+        return None
     return (
         "capability code must import kernel helpers only via "
         "untaped.capability_api (or the transitional untaped.api) "
@@ -163,6 +172,8 @@ def _import_violation(name: str, own_prefix: str) -> str | None:
     if name in _KERNEL_SURFACE_MODULES:
         return None
     if name == own_prefix or name.startswith(own_prefix + "."):
+        return None
+    if name == ANSIBLE_GITHUB_API and own_prefix == ANSIBLE_PREFIX:
         return None
     return (
         "capability code must import kernel helpers only via "
