@@ -15,7 +15,7 @@ version of the fact.
 When behavior changes, update the owning page and every derived surface in the
 same change. A behavior change without its owning page is incomplete.
 
-Core-owned facts live in `untaped/docs/`:
+Core-owned facts live in `docs/`:
 
 - config file layout, profiles, and env-var overrides —
   [configuration.md](./configuration.md)
@@ -36,7 +36,7 @@ pages for shared mechanics instead of copying them.
 | --- | --- | --- |
 | `README.md` | front door and quickstart links | no |
 | `docs/` concept pages | canonical behavior references | yes |
-| `src/untaped/capabilities/<name>/skills/SKILL.md` | self-contained agent brief | no; it distills |
+| `src/untaped/capabilities/<name>/skills/<full-id>/SKILL.md` | self-contained agent brief | no; it distills |
 | `AGENTS.md` | invariants, architecture, workflow, and doc contract | only rules it owns |
 | `CONTRIBUTING.md` | contribution and governance floor | only contribution rules |
 | `docs/superpowers/` | design artifacts and plans | no user reference |

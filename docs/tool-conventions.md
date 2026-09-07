@@ -22,7 +22,10 @@ Use this layout under `src/untaped/capabilities/<name>/`:
 
 Keep the import direction `cli -> application -> domain` and
 `infrastructure -> domain`. Domain modules do not import CLI, application, or
-infrastructure code. Cross-capability private-helper imports are forbidden;
+infrastructure code. Cross-capability private-helper imports are forbidden by
+default. A narrow, explicitly justified exception is allowed only when it
+matches an entry in [`docs/dependency-policy.toml`](./dependency-policy.toml),
+which is the module-prefix allow-list. Keep any exception narrow; broadly
 shared behavior belongs in core and must be exposed through the stable provider
 surface when external providers need it.
 

@@ -49,6 +49,22 @@ acme = "acme_provider:provider"
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "acme_provider"
+module-root = "src"
+source-include = ["src/acme_provider/skills/untaped-acme/SKILL.md"]
+```
+
+The explicit module settings keep the `src/acme_provider` layout bound to the
+project. Keeping the skill below that module root makes it part of the wheel;
+`source-include` also carries the file into a source distribution. After
+creating the tree above, verify that the wheel carries the skill:
+
+```bash
+uv build --wheel
+unzip -l dist/acme_provider-*.whl \
+  | grep 'acme_provider/skills/untaped-acme/SKILL.md'
 ```
 
 The entry-point name must equal the `CapabilitySpec.name`. The resolved object
@@ -82,7 +98,6 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from untaped.capability_api import (
-    CAPABILITY_API_VERSION,
     CapabilitySpec,
     SkillAsset,
     create_app,
@@ -140,7 +155,7 @@ SPEC = CapabilitySpec(
 class AcmeProvider:
     """Entry-point provider discovered by the unified shell."""
 
-    api_requires = (CAPABILITY_API_VERSION, 2.0)
+    api_requires = (1.0, 2.0)
 
     def __call__(self) -> CapabilitySpec:
         return SPEC
@@ -161,8 +176,8 @@ root:
 
 ```bash
 untaped acme hello
-untaped config set acme.greeting "hello from staging" --target-profile staging
 untaped profile create staging --copy-from default
+untaped config set acme.greeting "hello from staging" --target-profile staging
 untaped --profile staging acme hello
 untaped capabilities
 untaped doctor
