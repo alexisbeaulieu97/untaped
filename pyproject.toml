@@ -1,7 +1,7 @@
 [project]
 name = "untaped"
 version = "4.0.0rc1"
-description = "A batteries-included CLI framework for building standalone DevOps tools."
+description = "A batteries-included CLI for DevOps workflows."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

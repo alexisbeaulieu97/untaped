@@ -8,8 +8,6 @@ on:
       - ".gitignore"
       - "AGENTS.md"
       - "CLAUDE.md"
-      - "docs/decisions.md"
-      - "docs/orchestration-migration/**"
   push:
     branches: [main]
     paths:
@@ -18,8 +16,6 @@ on:
       - ".gitignore"
       - "AGENTS.md"
       - "CLAUDE.md"
-      - "docs/decisions.md"
-      - "docs/orchestration-migration/**"
 
 permissions:
   contents: read

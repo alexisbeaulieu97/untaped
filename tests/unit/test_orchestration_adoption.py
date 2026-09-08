@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 STORE = ROOT / ".untaped/orchestration"
-MIGRATION = ROOT / "docs/orchestration-migration"
+MIGRATION = ROOT / "tests/fixtures/orchestration-migration"
 STORE_ID = "sto_019f68b6af9e721e970126ca31dbfde1"
 SOURCE_OID = "80bb8411cd0017f3e0cde818656aaf6fd0233368"
 SOURCE_SHA = "597d74559b5447942468b7fe321ab40dccbed32e4055d9fca71830702c55831e"
@@ -171,12 +171,7 @@ def test_import_manifest_has_guarded_unique_records() -> None:
     assert record_ids == list(DECISION_IDS)
 
 
-def test_pointer_agent_rules_ignore_rules_and_workflow() -> None:
-    pointer = (ROOT / "docs/decisions.md").read_text(encoding="utf-8")
-    assert "../.untaped/orchestration/views/decisions.md" in pointer
-    assert "untaped-orchestration brief --format json" in pointer
-    assert "canonical" in pointer and "generated" in pointer
-    assert "orchestration-migration" in pointer
+def test_agent_rules_ignore_rules_and_workflow() -> None:
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
     for phrase in (
         "public decision-only",
@@ -221,8 +216,6 @@ def test_pointer_agent_rules_ignore_rules_and_workflow() -> None:
             ".gitignore",
             "AGENTS.md",
             "CLAUDE.md",
-            "docs/decisions.md",
-            "docs/orchestration-migration/**",
         )
     )
     assert "uv sync" not in workflow

@@ -223,10 +223,6 @@ explicit opt-in.
 
 ## See also
 
-- [The capability composition contract](./capabilities-spec.md) — provider
-  fields, API ranges, validation, quarantine, and root command ownership.
 - [Agent skills](./skills.md) — root skill discovery and installation.
-- [Capability authoring](./plugins.md) — building a built-in or external
-  capability without adding another executable.
-- [Documentation standard](./documentation.md) — page ownership and derived
-  surfaces.
+- [Capability authoring](./plugins.md) — building an external capability for
+  the unified executable.

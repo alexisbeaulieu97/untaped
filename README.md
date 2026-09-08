@@ -5,14 +5,14 @@
 The root shell provides:
 
 - **Config** — a shared `~/.untaped/config.yml` with top-level `active:` /
-  `profiles:`, per-profile SDK `http` / `ui` settings, and each tool's own
+  `profiles:`, per-profile SDK `http` / `ui` settings, and each capability's own
   profile settings plus tool-managed top-level state.
 - **Profiles** — named overlays (`dev`, `prod`, `homelab`) and a `--profile`
   root option, built in.
 - **Themes** — built-in theme presets for consistent terminal styling.
 - **Output** — consistent `--format json|yaml|table|raw|pipe` and `--columns`,
   so commands compose. `pipe` is a self-describing NDJSON record stream another
-  untaped tool can read back. `emit(...)` renders a single entity as a vertical
+  `untaped` command can read back. `emit(...)` renders a single entity as a vertical
   detail view or a sequence as a collection, dispatching by shape.
 - **HTTP / UI helpers** — an `HttpClient` with profile-aware TLS, automatic
   retries for transient failures (`RetryPolicy`), and pagination helpers, plus a
@@ -89,26 +89,12 @@ User-facing docs live in [`docs/`](./docs/README.md):
   composition rules for built-in capabilities.
 - [Configuration](./docs/configuration.md) — the `~/.untaped/config.yml`
   format, profiles, secrets, and TLS.
-- [Agent Skills](./docs/skills.md) — how each tool ships and installs
+- [Agent Skills](./docs/skills.md) — how capabilities ship and install
   Codex/Claude agent skills.
 - [Releasing](./docs/release.md) — PyPI/TestPyPI workflow, Trusted Publisher
   setup, and recovery rules.
-- [Architecture decisions](./docs/decisions.md) — the settled ADRs behind the
-  single application and its capability boundaries.
-
-Historical source repositories imported into the built-in capabilities:
-
-- [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
-- [Jira](https://github.com/alexisbeaulieu97/untaped-jira)
-- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
-- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
-- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
-- [Recipe](https://github.com/alexisbeaulieu97/untaped-recipe)
-- [Orchestration](https://github.com/alexisbeaulieu97/untaped-orchestration)
-
-The imported source history remains available for provenance and review. The
-public v4 application owns the installed command surface; private retirement
-and cutover work are tracked separately from this release documentation.
+- [Workspace usage](./docs/workspace/usage.md) — manifests, sync workflows, and
+  shell helpers.
 
 ## Security
 

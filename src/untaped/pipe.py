@@ -7,7 +7,8 @@ fully self-describing so it survives ``head``/``grep``/concatenation::
 
 This module owns the contract (constants + parse/validate) with **no dependency
 on the rendering layer**, so the producer (:mod:`untaped.ui`) and the consumer
-(:mod:`untaped.stdin`) can both share it without an import cycle.
+(:mod:`untaped.stdin`) can both share it without an import cycle. Provider
+examples live in ``docs/plugins.md``.
 
 Record values are serialized with ``json.dumps(default=str)`` (same as
 ``--format json``), so non-JSON-native types (datetime, Decimal, enum) become
@@ -17,10 +18,9 @@ JSON-native types only.
 Pipe envelope **v1** — frozen and stable across every ``untaped`` SDK release
 (1.x, 2.x, and 3.x alike). The envelope is versioned independently of the SDK: any
 change to its shape is a major *envelope* event, not tied to the SDK major. This
-freeze is what lets independently-installed tools interoperate: each tool may
-ship its own SDK version, but ``untaped-github | untaped-ansible`` is guaranteed
-to work as long as both emit the same envelope version (still v1). See
-``docs/decisions.md``.
+freeze lets capability commands interoperate as long as they emit the same
+envelope version (still v1). See ``docs/plugins.md`` for producer and consumer
+examples.
 """
 
 from __future__ import annotations
@@ -43,10 +43,9 @@ SUPPORTED_PIPE_VERSIONS = frozenset({"1"})
 class PipeEnvelope:
     """One decoded ``--format pipe`` line: a record plus its metadata.
 
-    This is the **v1** envelope, versioned independently of the SDK and frozen
-    across SDK 1.x, 2.x, and 3.x; any change to its shape would bump the envelope
-    version (not the SDK major) so independently-installed tools on different
-    SDK versions interoperate. See the module docstring and ``docs/decisions.md``.
+    This is the **v1** envelope, versioned independently of the SDK; any change
+    to its shape would bump the envelope version. See the module docstring and
+    ``docs/plugins.md``.
     """
 
     kind: str | None

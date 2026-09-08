@@ -45,8 +45,8 @@ class ManifestRepository:
 
         The mkdir is load-bearing — it's how every bootstrap-style
         lifecycle command (``init``, ``adopt``, ``import``) obtains the
-        workspace dir. See ``docs/workspace/AGENTS.md`` (the
-        "Manifest + registry split" section).
+        workspace dir. See ``docs/workspace/usage.md`` for the user-facing
+        manifest workflow.
         """
         path = self.manifest_path(workspace_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
