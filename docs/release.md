@@ -12,14 +12,14 @@ change repository settings without explicit approval for that exact action.
 ## Package Metadata
 
 - Package name: `untaped`
-- Current release target: `4.0.0`
+- Current release target: `5.0.0`
 - License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
 - Build command: `uv build --no-sources`
 - Public manifest: [`release-manifest.toml`](../release-manifest.toml), which
-  records the package identity, Python floor, seven built-ins, direct
+  records the package identity, Python floor, six built-ins, direct
   requirements, and imported source OIDs.
 - Unified smoke: install the wheel, invoke the executable `untaped`, require
-  exact metadata and `untaped --version`, check the five management and seven
+  exact metadata and `untaped --version`, check the five management and six
   capability roots in root help, then resolve every capability's `--help`
   command offline. Local and published jobs call the same
   `.github/release/release.py smoke-unified` implementation.

@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 RELEASE_MANIFEST = REPO_ROOT / "release-manifest.toml"
+RELEASE_SOURCE_EVIDENCE = REPO_ROOT / "release-source-evidence.toml"
 BUILD_JOB = "build"
 DRAFT_JOB = "github-draft"
 PUBLISH_JOB = "publish"
@@ -295,3 +296,22 @@ def test_project_metadata_declares_pypi_release_fields() -> None:
     assert project["license-files"] == ["LICENSE"]
     assert project.get("readme") == "README.md"
     assert not any(str(item).startswith("License ::") for item in project.get("classifiers", []))
+
+
+def test_release_contract_declares_six_builtins_and_no_retired_orchestration() -> None:
+    manifest = tomllib.loads(RELEASE_MANIFEST.read_text(encoding="utf-8"))
+    evidence = tomllib.loads(RELEASE_SOURCE_EVIDENCE.read_text(encoding="utf-8"))
+
+    expected = ["workspace", "github", "jira", "awx", "ansible", "recipe"]
+    assert manifest["manifest"]["capabilities"] == expected
+    assert "orchestration" not in manifest["manifest"]["capabilities"]
+    assert all(
+        record["capability"] != "orchestration" for record in manifest["provenance"]["sources"]
+    )
+    assert all(
+        record["capability"] != "orchestration" for record in evidence["evidence"]["sources"]
+    )
+    assert "approved-orchestration-fixes" not in manifest["provenance"]
+    assert "approved-orchestration-fixes" not in evidence["evidence"]
+    assert "dispositions" not in manifest["provenance"]
+    assert "removed-edges" not in evidence["evidence"]

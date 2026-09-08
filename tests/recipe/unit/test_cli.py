@@ -3360,7 +3360,7 @@ def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) ->
     assert rows[0]["status"] == "error"
     assert "must not depend on untaped at runtime" in rows[0]["error"]
     assert "dependency-groups.dev" in rows[0]["error"]
-    assert "untaped>=4.0.0,<5" in rows[0]["error"]
+    assert "untaped>=5.0.0,<6" in rows[0]["error"]
 
 
 def test_recipe_check_validates_unreferenced_local_hook_project_modules(tmp_path: Path) -> None:

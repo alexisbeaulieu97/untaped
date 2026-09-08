@@ -1,6 +1,6 @@
 # untaped
 
-**untaped** is one `untaped` application built on [cyclopts](https://cyclopts.readthedocs.io/). It provides the shared shell, five management command groups, and seven built-in capabilities from one install.
+**untaped** is one `untaped` application built on [cyclopts](https://cyclopts.readthedocs.io/). It provides the shared shell, five management command groups, and six built-in capabilities from one install.
 
 The root shell provides:
 
@@ -39,7 +39,7 @@ Python 3.14 and [uv](https://docs.astral.sh/uv/).
 ## Install and use
 
 ```bash
-uv tool install untaped==4.0.0
+uv tool install untaped==5.0.0
 untaped --help
 untaped --version
 ```
@@ -63,9 +63,8 @@ The unified shell composes these capabilities under one executable:
 - **`awx`** — AWX/AAP resource inspection and guarded reconciliation.
 - **`ansible`** — Ansible dependency graph and impact analysis.
 - **`recipe`** — local recipe pack planning, backup, and application.
-- **`orchestration`** — typed repository decision and task orchestration stores.
 
-All seven command roots resolve without network access when invoked with
+All six command roots resolve without network access when invoked with
 `--help`:
 
 ```bash
@@ -75,7 +74,6 @@ untaped jira --help
 untaped awx --help
 untaped ansible --help
 untaped recipe --help
-untaped orchestration --help
 ```
 
 See [docs/workspace/usage.md](./docs/workspace/usage.md) for the manifest

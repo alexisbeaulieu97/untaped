@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased (Wave 2)
+## 5.0.0
+
+- Removed the orchestration capability, its configuration section, and packaged
+  skill. No compatibility command is provided.
+- Planning now uses GitHub Issues and Projects; architectural rationale lives
+  in plain Markdown decisions in the owning repository.
+- The six remaining public capabilities keep their existing command roots.
+- Private capabilities require `untaped-private` 1.1.0 with this release.
+
+## 4.0.0
 
 - Completed the unified v4 release boundary: one `untaped` wheel and source
   archive, a public source-provenance manifest, and shared local/published
