@@ -47,7 +47,9 @@ them deliberately, and record what changed in the release PR or release notes.
 
 Inputs:
 
-- `version`: release version without a leading `v`.
+- `version`: release version without a leading `v`, matching `X.Y.Z` with an
+  optional `aN`, `bN`, or `rcN` suffix. Bare `X.Y.Z` creates a stable GitHub
+  draft; the suffixed forms create prerelease drafts.
 - `candidate_oid`: full 40-character reviewed commit SHA. It must equal the
   checkout's `GITHUB_SHA`.
 - `index`: `testpypi` or `pypi`.
