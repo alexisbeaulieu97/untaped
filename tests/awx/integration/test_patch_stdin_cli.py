@@ -1,8 +1,8 @@
-"""End-to-end CLI tests for ``untaped awx <kind> apply --stdin`` mass-patch.
+"""End-to-end CLI tests for ``untaped awx <kind> patch --stdin`` mass-patch.
 
 Drives the per-kind ``apply`` command from a piped selection (names, ids, or a
 ``--format pipe`` envelope stream) plus a ``--set`` / ``--patch-file`` overlay.
-Pins the contract: preview-by-default, ``--yes`` writes a sparse PATCH of only
+Pins the contract: explicit dry-run previews, ``--yes`` writes a sparse PATCH of only
 the overlaid fields, the selection path never creates, and an overlay field the
 tool does not recognize is passed through with a warning and then verified.
 """
@@ -53,11 +53,20 @@ def _posts(fake: Any) -> list[Any]:
     return [c for c in fake.router.calls if c.request.method == "POST"]
 
 
-def test_apply_stdin_preview_does_not_write(seeded_default_org: Any) -> None:
+def test_patch_stdin_preview_does_not_write(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
         app,
-        ["job-templates", "apply", "--stdin", "--set", "verbosity=2", "--organization", "Default"],
+        [
+            "job-templates",
+            "patch",
+            "--stdin",
+            "--set",
+            "verbosity=2",
+            "--organization",
+            "Default",
+            "--dry-run",
+        ],
         input="deploy\n",
     )
     assert result.exit_code == 0, result.output
@@ -65,13 +74,13 @@ def test_apply_stdin_preview_does_not_write(seeded_default_org: Any) -> None:
     assert "verbosity" in (result.stderr or "")
 
 
-def test_apply_stdin_yes_patches_only_set_field(seeded_default_org: Any) -> None:
+def test_patch_stdin_yes_patches_only_set_field(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "verbosity=2",
@@ -88,13 +97,13 @@ def test_apply_stdin_yes_patches_only_set_field(seeded_default_org: Any) -> None
     assert seeded_default_org.get_record("job_templates", 30)["verbosity"] == 2
 
 
-def test_apply_stdin_never_creates_missing_target(seeded_default_org: Any) -> None:
+def test_patch_stdin_never_creates_missing_target(seeded_default_org: Any) -> None:
     """A piped name that doesn't resolve is a per-item error — never a create."""
     result = CliInvoker().invoke(
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "verbosity=2",
@@ -109,12 +118,12 @@ def test_apply_stdin_never_creates_missing_target(seeded_default_org: Any) -> No
     assert _posts(seeded_default_org) == []  # nothing created
 
 
-def test_apply_stdin_requires_set_or_patch_file(seeded_default_org: Any) -> None:
+def test_patch_stdin_requires_set_or_patch_file(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
-        app, ["job-templates", "apply", "--stdin", "--yes"], input="deploy\n"
+        app, ["job-templates", "patch", "--stdin", "--yes"], input="deploy\n"
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "--set" in (result.stderr or result.output)
 
 
@@ -123,16 +132,16 @@ def test_apply_file_with_set_is_usage_error(seeded_default_org: Any, tmp_path: P
     f.write_text("kind: JobTemplate\nmetadata: {name: deploy}\nspec: {}\n")
     result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--set", "verbosity=2"])
     assert result.exit_code == 2
-    assert "--stdin" in (result.stderr or result.output)
+    assert "--set" in (result.stderr or result.output)
 
 
 def test_apply_neither_file_nor_stdin_is_usage_error(seeded_default_org: Any) -> None:
     result = CliInvoker().invoke(app, ["job-templates", "apply"])
     assert result.exit_code == 2
-    assert "--stdin" in (result.stderr or result.output)
+    assert "requires an argument" in (result.stderr or result.output)
 
 
-def test_apply_stdin_patch_file_merges_with_set(seeded_default_org: Any, tmp_path: Path) -> None:
+def test_patch_stdin_patch_file_merges_with_set(seeded_default_org: Any, tmp_path: Path) -> None:
     _seed_jt(seeded_default_org)
     pf = tmp_path / "p.yml"
     pf.write_text("verbosity: 1\njob_tags: base\n")
@@ -140,7 +149,7 @@ def test_apply_stdin_patch_file_merges_with_set(seeded_default_org: Any, tmp_pat
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--patch-file",
             str(pf),
@@ -160,24 +169,24 @@ def test_apply_stdin_patch_file_merges_with_set(seeded_default_org: Any, tmp_pat
     }
 
 
-def test_apply_stdin_by_id(seeded_default_org: Any) -> None:
+def test_patch_stdin_by_id(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org, id_=77, name="byid")
     result = CliInvoker().invoke(
         app,
-        ["job-templates", "apply", "--stdin", "--by-id", "--set", "verbosity=4", "--yes"],
+        ["job-templates", "patch", "--stdin", "--by-id", "--set", "verbosity=4", "--yes"],
         input="77\n",
     )
     assert result.exit_code == 0, result.output
     assert seeded_default_org.get_record("job_templates", 77)["verbosity"] == 4
 
 
-def test_apply_stdin_unchanged_does_not_patch(seeded_default_org: Any) -> None:
+def test_patch_stdin_unchanged_does_not_patch(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org, verbosity=2)
     result = CliInvoker().invoke(
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "verbosity=2",
@@ -192,8 +201,8 @@ def test_apply_stdin_unchanged_does_not_patch(seeded_default_org: Any) -> None:
     assert "unchanged" in result.stdout.lower()
 
 
-def test_apply_stdin_consumes_pipe_envelope(seeded_default_org: Any) -> None:
-    """`list --format pipe | apply --stdin` — the headline pipeline."""
+def test_patch_stdin_consumes_pipe_envelope(seeded_default_org: Any) -> None:
+    """`list --format pipe | patch --stdin` — the headline pipeline."""
     _seed_jt(seeded_default_org)
     envelope = json.dumps(
         {"untaped": "1", "kind": "awx.job_template", "record": {"id": 30, "name": "deploy"}}
@@ -202,7 +211,7 @@ def test_apply_stdin_consumes_pipe_envelope(seeded_default_org: Any) -> None:
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "verbosity=9",
@@ -216,8 +225,8 @@ def test_apply_stdin_consumes_pipe_envelope(seeded_default_org: Any) -> None:
     assert seeded_default_org.get_record("job_templates", 30)["verbosity"] == 9
 
 
-def test_apply_stdin_project_default_environment_fk(seeded_default_org: Any) -> None:
-    """Regression: ``projects apply --stdin --set default_environment=<ee>`` —
+def test_patch_stdin_project_default_environment_fk(seeded_default_org: Any) -> None:
+    """Regression: ``projects patch --stdin --set default_environment=<ee>`` —
     the EE name resolves to an id and lands in the sparse PATCH. Was rejected as
     an unknown field because ``default_environment`` was absent from the spec."""
     _seed_project(seeded_default_org, default_environment=None)
@@ -226,7 +235,7 @@ def test_apply_stdin_project_default_environment_fk(seeded_default_org: Any) -> 
         app,
         [
             "projects",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "default_environment=prod-ee",
@@ -243,7 +252,7 @@ def test_apply_stdin_project_default_environment_fk(seeded_default_org: Any) -> 
     assert seeded_default_org.get_record("projects", 50)["default_environment"] == 9
 
 
-def test_apply_stdin_project_default_environment_preview(seeded_default_org: Any) -> None:
+def test_patch_stdin_project_default_environment_preview(seeded_default_org: Any) -> None:
     """Preview (no ``--yes``) shows the ``default_environment`` diff, writes nothing."""
     _seed_project(seeded_default_org, default_environment=None)
     seeded_default_org.seed("execution_environments", id=9, name="prod-ee")
@@ -251,8 +260,9 @@ def test_apply_stdin_project_default_environment_preview(seeded_default_org: Any
         app,
         [
             "projects",
-            "apply",
+            "patch",
             "--stdin",
+            "--dry-run",
             "--set",
             "default_environment=prod-ee",
             "--organization",
@@ -265,7 +275,7 @@ def test_apply_stdin_project_default_environment_preview(seeded_default_org: Any
     assert "default_environment" in (result.stderr or "")
 
 
-def test_apply_stdin_warns_and_passes_through_unknown_field(seeded_default_org: Any) -> None:
+def test_patch_stdin_warns_and_passes_through_unknown_field(seeded_default_org: Any) -> None:
     """Passthrough model: a field this tool doesn't recognize is sent to AWX
     as-is, with a soft warning (was a hard exit-2 rejection under the old
     closed allowlist). NOTE: the fake server blindly stores the body, so this
@@ -275,7 +285,7 @@ def test_apply_stdin_warns_and_passes_through_unknown_field(seeded_default_org: 
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "zzz_bogus=1",
@@ -292,14 +302,14 @@ def test_apply_stdin_warns_and_passes_through_unknown_field(seeded_default_org: 
     assert json.loads(patches[0].request.content) == {"zzz_bogus": 1}  # passed through
 
 
-def test_apply_stdin_ignored_unknown_field_fails_by_default(seeded_default_org: Any) -> None:
+def test_patch_stdin_ignored_unknown_field_fails_by_default(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org)
     seeded_default_org.ignored_write_fields.add("zzz_bogus")
     result = CliInvoker().invoke(
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "zzz_bogus=1",
@@ -316,14 +326,14 @@ def test_apply_stdin_ignored_unknown_field_fails_by_default(seeded_default_org: 
     assert "zzz_bogus" not in seeded_default_org.get_record("job_templates", 30)
 
 
-def test_apply_stdin_ignored_unknown_field_can_be_allowed(seeded_default_org: Any) -> None:
+def test_patch_stdin_ignored_unknown_field_can_be_allowed(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org)
     seeded_default_org.ignored_write_fields.add("zzz_bogus")
     result = CliInvoker().invoke(
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "zzz_bogus=1",
@@ -342,13 +352,13 @@ def test_apply_stdin_ignored_unknown_field_can_be_allowed(seeded_default_org: An
     assert "zzz_bogus" not in seeded_default_org.get_record("job_templates", 30)
 
 
-def test_apply_stdin_allow_unverified_requires_yes(seeded_default_org: Any) -> None:
+def test_patch_stdin_allow_unverified_requires_yes(seeded_default_org: Any) -> None:
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "zzz_bogus=1",
@@ -358,11 +368,11 @@ def test_apply_stdin_allow_unverified_requires_yes(seeded_default_org: Any) -> N
         ],
         input="deploy\n",
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "--yes" in (result.output + (result.stderr or ""))
 
 
-def test_apply_stdin_overlay_fks_use_organization_scope(fake_aap: Any) -> None:
+def test_patch_stdin_overlay_fks_use_organization_scope(fake_aap: Any) -> None:
     fake_aap.seed("organizations", id=1, name="OrgA")
     fake_aap.seed("organizations", id=2, name="OrgB")
     fake_aap.seed("projects", id=10, name="playbooks", organization=1, organization_name="OrgA")
@@ -381,7 +391,7 @@ def test_apply_stdin_overlay_fks_use_organization_scope(fake_aap: Any) -> None:
         app,
         [
             "job-templates",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             "project=playbooks",
@@ -398,7 +408,7 @@ def test_apply_stdin_overlay_fks_use_organization_scope(fake_aap: Any) -> None:
     assert json.loads(patches[0].request.content) == {"project": 10}
 
 
-def test_apply_stdin_inventory_child_fks_use_inventory_scope(fake_aap: Any) -> None:
+def test_patch_stdin_inventory_child_fks_use_inventory_scope(fake_aap: Any) -> None:
     fake_aap.seed("organizations", id=1, name="Default")
     fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
     fake_aap.seed("inventories", id=21, name="staging", organization=1, organization_name="Default")
@@ -410,7 +420,7 @@ def test_apply_stdin_inventory_child_fks_use_inventory_scope(fake_aap: Any) -> N
         app,
         [
             "groups",
-            "apply",
+            "patch",
             "--stdin",
             "--set",
             'hosts=["web-01"]',

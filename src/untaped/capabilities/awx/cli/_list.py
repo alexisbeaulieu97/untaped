@@ -1,6 +1,7 @@
 """``list`` builder for the spec-driven CLI factory."""
 
-from typing import Annotated, Any
+from contextlib import nullcontext
+from typing import Annotated
 
 from cyclopts import App, Parameter
 
@@ -8,22 +9,21 @@ from untaped.api import (
     ColumnsOption,
     FormatOption,
     emit,
-    finish,
-    parse_kv_pairs,
     raise_usage,
-    read_identifiers,
     report_errors,
-    resolve_each,
 )
-from untaped.capabilities.awx.application import GetResource, ListResources
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
+from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._names import flatten_fks
-from untaped.capabilities.awx.cli._pipe import id_field_for, pipe_kind_for_spec
+from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
+from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.options import (
+    AllOption,
     ByIdOption,
+    InventoryOption,
     InventoryOrganizationOption,
-    InventoryStdinLookupOption,
-    OrganizationStdinLookupOption,
+    OrganizationOption,
+    ParentOption,
+    StdinOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -31,7 +31,10 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 def _add_list(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="list")
     def list_command(
+        names: list[str] | None = None,
         *,
+        all_: AllOption = False,
+        parent: ParentOption = None,
         search: Annotated[
             str | None,
             Parameter(name="--search", help="Fuzzy server-side search."),
@@ -49,17 +52,10 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             ),
         ] = None,
         limit: Annotated[int | None, Parameter(name="--limit", help="Cap result count.")] = None,
-        stdin: Annotated[
-            bool,
-            Parameter(
-                name="--stdin",
-                negative="",
-                help="Read names from stdin (one per line); render only those records.",
-            ),
-        ] = False,
+        stdin: StdinOption = False,
         by_id: ByIdOption = False,
-        organization: OrganizationStdinLookupOption = None,
-        inventory: InventoryStdinLookupOption = None,
+        organization: OrganizationOption = None,
+        inventory: InventoryOption = None,
         inventory_organization: InventoryOrganizationOption = None,
         with_names: Annotated[
             bool,
@@ -75,61 +71,37 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
-        """List resources, optionally restricted to identifiers from stdin.
-
-        With ``--stdin``, reads newline-separated names (or ids when
-        ``--by-id`` is passed) and renders only those records — same
-        identifier semantics as ``get --stdin`` but with the tabular
-        columns view ``list`` uses. Cannot be combined with
-        ``--search``/``--filter``/``--limit``. The
-        ``--organization`` / ``--org`` / ``--inventory`` /
-        ``--inventory-organization`` / ``--inventory-org``
-        scope flags apply to ``--stdin`` name lookups only (they have no
-        effect on server-side filtering, which already accepts
-        ``--filter organization__name=…``).
-        """
-        if stdin and (search or filter_ or limit is not None):
-            raise_usage("--stdin cannot be combined with --search/--filter/--limit")
-        records: list[dict[str, Any]] = []
-        any_failed = False
+        """List a complete selection by names, IDs, typed input, or query."""
+        if limit is not None and limit < 0:
+            raise_usage("--limit must be non-negative")
         with report_errors(), open_context() as ctx:
-            if stdin:
-                ids = read_identifiers([], stdin=True, id_field=id_field_for(spec, by_id=by_id))
-                scope = scope_for_command(
+            with (
+                ctx.progress_ui().progress(f"Loading {spec.kind}…")
+                if not stdin and not names
+                else nullcontext()
+            ):
+                selected = select_resources(
                     ctx,
-                    organization,
                     spec,
+                    names,
+                    stdin=stdin,
+                    by_id=by_id,
+                    filters=filter_,
+                    search=search,
+                    all_=all_,
+                    default_all=True,
+                    organization=organization,
                     inventory=inventory,
                     inventory_organization=inventory_organization,
+                    parent=parent,
                 )
-                getter = GetResource(ctx.repo)
-                records, any_failed = resolve_each(
-                    ids, lambda n: getter.by_identifier(spec, n, scope=scope, by_id=by_id)
-                )
-            else:
-                filters = parse_kv_pairs(filter_, flag="--filter")
-                with ctx.progress_ui().progress(f"Loading {spec.kind}…"):
-                    records = list(
-                        ListResources(ctx.repo)(spec, search=search, filters=filters, limit=limit)
-                    )
+            records = [item.record for item in selected]
+            if limit is not None:
+                records = records[:limit]
         cols = list(columns) if columns else list(spec.list_columns)
         if with_names:
             # Pass ``cols`` so display-only FK columns (e.g. Host's
             # ``inventory``, which lives in ``read_only_fields`` rather
             # than ``fk_refs``) get flattened from ``summary_fields``.
             records = flatten_fks(records, spec, columns=cols)
-        # In ``--stdin`` mode every input identifier already reported its
-        # own ``error:`` line; an all-failed batch leaves ``records``
-        # empty and we skip the redundant ``[]`` to keep stdout clean for
-        # piping. In normal mode an empty list still renders (``[]`` for
-        # json/yaml, header-only table, blank for raw) so downstream
-        # tools like ``jq`` always see a valid document.
-        if records or not stdin:
-            emit(
-                records,
-                fmt=fmt,
-                columns=cols,
-                kind=pipe_kind_for_spec(spec),
-                empty=f"No matching {spec.kind} found. Try a different --search or --filter.",
-            )
-        finish(any_failed)
+        emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec), empty=False)

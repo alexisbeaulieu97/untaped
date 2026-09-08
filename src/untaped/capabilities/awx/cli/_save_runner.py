@@ -4,36 +4,42 @@ from pathlib import Path
 
 from untaped.api import OutputFormat, echo, emit
 from untaped.capabilities.awx.application import SaveResource, SaveResources
+from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.yaml_io import dump_resource, write_resource
+from untaped.capabilities.awx.infrastructure.yaml_io import dump_resource
 
 
-def run_save_one(
+def run_save_selection(
     ctx: AwxContext,
     spec: ResourceSpec,
+    selected: tuple[SelectedResource, ...],
     *,
-    name: str,
-    scope: dict[str, str] | None,
     output: Path | None,
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    """Save one resource and write the requested CLI output."""
-    resource = SaveResource(ctx.repo, ctx.fk)(spec, name=name, scope=scope)
+    """Export selected records without resolving their names again."""
+    saver = SaveResource(ctx.repo, ctx.fk)
+    resources = [saver.from_record(spec, item.record) for item in selected]
     comment = spec.fidelity_note if spec.fidelity != "full" else None
     if comment:
         echo(f"{spec.fidelity} save: {comment}", err=True)
+    text = "---\n".join(dump_resource(resource, header_comment=comment) for resource in resources)
     if output:
-        write_resource(output, resource, header_comment=comment)
-        return
-    if fmt == "yaml":
-        # Bypass row rendering: apply's read_resources rejects list-wrapped docs.
-        echo(dump_resource(resource, header_comment=comment))
-        return
-    envelope = resource.model_dump(exclude_none=True)
-    emit(envelope, fmt=fmt, columns=columns, kind="awx.document")
+        output.expanduser().write_text(text)
+    elif fmt == "yaml":
+        if text:
+            echo(text)
+    else:
+        envelopes = [resource.model_dump(exclude_none=True) for resource in resources]
+        emit(
+            envelopes[0] if len(envelopes) == 1 else envelopes,
+            fmt=fmt,
+            columns=columns,
+            kind="awx.document",
+        )
 
 
 def run_save_batch(

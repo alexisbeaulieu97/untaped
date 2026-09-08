@@ -143,8 +143,6 @@ class _ErrorFallbackClient(_StubClient):
         raise self.error
 
 
-
-
 class _StubStrategy(DefaultApplyStrategy):
     def __init__(self, existing: dict[str, Any] | None = None) -> None:
         self.existing = existing
@@ -974,7 +972,7 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
     assert "no integer" in str(outcome.detail)
 
 
-# ── apply_to_existing: update-only seam for the `apply --stdin` mass-patch path ──
+# ── apply_to_existing: update-only seam for the `patch` mass-patch path ──
 
 
 def test_apply_to_existing_updates_passed_record_and_never_creates() -> None:
@@ -1113,7 +1111,7 @@ def test_apply_warns_on_unrecognized_field_but_passes_it_through() -> None:
 
 
 def test_apply_to_existing_does_not_warn_on_unrecognized_field() -> None:
-    """The ``--stdin`` per-item seam stays silent: ``run_apply_stdin`` warns once
+    """The single-resource adapter leaves warnings to its batch planner.
     over the shared overlay, so ``apply_to_existing`` must NOT warn per item
     (else an N-item mass-patch would repeat the warning N times)."""
     existing = {"id": 42, "name": "playbooks", "organization": 1, "scm_type": "git"}

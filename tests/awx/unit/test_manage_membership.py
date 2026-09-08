@@ -68,6 +68,7 @@ def test_associate_posts_one_request_per_member() -> None:
 
 def test_disassociate_sets_disassociate_flag() -> None:
     client = _StubClient()
+    client.members = {101}
     ManageMembership(cast(ResourceClient, client))(
         GROUP_SPEC,
         parent_id=200,

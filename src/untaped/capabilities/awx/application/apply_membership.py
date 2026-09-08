@@ -48,6 +48,8 @@ class MembershipPlan:
     desired_ids: tuple[PlannedId, ...] = ()
     to_reorder: tuple[PlannedId, ...] = ()
     mode: Literal["replacement", "additive"] = "replacement"
+    requested_associate: tuple[int, ...] = ()
+    requested_disassociate: tuple[int, ...] = ()
 
 
 class MembershipReconciler:
@@ -184,12 +186,22 @@ class MembershipReconciler:
             if ref.sub_endpoint
             else ()
         )
+        associate = () if disassociate else tuple(item for item in ids if item not in existing)
+        remove = tuple(item for item in ids if item in existing) if disassociate else ()
         return MembershipPlan(
             ref=ref,
-            to_associate=() if disassociate else ids,
-            to_disassociate=ids if disassociate else (),
+            to_associate=associate,
+            to_disassociate=remove,
             existing_ids=existing,
-            field_change=None,
+            requested_associate=() if disassociate else ids,
+            requested_disassociate=ids if disassociate else (),
+            field_change=FieldChange(
+                field=ref.field,
+                before=list(existing),
+                after=[item for item in existing if item not in remove] + list(associate),
+            )
+            if associate or remove
+            else None,
             mode="additive",
         )
 
@@ -210,8 +222,8 @@ class MembershipReconciler:
                 for item in client.paginate_sub_endpoint(spec, record_id, plan.ref.sub_endpoint)
             )
             if plan.mode == "additive":
-                matches = set(plan.to_associate).issubset(observed) and not set(
-                    plan.to_disassociate
+                matches = set(plan.requested_associate).issubset(observed) and not set(
+                    plan.requested_disassociate
                 ).intersection(observed)
             elif plan.ref.ordered:
                 matches = observed == plan.desired_ids

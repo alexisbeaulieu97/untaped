@@ -41,7 +41,7 @@ def unrecognized_warning(spec: ResourceSpec, names: Iterable[str]) -> str | None
 
     One source of truth for the message that both the file-mode
     (:meth:`ApplyResource._warn_unrecognized`, per doc) and ``--stdin``
-    (:func:`run_apply_stdin`, once per overlay) paths emit. Callers add their own
+    (the shared mutation planner, once per document) paths emit. Callers add their own
     ``warning:`` prefix / routing.
     """
     unknown = unrecognized_fields(spec, names)

@@ -7,6 +7,7 @@ from pathlib import Path
 from untaped.capabilities.awx.application.apply_ordering import topological_sort
 from untaped.capabilities.awx.application.apply_prefetch import prefetch_plan
 from untaped.capabilities.awx.application.apply_resource import ApplyResource
+from untaped.capabilities.awx.application.mutation_types import MutationPlan
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceDocumentReader
 from untaped.capabilities.awx.domain import ApplyOutcome
 
@@ -36,18 +37,21 @@ class ApplyFile:
         path: Path,
         *,
         write: bool = False,
-        fail_fast: bool = True,
-        continue_on_error: bool | None = None,
+        continue_on_error: bool = False,
     ) -> list[ApplyOutcome]:
-        docs = topological_sort(list(self._reader(path)), catalog=self._catalog)
-        prefetch = prefetch_plan(docs, catalog=self._catalog)
-        if prefetch:
-            self._fk.prefetch(prefetch)
-        plan = self._engine.prepare(docs)
+        plan = self.prepare(path)
         if not write:
             return [operation.preview for operation in plan.operations]
         return self._engine.execute(
             plan,
             parallel=self._parallel,
-            continue_on_error=(not fail_fast if continue_on_error is None else continue_on_error),
+            continue_on_error=continue_on_error,
         ).outcomes
+
+    def prepare(self, path: Path) -> MutationPlan:
+        """Read and validate the complete file batch once, before confirmation."""
+        docs = topological_sort(list(self._reader(path)), catalog=self._catalog)
+        prefetch = prefetch_plan(docs, catalog=self._catalog)
+        if prefetch:
+            self._fk.prefetch(prefetch)
+        return self._engine.prepare(docs)
