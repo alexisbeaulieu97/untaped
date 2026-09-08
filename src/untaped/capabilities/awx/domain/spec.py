@@ -125,6 +125,8 @@ class ResourceSpec(BaseModel):
     ``instance_groups``). Used by the test runner's name resolver.
     """
     secret_paths: tuple[str, ...] = ()
+    structured_text_fields: tuple[str, ...] = ()
+    """Explicit YAML/JSON mapping fields encoded as text at the HTTP boundary."""
     server_enriched_fields: tuple[str, ...] = ()
     """Top-level fields AWX may enrich while accepting a user replacement.
 

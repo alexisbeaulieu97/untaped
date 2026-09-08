@@ -44,6 +44,7 @@ from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import (
     ApplyOutcome,
     BatchResult,
+    IdentityRef,
     Resource,
     ResourceSpec,
 )
@@ -116,6 +117,9 @@ class _PlanningFkResolver:
 
     def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
         return self._base.validate_id(kind, id_, scope=scope)
+
+    def id_to_identity(self, kind: str, id_: int) -> IdentityRef:
+        return self._base.id_to_identity(kind, id_)
 
     def id_to_name(self, kind: str, id_: int) -> str:
         for target in self._targets:
@@ -267,11 +271,30 @@ class BatchMutationEngine:
                     found = strategy.find_existing(
                         spec, fixed_identity, client=self._client, fk=resolver
                     )
+                spec, found = strategy.prepare_state(
+                    spec,
+                    resource,
+                    found,
+                    parent=parent,
+                    parent_resource=next(
+                        (docs[item.index] for item in targets if _is_parent_target(item, resource)),
+                        None,
+                    ),
+                    client=self._client,
+                )
+                specs[index] = spec
                 if found is not None:
                     record = _record_dict(found)
                     record_id = _record_id(record)
                     if record_id is None:
                         raise BadRequest(f"{spec.kind} target returned no integer id")
+                    if any(
+                        other.index != index and other.kind == target.kind and other.id == record_id
+                        for other in targets
+                    ):
+                        raise MutationConflict(
+                            f"duplicate resolved target {target.kind}#{record_id}"
+                        )
                     target.id = record_id
                     resolved_existing[index] = self._snapshot(spec, record)
                 pending.remove(index)
@@ -349,8 +372,15 @@ class BatchMutationEngine:
                 ),
                 spec,
             )
-            dependencies = _dependencies_for(
-                index, {"body": body.payload, "parent": parents[index]}, targets
+            dependencies = tuple(
+                sorted(
+                    set(
+                        _dependencies_for(
+                            index, {"body": body.payload, "parent": parents[index]}, targets
+                        )
+                    )
+                    | {item.index for item in targets if _is_parent_target(item, resource)}
+                )
             )
             operations.append(
                 PreparedMutation(
@@ -510,6 +540,7 @@ class BatchMutationEngine:
                     if not semantic_equal(
                         operation.existing.get(field_name),
                         current_record.get(field_name),
+                        structured_text=field_name in operation.spec.structured_text_fields,
                     ):
                         conflicts[operation.index] = (
                             f"{operation.spec.kind} {operation.resource.metadata.name!r} "
@@ -923,7 +954,10 @@ def _validate_selected_identity(
     record_type = record.get("type")
     if record_type is not None and (
         not isinstance(record_type, str)
-        or record_type.replace("_", "").casefold() != spec.kind.casefold()
+        or (
+            record_type.replace("_", "").casefold() != spec.kind.casefold()
+            and not (spec.kind == "Inventory" and record_type == "constructed_inventory")
+        )
     ):
         raise BadRequest("changing the kind of a selected resource is not supported")
     for field in spec.identity_keys:
@@ -950,3 +984,16 @@ def _validate_dependencies(operations: list[PreparedMutation]) -> None:
             for index, dependencies in remaining.items()
             if index not in ready
         }
+
+
+def _is_parent_target(target: _PlannedTarget, resource: Resource) -> bool:
+    parent = resource.metadata.parent
+    return bool(
+        parent is not None
+        and target.kind == parent.kind
+        and target.identity.get("name") == parent.name
+        and _identity_matches_scope(
+            target.identity, {"organization": parent.organization} if parent.organization else None
+        )
+        and _nested_identity_matches(target.identity.get("parent"), parent.parent)
+    )

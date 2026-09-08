@@ -17,7 +17,7 @@ from typing import Any
 
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource, ResourceSpec
-from untaped.capabilities.awx.errors import ResourceNotFound
+from untaped.capabilities.awx.errors import BadRequest, ResourceNotFound
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
 
@@ -66,7 +66,17 @@ class SaveResource:
         return self._build_resource(spec, record)
 
     def _build_resource(self, spec: ResourceSpec, record: dict[str, Any]) -> Resource:
+        if spec.kind == "Inventory" and record.get("kind") == "constructed":
+            record = self._client.get(spec, int(record["id"])).model_dump()
         spec_data = self._build_spec_body(spec, record)
+        if spec.kind == "Inventory" and record.get("kind") == "constructed":
+            spec_data.pop("host_filter", None)
+        if spec.kind == "InventorySource" and record.get("source") == "constructed":
+            spec_data = {
+                k: v
+                for k, v in spec_data.items()
+                if k in {"source", "source_vars", "update_cache_timeout", "limit", "verbosity"}
+            }
         # Sub-endpoint multi-FKs (Group.hosts / Group.children /
         # JobTemplate.credentials) are managed via associate/disassociate
         # POSTs against ``/<id>/<sub>/`` rather than the body. For
@@ -75,14 +85,24 @@ class SaveResource:
         record_id = record.get("id")
         if isinstance(record_id, int):
             for ref in spec.fk_refs:
+                if ref.field == "input_inventories" and record.get("kind") != "constructed":
+                    continue
                 if not (ref.multi and ref.sub_endpoint):
                     continue
                 members = list(
                     self._client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint)
                 )
-                spec_data[ref.field] = [
-                    str(m["name"]) for m in members if isinstance(m.get("name"), str)
-                ]
+                if ref.kind == "Inventory":
+                    spec_data[ref.field] = [
+                        self._fk.id_to_identity("Inventory", int(m["id"])).model_dump(
+                            exclude_none=True
+                        )
+                        for m in members
+                    ]
+                else:
+                    spec_data[ref.field] = [
+                        str(m["name"]) for m in members if isinstance(m.get("name"), str)
+                    ]
         metadata = _METADATA_EXTRACTORS.get(spec.kind, _default_metadata)(spec, record, self._fk)
         # Polymorphic FK lives in metadata; strip from spec body if present
         for fk in spec.fk_refs:
@@ -131,10 +151,23 @@ def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolve
     parent_name = parent_summary.get("name")
     parent_kind = _UJT_KIND_MAP.get(parent_kind_str or "")
     parent: IdentityRef | None = None
+    parent_id = record.get("unified_job_template") or parent_summary.get("id")
+    if parent_kind == "InventorySource" and not isinstance(parent_id, int):
+        raise BadRequest("cannot save source-parent schedule without inventory ancestry")
+    if isinstance(parent_id, int) and (
+        not parent_kind
+        or not parent_name
+        or parent_kind == "InventorySource"
+        or not parent_summary.get("organization_name")
+    ):
+        parent = fk.id_to_identity(parent_kind or "UnifiedJobTemplate", parent_id)
+        return Metadata(name=name, parent=parent)
     if parent_kind and parent_name:
         # Schedule parents may belong to an organization; preserve it when present.
         parent_org = parent_summary.get("organization_name")
         parent = IdentityRef(kind=parent_kind, name=parent_name, organization=parent_org)
+    if parent is None:
+        raise BadRequest("cannot save schedule without resolvable parent ancestry")
     return Metadata(name=name, parent=parent)
 
 
@@ -154,7 +187,7 @@ def _inventory_child_metadata(
     inv_summary = summary.get("inventory") or {}
     parent_name = inv_summary.get("name")
     parent_org = inv_summary.get("organization_name")
-    if isinstance(parent_name, str):
+    if isinstance(parent_name, str) and isinstance(parent_org, str):
         parent = IdentityRef(
             kind="Inventory",
             name=parent_name,
@@ -166,17 +199,14 @@ def _inventory_child_metadata(
     # because Inventory's own record is the only place it's stored).
     inventory_id = record.get("inventory")
     if isinstance(inventory_id, int):
-        parent_name = fk.id_to_name("Inventory", inventory_id)
-        return Metadata(
-            name=name,
-            parent=IdentityRef(kind="Inventory", name=parent_name),
-        )
-    return Metadata(name=name)
+        return Metadata(name=name, parent=fk.id_to_identity("Inventory", inventory_id))
+    raise BadRequest(f"cannot save {spec.kind} without inventory ancestry")
 
 
 _METADATA_EXTRACTORS: dict[str, _MetadataExtractor] = {
     "Schedule": _schedule_metadata,
     "Host": _inventory_child_metadata,
+    "InventorySource": _inventory_child_metadata,
     "Group": _inventory_child_metadata,
 }
 """Per-kind hooks for non-default metadata extraction.

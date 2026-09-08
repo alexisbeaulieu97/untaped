@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.strategies import (
     DefaultApplyStrategy,
+    InventoryApplyStrategy,
     InventoryChildApplyStrategy,
     ScheduleApplyStrategy,
 )
@@ -20,6 +21,7 @@ class StaticStrategyResolver:
         self._registry: dict[str, ApplyStrategy] = {
             "default": DefaultApplyStrategy(),
             "schedule": ScheduleApplyStrategy(),
+            "inventory": InventoryApplyStrategy(),
             "inventory_child": InventoryChildApplyStrategy(),
         }
 

@@ -36,6 +36,7 @@ class IdentityRef(BaseModel):
     kind: str
     name: str
     organization: str | None = None
+    parent: IdentityRef | None = None
 
 
 class Metadata(BaseModel):

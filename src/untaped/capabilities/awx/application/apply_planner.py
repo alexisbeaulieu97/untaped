@@ -21,7 +21,7 @@ from typing import Any
 
 from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
-from untaped.capabilities.awx.domain import FkRef, Resource, ResourceSpec
+from untaped.capabilities.awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError, BadRequest
 
 
@@ -107,7 +107,7 @@ class ApplyPlanner:
         # always metadata-sourced (never overridable by the spec body).
         for key in spec.identity_keys:
             value = getattr(resource.metadata, key, None)
-            if value is not None:
+            if value is not None and key not in spec.read_only_fields:
                 body[key] = value
         # Resolve the FK names that survived the drop-set. Polymorphic and
         # sub_endpoint multi-FKs were excluded above, so every ref reaching here
@@ -176,6 +176,11 @@ def resolve_fk_value(
     ambiguous name lookup and preserves the exact reference selected by the
     user.
     """
+    if isinstance(value, Mapping):
+        reference = IdentityRef.model_validate({"kind": kind, **value})
+        if reference.kind != kind:
+            raise BadRequest(f"foreign key requires kind {kind}")
+        return fk.resolve_polymorphic(reference.model_dump(exclude_none=True))[1]
     if isinstance(value, bool):
         raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
     if isinstance(value, int):
@@ -210,9 +215,12 @@ def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
         # the polymorphic parent), prefer ``parent.organization`` so
         # name-scoped FK lookups resolve in the parent's org, not the
         # schedule's own (which is typically ``None``).
-        org = (
-            resource.metadata.parent.organization if resource.metadata.parent else None
-        ) or resource.metadata.organization
+        parent = resource.metadata.parent
+        org = None
+        while parent is not None and not org:
+            org = parent.organization
+            parent = parent.parent
+        org = org or resource.metadata.organization
         if org:
             return {"organization": org}
     if ref.scope_field == "inventory":

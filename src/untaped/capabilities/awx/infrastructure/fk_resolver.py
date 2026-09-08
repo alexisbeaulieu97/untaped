@@ -27,6 +27,7 @@ import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from untaped.capabilities.awx.domain import IdentityRef
 from untaped.capabilities.awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
@@ -34,6 +35,7 @@ from untaped.capabilities.awx.errors import (
     ResourceNotFound,
 )
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
+from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import ResourceClient
@@ -117,11 +119,57 @@ class FkResolver:
             self._id_cache[cache_key] = name
             return name
 
+    def id_to_identity(self, kind: str, id_: int) -> IdentityRef:
+        if kind == "UnifiedJobTemplate":
+            lookup = AwxResourceSpec(
+                kind=kind,
+                cli_name="",
+                api_path="unified_job_templates",
+                identity_keys=("name",),
+                canonical_fields=(),
+            )
+            record = self._repo.get(lookup, id_)
+            kinds = {
+                "job_template": "JobTemplate",
+                "workflow_job_template": "WorkflowJobTemplate",
+                "project": "Project",
+                "inventory_source": "InventorySource",
+            }
+            resolved_kind = kinds.get(str(record.get("type", "")))
+            if resolved_kind is None:
+                raise BadRequest("unsupported schedule parent type")
+            return self.id_to_identity(resolved_kind, id_)
+        spec = self._catalog.get(kind)
+        record = self._repo.get(spec, id_)
+        parent = None
+        organization = None
+        if spec.apply_strategy == "inventory_child":
+            inventory_id = record.get("inventory")
+            if not isinstance(inventory_id, int):
+                raise BadRequest(f"{kind}#{id_} is missing inventory ancestry")
+            parent = self.id_to_identity("Inventory", inventory_id)
+        elif "organization" in spec.identity_keys:
+            org_id = record.get("organization")
+            if isinstance(org_id, int):
+                organization = self.id_to_name("Organization", org_id)
+        return IdentityRef(
+            kind=kind, name=str(record["name"]), organization=organization, parent=parent
+        )
+
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int]:
         """Resolve ``{"kind": ..., "name": ..., "organization": ...}`` to ``(kind, id)``."""
         kind = value["kind"]
         name = value["name"]
-        scope = {k: v for k, v in value.items() if k not in {"kind", "name"} and v is not None}
+        scope = {
+            k: v for k, v in value.items() if k not in {"kind", "name", "parent"} and v is not None
+        }
+        parent = value.get("parent")
+        if kind == "InventorySource":
+            if not isinstance(parent, dict) or parent.get("kind") != "Inventory":
+                raise BadRequest("InventorySource reference requires Inventory parent ancestry")
+            scope = {"inventory": parent["name"]}
+            if parent.get("organization"):
+                scope["inventory__organization"] = parent["organization"]
         return kind, self.name_to_id(kind, name, scope=scope)
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:

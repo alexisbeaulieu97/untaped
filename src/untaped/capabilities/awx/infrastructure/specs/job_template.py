@@ -10,6 +10,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="JobTemplate",
     cli_name="job-templates",
     api_path="job_templates",
+    structured_text_fields=("extra_vars",),
     identity_keys=("name", "organization"),
     canonical_fields=(
         "description",

@@ -31,6 +31,7 @@ class FieldDiff:
         desired: dict[str, Any],
         preserved_fields: set[str],
         server_enriched_fields: tuple[str, ...] = (),
+        structured_text_fields: tuple[str, ...] = (),
     ) -> list[FieldChange]:
         """Return field-level changes between existing and the (stripped) desired payload.
 
@@ -58,7 +59,10 @@ class FieldDiff:
                 )
                 continue
             if not semantic_equal(
-                after, before, allow_server_enrichment=field in server_enriched_fields
+                after,
+                before,
+                allow_server_enrichment=field in server_enriched_fields,
+                structured_text=field in structured_text_fields,
             ):
                 out.append(FieldChange(field=field, before=before, after=after))
         # Top-level secret fields entirely stripped from ``desired``

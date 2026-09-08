@@ -7,6 +7,7 @@ must prepare once and execute that payload without another name lookup.
 from __future__ import annotations
 
 import copy
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -83,10 +84,16 @@ class BodyOperations:
             desired=write_payload,
             preserved_fields=preserved_fields,
             server_enriched_fields=spec.server_enriched_fields,
+            structured_text_fields=spec.structured_text_fields,
         )
         if existing is not None:
             changed = {change.field for change in changes if change.note != PRESERVED_SECRET_NOTE}
             write_payload = {key: value for key, value in write_payload.items() if key in changed}
+        for text_field in spec.structured_text_fields:
+            if text_field in write_payload and not isinstance(write_payload[text_field], str):
+                if not isinstance(write_payload[text_field], dict):
+                    raise BadRequest(f"{spec.kind}.{text_field} must be mapping or YAML/JSON text")
+                write_payload[text_field] = json.dumps(write_payload[text_field])
         return PreparedBody(write_payload, tuple(changes), tuple(preserved), tuple(dropped))
 
     def verify(

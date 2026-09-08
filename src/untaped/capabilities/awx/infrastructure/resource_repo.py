@@ -25,11 +25,12 @@ from collections.abc import Iterator
 from typing import Any
 
 from untaped.capabilities.awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
-from untaped.capabilities.awx.errors import AmbiguousIdentityError
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
+from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
 from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
-from untaped.capabilities.awx.infrastructure.spec import awx_api_path
+from untaped.capabilities.awx.infrastructure.spec import awx_api_path, awx_relationship_path
 
 
 class ResourceRepository:
@@ -56,6 +57,17 @@ class ResourceRepository:
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         with map_awx_errors():
             raw = self._client.get_json(f"{awx_api_path(spec)}/{id_}/")
+            # The base Inventory serializer omits constructed source settings.
+            # A detail read still refers to this exact ID when hydrating the proxy.
+            if (
+                spec.kind == "Inventory"
+                and awx_api_path(spec) == "inventories"
+                and raw.get("kind") == "constructed"
+            ):
+                proxy = self._client.get_json(f"constructed_inventories/{id_}/")
+                if proxy.get("id") != id_:
+                    raise BadRequest("constructed inventory hydration changed requested ID")
+                raw = {**raw, **proxy}
         return ServerRecord(**raw)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
@@ -110,9 +122,12 @@ class ResourceRepository:
             )
         return ServerRecord(**raw)
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         with map_awx_errors():
-            self._client.request_json("DELETE", f"{awx_api_path(spec)}/{id_}/")
+            status = self._client.delete_status(f"{awx_api_path(spec)}/{id_}/")
+        return DeleteReceipt(
+            action="deletion_requested" if status == 202 or spec.kind == "Inventory" else "deleted"
+        )
 
     def action(
         self,
@@ -179,7 +194,7 @@ class ResourceRepository:
         params: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        path = f"{awx_api_path(spec)}/{record_id}/{sub_endpoint}/"
+        path = f"{awx_relationship_path(spec)}/{record_id}/{sub_endpoint}/"
         with map_awx_errors():
             return self._client.request_json(  # type: ignore[no-any-return]
                 method, path, params=params, json=json
@@ -193,7 +208,7 @@ class ResourceRepository:
         *,
         params: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        path = f"{awx_api_path(spec)}/{record_id}/{sub_endpoint}/"
+        path = f"{awx_relationship_path(spec)}/{record_id}/{sub_endpoint}/"
         with map_awx_errors():
             yield from paginate(
                 self._client,

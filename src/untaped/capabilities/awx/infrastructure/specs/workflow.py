@@ -14,6 +14,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="WorkflowJobTemplate",
     cli_name="workflow-templates",
     api_path="workflow_job_templates",
+    structured_text_fields=("extra_vars",),
     identity_keys=("name", "organization"),
     canonical_fields=(
         "description",
