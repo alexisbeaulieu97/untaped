@@ -7,9 +7,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = ROOT / "pyproject.toml"
-VERSION_RE = re.compile(
-    r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?P<prerelease>(?:a|b|rc)[0-9]+)?$"
-)
+VERSION_RE = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?P<prerelease>(?:a|b|rc)[0-9]+)?$")
 TESTPYPI_INDEX = "https://test.pypi.org/simple/"
 PYPI_INDEX = "https://pypi.org/simple/"
 MANIFEST = ROOT / "release-manifest.toml"

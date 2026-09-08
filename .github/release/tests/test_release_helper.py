@@ -147,9 +147,7 @@ def test_verify_version_matches_pyproject_and_rejects_unsafe_input(tmp_path: Pat
         "9.8.7rc",
     ],
 )
-def test_verify_version_rejects_unsupported_release_forms(
-    tmp_path: Path, version: str
-) -> None:
+def test_verify_version_rejects_unsupported_release_forms(tmp_path: Path, version: str) -> None:
     release = _load_helper()
     pyproject = _pyproject(tmp_path, version=version)
 
