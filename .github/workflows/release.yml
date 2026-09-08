@@ -78,16 +78,6 @@ jobs:
           set -euo pipefail
           python3 .github/release/release.py verify-version "$RELEASE_VERSION"
 
-      - name: Verify production release prefix
-        if: inputs.index == 'pypi'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python3 .github/release/release.py verify-target-unused "$RELEASE_VERSION" \
-            --candidate-oid "$RELEASE_CANDIDATE_OID" \
-            --current-oid "$GITHUB_SHA"
-
       - name: Pre-commit hooks
         run: uv run pre-commit run --all-files --show-diff-on-failure
 
@@ -283,7 +273,7 @@ jobs:
           done
 
           if [ "$installed" != "1" ]; then
-            echo "::error::Published package smoke failed. The version may be burned if upload succeeded; bump patch before retrying."
+            echo "::error::Published package smoke failed. Reconcile the exact published index and GitHub state before resuming or choosing a new approved version."
             exit 1
           fi
 

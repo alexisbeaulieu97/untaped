@@ -375,8 +375,9 @@ def test_release_workflow_smokes_published_tool_from_selected_index() -> None:
     assert f"--package {DIST_NAME}" in smoke
     assert f"--console-script {CONSOLE_SCRIPT}" in smoke
     assert '--venv "$published_venv"' in smoke
-    assert "version may be burned" in smoke.lower()
-    assert "bump patch" in smoke.lower()
+    assert "reconcile the exact published index and github state" in smoke.lower()
+    assert "choosing a new approved version" in smoke.lower()
+    assert "bump patch" not in smoke.lower()
     assert "untaped.api" not in smoke
 
 
