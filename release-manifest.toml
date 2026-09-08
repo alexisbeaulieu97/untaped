@@ -100,12 +100,12 @@ oid = "8633e594ebe381ac7e3e58a5b57707ae9b691369"
 requires-python = ">=3.14"
 dependencies = ["cyclopts>=4.16,<5", "filelock>=3.29.7,<4", "pydantic>=2.13.3,<3", "tomli-w>=1.2,<2", "untaped>=3.1.0,<4"]
 
-# Approved orchestration source fixes remain provenance only until their
-# reviewed integrated state is independently verified.
+# These approved orchestration source fixes are integrated and reviewed in the
+# accepted unified source state.
 [provenance.approved-orchestration-fixes]
-status = "approved-not-integrated"
+status = "integrated-reviewed"
 source-oids = [
-    "d68e6a9007d11f50ce9c4e0a21296322975ec0ca",
+    "d68e6a9007d11f50ce9e4c0a21296322975ec0ca",
     "f6359b0678ea61e969ff164a57b7ab6858f3fef4",
 ]
 
