@@ -628,3 +628,43 @@ def test_constructed_host_filter_does_not_leak_into_saved_restore(controller: An
     assert "host_filter" not in saved.spec
     assert engine.run([saved], write=True).outcomes[0].action == "unchanged"
     assert state.writes == []
+
+
+@pytest.mark.parametrize("parent_first", [False, True])
+@pytest.mark.parametrize("second_parent_org", ["org", None])
+def test_new_generated_source_aliases_fail_before_parent_creation(
+    controller: Any, parent_first: bool, second_parent_org: str | None
+) -> None:
+    state, engine, _, _ = controller
+    state.records["inventories"].clear()
+    first = source_doc(update_cache_timeout=1)
+    second = source_doc(update_cache_timeout=2)
+    second.metadata.name = "different-alias"
+    second.metadata.parent = IdentityRef(
+        kind="Inventory", name="inv", organization=second_parent_org
+    )
+    inventory = inventory_doc(kind="constructed")
+    docs = [inventory, first, second] if parent_first else [first, second, inventory]
+    with pytest.raises(MutationConflict, match="duplicate parent-owned target"):
+        engine.prepare(docs)
+    assert state.writes == []
+    assert state.records["inventories"] == {}
+    assert state.records["inventory_sources"] == {}
+
+
+def test_generated_sources_on_distinct_new_parents_are_not_duplicate_targets(
+    controller: Any,
+) -> None:
+    state, engine, _, _ = controller
+    state.records["inventories"].clear()
+    first_inventory = inventory_doc(kind="constructed")
+    second_inventory = inventory_doc(kind="constructed")
+    second_inventory.metadata.organization = "other"
+    first_source = source_doc(update_cache_timeout=1)
+    second_source = source_doc(update_cache_timeout=2)
+    second_source.metadata.parent = IdentityRef(kind="Inventory", name="inv", organization="other")
+    plan = engine.prepare([first_source, second_source, first_inventory, second_inventory])
+    result = engine.execute(plan)
+    assert all(outcome.action == "created" for outcome in result.outcomes)
+    assert result.outcomes[0].id != result.outcomes[1].id
+    assert len(state.records["inventory_sources"]) == 2

@@ -277,7 +277,10 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         if resource.spec.get("source", "constructed") != "constructed":
             raise BadRequest("generated constructed source type cannot change")
         spec = spec.model_copy(
-            update={"read_only_fields": (*spec.read_only_fields, "name", "source")}
+            update={
+                "read_only_fields": (*spec.read_only_fields, "name", "source"),
+                "singleton_parent": True,
+            }
         )
         return spec, existing
 
