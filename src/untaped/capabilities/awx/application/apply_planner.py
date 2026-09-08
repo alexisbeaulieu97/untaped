@@ -16,11 +16,13 @@ the apply path actually queries.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
+from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, Resource, ResourceSpec
+from untaped.capabilities.awx.errors import AwxApiError, BadRequest
 
 
 def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:
@@ -67,7 +69,13 @@ class ApplyPlanner:
         return identity
 
     def plan_payload(
-        self, spec: ResourceSpec, resource: Resource, *, fk: FkResolver
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        *,
+        fk: FkResolver,
+        existing: Mapping[str, Any] | None = None,
+        preserve_existing_fk_ids: bool = False,
     ) -> dict[str, Any]:
         """Pass ``resource.spec`` through (minus a drop-set) and resolve FKs.
 
@@ -112,10 +120,77 @@ class ApplyPlanner:
             value = body[ref.field]
             if ref.multi:
                 if isinstance(value, list):
-                    body[ref.field] = [fk.name_to_id(ref.kind, str(v), scope=scope) for v in value]
+                    body[ref.field] = [
+                        _resolve_fk_value(
+                            ref.kind,
+                            v,
+                            scope=scope,
+                            fk=fk,
+                            existing=_existing_multi_value(existing, ref.field, index),
+                            preserve_existing_id=preserve_existing_fk_ids,
+                        )
+                        for index, v in enumerate(value)
+                    ]
             else:
-                body[ref.field] = fk.name_to_id(ref.kind, str(value), scope=scope)
+                body[ref.field] = _resolve_fk_value(
+                    ref.kind,
+                    value,
+                    scope=scope,
+                    fk=fk,
+                    existing=existing.get(ref.field) if existing is not None else None,
+                    preserve_existing_id=preserve_existing_fk_ids,
+                )
         return body
+
+
+def _existing_multi_value(existing: Mapping[str, Any] | None, field: str, index: int) -> Any:
+    """Return the existing item at ``index`` for unchanged FK labels.
+
+    The helper intentionally only supplies a positional hint.  A multi-FK
+    reference is still resolved by name when the requested label changed.
+    """
+    if existing is None:
+        return None
+    values = existing.get(field)
+    if isinstance(values, list) and index < len(values):
+        return values[index]
+    return None
+
+
+def _resolve_fk_value(
+    kind: str,
+    value: Any,
+    *,
+    scope: dict[str, str] | None,
+    fk: FkResolver,
+    existing: Any,
+    preserve_existing_id: bool,
+) -> PlannedId:
+    """Resolve an FK without confusing numeric names with numeric IDs.
+
+    Integer values are already controller IDs.  Strings, including strings
+    containing only digits, are names by contract.  When an editor leaves a
+    name unchanged, retaining the server's original ID avoids a second
+    ambiguous name lookup and preserves the exact reference selected by the
+    user.
+    """
+    if isinstance(value, bool):
+        raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+    if isinstance(value, int):
+        if value <= 0:
+            raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+        return value
+    if preserve_existing_id and isinstance(existing, int) and not isinstance(existing, bool):
+        try:
+            if fk.id_to_name(kind, existing) == value:
+                return existing
+        except (AwxApiError, KeyError, ValueError):
+            # A cache miss or a sparse test double must not make an otherwise
+            # valid name resolution fail; the authoritative lookup follows.
+            pass
+    if not isinstance(value, str):
+        raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+    return fk.name_to_id(kind, value, scope=scope)
 
 
 def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
