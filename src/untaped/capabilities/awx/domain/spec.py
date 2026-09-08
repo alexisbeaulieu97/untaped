@@ -20,7 +20,17 @@ from pydantic import BaseModel, ConfigDict, model_validator
 Fidelity = Literal["full", "partial", "read_only"]
 """Restore-fidelity tier per kind, surfaced on save."""
 
-CommandName = Literal["list", "get", "save", "apply", "launch", "update", "delete"]
+CommandName = Literal[
+    "list",
+    "get",
+    "save",
+    "apply",
+    "patch",
+    "edit",
+    "launch",
+    "update",
+    "delete",
+]
 """Commands the CLI factory may wire for a kind."""
 
 
@@ -46,6 +56,14 @@ class FkRef(BaseModel):
 
     sub_endpoint: str | None = None
     """Multi-FK exposed via a separate sub-endpoint (e.g. ``credentials/``)."""
+
+    ordered: bool = False
+    """Whether this sub-endpoint relationship is order-sensitive.
+
+    Most AWX relationships are sets.  Ordered many-to-many fields retain the
+    server's returned order and therefore need exact sequence comparison and
+    an explicit reordering operation during reconciliation.
+    """
 
     polymorphic: bool = False
     kind_in_value: str | None = None
@@ -107,6 +125,13 @@ class ResourceSpec(BaseModel):
     ``instance_groups``). Used by the test runner's name resolver.
     """
     secret_paths: tuple[str, ...] = ()
+    server_enriched_fields: tuple[str, ...] = ()
+    """Top-level fields AWX may enrich while accepting a user replacement.
+
+    These are narrow, explicit exceptions to the exact replacement contract;
+    an omitted field or extra server key remains a verification failure for
+    every other user-owned map and sequence.
+    """
     actions: tuple[ActionSpec, ...] = ()
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.

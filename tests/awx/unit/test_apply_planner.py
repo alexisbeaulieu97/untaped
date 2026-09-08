@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
+
 from untaped.capabilities.awx.application.apply_planner import ApplyPlanner, scope_for
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, Metadata, Resource
 from untaped.capabilities.awx.domain.envelope import IdentityRef
+from untaped.capabilities.awx.errors import BadRequest
 from untaped.capabilities.awx.infrastructure.specs import (
     GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
@@ -308,6 +311,41 @@ def test_plan_payload_skips_polymorphic_fks() -> None:
     )
     assert payload["rrule"] == "FREQ=DAILY"
     assert payload["enabled"] is True
+
+
+def test_plan_payload_treats_numeric_strings_as_names() -> None:
+    planner = ApplyPlanner()
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"project": "123"},
+    )
+    fk = _StubFk({("Organization", "Default"): 1, ("Project", "123"): 99})
+    assert planner.plan_payload(JOB_TEMPLATE_SPEC, resource, fk=fk)["project"] == 99
+
+
+def test_plan_payload_accepts_positive_integer_fk_ids() -> None:
+    planner = ApplyPlanner()
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"project": 99},
+    )
+    fk = _StubFk({("Organization", "Default"): 1})
+    assert planner.plan_payload(JOB_TEMPLATE_SPEC, resource, fk=fk)["project"] == 99
+
+
+@pytest.mark.parametrize("value", [True, False, 0, -1])
+def test_plan_payload_rejects_invalid_integer_fk_ids(value: Any) -> None:
+    planner = ApplyPlanner()
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"project": value},
+    )
+    fk = _StubFk({("Organization", "Default"): 1})
+    with pytest.raises(BadRequest, match="positive"):
+        planner.plan_payload(JOB_TEMPLATE_SPEC, resource, fk=fk)
 
 
 # ---- scope_for ----

@@ -13,6 +13,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Protocol
 
+from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.domain import (
     ActionPayload,
     ApplyOutcome,
@@ -222,11 +223,11 @@ class FkResolver(Protocol):
         name: str,
         *,
         scope: dict[str, str] | None = None,
-    ) -> int: ...
+    ) -> PlannedId: ...
 
     def id_to_name(self, kind: str, id_: int) -> str: ...
 
-    def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int]:
+    def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, PlannedId]:
         """Return ``(referenced_kind, id)`` for a polymorphic value.
 
         ``value`` looks like ``{"kind": "JobTemplate", "name": "deploy",

@@ -42,6 +42,11 @@ WarnFn = Callable[[str], None]
 def _noop_warn(_msg: str) -> None: ...
 
 
+def _scope_from_identity(identity: dict[str, Any]) -> dict[str, Any]:
+    """Return the user-facing scope slice of a prepared identity."""
+    return {key: value for key, value in identity.items() if key not in {"name", "id"}}
+
+
 class ApplyResource:
     def __init__(
         self,
@@ -105,10 +110,11 @@ class ApplyResource:
     def apply_to_existing(
         self,
         resource: Resource,
-        existing: dict[str, Any],
+        existing: dict[str, Any] | None,
         *,
         write: bool = False,
         defer_memberships: bool = False,
+        preserve_existing_fk_ids: bool = False,
     ) -> ApplyOutcome:
         """Apply ``resource``'s fields against an already-resolved record.
 
@@ -120,7 +126,11 @@ class ApplyResource:
         ones). Reuses the same diff / secret-preservation / FK / membership
         logic as :meth:`__call__`.
         """
-        spec, identity, payload, strategy = self._prepare(resource)
+        spec, identity, payload, strategy = self._prepare(
+            resource,
+            existing=existing,
+            preserve_existing_fk_ids=preserve_existing_fk_ids,
+        )
         return self._dispatch(
             spec=spec,
             resource=resource,
@@ -145,7 +155,11 @@ class ApplyResource:
             self._warn(message)
 
     def _prepare(
-        self, resource: Resource
+        self,
+        resource: Resource,
+        *,
+        existing: dict[str, Any] | None = None,
+        preserve_existing_fk_ids: bool = False,
     ) -> tuple[ResourceSpec, dict[str, Any], dict[str, Any], ApplyStrategy]:
         """Resolve spec, identity, planned payload, and strategy for a doc.
 
@@ -165,7 +179,13 @@ class ApplyResource:
                 "edit this resource via the AWX UI or API directly."
             )
         identity = self._planner.plan_identity(spec, resource)
-        payload = self._planner.plan_payload(spec, resource, fk=self._fk)
+        payload = self._planner.plan_payload(
+            spec,
+            resource,
+            fk=self._fk,
+            existing=existing,
+            preserve_existing_fk_ids=preserve_existing_fk_ids,
+        )
         strategy = self._strategies.get(spec.apply_strategy)
         return spec, identity, payload, strategy
 
@@ -279,6 +299,9 @@ class ApplyResource:
                 kind=spec.kind,
                 name=resource.metadata.name,
                 action=action,
+                id=int(existing["id"]) if existing is not None and "id" in existing else None,
+                identity=identity,
+                scope=_scope_from_identity(identity),
                 changes=changes,
                 preserved_secrets=preserved,
                 dropped_undeclared_secrets=dropped_undeclared,
@@ -366,6 +389,9 @@ class ApplyResource:
             kind=spec.kind,
             name=resource.metadata.name,
             action="created",
+            id=new_id,
+            identity=identity,
+            scope=_scope_from_identity(identity),
             changes=changes,
             preserved_secrets=[],
             dropped_undeclared_secrets=dropped_undeclared,
@@ -400,6 +426,9 @@ class ApplyResource:
                 kind=spec.kind,
                 name=resource.metadata.name,
                 action="unchanged",
+                id=int(existing["id"]),
+                identity=self._planner.plan_identity(spec, resource),
+                scope=_scope_from_identity(self._planner.plan_identity(spec, resource)),
                 changes=changes,
                 preserved_secrets=preserved,
                 dropped_undeclared_secrets=dropped_undeclared,
@@ -434,6 +463,9 @@ class ApplyResource:
             kind=spec.kind,
             name=resource.metadata.name,
             action="updated",
+            id=int(existing["id"]),
+            identity=self._planner.plan_identity(spec, resource),
+            scope=_scope_from_identity(self._planner.plan_identity(spec, resource)),
             changes=changes,
             preserved_secrets=preserved,
             dropped_undeclared_secrets=dropped_undeclared,

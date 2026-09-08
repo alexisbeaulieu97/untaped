@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from untaped.capabilities.awx.application.apply_planner import scope_for
+from untaped.capabilities.awx.application.mutation_refs import DeferredReference, PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequest
@@ -40,15 +41,18 @@ class MembershipPlan:
     """
 
     ref: FkRef
-    to_associate: tuple[int, ...]
+    to_associate: tuple[PlannedId, ...]
     to_disassociate: tuple[int, ...]
     field_change: FieldChange | None
+    existing_ids: tuple[int, ...] = ()
+    desired_ids: tuple[PlannedId, ...] = ()
+    to_reorder: tuple[PlannedId, ...] = ()
 
 
 class MembershipReconciler:
     """Plan + execute multi-FK sub-endpoint membership writes."""
 
-    def plan(
+    def plan(  # noqa: C901
         self,
         spec: ResourceSpec,
         resource: Resource,
@@ -85,33 +89,69 @@ class MembershipReconciler:
                 )
             desired_names = list(raw_value)
             scope = scope_for(ref, resource)
-            desired_ids = {fk.name_to_id(ref.kind, str(n), scope=scope) for n in desired_names}
+            resolved_desired_ids = tuple(
+                _resolve_membership_value(ref.kind, value, scope=scope, fk=fk)
+                for value in desired_names
+            )
+            if len(set(resolved_desired_ids)) != len(resolved_desired_ids):
+                raise BadRequest(
+                    f"{spec.kind} {resource.metadata.name!r}: {ref.field!r} contains "
+                    "duplicate members"
+                )
 
-            existing_ids: set[int] = set()
+            existing_ids: list[int] = []
             existing_name_by_id: dict[int, str] = {}
             if record_id is not None:
                 for record in client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint):
                     rid = int(record["id"])
-                    existing_ids.add(rid)
+                    if rid not in existing_ids:
+                        existing_ids.append(rid)
                     rname = record.get("name")
                     if isinstance(rname, str):
                         existing_name_by_id[rid] = rname
 
-            to_associate = sorted(desired_ids - existing_ids)
-            to_disassociate = sorted(existing_ids - desired_ids)
+            desired_set = set(resolved_desired_ids)
+            existing_set = set(existing_ids)
+            to_associate = tuple(
+                member_id for member_id in resolved_desired_ids if member_id not in existing_set
+            )
+            to_disassociate = tuple(
+                member_id for member_id in existing_ids if member_id not in desired_set
+            )
+            to_reorder: tuple[PlannedId, ...] = ()
+            if ref.ordered:
+                to_reorder = _ordered_replacements(
+                    existing_ids=tuple(existing_ids),
+                    desired_ids=resolved_desired_ids,
+                    removed=set(to_disassociate),
+                )
 
             field_change: FieldChange | None = None
             if to_associate or to_disassociate:
-                before = sorted(existing_name_by_id.get(i, str(i)) for i in existing_ids)
-                after = sorted(desired_names)
+                before = (
+                    [existing_name_by_id.get(i, str(i)) for i in existing_ids]
+                    if ref.ordered
+                    else sorted(existing_name_by_id.get(i, str(i)) for i in existing_ids)
+                )
+                after = list(desired_names) if ref.ordered else sorted(desired_names)
                 field_change = FieldChange(field=ref.field, before=before, after=after)
+            elif to_reorder:
+                before = [existing_name_by_id.get(i, str(i)) for i in existing_ids]
+                field_change = FieldChange(
+                    field=ref.field,
+                    before=before,
+                    after=list(desired_names),
+                )
 
             plans.append(
                 MembershipPlan(
                     ref=ref,
-                    to_associate=tuple(to_associate),
-                    to_disassociate=tuple(to_disassociate),
+                    to_associate=to_associate,
+                    to_disassociate=to_disassociate,
                     field_change=field_change,
+                    existing_ids=tuple(existing_ids),
+                    desired_ids=resolved_desired_ids,
+                    to_reorder=to_reorder,
                 )
             )
         return plans
@@ -126,10 +166,19 @@ class MembershipReconciler:
     ) -> None:
         """POST associate / disassociate per ``plans`` against the resource's id."""
         for plan in plans:
-            for member_ids, disassociate in (
-                (plan.to_associate, False),
-                (plan.to_disassociate, True),
-            ):
+            if plan.ref.ordered:
+                operations = (
+                    (tuple(dict.fromkeys((*plan.to_disassociate, *plan.to_reorder))), True),
+                    (tuple(dict.fromkeys((*plan.to_reorder, *plan.to_associate))), False),
+                )
+            else:
+                # Set-like relationships retain the long-standing additive
+                # order used by the command surface and its pipe output.
+                operations = (
+                    (plan.to_associate, False),
+                    (plan.to_disassociate, True),
+                )
+            for member_ids, disassociate in operations:
                 self.post_members(
                     spec,
                     parent_id=record_id,
@@ -145,7 +194,7 @@ class MembershipReconciler:
         *,
         parent_id: int,
         ref: FkRef,
-        member_ids: Iterable[int],
+        member_ids: Iterable[PlannedId],
         disassociate: bool = False,
         client: ResourceClient,
     ) -> None:
@@ -168,7 +217,63 @@ class MembershipReconciler:
         if ref.sub_endpoint is None:
             return
         for member_id in member_ids:
+            if isinstance(member_id, DeferredReference):
+                raise BadRequest(
+                    f"membership reference {member_id.kind} {member_id.name!r} "
+                    "was not bound before execution"
+                )
             body: dict[str, Any] = {"id": member_id}
             if disassociate:
                 body["disassociate"] = True
             client.sub_endpoint_request(spec, parent_id, ref.sub_endpoint, "POST", json=body)
+
+
+def _resolve_membership_value(
+    kind: str,
+    value: Any,
+    *,
+    scope: dict[str, str] | None,
+    fk: FkResolver,
+) -> PlannedId:
+    """Apply the FK integer/name contract to membership references."""
+    if isinstance(value, bool):
+        raise BadRequest(
+            f"membership reference {kind} must be a positive integer ID or string name"
+        )
+    if isinstance(value, int):
+        if value <= 0:
+            raise BadRequest(
+                f"membership reference {kind} must be a positive integer ID or string name"
+            )
+        return value
+    if not isinstance(value, str):
+        raise BadRequest(
+            f"membership reference {kind} must be a positive integer ID or string name"
+        )
+    return fk.name_to_id(kind, value, scope=scope)
+
+
+def _ordered_replacements(
+    *,
+    existing_ids: tuple[int, ...],
+    desired_ids: tuple[PlannedId, ...],
+    removed: set[int],
+) -> tuple[int, ...]:
+    """Return the desired tail that must be removed and re-added.
+
+    AWX's ordered-many-to-many endpoint appends an association and does not
+    move an existing through-row.  Keep the longest already-valid prefix and
+    re-add only the remaining desired members.  Unrelated members are removed
+    separately by ``to_disassociate``.
+    """
+    current = [member_id for member_id in existing_ids if member_id not in removed]
+    prefix = 0
+    while prefix < len(current) and prefix < len(desired_ids):
+        if current[prefix] != desired_ids[prefix]:
+            break
+        prefix += 1
+    if current == list(desired_ids):
+        return ()
+    desired_tail = desired_ids[prefix:]
+    current_set = set(current)
+    return tuple(member_id for member_id in desired_tail if member_id in current_set)

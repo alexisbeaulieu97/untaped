@@ -20,6 +20,7 @@ from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path
 
 if TYPE_CHECKING:
+    from untaped.capabilities.awx.application.mutation_refs import PlannedId
     from untaped.capabilities.awx.application.ports import FkResolver, RawHttpResourceClient
 
 
@@ -189,7 +190,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         return client.request("POST", path, json=body)
 
     @staticmethod
-    def _resolve_inventory_id(identity: dict[str, Any], *, fk: FkResolver) -> int:
+    def _resolve_inventory_id(identity: dict[str, Any], *, fk: FkResolver) -> PlannedId:
         parent = _parent(identity)
         scope = {"organization": parent.organization} if parent.organization else None
         return fk.name_to_id("Inventory", parent.name, scope=scope)

@@ -3,6 +3,7 @@ from untaped.capabilities.awx.domain.job import TERMINAL_STATUSES, Job, JobEvent
 from untaped.capabilities.awx.domain.outcomes import (
     ApplyAction,
     ApplyOutcome,
+    BatchResult,
     FieldChange,
     SaveAction,
     SaveOutcome,
@@ -30,6 +31,7 @@ __all__ = [
     "ActionSpec",
     "ApplyAction",
     "ApplyOutcome",
+    "BatchResult",
     "CommandName",
     "Fidelity",
     "FieldChange",

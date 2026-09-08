@@ -96,6 +96,10 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         FkRef(field="instance_groups", kind="InstanceGroup", multi=True),
     ),
     secret_paths=("webhook_key", "survey_spec.spec.*.default"),
+    # AWX may normalize and enrich the submitted survey document while
+    # retaining the user-owned questions/defaults.  Batch verification allows
+    # that explicitly instead of silently weakening comparison for all fields.
+    server_enriched_fields=("survey_spec",),
     actions=(
         # ``accepts`` is the public CLI contract: each name listed here
         # gets a CLI flag wired in `_add_launch`. The CLI dispatches
