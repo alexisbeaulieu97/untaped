@@ -31,7 +31,7 @@ acme-provider/
             └── SKILL.md
 ```
 
-The package requires the current v4 product and declares the entry-point group:
+The package requires the current product and declares the entry-point group:
 
 ```toml
 [project]
@@ -41,7 +41,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=4.0.0,<5",
+    "untaped>=5.0.0,<6",
 ]
 
 [project.entry-points."untaped.capabilities"]
