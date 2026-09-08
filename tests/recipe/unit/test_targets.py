@@ -70,13 +70,13 @@ def test_rejects_malformed_or_unusable_pipe_records() -> None:
 
     with pytest.raises(
         ValueError,
-        match=r"line 1: workspace.repo pipe record requires target_path.*rerun.*workspace",
+        match=r"line 1: workspace\.repo pipe record requires target_path",
     ):
         resolve_target_lines([(1, _env("workspace.repo", {"path": "/tmp/ws"}))])
 
     with pytest.raises(
         ValueError,
-        match=r"line 1: workspace.repo pipe record requires target_path.*rerun.*workspace",
+        match=r"line 1: workspace\.repo pipe record requires target_path",
     ):
         resolve_target_lines([(1, _env("workspace.repo", {"path": "/tmp/ws", "repo": ""}))])
 

@@ -238,34 +238,24 @@ def test_remove_warns_on_local_edits_before_confirm(
     assert (library_root() / "packs" / "demo").exists()
 
 
-def test_remove_clean_and_legacy_rows_keep_generic_preview_only(
+def test_remove_rejects_index_rows_without_content_hash(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
     result = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
     assert result.exit_code == 0, result.output
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
-    )
-
-    clean = CliInvoker().invoke(app, ["remove", "demo"])
-
     index_path = library_root() / "packs.toml"
     index_path.write_text(
         index_path.read_text(encoding="utf-8").replace("content_hash", "ignored_field"),
         encoding="utf-8",
     )
-    installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
-    installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
-    legacy = CliInvoker().invoke(app, ["remove", "demo"])
 
-    assert clean.exit_code == 0, clean.output
-    assert legacy.exit_code == 0, legacy.output
-    assert clean.stderr == "About to remove 1 pack(s):\n  - demo\n"
-    assert legacy.stderr == "About to remove 1 pack(s):\n  - demo\n"
+    result = CliInvoker().invoke(app, ["remove", "demo", "--yes"])
+
+    assert result.exit_code != 0
+    assert "content_hash" in result.output
+    assert (library_root() / "packs" / "demo").exists()
 
 
 def test_remove_yes_skips_local_edits_warning(
@@ -1090,7 +1080,7 @@ def test_apply_stdin_requires_yes_and_resolves_workspace_repo_pipe(tmp_path: Pat
     assert (repo / "out.txt").read_text() == "hello\n"
 
 
-def test_apply_stdin_rejects_old_workspace_repo_pipe_without_target_path(tmp_path: Path) -> None:
+def test_apply_stdin_rejects_workspace_repo_pipe_without_target_path(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
         "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
@@ -1115,7 +1105,6 @@ def test_apply_stdin_rejects_old_workspace_repo_pipe_without_target_path(tmp_pat
 
     assert result.exit_code != 0
     assert "workspace.repo pipe record requires target_path" in result.output
-    assert "rerun or upgrade untaped-workspace" in result.output
     assert not (workspace / "out.txt").exists()
     assert not (repo / "out.txt").exists()
 
@@ -1666,7 +1655,8 @@ def test_apply_sensitive_inputs_redact_warnings_and_suppress_diffs(
         code=(
             "import json\n"
             "def validate(*, inputs, target, args, helpers):\n"
-            "    return helpers.warn(json.dumps({'warning': inputs['token']}))\n"
+            "    helpers.warn(json.dumps({'warning': inputs['token']}))\n"
+            "    return helpers.pass_()\n"
         ),
     )
     target = tmp_path / "api"
@@ -2675,7 +2665,8 @@ def test_hook_run_validate_records_and_fail_exit(tmp_path: Path) -> None:
             "def validate(*, inputs, target, args, helpers):\n"
             "    if args.get('fail'):\n"
             "        return helpers.fail('not ready')\n"
-            "    return helpers.warn('check manually')\n"
+            "    helpers.warn('check manually')\n"
+            "    return helpers.pass_()\n"
         ),
     )
     target = tmp_path / "target"
@@ -2738,7 +2729,8 @@ def test_hook_run_dual_export_infers_or_requires_kind(tmp_path: Path) -> None:
             "def transform(content, *, inputs, target, file, args, helpers):\n"
             "    return 'transformed'\n\n"
             "def validate(*, inputs, target, args, helpers):\n"
-            "    return helpers.warn('validated')\n"
+            "    helpers.warn('validated')\n"
+            "    return helpers.pass_()\n"
         ),
     )
     target = tmp_path / "target"
@@ -3357,7 +3349,7 @@ def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) ->
     pyproject.write_text(
         pyproject.read_text().replace(
             "dependencies = []",
-            'dependencies = ["untaped>=4.0.0rc1,<5"]',
+            'dependencies = ["untaped>=4.0.0,<5"]',
         )
     )
 
@@ -3368,7 +3360,7 @@ def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) ->
     assert rows[0]["status"] == "error"
     assert "must not depend on untaped at runtime" in rows[0]["error"]
     assert "dependency-groups.dev" in rows[0]["error"]
-    assert "untaped>=4.0.0rc1,<5" in rows[0]["error"]
+    assert "untaped>=4.0.0,<5" in rows[0]["error"]
 
 
 def test_recipe_check_validates_unreferenced_local_hook_project_modules(tmp_path: Path) -> None:
