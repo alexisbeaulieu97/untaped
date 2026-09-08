@@ -228,7 +228,7 @@ jobs:
           done
 
           if [ "$installed" != "1" ]; then
-            echo "::error::Published package smoke failed. The version may be burned if upload succeeded; bump patch before retrying."
+            echo "::error::Published package smoke failed. Reconcile the exact published index and GitHub state before resuming or choosing a new approved version."
             exit 1
           fi
 
@@ -238,7 +238,7 @@ jobs:
             --venv "$published_venv" \
             --console-script __CONSOLE_SCRIPT__; then
             echo "::error::Published package smoke failed."
-            echo "::error::The version may be burned if upload succeeded; bump patch before retrying."
+            echo "::error::Reconcile the exact published index and GitHub state before resuming or choosing a new approved version."
             exit 1
           fi
 

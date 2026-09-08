@@ -127,6 +127,19 @@ def test_release_workflow_guards_production_publish_to_main() -> None:
     assert "exit 1" in run
 
 
+def test_release_workflow_uses_shared_github_prefix_transition() -> None:
+    _, workflow = _load_release_workflow()
+
+    build_text = "\n".join(str(step.get("run", "")) for step in _steps(workflow, BUILD_JOB))
+    assert "verify-target-unused" not in build_text
+
+    draft = _step(workflow, "Create or resume exact GitHub draft", job_name=DRAFT_JOB)
+    draft_run = str(draft["run"])
+    assert "ensure-github-draft" in draft_run
+    assert '--candidate-oid "$RELEASE_CANDIDATE_OID"' in draft_run
+    assert '--current-oid "$GITHUB_SHA"' in draft_run
+
+
 def test_release_workflow_validates_version_builds_without_sources_and_smokes_wheel() -> None:
     _, workflow = _load_release_workflow()
     run_text = _all_run_text(workflow)
@@ -251,12 +264,13 @@ def test_release_workflow_creates_github_release_only_after_production_smoke() -
     assert '"$RELEASE_VERSION"' in run
 
 
-def test_release_workflow_reports_burn_recovery_after_upload_failures() -> None:
+def test_release_workflow_reports_exact_state_recovery_after_upload_failures() -> None:
     _, workflow = _load_release_workflow()
 
     run_text = _all_run_text(workflow).lower()
-    assert "version may be burned" in run_text
-    assert "bump patch" in run_text
+    assert "reconcile the exact published index and github state" in run_text
+    assert "choosing a new approved version" in run_text
+    assert "bump patch" not in run_text
 
 
 def test_project_metadata_declares_pypi_release_fields() -> None:
