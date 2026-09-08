@@ -13,15 +13,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised by monkeypatch.
-    tomllib = None  # type: ignore[assignment]
-
 _RELEASE_DIR = Path(__file__).resolve().parent
 if str(_RELEASE_DIR) not in sys.path:
     sys.path.insert(0, str(_RELEASE_DIR))
 
+import _release_core  # noqa: E402
 from _publication import (  # noqa: E402
     GitHubRelease,
     PublicationState,
@@ -52,10 +48,7 @@ from _release_core import (  # noqa: E402
     ReleaseCheckError,
     dependency_name,
     normalize_package_name,
-    parse_project_metadata,
     project_metadata,
-    requirement_specifier,
-    verify_version,
 )
 from _release_transport import GitHubReleaseTransport, SimpleIndexTransport  # noqa: E402
 
@@ -85,16 +78,12 @@ __all__ = [
     "publish_github_draft",
     "run_publication",
     "validate_release_manifest",
-    "verify_candidate_oid",
     "verify_index_artifacts",
 ]
 
 
 _dependency_name = dependency_name
 _normalize_package_name = normalize_package_name
-_parse_project_metadata = parse_project_metadata
-_requirement_specifier = requirement_specifier
-_core_verify_version = verify_version
 
 
 def smoke_unified_app(
@@ -106,7 +95,7 @@ def smoke_unified_app(
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
     """Run the single installed-app smoke used by local and published jobs."""
-    smoke_console(
+    _smoke_installed_package(
         package_name=package_name,
         version=version,
         python_path=python_path,
@@ -162,17 +151,7 @@ def _run_smoke_command(
     return completed
 
 
-def _load_toml(path: Path) -> dict[str, Any]:
-    if tomllib is None:
-        raise ReleaseCheckError("TOML validation requires Python 3.11 or newer")
-    try:
-        parsed = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise ReleaseCheckError(f"could not read TOML file {path}: {error}") from error
-    return parsed
-
-
-def verify_target_unused(
+def _assert_existing_release_prefix(
     version: str,
     *,
     candidate_oid: str | None = None,
@@ -180,8 +159,8 @@ def verify_target_unused(
 ) -> None:
     """Fail closed on conflicts, while allowing an exact resumable prefix."""
     if candidate_oid is None:
-        check_github_release_absent(version)
-        check_git_tag_absent(version)
+        _assert_github_release_absent(version)
+        _assert_git_tag_absent(version)
         return
     if current_oid is None:
         raise ReleaseCheckError("current OID is required when checking an existing release prefix")
@@ -195,7 +174,7 @@ def verify_target_unused(
     transport = GitHubReleaseTransport(repo=repo, token=token)
     release = transport.inspect_github_release(tag=f"v{version}")
     if release is None:
-        check_git_tag_absent(version)
+        _assert_git_tag_absent(version)
         print(f"ok: GitHub release v{version} and its tag are absent")
         return
     if release.tag != f"v{version}" or release.target_oid != candidate_oid:
@@ -210,7 +189,7 @@ def verify_target_unused(
     print(f"ok: existing GitHub {state} v{version} targets reviewed candidate")
 
 
-def check_github_release_absent(
+def _assert_github_release_absent(
     version: str,
     *,
     repo: str | None = None,
@@ -252,7 +231,7 @@ def check_github_release_absent(
         raise ReleaseCheckError(f"could not verify GitHub release v{version}: {error}") from error
 
 
-def check_git_tag_absent(
+def _assert_git_tag_absent(
     version: str,
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
@@ -279,14 +258,14 @@ def check_git_tag_absent(
     )
 
 
-def verify_internal_dependencies_published(
+def _assert_internal_dependencies_published(
     index: str,
     *,
     pyproject_path: Path = PYPROJECT,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
     """Verify internal untaped dependencies resolve from the selected install path."""
-    requirements = internal_dependency_requirements(pyproject_path)
+    requirements = _internal_dependency_requirements(pyproject_path)
     if not requirements:
         print("ok: no internal untaped dependencies declared")
         return
@@ -343,9 +322,9 @@ def _verify_dependency_published(
         raise ReleaseCheckError(f"{requirement} is not available from {index}: {detail}")
 
 
-def internal_dependency_requirements(pyproject_path: Path = PYPROJECT) -> list[str]:
+def _internal_dependency_requirements(pyproject_path: Path = PYPROJECT) -> list[str]:
     """Return internal untaped dependency requirements from project metadata."""
-    project = _project_metadata(pyproject_path)
+    project = project_metadata(pyproject_path)
     self_name = _normalize_package_name(str(project["name"]))
     requirements: list[str] = []
     for dependency in project.get("dependencies", []):
@@ -356,7 +335,7 @@ def internal_dependency_requirements(pyproject_path: Path = PYPROJECT) -> list[s
     return requirements
 
 
-def smoke_console(
+def _smoke_installed_package(
     *,
     package_name: str,
     version: str,
@@ -364,7 +343,7 @@ def smoke_console(
     console_script: Path,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> None:
-    """Smoke a package install by checking metadata, version output, and help."""
+    """Smoke an installed package by checking metadata, version output, and help."""
     if not python_path.exists():
         raise ReleaseCheckError(f"expected Python interpreter was missing: {python_path}")
     if not console_script.exists():
@@ -421,14 +400,9 @@ def smoke_console(
     print(f"ok: {package_name} {version} console script smoke passed")
 
 
-def _project_metadata(pyproject_path: Path) -> dict[str, Any]:
-    """Read project metadata, retaining the legacy tomllib fallback seam."""
-    return project_metadata(pyproject_path, tomllib_module=tomllib)
-
-
 def verify_version(version: str, *, pyproject_path: Path = PYPROJECT) -> None:
     """Verify the requested release version against project metadata."""
-    _core_verify_version(version, pyproject_path=pyproject_path, tomllib_module=tomllib)
+    _release_core.verify_version(version, pyproject_path=pyproject_path)
 
 
 def _collect_cli_candidate(args: argparse.Namespace) -> ReleaseCandidate:
@@ -443,31 +417,6 @@ def _collect_cli_candidate(args: argparse.Namespace) -> ReleaseCandidate:
 
 def _handle_verify_version(args: argparse.Namespace) -> None:
     verify_version(args.version, pyproject_path=args.pyproject)
-
-
-def _handle_verify_target(args: argparse.Namespace) -> None:
-    verify_target_unused(
-        args.version,
-        candidate_oid=args.candidate_oid,
-        current_oid=args.current_oid,
-    )
-
-
-def _handle_verify_candidate_oid(args: argparse.Namespace) -> None:
-    verify_candidate_oid(args.candidate_oid, args.current_oid)
-
-
-def _handle_verify_internal_dependencies(args: argparse.Namespace) -> None:
-    verify_internal_dependencies_published(args.index, pyproject_path=args.pyproject)
-
-
-def _handle_smoke_console(args: argparse.Namespace) -> None:
-    smoke_console(
-        package_name=args.package,
-        version=args.version,
-        python_path=args.venv / "bin" / "python",
-        console_script=args.venv / "bin" / args.console_script,
-    )
 
 
 def _handle_smoke_unified(args: argparse.Namespace) -> None:
@@ -531,10 +480,6 @@ def _handle_verify_manifest(args: argparse.Namespace) -> None:
 
 _COMMAND_HANDLERS: dict[str, Callable[[argparse.Namespace], None]] = {
     "verify-version": _handle_verify_version,
-    "verify-target-unused": _handle_verify_target,
-    "verify-candidate-oid": _handle_verify_candidate_oid,
-    "verify-internal-dependencies-published": _handle_verify_internal_dependencies,
-    "smoke-console": _handle_smoke_console,
     "smoke-unified": _handle_smoke_unified,
     "verify-candidate": _handle_verify_candidate,
     "ensure-github-draft": _handle_ensure_github_draft,
@@ -553,25 +498,6 @@ def main(argv: list[str] | None = None) -> int:
     verify_version_parser = subparsers.add_parser("verify-version")
     verify_version_parser.add_argument("version")
     verify_version_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
-
-    verify_target_parser = subparsers.add_parser("verify-target-unused")
-    verify_target_parser.add_argument("version")
-    verify_target_parser.add_argument("--candidate-oid")
-    verify_target_parser.add_argument("--current-oid")
-
-    candidate_oid_parser = subparsers.add_parser("verify-candidate-oid")
-    candidate_oid_parser.add_argument("--candidate-oid", required=True)
-    candidate_oid_parser.add_argument("--current-oid", required=True)
-
-    verify_internal_deps_parser = subparsers.add_parser("verify-internal-dependencies-published")
-    verify_internal_deps_parser.add_argument("--index", choices=["testpypi", "pypi"], required=True)
-    verify_internal_deps_parser.add_argument("--pyproject", type=Path, default=PYPROJECT)
-
-    smoke_console_parser = subparsers.add_parser("smoke-console")
-    smoke_console_parser.add_argument("--package", required=True)
-    smoke_console_parser.add_argument("--version", required=True)
-    smoke_console_parser.add_argument("--venv", type=Path, required=True)
-    smoke_console_parser.add_argument("--console-script", required=True)
 
     smoke_unified_parser = subparsers.add_parser("smoke-unified")
     smoke_unified_parser.add_argument("--package", required=True)

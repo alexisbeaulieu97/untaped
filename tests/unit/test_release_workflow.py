@@ -11,6 +11,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+RELEASE_MANIFEST = REPO_ROOT / "release-manifest.toml"
 BUILD_JOB = "build"
 DRAFT_JOB = "github-draft"
 PUBLISH_JOB = "publish"
@@ -144,7 +145,7 @@ def test_release_workflow_validates_version_builds_without_sources_and_smokes_wh
     _, workflow = _load_release_workflow()
     run_text = _all_run_text(workflow)
 
-    assert "uv sync --frozen --all-packages" in run_text
+    assert "uv sync --locked --all-packages" in run_text
     assert "uv run pre-commit run --all-files --show-diff-on-failure" in run_text
     assert "uv run mypy" in run_text
     assert "uv run pytest" in run_text
@@ -287,8 +288,9 @@ def test_release_workflow_reports_exact_state_recovery_after_upload_failures() -
 
 def test_project_metadata_declares_pypi_release_fields() -> None:
     project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    manifest = tomllib.loads(RELEASE_MANIFEST.read_text(encoding="utf-8"))["manifest"]
 
-    assert project["version"] == "4.0.0rc1"
+    assert project["version"] == manifest["version"]
     assert project["license"] == "MIT"
     assert project["license-files"] == ["LICENSE"]
     assert project.get("readme") == "README.md"
