@@ -30,11 +30,6 @@ _normalize_package_name = normalize_package_name
 _project_metadata = project_metadata
 _requirement_specifier = requirement_specifier
 
-APPROVED_ORCHESTRATION_FIX_OIDS = (
-    "d68e6a9007d11f50ce9e4c0a21296322975ec0ca",
-    "f6359b0678ea61e969ff164a57b7ab6858f3fef4",
-)
-
 
 class PublicationState(StrEnum):
     """Ordered states in the restartable production publication contract."""
@@ -241,7 +236,6 @@ def validate_release_manifest(
     _validate_manifest_requirements(requirements, project_direct, evidence)
     _validate_manifest_core_source(provenance, evidence)
     _validate_manifest_sources(provenance, evidence)
-    _validate_manifest_dispositions(provenance, evidence)
 
     if lock_path is not None:
         lock_text = lock_path.read_text(encoding="utf-8")
@@ -351,49 +345,6 @@ def _validate_manifest_sources(provenance: dict[str, Any], evidence: dict[str, A
         seen_capabilities.add(capability)
     if seen_capabilities != set(BUILTIN_CAPABILITIES):
         raise ReleaseCheckError("release manifest is missing a capability source record")
-
-
-def _validate_manifest_dispositions(provenance: dict[str, Any], evidence: dict[str, Any]) -> None:
-    dispositions = provenance.get("dispositions")
-    if not isinstance(dispositions, dict):
-        raise ReleaseCheckError("release manifest is missing dependency dispositions")
-    if dispositions.get("core") != "unified-root" or dispositions.get("self") != "omitted":
-        raise ReleaseCheckError("release manifest has an invalid core/self disposition")
-    removed_edges = evidence.get("removed-edges")
-    if not isinstance(removed_edges, dict):
-        raise ReleaseCheckError("release source evidence is missing removed edges")
-    if dispositions.get("self") != removed_edges.get("core-self"):
-        raise ReleaseCheckError("release manifest must record the removed self edge")
-    if dispositions.get("ansible-github") != removed_edges.get("ansible-github"):
-        raise ReleaseCheckError("release manifest must record Ansible/GitHub conversion")
-    _validate_orchestration_provenance(provenance, evidence)
-
-
-def _validate_orchestration_provenance(
-    provenance: dict[str, Any], evidence: dict[str, Any]
-) -> None:
-    fixes = provenance.get("approved-orchestration-fixes")
-    evidence_fixes = evidence.get("approved-orchestration-fixes")
-    if not isinstance(fixes, dict) or not isinstance(evidence_fixes, dict):
-        raise ReleaseCheckError("release manifest is missing approved orchestration provenance")
-    if fixes.get("status") != "integrated-reviewed":
-        raise ReleaseCheckError(
-            "release manifest orchestration provenance is not integrated-reviewed"
-        )
-    if evidence_fixes.get("status") != "integrated-reviewed":
-        raise ReleaseCheckError(
-            "release source evidence orchestration provenance is not integrated-reviewed"
-        )
-    if tuple(fixes.get("source-oids", ())) != APPROVED_ORCHESTRATION_FIX_OIDS:
-        raise ReleaseCheckError("release manifest orchestration source OIDs are not approved")
-    if tuple(evidence_fixes.get("source-oids", ())) != APPROVED_ORCHESTRATION_FIX_OIDS:
-        raise ReleaseCheckError(
-            "release source evidence orchestration source OIDs are not approved"
-        )
-    if fixes.get("status") != evidence_fixes.get("status"):
-        raise ReleaseCheckError("release manifest orchestration provenance status is stale")
-    if tuple(fixes.get("source-oids", ())) != tuple(evidence_fixes.get("source-oids", ())):
-        raise ReleaseCheckError("release manifest orchestration source OIDs are stale")
 
 
 def run_publication(

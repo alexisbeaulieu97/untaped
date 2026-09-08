@@ -7,6 +7,7 @@ the root also keeps invocation-scoped option and reset behavior.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ from untaped.cli import create_app, echo
 from untaped.errors import ConfigError
 from untaped.profile_resolver import profile_override, set_profile_override
 from untaped.quiet import is_quiet
-from untaped.settings import get_settings, reset_config_registry_for_tests
+from untaped.settings import get_settings, get_settings_model, reset_config_registry_for_tests
 from untaped.testing import CliInvoker
 from untaped.verbose import is_verbose
 
@@ -109,6 +110,63 @@ def test_zero_capability_root_lists_no_capabilities() -> None:
     assert result.exit_code == 0, result.output
     assert "untaped" in result.stdout
     assert bootstrap.current_capability() is None
+
+
+def test_default_composition_retains_the_six_public_capabilities() -> None:
+    expected = ("workspace", "github", "jira", "awx", "ansible", "recipe")
+
+    composition = bootstrap.compose_root()
+
+    assert tuple(capability.spec.name for capability in composition.capabilities) == expected
+    assert composition.quarantine == ()
+
+    root = bootstrap.build_root_app()
+    for name in expected:
+        result = CliInvoker().invoke(root.meta, [name, "--help"])
+        assert result.exit_code == 0, result.output
+
+
+def test_retired_orchestration_command_is_unknown() -> None:
+    root = bootstrap.build_root_app()
+
+    result = CliInvoker().invoke(root.meta, ["orchestration"])
+
+    assert result.exit_code == 2
+    assert "orchestration" in result.output
+
+
+def test_retired_orchestration_capability_is_absent() -> None:
+    capability_path = (
+        Path(__file__).resolve().parents[2] / "src" / "untaped" / "capabilities" / "orchestration"
+    )
+
+    assert not capability_path.exists()
+    assert importlib.util.find_spec("untaped.capabilities.orchestration") is None
+
+
+def test_retired_orchestration_config_schema_is_absent() -> None:
+    root = bootstrap.build_root_app()
+
+    assert "orchestration" not in get_settings_model().model_fields
+
+    result = CliInvoker().invoke(
+        root.meta,
+        ["config", "list", "--format", "raw", "--columns", "key"],
+    )
+    assert result.exit_code == 0, result.output
+    assert not any(line.startswith("orchestration.") for line in result.stdout.splitlines())
+
+
+def test_retired_orchestration_packaged_skill_is_absent() -> None:
+    root = bootstrap.build_root_app()
+
+    result = CliInvoker().invoke(
+        root.meta,
+        ["skills", "list", "--format", "raw", "--columns", "name"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "untaped-orchestration" not in result.stdout
 
 
 def test_version_resolves_unified_distribution_lazily(
@@ -358,7 +416,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     assert built.returncode == 0, built.stderr
     wheels = sorted(dist_dir.glob("untaped-*-py3-none-any.whl"))
     assert len(wheels) == 1
-    assert wheels[0].name == "untaped-4.0.0-py3-none-any.whl"
+    assert wheels[0].name == "untaped-5.0.0-py3-none-any.whl"
 
     venv_dir = tmp_path / "smoke-venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, timeout=300)
@@ -406,7 +464,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
         timeout=120,
     )
     assert version.returncode == 0, version.stderr
-    assert version.stdout == "4.0.0\n"
+    assert version.stdout == "5.0.0\n"
 
     helped = subprocess.run(
         [str(venv_dir / "bin" / "untaped"), "--help"],

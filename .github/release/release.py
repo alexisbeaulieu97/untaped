@@ -116,7 +116,8 @@ def smoke_unified_app(
     ]
     if capability_rows != expected_rows:
         raise ReleaseCheckError(
-            "capabilities metadata did not contain the exact seven ready built-ins"
+            "capabilities metadata did not contain the exact "
+            f"{len(BUILTIN_CAPABILITIES)} ready built-ins"
         )
     for command in BUILTIN_CAPABILITIES:
         _run_smoke_command([str(console_script), command, "--help"], runner=runner)
