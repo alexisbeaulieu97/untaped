@@ -9,11 +9,9 @@ import from today), or the capability's own subtree. Anything else
 ``untaped.capabilities.registry``, sibling capabilities, or the bare
 ``untaped`` root) fails this suite.
 
-The sixteen supported helpers re-exported by
-``untaped.capability_api`` (spec §2) are pinned below as the stable
-helper allowlist: the boundary holds while that set stays closed, so a
-seventeenth re-export fails here as well as in
-``test_capability_api.py``.
+The approved helpers re-exported by ``untaped.capability_api`` are
+pinned below as an explicit allowlist. Unapproved additions fail here
+as well as in ``test_capability_api.py``.
 """
 
 from __future__ import annotations
@@ -39,11 +37,12 @@ COMPOSITION_NAMES = frozenset(
     }
 )
 
-SIXTEEN_HELPERS = frozenset(
+APPROVED_HELPERS = frozenset(
     {
         "ColumnsOption",
         "ConfigError",
         "FormatOption",
+        "PipeEnvelope",
         "StateCollection",
         "UiContext",
         "UntapedError",
@@ -54,6 +53,7 @@ SIXTEEN_HELPERS = frozenset(
         "finish",
         "first_validation_error",
         "get_config_section",
+        "parse_envelope_line",
         "raise_usage",
         "read_identifiers",
         "report_errors",
@@ -196,10 +196,10 @@ def test_capability_code_imports_kernel_only_surface() -> None:
     assert surface_violations() == []
 
 
-def test_sixteen_helper_allowlist_matches_capability_api() -> None:
+def test_approved_helper_allowlist_matches_capability_api() -> None:
     helpers = set(capability_api.__all__) - COMPOSITION_NAMES
-    assert helpers == set(SIXTEEN_HELPERS)
-    assert len(capability_api.__all__) == len(COMPOSITION_NAMES) + len(SIXTEEN_HELPERS)
+    assert helpers == set(APPROVED_HELPERS)
+    assert len(capability_api.__all__) == len(COMPOSITION_NAMES) + len(APPROVED_HELPERS)
 
 
 # ── negatives (hermetic probes) ──────────────────────────────────────────────
