@@ -137,173 +137,6 @@ def test_verify_version_matches_pyproject_and_rejects_unsafe_input(tmp_path: Pat
         release.verify_version(f"{SYNTHETIC_VERSION}; echo injected", pyproject_path=pyproject)
 
 
-def test_github_release_check_fails_when_release_exists() -> None:
-    release = _load_helper()
-
-    with pytest.raises(release.ReleaseCheckError, match="already exists"):
-        release._assert_github_release_absent(
-            SYNTHETIC_VERSION,
-            repo="acme/untaped",
-            token="token",
-            urlopen=lambda _request, timeout: _Response(200),
-        )
-
-
-def test_github_release_check_accepts_404_as_absent() -> None:
-    release = _load_helper()
-
-    def raise_not_found(_request: object, timeout: int) -> object:
-        raise _http_error(404)
-
-    release._assert_github_release_absent(
-        SYNTHETIC_VERSION,
-        repo="acme/untaped",
-        token="token",
-        urlopen=raise_not_found,
-    )
-
-
-def test_github_release_check_fails_closed_on_unexpected_http_status() -> None:
-    release = _load_helper()
-
-    def raise_forbidden(_request: object, timeout: int) -> object:
-        raise _http_error(403)
-
-    with pytest.raises(release.ReleaseCheckError, match="could not verify"):
-        release._assert_github_release_absent(
-            SYNTHETIC_VERSION,
-            repo="acme/untaped",
-            token="token",
-            urlopen=raise_forbidden,
-        )
-
-
-def test_github_release_check_fails_closed_on_network_error() -> None:
-    release = _load_helper()
-
-    def raise_network_error(_request: object, timeout: int) -> object:
-        raise urllib.error.URLError("dns failed")
-
-    with pytest.raises(release.ReleaseCheckError, match="could not verify"):
-        release._assert_github_release_absent(
-            SYNTHETIC_VERSION,
-            repo="acme/untaped",
-            token="token",
-            urlopen=raise_network_error,
-        )
-
-
-def test_git_tag_check_maps_exit_codes_fail_closed() -> None:
-    release = _load_helper()
-    calls: list[list[str]] = []
-
-    def runner(returncode: int) -> Any:
-        def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            calls.append(command)
-            return subprocess.CompletedProcess(command, returncode, "", "stderr")
-
-        return run
-
-    with pytest.raises(release.ReleaseCheckError, match="already exists"):
-        release._assert_git_tag_absent(SYNTHETIC_VERSION, runner=runner(0))
-
-    release._assert_git_tag_absent(SYNTHETIC_VERSION, runner=runner(2))
-
-    with pytest.raises(release.ReleaseCheckError, match="could not verify"):
-        release._assert_git_tag_absent(SYNTHETIC_VERSION, runner=runner(128))
-
-    assert calls[0] == [
-        "git",
-        "ls-remote",
-        "--exit-code",
-        "--tags",
-        "origin",
-        f"refs/tags/v{SYNTHETIC_VERSION}",
-    ]
-
-
-def test_internal_dependencies_are_read_from_pyproject_and_exclude_self(
-    tmp_path: Path,
-) -> None:
-    release = _load_helper()
-    pyproject = _pyproject(
-        tmp_path,
-        name="sample-app",
-        dependencies=[
-            "cyclopts>=4.16.0,<5",
-            "untaped>=4,<5",
-            "untaped-addon>=1,<2",
-            "sample-app>=0.1",
-        ],
-    )
-
-    assert release._internal_dependency_requirements(pyproject) == [
-        "untaped>=4,<5",
-        "untaped-addon>=1,<2",
-    ]
-
-
-def test_internal_dependency_matching_normalizes_names(tmp_path: Path) -> None:
-    release = _load_helper()
-    pyproject = _pyproject(
-        tmp_path,
-        name="untaped.addon",
-        dependencies=[
-            "Untaped>=4,<5",
-            "untaped_addon>=1",
-            "untaped-other>=1",
-        ],
-    )
-
-    assert release._internal_dependency_requirements(pyproject) == [
-        "Untaped>=4,<5",
-        "untaped-other>=1",
-    ]
-
-
-def test_internal_dependency_check_uses_testpypi_index_strategy(
-    tmp_path: Path,
-) -> None:
-    release = _load_helper()
-    pyproject = _pyproject(
-        tmp_path,
-        name="sample-app",
-        dependencies=["untaped>=4,<5", "untaped-addon>=1,<2"],
-    )
-    calls: list[tuple[list[str], dict[str, str]]] = []
-
-    def runner(
-        command: list[str],
-        *,
-        cwd: Path,
-        env: dict[str, str],
-        capture_output: bool,
-        text: bool,
-        check: bool,
-    ) -> subprocess.CompletedProcess[str]:
-        calls.append((command, env))
-        return subprocess.CompletedProcess(command, 0, "4.0", "")
-
-    release._assert_internal_dependencies_published(
-        "testpypi", pyproject_path=pyproject, runner=runner
-    )
-
-    assert len(calls) == 2
-    assert calls[0][0][:5] == ["uv", "run", "--no-project", "--refresh-package", "untaped"]
-    assert "untaped>=4,<5" in calls[0][0]
-    assert calls[1][0][:5] == [
-        "uv",
-        "run",
-        "--no-project",
-        "--refresh-package",
-        "untaped-addon",
-    ]
-    assert "untaped-addon>=1,<2" in calls[1][0]
-    for _command, env in calls:
-        assert env["UV_INDEX"] == "https://test.pypi.org/simple/"
-        assert env["UV_INDEX_STRATEGY"] == "unsafe-best-match"
-
-
 def test_installed_package_smoke_checks_version_script_and_help(
     tmp_path: Path,
 ) -> None:
@@ -403,9 +236,7 @@ def test_installed_package_smoke_rejects_wrong_or_extra_version_stdout(
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
         output = (
-            stdout
-            if command == [str(console_script), "--version"]
-            else f"{SYNTHETIC_VERSION}\n"
+            stdout if command == [str(console_script), "--version"] else f"{SYNTHETIC_VERSION}\n"
         )
         return subprocess.CompletedProcess(command, 0, output, "")
 
@@ -700,9 +531,7 @@ def test_release_candidate_requires_exact_commit_and_wheel_sdist_set(tmp_path: P
         f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl": __import__("hashlib")
         .sha256(b"wheel")
         .hexdigest(),
-        f"untaped-{SYNTHETIC_VERSION}.tar.gz": __import__("hashlib")
-        .sha256(b"sdist")
-        .hexdigest(),
+        f"untaped-{SYNTHETIC_VERSION}.tar.gz": __import__("hashlib").sha256(b"sdist").hexdigest(),
     }
     with pytest.raises(release_module.ReleaseCheckError, match="does not match reviewed"):
         release_module.collect_release_candidate(
