@@ -943,6 +943,50 @@ def test_prepare_index_upload_copies_only_missing_artifacts(tmp_path: Path) -> N
     assert [path.name for path in upload_dir.iterdir()] == [f"untaped-{SYNTHETIC_VERSION}.tar.gz"]
 
 
+@pytest.mark.parametrize(
+    ("version", "prerelease"),
+    [
+        ("4.0.0", False),
+        ("4.0.0a1", True),
+        ("4.0.0b1", True),
+        ("4.0.0rc1", True),
+    ],
+)
+def test_github_transport_draft_payload_marks_prereleases(
+    version: str,
+    prerelease: bool,
+) -> None:
+    candidate = release_module.ReleaseCandidate("untaped", version, "a" * 40, ())
+    requests: list[Any] = []
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        requests.append(request)
+        return _JsonResponse(
+            _github_release_payload(tag=f"v{version}", target_oid=candidate.candidate_oid)
+        )
+
+    transport = release_module.GitHubReleaseTransport(
+        repo="acme/untaped", token="token", urlopen=urlopen
+    )
+    transport.create_github_draft(candidate)
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert request.full_url == "https://api.github.com/repos/acme/untaped/releases"
+    assert request.data is not None
+    assert json.loads(request.data) == {
+        "tag_name": f"v{version}",
+        "target_commitish": candidate.candidate_oid,
+        "name": f"untaped v{version}",
+        "body": f"PyPI release for untaped {version}.",
+        "draft": True,
+        "prerelease": prerelease,
+        "generate_release_notes": False,
+    }
+
+
 def test_github_transport_peels_annotated_tag_to_commit() -> None:
     release = release_module.GitHubReleaseTransport
     tag_object = "b" * 40
