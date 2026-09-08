@@ -25,9 +25,8 @@ class ApplyVerifier:
     ) -> tuple[str, ...]:
         """Return body-field names whose requested value is not reflected.
 
-        This is deliberately asymmetric: AWX may enrich structured fields with
-        defaults, so every desired value must be present in the observed value,
-        but observed values may carry extra keys.
+        User-owned maps and lists must match exactly. Additional server keys
+        are accepted only for the specification's explicit enrichment fields.
         """
         desired_clean = self._strip_secret_paths(spec, desired)
         observed_clean = self._strip_secret_paths(spec, observed)

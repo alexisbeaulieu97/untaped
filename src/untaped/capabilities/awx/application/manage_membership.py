@@ -33,11 +33,13 @@ class ManageMembership:
     ) -> None:
         if not member_ids:
             return
-        self._reconciler.post_members(
+        plan = self._reconciler.plan_additive(
             spec,
-            parent_id=parent_id,
-            ref=ref,
-            member_ids=member_ids,
+            parent_id,
+            ref,
+            member_ids,
             disassociate=action == "disassociate",
             client=self._client,
         )
+        self._reconciler.execute(spec, parent_id, [plan], client=self._client)
+        self._reconciler.verify(spec, parent_id, [plan], client=self._client)

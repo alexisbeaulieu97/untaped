@@ -14,15 +14,24 @@ from untaped.capabilities.awx.application.selection import (
 )
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import PROJECT_SPEC
-from untaped.errors import ConfigError
-from untaped.pipe import parse_envelope_line
+from untaped.capability_api import ConfigError, parse_envelope_line
 
 
 class _Client:
     def __init__(self) -> None:
         self.records = {
-            7: {"id": 7, "name": "one", "organization": 1},
-            8: {"id": 8, "name": "two", "organization": 1},
+            7: {
+                "id": 7,
+                "name": "one",
+                "organization": 1,
+                "summary_fields": {"organization": {"id": 1, "name": "Default"}},
+            },
+            8: {
+                "id": 8,
+                "name": "two",
+                "organization": 1,
+                "summary_fields": {"organization": {"id": 1, "name": "Default"}},
+            },
         }
         self.find_calls: list[tuple[str, dict[str, str] | None]] = []
 
@@ -117,3 +126,83 @@ def test_mutation_selection_requires_explicit_source() -> None:
     with pytest.raises(ConfigError, match="explicit"):
         _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(mutation=True))
 
+
+def test_search_and_filters_form_one_query_mode() -> None:
+    client = _Client()
+    selected = _resolver(client).resolve(
+        PROJECT_SPEC, SelectionRequest(filters={"status": "ok"}, search="one", mutation=True)
+    )
+    assert len(selected) == 2
+    assert client.find_calls[-1] == ("list", {"status": "ok", "search": "one"})
+
+
+def test_missing_scope_never_matches_requested_name() -> None:
+    from untaped.capabilities.awx.errors import ResourceNotFound
+
+    client = _Client()
+    client.records[7] = {"id": 7, "name": "one"}
+    with pytest.raises(ResourceNotFound):
+        _resolver(client).resolve(
+            PROJECT_SPEC,
+            SelectionRequest(ids=("7",), by_id=True, scope={"organization": "Default"}),
+        )
+
+
+def test_scope_uses_summary_fields() -> None:
+    client = _Client()
+    client.records[7]["summary_fields"] = {"organization": {"id": 1, "name": "Default"}}
+    selected = _resolver(client).resolve(
+        PROJECT_SPEC, SelectionRequest(ids=("7",), by_id=True, scope={"organization": "Default"})
+    )
+    assert selected[0].id == 7
+
+
+def test_explicit_empty_pipe_is_empty_mutation_selection() -> None:
+    assert (
+        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(pipe=(), mutation=True)) == ()
+    )
+
+
+def test_nested_scope_follows_numeric_parent_ids_and_builds_name_filters() -> None:
+    from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
+    from untaped.capabilities.awx.infrastructure.specs import HOST_SPEC
+
+    class Scoped(_Client):
+        def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
+            if spec.kind == "Inventory":
+                return ServerRecord(id=30, name="prod", organization=1)
+            if spec.kind == "Organization":
+                return ServerRecord(id=1, name="Default")
+            return super().get(spec, id_)
+
+    client = Scoped()
+    client.records = {7: {"id": 7, "name": "host", "inventory": 30}}
+    resolver = SelectionResolver(cast(ResourceClient, client), AwxResourceCatalog())
+    scope = {"parent": "prod", "parent__organization": "Default"}
+    for request in [
+        SelectionRequest(names=("host",), scope=scope),
+        SelectionRequest(ids=("7",), by_id=True, scope=scope),
+        SelectionRequest(filters={"enabled": "true"}, search="host", scope=scope),
+    ]:
+        assert resolver.resolve(HOST_SPEC, request)[0].id == 7
+    assert client.find_calls[-1] == (
+        "list",
+        {
+            "enabled": "true",
+            "search": "host",
+            "inventory__name": "prod",
+            "inventory__organization__name": "Default",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "kind,id_value", [(None, 7), ("awx.inventory", 7), ("awx.project", True), ("awx.project", "7")]
+)
+def test_typed_pipe_requires_correct_kind_and_integer_id(kind: Any, id_value: Any) -> None:
+    from untaped.capability_api import PipeEnvelope
+
+    with pytest.raises(ConfigError):
+        _resolver(_Client()).resolve(
+            PROJECT_SPEC, SelectionRequest(pipe=(PipeEnvelope(kind, {"id": id_value}, 1),))
+        )

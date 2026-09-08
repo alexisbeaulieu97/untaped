@@ -32,6 +32,9 @@ class _StubFk:
     def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int:
         return self._names[(kind, name)]
 
+    def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
+        return id_
+
     def id_to_name(self, kind: str, id_: int) -> str:
         raise NotImplementedError
 

@@ -45,6 +45,7 @@ EXPECTED_ALL = [
     "ColumnsOption",
     "ConfigError",
     "FormatOption",
+    "PipeEnvelope",
     "StateCollection",
     "UiContext",
     "UntapedError",
@@ -55,13 +56,14 @@ EXPECTED_ALL = [
     "finish",
     "first_validation_error",
     "get_config_section",
+    "parse_envelope_line",
     "raise_usage",
     "read_identifiers",
     "report_errors",
 ]
 
 
-def test_all_contains_exactly_eight_plus_sixteen() -> None:
+def test_all_contains_exact_surface() -> None:
     assert capi.__all__ == EXPECTED_ALL
 
 
@@ -148,3 +150,10 @@ def test_sdk_api_does_not_expose_capability_composition_types() -> None:
 @pytest.mark.parametrize("name", EXPECTED_ALL)
 def test_all_entries_importable_from_module(name: str) -> None:
     assert name in dir(capi)
+
+
+def test_pipe_helpers_are_canonical_exports() -> None:
+    from untaped.pipe import PipeEnvelope, parse_envelope_line
+
+    assert capi.PipeEnvelope is PipeEnvelope
+    assert capi.parse_envelope_line is parse_envelope_line

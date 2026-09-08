@@ -223,6 +223,10 @@ class FkResolver(Protocol):
         scope: dict[str, str] | None = None,
     ) -> PlannedId: ...
 
+    def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
+        """Validate a concrete FK against its kind endpoint and requested scope."""
+        ...
+
     def id_to_name(self, kind: str, id_: int) -> str: ...
 
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, PlannedId]:

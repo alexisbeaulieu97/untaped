@@ -18,6 +18,7 @@ from untaped.capabilities.awx.infrastructure.specs import GROUP_SPEC
 
 class _StubClient:
     def __init__(self) -> None:
+        self.members: set[int] = set()
         self.calls: list[tuple[int, str, str, dict[str, Any] | None]] = []
 
     def sub_endpoint_request(
@@ -31,7 +32,15 @@ class _StubClient:
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.calls.append((record_id, sub_endpoint, method, json))
+        if json is not None:
+            if json.get("disassociate"):
+                self.members.discard(json["id"])
+            else:
+                self.members.add(json["id"])
         return {}
+
+    def paginate_sub_endpoint(self, spec: ResourceSpec, record_id: int, sub_endpoint: str) -> Any:
+        return iter({"id": item} for item in self.members)
 
 
 def _hosts_ref() -> Any:
@@ -101,3 +110,29 @@ def test_children_sub_endpoint_uses_ref_path() -> None:
         (200, "children", "POST", {"id": 300}),
         (200, "children", "POST", {"id": 301}),
     ]
+
+
+def test_additive_verification_retains_unrelated_members() -> None:
+    from tests.awx.unit.test_mutation_engine import _MembershipClient
+
+    client = _MembershipClient([])
+    client.members[(200, "hosts")] = [999]
+    use = ManageMembership(cast(ResourceClient, client))
+    use(GROUP_SPEC, parent_id=200, ref=_hosts_ref(), member_ids=[101], action="associate")
+    assert client.members[(200, "hosts")] == [999, 101]
+    use(GROUP_SPEC, parent_id=200, ref=_hosts_ref(), member_ids=[101], action="disassociate")
+    assert client.members[(200, "hosts")] == [999]
+
+
+def test_additive_ignored_write_fails_readback() -> None:
+    import pytest
+
+    from tests.awx.unit.test_mutation_engine import _MembershipClient
+    from untaped.capabilities.awx.errors import BadRequest
+
+    client = _MembershipClient([])
+    client.ignore_membership = True
+    with pytest.raises(BadRequest, match="did not converge"):
+        ManageMembership(cast(ResourceClient, client))(
+            GROUP_SPEC, parent_id=200, ref=_hosts_ref(), member_ids=[101], action="associate"
+        )

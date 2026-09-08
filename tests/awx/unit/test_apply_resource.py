@@ -343,6 +343,7 @@ def test_create_allow_unverified_keeps_action_and_records_detail() -> None:
     )
 
     outcome = apply(resource, write=True)
+    assert outcome.unverified is True
 
     assert outcome.action == "created"
     assert outcome.detail is not None
@@ -428,6 +429,7 @@ def test_create_allow_unverified_downgrades_when_fallback_get_errors() -> None:
     )
 
     outcome = apply(resource, write=True)
+    assert outcome.unverified is True
 
     assert outcome.action == "created"
     assert outcome.detail is not None
@@ -566,6 +568,7 @@ def test_update_allow_unverified_keeps_action_and_records_detail() -> None:
     )
 
     outcome = apply(resource, write=True)
+    assert outcome.unverified is True
 
     assert outcome.action == "updated"
     assert outcome.detail is not None
