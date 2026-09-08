@@ -97,17 +97,17 @@ def test_pack_manifest_requires_tool_table(tmp_path: Path) -> None:
         PackManifest.from_pyproject(tmp_path)
 
 
-def test_pack_manifest_rejects_hook_kind_with_shared_error(tmp_path: Path) -> None:
+def test_pack_manifest_rejects_unknown_hook_metadata(tmp_path: Path) -> None:
     _write_pyproject(
         tmp_path,
         "[project]\n"
-        'name = "untaped-recipe-legacy"\n\n'
+        'name = "untaped-recipe-invalid"\n\n'
         "[tool.untaped_recipe]\n\n"
         "[tool.untaped_recipe.hooks]\n"
         '"check" = { kind = "validate", module = "hooks.check" }\n',
     )
 
-    with pytest.raises(ValueError, match=r"kind was removed in 0\.9"):
+    with pytest.raises(ValueError, match="extra_forbidden"):
         PackManifest.from_pyproject(tmp_path)
 
 
