@@ -40,7 +40,7 @@ class ServerRecord(BaseModel):
     name: str | None = None
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Dict-style access for backward compatibility with raw payloads.
+        """Provide mapping-style access to dynamic AWX response fields.
 
         Matches Python ``dict.get`` semantics: ``default`` is returned
         only when ``key`` is *absent*, not when it's present-but-``None``.

@@ -29,14 +29,13 @@ class AppContext:
 
         Unlike :func:`untaped.settings.get_config_section`, this never builds
         a one-off model for unregistered sections — the context is a frozen
-        snapshot, so it can only serve sections that were registered (via
-        :func:`untaped.tool.register_tool`) before it was created.
+        snapshot, so it can only serve sections that were registered before
+        the composition was resolved.
         """
         value = getattr(self.settings, name, None)
         if value is None:
             raise ConfigError(
-                f"config section {name!r} is not registered; register the tool's "
-                f"section with untaped.tool.register_tool before resolving a context"
+                f"config section {name!r} is not registered in the current composition"
             )
         if isinstance(value, model_cls):
             return value

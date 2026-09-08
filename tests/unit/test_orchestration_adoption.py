@@ -201,12 +201,12 @@ def test_agent_rules_ignore_rules_and_workflow() -> None:
     assert "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0" in workflow
     assert "astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39" in workflow
     assert 'version: "0.11.26"' in workflow
-    commands = re.findall(r"^\s+run: (uvx .+)$", workflow, re.MULTILINE)
-    prefix = "uvx --python 3.14 --from 'untaped-orchestration==0.1.0' "
+    commands = re.findall(r"^\s+run: (uv .+)$", workflow, re.MULTILINE)
     assert commands == [
-        f"{prefix}untaped-orchestration check --local",
-        f"{prefix}untaped-orchestration fmt --check --local",
-        f"{prefix}untaped-orchestration render --check",
+        "uv sync --locked",
+        "uv run untaped orchestration check --local",
+        "uv run untaped orchestration fmt --check --local",
+        "uv run untaped orchestration render --check",
     ]
     assert all(
         path in workflow
@@ -218,6 +218,5 @@ def test_agent_rules_ignore_rules_and_workflow() -> None:
             "CLAUDE.md",
         )
     )
-    assert "uv sync" not in workflow
     assert "PYTHONPATH" not in workflow
     assert "render --check --local" not in workflow

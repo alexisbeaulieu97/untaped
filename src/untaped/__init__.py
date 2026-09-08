@@ -1,4 +1,4 @@
-"""The untaped SDK — a batteries-included CLI framework built on cyclopts.
+"""The unified untaped application and its stable SDK surface.
 
 This package root re-exports the public surface defined in :mod:`untaped.api`,
 so ``from untaped import X`` and ``from untaped.api import X`` are equivalent.

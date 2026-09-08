@@ -1,4 +1,4 @@
-"""Models and display helpers for the per-tool config command group."""
+"""Models and display helpers for the root config command group."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class Source:
 
 
 class SettingEntry(BaseModel):
-    """One row in the ``<tool> config list`` table.
+    """One row in the ``untaped config list`` table.
 
     Secret values are pre-masked into ``value`` (``"***"``), so callers don't
     need a separate ``is_secret`` flag.

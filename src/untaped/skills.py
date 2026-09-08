@@ -1,8 +1,4 @@
-"""Agent skill install helpers shared by the per-tool ``skills`` command group.
-
-:mod:`untaped.skills_app` builds each tool's ``skills list / install`` group on
-top of the selection, planning, and copy machinery defined here.
-"""
+"""Agent skill selection, planning, and installation helpers for the root CLI."""
 
 from __future__ import annotations
 
@@ -28,7 +24,7 @@ from untaped.stdin import read_identifiers
 class InstallableSkill(Protocol):
     """A packaged agent skill the install machinery can list and copy.
 
-    Structural type implemented by :class:`~untaped.tool.SkillAsset` (a frozen
+    Structural type implemented by :class:`~untaped.capability_api.SkillAsset` (a frozen
     dataclass). The members are read-only properties because the concrete type
     is frozen; a plain attribute Protocol would (wrongly) demand settability.
     """

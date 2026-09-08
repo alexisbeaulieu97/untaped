@@ -12,7 +12,7 @@ change repository settings without explicit approval for that exact action.
 ## Package Metadata
 
 - Package name: `untaped`
-- Current release target: `4.0.0rc1`
+- Current release target: `4.0.0`
 - License metadata: `license = "MIT"` and `license-files = ["LICENSE"]`
 - Build command: `uv build --no-sources`
 - Public manifest: [`release-manifest.toml`](../release-manifest.toml), which

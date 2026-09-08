@@ -1,8 +1,6 @@
-"""Root ``untaped config …`` command group (Wave 1.4, spec §4).
+"""Root ``untaped config …`` command group.
 
-Converts the per-tool config surface (:mod:`untaped.config.app`) to root
-commands. The cyclopts wiring mirrors the per-tool group, but key resolution
-is direct instead of delegated per tool: a fully qualified ``section.key``
+Key resolution is direct: a fully qualified ``section.key``
 selects its schema by ``section`` — SDK roots (``log_level``, ``http``,
 ``ui``) win first, then the section's own state fields raise the
 "managed by" error, and anything else passes through to the schema. Bare

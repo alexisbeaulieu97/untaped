@@ -648,13 +648,13 @@ def test_unexpected_trace_is_emitted_only_with_debug(monkeypatch, capfd) -> None
     def fail() -> CommandResult:
         raise RuntimeError("unexpected")
 
-    monkeypatch.setattr("sys.argv", ["untaped-orchestration", "check"])
+    monkeypatch.setattr("sys.argv", ["untaped", "orchestration", "check"])
     with pytest.raises(SystemExit) as raised:
         run_command("check", fail, fmt="json", allowed=("json",))
     assert raised.value.code == 5
     assert "Traceback" not in capfd.readouterr().err
 
-    monkeypatch.setattr("sys.argv", ["untaped-orchestration", "check", "--debug"])
+    monkeypatch.setattr("sys.argv", ["untaped", "orchestration", "check", "--debug"])
     with pytest.raises(SystemExit) as raised:
         run_command("check", fail, fmt="json", allowed=("json",))
     assert raised.value.code == 5

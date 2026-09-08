@@ -1,11 +1,7 @@
-"""Tests for the capability composition root (Wave 1.3 bootstrap, spec §§1-2,4).
+"""Tests for the unified capability composition root.
 
-:mod:`untaped.bootstrap` REPLACES the ``ToolSpec`` / ``run_tool`` composition
-path: discovery of built-ins plus externals via entry points runs BEFORE any
-settings registration or resolution, the root cyclopts app carries
-capability-mount plumbing (zero built-ins mounted yet), identity is
-invocation-scoped, and the existing ``--profile`` / ``--verbose`` /
-``--quiet`` reset semantics are preserved.
+Discovery and validation happen before settings registration or app mounting;
+the root also keeps invocation-scoped option and reset behavior.
 """
 
 from __future__ import annotations
@@ -268,7 +264,7 @@ def test_completion_flag_is_wired() -> None:
     assert "--install-completion" in result.stdout
 
 
-def test_bootstrap_does_not_wrap_legacy_composition() -> None:
+def test_bootstrap_has_no_standalone_composition_imports() -> None:
     src_dir = Path(bootstrap.__file__).resolve().parent
     for filename in ("bootstrap.py", "__main__.py"):
         tree = ast.parse((src_dir / filename).read_text(encoding="utf-8"))
@@ -362,7 +358,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     assert built.returncode == 0, built.stderr
     wheels = sorted(dist_dir.glob("untaped-*-py3-none-any.whl"))
     assert len(wheels) == 1
-    assert "4.0.0rc1" in wheels[0].name
+    assert wheels[0].name == "untaped-4.0.0-py3-none-any.whl"
 
     venv_dir = tmp_path / "smoke-venv"
     subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, timeout=300)
@@ -410,7 +406,7 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
         timeout=120,
     )
     assert version.returncode == 0, version.stderr
-    assert "4.0.0rc1" in version.stdout
+    assert version.stdout == "4.0.0\n"
 
     helped = subprocess.run(
         [str(venv_dir / "bin" / "untaped"), "--help"],

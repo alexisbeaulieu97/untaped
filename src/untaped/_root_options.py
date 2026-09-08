@@ -1,15 +1,7 @@
-"""Single source for position-independent root-option machinery (Wave 1.3 fix).
+"""Position-independent root-option machinery for the unified shell.
 
-Shared by the legacy per-tool composition root (:mod:`untaped.run`) and the
-unified shell (:mod:`untaped.bootstrap`): the ``--profile`` / ``--verbose`` /
-``--quiet`` option table plus the leading-consume + strip-on-unknown dispatch
-helpers. Both importers bind these same objects (``run.py`` re-exports them
-so existing imports keep working); neither module keeps a private copy.
-
-The shared code lives here — not in :mod:`untaped.run` — because ``run.py``
-is legacy surface slated for §9 retirement, and this machinery must survive
-it. :mod:`untaped.bootstrap` deliberately imports this module only, never
-``untaped.run`` / ``untaped.tool``.
+The ``--profile`` / ``--verbose`` / ``--quiet`` option table and dispatch
+helpers live here so the bootstrap composition root has one implementation.
 """
 
 from __future__ import annotations
