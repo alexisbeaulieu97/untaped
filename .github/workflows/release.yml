@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Sync workspace
-        run: uv sync --frozen --all-packages
+        run: uv sync --locked --all-packages
 
       - name: Verify release version
         run: |

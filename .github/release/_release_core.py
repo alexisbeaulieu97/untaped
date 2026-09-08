@@ -1,15 +1,9 @@
 """Shared constants and metadata helpers for the release boundary."""
 
-import ast
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - supported by the legacy fallback.
-    tomllib = None  # type: ignore[assignment]
-
 
 ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = ROOT / "pyproject.toml"
@@ -38,8 +32,6 @@ class ReleaseCheckError(RuntimeError):
 
 def load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML document for release metadata validation."""
-    if tomllib is None:
-        raise ReleaseCheckError("TOML validation requires Python 3.11 or newer")
     try:
         parsed = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
@@ -68,61 +60,21 @@ def normalize_package_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def project_metadata(pyproject_path: Path, *, tomllib_module: Any = tomllib) -> dict[str, Any]:
-    """Read project metadata, retaining the old pre-3.11 fallback parser."""
-    text = pyproject_path.read_text(encoding="utf-8")
-    if tomllib_module is not None:
-        return tomllib_module.loads(text)["project"]
-    return parse_project_metadata(text)
-
-
-def parse_project_metadata(text: str) -> dict[str, Any]:
-    """Parse the metadata subset needed by pre-sync release checks."""
-    project_lines: list[str] = []
-    in_project = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped == "[project]":
-            in_project = True
-            continue
-        if in_project and stripped.startswith("[") and stripped.endswith("]"):
-            break
-        if in_project:
-            project_lines.append(line)
-
-    project: dict[str, Any] = {}
-    index = 0
-    while index < len(project_lines):
-        stripped = project_lines[index].strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            index += 1
-            continue
-
-        key, raw_value = [part.strip() for part in stripped.split("=", maxsplit=1)]
-        if key in {"name", "version"}:
-            project[key] = ast.literal_eval(raw_value)
-        elif key == "dependencies":
-            value_lines = [raw_value]
-            while "]" not in value_lines[-1]:
-                index += 1
-                value_lines.append(project_lines[index].strip())
-            project[key] = ast.literal_eval("\n".join(value_lines))
-        index += 1
-
-    return project
+def project_metadata(pyproject_path: Path) -> dict[str, Any]:
+    """Read the project metadata using the supported Python TOML parser."""
+    return load_toml(pyproject_path)["project"]
 
 
 def verify_version(
     version: str,
     *,
     pyproject_path: Path = PYPROJECT,
-    tomllib_module: Any = tomllib,
 ) -> None:
     """Verify a release version against project metadata."""
     if VERSION_RE.fullmatch(version) is None:
         raise ReleaseCheckError(f"unsafe or invalid release version input: {version!r}")
 
-    project = project_metadata(pyproject_path, tomllib_module=tomllib_module)
+    project = project_metadata(pyproject_path)
     actual = str(project["version"])
     if actual != version:
         raise ReleaseCheckError(

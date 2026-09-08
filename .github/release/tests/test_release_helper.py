@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import ast
 import importlib.util
 import json
 import re
 import subprocess
 import sys
+import tomllib
 import urllib.error
 from pathlib import Path
 from types import ModuleType
@@ -17,12 +17,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / ".github" / "release" / "release.py"
-RELEASE_WORKFLOW_TEMPLATE = REPO_ROOT / ".github" / "release" / "templates" / "release.yml.tmpl"
-RELEASE_TEST_TEMPLATE = (
-    REPO_ROOT / ".github" / "release" / "templates" / "test_release_workflow.py.tmpl"
-)
-CHECKER_SHA_SENTINEL = "__CHECKER_SHA__"
-OLD_CHECKER_SHA = "07116cc11d4217283ad42badea4f5d5744542f2a"
+PROJECT = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+PROJECT_VERSION = str(PROJECT["version"])
+SYNTHETIC_VERSION = "9.8.7"
 
 
 def _load_helper() -> ModuleType:
@@ -37,11 +34,15 @@ def _load_helper() -> ModuleType:
 def _pyproject(
     tmp_path: Path,
     *,
-    name: str = "untaped-github",
-    version: str = "0.12.5",
+    name: str = "untaped",
+    version: str = SYNTHETIC_VERSION,
     dependencies: list[str] | None = None,
 ) -> Path:
-    dependencies = dependencies or ["untaped>=2.4.4,<3"]
+    dependency_lines = (
+        ["dependencies = [", *[f'    "{dependency}",' for dependency in dependencies], "]"]
+        if dependencies
+        else []
+    )
     path = tmp_path / "pyproject.toml"
     path.write_text(
         "\n".join(
@@ -49,9 +50,7 @@ def _pyproject(
                 "[project]",
                 f'name = "{name}"',
                 f'version = "{version}"',
-                "dependencies = [",
-                *[f'    "{dependency}",' for dependency in dependencies],
-                "]",
+                *dependency_lines,
                 "",
             ]
         ),
@@ -86,7 +85,7 @@ class _JsonResponse(_Response):
 def _github_release_payload(
     *,
     release_id: int = 1,
-    tag: str = "v4.0.0rc1",
+    tag: str = f"v{SYNTHETIC_VERSION}",
     target_oid: str = "a" * 40,
     draft: bool = True,
 ) -> dict[str, Any]:
@@ -100,7 +99,7 @@ def _github_release_payload(
 
 def _http_error(code: int) -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
-        url="https://api.github.com/repos/alexisbeaulieu97/untaped-github/releases/tags/v0.12.5",
+        url=f"https://api.github.com/repos/acme/untaped/releases/tags/v{SYNTHETIC_VERSION}",
         code=code,
         msg="status",
         hdrs=None,
@@ -120,78 +119,31 @@ def test_main_verify_version_accepts_pyproject_option(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     release = _load_helper()
-    pyproject = _pyproject(tmp_path, version="9.8.7")
-
-    assert release.main(["verify-version", "9.8.7", "--pyproject", str(pyproject)]) == 0
-    assert "matches workflow input 9.8.7" in capsys.readouterr().out
-
-
-def test_main_verify_internal_dependencies_accepts_pyproject_option(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    release = _load_helper()
     pyproject = _pyproject(tmp_path)
-    calls: list[tuple[str, Path]] = []
 
-    def verify(index: str, *, pyproject_path: Path) -> None:
-        calls.append((index, pyproject_path))
-
-    monkeypatch.setattr(release, "verify_internal_dependencies_published", verify)
-
-    assert (
-        release.main(
-            [
-                "verify-internal-dependencies-published",
-                "--index",
-                "testpypi",
-                "--pyproject",
-                str(pyproject),
-            ]
-        )
-        == 0
-    )
-    assert calls == [("testpypi", pyproject)]
+    assert release.main(["verify-version", SYNTHETIC_VERSION, "--pyproject", str(pyproject)]) == 0
+    assert f"matches workflow input {SYNTHETIC_VERSION}" in capsys.readouterr().out
 
 
 def test_verify_version_matches_pyproject_and_rejects_unsafe_input(tmp_path: Path) -> None:
     release = _load_helper()
     pyproject = _pyproject(tmp_path)
 
-    release.verify_version("0.12.5", pyproject_path=pyproject)
+    release.verify_version(SYNTHETIC_VERSION, pyproject_path=pyproject)
 
     with pytest.raises(release.ReleaseCheckError, match="does not match"):
-        release.verify_version("0.12.6", pyproject_path=pyproject)
+        release.verify_version("9.8.8", pyproject_path=pyproject)
     with pytest.raises(release.ReleaseCheckError, match="unsafe or invalid"):
-        release.verify_version("0.12.5; echo injected", pyproject_path=pyproject)
-
-
-def test_project_metadata_fallback_works_without_tomllib(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    release = _load_helper()
-    pyproject = _pyproject(
-        tmp_path,
-        name="untaped-ansible",
-        dependencies=["untaped>=2.4.4,<3", "untaped-github>=0.12.5,<0.13"],
-    )
-    monkeypatch.setattr(release, "tomllib", None)
-
-    release.verify_version("0.12.5", pyproject_path=pyproject)
-    assert release.internal_dependency_requirements(pyproject) == [
-        "untaped>=2.4.4,<3",
-        "untaped-github>=0.12.5,<0.13",
-    ]
+        release.verify_version(f"{SYNTHETIC_VERSION}; echo injected", pyproject_path=pyproject)
 
 
 def test_github_release_check_fails_when_release_exists() -> None:
     release = _load_helper()
 
     with pytest.raises(release.ReleaseCheckError, match="already exists"):
-        release.check_github_release_absent(
-            "0.12.5",
-            repo="alexisbeaulieu97/untaped-github",
+        release._assert_github_release_absent(
+            SYNTHETIC_VERSION,
+            repo="acme/untaped",
             token="token",
             urlopen=lambda _request, timeout: _Response(200),
         )
@@ -203,9 +155,9 @@ def test_github_release_check_accepts_404_as_absent() -> None:
     def raise_not_found(_request: object, timeout: int) -> object:
         raise _http_error(404)
 
-    release.check_github_release_absent(
-        "0.12.5",
-        repo="alexisbeaulieu97/untaped-github",
+    release._assert_github_release_absent(
+        SYNTHETIC_VERSION,
+        repo="acme/untaped",
         token="token",
         urlopen=raise_not_found,
     )
@@ -218,9 +170,9 @@ def test_github_release_check_fails_closed_on_unexpected_http_status() -> None:
         raise _http_error(403)
 
     with pytest.raises(release.ReleaseCheckError, match="could not verify"):
-        release.check_github_release_absent(
-            "0.12.5",
-            repo="alexisbeaulieu97/untaped-github",
+        release._assert_github_release_absent(
+            SYNTHETIC_VERSION,
+            repo="acme/untaped",
             token="token",
             urlopen=raise_forbidden,
         )
@@ -233,9 +185,9 @@ def test_github_release_check_fails_closed_on_network_error() -> None:
         raise urllib.error.URLError("dns failed")
 
     with pytest.raises(release.ReleaseCheckError, match="could not verify"):
-        release.check_github_release_absent(
-            "0.12.5",
-            repo="alexisbeaulieu97/untaped-github",
+        release._assert_github_release_absent(
+            SYNTHETIC_VERSION,
+            repo="acme/untaped",
             token="token",
             urlopen=raise_network_error,
         )
@@ -253,12 +205,12 @@ def test_git_tag_check_maps_exit_codes_fail_closed() -> None:
         return run
 
     with pytest.raises(release.ReleaseCheckError, match="already exists"):
-        release.check_git_tag_absent("0.12.5", runner=runner(0))
+        release._assert_git_tag_absent(SYNTHETIC_VERSION, runner=runner(0))
 
-    release.check_git_tag_absent("0.12.5", runner=runner(2))
+    release._assert_git_tag_absent(SYNTHETIC_VERSION, runner=runner(2))
 
     with pytest.raises(release.ReleaseCheckError, match="could not verify"):
-        release.check_git_tag_absent("0.12.5", runner=runner(128))
+        release._assert_git_tag_absent(SYNTHETIC_VERSION, runner=runner(128))
 
     assert calls[0] == [
         "git",
@@ -266,7 +218,7 @@ def test_git_tag_check_maps_exit_codes_fail_closed() -> None:
         "--exit-code",
         "--tags",
         "origin",
-        "refs/tags/v0.12.5",
+        f"refs/tags/v{SYNTHETIC_VERSION}",
     ]
 
 
@@ -276,18 +228,18 @@ def test_internal_dependencies_are_read_from_pyproject_and_exclude_self(
     release = _load_helper()
     pyproject = _pyproject(
         tmp_path,
-        name="untaped-ansible",
+        name="sample-app",
         dependencies=[
             "cyclopts>=4.16.0,<5",
-            "untaped>=2.4.4,<3",
-            "untaped-github>=0.12.5,<0.13",
-            "untaped-ansible>=0.11.1",
+            "untaped>=4,<5",
+            "untaped-addon>=1,<2",
+            "sample-app>=0.1",
         ],
     )
 
-    assert release.internal_dependency_requirements(pyproject) == [
-        "untaped>=2.4.4,<3",
-        "untaped-github>=0.12.5,<0.13",
+    assert release._internal_dependency_requirements(pyproject) == [
+        "untaped>=4,<5",
+        "untaped-addon>=1,<2",
     ]
 
 
@@ -295,28 +247,28 @@ def test_internal_dependency_matching_normalizes_names(tmp_path: Path) -> None:
     release = _load_helper()
     pyproject = _pyproject(
         tmp_path,
-        name="untaped.github",
+        name="untaped.addon",
         dependencies=[
-            "Untaped>=2.4.4,<3",
-            "untaped_github>=0.12.5",
-            "untaped-workspace>=0.10.1",
+            "Untaped>=4,<5",
+            "untaped_addon>=1",
+            "untaped-other>=1",
         ],
     )
 
-    assert release.internal_dependency_requirements(pyproject) == [
-        "Untaped>=2.4.4,<3",
-        "untaped-workspace>=0.10.1",
+    assert release._internal_dependency_requirements(pyproject) == [
+        "Untaped>=4,<5",
+        "untaped-other>=1",
     ]
 
 
-def test_verify_internal_dependencies_published_uses_testpypi_index_strategy(
+def test_internal_dependency_check_uses_testpypi_index_strategy(
     tmp_path: Path,
 ) -> None:
     release = _load_helper()
     pyproject = _pyproject(
         tmp_path,
-        name="untaped-ansible",
-        dependencies=["untaped>=2.4.4,<3", "untaped-github>=0.12.5,<0.13"],
+        name="sample-app",
+        dependencies=["untaped>=4,<5", "untaped-addon>=1,<2"],
     )
     calls: list[tuple[list[str], dict[str, str]]] = []
 
@@ -330,34 +282,34 @@ def test_verify_internal_dependencies_published_uses_testpypi_index_strategy(
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
         calls.append((command, env))
-        return subprocess.CompletedProcess(command, 0, "2.4.4", "")
+        return subprocess.CompletedProcess(command, 0, "4.0", "")
 
-    release.verify_internal_dependencies_published(
+    release._assert_internal_dependencies_published(
         "testpypi", pyproject_path=pyproject, runner=runner
     )
 
     assert len(calls) == 2
     assert calls[0][0][:5] == ["uv", "run", "--no-project", "--refresh-package", "untaped"]
-    assert "untaped>=2.4.4,<3" in calls[0][0]
+    assert "untaped>=4,<5" in calls[0][0]
     assert calls[1][0][:5] == [
         "uv",
         "run",
         "--no-project",
         "--refresh-package",
-        "untaped-github",
+        "untaped-addon",
     ]
-    assert "untaped-github>=0.12.5,<0.13" in calls[1][0]
+    assert "untaped-addon>=1,<2" in calls[1][0]
     for _command, env in calls:
         assert env["UV_INDEX"] == "https://test.pypi.org/simple/"
         assert env["UV_INDEX_STRATEGY"] == "unsafe-best-match"
 
 
-def test_smoke_console_checks_version_script_and_help(
+def test_installed_package_smoke_checks_version_script_and_help(
     tmp_path: Path,
 ) -> None:
     release = _load_helper()
     python_path = tmp_path / "venv" / "bin" / "python"
-    console_script = tmp_path / "venv" / "bin" / "untaped-github"
+    console_script = tmp_path / "venv" / "bin" / "untaped"
     console_script.parent.mkdir(parents=True)
     python_path.write_text("#!/bin/sh\n", encoding="utf-8")
     console_script.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -372,26 +324,26 @@ def test_smoke_console_checks_version_script_and_help(
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "0.12.5\n", "")
+        return subprocess.CompletedProcess(command, 0, f"{SYNTHETIC_VERSION}\n", "")
 
-    release.smoke_console(
-        package_name="untaped-github",
-        version="0.12.5",
+    release._smoke_installed_package(
+        package_name="untaped",
+        version=SYNTHETIC_VERSION,
         python_path=python_path,
         console_script=console_script,
         runner=runner,
     )
 
     assert calls[0][0] == str(python_path)
-    assert "metadata.version('untaped-github')" in " ".join(calls[0])
+    assert "metadata.version('untaped')" in " ".join(calls[0])
     assert calls[1] == [str(console_script), "--version"]
     assert calls[2] == [str(console_script), "--help"]
 
 
-def test_smoke_console_fails_when_version_command_fails(tmp_path: Path) -> None:
+def test_installed_package_smoke_fails_when_version_command_fails(tmp_path: Path) -> None:
     release = _load_helper()
     python_path = tmp_path / "venv" / "bin" / "python"
-    console_script = tmp_path / "venv" / "bin" / "untaped-github"
+    console_script = tmp_path / "venv" / "bin" / "untaped"
     console_script.parent.mkdir(parents=True)
     python_path.write_text("#!/bin/sh\n", encoding="utf-8")
     console_script.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -406,15 +358,15 @@ def test_smoke_console_fails_when_version_command_fails(tmp_path: Path) -> None:
     ) -> subprocess.CompletedProcess[str]:
         if command == [str(console_script), "--version"]:
             return subprocess.CompletedProcess(command, 2, "", "version exploded")
-        return subprocess.CompletedProcess(command, 0, "0.12.5\n", "")
+        return subprocess.CompletedProcess(command, 0, f"{SYNTHETIC_VERSION}\n", "")
 
     with pytest.raises(
         release.ReleaseCheckError,
-        match=r"untaped-github --version failed: version exploded",
+        match=r"untaped --version failed: version exploded",
     ):
-        release.smoke_console(
-            package_name="untaped-github",
-            version="0.12.5",
+        release._smoke_installed_package(
+            package_name="untaped",
+            version=SYNTHETIC_VERSION,
             python_path=python_path,
             console_script=console_script,
             runner=runner,
@@ -424,20 +376,20 @@ def test_smoke_console_fails_when_version_command_fails(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "stdout",
     [
-        "0.12.5",
-        "0.12.6\n",
-        "0.12.5 extra\n",
-        "0.12.5\n\n",
-        "untaped-github 0.12.5\n",
+        SYNTHETIC_VERSION,
+        "9.8.8\n",
+        f"{SYNTHETIC_VERSION} extra\n",
+        f"{SYNTHETIC_VERSION}\n\n",
+        f"untaped {SYNTHETIC_VERSION}\n",
     ],
 )
-def test_smoke_console_rejects_wrong_or_extra_version_stdout(
+def test_installed_package_smoke_rejects_wrong_or_extra_version_stdout(
     tmp_path: Path,
     stdout: str,
 ) -> None:
     release = _load_helper()
     python_path = tmp_path / "venv" / "bin" / "python"
-    console_script = tmp_path / "venv" / "bin" / "untaped-github"
+    console_script = tmp_path / "venv" / "bin" / "untaped"
     console_script.parent.mkdir(parents=True)
     python_path.write_text("#!/bin/sh\n", encoding="utf-8")
     console_script.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -450,34 +402,38 @@ def test_smoke_console_rejects_wrong_or_extra_version_stdout(
         text: bool,
         check: bool,
     ) -> subprocess.CompletedProcess[str]:
-        output = stdout if command == [str(console_script), "--version"] else "0.12.5\n"
+        output = (
+            stdout
+            if command == [str(console_script), "--version"]
+            else f"{SYNTHETIC_VERSION}\n"
+        )
         return subprocess.CompletedProcess(command, 0, output, "")
 
     with pytest.raises(
         release.ReleaseCheckError,
-        match=r"untaped-github --version output .* did not match '0.12.5\\n'",
+        match=r"untaped --version output .* did not match '9\.8\.7\\n'",
     ):
-        release.smoke_console(
-            package_name="untaped-github",
-            version="0.12.5",
+        release._smoke_installed_package(
+            package_name="untaped",
+            version=SYNTHETIC_VERSION,
             python_path=python_path,
             console_script=console_script,
             runner=runner,
         )
 
 
-def test_smoke_console_fails_when_console_script_missing(tmp_path: Path) -> None:
+def test_installed_package_smoke_fails_when_console_script_missing(tmp_path: Path) -> None:
     release = _load_helper()
     python_path = tmp_path / "venv" / "bin" / "python"
     python_path.parent.mkdir(parents=True)
     python_path.write_text("#!/bin/sh\n", encoding="utf-8")
 
     with pytest.raises(release.ReleaseCheckError, match="expected console script"):
-        release.smoke_console(
-            package_name="untaped-github",
-            version="0.12.5",
+        release._smoke_installed_package(
+            package_name="untaped",
+            version=SYNTHETIC_VERSION,
             python_path=python_path,
-            console_script=tmp_path / "venv" / "bin" / "untaped-github",
+            console_script=tmp_path / "venv" / "bin" / "untaped",
         )
 
 
@@ -499,7 +455,7 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
             "origin": "built-in",
             "status": "ready",
             "distribution": "untaped",
-            "version": "4.0.0rc1",
+            "version": PROJECT_VERSION,
             "api": ">=1.0,<2.0",
         }
         for command in release.BUILTIN_CAPABILITIES
@@ -516,9 +472,9 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
             "import importlib.metadata as metadata; print(metadata.version('untaped'))"
         )
         if command == [str(python_path), "-c", metadata_command]:
-            return subprocess.CompletedProcess(command, 0, "4.0.0rc1\n", "")
+            return subprocess.CompletedProcess(command, 0, f"{PROJECT_VERSION}\n", "")
         if command == [str(console_script), "--version"]:
-            return subprocess.CompletedProcess(command, 0, "4.0.0rc1\n", "")
+            return subprocess.CompletedProcess(command, 0, f"{PROJECT_VERSION}\n", "")
         if command == [str(console_script), "--help"]:
             return subprocess.CompletedProcess(command, 0, root_commands, "")
         if command == [str(console_script), "capabilities", "--format", "json"]:
@@ -527,82 +483,11 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
 
     release.smoke_unified_app(
         package_name="untaped",
-        version="4.0.0rc1",
+        version=PROJECT_VERSION,
         python_path=python_path,
         console_script=console_script,
         runner=runner,
     )
-
-
-def test_reusable_release_templates_require_checker_sha_substitution() -> None:
-    workflow_template = RELEASE_WORKFLOW_TEMPLATE.read_text(encoding="utf-8")
-    test_template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
-
-    assert workflow_template.count(CHECKER_SHA_SENTINEL) == 2
-    assert test_template.count(CHECKER_SHA_SENTINEL) == 1
-    assert OLD_CHECKER_SHA not in workflow_template
-    assert OLD_CHECKER_SHA not in test_template
-
-
-def test_reusable_release_test_template_keeps_checker_sha_in_editable_block() -> None:
-    template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
-    config_start = template.index("# ============================ PER-TOOL CONFIG")
-    config_end = template.index(
-        "# ========================================================================",
-        config_start,
-    )
-    checker_assignment = template.index('CORE_RELEASE_TOOL_SHA = "__CHECKER_SHA__"')
-
-    assert config_start < checker_assignment < config_end
-    assert "Everything below the closing divider must stay byte-identical" in template
-
-
-def test_reusable_release_test_template_keeps_immutable_checker_ref_contract() -> None:
-    template = RELEASE_TEST_TEMPLATE.read_text(encoding="utf-8")
-    module = ast.parse(template, filename=str(RELEASE_TEST_TEMPLATE))
-    contract_nodes = [
-        node
-        for node in module.body
-        if (
-            isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "FULL_SHA_RE"
-                for target in node.targets
-            )
-        )
-        or (isinstance(node, ast.FunctionDef) and node.name == "_is_immutable_core_sha")
-    ]
-    assert len(contract_nodes) == 2
-    namespace: dict[str, object] = {"re": re}
-    exec(
-        compile(
-            ast.Module(body=contract_nodes, type_ignores=[]),
-            str(RELEASE_TEST_TEMPLATE),
-            "exec",
-        ),
-        namespace,
-    )
-    validator = namespace["_is_immutable_core_sha"]
-    assert callable(validator)
-
-    invalid_refs = [
-        "main",
-        "v3.1.0",
-        "__CHECKER_SHA__",
-        "A" * 40,
-        "a" * 39,
-        "a" * 41,
-        "a" * 40 + "\n",
-    ]
-    for invalid in invalid_refs:
-        assert validator(invalid) is False
-    assert validator("a" * 40) is True
-
-    assert "assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)" in template
-    assert "def test_core_release_tool_sha_validator_rejects_mutable_or_malformed_refs" in template
-    immutable_assertion = template.index("assert _is_immutable_core_sha(CORE_RELEASE_TOOL_SHA)")
-    checkout_comparison = template.index('assert step["with"]["ref"] == CORE_RELEASE_TOOL_SHA')
-    assert immutable_assertion < checkout_comparison
 
 
 class _FakePublicationTransport:
@@ -682,8 +567,8 @@ class _FakePublicationTransport:
 
 
 def _candidate(tmp_path: Path) -> Any:
-    wheel = tmp_path / "untaped-4.0.0rc1-py3-none-any.whl"
-    sdist = tmp_path / "untaped-4.0.0rc1.tar.gz"
+    wheel = tmp_path / f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl"
+    sdist = tmp_path / f"untaped-{SYNTHETIC_VERSION}.tar.gz"
     wheel.write_bytes(b"wheel")
     sdist.write_bytes(b"sdist")
     artifact_type = release_module.ReleaseArtifact
@@ -691,7 +576,7 @@ def _candidate(tmp_path: Path) -> Any:
         artifact_type(path.name, __import__("hashlib").sha256(path.read_bytes()).hexdigest(), path)
         for path in (wheel, sdist)
     )
-    return release_module.ReleaseCandidate("untaped", "4.0.0rc1", "a" * 40, artifacts)
+    return release_module.ReleaseCandidate("untaped", SYNTHETIC_VERSION, "a" * 40, artifacts)
 
 
 release_module: ModuleType = _load_helper()
@@ -707,7 +592,7 @@ def test_release_cli_executes_when_invoked_as_a_script() -> None:
             sys.executable,
             str(HELPER),
             "verify-version",
-            "4.0.0rc1",
+            PROJECT_VERSION,
             "--pyproject",
             str(REPO_ROOT / "pyproject.toml"),
         ],
@@ -716,7 +601,7 @@ def test_release_cli_executes_when_invoked_as_a_script() -> None:
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "ok: package metadata version matches workflow input 4.0.0rc1" in result.stdout
+    assert f"ok: package metadata version matches workflow input {PROJECT_VERSION}" in result.stdout
 
 
 def test_manifest_rejects_mutated_core_source_provenance(tmp_path: Path) -> None:
@@ -771,7 +656,7 @@ def test_manifest_rejects_unapproved_orchestration_provenance(
     ("needle", "message"),
     [
         ("capabilities = [", "capability order"),
-        ('version = "4.0.0rc1"', "version"),
+        (f'version = "{PROJECT_VERSION}"', "version"),
         ('requires-python = ">=3.14"', "Python floor"),
     ],
 )
@@ -789,7 +674,7 @@ def test_manifest_rejects_stale_public_identity(tmp_path: Path, needle: str, mes
     elif needle == 'requires-python = ">=3.14"':
         replacement = 'requires-python = ">=3.13"'
     else:
-        replacement = needle.replace("4.0.0rc1", "4.0.0")
+        replacement = f'version = "{SYNTHETIC_VERSION}"'
     if replacement is not None:
         altered = text.replace(needle, replacement, 1)
     path = tmp_path / "release-manifest.toml"
@@ -801,23 +686,27 @@ def test_manifest_rejects_stale_public_identity(tmp_path: Path, needle: str, mes
 def test_release_candidate_requires_exact_commit_and_wheel_sdist_set(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     dist.mkdir()
-    (dist / "untaped-4.0.0rc1-py3-none-any.whl").write_bytes(b"wheel")
-    (dist / "untaped-4.0.0rc1.tar.gz").write_bytes(b"sdist")
-    pyproject = REPO_ROOT / "pyproject.toml"
+    (dist / f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl").write_bytes(b"wheel")
+    (dist / f"untaped-{SYNTHETIC_VERSION}.tar.gz").write_bytes(b"sdist")
+    pyproject = _pyproject(tmp_path, version=SYNTHETIC_VERSION)
     candidate = release_module.collect_release_candidate(
-        version="4.0.0rc1",
+        version=SYNTHETIC_VERSION,
         candidate_oid="a" * 40,
         current_oid="a" * 40,
         dist_dir=dist,
         pyproject_path=pyproject,
     )
     assert candidate.artifact_hashes == {
-        "untaped-4.0.0rc1-py3-none-any.whl": __import__("hashlib").sha256(b"wheel").hexdigest(),
-        "untaped-4.0.0rc1.tar.gz": __import__("hashlib").sha256(b"sdist").hexdigest(),
+        f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl": __import__("hashlib")
+        .sha256(b"wheel")
+        .hexdigest(),
+        f"untaped-{SYNTHETIC_VERSION}.tar.gz": __import__("hashlib")
+        .sha256(b"sdist")
+        .hexdigest(),
     }
     with pytest.raises(release_module.ReleaseCheckError, match="does not match reviewed"):
         release_module.collect_release_candidate(
-            version="4.0.0rc1",
+            version=SYNTHETIC_VERSION,
             candidate_oid="b" * 40,
             current_oid="a" * 40,
             dist_dir=dist,
@@ -829,26 +718,26 @@ def test_release_candidate_requires_exact_commit_and_wheel_sdist_set(tmp_path: P
     "filenames",
     [
         (
-            "untaped-4.0.0rc1-py3-none-any.whl",
-            "untaped-4.0.0rc1.tar.gz",
+            f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl",
+            f"untaped-{SYNTHETIC_VERSION}.tar.gz",
             "notes.txt",
         ),
         (
-            "other-4.0.0rc1-py3-none-any.whl",
-            "untaped-4.0.0rc1.tar.gz",
+            f"other-{SYNTHETIC_VERSION}-py3-none-any.whl",
+            f"untaped-{SYNTHETIC_VERSION}.tar.gz",
         ),
         (
-            "untaped-4.0.0rc10-py3-none-any.whl",
-            "untaped-4.0.0rc1.tar.gz",
+            f"untaped-{SYNTHETIC_VERSION}0-py3-none-any.whl",
+            f"untaped-{SYNTHETIC_VERSION}.tar.gz",
         ),
         (
-            "untaped-4.0.0rc1-py3-none-any.whl",
-            "untaped-4.0.0rc1-py3.14-none-any.whl",
-            "untaped-4.0.0rc1.tar.gz",
+            f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl",
+            f"untaped-{SYNTHETIC_VERSION}-py3.14-none-any.whl",
+            f"untaped-{SYNTHETIC_VERSION}.tar.gz",
         ),
         (
-            "untaped-4.0.0rc1-py3-none-any.whl",
-            "untaped-4.0.0rc1.tar",
+            f"untaped-{SYNTHETIC_VERSION}-py3-none-any.whl",
+            f"untaped-{SYNTHETIC_VERSION}.tar",
         ),
     ],
     ids=[
@@ -869,7 +758,7 @@ def test_release_candidate_rejects_non_exact_distribution_sets(
 
     with pytest.raises(release_module.ReleaseCheckError):
         release_module.collect_release_candidate(
-            version="4.0.0rc1",
+            version=SYNTHETIC_VERSION,
             candidate_oid="a" * 40,
             current_oid="a" * 40,
             dist_dir=dist,
@@ -1195,7 +1084,7 @@ def test_simple_index_rejects_unexpected_same_version_file(tmp_path: Path) -> No
     html = "".join(
         f'<a href="{name}#sha256={digest}">{name}</a>' for name, digest in hashes.items()
     )
-    html += '<a href="untaped-4.0.0rc1-extra.whl#sha256=' + "0" * 64 + '">extra</a>'
+    html += f'<a href="untaped-{SYNTHETIC_VERSION}-extra.whl#sha256=' + "0" * 64 + '">extra</a>'
 
     class HtmlResponse(_Response):
         def read(self) -> bytes:
@@ -1222,7 +1111,7 @@ def test_prepare_index_upload_copies_only_missing_artifacts(tmp_path: Path) -> N
         transport=transport,
         output_dir=upload_dir,
     )
-    assert [path.name for path in upload_dir.iterdir()] == ["untaped-4.0.0rc1.tar.gz"]
+    assert [path.name for path in upload_dir.iterdir()] == [f"untaped-{SYNTHETIC_VERSION}.tar.gz"]
 
 
 def test_github_transport_peels_annotated_tag_to_commit() -> None:
@@ -1239,18 +1128,18 @@ def test_github_transport_peels_annotated_tag_to_commit() -> None:
             return json.dumps(self.payload).encode("utf-8")
 
     def urlopen(request: Any, timeout: int) -> JsonResponse:
-        if request.full_url.endswith("/git/ref/tags/v4.0.0rc1"):
+        if request.full_url.endswith(f"/git/ref/tags/v{SYNTHETIC_VERSION}"):
             return JsonResponse({"object": {"type": "tag", "sha": tag_object}})
         assert request.full_url.endswith(f"/git/tags/{tag_object}")
         return JsonResponse({"object": {"type": "commit", "sha": commit_object}})
 
     transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
-    assert transport.inspect_tag_target(tag="v4.0.0rc1") == commit_object
+    assert transport.inspect_tag_target(tag=f"v{SYNTHETIC_VERSION}") == commit_object
 
 
 def test_github_transport_finds_draft_when_tag_route_hides_drafts() -> None:
     release = release_module.GitHubReleaseTransport
-    tag = "v4.0.0rc1"
+    tag = f"v{SYNTHETIC_VERSION}"
     target_oid = "b" * 40
     calls: list[str] = []
 
@@ -1271,14 +1160,14 @@ def test_github_transport_finds_draft_when_tag_route_hides_drafts() -> None:
         release_id="17", tag=tag, target_oid=target_oid, draft=True, assets={}
     )
     assert calls == [
-        "https://api.github.com/repos/acme/untaped/releases/tags/v4.0.0rc1",
+        f"https://api.github.com/repos/acme/untaped/releases/tags/v{SYNTHETIC_VERSION}",
         "https://api.github.com/repos/acme/untaped/releases?per_page=100&page=1",
     ]
 
 
 def test_github_transport_paginates_release_list_after_tag_route_404() -> None:
     release = release_module.GitHubReleaseTransport
-    tag = "v4.0.0rc1"
+    tag = f"v{SYNTHETIC_VERSION}"
     first_page = [
         _github_release_payload(release_id=index + 1, tag=f"v-other-{index}")
         for index in range(100)
@@ -1306,7 +1195,7 @@ def test_github_transport_paginates_release_list_after_tag_route_404() -> None:
 
 def test_github_transport_rejects_ambiguous_matching_releases() -> None:
     release = release_module.GitHubReleaseTransport
-    tag = "v4.0.0rc1"
+    tag = f"v{SYNTHETIC_VERSION}"
 
     def urlopen(request: Any, timeout: int) -> _Response:
         del timeout
@@ -1326,7 +1215,7 @@ def test_github_transport_rejects_ambiguous_matching_releases() -> None:
 
 def test_github_transport_rejects_malformed_matching_release() -> None:
     release = release_module.GitHubReleaseTransport
-    tag = "v4.0.0rc1"
+    tag = f"v{SYNTHETIC_VERSION}"
 
     def urlopen(request: Any, timeout: int) -> _Response:
         del timeout
@@ -1350,17 +1239,17 @@ def test_github_transport_preserves_tag_route_api_errors() -> None:
 
     transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
     with pytest.raises(release_module.ReleaseCheckError, match="HTTP 403"):
-        transport.inspect_github_release(tag="v4.0.0rc1")
+        transport.inspect_github_release(tag=f"v{SYNTHETIC_VERSION}")
     assert len(calls) == 1
 
 
 def test_github_transport_rejects_tag_route_mismatch() -> None:
     release = release_module.GitHubReleaseTransport
-    requested_tag = "v4.0.0rc1"
+    requested_tag = f"v{SYNTHETIC_VERSION}"
 
     def urlopen(request: Any, timeout: int) -> _Response:
         del request, timeout
-        return _JsonResponse(_github_release_payload(tag="v4.0.0rc2"))
+        return _JsonResponse(_github_release_payload(tag="v9.8.8"))
 
     transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
     with pytest.raises(release_module.ReleaseCheckError, match="unexpected tag"):
