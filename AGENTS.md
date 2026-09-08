@@ -65,13 +65,10 @@ Import direction inside a capability: `cli → application → domain` and
 
 ## Management commands
 
-The root shell owns five management commands in `management/` (built from
-shared core logic, with only root-specific resolution rules as new private
-helpers): `untaped config …`, `untaped profile …`, `untaped skills …`,
-`untaped doctor` (offline checks, per-capability rows isolated), and
-`untaped capabilities` (one record per candidate provider, ready or
-quarantined). Config diagnostics live at root `doctor`, not under
-`config doctor`.
+The root shell owns management commands in `management/`, built from shared
+core logic with only root-specific resolution rules as private helpers. Read
+the current command names and options from `untaped --help`; config
+diagnostics live at root `doctor`.
 
 ## Per-capability ownership (Hard Rules)
 

@@ -6,7 +6,7 @@ import yaml
 from pydantic import BaseModel, SecretStr
 
 from untaped import ConfigError
-from untaped.config import SetSetting, SettingsFileRepository, ToolConfigContext, UnsetSetting
+from untaped.config import SetSetting, SettingsFileRepository, UnsetSetting
 from untaped.settings import (
     get_settings,
     register_profile_settings,
@@ -18,14 +18,6 @@ class DemoPluginSettings(BaseModel):
     base_url: str | None = None
     token: SecretStr | None = None
     page_size: int = 200
-
-
-DEMO_CONTEXT = ToolConfigContext(
-    command="untaped-demo",
-    section="demo",
-    profile_fields=frozenset(DemoPluginSettings.model_fields),
-    state_fields=frozenset({"cursor"}),
-)
 
 
 @pytest.fixture(autouse=True)
@@ -48,45 +40,6 @@ def test_set_writes_into_default_profile(_isolate_settings: Path) -> None:
     assert result.profile == "default"
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data == {"profiles": {"default": {"log_level": "DEBUG"}}}
-
-
-def test_set_resolves_bare_tool_key_through_context(_isolate_settings: Path) -> None:
-    result = SetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("base_url", "https://demo")
-
-    assert result.key == "demo.base_url"
-    assert result.profile == "default"
-    data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"demo": {"base_url": "https://demo"}}}}
-
-
-def test_set_sdk_root_key_wins_over_tool_field_collision(_isolate_settings: Path) -> None:
-    context = ToolConfigContext(
-        command="untaped-demo",
-        section="demo",
-        profile_fields=frozenset({"log_level"}),
-        state_fields=frozenset(),
-    )
-
-    result = SetSetting(SettingsFileRepository(), context=context)("log_level", "DEBUG")
-
-    assert result.key == "log_level"
-    assert result.profile == "default"
-    data = yaml.safe_load(_isolate_settings.read_text())
-    assert data == {"profiles": {"default": {"log_level": "DEBUG"}}}
-
-
-def test_set_rejects_bare_state_key_through_context(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="managed by untaped-demo"):
-        SetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("cursor", "abc")
-
-    assert not _isolate_settings.exists()
-
-
-def test_set_rejects_qualified_state_key_through_context(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="managed by untaped-demo"):
-        SetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("demo.cursor", "abc")
-
-    assert not _isolate_settings.exists()
 
 
 def test_set_creates_nested_path(_isolate_settings: Path) -> None:
@@ -230,31 +183,6 @@ def test_unset_removes_key_from_default_profile(_isolate_settings: Path) -> None
     assert result.profile == "default"
     data = yaml.safe_load(_isolate_settings.read_text())
     assert data == {"profiles": {"default": {"demo": {"base_url": "https://x"}}}}
-
-
-def test_unset_resolves_bare_tool_key_through_context(_isolate_settings: Path) -> None:
-    _isolate_settings.write_text("profiles:\n  default:\n    demo:\n      base_url: https://x\n")
-
-    result = UnsetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("base_url")
-
-    assert result.key == "demo.base_url"
-    assert result.removed is True
-    assert result.profile == "default"
-    assert yaml.safe_load(_isolate_settings.read_text()) == {"profiles": {"default": {}}}
-
-
-def test_unset_rejects_bare_state_key_through_context(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="managed by untaped-demo"):
-        UnsetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("cursor")
-
-    assert not _isolate_settings.exists()
-
-
-def test_unset_rejects_qualified_state_key_through_context(_isolate_settings: Path) -> None:
-    with pytest.raises(ConfigError, match="managed by untaped-demo"):
-        UnsetSetting(SettingsFileRepository(), context=DEMO_CONTEXT)("demo.cursor")
-
-    assert not _isolate_settings.exists()
 
 
 def test_unset_cleans_empty_parent(_isolate_settings: Path) -> None:

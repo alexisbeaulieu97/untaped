@@ -1,11 +1,10 @@
-"""Negative CI proof for the ToolSpec-era surface (spec §9 gate 3, Wave 1.6).
+"""Negative CI proof for the retired standalone composition surface.
 
-``ToolSpec``, ``register_tool``, ``build_tool_app``, and ``run_tool`` stay
-operative in the legacy paths until retirement completes, but the v4
-composition surface must never touch them. This suite fails the build
-when any file under the v4 runtime paths defines, imports, exports, or
-aliases one of the four retired names — including ``as``-import aliases
-in either direction and wrapper assignments.
+The unified composition surface must never define, import, export, or alias
+``ToolSpec``, ``register_tool``, ``build_tool_app``, or ``run_tool``. This
+suite fails the build when any file under the v4 runtime paths retains one of
+the retired names — including ``as``-import aliases in either direction and
+wrapper assignments.
 
 Docstrings and comments may still name them (prose is not composition).
 """

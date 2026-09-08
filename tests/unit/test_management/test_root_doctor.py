@@ -1,10 +1,10 @@
-"""Tests for the root ``untaped doctor`` command (Wave 1.4, spec §§4-5, 7-8).
+"""Tests for the root ``untaped doctor`` command.
 
 The root doctor runs OFFLINE (config-file reads plus in-process model
 validation; never network I/O) with per-row failure isolation: invalid
 settings for one capability surface as failed rows while every other row
 still runs (the Jira-isolation acceptance case). Any failure or quarantine
-exits nonzero; legacy-install shadows (§8) are advisory-only pass rows.
+exits nonzero.
 """
 
 from __future__ import annotations
@@ -198,38 +198,6 @@ def test_quarantine_row_fails_exit(_isolated_config: Path) -> None:
     assert "duplicate capability name: 'ghost'" in raw.stdout
 
 
-# ── legacy shadows are advisory-only ─────────────────────────────────────────
-
-
-def test_legacy_shadow_is_a_non_failing_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    shim = bindir / "untaped-ghost"
-    shim.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    shim.chmod(0o755)
-    monkeypatch.setenv("PATH", str(bindir))
-    app = _doctor_app(make_spec("ghost", profile_model=ExtProfile))
-    result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
-    assert "untaped-ghost" in result.stdout
-    assert "untaped ghost" in result.stdout
-    raw = CliInvoker().invoke(app, ["--format", "raw", "--columns", "detail"])  # type: ignore[arg-type]
-    assert raw.exit_code == 0, raw.output
-    assert str(shim) in raw.stdout
-    assert "uv tool uninstall untaped-ghost" in raw.stdout
-
-
-def test_legacy_flat_section_is_a_non_failing_row(_isolated_config: Path) -> None:
-    write_config(_isolated_config, "http:\n  proxy: http://corp:8080\n")
-    get_settings.cache_clear()
-    app = _doctor_app(make_spec("ext", profile_model=ExtProfile))
-    result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
-    assert "legacy-config" in result.stdout
-
-
 def test_undefined_active_profile_fails_section_rows(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default: {}\nactive: ghost\n")
     get_settings.cache_clear()
@@ -237,14 +205,6 @@ def test_undefined_active_profile_fails_section_rows(_isolated_config: Path) -> 
     result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
     assert result.exit_code == 1
     assert "not defined" in result.stdout
-
-
-def test_no_shadow_means_no_legacy_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PATH", str(tmp_path))
-    app = _doctor_app(make_spec("ghost", profile_model=ExtProfile))
-    result = CliInvoker().invoke(app, [])  # type: ignore[arg-type]
-    assert result.exit_code == 0, result.output
-    assert "legacy-install" not in result.stdout
 
 
 # ── offline ──────────────────────────────────────────────────────────────────

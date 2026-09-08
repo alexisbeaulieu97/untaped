@@ -82,6 +82,28 @@ def test_list_shows_every_composed_section(_isolated_config: Path) -> None:
     assert "log_level" in keys
 
 
+def test_list_raw_defaults_to_key_column(_isolated_config: Path) -> None:
+    """Raw list output is the stable key stream when columns are omitted."""
+    app = _config_app()
+    result = CliInvoker().invoke(app, ["list", "--format", "raw"])  # type: ignore[arg-type]
+    assert result.exit_code == 0, result.output
+    keys = set(result.stdout.splitlines())
+    assert "github.token" in keys
+    assert "github.base_url" in keys
+    assert "https://api.github.com" not in keys
+
+
+def test_list_all_profiles_raw_is_empty_without_profiles(_isolated_config: Path) -> None:
+    """The raw all-profiles stream has no rows before a profile is created."""
+    app = _config_app()
+    result = CliInvoker().invoke(
+        app,
+        ["list", "--all-profiles", "--format", "raw"],  # type: ignore[arg-type]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+
+
 def test_unset_fully_qualified_key_removes_value(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    github:\n      mode: on\n")
     get_settings.cache_clear()

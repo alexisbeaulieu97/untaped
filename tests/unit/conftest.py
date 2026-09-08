@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from untaped.identity import reset_tool_command
 from untaped.settings import (
     get_settings,
     reset_config_registry_for_tests,
@@ -26,14 +25,6 @@ def _isolated_install_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "baseline-config.yml"))
     get_settings.cache_clear()
-
-
-@pytest.fixture(autouse=True)
-def _reset_tool_command() -> Iterator[None]:
-    """Clear the process-global tool command so it never bleeds across tests."""
-    reset_tool_command()
-    yield
-    reset_tool_command()
 
 
 @pytest.fixture(autouse=True)

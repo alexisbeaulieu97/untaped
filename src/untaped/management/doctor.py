@@ -1,21 +1,16 @@
-"""Root ``untaped doctor`` command (Wave 1.4, spec §§4-5, 7-8).
+"""Root ``untaped doctor`` command.
 
 A terminal command (not a group): it runs the shell plus every composed
 capability's health checks OFFLINE — config-file reads plus in-process model
 validation only, never network I/O. Each row is isolated: invalid settings
-for one capability surface as failed rows while every other row still runs
-(the Jira-isolation acceptance case, spec §4). Quarantine records render as
-failed rows (nonzero exit); legacy-install shadows (§8) render as
-non-failing advisory rows.
+for one capability surface as failed rows while every other row still runs.
+Quarantine records render as failed rows (nonzero exit).
 """
 
 from __future__ import annotations
 
-import shutil
-import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from cyclopts import App
@@ -41,11 +36,7 @@ from untaped.errors import ConfigError, first_validation_error
 from untaped.management._render import emit_isolated
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
-from untaped.settings import (
-    active_settings_layout,
-    legacy_flat_sections,
-    resolve_config_path,
-)
+from untaped.settings import active_settings_layout, resolve_config_path
 
 _PASS = "pass"
 _FAIL = "fail"
@@ -60,15 +51,6 @@ class _SectionScope:
     profile_model: type[BaseModel]
     state_model: type[BaseModel] | None
     checks: tuple[DoctorCheck, ...]
-
-
-@dataclass(frozen=True)
-class _LegacyShadow:
-    """One legacy standalone install shadowing a composed capability (§8)."""
-
-    command: str
-    path: str
-    capability: str
 
 
 def build_root_doctor_app(*, shell: ApplicationSpec, result: CompositionResult) -> App:
@@ -149,7 +131,6 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
     if raw is None:
         settings_error = str(config_row["detail"])
     else:
-        rows.extend(_legacy_flat_rows(shell, raw))
         try:
             effective = active_settings_layout().effective(raw)
         except ConfigError as exc:
@@ -169,18 +150,6 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
             rows.append(_run_check(scope, check_item, settings))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
-    for shadow in _detect_legacy_shadows(scope.capability for scope in _scopes(shell, result)):
-        rows.append(
-            _row(
-                "legacy-install",
-                shadow.capability,
-                _PASS,
-                "legacy install shadow",
-                f"{shadow.command} at {shadow.path} shadows the unified CLI "
-                f"(use `untaped {shadow.capability}`; "
-                f"remove with `uv tool uninstall {shadow.command}`)",
-            )
-        )
     return rows
 
 
@@ -198,20 +167,6 @@ def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str
         "load config file",
         f"{path} (active profile: {name or 'default'} via {source})",
     )
-
-
-def _legacy_flat_rows(shell: ApplicationSpec, raw: Mapping[str, Any]) -> list[dict[str, object]]:
-    return [
-        _row(
-            "legacy-config",
-            shell.name,
-            _PASS,
-            "legacy top-level section",
-            f"top-level `{section}:` is ignored since the v2 profiles layout — "
-            f"move it under `profiles.default.{section}`",
-        )
-        for section in legacy_flat_sections(raw)
-    ]
 
 
 def _validate_section(
@@ -285,47 +240,6 @@ def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:
     if record.entry_point:
         detail = f"{detail} [entry point {record.entry_point}]"
     return _row("quarantine", record.distribution, _FAIL, record.reason, detail)
-
-
-def _managed_roots() -> list[Path]:
-    roots: list[Path] = []
-    for candidate in (Path(sys.prefix), Path(sys.executable).parent):
-        try:
-            roots.append(candidate.resolve())
-        except OSError:
-            continue
-    return roots
-
-
-def _is_managed(path: Path) -> bool:
-    return any(path == root or path.is_relative_to(root) for root in _managed_roots())
-
-
-def _detect_legacy_shadows(names: Iterable[str]) -> list[_LegacyShadow]:
-    """Find legacy standalone installs shadowing composed capabilities (§8).
-
-    Pure ``PATH`` scanning (``shutil.which``): advisory-only, offline, and
-    incapable of quarantining, reordering ``PATH``, or failing the run. A hit
-    inside the current environment's managed roots is co-managed, not a
-    shadow.
-    """
-    shadows: list[_LegacyShadow] = []
-    for name in names:
-        command = f"untaped-{name}"
-        try:
-            found = shutil.which(command)
-        except Exception:
-            continue
-        if not found:
-            continue
-        try:
-            resolved = Path(found).resolve()
-        except OSError:
-            continue
-        if _is_managed(resolved):
-            continue
-        shadows.append(_LegacyShadow(command=command, path=str(resolved), capability=name))
-    return shadows
 
 
 __all__ = ["build_root_doctor_app"]

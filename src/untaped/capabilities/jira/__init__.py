@@ -1,10 +1,4 @@
-"""Jira capability for the unified ``untaped`` shell (Wave 2 slice 2).
-
-Exposes a nullary :func:`build_app` factory plus a static ``SPEC:
-CapabilitySpec`` (spec §9 gate 1). The lazy ``app`` PEP-562 re-export from
-the standalone tool is retired: importing this package never constructs
-the CLI tree; :func:`build_app` imports it on demand at mount time.
-"""
+"""Jira capability for the unified ``untaped`` shell."""
 
 from __future__ import annotations
 

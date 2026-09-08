@@ -39,7 +39,7 @@ Python 3.14 and [uv](https://docs.astral.sh/uv/).
 ## Install and use
 
 ```bash
-uv tool install untaped==4.0.0rc1
+uv tool install untaped==4.0.0
 untaped --help
 untaped --version
 ```

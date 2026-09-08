@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import Any
 
 from untaped.errors import ConfigError
-from untaped.identity import current_tool_command
 from untaped.profile_resolver import (
     DEFAULT_PROFILE,
     effective_active_profile_name,
@@ -69,10 +68,9 @@ class ProfilesSettingsLayout:
         known = existing if isinstance(existing, dict) else {}
         if name != DEFAULT_PROFILE and name not in known:
             known_str = ", ".join(sorted(known)) or "(none)"
-            command = current_tool_command() or "<tool>"
             raise ConfigError(
                 f"profile {name!r} does not exist; known profiles: {known_str}. "
-                f"Create it first with `{command} profile create`."
+                "Create it first with `untaped profile create`."
             )
         profiles = raw.setdefault("profiles", {})
         if not isinstance(profiles, dict):

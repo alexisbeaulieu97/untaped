@@ -1,12 +1,8 @@
-"""The untaped SDK surface.
+"""The shared SDK surface for the unified ``untaped`` application.
 
-Tools import from this module (``from untaped.api import ...``) instead of
-reaching into SDK internals. Names listed in ``__all__`` are the SDK contract:
-additions are backwards-compatible; removing a name or changing its behaviour
-is a major SDK version event. Internal modules stay free to reorganize as long
-as this surface keeps resolving. ``untaped`` (the package root) re-exports this
-exact surface, so ``from untaped import X`` and ``from untaped.api import X``
-are equivalent.
+Capability providers import their stable composition helpers from
+:mod:`untaped.capability_api`; this module contains the shared runtime helpers
+used by the built-in application and providers.
 """
 
 from __future__ import annotations
@@ -61,7 +57,6 @@ from untaped.pipe import PipeEnvelope, common_kind, is_envelope_line, parse_enve
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
 from untaped.render import OutputFormat
-from untaped.run import build_tool_app, run_tool
 from untaped.settings import (
     HttpSettings,
     get_config_section,
@@ -77,7 +72,6 @@ from untaped.stdin import (
     resolve_text_input,
 )
 from untaped.theme import ThemeSpec
-from untaped.tool import SkillAsset, ToolSpec, register_tool
 from untaped.ui import UiContext, ui_context
 
 
@@ -109,11 +103,9 @@ __all__ = [
     "ProgressHandle",
     "PromptChoice",
     "RetryPolicy",
-    "SkillAsset",
     "StateCollection",
     "StateMap",
     "ThemeSpec",
-    "ToolSpec",
     "UiContext",
     "UntapedError",
     "app_context",
@@ -121,7 +113,6 @@ __all__ = [
     "atomic_write",
     "batch_apply",
     "bounded_map",
-    "build_tool_app",
     "clamp_parallel",
     "common_kind",
     "connected_client",
@@ -154,13 +145,11 @@ __all__ = [
     "read_stdin_text",
     "read_structured_file",
     "read_tool_state",
-    "register_tool",
     "render_rows",
     "report_errors",
     "resolve_each",
     "resolve_text_input",
     "resolve_verify",
-    "run_tool",
     "ui_context",
     "unified_diff_text",
 ]
