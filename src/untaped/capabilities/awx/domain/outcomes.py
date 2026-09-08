@@ -85,3 +85,10 @@ class SaveOutcome(BaseModel):
     filename: str | None = None
     header_comment: str | None = None
     detail: str | None = None
+
+
+class DeleteReceipt(BaseModel):
+    """A successful DELETE acknowledges removal or asynchronous acceptance."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    action: Literal["deleted", "deletion_requested"]

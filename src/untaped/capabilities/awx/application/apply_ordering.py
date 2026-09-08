@@ -49,6 +49,9 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
 
     # Polymorphic refs: read the referenced kind from each doc's data.
     for doc in docs_list:
+        parent = doc.metadata.parent
+        if parent is not None and parent.kind in kinds_in_docs:
+            edges[doc.kind].add(parent.kind)
         for ref in specs[doc.kind].fk_refs:
             if not ref.polymorphic or ref.kind_in_value is None:
                 continue

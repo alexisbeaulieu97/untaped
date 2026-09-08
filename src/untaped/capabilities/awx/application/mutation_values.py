@@ -19,10 +19,12 @@ def semantic_equal(
     right: Any,
     *,
     allow_server_enrichment: bool = False,
+    structured_text: bool = False,
 ) -> bool:
     """Compare user-owned values exactly, with explicit enrichment allowance."""
-    left = _parse_structured_string(left)
-    right = _parse_structured_string(right)
+    if structured_text:
+        left = _parse_structured_string(left)
+        right = _parse_structured_string(right)
     if allow_server_enrichment and isinstance(left, Mapping) and isinstance(right, Mapping):
         return bool(
             all(

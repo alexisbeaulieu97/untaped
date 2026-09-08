@@ -17,6 +17,7 @@ class AwxResourceSpec(ResourceSpec):
 
     cli_name: str
     api_path: str
+    relationship_api_path: str | None = None
     list_columns: tuple[str, ...] = ()
     commands: tuple[CommandName, ...] = ("list", "get", "save", "apply")
 
@@ -33,3 +34,10 @@ def awx_api_path(spec: ResourceSpec) -> str:
     if not isinstance(spec, AwxResourceSpec):
         raise TypeError(f"AwxResourceSpec required, got {type(spec).__name__}")
     return spec.api_path
+
+
+def awx_relationship_path(spec: ResourceSpec) -> str:
+    """Relationships can stay on the base resource when the detail route is a proxy."""
+    if not isinstance(spec, AwxResourceSpec):
+        raise TypeError(f"AwxResourceSpec required, got {type(spec).__name__}")
+    return spec.relationship_api_path or spec.api_path

@@ -34,7 +34,21 @@ def prefetch_plan(
             # inventory-child refs (Group.hosts/children) where scope lives
             # on metadata.parent rather than in the body.
             scope = scope_for(ref, doc) or {}
-            seen[ref.kind].add(frozenset(scope.items()))
+            values = (
+                body[ref.field]
+                if ref.multi and isinstance(body[ref.field], list)
+                else [body[ref.field]]
+            )
+            for value in values:
+                if isinstance(value, dict):
+                    scoped = {
+                        key: item
+                        for key, item in value.items()
+                        if key not in {"kind", "name", "parent"} and isinstance(item, str)
+                    }
+                    seen[ref.kind].add(frozenset(scoped.items()))
+                elif isinstance(value, str):
+                    seen[ref.kind].add(frozenset(scope.items()))
     return {
         kind: [dict(items) if items else None for items in scopes] for kind, scopes in seen.items()
     }

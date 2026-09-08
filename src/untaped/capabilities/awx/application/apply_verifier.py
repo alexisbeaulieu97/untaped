@@ -41,6 +41,7 @@ class ApplyVerifier:
                 desired_clean[field],
                 observed_clean[field],
                 allow_server_enrichment=field in spec.server_enriched_fields,
+                structured_text=field in spec.structured_text_fields,
             ):
                 missing.append(field)
         return tuple(missing)

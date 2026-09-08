@@ -16,6 +16,7 @@ from typing import Any, Protocol
 from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.domain import (
     ActionPayload,
+    IdentityRef,
     Job,
     JobEvent,
     Resource,
@@ -23,6 +24,7 @@ from untaped.capabilities.awx.domain import (
     ServerRecord,
     WritePayload,
 )
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 
 
 class AwxPingService(Protocol):
@@ -98,7 +100,7 @@ class ResourceClient(Protocol):
 
     def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord: ...
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None: ...
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt | None: ...
 
     def action(
         self,
@@ -227,6 +229,10 @@ class FkResolver(Protocol):
         """Validate a concrete FK against its kind endpoint and requested scope."""
         ...
 
+    def id_to_identity(self, kind: str, id_: int) -> IdentityRef:
+        """Return complete portable ancestry, fetching parents when necessary."""
+        ...
+
     def id_to_name(self, kind: str, id_: int) -> str: ...
 
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, PlannedId]:
@@ -264,6 +270,19 @@ class ApplyStrategy(Protocol):
     parameter is :class:`RawHttpResourceClient` (which extends
     :class:`ResourceClient` with raw URL access).
     """
+
+    def prepare_state(
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        existing: dict[str, Any] | None,
+        *,
+        parent: tuple[str, PlannedId] | None = None,
+        parent_resource: Resource | None = None,
+        client: RawHttpResourceClient,
+    ) -> tuple[ResourceSpec, dict[str, Any] | None]:
+        """Freeze routing, hydrate selected IDs, and validate resource-specific state."""
+        ...
 
     def prepare_parent(
         self,
