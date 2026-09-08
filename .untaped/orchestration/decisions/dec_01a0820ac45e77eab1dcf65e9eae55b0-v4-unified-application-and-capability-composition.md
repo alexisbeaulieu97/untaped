@@ -12,8 +12,10 @@ target_store_id = "sto_019f68b6af9e721e970126ca31dbfde1"
 target = "dec_019f68b6b2cb75a9a7cb908963b4b59c"
 +++
 Version 4 ships one `untaped` application and executable. The root owns shared
-configuration, profiles, skills, doctor checks, capability reporting, and root
-options; built-in capabilities mount under `untaped <capability> ...`.
+configuration, profiles, management commands, capability reporting, and root
+options. Capabilities declare their own skill assets and doctor checks; the
+root aggregates them for the skills and doctor commands. Built-in capabilities
+mount under `untaped <capability> ...`.
 
 External providers are discovered through the `untaped.capabilities` entry
 point group and validated against `untaped.capability_api` before they mount.
