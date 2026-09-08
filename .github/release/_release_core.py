@@ -7,7 +7,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = ROOT / "pyproject.toml"
-VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z0-9][A-Za-z0-9._+-]*)?")
+VERSION_RE = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?P<prerelease>(?:a|b|rc)[0-9]+)?$")
 TESTPYPI_INDEX = "https://test.pypi.org/simple/"
 PYPI_INDEX = "https://pypi.org/simple/"
 MANIFEST = ROOT / "release-manifest.toml"
@@ -58,6 +58,18 @@ def dependency_name(requirement: str) -> str:
 def normalize_package_name(name: str) -> str:
     """Normalize a distribution name according to PEP 503."""
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def is_prerelease_version(version: str) -> bool:
+    """Return whether an accepted X.Y.Z release has an aN, bN, or rcN suffix."""
+    match = VERSION_RE.fullmatch(version)
+    if match is None:
+        raise ReleaseCheckError(
+            "unsafe or invalid release version input "
+            "(expected X.Y.Z with optional aN, bN, or rcN suffix): "
+            f"{version!r}"
+        )
+    return match.group("prerelease") is not None
 
 
 def project_metadata(pyproject_path: Path) -> dict[str, Any]:
