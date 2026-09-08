@@ -8,6 +8,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = ROOT / "pyproject.toml"
 VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:[A-Za-z0-9][A-Za-z0-9._+-]*)?")
+_PRERELEASE_RE = re.compile(
+    r"^[0-9]+\.[0-9]+\.[0-9]+[-_.]?(?:a(?:lpha)?|b(?:eta)?|c|rc|pre(?:view)?|dev)",
+    re.IGNORECASE,
+)
 TESTPYPI_INDEX = "https://test.pypi.org/simple/"
 PYPI_INDEX = "https://pypi.org/simple/"
 MANIFEST = ROOT / "release-manifest.toml"
@@ -58,6 +62,13 @@ def dependency_name(requirement: str) -> str:
 def normalize_package_name(name: str) -> str:
     """Normalize a distribution name according to PEP 503."""
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def is_prerelease_version(version: str) -> bool:
+    """Return whether an accepted release version denotes a prerelease."""
+    if VERSION_RE.fullmatch(version) is None:
+        raise ReleaseCheckError(f"unsafe or invalid release version input: {version!r}")
+    return _PRERELEASE_RE.match(version) is not None
 
 
 def project_metadata(pyproject_path: Path) -> dict[str, Any]:
