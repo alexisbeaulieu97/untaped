@@ -232,8 +232,14 @@ jobs:
       RELEASE_INDEX: ${{ inputs.index }}
       RELEASE_VERSION: ${{ inputs.version }}
       RELEASE_CANDIDATE_OID: ${{ inputs.candidate_oid }}
-      HOME: ${{ runner.temp }}/untaped-published-smoke-home
     steps:
+      - name: Configure isolated published smoke home
+        run: |
+          set -euo pipefail
+          home_dir="$RUNNER_TEMP/untaped-published-smoke-home"
+          mkdir -p "$home_dir"
+          echo "HOME=$home_dir" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
