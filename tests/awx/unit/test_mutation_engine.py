@@ -20,6 +20,7 @@ from untaped.capabilities.awx.application.ports import (
     StrategyResolver,
 )
 from untaped.capabilities.awx.domain import FkRef, Metadata, Resource, ResourceSpec, ServerRecord
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.infrastructure.specs import PROJECT_SPEC
 from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
 
@@ -106,8 +107,9 @@ class _Client:
         self.writes.append(("update", id_, values))
         return ServerRecord(**self.records[id_])
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         del self.records[id_]
+        return DeleteReceipt(action="deleted")
 
     def action(
         self,

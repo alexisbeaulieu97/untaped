@@ -124,7 +124,7 @@ class ResourceRepository:
 
     def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         with map_awx_errors():
-            status = self._client.delete_status(f"{awx_api_path(spec)}/{id_}/")
+            status = self._client.delete(f"{awx_api_path(spec)}/{id_}/")
         return DeleteReceipt(
             action="deletion_requested" if status == 202 or spec.kind == "Inventory" else "deleted"
         )

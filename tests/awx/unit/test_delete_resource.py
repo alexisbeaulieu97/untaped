@@ -7,13 +7,14 @@ exercise the ``DELETE`` call and typed-error propagation.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import cast, get_type_hints
 
 import pytest
 
 from untaped.capabilities.awx.application import DeleteResource
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.errors import Conflict, ResourceNotFound
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
@@ -23,16 +24,18 @@ class _StubClient:
         self._raises = raises
         self.delete_calls: list[int] = []
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         self.delete_calls.append(id_)
         if self._raises is not None:
             raise self._raises
+        return DeleteReceipt(action="deleted")
 
 
 def test_delete_calls_client_with_record_id() -> None:
     client = _StubClient()
-    DeleteResource(cast(ResourceClient, client))(JOB_TEMPLATE_SPEC, 42)
+    receipt = DeleteResource(cast(ResourceClient, client))(JOB_TEMPLATE_SPEC, 42)
     assert client.delete_calls == [42]
+    assert receipt.action == "deleted"
 
 
 def test_delete_propagates_conflict() -> None:
@@ -47,3 +50,7 @@ def test_delete_propagates_not_found() -> None:
     client = _StubClient(raises=ResourceNotFound("JobTemplate", {"id": 42}))
     with pytest.raises(ResourceNotFound):
         DeleteResource(cast(ResourceClient, client))(JOB_TEMPLATE_SPEC, 42)
+
+
+def test_delete_port_requires_receipt() -> None:
+    assert get_type_hints(ResourceClient.delete)["return"] is DeleteReceipt

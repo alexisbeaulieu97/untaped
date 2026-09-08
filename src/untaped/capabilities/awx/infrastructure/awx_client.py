@@ -54,7 +54,7 @@ class AwxClient:
         or ``None`` for empty 204 responses (e.g. DELETE)."""
         return self._http.request_json(method, self._url(path), **kwargs)
 
-    def delete_status(self, path: str) -> int:
+    def delete(self, path: str) -> int:
         """Keep the HTTP status so callers do not confuse 202 with removal."""
         return self._http.request("DELETE", self._url(path)).status_code
 
