@@ -6,9 +6,9 @@ adds each asset to its `CapabilitySpec.skills` tuple. The unified root discovers
 the union of shell and capability assets, so one command can list or install
 skills from the whole composed application.
 
-The stable asset ID remains the `SkillAsset.name` value. Existing IDs such as
-`untaped-github`, `untaped-awx`, and `untaped-workspace` are not renamed when
-the command moves to the root.
+The stable asset ID remains the `SkillAsset.name` value. Built-in skills keep
+their full IDs (for example, `untaped-github`, `untaped-awx`, and
+`untaped-workspace`) even when selected through the unified root.
 
 ```python
 from pathlib import Path
@@ -119,5 +119,4 @@ settings, workflow, or contract changes; do not duplicate the shared install
 mechanics in a capability-specific skill.
 
 See [Capability authoring](./plugins.md) for the provider entry-point contract
-and [the composition specification](./capabilities-spec.md) for validation and
-collision rules.
+and the current `untaped capabilities` output for the composed providers.

@@ -1,10 +1,10 @@
 # AGENTS.md — `untaped` (unified app v4)
 
-Single source of truth for how the unified `untaped` application is built.
+Contribution rules for the unified `untaped` application.
 AI agents and humans both read this file. This repo is **one modular
 application**: a single `untaped` console script composing built-in
-capabilities. The standalone `untaped-*` tool repos are retired at the v4
-cutover; there is no multi-repo workspace guidance here anymore.
+capabilities. This repository contains the application and its built-in
+capabilities; there is no multi-repo workspace guidance here.
 
 ## Mission
 
@@ -14,33 +14,21 @@ helpers, plus one command subtree per built-in capability
 (`untaped workspace ...`, ...). Composition runs through
 `src/untaped/bootstrap.py` (`main()`), which discovers built-in
 capability specs plus externals via the `untaped.capabilities` entry-point
-group, validates them through the registry, then mounts the survivors.
-See [`docs/capabilities-spec.md`](docs/capabilities-spec.md) for the
-authoritative composition contract and [`docs/decisions.md`](docs/decisions.md)
-for the ADRs behind the v4 direction.
+group, validates them through the registry, then mounts the survivors. The
+implementation in `src/untaped/` is authoritative for composition and command
+behavior. User workflows live in [`docs/`](docs/README.md); provider authors
+should start with [`docs/plugins.md`](docs/plugins.md).
 
-The built-in command order is fixed: `workspace`, `github`, `jira`, `awx`,
-`ansible`, `recipe`, and `orchestration`.
+Inspect `untaped --help` for the current built-in command order. The source
+tree is the implementation reference:
 
-## Repository Map
-
-```
-untaped/  (repo root IS the app; version 4.0.0rc1, requires-python >=3.14)
-├── pyproject.toml                # single `untaped` package; script `untaped = untaped.__main__:main`
-├── uv.lock                       # lockfile (commit it)
-├── AGENTS.md                     # ← you are here (unified-app rules)
-├── docs/                         # capabilities-spec.md (contract), decisions.md (ADRs), …
-├── src/untaped/
-│   ├── __main__.py               # entry point → bootstrap.main
-│   ├── bootstrap.py              # composition root (replaces run/tool path)
-│   ├── capability_api.py         # STABLE provider import surface (spec §2)
-│   ├── capabilities/
-│   │   ├── registry.py           # internal composition kernel (NOT re-exported)
-│   │   └── <name>/               # one dir per built-in capability
-│   ├── management/               # root commands: config, profile, skills, doctor, capabilities
-│   └── <core>/                   # config, profile, cli, api, settings, http, ui, … (shared framework)
-└── tests/                        # app and release contract tests
-```
+- `pyproject.toml` and `uv.lock` define the distribution and locked
+  environment.
+- `src/untaped/` contains the shell, shared services, and built-in
+  capabilities. Each `src/untaped/capabilities/<name>/` directory owns one
+  capability end to end.
+- `docs/` contains user guides and executable policy files.
+- `tests/` verifies public behavior and release contracts.
 
 A capability owns its directory end to end:
 
@@ -61,18 +49,16 @@ Import direction inside a capability: `cli → application → domain` and
 
 ## Capability registry + capability_api
 
-- `capability_api.py` is the **only** module provider code imports from:
-  spec types (`ApplicationSpec`, `CapabilitySpec`, `SkillAsset`,
-  `DoctorCheck`, `DoctorResult`, `CapabilityContext`), the shared helpers,
-  and `CAPABILITY_API_VERSION` (currently `1.0`; built-ins declare
-  `api_requires` in `(1.0, 2.0)`).
+- `capability_api.py` is the **only** module provider code imports from. Its
+  exported types, helpers, and API version are the source of truth for
+  provider compatibility.
 - `capabilities/registry.py` is the internal composition kernel: discovery /
   API pre-checks → provider resolution → declaration validation + app-factory
   staging → commit. Built-in violations raise `ConfigError` (fatal);
   external violations become `QuarantineRecord` entries while composition
   continues. Provider authors never import it.
-- Reserved root names no capability may claim: `profiles`, `active`,
-  `config`, `profile`, `skills`, `doctor`, `capabilities`.
+- Management command names are owned by the root shell; inspect
+  `untaped --help` and `src/untaped/management/` when adding a capability.
 - A new built-in capability: add `capabilities/<name>/` per the layout
   above, expose `SPEC` + `build_app`, and append it to
   `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order.
@@ -150,6 +136,5 @@ next starts:
 
 ## See also
 
-- **Composition contract:** [`docs/capabilities-spec.md`](docs/capabilities-spec.md)
-- **Decisions (ADRs):** [`docs/decisions.md`](docs/decisions.md)
+- **Provider authoring:** [`docs/plugins.md`](docs/plugins.md)
 - **User-facing docs:** [`docs/`](docs/README.md)

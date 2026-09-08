@@ -100,23 +100,9 @@ smoke verification.
 
 ## Release Order
 
-The v4 package is the release unit. The imported source OIDs and dependency
-intersections are recorded in the public manifest; standalone source history
-remains provenance for review.
-
-## Adopting the release pipeline in a tool
-
-Start from the two reusable templates in `.github/release/templates/`. Before committing the
-tool copies, choose a reviewed, merged 40-character commit SHA from this repo that contains the
-shared release checker version the tool should run. Substitute that same SHA for all three
-`__CHECKER_SHA__` sites: the two `.release-tool` checkout refs in `release.yml.tmpl` and
-`CORE_RELEASE_TOOL_SHA` in `test_release_workflow.py.tmpl`. A branch or tag is not an acceptable
-substitute because the checker must remain immutable and reviewable.
-
-Also replace the distribution and console-script sentinels and complete the test template's
-`PER-TOOL CONFIG` block from the tool's `pyproject.toml`. After substitution, the workflow has no
-template sentinels left, both checkout refs equal `CORE_RELEASE_TOOL_SHA`, and every action remains
-pinned to a full commit SHA.
+The `untaped` package is the release unit. Its supported Python floor,
+capability order, direct requirements, and reviewed source inputs are recorded
+in [`release-manifest.toml`](../release-manifest.toml).
 
 ## TestPyPI Caveat
 
@@ -126,8 +112,6 @@ patch version and restart that package's release cycle.
 
 For TestPyPI smokes, the workflow uses TestPyPI for the package under test and
 PyPI for third-party dependencies via `UV_INDEX_STRATEGY=unsafe-best-match`.
-Downstream tool smokes may still rely on production PyPI for already-published
-upstream untaped packages during the release wave.
 
 ## Burn Recovery
 
@@ -181,13 +165,5 @@ Use a new approved version only after reconciliation proves that an immutable
 public filename or tag contains bytes or identity for another candidate, or
 when the original candidate can no longer be proven. Never overwrite a
 filename, delete/reuse a tag, or silently switch candidate OIDs. Restore
-standalone operational paths from accepted source bundles without destroying
-live checkouts, and preserve restricted config, state, and expected skill
-manifests. Laptop cutover and later private retirement checks are separate
-gates.
-
-## Follow-Up
-
-The external freeze receipt binds the final local candidate OID and artifact
-hashes. It is separate from the public manifest and from any later runtime
-attestation or cutover record.
+required operational paths from accepted source bundles without destroying live
+checkouts, and preserve restricted config, state, and expected skill manifests.
