@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-from untaped.capabilities.awx.application.apply_planner import scope_for
+from untaped.capabilities.awx.application.apply_planner import resolve_fk_value, scope_for
 from untaped.capabilities.awx.application.mutation_refs import DeferredReference, PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Resource, ResourceSpec
@@ -47,6 +47,7 @@ class MembershipPlan:
     existing_ids: tuple[int, ...] = ()
     desired_ids: tuple[PlannedId, ...] = ()
     to_reorder: tuple[PlannedId, ...] = ()
+    mode: Literal["replacement", "additive"] = "replacement"
 
 
 class MembershipReconciler:
@@ -90,8 +91,7 @@ class MembershipReconciler:
             desired_names = list(raw_value)
             scope = scope_for(ref, resource)
             resolved_desired_ids = tuple(
-                _resolve_membership_value(ref.kind, value, scope=scope, fk=fk)
-                for value in desired_names
+                resolve_fk_value(ref.kind, value, scope=scope, fk=fk) for value in desired_names
             )
             if len(set(resolved_desired_ids)) != len(resolved_desired_ids):
                 raise BadRequest(
@@ -133,7 +133,7 @@ class MembershipReconciler:
                     if ref.ordered
                     else sorted(existing_name_by_id.get(i, str(i)) for i in existing_ids)
                 )
-                after = list(desired_names) if ref.ordered else sorted(desired_names)
+                after = list(desired_names) if ref.ordered else sorted(desired_names, key=str)
                 field_change = FieldChange(field=ref.field, before=before, after=after)
             elif to_reorder:
                 before = [existing_name_by_id.get(i, str(i)) for i in existing_ids]
@@ -155,6 +155,66 @@ class MembershipReconciler:
                 )
             )
         return plans
+
+    def plan_additive(
+        self,
+        spec: ResourceSpec,
+        record_id: int,
+        ref: FkRef,
+        member_ids: Iterable[int],
+        *,
+        disassociate: bool = False,
+        client: ResourceClient,
+    ) -> MembershipPlan:
+        """Capture an explicit add/remove operation without replacing other members."""
+        ids = tuple(dict.fromkeys(member_ids))
+        if any(isinstance(item, bool) or not isinstance(item, int) or item <= 0 for item in ids):
+            raise BadRequest("membership IDs must be positive integers")
+        existing = (
+            tuple(
+                int(item["id"])
+                for item in client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint)
+            )
+            if ref.sub_endpoint
+            else ()
+        )
+        return MembershipPlan(
+            ref=ref,
+            to_associate=() if disassociate else ids,
+            to_disassociate=ids if disassociate else (),
+            existing_ids=existing,
+            field_change=None,
+            mode="additive",
+        )
+
+    def verify(
+        self,
+        spec: ResourceSpec,
+        record_id: int,
+        plans: Iterable[MembershipPlan],
+        *,
+        client: ResourceClient,
+    ) -> None:
+        """Read back replacements exactly, or additive requested presence/absence."""
+        for plan in plans:
+            if plan.ref.sub_endpoint is None:
+                continue
+            observed = tuple(
+                int(item["id"])
+                for item in client.paginate_sub_endpoint(spec, record_id, plan.ref.sub_endpoint)
+            )
+            if plan.mode == "additive":
+                matches = set(plan.to_associate).issubset(observed) and not set(
+                    plan.to_disassociate
+                ).intersection(observed)
+            elif plan.ref.ordered:
+                matches = observed == plan.desired_ids
+            else:
+                matches = set(observed) == set(plan.desired_ids)
+            if not matches:
+                raise BadRequest(
+                    f"{spec.kind}#{record_id}: membership {plan.ref.field!r} did not converge"
+                )
 
     def execute(
         self,
@@ -226,31 +286,6 @@ class MembershipReconciler:
             if disassociate:
                 body["disassociate"] = True
             client.sub_endpoint_request(spec, parent_id, ref.sub_endpoint, "POST", json=body)
-
-
-def _resolve_membership_value(
-    kind: str,
-    value: Any,
-    *,
-    scope: dict[str, str] | None,
-    fk: FkResolver,
-) -> PlannedId:
-    """Apply the FK integer/name contract to membership references."""
-    if isinstance(value, bool):
-        raise BadRequest(
-            f"membership reference {kind} must be a positive integer ID or string name"
-        )
-    if isinstance(value, int):
-        if value <= 0:
-            raise BadRequest(
-                f"membership reference {kind} must be a positive integer ID or string name"
-            )
-        return value
-    if not isinstance(value, str):
-        raise BadRequest(
-            f"membership reference {kind} must be a positive integer ID or string name"
-        )
-    return fk.name_to_id(kind, value, scope=scope)
 
 
 def _ordered_replacements(

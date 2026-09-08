@@ -199,7 +199,9 @@ Provider imports come from `untaped.capability_api` only. The module exports the
 composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`, and related
 records), `CAPABILITY_API_VERSION`, and the supported helpers including
 `create_app`, `app_context`, `get_config_section`, `emit`, `read_identifiers`,
-`report_errors`, `FormatOption`, and `ColumnsOption`.
+`report_errors`, `FormatOption`, and `ColumnsOption`. The canonical v1 wire
+parser and record type are also exported as `parse_envelope_line` and
+`PipeEnvelope`; capabilities retain their own kind and required-ID validation.
 
 Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
 do not reach into `untaped` internals to obtain an unexported helper. Shared

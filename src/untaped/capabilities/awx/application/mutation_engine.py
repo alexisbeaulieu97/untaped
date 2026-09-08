@@ -1,17 +1,8 @@
-"""Prepare and execute AWX resource mutations as one fixed batch.
+"""Prepare and execute fixed AWX batches for apply, patch, and edit.
 
-The legacy :class:`~untaped.capabilities.awx.application.ApplyResource` use
-case remains useful for one document and for compatibility with existing
-commands.  This module owns the stronger batch contract used by patch, edit,
-and the next apply command: all targets, foreign keys, body diffs, and
-membership snapshots are prepared before a confirmation or write.  Execution
-rechecks those snapshots, writes bodies in dependency order, then reconciles
-memberships after every body exists.
-
-The engine deliberately does not claim cross-request atomicity.  A request can
-still change after the recheck and an already-running operation can finish
-after a later operation fails; those cases are represented as ``partial`` or
-``skipped`` outcomes.
+Preparation owns all target, FK, body, secret, and membership decisions.
+Execution rechecks snapshots before any write, binds typed creation references,
+and sends only prepared operations. It does not provide cross-request atomicity.
 """
 
 from __future__ import annotations
@@ -24,7 +15,6 @@ from typing import Any, Literal, cast
 
 from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
 from untaped.capabilities.awx.application.apply_membership import (
-    MembershipPlan,
     MembershipReconciler,
 )
 from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
@@ -50,6 +40,7 @@ from untaped.capabilities.awx.application.ports import (
     StrategyResolver,
 )
 from untaped.capabilities.awx.application.prepared_body import BodyOperations
+from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import (
     ApplyOutcome,
     BatchResult,
@@ -63,7 +54,6 @@ from untaped.capabilities.awx.errors import (
 )
 
 MutationMode = Literal["apply", "patch", "edit"]
-_PRESERVED_SECRET_NOTE = "preserved existing secret"
 
 
 class MutationConflict(AwxApiError):
@@ -123,6 +113,9 @@ class _PlanningFkResolver:
                 scope=dict(scope or {}),
             )
         return self._base.name_to_id(kind, name, scope=scope)
+
+    def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
+        return self._base.validate_id(kind, id_, scope=scope)
 
     def id_to_name(self, kind: str, id_: int) -> str:
         for target in self._targets:
@@ -210,7 +203,7 @@ class BatchMutationEngine:
         resources: Iterable[Resource],
         *,
         mode: MutationMode = "apply",
-        existing: Iterable[Mapping[str, Any]] | None = None,
+        existing: Iterable[Mapping[str, Any] | SelectedResource] | None = None,
         preserve_existing_fk_ids: bool = False,
     ) -> MutationPlan:
         """Prepare every resource without issuing a write request.
@@ -253,7 +246,15 @@ class BatchMutationEngine:
                     if parent_index in pending:
                         continue
                 if selected is not None:
-                    found = dict(selected[index])
+                    item = selected[index]
+                    if isinstance(item, SelectedResource):
+                        if item.kind != resource.kind or item.record.get("id") != item.id:
+                            raise BadRequest(
+                                "changing the kind or ID of a selected resource is not supported"
+                            )
+                        found = copy.deepcopy(item.record)
+                    else:
+                        found = dict(item)
                     if found.get("name") != resource.metadata.name:
                         raise BadRequest("renaming a selected resource is not supported")
                 elif parent is not None and isinstance(parent[1], DeferredReference):
@@ -294,6 +295,22 @@ class BatchMutationEngine:
             existing_record = resolved_existing[index]
             target = targets[index]
             identity = target.identity
+            if mode in {"patch", "edit"}:
+                forbidden = set(spec.identity_keys) | {"id", "kind", "type"}
+                if spec.apply_strategy in {"schedule", "inventory_child"}:
+                    forbidden.update(
+                        {
+                            "parent",
+                            "inventory"
+                            if spec.apply_strategy == "inventory_child"
+                            else "unified_job_template",
+                        }
+                    )
+                if forbidden.intersection(resource.spec):
+                    raise BadRequest(
+                        "renaming, reparenting, or changing the kind or ID "
+                        "of a selected resource is not supported"
+                    )
             payload = self._planner.plan_payload(
                 spec,
                 resource,
@@ -301,6 +318,10 @@ class BatchMutationEngine:
                 existing=existing_record,
                 preserve_existing_fk_ids=preserve_existing_fk_ids,
             )
+            if selected is not None and existing_record is not None:
+                _validate_selected_identity(
+                    spec, resource, existing_record, payload, parents[index]
+                )
             membership_plans = self._membership.plan(
                 spec,
                 resource,
@@ -333,26 +354,43 @@ class BatchMutationEngine:
             operations.append(
                 PreparedMutation(
                     index=index,
-                    resource=resource,
+                    _resource=resource,
                     spec=spec,
                     strategy=strategy,
-                    identity=copy.deepcopy(identity),
-                    scope=_scope_from_identity(identity),
-                    payload=copy.deepcopy(body.payload),
-                    presentation_payload=redact_value(body.payload, spec.secret_paths),
-                    existing=copy.deepcopy(existing_record)
+                    _identity=copy.deepcopy(identity),
+                    _scope=_scope_from_identity(identity),
+                    _payload=copy.deepcopy(body.payload),
+                    _presentation_payload=redact_value(body.payload, spec.secret_paths),
+                    _existing=copy.deepcopy(existing_record)
                     if existing_record is not None
                     else None,
                     target_id=target.id,
                     create=existing_record is None,
                     dependencies=dependencies,
-                    membership_plans=membership_plans,
-                    preview=preview,
+                    _membership_plans=membership_plans,
+                    _preview=preview,
                     create_parent=parents[index],
-                    watched_fields=tuple(payload),
+                    watched_fields=tuple(
+                        dict.fromkeys(
+                            (
+                                *payload,
+                                *spec.identity_keys,
+                                *(
+                                    (
+                                        "inventory"
+                                        if spec.apply_strategy == "inventory_child"
+                                        else "unified_job_template",
+                                    )
+                                    if parents[index] is not None
+                                    else ()
+                                ),
+                            )
+                        )
+                    ),
                 )
             )
-        return MutationPlan(operations=operations, mode=mode)
+        _validate_dependencies(operations)
+        return MutationPlan(operations=tuple(operations), mode=mode)
 
     def execute(
         self,
@@ -616,6 +654,7 @@ class BatchMutationEngine:
                     "action": "created" if operation.create else "updated",
                     "id": target_id,
                     "detail": detail,
+                    "unverified": detail is not None,
                 }
             )
         except AwxApiError as exc:
@@ -623,6 +662,7 @@ class BatchMutationEngine:
                 update={
                     "action": "partial" if wrote else "failed",
                     "partial": wrote,
+                    "unverified": wrote,
                     "id": target_id,
                     "detail": _safe_error(exc, operation),
                 }
@@ -645,11 +685,16 @@ class BatchMutationEngine:
             if not operation.membership_plans:
                 continue
             target_id = outcome.id
-            if stopped or target_id is None:
+            membership_changed = any(
+                item.to_associate or item.to_disassociate or item.to_reorder
+                for item in operation.membership_plans
+            )
+            if (stopped and membership_changed) or target_id is None:
                 outcomes[operation.index] = outcome.model_copy(
                     update={
                         "action": "partial",
                         "partial": True,
+                        "unverified": True,
                         "detail": "membership skipped after runtime failure"
                         if stopped
                         else "body succeeded but no target ID was returned for membership",
@@ -672,12 +717,13 @@ class BatchMutationEngine:
                     plans,
                     client=self._client,
                 )
-                self._verify_memberships(operation, plans, target_id)
+                self._membership.verify(operation.spec, target_id, plans, client=self._client)
             except (AwxApiError, KeyError, TypeError, ValueError) as exc:
                 outcomes[operation.index] = outcome.model_copy(
                     update={
                         "action": "partial",
                         "partial": True,
+                        "unverified": True,
                         "detail": (
                             "body succeeded but membership verification failed: "
                             f"{_safe_error(exc, operation)}"
@@ -691,34 +737,6 @@ class BatchMutationEngine:
                 and outcome.action == "unchanged"
             ):
                 outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
-
-    def _verify_memberships(
-        self,
-        operation: PreparedMutation,
-        plans: list[MembershipPlan],
-        target_id: int,
-    ) -> None:
-        for membership in plans:
-            if membership.ref.sub_endpoint is None:
-                continue
-            observed = tuple(
-                _membership_ids(
-                    self._client,
-                    operation.spec,
-                    target_id,
-                    membership.ref.sub_endpoint,
-                )
-            )
-            desired = tuple(membership.desired_ids)
-            if membership.ref.ordered:
-                matches = observed == desired
-            else:
-                matches = set(observed) == set(desired)
-            if not matches:
-                raise MutationConflict(
-                    f"{operation.spec.kind} {operation.resource.metadata.name!r}: "
-                    f"membership {membership.ref.field!r} did not converge"
-                )
 
     @staticmethod
     def _status_outcome(
@@ -817,13 +835,7 @@ def _dependencies_for(
 ) -> tuple[int, ...]:
     tokens = _tokens_in(payload)
     token_to_index = {target.token: target.index for target in targets}
-    return tuple(
-        sorted(
-            token_to_index[token]
-            for token in tokens
-            if token in token_to_index and token_to_index[token] != index
-        )
-    )
+    return tuple(sorted(token_to_index[token] for token in tokens if token in token_to_index))
 
 
 def _tokens_in(value: Any) -> set[str]:
@@ -888,3 +900,42 @@ def _safe_error(exc: Exception, operation: PreparedMutation) -> str:
     return redact_error(
         exc, operation.spec, operation.existing, operation.payload, operation.resource.spec
     )
+
+
+def _validate_selected_identity(
+    spec: ResourceSpec,
+    resource: Resource,
+    record: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    parent: tuple[str, int | DeferredReference] | None,
+) -> None:
+    record_type = record.get("type")
+    if record_type is not None and (
+        not isinstance(record_type, str)
+        or record_type.replace("_", "").casefold() != spec.kind.casefold()
+    ):
+        raise BadRequest("changing the kind of a selected resource is not supported")
+    for field in spec.identity_keys:
+        if field in payload and payload[field] != record.get(field):
+            raise BadRequest(f"changing selected identity field {field!r} is not supported")
+    if parent is not None:
+        field = "inventory" if spec.apply_strategy == "inventory_child" else "unified_job_template"
+        actual = record.get(field)
+        if actual is None:
+            summary = record.get("summary_fields") or {}
+            actual = (summary.get(field) or {}).get("id")
+        if isinstance(parent[1], DeferredReference) or parent[1] != actual:
+            raise BadRequest("reparenting a selected resource is not supported")
+
+
+def _validate_dependencies(operations: list[PreparedMutation]) -> None:
+    remaining = {operation.index: set(operation.dependencies) for operation in operations}
+    while remaining:
+        ready = {index for index, dependencies in remaining.items() if not dependencies}
+        if not ready:
+            raise BadRequest("body dependencies form a cycle")
+        remaining = {
+            index: dependencies - ready
+            for index, dependencies in remaining.items()
+            if index not in ready
+        }

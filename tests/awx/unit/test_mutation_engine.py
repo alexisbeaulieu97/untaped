@@ -169,8 +169,6 @@ class _Client:
         return iter(())
 
 
-
-
 class _Strategy(DefaultApplyStrategy):
     def find_existing(self, spec: Any, identity: dict[str, Any], *, client: Any, fk: Any) -> Any:
         return client.find(spec, params={"name": str(identity["name"])})
@@ -551,3 +549,206 @@ def test_body_replacements_must_converge_exactly(desired: Any, observed: Any) ->
     )
     assert result.outcomes[0].action == "partial"
     assert client.writes[0][2] == {"value": desired}
+
+
+def test_selected_target_is_fixed_by_id_even_with_same_named_other_record() -> None:
+    from untaped.capabilities.awx.application.selection import SelectedResource
+
+    spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
+    client = _Client(
+        [
+            {"id": 1, "name": "same", "description": "one"},
+            {"id": 2, "name": "same", "description": "two"},
+        ]
+    )
+    selected = SelectedResource("Item", 2, "same", {}, dict(client.records[2]))
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    plan = engine.prepare(
+        [Resource(kind="Item", metadata=Metadata(name="same"), spec={"description": "new"})],
+        mode="patch",
+        existing=[selected],
+    )
+    assert client.find_calls == 0
+    result = engine.execute(plan)
+    assert result.outcomes[0].id == 2
+    assert client.records[1]["description"] == "one"
+    assert client.records[2]["description"] == "new"
+
+
+def test_selected_kind_change_is_rejected_before_writes() -> None:
+    from untaped.capabilities.awx.application.selection import SelectedResource
+    from untaped.capabilities.awx.errors import BadRequest
+
+    spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
+    client = _Client([{"id": 2, "name": "same"}])
+    selected = SelectedResource("OtherKind", 2, "same", {}, dict(client.records[2]))
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    with pytest.raises(BadRequest, match="kind"):
+        engine.prepare(
+            [Resource(kind="Item", metadata=Metadata(name="same"), spec={})],
+            mode="patch",
+            existing=[selected],
+        )
+    assert not client.writes
+
+
+def test_selected_reparenting_is_rejected_before_writes() -> None:
+    from untaped.capabilities.awx.errors import BadRequest
+
+    client = _MembershipClient([{"id": 2, "name": "group", "inventory": 99}])
+    with pytest.raises(BadRequest, match="reparenting"):
+        _group_engine(client).prepare(
+            [_group("group", [])], mode="edit", existing=[client.records[2]]
+        )
+    assert not client.writes
+
+
+def test_body_dependency_cycles_fail_preparation_before_unrelated_writes() -> None:
+    from untaped.capabilities.awx.errors import BadRequest
+
+    spec = ResourceSpec(
+        kind="Item",
+        identity_keys=("name",),
+        canonical_fields=("parent",),
+        fk_refs=(FkRef(field="parent", kind="Item"),),
+    )
+    client = _Client([])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    docs = [
+        Resource(kind="Item", metadata=Metadata(name="independent"), spec={}),
+        Resource(kind="Item", metadata=Metadata(name="a"), spec={"parent": "b"}),
+        Resource(kind="Item", metadata=Metadata(name="b"), spec={"parent": "a"}),
+    ]
+    with pytest.raises(BadRequest, match="cycle"):
+        engine.prepare(docs)
+    assert not client.writes
+
+
+def test_new_and_existing_secret_values_are_redacted_from_runtime_errors() -> None:
+    from untaped.capabilities.awx.errors import BadRequest
+
+    class Echoing(_Client):
+        def update(self, spec: ResourceSpec, id_: int, payload: Any) -> ServerRecord:
+            raise BadRequest("rejected old-secret and new-secret")
+
+    spec = ResourceSpec(
+        kind="Secret",
+        canonical_fields=("password",),
+        identity_keys=("name",),
+        secret_paths=("password",),
+    )
+    client = Echoing([{"id": 1, "name": "one", "password": "old-secret"}])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    result = engine.run(
+        [Resource(kind="Secret", metadata=Metadata(name="one"), spec={"password": "new-secret"})],
+        write=True,
+    )
+    assert result.outcomes[0].action == "failed"
+    assert "old-secret" not in repr(result)
+    assert "new-secret" not in repr(result)
+
+
+def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
+    from untaped.capabilities.awx.errors import BadRequest
+
+    class Failing(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            if payload.name == "parent":
+                raise BadRequest("failed")
+            return super().create(spec, payload)
+
+    spec = ResourceSpec(
+        kind="Item",
+        canonical_fields=("parent",),
+        identity_keys=("name",),
+        fk_refs=(FkRef(field="parent", kind="Item"),),
+    )
+    client = Failing([])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    docs = [
+        Resource(kind="Item", metadata=Metadata(name="parent"), spec={}),
+        Resource(kind="Item", metadata=Metadata(name="child"), spec={"parent": "parent"}),
+        Resource(kind="Item", metadata=Metadata(name="independent"), spec={}),
+    ]
+    result = engine.run(docs, write=True, continue_on_error=True)
+    assert [row.action for row in result.outcomes] == ["failed", "skipped", "created"]
+
+
+def test_parallel_execution_never_exceeds_http_cap() -> None:
+    import threading
+
+    barrier = threading.Barrier(10)
+
+    class Counting(_Client):
+        def __init__(self) -> None:
+            super().__init__([])
+            self.lock = threading.Lock()
+            self.active = 0
+            self.peak = 0
+
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            with self.lock:
+                self.active += 1
+                self.peak = max(self.peak, self.active)
+            barrier.wait(timeout=2)
+            with self.lock:
+                result = super().create(spec, payload)
+                self.active -= 1
+                return result
+
+    spec = ResourceSpec(kind="Item", canonical_fields=(), identity_keys=("name",))
+    client = Counting()
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    result = engine.execute(
+        engine.prepare(
+            [
+                Resource(kind="Item", metadata=Metadata(name=str(index)), spec={})
+                for index in range(20)
+            ]
+        ),
+        parallel=100,
+    )
+    assert client.peak == 10
+    assert [row.action for row in result.outcomes] == ["created"] * 20
+
+
+def test_exposed_plan_values_cannot_change_the_prepared_write() -> None:
+    client = _Client([{"id": 7, "name": "one", "description": "old"}])
+    engine = _engine(client)
+    resource = _project("one", "prepared")
+    plan = engine.prepare([resource])
+    resource.spec["description"] = "changed input"
+    plan.operations[0].payload["description"] = "changed accessor"
+    plan.operations[0].resource.spec["description"] = "changed document"
+    assert engine.execute(plan).outcomes[0].action == "updated"
+    assert client.records[7]["description"] == "prepared"

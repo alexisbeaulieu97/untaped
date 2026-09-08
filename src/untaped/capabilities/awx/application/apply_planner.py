@@ -119,9 +119,11 @@ class ApplyPlanner:
             scope = scope_for(ref, resource)
             value = body[ref.field]
             if ref.multi:
+                if not isinstance(value, list):
+                    raise BadRequest(f"foreign key {ref.field!r} must be a list")
                 if isinstance(value, list):
                     body[ref.field] = [
-                        _resolve_fk_value(
+                        resolve_fk_value(
                             ref.kind,
                             v,
                             scope=scope,
@@ -132,7 +134,7 @@ class ApplyPlanner:
                         for index, v in enumerate(value)
                     ]
             else:
-                body[ref.field] = _resolve_fk_value(
+                body[ref.field] = resolve_fk_value(
                     ref.kind,
                     value,
                     scope=scope,
@@ -157,14 +159,14 @@ def _existing_multi_value(existing: Mapping[str, Any] | None, field: str, index:
     return None
 
 
-def _resolve_fk_value(
+def resolve_fk_value(
     kind: str,
     value: Any,
     *,
     scope: dict[str, str] | None,
     fk: FkResolver,
-    existing: Any,
-    preserve_existing_id: bool,
+    existing: Any = None,
+    preserve_existing_id: bool = False,
 ) -> PlannedId:
     """Resolve an FK without confusing numeric names with numeric IDs.
 
@@ -179,15 +181,14 @@ def _resolve_fk_value(
     if isinstance(value, int):
         if value <= 0:
             raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
-        return value
+        return fk.validate_id(kind, value, scope=scope)
     if preserve_existing_id and isinstance(existing, int) and not isinstance(existing, bool):
         try:
-            if fk.id_to_name(kind, existing) == value:
-                return existing
+            original_name = fk.id_to_name(kind, existing)
         except AwxApiError, KeyError, ValueError:
-            # A cache miss or a sparse test double must not make an otherwise
-            # valid name resolution fail; the authoritative lookup follows.
-            pass
+            original_name = None
+        if original_name == value:
+            return fk.validate_id(kind, existing, scope=scope)
     if not isinstance(value, str):
         raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
     return fk.name_to_id(kind, value, scope=scope)

@@ -1,13 +1,8 @@
-"""Compute the field-level diff that drives the apply preview.
+"""Compute exact body-field diffs and annotate preserved secret fields.
 
-Pure value-shaped class: takes the existing record + the (post-strip)
-desired payload + the set of preserved-secret top-level fields, returns
-``list[FieldChange]``. Order-insensitive equality is applied to FK
-lists (``credentials``, etc.) so server-side reordering doesn't appear
-as a spurious diff.
-
-The diff is independent of the spec — it only reads the dicts. Tests
-exercise it directly without a Catalog / FkResolver / Client.
+Body maps and ordered lists use the shared semantic comparator. Enrichment is
+accepted only for explicitly declared fields; sub-endpoint memberships own their
+separate set/order semantics.
 """
 
 from __future__ import annotations

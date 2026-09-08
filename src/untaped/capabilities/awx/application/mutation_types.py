@@ -19,31 +19,65 @@ class PreparedMutation:
     ``payload`` and ``existing`` are execution-only values and are excluded
     from repr so printing a plan cannot accidentally expose a secret.  Use
     ``presentation_payload`` and ``preview`` for human-facing output.
+    Structured accessors return copies so callers cannot alter execution state
+    through a nested mapping or an exposed Pydantic value.
     """
 
     index: int
-    resource: Resource = field(repr=False)
+    _resource: Resource = field(repr=False)
     spec: ResourceSpec = field(repr=False)
     strategy: ApplyStrategy = field(repr=False)
-    identity: dict[str, Any]
-    scope: dict[str, Any]
-    payload: dict[str, Any] = field(repr=False)
-    presentation_payload: dict[str, Any]
-    existing: dict[str, Any] | None = field(repr=False)
+    _identity: dict[str, Any]
+    _scope: dict[str, Any]
+    _payload: dict[str, Any] = field(repr=False)
+    _presentation_payload: dict[str, Any]
+    _existing: dict[str, Any] | None = field(repr=False)
     target_id: int | None
     watched_fields: tuple[str, ...]
     create: bool
     dependencies: tuple[int, ...]
-    preview: ApplyOutcome
-    membership_plans: list[MembershipPlan] = field(repr=False, default_factory=list)
+    _preview: ApplyOutcome
+    _membership_plans: list[MembershipPlan] = field(repr=False, default_factory=list)
     create_parent: tuple[str, int | DeferredReference] | None = field(repr=False, default=None)
+
+    @property
+    def resource(self) -> Resource:
+        return copy.deepcopy(self._resource)
+
+    @property
+    def identity(self) -> dict[str, Any]:
+        return copy.deepcopy(self._identity)
+
+    @property
+    def scope(self) -> dict[str, Any]:
+        return copy.deepcopy(self._scope)
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return copy.deepcopy(self._payload)
+
+    @property
+    def presentation_payload(self) -> dict[str, Any]:
+        return copy.deepcopy(self._presentation_payload)
+
+    @property
+    def existing(self) -> dict[str, Any] | None:
+        return copy.deepcopy(self._existing)
+
+    @property
+    def preview(self) -> ApplyOutcome:
+        return copy.deepcopy(self._preview)
+
+    @property
+    def membership_plans(self) -> list[MembershipPlan]:
+        return copy.deepcopy(self._membership_plans)
 
 
 @dataclass(frozen=True)
 class MutationPlan:
     """An in-memory plan that can be confirmed and executed unchanged."""
 
-    operations: list[PreparedMutation]
+    operations: tuple[PreparedMutation, ...]
     mode: str = "apply"
 
     @property

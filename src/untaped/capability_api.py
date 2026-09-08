@@ -1,6 +1,6 @@
 """Stable import surface for capability provider authors (spec §2).
 
-The v1 composition set (eight names) plus the sixteen supported helpers.
+The v1 composition set (eight names) plus the supported helpers.
 Provider packages MUST obtain helpers only via this module.
 """
 
@@ -28,12 +28,13 @@ from untaped.cli import (
     report_errors,
 )
 from untaped.errors import ConfigError, UntapedError, first_validation_error
+from untaped.pipe import PipeEnvelope, parse_envelope_line
 from untaped.settings import get_config_section
 from untaped.state import StateCollection
 from untaped.stdin import read_identifiers
 from untaped.ui import UiContext
 
-__all__ = [  # noqa: RUF022 — grouped 8 core + 16 helpers, order pinned by test_all_contains_exactly_eight_plus_sixteen
+__all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by test_all_contains_exact_surface
     "ApplicationSpec",
     "CapabilitySpec",
     "CapabilityProvider",
@@ -45,6 +46,7 @@ __all__ = [  # noqa: RUF022 — grouped 8 core + 16 helpers, order pinned by tes
     "ColumnsOption",
     "ConfigError",
     "FormatOption",
+    "PipeEnvelope",
     "StateCollection",
     "UiContext",
     "UntapedError",
@@ -55,6 +57,7 @@ __all__ = [  # noqa: RUF022 — grouped 8 core + 16 helpers, order pinned by tes
     "finish",
     "first_validation_error",
     "get_config_section",
+    "parse_envelope_line",
     "raise_usage",
     "read_identifiers",
     "report_errors",
