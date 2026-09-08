@@ -17,9 +17,14 @@ jobs:
   unified-app-wheel-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      HOME: ${{ runner.temp }}/untaped-smoke-home
     steps:
+      - name: Configure isolated smoke home
+        run: |
+          set -euo pipefail
+          home_dir="$RUNNER_TEMP/untaped-smoke-home"
+          mkdir -p "$home_dir"
+          echo "HOME=$home_dir" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:

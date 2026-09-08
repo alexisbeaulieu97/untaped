@@ -254,6 +254,18 @@ def test_release_workflow_smokes_published_package_from_selected_index() -> None
     assert "verify-index-artifacts" in smoke
 
 
+def test_release_workflow_initializes_smoke_home_at_step_runtime() -> None:
+    _, workflow = _load_release_workflow()
+
+    job = _job(workflow, SMOKE_JOB)
+    assert "HOME" not in job.get("env", {})
+    setup = _step(workflow, "Configure isolated published smoke home", job_name=SMOKE_JOB)
+    run = str(setup["run"])
+    assert 'home_dir="$RUNNER_TEMP/untaped-published-smoke-home"' in run
+    assert 'mkdir -p "$home_dir"' in run
+    assert 'echo "HOME=$home_dir" >> "$GITHUB_ENV"' in run
+
+
 def test_release_workflow_creates_github_release_only_after_production_smoke() -> None:
     _, workflow = _load_release_workflow()
 

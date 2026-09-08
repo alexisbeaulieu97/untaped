@@ -86,6 +86,17 @@ def test_release_smoke_workflow_runs_on_pr_main_push_and_manual_dispatch() -> No
     assert job["runs-on"] == "ubuntu-latest"
 
 
+def test_release_smoke_workflow_initializes_home_at_step_runtime() -> None:
+    _, workflow = _load_workflow()
+
+    job = workflow["jobs"][SMOKE_JOB]
+    assert "HOME" not in job.get("env", {})
+    run = _step_run(workflow, "Configure isolated smoke home")
+    assert 'home_dir="$RUNNER_TEMP/untaped-smoke-home"' in run
+    assert 'mkdir -p "$home_dir"' in run
+    assert 'echo "HOME=$home_dir" >> "$GITHUB_ENV"' in run
+
+
 def test_release_smoke_workflow_builds_and_installs_the_unified_app_wheel() -> None:
     _, workflow = _load_workflow()
 
