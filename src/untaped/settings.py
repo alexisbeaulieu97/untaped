@@ -1,13 +1,11 @@
 """Registry-backed configuration loaded from ``~/.untaped/config.yml``.
 
-The SDK owns YAML/env loading and an in-process registry that the running tool
-populates (via :func:`untaped.tool.register_tool`) with its typed settings
-section(s) and the built-in profiles layout.
+The unified composition root owns YAML/env loading and the in-process registry
+of typed capability settings sections over the profiles layout.
 """
 
 from __future__ import annotations
 
-import logging
 import os
 from collections.abc import Mapping
 from functools import lru_cache
@@ -57,7 +55,6 @@ class _ConfigRegistry:
     def reset(self) -> None:
         self.profile_sections = {}
         self.state_sections = dict(BUILTIN_STATE_SECTIONS)
-        _warned_legacy_config.clear()
         get_settings.cache_clear()
         get_settings_model.cache_clear()
         get_profile_settings_model.cache_clear()
@@ -90,10 +87,6 @@ class _ConfigRegistry:
 
 
 _CONFIG_REGISTRY = _ConfigRegistry()
-
-# Config paths already warned about (warn-once-per-process for the flat→profiles
-# migration); keyed by (path, offending section names). Cleared on registry reset.
-_warned_legacy_config: set[tuple[str, frozenset[str]]] = set()
 
 
 class Settings(BaseSettings):
@@ -171,8 +164,8 @@ def _reject_reserved_section(section: str) -> None:
 def reset_config_registry_for_tests() -> None:
     """Reset the running tool's registered config sections.
 
-    Public only for test isolation. Production code registers sections via
-    :func:`untaped.tool.register_tool`.
+    Public only for test isolation. Production code registers sections during
+    unified composition.
     """
     _CONFIG_REGISTRY.reset()
 
@@ -184,7 +177,6 @@ class LayoutSettingsSource(InitSettingsSource):
         raw = self._load_raw_yaml(yaml_file)
         effective = active_settings_layout().effective(raw)
         splice_registered_state(raw, effective)
-        _warn_on_legacy_flat_sections(raw, yaml_file)
         super().__init__(settings_cls, effective)
 
     @staticmethod
@@ -218,43 +210,6 @@ def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -
             merged.update(state_data)
         else:
             effective[section] = state_data
-
-
-def legacy_flat_sections(raw: Mapping[str, Any]) -> list[str]:
-    """Top-level config keys that belong under ``profiles.default`` (and are ignored).
-
-    The flat top-level layout was removed in v1.0.1 (and ``http``/``ui`` joined
-    it in v2.0.0); such a key is now silently ignored by the profiles resolver.
-    The set of "belongs under a profile" keys is derived from the schema — the
-    base per-profile fields (``log_level``, ``http``, ``ui``) plus every
-    registered tool section — so there's no hard-coded name list. Tool-managed
-    top-level *state* sections legitimately stay top-level and are excluded.
-    Shared by the load-time warning and ``config doctor``.
-    """
-    profile_keys = set(Settings.model_fields) | set(_CONFIG_REGISTRY.profile_sections)
-    return sorted(
-        key for key in raw if key in profile_keys and key not in _CONFIG_REGISTRY.state_sections
-    )
-
-
-def _warn_on_legacy_flat_sections(raw: Mapping[str, Any], path: Path) -> None:
-    """Warn once when a per-profile setting sits at the config top level."""
-    offending = legacy_flat_sections(raw)
-    if not offending:
-        return
-    cache_key = (str(path), frozenset(offending))
-    if cache_key in _warned_legacy_config:
-        return
-    _warned_legacy_config.add(cache_key)
-    sections = ", ".join(offending)
-    logging.getLogger("untaped").warning(
-        "%s has top-level section(s) %s that are ignored since the v1.0.1 profiles "
-        "layout. Move them under `profiles.default.<section>` "
-        "(e.g. `profiles:` → `default:` → `%s: ...`).",
-        path,
-        sections,
-        offending[0],
-    )
 
 
 def resolve_config_path() -> Path:

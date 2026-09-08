@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
 
 _DOTTED_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
-_UNTAPED_DEV_REQUIREMENT = "untaped>=4.0.0rc1,<5"
+_UNTAPED_DEV_REQUIREMENT = "untaped>=4.0.0,<5"
 HookKind = Literal["transform", "validate"]
 
 
@@ -111,7 +111,6 @@ class HookProjectMetadata(BaseModel):
             )
         if not isinstance(hooks, Mapping):
             raise ValueError("[tool.untaped_recipe.hooks] must be a table")
-        _reject_kind_hook_rows(hooks)
         return cls(
             hooks=dict(hooks),
             requires_hook_api=requires_hook_api,
@@ -201,17 +200,6 @@ def validate_hook_project_contract(project_root: Path, metadata: HookApiContract
             f"hook project requires hook API {metadata.requires_hook_api}, "
             f"but the untaped recipe capability provides {HOOK_API_VERSION}: {project_root}"
         )
-
-
-def _reject_kind_hook_rows(hooks: Mapping[object, object]) -> None:
-    for name, definition in hooks.items():
-        if not isinstance(definition, Mapping):
-            continue
-        if "kind" in definition:
-            raise ValueError(
-                f"hook {name!r} declares kind; kind was removed in 0.9 — "
-                "export transform()/validate() instead"
-            )
 
 
 def nested_mapping(data: Mapping[str, object], path: tuple[str, ...]) -> object | None:

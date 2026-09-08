@@ -139,8 +139,9 @@ def test_no_extra_module_level_names_leak() -> None:
     assert public == set(capi.__all__) | {"annotations"}
 
 
-def test_sdk_api_surface_untouched() -> None:
-    assert "ToolSpec" in sdk_api.__all__
+def test_sdk_api_does_not_expose_capability_composition_types() -> None:
+    assert "SkillAsset" not in sdk_api.__all__
+    assert "ToolSpec" not in sdk_api.__all__
     assert "capability_api" not in sdk_api.__all__
 
 

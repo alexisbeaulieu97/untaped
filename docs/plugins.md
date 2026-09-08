@@ -2,9 +2,10 @@
 
 `untaped` is a single application. Built-in capabilities are composed into the
 root shell, and external capabilities are discovered from the
-`untaped.capabilities` entry-point group. This page shows the current provider
-contract; the complete validation and quarantine rules live in
-[the composition specification](./capabilities-spec.md).
+`untaped.capabilities` entry-point group. This page shows the provider workflow;
+the implementation in
+[`src/untaped/capability_api.py`](../src/untaped/capability_api.py) is the
+authoritative API surface.
 
 A capability contributes one command subtree, one config section, optional
 state, optional doctor checks, and optional packaged skills. It runs as
@@ -40,7 +41,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=4.0.0rc1,<5",
+    "untaped>=4.0.0,<5",
 ]
 
 [project.entry-points."untaped.capabilities"]
@@ -69,9 +70,9 @@ unzip -l dist/acme_provider-*.whl \
 
 The entry-point name must equal the `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` tuple, and return one
-`CapabilitySpec` when called without arguments. The current capability API
-version is `1.0`; a provider built against v1 declares the compatible range
-`(1.0, 2.0)`.
+`CapabilitySpec` when called without arguments. Check the current
+`CAPABILITY_API_VERSION` in `src/untaped/capability_api.py` when choosing the
+compatible range.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
@@ -298,6 +299,7 @@ its entry-point name matches `SPEC.name`, and exercise root config, profile,
 skill, pipe, and error paths. A malformed external provider is quarantined so
 other capabilities can still boot; a built-in provider violation is fatal.
 
-See [the composition specification](./capabilities-spec.md) for the exact API
-range, reserved roots, duplicate detection, provider metadata, quarantine, and
-provider side-effect rules.
+The root validates provider metadata before mounting it. Exercise the provider
+through `untaped capabilities`, `untaped <capability> --help`, and
+`untaped doctor`; those commands expose the composed surface and any
+quarantine diagnostics without maintaining a second option inventory here.

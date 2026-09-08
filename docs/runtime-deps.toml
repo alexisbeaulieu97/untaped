@@ -1,4 +1,4 @@
-# Distribution runtime dependencies per capability (spec §6(a)).
+# Distribution runtime dependencies per capability.
 #
 # Each in-repo capability's runtime dependencies (`pyproject.toml`
 # `dependencies`) MUST be recorded here, one entry per direct dependency

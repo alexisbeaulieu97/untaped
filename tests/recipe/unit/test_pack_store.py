@@ -208,6 +208,26 @@ def test_pack_library_index_round_trips_source_rev_and_version(tmp_path: Path) -
     }
 
 
+@pytest.mark.parametrize(
+    ("index_text", "message"),
+    [
+        ('"broken" = "not-a-table"\n', "must be a table"),
+        ('[broken]\nsource = "local"\n', "requires content_hash"),
+        ('[broken]\ncontent_hash = ""\n', "requires content_hash"),
+        ("[broken]\ncontent_hash = 42\n", "requires content_hash"),
+    ],
+)
+def test_pack_library_rejects_incomplete_index_rows(
+    tmp_path: Path, index_text: str, message: str
+) -> None:
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    (library_root / "packs.toml").write_text(index_text, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        PackLibrary(library_root=library_root).reconcile()
+
+
 def test_pack_library_reconcile_reports_stale_index_and_orphan_directory(
     tmp_path: Path,
 ) -> None:

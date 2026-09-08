@@ -6,12 +6,6 @@ import importlib
 
 EXPECTED_SURFACE = frozenset(
     {
-        # Tool composition contract
-        "ToolSpec",
-        "SkillAsset",
-        "register_tool",
-        "run_tool",
-        "build_tool_app",
         # Tool execution context
         "AppContext",
         "app_context",

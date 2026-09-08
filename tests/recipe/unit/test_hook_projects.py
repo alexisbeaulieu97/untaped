@@ -125,7 +125,7 @@ def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
     with pytest.raises(ValueError, match="module is required"):
         HookProjectMetadata.from_pyproject({"tool": {"untaped_recipe": {"hooks": {"check": {}}}}})
 
-    with pytest.raises(ValueError, match=r"kind was removed in 0\.9"):
+    with pytest.raises(ValueError, match="extra_forbidden"):
         HookProjectMetadata.from_pyproject(
             {
                 "tool": {
@@ -137,7 +137,7 @@ def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
         )
 
 
-def test_manifest_kind_is_rejected(tmp_path: Path) -> None:
+def test_manifest_hook_metadata_rejects_unknown_fields(tmp_path: Path) -> None:
     project_root = tmp_path / "recipe"
     _write_hook_project(
         project_root,
@@ -145,7 +145,7 @@ def test_manifest_kind_is_rejected(tmp_path: Path) -> None:
         kind="transform",
     )
 
-    with pytest.raises(ValueError, match=r"kind was removed in 0\.9"):
+    with pytest.raises(ValueError, match="extra_forbidden"):
         HookProjectMetadata.from_pyproject(
             {
                 "tool": {
@@ -160,7 +160,7 @@ def test_manifest_kind_is_rejected(tmp_path: Path) -> None:
                 }
             }
         )
-    with pytest.raises(ValueError, match=r"kind was removed in 0\.9"):
+    with pytest.raises(ValueError, match="extra_forbidden"):
         read_hook_metadata(project_root)
 
 
@@ -223,7 +223,7 @@ def test_hook_resolver_rejects_missing_lockfile(tmp_path: Path) -> None:
         HookResolver().resolve("check", recipe_dir)
 
 
-@pytest.mark.parametrize("dependency", ["untaped>=4.0.0rc1,<5", "untaped-recipe>=0.7"])
+@pytest.mark.parametrize("dependency", ["untaped>=4.0.0,<5", "untaped-recipe>=0.7"])
 def test_hook_resolver_rejects_runtime_cli_dependency(
     tmp_path: Path,
     dependency: str,
@@ -241,7 +241,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(
     ) as exc_info:
         HookResolver().resolve("check", recipe_dir)
     assert "dependency-groups.dev" in str(exc_info.value)
-    assert "untaped>=4.0.0rc1,<5" in str(exc_info.value)
+    assert "untaped>=4.0.0,<5" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
@@ -249,7 +249,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(
     [
         "Untaped_Recipe[hooks]>=0.7; python_version >= '3.14'",
         "untaped-recipe @ git+https://example.invalid/untaped-recipe.git",
-        "untaped[recipe]>=4.0.0rc1,<5",
+        "untaped[recipe]>=4.0.0,<5",
     ],
 )
 def test_hook_resolver_rejects_pep508_runtime_cli_dependencies(
@@ -1326,7 +1326,8 @@ def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: P
         "    )\n"
         "\n"
         "def validate(*, inputs, target, args, helpers):\n"
-        "    return helpers.warn('check warning')\n"
+        "    helpers.warn('check warning')\n"
+        "    return helpers.pass_()\n"
     )
     worker = (
         Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "hook_worker.py"
@@ -1485,7 +1486,7 @@ def test_worker_script_rejects_invalid_validate_return_object(tmp_path: Path) ->
     assert "invalid validate verdict" in stderr
 
 
-def test_hook_executor_maps_legacy_warn_verdict_to_pass_plus_warning(tmp_path: Path) -> None:
+def test_hook_executor_rejects_unknown_warn_verdict(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipe"
     _write_hook_project(
         recipe_dir,
@@ -1502,7 +1503,6 @@ def test_hook_executor_maps_legacy_warn_verdict_to_pass_plus_warning(tmp_path: P
             diagnostic_limit: int | None = 4000,
             settle_seconds: float = 0,
         ) -> HookWorkerCallResult:
-            # Legacy hooks may still return a bare warn verdict dict.
             return HookWorkerCallResult(
                 result={"status": "warn", "message": "check this"},
                 diagnostics="discarded\n",
@@ -1514,17 +1514,14 @@ def test_hook_executor_maps_legacy_warn_verdict_to_pass_plus_warning(tmp_path: P
         helpers_factory=HookHelpers,
     )
 
-    result = executor.validate(
-        "check",
-        local_hook_project=recipe_dir,
-        target=tmp_path / "target",
-        inputs={},
-        args={},
-    )
-
-    assert result.result == Verdict(status="pass")
-    assert result.warnings == ("check this",)
-    assert result.diagnostics == ""
+    with pytest.raises(ValueError, match="status"):
+        executor.validate(
+            "check",
+            local_hook_project=recipe_dir,
+            target=tmp_path / "target",
+            inputs={},
+            args={},
+        )
 
 
 def test_hook_executor_collects_worker_warnings_alongside_verdict(tmp_path: Path) -> None:

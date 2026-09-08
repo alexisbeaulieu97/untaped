@@ -202,7 +202,7 @@ def run_cyclopts_app(
     """Run a Cyclopts app while preserving untaped's usage-error contract.
 
     Also converts a broken downstream pipe — the consumer closed it early, e.g.
-    ``untaped-tool list | head`` or a consumer that exits before reading all of
+    ``untaped <capability> list | head`` or a consumer that exits before reading all of
     its input — into a clean ``SystemExit(1)``. Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.

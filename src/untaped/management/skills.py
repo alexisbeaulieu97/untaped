@@ -1,7 +1,6 @@
-"""Root ``untaped skills …`` command group (Wave 1.4).
+"""Root ``untaped skills …`` command group.
 
-Converts the per-tool skills surface (:mod:`untaped.skills_app`) to root
-commands over the union of the shell plus every composed capability's
+The root exposes commands over the union of the shell plus every composed capability's
 skills. Selection, planning, and install machinery are imported from
 :mod:`untaped.skills`; only the short-selector rule is new: a selector
 naming no skill exactly retries with the ``untaped-`` prefix, while the

@@ -80,7 +80,7 @@ no control flow in recipes, and no state or inventory.
 - Records resolve absolute `record.target_path` first, then generic
   `record.path`. Records whose `kind` ends in `.summary` are skipped as
   non-targets. Repo-grain records such as `workspace.repo` must provide
-  `target_path`; stale `path`+`repo` streams are rejected before planning.
+  `target_path`; records without it are rejected before planning.
 - Piped stdin requires `--yes` before planning unless `--dry-run` or `--check`
   is used. `--stdin --interactive` reads targets from stdin and prompts via
   the controlling terminal, failing clearly without one.
@@ -118,7 +118,9 @@ no control flow in recipes, and no state or inventory.
   and `packs.toml`; a ref validates one pack, recipe, path, or built-in. It
   AST-scans hook modules without importing them, and for hook-declaring
   projects requires `uv.lock` and verifies freshness with `uv lock --check`
-  (hookless packs and recipe projects are exempt).
+  (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
+  row must include its `content_hash`; malformed or incomplete rows fail closed
+  before a library mutation.
 - `test [pack|path|pack/recipe]` runs golden-fixture cases under
   `tests/<recipe>/<case>/`: `given/` is copied to a temp target, `expected/` is
   the full expected tree (omitted = asserts no changes), optional data-only
@@ -163,16 +165,17 @@ no control flow in recipes, and no state or inventory.
   anchors for structural reuse in recipes.
 - A hook module exports `transform()`, `validate()`, or both — the exported
   name is the contract; manifest rows declare only `module`. Keep
-  `untaped>=4.0.0rc1,<5` as a dev-only dependency; runtime hook dependencies go
+  `untaped>=4.0.0,<5` as a dev-only dependency; runtime hook dependencies go
   in `[project].dependencies`.
   Hooks must stay pure at planning time: read only the target tree and their
   own pack, never write or reach the network.
 - Validate verdicts are `helpers.pass_()`, `helpers.fail(msg)`, and
   `helpers.skip(msg)` (not applicable → target `skipped`, never a failure).
   `helpers.warn(msg)` is a warning accumulator callable any number of times from
-  validate and transform hooks; warnings attach to the target plan. A legacy
-  `{"status": "warn"}` verdict (or returning `helpers.warn(...)`) is accepted
-  this release and mapped to pass + a warning (deprecated).
+  validate and transform hooks; warnings attach to the target plan and do not
+  replace the verdict. Call it for its side effect, then return a pass, fail, or
+  skip verdict. `None` remains an implicit pass and a plain string is a fail
+  message; unknown verdict objects and status values are rejected.
 - `hook run <ref> --target DIR` debugs one hook without a recipe: transforms
   need `--file` (stdout is exact transformed content, or `--diff`); validates
   emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit non-zero only

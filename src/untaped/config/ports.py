@@ -1,4 +1,4 @@
-"""Protocols (ports) for the per-tool config command group."""
+"""Protocols (ports) for the root config command group."""
 
 from __future__ import annotations
 

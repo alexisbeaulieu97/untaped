@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 import untaped.skills as skills_module
+from untaped.capability_api import SkillAsset
 from untaped.errors import ConfigError
 from untaped.skills import SkillInstallScope, SkillInstallTarget
-from untaped.tool import SkillAsset
 
 
 def _skill_dir(tmp_path: Path, name: str = "untaped-demo") -> Path:
