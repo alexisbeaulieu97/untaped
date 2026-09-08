@@ -237,6 +237,7 @@ class BatchMutationEngine:
             specs.append(spec)
             strategies.append(self._strategies.get(spec.apply_strategy))
 
+        parent_targets: set[tuple[str, str, int | str]] = set()
         pending = set(range(len(docs)))
         while pending:
             progressed = False
@@ -297,6 +298,18 @@ class BatchMutationEngine:
                         )
                     target.id = record_id
                     resolved_existing[index] = self._snapshot(spec, record)
+                if spec.singleton_parent:
+                    if parent is None:
+                        raise BadRequest(f"{spec.kind} requires a parent-owned identity")
+                    parent_id = (
+                        parent[1].token if isinstance(parent[1], DeferredReference) else parent[1]
+                    )
+                    key = (spec.kind, parent[0], parent_id)
+                    if key in parent_targets:
+                        raise MutationConflict(
+                            f"duplicate parent-owned target {spec.kind} for {parent[0]}"
+                        )
+                    parent_targets.add(key)
                 pending.remove(index)
                 progressed = True
             if not progressed:

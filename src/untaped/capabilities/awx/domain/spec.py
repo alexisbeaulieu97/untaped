@@ -135,6 +135,8 @@ class ResourceSpec(BaseModel):
     every other user-owned map and sequence.
     """
     actions: tuple[ActionSpec, ...] = ()
+    singleton_parent: bool = False
+    """Prepared resource has one managed target per parent, regardless of its name."""
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.
     The string is opaque to the domain — :class:`StrategyResolver` (an
