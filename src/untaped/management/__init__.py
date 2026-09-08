@@ -1,10 +1,4 @@
-"""Root management commands for the unified ``untaped`` shell (Wave 1.4).
-
-Each builder converts an existing per-tool surface to a root command by
-importing its shared logic; new private helpers exist only where the root
-semantics genuinely differ (root key resolution, short skill selectors,
-offline isolated doctor rows, capability listings).
-"""
+"""Root management commands for the unified ``untaped`` shell."""
 
 from __future__ import annotations
 

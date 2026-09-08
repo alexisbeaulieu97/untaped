@@ -164,27 +164,33 @@ def test_pack_add_force_proceeds_without_local_edits(tmp_path: Path) -> None:
     _add_pack(library_root, pack_source, name="clean", force=True)
 
 
-def test_pack_add_force_treats_legacy_rows_as_unguarded(tmp_path: Path) -> None:
+def test_pack_add_rejects_index_rows_without_content_hash_before_mutation(tmp_path: Path) -> None:
     library_root = tmp_path / "library"
     pack_source = tmp_path / "pack-source"
     _write_hook_project(pack_source, hook_name="pick")
-    _add_pack(library_root, pack_source, name="legacy")
+    _add_pack(library_root, pack_source, name="guarded")
     index_path = library_root / "packs.toml"
     index_path.write_text(
         index_path.read_text(encoding="utf-8").replace("content_hash", "ignored_field"),
         encoding="utf-8",
     )
-    installed = library_root / "packs" / "legacy"
+    installed = library_root / "packs" / "guarded"
     (installed / "src" / "project_hooks" / "hooks" / "pick.py").write_text(
         "def transform(content, *, inputs, target, file, args, helpers):\n"
         "    return content + 'edited'\n"
     )
-    assert PackLibrary(library_root=library_root).local_edits("legacy") is False
 
-    _add_pack(library_root, pack_source, name="legacy", force=True)
+    before_index = index_path.read_text(encoding="utf-8")
+    before_hook = (installed / "src" / "project_hooks" / "hooks" / "pick.py").read_text(
+        encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=r"pack index row 'guarded' requires content_hash"):
+        _add_pack(library_root, pack_source, name="guarded", force=True, discard_edits=True)
 
-    assert "content_hash" in index_path.read_text(encoding="utf-8")
-    assert PackLibrary(library_root=library_root).local_edits("legacy") is False
+    assert index_path.read_text(encoding="utf-8") == before_index
+    assert (installed / "src" / "project_hooks" / "hooks" / "pick.py").read_text(
+        encoding="utf-8"
+    ) == before_hook
 
 
 def test_pack_content_hash_reports_unreadable_files_cleanly(tmp_path: Path) -> None:

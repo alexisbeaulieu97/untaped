@@ -56,12 +56,7 @@ def _target_from_record(kind: str | None, record: dict[str, object], lineno: int
     if target_path is not None:
         return target_path
     if kind == "workspace.repo":
-        # Bounded migration shim for pre-target_path workspace repo records;
-        # generic target consumers should otherwise rely on path/target_path.
-        raise ValueError(
-            f"line {lineno}: workspace.repo pipe record requires target_path; "
-            "rerun or upgrade untaped-workspace so repo records include target_path"
-        )
+        raise ValueError(f"line {lineno}: workspace.repo pipe record requires target_path")
     path_value = _string_field(record, "path")
     if path_value is None:
         raise ValueError(f"line {lineno}: record path is missing or blank")

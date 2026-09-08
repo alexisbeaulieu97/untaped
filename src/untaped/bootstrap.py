@@ -1,26 +1,9 @@
-"""Capability composition root for the unified ``untaped`` shell (spec §§1-2,4).
+"""Capability composition root for the unified ``untaped`` shell.
 
-This module REPLACES the ``untaped.run`` / ``untaped.tool`` composition path:
-it deliberately imports neither module. Discovery of built-in capabilities
-plus externals via the ``untaped.capabilities`` entry-point group runs BEFORE
-any settings registration or resolution; only providers that survive
-validation register settings sections, mount apps, or contribute skills and
-doctor checks.
-
-Wave 1.3 scope: the root owns position-independent ``--profile`` /
-``--verbose`` / ``--quiet`` options (token-reset exactly like the retired
-per-tool root), lazy ``--version`` from the ``untaped`` distribution,
-shell-completion wiring, invocation-scoped identity, and capability-mount
-plumbing with zero built-ins mounted yet. Wave 1.4 mounts the five root
-management commands (``config`` / ``profile`` / ``skills`` / ``doctor`` /
-``capabilities``, see :mod:`untaped.management`); Wave 1.5 mounts the
-workspace built-in capability subtree (``untaped workspace ...``); Wave 2
-slice 1 appends the github subtree (``untaped github ...``); Wave 2 slice 2
-appends the jira subtree (``untaped jira ...``); Wave 2 slice 3 appends
-the awx subtree (``untaped awx ...``); Wave 2 slice 4 appends
-the ansible subtree (``untaped ansible ...``); Wave 2 slice 5 appends
-the recipe subtree (``untaped recipe ...``); Wave 2 slice 6 appends
-the orchestration subtree (``untaped orchestration ...``).
+Built-in capabilities and providers discovered through the
+``untaped.capabilities`` entry-point group are validated before settings
+registration or app mounting. Only providers that survive validation
+contribute command trees, settings sections, skills, or doctor checks.
 """
 
 from __future__ import annotations
@@ -143,11 +126,8 @@ def _default_builtins() -> tuple[CapabilitySpec, ...]:
     )
 
 
-#: Built-in capabilities composed ahead of externals (Wave 1.5 mounts the
-#: workspace capability, Wave 2 slice 1 appends github, Wave 2 slice 2 appends
-#: jira, Wave 2 slice 3 appends awx, Wave 2 slice 4 appends ansible,
-#: Wave 2 slice 5 appends recipe, Wave 2 slice 6 appends orchestration;
-#: further capabilities append in declaration order).
+#: Built-in capabilities composed ahead of external providers, in declaration
+#: order.
 BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = _default_builtins()
 
 #: Active capability name for the current invocation (spec §4). Set at
@@ -163,7 +143,7 @@ def current_capability() -> str | None:
 
 
 class ShellProfileSettings(BaseModel):
-    """Shell-level profile-scoped settings (reserved; no fields in Wave 1.3)."""
+    """Reserved shell-level profile-scoped settings."""
 
 
 def _shell_app() -> App:
@@ -281,16 +261,11 @@ def build_root_app(
 ) -> App:
     """Compose the shell plus capabilities and return the root app.
 
-    Mounts the five root management commands plus each validated
-    capability's sub-app under its capability name (Wave 1.5 default mounts
-    the workspace built-in, Wave 2 slice 1 appends github, Wave 2 slice 2
-    appends jira, Wave 2 slice 3 appends awx, Wave 2 slice 4 appends ansible,
-    Wave 2 slice 5 appends recipe, Wave 2 slice 6 appends orchestration), wires
-    ``--version`` to lazy installed-distribution
-    metadata,
-    installs the position-independent root options, and registers shell
-    completion. Drive ``app.meta`` directly in tests; run via :func:`run_root`
-    in production.
+    Mounts root management commands and each validated capability's sub-app
+    under its capability name, wires ``--version`` to installed-distribution
+    metadata, installs position-independent root options, and registers shell
+    completion. Drive ``app.meta`` directly in tests; run via
+    :func:`run_root` in production.
     """
     candidates = list(externals) if externals is not None else list(discover_external_providers())
     result = compose_root(builtins=builtins, externals=candidates)

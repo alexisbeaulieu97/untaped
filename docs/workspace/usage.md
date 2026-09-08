@@ -521,7 +521,7 @@ run, on demand, before reference clones use it.
 
 ## See also
 
-- [`untaped` SDK configuration docs](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md)
-  — `untaped config`, profile selection, and the YAML schema.
-- [AGENTS.md](./AGENTS.md) — internals (manifest vs registry split, the
-  `GitRunner` boundary, sync state machine).
+- [Configuration](../configuration.md) — `untaped config`, profile selection,
+  and the YAML schema.
+- Run `untaped workspace <command> --help` for the current options and
+  `untaped config list --format json` to inspect the active configuration.

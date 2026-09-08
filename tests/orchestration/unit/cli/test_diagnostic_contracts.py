@@ -189,7 +189,7 @@ def test_unknown_failures_are_redacted_and_exit_five(error: Exception, capfd) ->
 
 
 def test_unknown_failure_trace_appears_only_under_debug(monkeypatch, capfd) -> None:
-    monkeypatch.setattr(sys, "argv", ["untaped-orchestration", "show", "--debug"])
+    monkeypatch.setattr(sys, "argv", ["untaped", "orchestration", "show", "--debug"])
     exit_code, captured = _run_failure(RuntimeError("debug detail"), "json", capfd)
     assert exit_code == 5
     assert "debug detail" not in captured.out

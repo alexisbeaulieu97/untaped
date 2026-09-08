@@ -33,7 +33,6 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
-from untaped.identity import current_tool_command
 from untaped.settings import HttpSettings, get_settings
 
 if TYPE_CHECKING:
@@ -364,22 +363,11 @@ def _decode_json_dict(response: httpx.Response) -> dict[str, Any]:
 
 
 def missing_setting_error(section: str, field: str) -> ConfigError:
-    """A standard "go set this config key" error for a missing tool setting.
-
-    Names the running tool's command with a bare key (``untaped-github config
-    set token``) when a tool is registered; falls back to a neutral
-    ``<tool> config set <section>.<field>`` placeholder otherwise (no tool
-    registered is a misuse path — e.g. the SDK used without ``run_tool``).
-    """
+    """Return the standard root command for a missing capability setting."""
     placeholder = field.rsplit("_", maxsplit=1)[-1]
-    command = current_tool_command()
-    if command is None:
-        cmd, key = "<tool>", f"{section}.{field}"
-    else:
-        cmd, key = command, field
     return ConfigError(
         f"{section}.{field} is not configured (set it via "
-        f"`{cmd} config set {key} <{placeholder}>` or "
+        f"`untaped config set {section}.{field} <{placeholder}>` or "
         f"UNTAPED_{section.upper()}__{field.upper()})"
     )
 

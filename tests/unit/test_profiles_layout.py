@@ -1,9 +1,7 @@
 """Tests for the SDK's built-in profiles settings layout.
 
-Profiles are now a first-class SDK capability (absorbed from the retired
-untaped-profile plugin), so ``ProfilesSettingsLayout`` lives in core. It
-layers ``profiles.default`` beneath ``profiles.<active>`` and exposes the
-profile surface the config writer needs.
+``ProfilesSettingsLayout`` layers ``profiles.default`` beneath
+``profiles.<active>`` and exposes the profile surface the config writer needs.
 """
 
 from __future__ import annotations

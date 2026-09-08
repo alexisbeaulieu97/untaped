@@ -1,82 +1,23 @@
-"""Use cases for the per-tool config command group."""
+"""Use cases for the root config command group."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from untaped.config.models import SettingEntry, Source, display_default, display_value
 from untaped.config.ports import SettingsReader, SettingsRepository
 from untaped.config_schema import FieldDescriptor
-from untaped.errors import ConfigError
-from untaped.settings import Settings
-
-if TYPE_CHECKING:
-    from untaped.tool import ToolSpec
-
-
-@dataclass(frozen=True)
-class ToolConfigContext:
-    """Tool identity needed to resolve user-facing config keys."""
-
-    command: str
-    section: str
-    profile_fields: frozenset[str]
-    state_fields: frozenset[str]
-
-    @classmethod
-    def from_spec(cls, spec: ToolSpec) -> ToolConfigContext:
-        state_fields: Iterable[str] = (
-            spec.state_model.model_fields if spec.state_model is not None else ()
-        )
-        return cls(
-            command=spec.command,
-            section=spec.section,
-            profile_fields=frozenset(spec.profile_model.model_fields),
-            state_fields=frozenset(state_fields),
-        )
-
-    def resolve_key(self, key: str) -> str:
-        """Map a user key to the concrete config key.
-
-        SDK roots win first: a tool field literally named ``log_level``,
-        ``http``, or ``ui`` must not capture those SDK-owned settings.
-        """
-        first, rest = _split_first(key)
-        if first in Settings.model_fields:
-            return key
-        if first in self.state_fields:
-            raise self._state_error(key)
-        if first == self.section and rest is not None:
-            state_first, _ = _split_first(rest)
-            if state_first in self.state_fields:
-                raise self._state_error(key)
-        if first in self.profile_fields:
-            return f"{self.section}.{key}"
-        return key
-
-    def _state_error(self, key: str) -> ConfigError:
-        return ConfigError(
-            f"{key!r} is managed by {self.command} and is not a configurable setting"
-        )
-
-
-def _split_first(key: str) -> tuple[str, str | None]:
-    first, sep, rest = key.partition(".")
-    return first, rest if sep else None
 
 
 class GetSetting:
     """Return the effective display entry for a single scalar setting."""
 
-    def __init__(self, repo: SettingsReader, *, context: ToolConfigContext | None = None) -> None:
+    def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
-        self._context = context
 
     def __call__(self, key: str, *, reveal_secrets: bool = False) -> SettingEntry:
-        resolved_key = self._context.resolve_key(key) if self._context is not None else key
-        descriptor = self._repo.descriptor(resolved_key)
+        descriptor = self._repo.descriptor(key)
         return setting_entry_for_descriptor(
             self._repo,
             descriptor,
@@ -86,7 +27,7 @@ class GetSetting:
 
 
 class ListSettings:
-    """Build the ``<tool> config list`` table — one entry per leaf scalar."""
+    """Build the root config list — one entry per leaf scalar."""
 
     def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
@@ -107,7 +48,7 @@ class ListSettings:
 
 
 class ListAllProfilesSettings:
-    """Build the ``<tool> config list --all-profiles`` table.
+    """Build the root config list ``--all-profiles`` table.
 
     One entry per ``(profile, key)`` pair where the profile actually sets the
     leaf. Schema defaults are *not* included (use plain ``ListSettings`` for
@@ -227,16 +168,12 @@ class SetSetting:
     the write landed.
     """
 
-    def __init__(
-        self, repo: SettingsRepository, *, context: ToolConfigContext | None = None
-    ) -> None:
+    def __init__(self, repo: SettingsRepository) -> None:
         self._repo = repo
-        self._context = context
 
     def __call__(self, key: str, raw_value: str, *, profile: str | None = None) -> SetSettingResult:
-        resolved_key = self._context.resolve_key(key) if self._context is not None else key
-        resolved_profile = self._repo.set_value(resolved_key, raw_value, profile=profile)
-        return SetSettingResult(key=resolved_key, profile=resolved_profile)
+        resolved_profile = self._repo.set_value(key, raw_value, profile=profile)
+        return SetSettingResult(key=key, profile=resolved_profile)
 
 
 @dataclass(frozen=True)
@@ -256,13 +193,9 @@ class UnsetSetting:
     raises ``ConfigError`` — same contract as ``set``.
     """
 
-    def __init__(
-        self, repo: SettingsRepository, *, context: ToolConfigContext | None = None
-    ) -> None:
+    def __init__(self, repo: SettingsRepository) -> None:
         self._repo = repo
-        self._context = context
 
     def __call__(self, key: str, *, profile: str | None = None) -> UnsetSettingResult:
-        resolved_key = self._context.resolve_key(key) if self._context is not None else key
-        removed, resolved_profile = self._repo.unset_value(resolved_key, profile=profile)
-        return UnsetSettingResult(key=resolved_key, removed=removed, profile=resolved_profile)
+        removed, resolved_profile = self._repo.unset_value(key, profile=profile)
+        return UnsetSettingResult(key=key, removed=removed, profile=resolved_profile)

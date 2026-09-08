@@ -1,32 +1,21 @@
 # `untaped` — documentation
 
-`untaped` is a single `untaped` application composing built-in capabilities; the standalone `untaped-*` tools are retired at the v4 cutover. Capabilities share two frozen contracts — the `~/.untaped/config.yml` format and the `--format pipe` envelope — so they interoperate and compose.
+`untaped` is a single application composing built-in capabilities. Use the
+installed command's `--help` output for the current command surface; these pages
+cover the workflows and contracts that are useful across commands.
 
 ## Pages
 
 - [Configuration](./configuration.md) — `~/.untaped/config.yml`,
   profiles, secrets, TLS, env-var overrides. Start here.
-- [Building a tool with the untaped SDK](./plugins.md) — declare a `ToolSpec`,
-  wire `run_tool`, and ship an independent CLI.
-- [Agent Skills](./skills.md) — list and install Codex/Claude skills that each
-  tool ships.
-- [Fleet tool conventions](./tool-conventions.md) — suite-wide layering, code
-  norms, and output conventions for agents working inside a tool repo.
-- [Fleet documentation standard](./documentation.md) — how every repo in the
-  family documents itself: single-source rule, surfaces, concept pages.
+- [Building a capability provider](./plugins.md) — package an external
+  capability for the unified CLI.
+- [Agent Skills](./skills.md) — list and install the skills shipped with the
+  composed application.
 - [Releasing](./release.md) — PyPI/TestPyPI workflow, Trusted Publisher setup,
   and recovery rules.
-- [Architecture decisions](./decisions.md) — the settled ADRs behind the single `untaped` application composing built-in capabilities, with the standalone `untaped-*` tools retired at the v4 cutover.
-
-Retired standalone `untaped-*` tool repos, now built-in capabilities of the single `untaped` application retired at the v4 cutover:
-
-- [GitHub](https://github.com/alexisbeaulieu97/untaped-github)
-- [Jira](https://github.com/alexisbeaulieu97/untaped-jira)
-- [AWX / AAP](https://github.com/alexisbeaulieu97/untaped-awx)
-- [Ansible](https://github.com/alexisbeaulieu97/untaped-ansible)
-- [Workspaces](https://github.com/alexisbeaulieu97/untaped-workspace)
-- [Recipe](https://github.com/alexisbeaulieu97/untaped-recipe)
-- [Apple Health](https://github.com/alexisbeaulieu97/untaped-apple-health)
+- [Workspace usage](./workspace/usage.md) — workspace manifests, sync, and
+  shell helpers.
 
 For installation, see the repo's [README](../README.md).
 
@@ -34,32 +23,30 @@ For installation, see the repo's [README](../README.md).
 
 Row-oriented `list`/`get`/`status`-style commands support
 `--format json|yaml|table|raw|pipe` and `--columns <field>` so their stdout
-can feed into the next tool. `--format pipe` is a self-describing record stream
-(NDJSON) that another untaped tool reads back — typed composition without
+can feed into the next command. `--format pipe` is a self-describing record stream
+(NDJSON) that another `untaped` command reads back — typed composition without
 flattening to strings:
 
 ```bash
 # Pick a job template interactively, then fetch its details as JSON.
-untaped-awx job-templates list --format raw --columns name \
+untaped awx job-templates list --format raw --columns name \
   | fzf \
-  | untaped-awx job-templates get --stdin --format json
+  | untaped awx job-templates get --stdin --format json
 
-# --format pipe carries full records between independently-installed tools.
-untaped-github search repos --org acme --format pipe \
-  | untaped-github search code "BaseModel" --repo-stdin
+# --format pipe carries full records between capability commands.
+untaped github search repos --org acme --format pipe \
+  | untaped github search code "BaseModel" --repo-stdin
 ```
 
-Single-entity commands (`whoami`/`get`/`show`/`status`) render their one object
-as a vertical `key: value` detail view via `emit(...)`, which dispatches by
-shape — a sequence becomes a collection — and still honours every `--format`.
+Single-entity commands (`whoami`/`get`/`show`/`status`) render a readable detail
+view by default and still honour every `--format`.
 
-Side-effect commands (`<tool> profile use`, `<tool> config set`, `apply --yes`,
+Side-effect commands (`untaped profile use`, `untaped config set`, `apply --yes`,
 …) print a short confirmation to stderr and exit. **Logs go to stderr; only
 data hits stdout** — so pipes stay clean. A `--quiet` root option mutes progress
 and `success`/`info` messages without touching data or warnings/errors.
 
 ## Contributing / extending
 
-Architecture, conventions, and the recipes for building a tool live in
-[AGENTS.md](../AGENTS.md). It's the single source of truth for *how* `untaped`
-is built — read it before sending changes.
+Contribution rules live in [AGENTS.md](../AGENTS.md). Source code and tests are
+the authority for implementation behavior.

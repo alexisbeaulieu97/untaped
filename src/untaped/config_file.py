@@ -1,8 +1,8 @@
 """Read/write helpers for the ``~/.untaped/config.yml`` file.
 
-These are the lowest-level primitives behind each tool's ``<tool> config
-set/unset``. They never validate against the Settings schema — that's the
-caller's job.
+These are the lowest-level primitives behind the root ``untaped config
+set/unset`` commands. They never validate against the Settings schema —
+that's the caller's job.
 
 Note: round-tripping with PyYAML drops comments. Acceptable for v0; if we
 need comment preservation later, swap to ``ruamel.yaml``.

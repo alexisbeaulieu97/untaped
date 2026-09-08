@@ -128,6 +128,7 @@ class PackLibrary:
         source_dir = source_dir.expanduser()
         manifest = PackManifest.from_pyproject(source_dir)
         validate_pack(source_dir, manifest)
+        index = self._read_index()
         installed_name = safe_library_name(name or manifest.name, field="pack")
         dest = self.packs_dir / installed_name
         if dest.exists() and not force:
@@ -142,7 +143,6 @@ class PackLibrary:
         if force and dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(source_dir, dest, ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE))
-        index = self._read_index()
         index[installed_name] = _IndexEntry(
             source=source,
             rev=rev or "",
@@ -156,8 +156,8 @@ class PackLibrary:
     def local_edits(self, name: str) -> bool:
         """Return true when the installed copy diverged from its install hash.
 
-        Absent packs and legacy index rows without a recorded hash report
-        False (unguarded).
+        Absent packs and unindexed directories report false. Every persisted
+        index row must contain a content hash before it can be read.
         """
         installed_name = safe_library_name(name, field="pack")
         dest = self.packs_dir / installed_name
@@ -174,8 +174,8 @@ class PackLibrary:
         dest = self.packs_dir / installed_name
         if not dest.is_dir():
             raise ValueError(f"pack not found: {name}")
-        shutil.rmtree(dest)
         index = self._read_index()
+        shutil.rmtree(dest)
         index.pop(installed_name, None)
         self._write_index(index)
         self._packs_cache = None
@@ -275,12 +275,15 @@ class PackLibrary:
         index: dict[str, _IndexEntry] = {}
         for name, raw_entry in data.items():
             if not isinstance(raw_entry, dict):
-                continue
+                raise ValueError(f"pack index row {name!r} must be a table")
+            raw_hash = raw_entry.get("content_hash")
+            if not isinstance(raw_hash, str) or not raw_hash.strip():
+                raise ValueError(f"pack index row {name!r} requires content_hash")
             index[name] = _IndexEntry(
                 source=str(raw_entry.get("source", "")),
                 rev=str(raw_entry.get("rev", "")),
                 version=str(raw_entry.get("version", "")),
-                content_hash=str(raw_entry.get("content_hash", "")),
+                content_hash=raw_hash,
             )
         return index
 

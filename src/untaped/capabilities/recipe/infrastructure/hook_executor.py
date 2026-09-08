@@ -185,14 +185,11 @@ class HookExecutor:
             result = execution.result
             diagnostics = execution.diagnostics
             warnings = execution.warnings
-        # A legacy `{"status": "warn"}` verdict (or an old hook returning
-        # helpers.warn(...) as its verdict) is accepted for this release and
-        # mapped to pass + an accumulated warning; documented as deprecated.
-        verdict, legacy_warnings = _coerce_verdict(result)
+        verdict = _coerce_verdict(result)
         return HookDebugResult(
             result=verdict,
             diagnostics=diagnostics,
-            warnings=warnings + legacy_warnings,
+            warnings=warnings,
         )
 
 
@@ -296,17 +293,14 @@ def _request_external(
     )
 
 
-def _coerce_verdict(value: object) -> tuple[Verdict, tuple[str, ...]]:
-    """Coerce a raw validate result into a verdict plus any legacy warnings."""
+def _coerce_verdict(value: object) -> Verdict:
+    """Coerce a raw validate result into the current verdict model."""
     if isinstance(value, Verdict):
-        return value, ()
+        return value
     if isinstance(value, dict):
-        if value.get("status") == "warn":
-            message = str(value.get("message", ""))
-            return Verdict(status="pass"), ((message,) if message else ())
-        return Verdict.model_validate(value), ()
+        return Verdict.model_validate(value)
     if value is None:
-        return Verdict(status="pass"), ()
+        return Verdict(status="pass")
     if isinstance(value, str):
-        return Verdict(status="fail", message=value), ()
+        return Verdict(status="fail", message=value)
     raise ValueError(f"invalid validate verdict: {value!r}")
