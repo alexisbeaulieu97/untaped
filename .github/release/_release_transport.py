@@ -47,7 +47,40 @@ class GitHubReleaseTransport:
             f"/releases/tags/{urllib.parse.quote(tag, safe='')}",
             missing_ok=True,
         )
-        return None if data is None else self._release_from_json(data)
+        if data is not None:
+            release = self._release_from_json(data)
+            if release.tag != tag:
+                raise ReleaseCheckError("GitHub returned a release with an unexpected tag")
+            return release
+
+        matches: list[GitHubRelease] = []
+        page = 1
+        while True:
+            releases = self._request_release_page(page=page)
+            for release_data in releases:
+                if release_data.get("tag_name") == tag:
+                    matches.append(self._release_from_json(release_data))
+            if len(releases) < 100:
+                break
+            page += 1
+
+        if len(matches) > 1:
+            raise ReleaseCheckError(f"GitHub returned multiple releases for tag {tag!r}")
+        return matches[0] if matches else None
+
+    def _request_release_page(self, *, page: int) -> list[Mapping[str, Any]]:
+        data = self._request_url(
+            "GET",
+            f"https://api.github.com/repos/{self.repo}/releases?per_page=100&page={page}",
+        )
+        if not isinstance(data, list):
+            raise ReleaseCheckError("GitHub returned a non-array release list")
+        releases: list[Mapping[str, Any]] = []
+        for release in data:
+            if not isinstance(release, Mapping):
+                raise ReleaseCheckError("GitHub returned a malformed release list")
+            releases.append(release)
+        return releases
 
     def inspect_tag_target(self, *, tag: str) -> str | None:
         """Resolve a lightweight or annotated tag to its peeled commit SHA."""
@@ -142,16 +175,25 @@ class GitHubReleaseTransport:
         return self._release_from_json(data)
 
     def _release_from_json(self, data: Mapping[str, Any]) -> GitHubRelease:
-        try:
-            return GitHubRelease(
-                release_id=str(data["id"]),
-                tag=str(data["tag_name"]),
-                target_oid=str(data["target_commitish"]),
-                draft=bool(data["draft"]),
-                assets={},
-            )
-        except (KeyError, TypeError) as error:
-            raise ReleaseCheckError("GitHub returned a malformed release") from error
+        release_id = data.get("id")
+        tag = data.get("tag_name")
+        target_oid = data.get("target_commitish")
+        draft = data.get("draft")
+        if (
+            not isinstance(release_id, (int, str))
+            or isinstance(release_id, bool)
+            or not isinstance(tag, str)
+            or not isinstance(target_oid, str)
+            or not isinstance(draft, bool)
+        ):
+            raise ReleaseCheckError("GitHub returned a malformed release")
+        return GitHubRelease(
+            release_id=str(release_id),
+            tag=tag,
+            target_oid=target_oid,
+            draft=draft,
+            assets={},
+        )
 
     def _request(
         self,
@@ -162,7 +204,10 @@ class GitHubReleaseTransport:
         missing_ok: bool = False,
     ) -> dict[str, Any] | None:
         url = f"https://api.github.com/repos/{self.repo}{path}"
-        return self._request_url(method, url, payload=payload, missing_ok=missing_ok)
+        data = self._request_url(method, url, payload=payload, missing_ok=missing_ok)
+        if data is not None and not isinstance(data, dict):
+            raise ReleaseCheckError("GitHub returned a non-object response")
+        return data
 
     def _request_url(
         self,
@@ -173,7 +218,7 @@ class GitHubReleaseTransport:
         body: bytes | None = None,
         content_type: str = "application/vnd.github+json",
         missing_ok: bool = False,
-    ) -> dict[str, Any] | None:
+    ) -> object | None:
         request_body = body
         if payload is not None:
             request_body = json.dumps(payload, separators=(",", ":")).encode()
@@ -203,8 +248,6 @@ class GitHubReleaseTransport:
             parsed = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ReleaseCheckError("GitHub returned an invalid JSON response") from error
-        if not isinstance(parsed, dict):
-            raise ReleaseCheckError("GitHub returned a non-object response")
         return parsed
 
     def _download_digest(self, url: str) -> str:
