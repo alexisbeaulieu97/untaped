@@ -74,6 +74,30 @@ class _Response:
         return b""
 
 
+class _JsonResponse(_Response):
+    def __init__(self, payload: object) -> None:
+        super().__init__()
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def _github_release_payload(
+    *,
+    release_id: int = 1,
+    tag: str = "v4.0.0rc1",
+    target_oid: str = "a" * 40,
+    draft: bool = True,
+) -> dict[str, Any]:
+    return {
+        "id": release_id,
+        "tag_name": tag,
+        "target_commitish": target_oid,
+        "draft": draft,
+    }
+
+
 def _http_error(code: int) -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
         url="https://api.github.com/repos/alexisbeaulieu97/untaped-github/releases/tags/v0.12.5",
@@ -1222,3 +1246,122 @@ def test_github_transport_peels_annotated_tag_to_commit() -> None:
 
     transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
     assert transport.inspect_tag_target(tag="v4.0.0rc1") == commit_object
+
+
+def test_github_transport_finds_draft_when_tag_route_hides_drafts() -> None:
+    release = release_module.GitHubReleaseTransport
+    tag = "v4.0.0rc1"
+    target_oid = "b" * 40
+    calls: list[str] = []
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        calls.append(request.full_url)
+        if "/releases/tags/" in request.full_url:
+            raise _http_error(404)
+        assert request.full_url.endswith("/releases?per_page=100&page=1")
+        return _JsonResponse(
+            [_github_release_payload(release_id=17, tag=tag, target_oid=target_oid)]
+        )
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    found = transport.inspect_github_release(tag=tag)
+
+    assert found == release_module.GitHubRelease(
+        release_id="17", tag=tag, target_oid=target_oid, draft=True, assets={}
+    )
+    assert calls == [
+        "https://api.github.com/repos/acme/untaped/releases/tags/v4.0.0rc1",
+        "https://api.github.com/repos/acme/untaped/releases?per_page=100&page=1",
+    ]
+
+
+def test_github_transport_paginates_release_list_after_tag_route_404() -> None:
+    release = release_module.GitHubReleaseTransport
+    tag = "v4.0.0rc1"
+    first_page = [
+        _github_release_payload(release_id=index + 1, tag=f"v-other-{index}")
+        for index in range(100)
+    ]
+    second_page = [_github_release_payload(release_id=101, tag=tag)]
+    pages = {1: first_page, 2: second_page}
+    requested_pages: list[int] = []
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        if "/releases/tags/" in request.full_url:
+            raise _http_error(404)
+        page = int(request.full_url.rsplit("page=", 1)[1])
+        requested_pages.append(page)
+        return _JsonResponse(pages[page])
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    found = transport.inspect_github_release(tag=tag)
+
+    assert found is not None
+    assert found.release_id == "101"
+    assert found.tag == tag
+    assert requested_pages == [1, 2]
+
+
+def test_github_transport_rejects_ambiguous_matching_releases() -> None:
+    release = release_module.GitHubReleaseTransport
+    tag = "v4.0.0rc1"
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        if "/releases/tags/" in request.full_url:
+            raise _http_error(404)
+        return _JsonResponse(
+            [
+                _github_release_payload(release_id=1, tag=tag),
+                _github_release_payload(release_id=2, tag=tag),
+            ]
+        )
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    with pytest.raises(release_module.ReleaseCheckError, match="multiple releases"):
+        transport.inspect_github_release(tag=tag)
+
+
+def test_github_transport_rejects_malformed_matching_release() -> None:
+    release = release_module.GitHubReleaseTransport
+    tag = "v4.0.0rc1"
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        if "/releases/tags/" in request.full_url:
+            raise _http_error(404)
+        return _JsonResponse([{"id": 1, "tag_name": tag, "target_commitish": "a" * 40}])
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    with pytest.raises(release_module.ReleaseCheckError, match="malformed release"):
+        transport.inspect_github_release(tag=tag)
+
+
+def test_github_transport_preserves_tag_route_api_errors() -> None:
+    release = release_module.GitHubReleaseTransport
+    calls: list[str] = []
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        calls.append(request.full_url)
+        raise _http_error(403)
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    with pytest.raises(release_module.ReleaseCheckError, match="HTTP 403"):
+        transport.inspect_github_release(tag="v4.0.0rc1")
+    assert len(calls) == 1
+
+
+def test_github_transport_rejects_tag_route_mismatch() -> None:
+    release = release_module.GitHubReleaseTransport
+    requested_tag = "v4.0.0rc1"
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del request, timeout
+        return _JsonResponse(_github_release_payload(tag="v4.0.0rc2"))
+
+    transport = release(repo="acme/untaped", token="token", urlopen=urlopen)
+    with pytest.raises(release_module.ReleaseCheckError, match="unexpected tag"):
+        transport.inspect_github_release(tag=requested_tag)
