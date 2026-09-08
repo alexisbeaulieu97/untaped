@@ -32,6 +32,11 @@ class DefaultApplyStrategy:
     IDs just to look up).
     """
 
+    def prepare_parent(
+        self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
+    ) -> tuple[str, PlannedId] | None:
+        return None
+
     def find_existing(
         self,
         spec: ResourceSpec,
@@ -93,6 +98,16 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         "InventorySource": "inventory_sources",
     }
 
+    def prepare_parent(
+        self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
+    ) -> tuple[str, PlannedId] | None:
+        parent = identity.get("parent")
+        if parent is None:
+            raise BadRequest("schedule identity missing 'parent'")
+        result = fk.resolve_polymorphic(_as_dict(parent))
+        self._parent_path(result[0])
+        return result
+
     def find_existing(
         self,
         spec: ResourceSpec,
@@ -104,7 +119,9 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         parent = identity.get("parent")
         if parent is None:
             raise BadRequest("schedule identity missing 'parent'")
-        parent_kind, parent_id = fk.resolve_polymorphic(_as_dict(parent))
+        parent_kind, parent_id = identity.get("_prepared_parent") or fk.resolve_polymorphic(
+            _as_dict(parent)
+        )
         path = self._parent_path(parent_kind)
         return _find_unique(
             client,
@@ -126,7 +143,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         parent = identity.get("parent")
         if parent is None:
             raise BadRequest("schedule identity missing 'parent' for create")
-        parent_kind, parent_id = fk.resolve_polymorphic(_as_dict(parent))
+        parent_kind, parent_id = identity["_prepared_parent"]
         path = self._parent_path(parent_kind)
         return client.request(
             "POST",
@@ -158,6 +175,11 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
     endpoint).
     """
 
+    def prepare_parent(
+        self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
+    ) -> tuple[str, PlannedId] | None:
+        return "Inventory", self._resolve_inventory_id(identity, fk=fk)
+
     def find_existing(
         self,
         spec: ResourceSpec,
@@ -166,7 +188,11 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
-        inventory_id = self._resolve_inventory_id(identity, fk=fk)
+        inventory_id = (
+            identity["_prepared_parent"][1]
+            if "_prepared_parent" in identity
+            else self._resolve_inventory_id(identity, fk=fk)
+        )
         return _find_unique(
             client,
             path=f"inventories/{inventory_id}/{awx_api_path(spec)}/",
@@ -184,7 +210,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        inventory_id = self._resolve_inventory_id(identity, fk=fk)
+        inventory_id = identity["_prepared_parent"][1]
         path = f"inventories/{inventory_id}/{awx_api_path(spec)}/"
         body = {"name": identity["name"], **payload}
         return client.request("POST", path, json=body)

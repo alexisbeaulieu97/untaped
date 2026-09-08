@@ -19,27 +19,26 @@ from __future__ import annotations
 import copy
 from collections.abc import Iterable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
+from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
 from untaped.capabilities.awx.application.apply_membership import (
     MembershipPlan,
     MembershipReconciler,
 )
 from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
-from untaped.capabilities.awx.application.apply_resource import ApplyResource
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
+from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.mutation_types import (
     DeferredReference,
     MutationPlan,
     PreparedMutation,
 )
 from untaped.capabilities.awx.application.mutation_values import (
-    REDACTED,
-    redact_field_change,
+    redact_error,
     redact_outcome,
     redact_value,
-    relative_secret_paths,
     semantic_equal,
 )
 from untaped.capabilities.awx.application.ports import (
@@ -50,6 +49,7 @@ from untaped.capabilities.awx.application.ports import (
     ResourceClient,
     StrategyResolver,
 )
+from untaped.capabilities.awx.application.prepared_body import BodyOperations
 from untaped.capabilities.awx.domain import (
     ApplyOutcome,
     BatchResult,
@@ -70,14 +70,6 @@ class MutationConflict(AwxApiError):
     """Raised for an invalid no-create target or an unusable prepared plan."""
 
 
-class _DeferredResolution(Exception):
-    """Internal signal that a planned parent must be created first."""
-
-    def __init__(self, token: int) -> None:
-        super().__init__(f"planned reference {token} is not bound")
-        self.token = token
-
-
 @dataclass
 class _PlannedTarget:
     index: int
@@ -93,13 +85,6 @@ class _PlanningFkResolver:
     def __init__(self, base: FkResolver, targets: list[_PlannedTarget]) -> None:
         self._base = base
         self._targets = targets
-
-    def bind(self, token: str, id_: int) -> None:
-        for target in self._targets:
-            if target.token == token:
-                target.id = id_
-                return
-        raise KeyError(token)
 
     def target_for_token(self, token: str) -> _PlannedTarget:
         for target in self._targets:
@@ -147,9 +132,7 @@ class _PlanningFkResolver:
                     return value
         return self._base.id_to_name(kind, id_)
 
-    def resolve_polymorphic(
-        self, value: dict[str, Any]
-    ) -> tuple[str, int | DeferredReference]:
+    def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int | DeferredReference]:
         normalized = _as_mapping(value)
         kind = normalized.get("kind")
         name = normalized.get("name")
@@ -201,6 +184,8 @@ class BatchMutationEngine:
         secret_policy: SecretPreservationPolicy | None = None,
         warn: Any = None,
         allow_unverified: bool = False,
+        field_diff: FieldDiff | None = None,
+        verifier: ApplyVerifier | None = None,
     ) -> None:
         self._client = client
         self._catalog = catalog
@@ -211,12 +196,22 @@ class BatchMutationEngine:
         self._secret_policy = secret_policy or SecretPreservationPolicy()
         self._warn = warn if warn is not None else _noop_warn
         self._allow_unverified = allow_unverified
+        self._body = BodyOperations(
+            client,
+            warn=self._warn,
+            secret_policy=self._secret_policy,
+            field_diff=field_diff,
+            verifier=verifier,
+            allow_unverified=allow_unverified,
+        )
 
-    def prepare(
+    def prepare(  # noqa: C901 - target graph resolution and whole-batch validation
         self,
         resources: Iterable[Resource],
         *,
         mode: MutationMode = "apply",
+        existing: Iterable[Mapping[str, Any]] | None = None,
+        preserve_existing_fk_ids: bool = False,
     ) -> MutationPlan:
         """Prepare every resource without issuing a write request.
 
@@ -227,43 +222,61 @@ class BatchMutationEngine:
         """
         if mode not in {"apply", "patch", "edit"}:
             raise BadRequest(f"unsupported mutation mode {mode!r}")
-        docs = list(resources)
+        docs = [resource.model_copy(deep=True) for resource in resources]
+        selected = list(existing) if existing is not None else None
+        if selected is not None and len(selected) != len(docs):
+            raise BadRequest("selected records and documents must have equal length")
         targets = self._build_targets(docs)
         resolver = _PlanningFkResolver(self._fk, targets)
         resolved_existing: list[dict[str, Any] | None] = [None] * len(docs)
         specs: list[ResourceSpec] = []
         strategies: list[ApplyStrategy] = []
 
-        # First resolve every target identity.  This pass is intentionally
-        # complete before any payload planning so references can point forward.
-        for index, resource in enumerate(docs):
+        parents: list[tuple[str, int | DeferredReference] | None] = [None] * len(docs)
+        for resource in docs:
             spec = self._catalog.get(resource.kind)
             if spec.fidelity == "read_only":
-                raise BadRequest(
-                    f"{spec.kind} does not support mutation (fidelity={spec.fidelity!r})"
-                )
-            strategy = self._strategies.get(spec.apply_strategy)
+                raise BadRequest(f"{spec.kind} does not support apply (fidelity={spec.fidelity!r})")
             specs.append(spec)
-            strategies.append(strategy)
-            target = targets[index]
-            if _identity_depends_on_unbound_target(target.identity, resolver):
-                continue
-            try:
-                found = strategy.find_existing(
-                    spec,
-                    target.identity,
-                    client=self._client,
-                    fk=resolver,
-                )
-            except _DeferredResolution:
-                found = None
-            if found is not None:
-                record = _record_dict(found)
-                record_id = _record_id(record)
-                if record_id is None:
-                    raise BadRequest(f"{spec.kind} target returned no integer id")
-                target.id = record_id
-                resolved_existing[index] = self._snapshot(spec, record)
+            strategies.append(self._strategies.get(spec.apply_strategy))
+
+        pending = set(range(len(docs)))
+        while pending:
+            progressed = False
+            for index in sorted(tuple(pending)):
+                resource, target = docs[index], targets[index]
+                spec, strategy = specs[index], strategies[index]
+                parent = strategy.prepare_parent(spec, target.identity, fk=resolver)
+                parents[index] = parent
+                if parent is not None and isinstance(parent[1], DeferredReference):
+                    parent_index = resolver.target_for_token(parent[1].token).index
+                    if parent_index in pending:
+                        continue
+                if selected is not None:
+                    found = dict(selected[index])
+                    if found.get("name") != resource.metadata.name:
+                        raise BadRequest("renaming a selected resource is not supported")
+                elif parent is not None and isinstance(parent[1], DeferredReference):
+                    found = None
+                else:
+                    fixed_identity = {
+                        **target.identity,
+                        **({"_prepared_parent": parent} if parent is not None else {}),
+                    }
+                    found = strategy.find_existing(
+                        spec, fixed_identity, client=self._client, fk=resolver
+                    )
+                if found is not None:
+                    record = _record_dict(found)
+                    record_id = _record_id(record)
+                    if record_id is None:
+                        raise BadRequest(f"{spec.kind} target returned no integer id")
+                    target.id = record_id
+                    resolved_existing[index] = self._snapshot(spec, record)
+                pending.remove(index)
+                progressed = True
+            if not progressed:
+                raise BadRequest("create-parent dependencies form a cycle")
 
         if mode in {"patch", "edit"}:
             missing = [
@@ -278,14 +291,15 @@ class BatchMutationEngine:
         for index, resource in enumerate(docs):
             spec = specs[index]
             strategy = strategies[index]
-            existing = resolved_existing[index]
+            existing_record = resolved_existing[index]
             target = targets[index]
             identity = target.identity
             payload = self._planner.plan_payload(
                 spec,
                 resource,
                 fk=resolver,
-                existing=existing,
+                existing=existing_record,
+                preserve_existing_fk_ids=preserve_existing_fk_ids,
             )
             membership_plans = self._membership.plan(
                 spec,
@@ -294,29 +308,27 @@ class BatchMutationEngine:
                 client=self._client,
                 fk=resolver,
             )
-            apply = ApplyResource(
-                self._client,
-                self._catalog,
-                resolver,
-                self._strategies,
-                warn=self._warn,
-                secret_policy=self._secret_policy,
-                planner=self._planner,
-                membership=self._membership,
-                allow_unverified=self._allow_unverified,
+            body = self._body.prepare(spec, resource, payload, existing_record)
+            changes = [
+                *body.changes,
+                *(item.field_change for item in membership_plans if item.field_change is not None),
+            ]
+            preview = redact_outcome(
+                ApplyOutcome(
+                    kind=spec.kind,
+                    name=resource.metadata.name,
+                    action="preview",
+                    id=target.id,
+                    identity=copy.deepcopy(identity),
+                    scope=_scope_from_identity(identity),
+                    changes=changes,
+                    preserved_secrets=list(body.preserved),
+                    dropped_undeclared_secrets=list(body.dropped_undeclared),
+                ),
+                spec,
             )
-            preview = apply.apply_to_existing(
-                resource,
-                existing,
-                write=False,
-                preserve_existing_fk_ids=True,
-            )
-            preview = redact_outcome(preview, spec)
             dependencies = _dependencies_for(
-                index,
-                payload,
-                membership_plans,
-                targets,
+                index, {"body": body.payload, "parent": parents[index]}, targets
             )
             operations.append(
                 PreparedMutation(
@@ -326,15 +338,18 @@ class BatchMutationEngine:
                     strategy=strategy,
                     identity=copy.deepcopy(identity),
                     scope=_scope_from_identity(identity),
-                    payload=copy.deepcopy(payload),
-                    presentation_payload=redact_value(payload, spec.secret_paths),
-                    existing=copy.deepcopy(existing) if existing is not None else None,
+                    payload=copy.deepcopy(body.payload),
+                    presentation_payload=redact_value(body.payload, spec.secret_paths),
+                    existing=copy.deepcopy(existing_record)
+                    if existing_record is not None
+                    else None,
                     target_id=target.id,
-                    create=existing is None,
+                    create=existing_record is None,
                     dependencies=dependencies,
                     membership_plans=membership_plans,
                     preview=preview,
-                    resolver=resolver,
+                    create_parent=parents[index],
+                    watched_fields=tuple(payload),
                 )
             )
         return MutationPlan(operations=operations, mode=mode)
@@ -355,6 +370,8 @@ class BatchMutationEngine:
         """
         if parallel < 1:
             raise BadRequest("parallel must be at least 1")
+        parallel = min(parallel, 10)
+        bindings: dict[str, int] = {}
         conflicts = self._preflight_conflicts(plan)
         if conflicts:
             outcomes = [
@@ -378,8 +395,9 @@ class BatchMutationEngine:
             plan,
             continue_on_error=continue_on_error,
             parallel=parallel,
+            bindings=bindings,
         )
-        self._execute_memberships(plan, outcomes)
+        self._execute_memberships(plan, outcomes, bindings, continue_on_error=continue_on_error)
         partial = any(
             outcome.action in {"failed", "partial"} or outcome.partial for outcome in outcomes
         )
@@ -433,19 +451,6 @@ class BatchMutationEngine:
         for operation in plan.operations:
             try:
                 if operation.existing is None:
-                    if _identity_depends_on_unbound_target(operation.identity, operation.resolver):
-                        continue
-                    current = operation.strategy.find_existing(
-                        operation.spec,
-                        operation.identity,
-                        client=self._client,
-                        fk=operation.resolver,
-                    )
-                    if current is not None:
-                        conflicts[operation.index] = (
-                            f"{operation.spec.kind} {operation.resource.metadata.name!r} "
-                            "appeared after planning"
-                        )
                     continue
                 current_record = _record_dict(
                     self._client.get(operation.spec, int(operation.existing["id"]))
@@ -465,8 +470,6 @@ class BatchMutationEngine:
                 if operation.index in conflicts:
                     continue
                 for membership in operation.membership_plans:
-                    if not membership.existing_ids:
-                        continue
                     current_ids = tuple(
                         _membership_ids(
                             self._client,
@@ -488,7 +491,7 @@ class BatchMutationEngine:
             except (AwxApiError, KeyError, TypeError, ValueError) as exc:
                 conflicts[operation.index] = (
                     f"{operation.spec.kind} {operation.resource.metadata.name!r} "
-                    f"was deleted or could not be re-read: {exc}"
+                    f"was deleted or could not be re-read: {_safe_error(exc, operation)}"
                 )
         return conflicts
 
@@ -498,6 +501,7 @@ class BatchMutationEngine:
         *,
         continue_on_error: bool,
         parallel: int,
+        bindings: dict[str, int],
     ) -> list[ApplyOutcome]:
         outcomes: list[ApplyOutcome | None] = [None] * len(plan.operations)
         pending = {operation.index for operation in plan.operations}
@@ -525,7 +529,7 @@ class BatchMutationEngine:
                             continue
                         if any(outcome is None for outcome in dependency_outcomes):
                             continue
-                        future = pool.submit(self._execute_body, operation)
+                        future = pool.submit(self._execute_body, operation, bindings)
                         in_flight[future] = index
                         pending.remove(index)
                 if not in_flight:
@@ -535,7 +539,9 @@ class BatchMutationEngine:
                         outcomes[index] = self._status_outcome(
                             operation,
                             action="skipped",
-                            detail="skipped because mutation dependencies form a cycle",
+                            detail="skipped after a runtime failure"
+                            if stopped
+                            else "skipped because mutation dependencies form a cycle",
                         )
                     pending.clear()
                     break
@@ -548,6 +554,12 @@ class BatchMutationEngine:
                         operation = plan.operations[index]
                         outcome = self._status_outcome(operation, action="failed", detail=str(exc))
                     outcomes[index] = outcome
+                    if (
+                        outcome.id is not None
+                        and plan.operations[index].create
+                        and outcome.action == "created"
+                    ):
+                        bindings[f"planned:{index}"] = outcome.id
                     if outcome.action in {"failed", "partial"} and not continue_on_error:
                         stopped = True
             if stopped:
@@ -561,148 +573,131 @@ class BatchMutationEngine:
                 pending.clear()
         return [cast(ApplyOutcome, outcome) for outcome in outcomes]
 
-    def _execute_body(self, operation: PreparedMutation) -> ApplyOutcome:
-        apply = ApplyResource(
-            self._client,
-            self._catalog,
-            operation.resolver,
-            self._strategies,
-            warn=self._warn,
-            secret_policy=self._secret_policy,
-            planner=self._planner,
-            membership=self._membership,
-            allow_unverified=self._allow_unverified,
-        )
+    def _execute_body(
+        self, operation: PreparedMutation, bindings: Mapping[str, int]
+    ) -> ApplyOutcome:
+        payload = _bind_deferred_values(operation.payload, bindings)
+        target_id = operation.target_id
+        base = operation.preview
+        if not operation.create and not payload:
+            return base.model_copy(update={"action": "unchanged"})
+        wrote = False
         try:
-            outcome = apply.apply_to_existing(
-                operation.resource,
-                operation.existing,
-                write=True,
-                defer_memberships=True,
-                preserve_existing_fk_ids=True,
+            if operation.create:
+                identity = copy.deepcopy(operation.identity)
+                if operation.create_parent is not None:
+                    identity["_prepared_parent"] = _bind_deferred_values(
+                        operation.create_parent, bindings
+                    )
+                result = operation.strategy.create(
+                    operation.spec, payload, identity, client=self._client, fk=self._fk
+                )
+                wrote = True
+                target_id = _record_id(result)
+                if target_id is None:
+                    raise BadRequest(
+                        "create response had no integer 'id'; cannot verify or reconcile membership"
+                    )
+            else:
+                assert operation.existing is not None
+                result = operation.strategy.update(
+                    operation.spec, operation.existing, payload, client=self._client, fk=self._fk
+                )
+                wrote = True
+            detail = self._body.verify(
+                spec=operation.spec,
+                resource=operation.resource,
+                payload=payload,
+                response=result,
+                record_id=target_id,
             )
-            self._verify_body_exact(operation, outcome)
-        except MutationConflict as exc:
-            # The body request may already have succeeded before a strict
-            # read-back detects divergence.  Report that fact as partial so a
-            # caller never mistakes the row for an untouched failure.
-            base = operation.preview.model_copy(
+            return base.model_copy(
                 update={
-                    "action": "partial",
-                    "partial": True,
-                    "id": operation.target_id,
-                    "identity": copy.deepcopy(operation.identity),
-                    "scope": copy.deepcopy(operation.scope),
-                    "detail": str(exc),
+                    "action": "created" if operation.create else "updated",
+                    "id": target_id,
+                    "detail": detail,
                 }
             )
-            return base
-        if outcome.id is not None:
-            operation.target_id = outcome.id
-            if operation.create:
-                operation.resolver.bind(f"planned:{operation.index}", outcome.id)
-        return redact_outcome(outcome, operation.spec)
-
-    def _verify_body_exact(
-        self,
-        operation: PreparedMutation,
-        outcome: ApplyOutcome,
-    ) -> None:
-        if outcome.id is None:
-            raise MutationConflict(
-                f"{operation.spec.kind} {operation.resource.metadata.name!r}: "
-                "write returned no target ID"
+        except AwxApiError as exc:
+            return base.model_copy(
+                update={
+                    "action": "partial" if wrote else "failed",
+                    "partial": wrote,
+                    "id": target_id,
+                    "detail": _safe_error(exc, operation),
+                }
             )
-        observed = _record_dict(self._client.get(operation.spec, outcome.id))
-        membership_fields = {plan.ref.field for plan in operation.membership_plans}
-        desired_payload = _bind_deferred_values(operation.payload, operation.resolver)
-        for field_name, desired in desired_payload.items():
-            if field_name in membership_fields:
-                continue
-            observed_value = observed.get(field_name)
-            if field_name in operation.spec.secret_paths:
-                desired_clean = REDACTED
-                observed_clean = REDACTED
-            else:
-                relative_paths = relative_secret_paths(operation.spec.secret_paths, field_name)
-                desired_clean = self._secret_policy.strip_paths(desired, relative_paths)
-                observed_clean = self._secret_policy.strip_paths(observed_value, relative_paths)
-            if not semantic_equal(
-                desired_clean,
-                observed_clean,
-                allow_server_enrichment=field_name in operation.spec.server_enriched_fields,
-            ):
-                raise MutationConflict(
-                    f"{operation.spec.kind} {operation.resource.metadata.name!r}: "
-                    f"write did not converge for field {field_name!r}"
-                )
 
     def _execute_memberships(
         self,
         plan: MutationPlan,
         outcomes: list[ApplyOutcome],
+        bindings: Mapping[str, int],
+        *,
+        continue_on_error: bool,
     ) -> None:
+        stopped = not continue_on_error and any(
+            outcome.action in {"failed", "partial"} for outcome in outcomes
+        )
         for operation, outcome in zip(plan.operations, outcomes, strict=True):
             if outcome.action in {"failed", "skipped", "conflict", "partial"}:
                 continue
             if not operation.membership_plans:
                 continue
-            if operation.target_id is None:
+            target_id = outcome.id
+            if stopped or target_id is None:
                 outcomes[operation.index] = outcome.model_copy(
                     update={
                         "action": "partial",
                         "partial": True,
-                        "detail": "body succeeded but no target ID was returned for membership",
+                        "detail": "membership skipped after runtime failure"
+                        if stopped
+                        else "body succeeded but no target ID was returned for membership",
                     }
                 )
                 continue
             try:
-                plans = self._membership.plan(
-                    operation.spec,
-                    operation.resource,
-                    operation.target_id,
-                    client=self._client,
-                    fk=operation.resolver,
-                )
+                plans = [
+                    replace(
+                        item,
+                        to_associate=_bind_deferred_values(item.to_associate, bindings),
+                        desired_ids=_bind_deferred_values(item.desired_ids, bindings),
+                        to_reorder=_bind_deferred_values(item.to_reorder, bindings),
+                    )
+                    for item in operation.membership_plans
+                ]
                 self._membership.execute(
                     operation.spec,
-                    operation.target_id,
+                    target_id,
                     plans,
                     client=self._client,
                 )
-                self._verify_memberships(operation, plans)
+                self._verify_memberships(operation, plans, target_id)
             except (AwxApiError, KeyError, TypeError, ValueError) as exc:
                 outcomes[operation.index] = outcome.model_copy(
                     update={
                         "action": "partial",
                         "partial": True,
-                        "detail": f"body succeeded but membership verification failed: {exc}",
+                        "detail": (
+                            "body succeeded but membership verification failed: "
+                            f"{_safe_error(exc, operation)}"
+                        ),
                     }
                 )
+                stopped = not continue_on_error
                 continue
-            membership_changes = [
-                plan_item.field_change
-                for plan_item in plans
-                if plan_item.field_change is not None
-            ]
-            if membership_changes:
-                changes = [*outcome.changes, *membership_changes]
-                outcomes[operation.index] = outcome.model_copy(
-                    update={
-                        "action": "updated" if outcome.action == "unchanged" else outcome.action,
-                        "changes": [
-                            redact_field_change(change, operation.spec)
-                            for change in changes
-                        ],
-                    }
-                )
+            if (
+                any(item.field_change is not None for item in plans)
+                and outcome.action == "unchanged"
+            ):
+                outcomes[operation.index] = outcome.model_copy(update={"action": "updated"})
 
     def _verify_memberships(
         self,
         operation: PreparedMutation,
         plans: list[MembershipPlan],
+        target_id: int,
     ) -> None:
-        assert operation.target_id is not None
         for membership in plans:
             if membership.ref.sub_endpoint is None:
                 continue
@@ -710,7 +705,7 @@ class BatchMutationEngine:
                 _membership_ids(
                     self._client,
                     operation.spec,
-                    operation.target_id,
+                    target_id,
                     membership.ref.sub_endpoint,
                 )
             )
@@ -811,27 +806,6 @@ def _identity_matches_scope(identity: Mapping[str, Any], scope: Mapping[str, str
     return True
 
 
-def _identity_depends_on_unbound_target(
-    identity: Mapping[str, Any], resolver: _PlanningFkResolver
-) -> bool:
-    parent = identity.get("parent")
-    if parent is None:
-        return False
-    parent_mapping = _as_mapping(parent)
-    kind = parent_mapping.get("kind")
-    name = parent_mapping.get("name")
-    if not isinstance(kind, str) or not isinstance(name, str):
-        return False
-    matches = [
-        target
-        for target in resolver._targets
-        if target.kind == kind
-        and target.identity.get("name") == name
-        and _nested_identity_matches(target.identity.get("parent"), parent_mapping.get("parent"))
-    ]
-    return any(target.id is None for target in matches)
-
-
 def _scope_from_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
     return {key: copy.deepcopy(value) for key, value in identity.items() if key != "name"}
 
@@ -839,14 +813,9 @@ def _scope_from_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
 def _dependencies_for(
     index: int,
     payload: Mapping[str, Any],
-    membership_plans: Iterable[MembershipPlan],
     targets: list[_PlannedTarget],
 ) -> tuple[int, ...]:
     tokens = _tokens_in(payload)
-    for membership in membership_plans:
-        tokens.update(_tokens_in(membership.to_associate))
-        tokens.update(_tokens_in(membership.to_disassociate))
-        tokens.update(_tokens_in(membership.desired_ids))
     token_to_index = {target.token: target.index for target in targets}
     return tuple(
         sorted(
@@ -873,30 +842,25 @@ def _tokens_in(value: Any) -> set[str]:
     return set()
 
 
-def _bind_deferred_values(value: Any, resolver: _PlanningFkResolver) -> Any:
+def _bind_deferred_values(value: Any, bindings: Mapping[str, int]) -> Any:
     if isinstance(value, DeferredReference):
-        target = resolver.target_for_token(value.token)
-        if target.id is None:
+        if value.token not in bindings:
             raise MutationConflict(f"planned reference {value.token!r} was not created")
-        return target.id
+        return bindings[value.token]
     if isinstance(value, Mapping):
-        return {key: _bind_deferred_values(item, resolver) for key, item in value.items()}
+        return {key: _bind_deferred_values(item, bindings) for key, item in value.items()}
     if isinstance(value, list):
-        return [_bind_deferred_values(item, resolver) for item in value]
+        return [_bind_deferred_values(item, bindings) for item in value]
     if isinstance(value, tuple):
-        return tuple(_bind_deferred_values(item, resolver) for item in value)
+        return tuple(_bind_deferred_values(item, bindings) for item in value)
     if isinstance(value, set):
-        return {_bind_deferred_values(item, resolver) for item in value}
+        return {_bind_deferred_values(item, bindings) for item in value}
     return value
 
 
 def _watched_fields(operation: PreparedMutation) -> set[str]:
     membership_fields = {plan.ref.field for plan in operation.membership_plans}
-    return {
-        field
-        for field in operation.payload
-        if field not in membership_fields and field not in operation.spec.identity_keys
-    }
+    return {field for field in operation.payload if field not in membership_fields}
 
 
 def _membership_ids(
@@ -908,8 +872,7 @@ def _membership_ids(
     if sub_endpoint is None:
         return []
     return [
-        int(record["id"])
-        for record in client.paginate_sub_endpoint(spec, record_id, sub_endpoint)
+        int(record["id"]) for record in client.paginate_sub_endpoint(spec, record_id, sub_endpoint)
     ]
 
 
@@ -919,3 +882,9 @@ __all__ = [
     "MutationPlan",
     "PreparedMutation",
 ]
+
+
+def _safe_error(exc: Exception, operation: PreparedMutation) -> str:
+    return redact_error(
+        exc, operation.spec, operation.existing, operation.payload, operation.resource.spec
+    )

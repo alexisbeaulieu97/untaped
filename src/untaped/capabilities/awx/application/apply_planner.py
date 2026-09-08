@@ -184,7 +184,7 @@ def _resolve_fk_value(
         try:
             if fk.id_to_name(kind, existing) == value:
                 return existing
-        except (AwxApiError, KeyError, ValueError):
+        except AwxApiError, KeyError, ValueError:
             # A cache miss or a sparse test double must not make an otherwise
             # valid name resolution fail; the authoritative lookup follows.
             pass
