@@ -69,7 +69,7 @@ def test_apply_preview_does_not_write(fake_aap: Any, tmp_path: Path) -> None:
         "  project: playbooks\n"
         "  inventory: prod\n"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f)])
+    result = CliInvoker().invoke(app, ["job-templates", "apply", "--dry-run", str(f)])
     assert result.exit_code == 0, result.output
     # State on the server is unchanged because we didn't pass --yes.
     jt = fake_aap.get_record("job_templates", 30)
@@ -181,7 +181,7 @@ def test_apply_allow_unverified_requires_yes(fake_aap: Any, tmp_path: Path) -> N
 
     result = CliInvoker().invoke(app, ["apply", str(f), "--allow-unverified"])
 
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "--yes" in (result.output + (result.stderr or ""))
 
 
@@ -254,14 +254,32 @@ def test_job_templates_credentials_add_remove_command_scopes_members_by_org(
 
     add = CliInvoker().invoke(
         app,
-        ["job-templates", "credentials", "add", "deploy", "ssh", "--organization", "Default"],
+        [
+            "job-templates",
+            "credentials",
+            "add",
+            "--yes",
+            "deploy",
+            "ssh",
+            "--organization",
+            "Default",
+        ],
     )
     assert add.exit_code == 0, add.output + (add.stderr or "")
     assert fake_aap.memberships[("job_templates", 30, "credentials")] == {40}
 
     remove = CliInvoker().invoke(
         app,
-        ["job-templates", "credentials", "remove", "deploy", "ssh", "--organization", "Default"],
+        [
+            "job-templates",
+            "credentials",
+            "remove",
+            "--yes",
+            "deploy",
+            "ssh",
+            "--organization",
+            "Default",
+        ],
     )
     assert remove.exit_code == 0, remove.output + (remove.stderr or "")
     assert fake_aap.memberships[("job_templates", 30, "credentials")] == set()
@@ -284,14 +302,14 @@ def test_per_resource_apply_rejects_wrong_kind_before_writing(
         "spec: { scm_type: hg, scm_url: 'https://elsewhere/x.git' }\n"
     )
     result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
-    assert result.exit_code == 0, result.output
-    # JT got patched
+    assert result.exit_code != 0, result.output
+    # The entire batch is rejected.
     jt = fake_aap.get_record("job_templates", 30)
-    assert jt["playbook"] == "changed.yml"
+    assert jt["playbook"] == "deploy.yml"
     # Project untouched — no scm_type=hg leaked through
     project = fake_aap.get_record("projects", 10)
     assert project["scm_type"] == original_project["scm_type"] == "git"
-    # Wrong-kind warning visible
+    # Wrong-kind error visible
     assert "Project" in result.stderr
 
 

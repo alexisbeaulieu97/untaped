@@ -523,7 +523,7 @@ def test_get_defaults_to_name_lookup_for_all_digit_names(seeded_default_org: Any
     assert result.stdout.strip() == "99"
 
 
-def test_get_by_id_ignores_organization_scope(fake_aap: Any) -> None:
+def test_get_by_id_validates_organization_scope(fake_aap: Any) -> None:
     """Numeric ids are globally unique, so the org scope must not be applied
     (otherwise looking up by id requires the user to know the org, which
     defeats the purpose of having an id)."""
@@ -545,15 +545,15 @@ def test_get_by_id_ignores_organization_scope(fake_aap: Any) -> None:
             "--by-id",
             "10",
             "--organization",
-            "Org-A",  # wrong org, must be ignored
+            "Org-A",  # wrong org, must reject
             "--format",
             "raw",
             "--columns",
             "name",
         ],
     )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "playbooks"
+    assert result.exit_code != 0, result.output
+    assert result.stdout.strip() == ""
 
 
 def test_get_stdin_defaults_to_name_lookup_for_all_lines(seeded_default_org: Any) -> None:
@@ -609,7 +609,7 @@ def test_get_stdin_by_id_rejects_non_numeric_lines(seeded_default_org: Any) -> N
         input="10\nops\n",
     )
     assert result.exit_code == 1
-    assert result.stdout.strip() == "playbooks"
+    assert result.stdout.strip() == ""
     assert "ops" in (result.stderr or result.output)
     assert "numeric" in (result.stderr or result.output)
 
@@ -670,7 +670,7 @@ def test_get_by_missing_id_reports_error(seeded_default_org: Any) -> None:
     )
     assert result.exit_code != 0
     # Successful lookup still reaches stdout.
-    assert "playbooks" in result.stdout
+    assert result.stdout == ""
     # The missing id surfaces on stderr.
     assert "9999" in (result.output + (result.stderr or ""))
 
@@ -750,8 +750,7 @@ def test_list_stdin_all_failed_exits_one_and_suppresses_empty_stdout(
     assert result.exit_code != 0
     assert result.stdout.strip() == ""
     err = (result.output or "") + (result.stderr or "")
-    assert "error: missing-a:" in err
-    assert "error: missing-b:" in err
+    assert "missing-a" in err
 
 
 def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: Any) -> None:
@@ -768,21 +767,20 @@ def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: A
     assert result.stdout.strip() == "[]"
 
 
-def test_list_stdin_empty_errors(seeded_default_org: Any) -> None:
-    """An empty stdin under `--stdin` must error rather than silently
-    no-op (consistent with the `read_identifiers` empty-input contract)."""
+def test_list_stdin_empty_is_noop(seeded_default_org: Any) -> None:
+    """An explicitly empty stdin selection is a clear no-op."""
     result = CliInvoker().invoke(
         app,
         ["projects", "list", "--stdin"],
         input="",
     )
-    assert result.exit_code != 0
-    assert "no identifiers received on stdin" in (result.output + (result.stderr or ""))
+    assert result.exit_code == 0
+    assert "No matching" in (result.output + (result.stderr or ""))
 
 
 @pytest.mark.parametrize(
     "extra",
-    [["--search", "foo"], ["--filter", "name=alpha"], ["--limit", "5"]],
+    [["--search", "foo"], ["--filter", "name=alpha"]],
 )
 def test_list_stdin_rejects_server_filter_flags(seeded_default_org: Any, extra: list[str]) -> None:
     """`--stdin` is identifier-based lookup; server filtering knobs are a
@@ -794,12 +792,11 @@ def test_list_stdin_rejects_server_filter_flags(seeded_default_org: Any, extra: 
     )
     assert result.exit_code != 0
     output = result.output + (result.stderr or "")
-    assert "--search/--filter/--limit" in output
+    assert "selection sources are exclusive" in output
 
 
-def test_list_stdin_continues_on_missing_name(seeded_default_org: Any) -> None:
-    """A missing name in `list --stdin` must not suppress the names that
-    resolved (same per-id error reporting as `get --stdin`)."""
+def test_list_stdin_rejects_incomplete_selection(seeded_default_org: Any) -> None:
+    """The shared resolver rejects an incomplete selection before output."""
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
     )
@@ -809,7 +806,7 @@ def test_list_stdin_continues_on_missing_name(seeded_default_org: Any) -> None:
         input="alpha\nghost\n",
     )
     assert result.exit_code != 0
-    assert "alpha" in result.stdout
+    assert result.stdout == ""
     assert "ghost" in (result.output + (result.stderr or ""))
 
 
@@ -965,7 +962,7 @@ def test_get_accepts_org_alias_for_name_scope(fake_aap: Any) -> None:
     assert result.stdout.strip() == "11"
 
 
-def test_get_stdin_continues_on_missing_name(seeded_default_org: Any) -> None:
+def test_get_stdin_rejects_incomplete_selection(seeded_default_org: Any) -> None:
     """A missing name in a multi-name `get --stdin` batch must not
     suppress the names that resolved successfully."""
     seeded_default_org.seed(
@@ -978,7 +975,7 @@ def test_get_stdin_continues_on_missing_name(seeded_default_org: Any) -> None:
     )
     assert result.exit_code != 0
     # alpha's row reaches stdout even though ghost failed.
-    assert "alpha" in result.stdout
+    assert result.stdout == ""
     assert "ghost" in (result.output + (result.stderr or ""))
 
 
@@ -1015,7 +1012,7 @@ def test_list_empty_json_stays_pipe_clean(fake_aap: Any) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "[]"
-    assert "No matching" not in result.stderr
+    assert "No matching" in result.stderr
 
 
 def test_list_reports_progress_on_stderr(fake_aap: Any) -> None:

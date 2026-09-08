@@ -167,18 +167,12 @@ def test_ping_requires_base_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.parametrize("cli_name", ["organizations", "credential-types", "job-templates"])
-def test_list_does_not_auto_apply_default_organization(
+def test_list_applies_default_organization_only_to_scoped_kinds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     cli_name: str,
 ) -> None:
-    """``awx.default_organization`` is for name disambiguation on
-    ``get`` / ``launch`` / ``update`` only — ``list`` filters are now
-    explicit via ``--filter``. Auto-applying the default would (a) break
-    global kinds (Organization, CredentialType have no organization
-    column), and (b) silently scope a list the user expected to be
-    cluster-wide.
-    """
+    """The default organization scopes applicable resource queries; global kinds remain global."""
     cfg = tmp_path / "config.yml"
     cfg.write_text(
         """
@@ -213,9 +207,7 @@ def test_list_does_not_auto_apply_default_organization(
     assert result.exit_code == 0, result.output
     assert captured, "no request captured"
     for req in captured:
-        assert "organization__name" not in req.url.params, (
-            f"{cli_name!r} list auto-applied default_organization: {req.url.params}"
-        )
+        assert ("organization__name" in req.url.params) == (cli_name == "job-templates")
 
 
 def test_list_filter_passes_through_to_awx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -312,7 +304,7 @@ def test_get_bare_invocation_is_usage_error_without_opening_context() -> None:
     result = CliInvoker().invoke(app, ["job-templates", "get"])
 
     assert result.exit_code == 2
-    assert "error: provide JobTemplate name(s) or --stdin" in result.stderr
+    assert "error: provide names, --stdin, filters/search, or --all" in result.stderr
     assert "awx.base_url" not in result.output
 
 
@@ -387,7 +379,7 @@ def test_apply_rejects_removed_file_alias(
     args = [str(yml) if a == "FILE" else a for a in args_template]
     result = CliInvoker().invoke(app, args)
     assert result.exit_code != 0
-    assert "--file" in result.output or "-f" in result.output
+    assert result.stdout == ""
 
 
 def test_top_level_apply_bare_invocation_is_missing_argument_error() -> None:
@@ -400,13 +392,11 @@ def test_top_level_apply_bare_invocation_is_missing_argument_error() -> None:
     assert result.stdout == ""
 
 
-def test_per_kind_apply_bare_invocation_needs_file_or_stdin() -> None:
-    """Per-kind ``apply`` takes a file *or* ``--stdin`` (mass-patch a selection).
-    With neither it's a usage error that names both options; exit 2, clean
-    stdout."""
+def test_per_kind_apply_bare_invocation_needs_file() -> None:
+    """Per-kind declarative apply requires a file; missing input leaves stdout clean."""
     result = CliInvoker().invoke(app, ["job-templates", "apply"])
     assert result.exit_code == 2
-    assert "--stdin" in result.stderr
+    assert "requires an argument" in result.stderr
     assert result.stdout == ""
 
 

@@ -198,7 +198,7 @@ def test_hosts_apply_preview_does_not_write(seeded_default_org: Any, tmp_path: P
           description: Frontend web server
         """
     )
-    result = CliInvoker().invoke(app, ["hosts", "apply", str(doc)])
+    result = CliInvoker().invoke(app, ["hosts", "apply", "--dry-run", str(doc)])
     assert result.exit_code == 0, result.output
     assert seeded_default_org.store["hosts"] == {}
 

@@ -49,11 +49,11 @@ def semantic_equal(
     return bool(left == right)
 
 
-def redact_value(value: Any, paths: Iterable[str]) -> Any:
+def redact_value(value: Any, paths: Iterable[str], *, replacement: str = REDACTED) -> Any:
     """Deep-copy ``value`` and replace every known secret path."""
     result = copy.deepcopy(value)
     for path in paths:
-        _redact_at_path(result, path.split("."))
+        _redact_at_path(result, path.split("."), replacement)
     return result
 
 
@@ -92,7 +92,7 @@ def relative_secret_paths(paths: Iterable[str], field: str) -> list[str]:
     return relative
 
 
-def _redact_at_path(value: Any, parts: list[str]) -> None:  # noqa: C901
+def _redact_at_path(value: Any, parts: list[str], replacement: str) -> None:  # noqa: C901
     if not parts or value is None:
         return
     head, *tail = parts
@@ -100,22 +100,22 @@ def _redact_at_path(value: Any, parts: list[str]) -> None:  # noqa: C901
         if isinstance(value, dict):
             if head == "*":
                 for key in list(value):
-                    value[key] = REDACTED
+                    value[key] = replacement
             elif head in value:
-                value[head] = REDACTED
+                value[head] = replacement
         elif isinstance(value, list) and head == "*":
             for index in range(len(value)):
-                value[index] = REDACTED
+                value[index] = replacement
         return
     if isinstance(value, dict):
         if head == "*":
             for child in value.values():
-                _redact_at_path(child, tail)
+                _redact_at_path(child, tail, replacement)
         elif head in value:
-            _redact_at_path(value[head], tail)
+            _redact_at_path(value[head], tail, replacement)
     elif isinstance(value, list) and head == "*":
         for child in value:
-            _redact_at_path(child, tail)
+            _redact_at_path(child, tail, replacement)
 
 
 __all__ = [

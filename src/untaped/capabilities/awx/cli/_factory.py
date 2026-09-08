@@ -18,6 +18,7 @@ from untaped.capabilities.awx.cli._delete import _add_delete
 from untaped.capabilities.awx.cli._get import _add_get
 from untaped.capabilities.awx.cli._launch import _add_launch
 from untaped.capabilities.awx.cli._list import _add_list
+from untaped.capabilities.awx.cli._patch import _add_patch
 from untaped.capabilities.awx.cli._save import _add_save
 from untaped.capabilities.awx.cli._update import _add_update
 from untaped.capabilities.awx.cli.membership_commands import register_membership_subapp
@@ -39,6 +40,7 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
         _add_save(app, spec)
     if "apply" in spec.commands:
         _add_apply(app, spec)
+        _add_patch(app, spec)
     if "delete" in spec.commands:
         _add_delete(app, spec)
     for action in spec.actions:

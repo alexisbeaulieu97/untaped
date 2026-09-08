@@ -124,7 +124,7 @@ def test_job_templates_save_apply_round_trips_string_extra_vars(
     apply_result = CliInvoker().invoke(app, ["job-templates", "apply", str(saved), "--yes"])
 
     assert apply_result.exit_code == 0, apply_result.output
-    assert "unverified" not in apply_result.output.lower()
+    assert "did not converge" not in apply_result.output.lower()
     assert fake_aap.get_record("job_templates", 30)["extra_vars"] == "answer: 42\n"
 
 

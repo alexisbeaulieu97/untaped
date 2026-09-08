@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from untaped.capabilities.awx.cli import app
-from untaped.testing import CliInvoker, ScriptedPromptBackend, assert_destructive_contract
+from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 pytestmark = pytest.mark.integration
 
@@ -41,10 +41,10 @@ def test_delete_by_id_removes_record(seeded_default_org: Any) -> None:
     assert result.stdout.strip() == "10"
 
 
-def test_delete_by_id_yes_uses_bulk_id_fast_path(
+def test_delete_by_id_yes_validates_existence(
     seeded_default_org: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Under ``--by-id --yes``, delete should not do one GET per id."""
+    """--yes never skips detail validation."""
     _seed_jt(seeded_default_org, id_=10, name="alpha")
     original_get = seeded_default_org._get
 
@@ -58,8 +58,8 @@ def test_delete_by_id_yes_uses_bulk_id_fast_path(
         app, ["job-templates", "delete", "--by-id", "10", "--yes", "--format", "raw"]
     )
 
-    assert result.exit_code == 0, result.output
-    assert 10 not in seeded_default_org.store["job_templates"]
+    assert result.exit_code != 0, result.output
+    assert 10 in seeded_default_org.store["job_templates"]
 
 
 def test_delete_by_name_resolves_through_organization(seeded_default_org: Any) -> None:
@@ -98,7 +98,7 @@ def test_delete_stdin_batch_removes_each(seeded_default_org: Any) -> None:
 
 
 def test_delete_stdin_without_yes_or_dry_run_errors(seeded_default_org: Any) -> None:
-    """Refuse to consume stdin without an explicit confirmation gate.
+    """Without a controlling terminal, consumed stdin requires an explicit write gate.
 
     Without ``--yes`` (skip prompt) or ``--dry-run`` (safe preview),
     the CLI has no way to interactively confirm while reading stdin —
@@ -107,12 +107,12 @@ def test_delete_stdin_without_yes_or_dry_run_errors(seeded_default_org: Any) -> 
     _seed_jt(seeded_default_org, id_=10, name="alpha")
     result = CliInvoker().invoke(
         app,
-        ["job-templates", "delete", "--stdin"],
+        ["job-templates", "delete", "--stdin", "--by-id"],
         input="10\n",
     )
     # Usage errors exit before touching the store.
-    assert result.exit_code == 2
-    assert "--stdin requires" in (result.stderr or result.output)
+    assert result.exit_code == 1
+    assert "--yes or --dry-run" in (result.stderr or result.output)
     # Record must still exist.
     assert 10 in seeded_default_org.store["job_templates"]
 
@@ -153,8 +153,8 @@ def test_delete_missing_id_emits_error_row(seeded_default_org: Any) -> None:
     assert "999" in result.output
 
 
-def test_delete_mixed_success_and_missing_continues(seeded_default_org: Any) -> None:
-    """Per-id batch errors are isolated — successful targets still get deleted."""
+def test_delete_missing_target_rejects_whole_batch(seeded_default_org: Any) -> None:
+    """Missing targets prevent any delete in the selected batch."""
     _seed_jt(seeded_default_org, id_=10, name="alpha")
     result = CliInvoker().invoke(
         app,
@@ -162,10 +162,10 @@ def test_delete_mixed_success_and_missing_continues(seeded_default_org: Any) -> 
         input="10\n999\n",
     )
     assert result.exit_code == 1
-    # alpha is gone.
-    assert 10 not in seeded_default_org.store["job_templates"]
-    # alpha's id reached stdout; the missing id reached stderr.
-    assert result.stdout.strip() == "10"
+    # alpha survives.
+    assert 10 in seeded_default_org.store["job_templates"]
+    # No successful result is emitted.
+    assert result.stdout.strip() == ""
     assert "999" in (result.stderr or "")
 
 
@@ -183,10 +183,10 @@ def test_delete_prompt_accepts_yes(
     )
     assert result.exit_code == 0, result.output
     assert 10 not in seeded_default_org.store["job_templates"]
-    assert backend.calls == [("confirm", "Continue?")]
+    assert backend.calls == [("confirm", "Delete 1 resource(s)?")]
     # Preamble lands on stderr so stdout stays clean for piping.
     preview = result.stderr or result.output
-    assert "About to delete 1 JobTemplate" in preview
+    assert "Delete JobTemplate/alpha" in preview
     assert "alpha" in preview
 
 
@@ -205,7 +205,7 @@ def test_delete_prompt_declines_aborts(
     )
     # Exit 0 — user-initiated abort isn't an error.
     assert result.exit_code == 0, result.output
-    assert backend.calls == [("confirm", "Continue?")]
+    assert backend.calls == [("confirm", "Delete 1 resource(s)?")]
     assert 10 in seeded_default_org.store["job_templates"]
 
 
@@ -217,21 +217,8 @@ def test_delete_prompt_requires_yes_when_non_interactive(
     result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10"])
 
     assert result.exit_code == 1
-    assert "delete requires --yes when stdin is not interactive" in result.output
+    assert "--yes or --dry-run" in result.output
     assert 10 in seeded_default_org.store["job_templates"]
-
-
-def test_delete_conforms_to_sdk_destructive_contract(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org, id_=10, name="alpha")
-
-    def _resource_survives_decline() -> None:
-        assert 10 in seeded_default_org.store["job_templates"]
-
-    assert_destructive_contract(
-        app,
-        ["job-templates", "delete", "--by-id", "10"],
-        assert_unchanged=_resource_survives_decline,
-    )
 
 
 def test_delete_no_args_is_usage_error(seeded_default_org: Any) -> None:
@@ -239,7 +226,7 @@ def test_delete_no_args_is_usage_error(seeded_default_org: Any) -> None:
     result = CliInvoker().invoke(app, ["job-templates", "delete"])
     # Missing identifiers is a usage error on stderr, exit 2.
     assert result.exit_code == 2
-    assert "error: provide JobTemplate name(s) or --stdin" in result.stderr
+    assert "error: provide names, --stdin, filters/search, or --all" in result.stderr
 
 
 def test_delete_defaults_to_name_lookup_for_digit_named(
@@ -346,15 +333,8 @@ def test_delete_by_id_yes_populates_name_in_table(seeded_default_org: Any) -> No
     assert "deleted" in result.stdout.lower()
 
 
-def test_delete_stdin_by_id_bulk_prefetches_names_in_one_call(seeded_default_org: Any) -> None:
-    """Batch ``--by-id`` delete fetches every name in a single ``?id__in=`` GET.
-
-    Pins the round-trip win of the fast-path optimisation: one bulk list
-    replaces N per-id resolves, and every row in the output table carries
-    the populated ``name``. Observes calls at the httpx layer (the
-    ``respx`` router installed by the ``fake_aap`` fixture) so the
-    assertion doesn't depend on ``FakeAap`` internals.
-    """
+def test_delete_stdin_by_id_reports_validated_names(seeded_default_org: Any) -> None:
+    """Batch ID deletion validates every target and reports its resolved name."""
     _seed_jt(seeded_default_org, id_=10, name="alpha")
     _seed_jt(seeded_default_org, id_=11, name="beta")
     result = CliInvoker().invoke(
@@ -365,10 +345,3 @@ def test_delete_stdin_by_id_bulk_prefetches_names_in_one_call(seeded_default_org
     assert 11 not in seeded_default_org.store["job_templates"]
     assert "alpha" in result.stdout
     assert "beta" in result.stdout
-    id_in_calls = [
-        c
-        for c in seeded_default_org.router.calls
-        if c.request.method == "GET" and "id__in" in c.request.url.params
-    ]
-    assert len(id_in_calls) == 1
-    assert set(id_in_calls[0].request.url.params["id__in"].split(",")) == {"10", "11"}

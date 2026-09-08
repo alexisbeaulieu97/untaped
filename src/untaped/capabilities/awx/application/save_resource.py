@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from untaped.capabilities.awx.application.mutation_values import redact_value
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequest, ResourceNotFound
@@ -65,6 +66,10 @@ class SaveResource:
         """Public access to the record→resource builder for bulk save flows."""
         return self._build_resource(spec, record)
 
+    def metadata_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> Metadata:
+        """Extract ancestry without reading unrelated fields or memberships."""
+        return _METADATA_EXTRACTORS.get(spec.kind, _default_metadata)(spec, record, self._fk)
+
     def _build_resource(self, spec: ResourceSpec, record: dict[str, Any]) -> Resource:
         if spec.kind == "Inventory" and record.get("kind") == "constructed":
             record = self._client.get(spec, int(record["id"])).model_dump()
@@ -103,12 +108,16 @@ class SaveResource:
                     spec_data[ref.field] = [
                         str(m["name"]) for m in members if isinstance(m.get("name"), str)
                     ]
-        metadata = _METADATA_EXTRACTORS.get(spec.kind, _default_metadata)(spec, record, self._fk)
+        metadata = self.metadata_from_record(spec, record)
         # Polymorphic FK lives in metadata; strip from spec body if present
         for fk in spec.fk_refs:
             if fk.polymorphic:
                 spec_data.pop(fk.field, None)
-        return Resource(kind=spec.kind, metadata=metadata, spec=spec_data)
+        return Resource(
+            kind=spec.kind,
+            metadata=metadata,
+            spec=redact_value(spec_data, spec.secret_paths, replacement="$encrypted$"),
+        )
 
     def _build_spec_body(self, spec: ResourceSpec, record: dict[str, Any]) -> dict[str, Any]:
         body: dict[str, Any] = {}

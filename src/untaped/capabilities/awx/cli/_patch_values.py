@@ -1,4 +1,4 @@
-"""Build the field overlay for ``apply --stdin`` mass-patch.
+"""Parse top-level field replacements for ``patch``.
 
 The selection path patches every listed item with a common set of fields. Those
 fields come from two sources, merged with ``--set`` winning:
@@ -8,7 +8,7 @@ fields come from two sources, merged with ``--set`` winning:
 - ``--set NAME=VALUE`` (repeatable) — imperative, JSON-coerced so types reach
   AWX correctly (``verbosity=2`` → ``2``, ``enabled=true`` → ``True``).
 
-The merged overlay becomes a synthetic ``Resource.spec`` that flows through the
+The merged patch becomes a synthetic ``Resource.spec`` that flows through the
 normal apply pipeline (FK resolution, diff, sparse PATCH).
 """
 
@@ -41,7 +41,7 @@ def _coerce(value: str) -> Any:
         return value
 
 
-def build_overlay(set_pairs: list[str] | None, patch_file: Path | None) -> dict[str, Any]:
+def build_patch(set_pairs: list[str] | None, patch_file: Path | None) -> dict[str, Any]:
     """Merge ``--patch-file`` then ``--set`` (``--set`` wins on key clash)."""
     overlay: dict[str, Any] = {}
     if patch_file is not None:
@@ -50,4 +50,4 @@ def build_overlay(set_pairs: list[str] | None, patch_file: Path | None) -> dict[
     return overlay
 
 
-__all__ = ["build_overlay", "parse_set_pairs"]
+__all__ = ["build_patch", "parse_set_pairs"]

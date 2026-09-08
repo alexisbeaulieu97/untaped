@@ -44,7 +44,6 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from untaped.capabilities.awx.cli._delete import _delete_row
 from untaped.capabilities.awx.cli.test_commands import _test_case_row, _test_suite_row
 from untaped.capabilities.awx.domain import Job, JobEvent, WorkflowNode
 from untaped.capabilities.awx.domain.test_suite import Case, CaseResult, TestSuite
@@ -80,11 +79,6 @@ HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] =
             TestSuite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
         ),
         "suite",
-    ),
-    (
-        "untaped.capabilities.awx.cli._delete._delete_row",
-        lambda: _delete_row({"id": 7, "name": "alpha"}),
-        "id",
     ),
 ]
 
