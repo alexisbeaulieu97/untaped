@@ -21,7 +21,6 @@ BUILTIN_CAPABILITIES = (
     "awx",
     "ansible",
     "recipe",
-    "orchestration",
 )
 MANAGEMENT_COMMANDS = ("config", "profile", "skills", "doctor", "capabilities")
 

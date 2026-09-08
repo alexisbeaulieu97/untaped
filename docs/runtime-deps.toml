@@ -84,9 +84,3 @@ name = "truststore"
 owner = "workspace"
 reason = "OS trust-store TLS verification for the kernel HTTP client"
 requirement = "truststore>=0.10.4"
-
-[[dep]]
-name = "tomli-w"
-owner = "orchestration"
-reason = "canonical TOML serialization for orchestration store/bootstrap writes"
-requirement = "tomli-w>=1.2,<2"

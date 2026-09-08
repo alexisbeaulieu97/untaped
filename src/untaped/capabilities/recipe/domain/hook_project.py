@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
 
 _DOTTED_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
-_UNTAPED_DEV_REQUIREMENT = "untaped>=4.0.0,<5"
+_UNTAPED_DEV_REQUIREMENT = "untaped>=5.0.0,<6"
 HookKind = Literal["transform", "validate"]
 
 

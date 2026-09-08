@@ -295,8 +295,7 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
     console_script.write_text("#!/bin/sh\n", encoding="utf-8")
     console_script.chmod(0o755)
     root_commands = (
-        "config profile skills doctor capabilities workspace github jira awx ansible recipe "
-        "orchestration"
+        "config profile skills doctor capabilities workspace github jira awx ansible recipe"
     )
     rows = [
         {
@@ -337,6 +336,20 @@ def test_smoke_unified_checks_exact_capability_metadata(tmp_path: Path) -> None:
         console_script=console_script,
         runner=runner,
     )
+
+
+def test_smoke_unified_retires_orchestration_from_the_builtin_contract() -> None:
+    release = _load_helper()
+
+    assert release.BUILTIN_CAPABILITIES == (
+        "workspace",
+        "github",
+        "jira",
+        "awx",
+        "ansible",
+        "recipe",
+    )
+    assert "orchestration" not in release.BUILTIN_CAPABILITIES
 
 
 class _FakePublicationTransport:
@@ -472,32 +485,6 @@ def test_manifest_rejects_broadened_source_intersection(tmp_path: Path) -> None:
     path = tmp_path / "release-manifest.toml"
     path.write_text(altered, encoding="utf-8")
     with pytest.raises(release_module.ReleaseCheckError, match="source dependency intersections"):
-        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
-
-
-@pytest.mark.parametrize(
-    ("needle", "replacement", "message"),
-    [
-        (
-            'status = "integrated-reviewed"',
-            'status = "approved-not-integrated"',
-            "integrated-reviewed",
-        ),
-        (
-            '"d68e6a9007d11f50ce9e4c0a21296322975ec0ca"',
-            f'"{"b" * 40}"',
-            "source OIDs are not approved",
-        ),
-    ],
-)
-def test_manifest_rejects_unapproved_orchestration_provenance(
-    tmp_path: Path, needle: str, replacement: str, message: str
-) -> None:
-    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
-    altered = text.replace(needle, replacement, 1)
-    path = tmp_path / "release-manifest.toml"
-    path.write_text(altered, encoding="utf-8")
-    with pytest.raises(release_module.ReleaseCheckError, match=message):
         release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
 
 

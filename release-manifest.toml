@@ -1,8 +1,8 @@
 [manifest]
 schema = "untaped.release-manifest.v1"
-version = "4.0.0"
+version = "5.0.0"
 requires-python = ">=3.14"
-capabilities = ["workspace", "github", "jira", "awx", "ansible", "recipe", "orchestration"]
+capabilities = ["workspace", "github", "jira", "awx", "ansible", "recipe"]
 
 [distribution]
 name = "untaped"
@@ -21,7 +21,6 @@ direct = [
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "ruamel.yaml>=0.18.16",
-    "tomli-w>=1.2,<2",
     "tomlkit>=0.13,<1",
     "truststore>=0.10.4",
 ]
@@ -92,24 +91,3 @@ repository = "untaped-recipe"
 oid = "dbbd512336d227043aaa99b3bc10efe9a2d7219c"
 requires-python = ">=3.14"
 dependencies = ["cyclopts>=4.16.0,<5", "jinja2>=3.1.6,<4", "packaging>=26.2,<27", "pydantic>=2.13.3", "pyyaml>=6.0.3", "ruamel.yaml>=0.18.16", "tomlkit>=0.13,<1", "untaped>=3.0.0,<4"]
-
-[[provenance.sources]]
-capability = "orchestration"
-repository = "untaped-orchestration"
-oid = "8633e594ebe381ac7e3e58a5b57707ae9b691369"
-requires-python = ">=3.14"
-dependencies = ["cyclopts>=4.16,<5", "filelock>=3.29.7,<4", "pydantic>=2.13.3,<3", "tomli-w>=1.2,<2", "untaped>=3.1.0,<4"]
-
-# These approved orchestration source fixes are integrated and reviewed in the
-# accepted unified source state.
-[provenance.approved-orchestration-fixes]
-status = "integrated-reviewed"
-source-oids = [
-    "d68e6a9007d11f50ce9e4c0a21296322975ec0ca",
-    "f6359b0678ea61e969ff164a57b7ab6858f3fef4",
-]
-
-[provenance.dispositions]
-core = "unified-root"
-self = "omitted"
-ansible-github = "builtin-capability:github"

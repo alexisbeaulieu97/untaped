@@ -1,4 +1,4 @@
-# AGENTS.md — `untaped` (unified app v4)
+# AGENTS.md — `untaped` (unified app)
 
 Contribution rules for the unified `untaped` application.
 AI agents and humans both read this file. This repo is **one modular
@@ -110,20 +110,21 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 (`ban-relative-imports = "all"`, tests included). Secrets are
 `pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`.
 
-## Orchestration store
+## Planning and decisions
 
-The repository has a public decision-only orchestration store; it contains no tasks.
-Use the unified `untaped orchestration` capability for canonical reads and mutations, including revision guards
-on every mutation. Agents never use `--force-current`. The committed views are
-human-only generated state, not canonical agent input. After hand recovery, run
-`untaped orchestration check --local` and `untaped orchestration render --check`.
+Read relevant constraints in [`.planning/decisions/`](.planning/decisions/)
+before changing architecture. Code and tests define implementation behavior;
+keep decisions short and focused on rationale and constraints.
 
-Current architectural decisions are recorded in the public store under
-`.untaped/orchestration`. Sequencing and release planning belong in the private
-`untaped-private` planning repository; private roadmap or hub prose is not
-mirrored here. Keep public records free of private planning details.
+Tasks, roadmap, priorities, blockers, and handoffs live in private GitHub Issues
+and the private Untaped Project owned by `untaped-private`. Its `AGENTS.md`
+describes the workflow. Do not copy private task bodies or planning exports into
+this public repository. Do not maintain a second backlog or generated roadmap.
+Use Superpowers for design, implementation, and review. Put public behavioral
+changes and their validation in the implementation PR.
 
-Do not publish remotely without explicit authorization.
+Existing user authorization persists for its concrete scope. A backlog item
+alone does not authorize remote publication or unrelated work.
 
 ## See also
 

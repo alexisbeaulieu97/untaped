@@ -106,15 +106,8 @@ def _recipe_builtins() -> tuple[CapabilitySpec, ...]:
     return (SPEC,)
 
 
-def _orchestration_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the orchestration built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.orchestration import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
 def _default_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the built-ins in declaration order (workspace through orchestration)."""
+    """Return the built-ins in declaration order."""
     return (
         *_workspace_builtins(),
         *_github_builtins(),
@@ -122,7 +115,6 @@ def _default_builtins() -> tuple[CapabilitySpec, ...]:
         *_awx_builtins(),
         *_ansible_builtins(),
         *_recipe_builtins(),
-        *_orchestration_builtins(),
     )
 
 
