@@ -22,6 +22,7 @@ from _release_core import (
     SHA256_RE,
     TESTPYPI_INDEX,
     ReleaseCheckError,
+    is_prerelease_version,
 )
 
 
@@ -121,7 +122,7 @@ class GitHubReleaseTransport:
                 "name": f"untaped v{candidate.version}",
                 "body": f"PyPI release for {candidate.package_name} {candidate.version}.",
                 "draft": True,
-                "prerelease": True,
+                "prerelease": is_prerelease_version(candidate.version),
                 "generate_release_notes": False,
             },
         )

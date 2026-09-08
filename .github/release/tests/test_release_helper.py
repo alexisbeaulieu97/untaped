@@ -137,6 +137,24 @@ def test_verify_version_matches_pyproject_and_rejects_unsafe_input(tmp_path: Pat
         release.verify_version(f"{SYNTHETIC_VERSION}; echo injected", pyproject_path=pyproject)
 
 
+@pytest.mark.parametrize(
+    "version",
+    [
+        "9.8.7post1.dev1",
+        "9.8.7.dev1",
+        "9.8.7+local",
+        "9.8.7-alpha1",
+        "9.8.7rc",
+    ],
+)
+def test_verify_version_rejects_unsupported_release_forms(tmp_path: Path, version: str) -> None:
+    release = _load_helper()
+    pyproject = _pyproject(tmp_path, version=version)
+
+    with pytest.raises(release.ReleaseCheckError, match="unsafe or invalid"):
+        release.verify_version(version, pyproject_path=pyproject)
+
+
 def test_installed_package_smoke_checks_version_script_and_help(
     tmp_path: Path,
 ) -> None:
@@ -941,6 +959,79 @@ def test_prepare_index_upload_copies_only_missing_artifacts(tmp_path: Path) -> N
         output_dir=upload_dir,
     )
     assert [path.name for path in upload_dir.iterdir()] == [f"untaped-{SYNTHETIC_VERSION}.tar.gz"]
+
+
+@pytest.mark.parametrize(
+    ("version", "prerelease"),
+    [
+        ("4.0.0", False),
+        ("4.0.0a1", True),
+        ("4.0.0b1", True),
+        ("4.0.0rc1", True),
+    ],
+)
+def test_github_transport_draft_payload_marks_prereleases(
+    version: str,
+    prerelease: bool,
+) -> None:
+    candidate = release_module.ReleaseCandidate("untaped", version, "a" * 40, ())
+    requests: list[Any] = []
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        requests.append(request)
+        return _JsonResponse(
+            _github_release_payload(tag=f"v{version}", target_oid=candidate.candidate_oid)
+        )
+
+    transport = release_module.GitHubReleaseTransport(
+        repo="acme/untaped", token="token", urlopen=urlopen
+    )
+    transport.create_github_draft(candidate)
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert request.full_url == "https://api.github.com/repos/acme/untaped/releases"
+    assert request.data is not None
+    assert json.loads(request.data) == {
+        "tag_name": f"v{version}",
+        "target_commitish": candidate.candidate_oid,
+        "name": f"untaped v{version}",
+        "body": f"PyPI release for untaped {version}.",
+        "draft": True,
+        "prerelease": prerelease,
+        "generate_release_notes": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "4.0.0post1.dev1",
+        "4.0.0.dev1",
+        "4.0.0+local",
+        "4.0.0-alpha1",
+        "4.0.0rc",
+    ],
+)
+def test_github_transport_rejects_unsupported_release_forms(version: str) -> None:
+    candidate = release_module.ReleaseCandidate("untaped", version, "a" * 40, ())
+    requests: list[Any] = []
+
+    def urlopen(request: Any, timeout: int) -> _Response:
+        del timeout
+        requests.append(request)
+        return _JsonResponse(
+            _github_release_payload(tag=f"v{version}", target_oid=candidate.candidate_oid)
+        )
+
+    transport = release_module.GitHubReleaseTransport(
+        repo="acme/untaped", token="token", urlopen=urlopen
+    )
+    with pytest.raises(release_module.ReleaseCheckError, match="unsafe or invalid"):
+        transport.create_github_draft(candidate)
+    assert requests == []
 
 
 def test_github_transport_peels_annotated_tag_to_commit() -> None:
