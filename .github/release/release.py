@@ -6,12 +6,8 @@ import os
 import re
 import subprocess
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 _RELEASE_DIR = Path(__file__).resolve().parent
 if str(_RELEASE_DIR) not in sys.path:
@@ -30,7 +26,6 @@ from _publication import (  # noqa: E402
     publish_github_draft,
     run_publication,
     validate_release_manifest,
-    verify_candidate_oid,
     verify_index_artifacts,
 )
 from _release_core import (  # noqa: E402
@@ -46,9 +41,6 @@ from _release_core import (  # noqa: E402
     TESTPYPI_INDEX,
     VERSION_RE,
     ReleaseCheckError,
-    dependency_name,
-    normalize_package_name,
-    project_metadata,
 )
 from _release_transport import GitHubReleaseTransport, SimpleIndexTransport  # noqa: E402
 
@@ -80,10 +72,6 @@ __all__ = [
     "validate_release_manifest",
     "verify_index_artifacts",
 ]
-
-
-_dependency_name = dependency_name
-_normalize_package_name = normalize_package_name
 
 
 def smoke_unified_app(
@@ -149,190 +137,6 @@ def _run_smoke_command(
         detail = completed.stderr.strip() or completed.stdout.strip()
         raise ReleaseCheckError(f"{' '.join(command)} failed: {detail}")
     return completed
-
-
-def _assert_existing_release_prefix(
-    version: str,
-    *,
-    candidate_oid: str | None = None,
-    current_oid: str | None = None,
-) -> None:
-    """Fail closed on conflicts, while allowing an exact resumable prefix."""
-    if candidate_oid is None:
-        _assert_github_release_absent(version)
-        _assert_git_tag_absent(version)
-        return
-    if current_oid is None:
-        raise ReleaseCheckError("current OID is required when checking an existing release prefix")
-    verify_candidate_oid(candidate_oid, current_oid)
-    repo = os.environ.get("GITHUB_REPOSITORY")
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not repo or not token:
-        raise ReleaseCheckError(
-            "could not verify existing release prefix: repository/token missing"
-        )
-    transport = GitHubReleaseTransport(repo=repo, token=token)
-    release = transport.inspect_github_release(tag=f"v{version}")
-    if release is None:
-        _assert_git_tag_absent(version)
-        print(f"ok: GitHub release v{version} and its tag are absent")
-        return
-    if release.tag != f"v{version}" or release.target_oid != candidate_oid:
-        raise ReleaseCheckError(
-            f"existing GitHub release v{version} does not match reviewed candidate state"
-        )
-    if transport.inspect_tag_target(tag=release.tag) != candidate_oid:
-        raise ReleaseCheckError(
-            f"existing Git tag v{version} does not resolve to the reviewed candidate"
-        )
-    state = "draft" if release.draft else "published"
-    print(f"ok: existing GitHub {state} v{version} targets reviewed candidate")
-
-
-def _assert_github_release_absent(
-    version: str,
-    *,
-    repo: str | None = None,
-    token: str | None = None,
-    urlopen: Callable[..., Any] = urllib.request.urlopen,
-) -> None:
-    """Fail closed unless GitHub proves the release tag is absent."""
-    repo = repo or os.environ.get("GITHUB_REPOSITORY")
-    token = token or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not repo:
-        raise ReleaseCheckError("could not verify GitHub release: GITHUB_REPOSITORY is missing")
-    if not token:
-        raise ReleaseCheckError("could not verify GitHub release: GH_TOKEN is missing")
-
-    quoted_tag = urllib.parse.quote(f"v{version}", safe="")
-    request = urllib.request.Request(
-        f"https://api.github.com/repos/{repo}/releases/tags/{quoted_tag}",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    try:
-        with urlopen(request, timeout=15) as response:
-            status = int(getattr(response, "status", 0))
-            if status == 200:
-                raise ReleaseCheckError(f"GitHub release v{version} already exists.")
-            raise ReleaseCheckError(
-                f"could not verify GitHub release v{version}: unexpected HTTP {status}"
-            )
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            return
-        raise ReleaseCheckError(
-            f"could not verify GitHub release v{version}: HTTP {error.code}"
-        ) from error
-    except urllib.error.URLError as error:
-        raise ReleaseCheckError(f"could not verify GitHub release v{version}: {error}") from error
-
-
-def _assert_git_tag_absent(
-    version: str,
-    *,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> None:
-    """Fail closed unless git proves the remote tag is absent."""
-    command = [
-        "git",
-        "ls-remote",
-        "--exit-code",
-        "--tags",
-        "origin",
-        f"refs/tags/v{version}",
-    ]
-    completed = runner(command, capture_output=True, text=True, check=False)
-    if completed.returncode == 0:
-        raise ReleaseCheckError(f"Git tag v{version} already exists on origin.")
-    if completed.returncode == 2:
-        return
-
-    detail = completed.stderr.strip() or completed.stdout.strip()
-    suffix = f": {detail}" if detail else ""
-    raise ReleaseCheckError(
-        f"could not verify Git tag v{version}: git ls-remote exited {completed.returncode}{suffix}"
-    )
-
-
-def _assert_internal_dependencies_published(
-    index: str,
-    *,
-    pyproject_path: Path = PYPROJECT,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> None:
-    """Verify internal untaped dependencies resolve from the selected install path."""
-    requirements = _internal_dependency_requirements(pyproject_path)
-    if not requirements:
-        print("ok: no internal untaped dependencies declared")
-        return
-
-    env = os.environ.copy()
-    if index == "testpypi":
-        env["UV_INDEX"] = TESTPYPI_INDEX
-        env["UV_INDEX_STRATEGY"] = "unsafe-best-match"
-    elif index != "pypi":
-        raise ReleaseCheckError(f"unknown release index: {index}")
-
-    for requirement in requirements:
-        package_name = _dependency_name(requirement)
-        _verify_dependency_published(
-            package_name=package_name,
-            requirement=requirement,
-            index=index,
-            env=env,
-            runner=runner,
-        )
-    print(f"ok: {len(requirements)} internal dependencies resolve from {index}")
-
-
-def _verify_dependency_published(
-    *,
-    package_name: str,
-    requirement: str,
-    index: str,
-    env: dict[str, str],
-    runner: Callable[..., subprocess.CompletedProcess[str]],
-) -> None:
-    command = [
-        "uv",
-        "run",
-        "--no-project",
-        "--refresh-package",
-        package_name,
-        "--with",
-        requirement,
-        "python",
-        "-c",
-        f"import importlib.metadata as m; print(m.version({package_name!r}))",
-    ]
-    completed = runner(
-        command,
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise ReleaseCheckError(f"{requirement} is not available from {index}: {detail}")
-
-
-def _internal_dependency_requirements(pyproject_path: Path = PYPROJECT) -> list[str]:
-    """Return internal untaped dependency requirements from project metadata."""
-    project = project_metadata(pyproject_path)
-    self_name = _normalize_package_name(str(project["name"]))
-    requirements: list[str] = []
-    for dependency in project.get("dependencies", []):
-        requirement = str(dependency)
-        dependency_name = _dependency_name(requirement)
-        if dependency_name.startswith("untaped") and dependency_name != self_name:
-            requirements.append(requirement)
-    return requirements
 
 
 def _smoke_installed_package(
