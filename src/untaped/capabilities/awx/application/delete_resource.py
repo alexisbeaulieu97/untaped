@@ -28,7 +28,4 @@ class DeleteResource:
             and self._client.get(spec, record_id).get("source") == "constructed"
         ):
             raise BadRequest("generated constructed sources cannot be deleted independently")
-        receipt = self._client.delete(spec, record_id)
-        return receipt or DeleteReceipt(
-            action="deletion_requested" if spec.kind == "Inventory" else "deleted"
-        )
+        return self._client.delete(spec, record_id)

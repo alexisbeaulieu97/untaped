@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
 
 
@@ -71,7 +72,7 @@ class _FakeClient:
     def update(self, *a: Any, **kw: Any) -> Any:  # pragma: no cover
         raise NotImplementedError
 
-    def delete(self, *a: Any, **kw: Any) -> None:  # pragma: no cover
+    def delete(self, *a: Any, **kw: Any) -> DeleteReceipt:  # pragma: no cover
         raise NotImplementedError
 
     def action(self, *a: Any, **kw: Any) -> dict[str, Any]:  # pragma: no cover

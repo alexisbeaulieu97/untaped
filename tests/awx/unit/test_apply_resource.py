@@ -16,6 +16,7 @@ from untaped.capabilities.awx.application.ports import (
 )
 from untaped.capabilities.awx.domain import Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.envelope import IdentityRef
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.errors import AwxApiError, BadRequest
 from untaped.capabilities.awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
@@ -89,7 +90,7 @@ class _StubClient:
         self.updated = (id_, payload)
         return {"id": id_, **payload}
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         raise NotImplementedError
 
     def action(

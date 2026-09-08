@@ -46,6 +46,7 @@ from untaped.capabilities.awx.domain import (
     ResourceSpec,
     ServerRecord,
 )
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.errors import BadRequest
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
@@ -102,7 +103,7 @@ class _StubClient:
     def update(self, spec: ResourceSpec, id_: int, payload: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         raise NotImplementedError
 
     def action(
