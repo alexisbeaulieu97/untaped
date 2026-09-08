@@ -118,18 +118,12 @@ on every mutation. Agents never use `--force-current`. The committed views are
 human-only generated state, not canonical agent input. After hand recovery, run
 `untaped orchestration check --local` and `untaped orchestration render --check`.
 
-## Wave gates
+Current architectural decisions are recorded in the public store under
+`.untaped/orchestration`. Sequencing and release planning belong in the private
+`untaped-private` planning repository; private roadmap or hub prose is not
+mirrored here. Keep public records free of private planning details.
 
-Capability slices land serialized, one at a time, each gated before the
-next starts:
-
-1. Fresh disposable checkout implementing exactly one slice per its spec.
-2. Senior review: PASS (or fix-and-re-review). Involved lines only.
-3. Cumulative checks on every accepted slice, un-narrowed: FULL suite,
-   `ruff`, `mypy`, and the S-suite scanners that run in Wave 1 CI
-   (see `.github/workflows/ci.yml`).
-4. Accepted slice OID recorded in the control root.
-5. No remote publication without explicit authorization.
+Do not publish remotely without explicit authorization.
 
 ## See also
 
