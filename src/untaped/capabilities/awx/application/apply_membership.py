@@ -61,6 +61,7 @@ class MembershipReconciler:
         *,
         client: ResourceClient,
         fk: FkResolver,
+        preserve_existing_fk_ids: bool = False,
     ) -> list[MembershipPlan]:
         """For each ``multi=True, sub_endpoint != None`` FK, compute the plan.
 
@@ -90,15 +91,6 @@ class MembershipReconciler:
                 )
             desired_names = list(raw_value)
             scope = scope_for(ref, resource)
-            resolved_desired_ids = tuple(
-                resolve_fk_value(ref.kind, value, scope=scope, fk=fk) for value in desired_names
-            )
-            if len(set(resolved_desired_ids)) != len(resolved_desired_ids):
-                raise BadRequest(
-                    f"{spec.kind} {resource.metadata.name!r}: {ref.field!r} contains "
-                    "duplicate members"
-                )
-
             existing_ids: list[int] = []
             existing_name_by_id: dict[int, str] = {}
             if record_id is not None:
@@ -109,6 +101,20 @@ class MembershipReconciler:
                     rname = record.get("name")
                     if isinstance(rname, str):
                         existing_name_by_id[rid] = rname
+
+            resolved_desired_ids = _resolve_desired_members(
+                ref.kind,
+                desired_names,
+                existing_name_by_id,
+                scope=scope,
+                fk=fk,
+                preserve_existing_fk_ids=preserve_existing_fk_ids,
+            )
+            if len(set(resolved_desired_ids)) != len(resolved_desired_ids):
+                raise BadRequest(
+                    f"{spec.kind} {resource.metadata.name!r}: "
+                    f"{ref.field!r} contains duplicate members"
+                )
 
             desired_set = set(resolved_desired_ids)
             existing_set = set(existing_ids)
@@ -226,10 +232,11 @@ class MembershipReconciler:
     ) -> None:
         """POST associate / disassociate per ``plans`` against the resource's id."""
         for plan in plans:
-            if plan.ref.ordered:
+            if plan.ref.ordered and plan.mode == "replacement":
+                associate = set(plan.to_reorder) | set(plan.to_associate)
                 operations = (
                     (tuple(dict.fromkeys((*plan.to_disassociate, *plan.to_reorder))), True),
-                    (tuple(dict.fromkeys((*plan.to_reorder, *plan.to_associate))), False),
+                    (tuple(member for member in plan.desired_ids if member in associate), False),
                 )
             else:
                 # Set-like relationships retain the long-standing additive
@@ -312,3 +319,30 @@ def _ordered_replacements(
     desired_tail = desired_ids[prefix:]
     current_set = set(current)
     return tuple(member_id for member_id in desired_tail if member_id in current_set)
+
+
+def _resolve_desired_members(
+    kind: str,
+    values: list[Any],
+    existing_names: dict[int, str],
+    *,
+    scope: dict[str, str] | None,
+    fk: FkResolver,
+    preserve_existing_fk_ids: bool,
+) -> tuple[PlannedId, ...]:
+    """Retain validated editor IDs by snapshot label, independently of ordering.
+
+    Repeated existing labels consume their original IDs in snapshot order. A
+    newly entered label still uses normal name resolution and ambiguity checks.
+    """
+    remaining: dict[str, list[int]] = {}
+    if preserve_existing_fk_ids:
+        for member_id, name in existing_names.items():
+            remaining.setdefault(name, []).append(member_id)
+    result: list[PlannedId] = []
+    for value in values:
+        if isinstance(value, str) and remaining.get(value):
+            result.append(fk.validate_id(kind, remaining[value].pop(0), scope=scope))
+        else:
+            result.append(resolve_fk_value(kind, value, scope=scope, fk=fk))
+    return tuple(result)

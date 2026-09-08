@@ -752,3 +752,205 @@ def test_exposed_plan_values_cannot_change_the_prepared_write() -> None:
     plan.operations[0].resource.spec["description"] = "changed document"
     assert engine.execute(plan).outcomes[0].action == "updated"
     assert client.records[7]["description"] == "prepared"
+
+
+@pytest.mark.parametrize("drift", ["value", "preserved", "name", "enriched"])
+def test_preflight_watches_unchanged_preserved_and_identity_fields_batchwide(drift: str) -> None:
+    spec = ResourceSpec(
+        kind="Item",
+        identity_keys=("name",),
+        canonical_fields=("description", "value", "password", "settings"),
+        secret_paths=("password",),
+        server_enriched_fields=("settings",),
+    )
+    records = [
+        {
+            "id": i,
+            "name": f"item{i}",
+            "description": "old",
+            "value": {"keep": 1},
+            "password": "old-secret",
+            "settings": {"keep": 1},
+        }
+        for i in (1, 2)
+    ]
+    client = _Client(records)
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    docs = [
+        Resource(
+            kind="Item",
+            metadata=Metadata(name=f"item{i}"),
+            spec={
+                "description": "new",
+                "value": {"keep": 1},
+                "password": "$encrypted$",
+                "settings": {"keep": 1},
+            },
+        )
+        for i in (1, 2)
+    ]
+    plan = engine.prepare(docs)
+    field, value = {
+        "value": ("value", {"other": 2}),
+        "preserved": ("password", "rotated-secret"),
+        "name": ("name", "renamed"),
+        "enriched": ("settings", {"keep": 1, "added": 2}),
+    }[drift]
+    client.records[2][field] = value
+    result = engine.execute(plan)
+    assert [row.action for row in result.outcomes] == ["skipped", "conflict"]
+    assert client.writes == []
+
+
+def test_preflight_watches_nested_parent_drift_for_whole_batch() -> None:
+    client = _MembershipClient(
+        [
+            {"id": 1, "name": "one", "inventory": 30, "description": "old"},
+            {"id": 2, "name": "two", "inventory": 30, "description": "old"},
+        ]
+    )
+    docs = [_group("one", []), _group("two", [])]
+    for doc in docs:
+        doc.spec["description"] = "new"
+    engine = _group_engine(client)
+    plan = engine.prepare(docs, mode="edit", existing=[client.records[1], client.records[2]])
+    client.records[2]["inventory"] = 40
+    assert [row.action for row in engine.execute(plan).outcomes] == ["skipped", "conflict"]
+    assert client.writes == []
+
+
+def test_distinct_selected_ids_with_duplicate_names_are_independent() -> None:
+    from untaped.capabilities.awx.application.selection import SelectedResource
+
+    spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
+    client = _Client([{"id": i, "name": "same", "description": "old"} for i in (1, 2)])
+    selected = [SelectedResource("Item", i, "same", {}, dict(client.records[i])) for i in (1, 2)]
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    plan = engine.prepare(
+        [
+            Resource(kind="Item", metadata=Metadata(name="same"), spec={"description": f"new{i}"})
+            for i in (1, 2)
+        ],
+        mode="patch",
+        existing=selected,
+    )
+    assert client.find_calls == 0
+    result = engine.execute(plan)
+    assert [(row.id, row.action) for row in result.outcomes] == [(1, "updated"), (2, "updated")]
+    assert [client.records[i]["description"] for i in (1, 2)] == ["new1", "new2"]
+
+
+def test_repeated_selected_id_is_rejected_before_writes() -> None:
+    spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
+    client = _Client([{"id": 1, "name": "same", "description": "old"}])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    docs = [
+        Resource(kind="Item", metadata=Metadata(name="same"), spec={"description": value})
+        for value in ("first", "second")
+    ]
+    with pytest.raises(MutationConflict, match="duplicate target"):
+        engine.prepare(docs, mode="patch", existing=[client.records[1], client.records[1]])
+    assert client.find_calls == 0
+    assert client.writes == []
+
+
+@pytest.mark.parametrize(
+    "current,labels,expected",
+    [
+        ([9, 10], ["9", "other"], [9, 10]),
+        ([9, 10], ["other", "9"], [10, 9]),
+        ([9, 11, 10], ["other", "9", "9"], [10, 9, 11]),
+    ],
+)
+def test_editor_preserves_membership_ids_for_ambiguous_unchanged_labels(
+    current: list[int], labels: list[str], expected: list[int]
+) -> None:
+    class AmbiguousFk(_Fk):
+        def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int:
+            from untaped.capabilities.awx.errors import AmbiguousIdentityError
+
+            raise AmbiguousIdentityError(kind, {"name": name}, match_count=2)
+
+        def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
+            assert kind == "Member" and id_ in {9, 10, 11}
+            return id_
+
+    class NamedMembers(_MembershipClient):
+        def paginate_sub_endpoint(
+            self, spec: ResourceSpec, record_id: int, sub_endpoint: str, **kwargs: Any
+        ) -> Iterator[dict[str, Any]]:
+            return iter(
+                {"id": item, "name": {9: "9", 10: "other", 11: "9"}[item]}
+                for item in self.members.get((record_id, sub_endpoint), [])
+            )
+
+    spec = ResourceSpec(
+        kind="Item",
+        identity_keys=("name",),
+        canonical_fields=(),
+        fk_refs=(
+            FkRef(field="members", kind="Member", multi=True, sub_endpoint="members", ordered=True),
+        ),
+    )
+    client = NamedMembers([{"id": 1, "name": "item"}])
+    client.members[(1, "members")] = current.copy()
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, AmbiguousFk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    plan = engine.prepare(
+        [Resource(kind="Item", metadata=Metadata(name="item"), spec={"members": labels})],
+        mode="edit",
+        existing=[client.records[1]],
+        preserve_existing_fk_ids=True,
+    )
+    result = engine.execute(plan)
+    assert result.outcomes[0].action in {"updated", "unchanged"}
+    assert client.members[(1, "members")] == expected
+
+
+def test_ordered_membership_interleaves_created_reference_before_retained_tail() -> None:
+    spec = ResourceSpec(
+        kind="Item",
+        identity_keys=("name",),
+        canonical_fields=(),
+        fk_refs=(
+            FkRef(field="members", kind="Item", multi=True, sub_endpoint="members", ordered=True),
+        ),
+    )
+    client = _MembershipClient(
+        [{"id": 1, "name": "owner"}, {"id": 2, "name": "first"}, {"id": 3, "name": "last"}]
+    )
+    client.members[(1, "members")] = [2, 3]
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({("Item", "first"): 2, ("Item", "last"): 3})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    docs = [
+        Resource(
+            kind="Item", metadata=Metadata(name="owner"), spec={"members": ["first", "new", "last"]}
+        ),
+        Resource(kind="Item", metadata=Metadata(name="new"), spec={}),
+    ]
+    result = engine.run(docs, write=True)
+    assert [row.action for row in result.outcomes] == ["updated", "created"]
+    assert client.members[(1, "members")] == [2, 4, 3]

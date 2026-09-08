@@ -398,3 +398,75 @@ def test_post_members_ref_without_sub_endpoint_is_a_noop() -> None:
         client=cast(ResourceClient, client),
     )
     assert client.subendpoint_calls == []
+
+
+@pytest.mark.parametrize(
+    "current,desired", [([1, 3], [1, 2, 3]), ([1, 3], [2, 1, 3]), ([1, 2, 3, 5], [3, 4, 1])]
+)
+def test_ordered_replacement_interleaves_new_and_reordered_members(
+    current: list[int], desired: list[int]
+) -> None:
+    from tests.awx.unit.test_mutation_engine import _Fk, _MembershipClient
+    from untaped.capabilities.awx.domain import Metadata, ResourceSpec
+
+    spec = ResourceSpec(
+        kind="Item",
+        identity_keys=("name",),
+        canonical_fields=(),
+        fk_refs=(
+            FkRef(field="members", kind="Item", multi=True, sub_endpoint="members", ordered=True),
+        ),
+    )
+    client = _MembershipClient([])
+    client.members[(10, "members")] = current.copy()
+    fk = _Fk({("Item", str(item)): item for item in desired})
+    use = MembershipReconciler()
+    plans = use.plan(
+        spec,
+        Resource(
+            kind="Item",
+            metadata=Metadata(name="owner"),
+            spec={"members": [str(item) for item in desired]},
+        ),
+        10,
+        client=cast(ResourceClient, client),
+        fk=cast(FkResolver, fk),
+    )
+    use.execute(spec, 10, plans, client=cast(ResourceClient, client))
+    assert client.members[(10, "members")] == desired
+    use.verify(spec, 10, plans, client=cast(ResourceClient, client))
+
+
+@pytest.mark.parametrize("label", ["existing", "changed"])
+def test_editor_membership_preserves_only_unchanged_snapshot_labels(label: str) -> None:
+    class Resolver:
+        def __init__(self) -> None:
+            self.validated: list[int] = []
+            self.resolved: list[str] = []
+
+        def validate_id(self, kind: str, id_: int, *, scope: Any = None) -> int:
+            self.validated.append(id_)
+            return id_
+
+        def name_to_id(self, kind: str, name: str, *, scope: Any = None) -> int:
+            self.resolved.append(name)
+            assert name == "changed"
+            return 12
+
+    fk = Resolver()
+    client = _StubClient(existing_members={"hosts": [{"id": 9, "name": "existing"}]})
+    plans = MembershipReconciler().plan(
+        GROUP_SPEC,
+        Resource(
+            kind="Group",
+            metadata=Metadata(name="group", parent=IdentityRef(kind="Inventory", name="prod")),
+            spec={"hosts": [label]},
+        ),
+        1,
+        client=cast(ResourceClient, client),
+        fk=cast(FkResolver, fk),
+        preserve_existing_fk_ids=True,
+    )
+    assert plans[0].desired_ids == ((9,) if label == "existing" else (12,))
+    assert fk.validated == ([9] if label == "existing" else [])
+    assert fk.resolved == ([] if label == "existing" else ["changed"])

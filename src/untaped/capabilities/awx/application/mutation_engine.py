@@ -219,7 +219,7 @@ class BatchMutationEngine:
         selected = list(existing) if existing is not None else None
         if selected is not None and len(selected) != len(docs):
             raise BadRequest("selected records and documents must have equal length")
-        targets = self._build_targets(docs)
+        targets = self._build_targets(docs, selected)
         resolver = _PlanningFkResolver(self._fk, targets)
         resolved_existing: list[dict[str, Any] | None] = [None] * len(docs)
         specs: list[ResourceSpec] = []
@@ -328,6 +328,7 @@ class BatchMutationEngine:
                 target.id,
                 client=self._client,
                 fk=resolver,
+                preserve_existing_fk_ids=preserve_existing_fk_ids,
             )
             body = self._body.prepare(spec, resource, payload, existing_record)
             changes = [
@@ -456,13 +457,24 @@ class BatchMutationEngine:
             return BatchResult(outcomes=[operation.preview for operation in plan.operations])
         return self.execute(plan, continue_on_error=continue_on_error, parallel=parallel)
 
-    def _build_targets(self, docs: list[Resource]) -> list[_PlannedTarget]:
+    def _build_targets(
+        self,
+        docs: list[Resource],
+        selected: list[Mapping[str, Any] | SelectedResource] | None,
+    ) -> list[_PlannedTarget]:
         targets: list[_PlannedTarget] = []
         seen: dict[tuple[str, Any], int] = {}
         for index, resource in enumerate(docs):
             spec = self._catalog.get(resource.kind)
             identity = self._planner.plan_identity(spec, resource)
-            key = (resource.kind, _freeze(identity))
+            if selected is None:
+                key = (resource.kind, _freeze(identity))
+            else:
+                item = selected[index]
+                fixed_id = item.id if isinstance(item, SelectedResource) else _record_id(item)
+                if fixed_id is None:
+                    raise BadRequest("selected resource requires an integer ID")
+                key = (resource.kind, fixed_id)
             if key in seen:
                 raise MutationConflict(
                     f"duplicate target {resource.kind} {resource.metadata.name!r} "
@@ -498,7 +510,6 @@ class BatchMutationEngine:
                     if not semantic_equal(
                         operation.existing.get(field_name),
                         current_record.get(field_name),
-                        allow_server_enrichment=field_name in operation.spec.server_enriched_fields,
                     ):
                         conflicts[operation.index] = (
                             f"{operation.spec.kind} {operation.resource.metadata.name!r} "
@@ -872,7 +883,7 @@ def _bind_deferred_values(value: Any, bindings: Mapping[str, int]) -> Any:
 
 def _watched_fields(operation: PreparedMutation) -> set[str]:
     membership_fields = {plan.ref.field for plan in operation.membership_plans}
-    return {field for field in operation.payload if field not in membership_fields}
+    return {field for field in operation.watched_fields if field not in membership_fields}
 
 
 def _membership_ids(
