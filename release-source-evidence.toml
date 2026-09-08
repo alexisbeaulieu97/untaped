@@ -70,8 +70,8 @@ core-self = "omitted"
 ansible-github = "builtin-capability:github"
 
 [evidence.approved-orchestration-fixes]
-status = "approved-not-integrated"
+status = "integrated-reviewed"
 source-oids = [
-    "d68e6a9007d11f50ce9c4e0a21296322975ec0ca",
+    "d68e6a9007d11f50ce9e4c0a21296322975ec0ca",
     "f6359b0678ea61e969ff164a57b7ab6858f3fef4",
 ]

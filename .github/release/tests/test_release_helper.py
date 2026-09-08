@@ -718,6 +718,32 @@ def test_manifest_rejects_broadened_source_intersection(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("needle", "replacement", "message"),
+    [
+        (
+            'status = "integrated-reviewed"',
+            'status = "approved-not-integrated"',
+            "integrated-reviewed",
+        ),
+        (
+            '"d68e6a9007d11f50ce9e4c0a21296322975ec0ca"',
+            f'"{"b" * 40}"',
+            "source OIDs are not approved",
+        ),
+    ],
+)
+def test_manifest_rejects_unapproved_orchestration_provenance(
+    tmp_path: Path, needle: str, replacement: str, message: str
+) -> None:
+    text = (REPO_ROOT / "release-manifest.toml").read_text(encoding="utf-8")
+    altered = text.replace(needle, replacement, 1)
+    path = tmp_path / "release-manifest.toml"
+    path.write_text(altered, encoding="utf-8")
+    with pytest.raises(release_module.ReleaseCheckError, match=message):
+        release_module.validate_release_manifest(path, lock_path=REPO_ROOT / "uv.lock")
+
+
+@pytest.mark.parametrize(
     ("needle", "message"),
     [
         ("capabilities = [", "capability order"),
