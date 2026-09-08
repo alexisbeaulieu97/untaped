@@ -63,7 +63,7 @@ def run_apply(
         for outcome in outcomes:
             for line in diff_lines(outcome):
                 echo(line, err=True)
-    finish(any(o.action == "failed" for o in outcomes))
+    finish(any(o.action in {"failed", "partial", "conflict", "skipped"} for o in outcomes))
 
 
 def run_apply_stdin(
@@ -126,7 +126,10 @@ def run_apply_stdin(
         for outcome in outcomes:
             for line in diff_lines(outcome):
                 echo(line, err=True)
-    finish(any_failed or any(o.action == "failed" for o in outcomes))
+    finish(
+        any_failed
+        or any(o.action in {"failed", "partial", "conflict", "skipped"} for o in outcomes)
+    )
 
 
 def _make_reader(*, kind_filter: str | None, cli_name: str | None) -> ResourceDocumentReader:

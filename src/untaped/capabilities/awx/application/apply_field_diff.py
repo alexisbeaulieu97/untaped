@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from untaped.capabilities.awx.application.mutation_values import semantic_equal
 from untaped.capabilities.awx.domain import FieldChange
 
 PRESERVED_SECRET_NOTE = "preserved existing secret"
@@ -34,6 +35,7 @@ class FieldDiff:
         existing: dict[str, Any] | None,
         desired: dict[str, Any],
         preserved_fields: set[str],
+        server_enriched_fields: tuple[str, ...] = (),
     ) -> list[FieldChange]:
         """Return field-level changes between existing and the (stripped) desired payload.
 
@@ -60,7 +62,9 @@ class FieldDiff:
                     )
                 )
                 continue
-            if not _equal(before, after):
+            if not semantic_equal(
+                after, before, allow_server_enrichment=field in server_enriched_fields
+            ):
                 out.append(FieldChange(field=field, before=before, after=after))
         # Top-level secret fields entirely stripped from ``desired``
         # (e.g. ``webhook_key``) still need a row so the user sees them
@@ -78,13 +82,3 @@ class FieldDiff:
                 )
             )
         return out
-
-
-def _equal(a: Any, b: Any) -> bool:
-    """Order-insensitive equality for FK lists (e.g., credentials)."""
-    if isinstance(a, list) and isinstance(b, list):
-        try:
-            return bool(sorted(a, key=repr) == sorted(b, key=repr))
-        except TypeError:
-            return bool(a == b)
-    return bool(a == b)

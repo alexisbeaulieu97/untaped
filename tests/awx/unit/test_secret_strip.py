@@ -39,9 +39,16 @@ from untaped.capabilities.awx.application.ports import (
     RawHttpResourceClient,
     StrategyResolver,
 )
-from untaped.capabilities.awx.domain import ApplyOutcome, Metadata, Resource, ResourceSpec
+from untaped.capabilities.awx.domain import (
+    ApplyOutcome,
+    Metadata,
+    Resource,
+    ResourceSpec,
+    ServerRecord,
+)
 from untaped.capabilities.awx.errors import BadRequest
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
 
 # ----- Stubs (copies of those in test_apply_resource.py) -----
 
@@ -83,8 +90,8 @@ class _StubClient:
     ) -> Iterator[dict[str, Any]]:
         return iter([])
 
-    def get(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
-        raise NotImplementedError
+    def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
+        return ServerRecord(**self.existing)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
         return None
@@ -118,13 +125,14 @@ class _StubClient:
         raise NotImplementedError
 
 
-class _StubStrategy:
+class _StubStrategy(DefaultApplyStrategy):
     def __init__(self, existing: dict[str, Any] | None) -> None:
         self.existing = existing
         self.created: tuple[dict[str, Any], dict[str, Any]] | None = None
         self.updated: tuple[dict[str, Any], dict[str, Any]] | None = None
 
     def find_existing(self, spec, identity, *, client, fk):  # type: ignore[no-untyped-def]
+        client.existing = self.existing
         return self.existing
 
     def create(self, spec, payload, identity, *, client, fk):  # type: ignore[no-untyped-def]

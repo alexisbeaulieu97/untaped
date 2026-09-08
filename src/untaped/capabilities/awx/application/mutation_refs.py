@@ -14,6 +14,9 @@ class DeferredReference:
     name: str
     scope: dict[str, str]
 
+    def __hash__(self) -> int:
+        return hash(self.token)
+
 
 PlannedId = int | DeferredReference
 

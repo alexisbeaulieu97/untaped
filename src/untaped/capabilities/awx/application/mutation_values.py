@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
 from collections.abc import Iterable, Mapping
 from typing import Any
+
+import yaml
 
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange, ResourceSpec
 
@@ -18,23 +21,29 @@ def semantic_equal(
     allow_server_enrichment: bool = False,
 ) -> bool:
     """Compare user-owned values exactly, with explicit enrichment allowance."""
+    left = _parse_structured_string(left)
+    right = _parse_structured_string(right)
     if allow_server_enrichment and isinstance(left, Mapping) and isinstance(right, Mapping):
         return bool(
             all(
-                key in right and semantic_equal(value, right[key])
+                key in right and semantic_equal(value, right[key], allow_server_enrichment=True)
                 for key, value in left.items()
             )
         )
     if isinstance(left, Mapping) and isinstance(right, Mapping):
         return bool(
-            set(left) == set(right)
-            and all(semantic_equal(left[key], right[key]) for key in left)
+            set(left) == set(right) and all(semantic_equal(left[key], right[key]) for key in left)
         )
     if isinstance(left, list) and isinstance(right, list):
         return bool(
             len(left) == len(right)
-            and all(semantic_equal(a, b) for a, b in zip(left, right, strict=True))
+            and all(
+                semantic_equal(a, b, allow_server_enrichment=allow_server_enrichment)
+                for a, b in zip(left, right, strict=True)
+            )
         )
+    if isinstance(left, bool) != isinstance(right, bool):
+        return False
     return bool(left == right)
 
 
@@ -115,3 +124,47 @@ __all__ = [
     "relative_secret_paths",
     "semantic_equal",
 ]
+
+
+def _parse_structured_string(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    for parser in (json.loads, yaml.safe_load):
+        try:
+            parsed = parser(value)
+        except ValueError, yaml.YAMLError:
+            continue
+        if isinstance(parsed, dict | list):
+            return parsed
+    return value
+
+
+def redact_error(error: Exception, spec: ResourceSpec, *records: Any) -> str:
+    """Remove known current and submitted secrets from controller error text."""
+    message = str(error)
+    values: set[str] = set()
+    for record in records:
+        for path in spec.secret_paths:
+            for value in _values_at_path(record, path.split(".")):
+                if isinstance(value, str) and value:
+                    values.add(value)
+                    values.add(json.dumps(value)[1:-1])
+    for value in sorted(values, key=len, reverse=True):
+        message = message.replace(value, REDACTED)
+    return message
+
+
+def _values_at_path(value: Any, parts: list[str]) -> Iterable[Any]:
+    if not parts:
+        yield value
+        return
+    head, *tail = parts
+    children: Iterable[Any]
+    if isinstance(value, Mapping):
+        children = value.values() if head == "*" else [value.get(head)]
+    elif isinstance(value, list | tuple) and head == "*":
+        children = value
+    else:
+        return
+    for child in children:
+        yield from _values_at_path(child, tail)

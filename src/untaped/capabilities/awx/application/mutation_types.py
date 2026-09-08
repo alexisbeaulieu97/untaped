@@ -12,7 +12,7 @@ from untaped.capabilities.awx.application.ports import ApplyStrategy
 from untaped.capabilities.awx.domain import ApplyOutcome, Resource, ResourceSpec
 
 
-@dataclass
+@dataclass(frozen=True)
 class PreparedMutation:
     """One fixed target and its preflight state.
 
@@ -31,14 +31,15 @@ class PreparedMutation:
     presentation_payload: dict[str, Any]
     existing: dict[str, Any] | None = field(repr=False)
     target_id: int | None
+    watched_fields: tuple[str, ...]
     create: bool
     dependencies: tuple[int, ...]
     preview: ApplyOutcome
     membership_plans: list[MembershipPlan] = field(repr=False, default_factory=list)
-    resolver: Any = field(repr=False, default=None)
+    create_parent: tuple[str, int | DeferredReference] | None = field(repr=False, default=None)
 
 
-@dataclass
+@dataclass(frozen=True)
 class MutationPlan:
     """An in-memory plan that can be confirmed and executed unchanged."""
 

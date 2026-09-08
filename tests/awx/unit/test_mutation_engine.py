@@ -21,6 +21,7 @@ from untaped.capabilities.awx.application.ports import (
 )
 from untaped.capabilities.awx.domain import FkRef, Metadata, Resource, ResourceSpec, ServerRecord
 from untaped.capabilities.awx.infrastructure.specs import PROJECT_SPEC
+from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
 
 
 class _Catalog:
@@ -41,9 +42,7 @@ class _Fk:
     def __init__(self, values: dict[tuple[str, str], int]) -> None:
         self.values = values
 
-    def name_to_id(
-        self, kind: str, name: str, *, scope: dict[str, str] | None = None
-    ) -> int:
+    def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int:
         return self.values[(kind, name)]
 
     def id_to_name(self, kind: str, id_: int) -> str:
@@ -170,7 +169,9 @@ class _Client:
         return iter(())
 
 
-class _Strategy:
+
+
+class _Strategy(DefaultApplyStrategy):
     def find_existing(self, spec: Any, identity: dict[str, Any], *, client: Any, fk: Any) -> Any:
         return client.find(spec, params={"name": str(identity["name"])})
 
@@ -340,3 +341,213 @@ def test_execute_binds_created_id_for_later_reference() -> None:
     )
     assert [outcome.action for outcome in result.outcomes] == ["created", "created"], result
     assert client.records[2]["parent"] == 1
+
+
+def test_execute_uses_prepared_fk_even_if_name_resolution_changes() -> None:
+    spec = ResourceSpec(
+        kind="Child",
+        canonical_fields=("parent",),
+        identity_keys=("name",),
+        fk_refs=(FkRef(field="parent", kind="Parent"),),
+    )
+    client = _Client([{"id": 7, "name": "child", "parent": 20}])
+    fk = _Fk({("Parent", "parent"): 21})
+    engine = BatchMutationEngine(
+        client=cast(RawHttpResourceClient, client),
+        catalog=cast(Catalog, _Catalog(spec)),
+        fk=cast(FkResolver, fk),
+        strategies=cast(StrategyResolver, _Strategies()),
+    )
+    plan = engine.prepare(
+        [Resource(kind="Child", metadata=Metadata(name="child"), spec={"parent": "parent"})]
+    )
+    fk.values[("Parent", "parent")] = 22
+    result = engine.execute(plan)
+    assert result.outcomes[0].action == "updated"
+    assert client.records[7]["parent"] == 21
+
+
+def test_prepare_rejects_placeholder_create_before_any_write() -> None:
+    spec = ResourceSpec(
+        kind="Secret",
+        canonical_fields=("password",),
+        identity_keys=("name",),
+        secret_paths=("password",),
+    )
+    client = _Client([])
+    engine = BatchMutationEngine(
+        client=cast(RawHttpResourceClient, client),
+        catalog=cast(Catalog, _Catalog(spec)),
+        fk=cast(FkResolver, _Fk({})),
+        strategies=cast(StrategyResolver, _Strategies()),
+    )
+    from untaped.capabilities.awx.errors import BadRequest
+
+    with pytest.raises(BadRequest, match="placeholder"):
+        engine.prepare(
+            [
+                Resource(
+                    kind="Secret", metadata=Metadata(name="bad"), spec={"password": "$encrypted$"}
+                )
+            ]
+        )
+    assert not client.writes
+
+
+class _MembershipClient(_Client):
+    def __init__(self, records: list[dict[str, Any]]) -> None:
+        super().__init__(records)
+        self.members: dict[tuple[int, str], list[int]] = {}
+        self.ignore_membership = False
+        self.nested_posts: list[str] = []
+
+    def paginate_sub_endpoint(
+        self, spec: ResourceSpec, record_id: int, sub_endpoint: str, **kwargs: Any
+    ) -> Iterator[dict[str, Any]]:
+        return iter(
+            {"id": id_, "name": str(id_)} for id_ in self.members.get((record_id, sub_endpoint), [])
+        )
+
+    def sub_endpoint_request(
+        self, spec: ResourceSpec, record_id: int, sub_endpoint: str, method: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        if not self.ignore_membership:
+            data = kwargs["json"]
+            members = self.members.setdefault((record_id, sub_endpoint), [])
+            if data.get("disassociate"):
+                if data["id"] in members:
+                    members.remove(data["id"])
+            elif data["id"] not in members:
+                members.append(data["id"])
+        return {}
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if method == "GET":
+            return {"results": []}
+        assert json is not None
+        self.nested_posts.append(path)
+        return self.create(PROJECT_SPEC, _payload(json)).model_dump()
+
+
+def _group_engine(client: _MembershipClient) -> BatchMutationEngine:
+    from untaped.capabilities.awx.infrastructure.specs import GROUP_SPEC
+    from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStrategyResolver
+
+    return BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(GROUP_SPEC)),
+        cast(FkResolver, _Fk({("Inventory", "prod"): 30})),
+        StaticStrategyResolver(),
+    )
+
+
+def _group(name: str, children: list[str]) -> Resource:
+    from untaped.capabilities.awx.domain.envelope import IdentityRef
+
+    return Resource(
+        kind="Group",
+        metadata=Metadata(name=name, parent=IdentityRef(kind="Inventory", name="prod")),
+        spec={"children": children},
+    )
+
+
+def test_group_membership_cycles_are_not_body_dependencies() -> None:
+    client = _MembershipClient([])
+    engine = _group_engine(client)
+    plan = engine.prepare([_group("first", ["second"]), _group("second", ["first"])])
+    assert [op.dependencies for op in plan.operations] == [(), ()]
+    result = engine.execute(plan)
+    assert [row.action for row in result.outcomes] == ["created", "created"]
+    assert client.members == {(1, "children"): [2], (2, "children"): [1]}
+    assert [op.target_id for op in plan.operations] == [None, None]
+    assert isinstance(plan.operations[0].membership_plans[0].desired_ids[0], DeferredReference)
+
+
+def test_nested_create_uses_frozen_parent_id() -> None:
+    from untaped.capabilities.awx.infrastructure.specs import GROUP_SPEC
+    from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStrategyResolver
+
+    fk = _Fk({("Inventory", "prod"): 30})
+    client = _MembershipClient([])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(GROUP_SPEC)),
+        cast(FkResolver, fk),
+        StaticStrategyResolver(),
+    )
+    plan = engine.prepare([_group("first", [])])
+    fk.values[("Inventory", "prod")] = 40
+    result = engine.execute(plan)
+    assert result.outcomes[0].action == "created"
+    assert client.nested_posts == ["inventories/30/groups/"]
+
+
+def test_empty_membership_snapshot_is_rechecked_before_any_write() -> None:
+    spec = ResourceSpec(
+        kind="Item",
+        canonical_fields=("description",),
+        identity_keys=("name",),
+        fk_refs=(FkRef(field="members", kind="Item", multi=True, sub_endpoint="members"),),
+    )
+    client = _MembershipClient([{"id": 1, "name": "first", "description": "old"}])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    plan = engine.prepare(
+        [
+            Resource(
+                kind="Item",
+                metadata=Metadata(name="first"),
+                spec={"description": "new", "members": []},
+            )
+        ]
+    )
+    client.members[(1, "members")] = [99]
+    result = engine.execute(plan)
+    assert result.outcomes[0].action == "conflict"
+    assert client.writes == []
+
+
+def test_successful_body_with_unreflected_membership_is_partial() -> None:
+    client = _MembershipClient([])
+    client.ignore_membership = True
+    result = _group_engine(client).run(
+        [_group("first", ["second"]), _group("second", [])], write=True
+    )
+    assert result.outcomes[0].action == "partial"
+    assert result.outcomes[0].id == 1
+    assert len(client.writes) == 2
+
+
+@pytest.mark.parametrize(
+    "desired,observed", [({}, {"old": 1}), ({"keep": 1}, {"keep": 1, "old": 2}), ([2, 1], [1, 2])]
+)
+def test_body_replacements_must_converge_exactly(desired: Any, observed: Any) -> None:
+    class RefusingClient(_Client):
+        def update(self, spec: ResourceSpec, id_: int, payload: Any) -> ServerRecord:
+            self.writes.append(("update", id_, payload.model_dump()))
+            return ServerRecord(**self.records[id_])
+
+    spec = ResourceSpec(kind="Item", canonical_fields=("value",), identity_keys=("name",))
+    client = RefusingClient([{"id": 1, "name": "one", "value": observed}])
+    engine = BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+    result = engine.run(
+        [Resource(kind="Item", metadata=Metadata(name="one"), spec={"value": desired})], write=True
+    )
+    assert result.outcomes[0].action == "partial"
+    assert client.writes[0][2] == {"value": desired}
