@@ -46,8 +46,8 @@ def editor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Callable[..., lis
             assert stat.S_IMODE(path.stat().st_mode) == 0o600
             assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
             assert kwargs["stdin"].isatty()
-            assert kwargs["stdout"] is kwargs["stdin"]
-            assert kwargs["stderr"] is kwargs["stdin"]
+            assert kwargs["stdout"].isatty()
+            assert kwargs["stderr"] is kwargs["stdout"]
             action = next(actions)
             if isinstance(action, BaseException):
                 raise action
@@ -507,3 +507,71 @@ def test_invalid_fk_mapping_never_leaks_parser_values(fake_aap: Any, editor: Any
     assert "validation cancelled" in result.output
     assert paths[0].exists()
     assert not any(call.request.method in {"PATCH", "POST"} for call in fake_aap.router.calls)
+
+
+@pytest.mark.parametrize("yes", [False, True])
+def test_configured_editor_uses_real_nonseekable_terminal(
+    fake_aap: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, yes: bool
+) -> None:
+    import os
+    import select
+    import shlex
+    import sys
+
+    seed(fake_aap, "projects")
+    script = tmp_path / "real editor.py"
+    script.write_text(
+        "import pathlib, sys\n"
+        "assert all(s.isatty() and not s.seekable() for s in (sys.stdin, sys.stdout, sys.stderr))\n"
+        "assert sys.stdin.readline().strip() == 'editor-input'\n"
+        "print('editor-terminal-stdout', flush=True)\n"
+        "print('editor-terminal-stderr', file=sys.stderr, flush=True)\n"
+        "path = pathlib.Path(sys.argv[-1])\n"
+        "path.write_text(path.read_text().replace('description: old', 'description: new'))\n"
+    )
+    monkeypatch.setenv("VISUAL", shlex.join([sys.executable, str(script)]))
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    original_open = builtins.open
+    master, slave = os.openpty()
+
+    def open_terminal(file: Any, *args: Any, **kwargs: Any) -> Any:
+        if file == "/dev/tty":
+            # Keep Python's real stream construction: buffered r+ must fail on
+            # this descriptor, unlike the seekable StringIO editor fixture.
+            return os.fdopen(os.dup(slave), *args, **kwargs)
+        return original_open(file, *args, **kwargs)
+
+    try:
+        assert os.isatty(slave)
+        monkeypatch.setattr(builtins, "open", open_terminal)
+        os.write(master, b"editor-input\n")
+        backend = ScriptedPromptBackend(confirms=[True])
+        result = CliInvoker().invoke(
+            app,
+            [
+                "projects",
+                "edit",
+                "--stdin",
+                "--field",
+                "description",
+                "--format",
+                "json",
+                *(["--yes"] if yes else []),
+            ],
+            input=pipe("awx.project", 10),
+            prompt_backend=backend,
+        )
+        assert result.exit_code == 0, result.output
+        terminal_output = b""
+        while select.select([master], [], [], 0.1)[0]:
+            terminal_output += os.read(master, 8192)
+        assert b"editor-terminal-stdout" in terminal_output
+        assert b"editor-terminal-stderr" in terminal_output
+        assert "editor-terminal-" not in result.output
+        assert json.loads(result.stdout)[0]["action"] == "updated"
+        assert fake_aap.get_record("projects", 10)["description"] == "new"
+        assert len(backend.calls) == (0 if yes else 1)
+        assert not list(tmp_path.glob("untaped-awx-edit-*"))
+    finally:
+        os.close(master)
+        os.close(slave)
