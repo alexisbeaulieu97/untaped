@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 import yaml
 
-from tests.awx.integration.test_selection_mutation_cli import KINDS, pipe, seed
+from awx.integration.support import KINDS, pipe, seed
 from untaped.capabilities.awx.cli.commands import app
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 

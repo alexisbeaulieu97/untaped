@@ -114,7 +114,7 @@ def test_children_sub_endpoint_uses_ref_path() -> None:
 
 
 def test_additive_verification_retains_unrelated_members() -> None:
-    from tests.awx.unit.test_mutation_engine import _MembershipClient
+    from awx.unit.support import _MembershipClient
 
     client = _MembershipClient([])
     client.members[(200, "hosts")] = [999]
@@ -128,7 +128,7 @@ def test_additive_verification_retains_unrelated_members() -> None:
 def test_additive_ignored_write_fails_readback() -> None:
     import pytest
 
-    from tests.awx.unit.test_mutation_engine import _MembershipClient
+    from awx.unit.support import _MembershipClient
     from untaped.capabilities.awx.errors import BadRequest
 
     client = _MembershipClient([])
