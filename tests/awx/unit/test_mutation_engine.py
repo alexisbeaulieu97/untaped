@@ -917,11 +917,27 @@ def test_editor_preserves_membership_ids_for_ambiguous_unchanged_labels(
         cast(FkResolver, AmbiguousFk({})),
         cast(StrategyResolver, _Strategies()),
     )
+    import yaml
+
+    from untaped.capabilities.awx.application.edit_resources import EditResources
+    from untaped.capabilities.awx.application.ports import ResourceClient
+    from untaped.capabilities.awx.application.save_resource import SaveResource
+    from untaped.capabilities.awx.application.selection import SelectedResource
+
+    selected = SelectedResource("Item", 1, "item", {}, client.records[1])
+    batch = EditResources(
+        spec,
+        [selected],
+        SaveResource(cast(ResourceClient, client), cast(FkResolver, AmbiguousFk({}))),
+    )
+    docs = list(yaml.safe_load_all(batch.render()))
+    docs[0]["spec"]["members"] = labels
+    resources, retained = batch.parse(yaml.safe_dump_all(docs))
     plan = engine.prepare(
-        [Resource(kind="Item", metadata=Metadata(name="item"), spec={"members": labels})],
+        resources,
         mode="edit",
-        existing=[client.records[1]],
-        preserve_existing_fk_ids=True,
+        existing=retained,
+        membership_snapshots=batch.membership_snapshots,
     )
     result = engine.execute(plan)
     assert result.outcomes[0].action in {"updated", "unchanged"}
@@ -956,3 +972,25 @@ def test_ordered_membership_interleaves_created_reference_before_retained_tail()
     result = engine.run(docs, write=True)
     assert [row.action for row in result.outcomes] == ["updated", "created"]
     assert client.members[(1, "members")] == [2, 4, 3]
+
+
+def test_editor_return_values_cannot_mutate_original_snapshot() -> None:
+    from untaped.capabilities.awx.application.edit_resources import EditResources
+    from untaped.capabilities.awx.application.ports import ResourceClient
+    from untaped.capabilities.awx.application.save_resource import SaveResource
+    from untaped.capabilities.awx.application.selection import SelectedResource
+
+    spec = ResourceSpec(kind="Item", identity_keys=("name",), canonical_fields=("description",))
+    record = {"id": 1, "name": "original", "description": "old"}
+    batch = EditResources(
+        spec,
+        [SelectedResource("Item", 1, "original", {}, record)],
+        SaveResource(cast(ResourceClient, _Client([record])), cast(FkResolver, _Fk({}))),
+    )
+    text = batch.render()
+    resources, selected = batch.parse(text)
+    resources[0].metadata.name = "mutated"
+    selected[0].record["description"] = "mutated"
+    again, original = batch.parse(text)
+    assert again[0].metadata.name == "original"
+    assert original[0].record["description"] == "old"

@@ -63,6 +63,7 @@ class UiContext:
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
         self._prompt_backend = prompt_backend
+        self._default_prompt_backend: PromptToolkitPromptBackend | None = None
 
     @property
     def prompt_backend(self) -> PromptBackend:
@@ -71,7 +72,9 @@ class UiContext:
         Constructing the default backend imports ``prompt_toolkit``; deferring
         it here keeps that cost off any rendering-only or piped invocation that
         never prompts. An injected backend (tests, alternative frontends) is
-        returned as-is. A ContextVar override (installed by the test harness
+        returned as-is. The default is cached only while its input and error
+        streams remain the same, so reopened terminals never reuse closed streams.
+        A ContextVar override (installed by the test harness
         via ``untaped.testing``) wins over the lazy default so scripted prompts
         reach contexts the test never constructed itself.
         """
@@ -83,12 +86,16 @@ class UiContext:
         if override is not None:
             return override
 
+        cached = self._default_prompt_backend
+        if cached is not None and cached.stdin is self.stdin and cached.stderr is self.stderr:
+            return cached
+
         backend = PromptToolkitPromptBackend(
             stdin=self.stdin,
             stderr=self.stderr,
             style=prompt_style_from_roles(self.theme.color_roles),
         )
-        self._prompt_backend = backend
+        self._default_prompt_backend = backend
         return backend
 
     def collection(

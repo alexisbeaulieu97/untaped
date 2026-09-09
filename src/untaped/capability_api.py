@@ -27,6 +27,7 @@ from untaped.cli import (
     raise_usage,
     report_errors,
 )
+from untaped.editor import run_editor
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.pipe import PipeEnvelope, parse_envelope_line
 from untaped.settings import get_config_section
@@ -61,4 +62,5 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "raise_usage",
     "read_identifiers",
     "report_errors",
+    "run_editor",
 ]

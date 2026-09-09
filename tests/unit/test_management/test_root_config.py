@@ -238,3 +238,22 @@ def test_resolve_key_unit_semantics() -> None:
     # Bare keys pass through untouched: no implicit expansion.
     assert ctx.resolve_key("token") == "token"
     assert ctx.resolve_key("nope.key") == "nope.key"
+
+
+@pytest.mark.parametrize("valid", [True, False])
+def test_config_edit_waits_then_validates_with_shared_editor(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, valid: bool
+) -> None:
+    import shlex
+    import sys
+
+    script = tmp_path / "config editor.py"
+    content = "profiles: {default: {jira: {timeout: 12}}}" if valid else "[invalid"
+    script.write_text(
+        "import pathlib, sys\npathlib.Path(sys.argv[-1]).write_text(" + repr(content) + ")\n"
+    )
+    monkeypatch.setenv("VISUAL", shlex.join([sys.executable, str(script)]))
+    result = CliInvoker().invoke(_config_app(), ["edit"])
+    assert (result.exit_code == 0) is valid, result.output
+    assert _isolated_config.read_text() == content
+    assert ("saved and validated" in result.output) is valid

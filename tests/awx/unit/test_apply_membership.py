@@ -438,7 +438,7 @@ def test_ordered_replacement_interleaves_new_and_reordered_members(
 
 
 @pytest.mark.parametrize("label", ["existing", "changed"])
-def test_editor_membership_preserves_only_unchanged_snapshot_labels(label: str) -> None:
+def test_membership_validates_bound_ids_and_resolves_changed_names(label: str) -> None:
     class Resolver:
         def __init__(self) -> None:
             self.validated: list[int] = []
@@ -460,13 +460,26 @@ def test_editor_membership_preserves_only_unchanged_snapshot_labels(label: str) 
         Resource(
             kind="Group",
             metadata=Metadata(name="group", parent=IdentityRef(kind="Inventory", name="prod")),
-            spec={"hosts": [label]},
+            spec={"hosts": [9 if label == "existing" else label]},
         ),
         1,
         client=cast(ResourceClient, client),
         fk=cast(FkResolver, fk),
-        preserve_existing_fk_ids=True,
     )
     assert plans[0].desired_ids == ((9,) if label == "existing" else (12,))
     assert fk.validated == ([9] if label == "existing" else [])
     assert fk.resolved == ([] if label == "existing" else ["changed"])
+
+
+def test_supplied_membership_snapshot_cannot_refresh_missing_relationship() -> None:
+    client = _StubClient(existing_members={"hosts": [{"id": 9, "name": "existing"}]})
+    with pytest.raises(BadRequest, match="missing initial editor membership snapshot"):
+        MembershipReconciler().plan(
+            GROUP_SPEC,
+            _group("group", hosts=[]),
+            1,
+            client=cast(ResourceClient, client),
+            fk=cast(FkResolver, _StubFk({})),
+            membership_snapshots={},
+        )
+    assert not client.subendpoint_calls

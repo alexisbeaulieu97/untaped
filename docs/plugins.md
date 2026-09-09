@@ -203,6 +203,14 @@ records), `CAPABILITY_API_VERSION`, and the supported helpers including
 parser and record type are also exported as `parse_envelope_line` and
 `PipeEnvelope`; capabilities retain their own kind and required-ID validation.
 
+`run_editor(path, *, argv=None, stdin=None, stdout=None, stderr=None)` opens an
+external editor and waits for it to exit. Without explicit argv it parses
+`VISUAL`, falling back to `EDITOR`, as shell-free arguments. Configure a GUI
+editor with its wait flag. Omitted streams inherit the process streams; callers
+can route all three streams to a controlling terminal to protect piped stdout.
+The capability owns terminal requirements, temporary-file permissions, validation,
+and cleanup. Launch failures raise `ConfigError`.
+
 Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
 do not reach into `untaped` internals to obtain an unexported helper. Shared
 settings, UI, error, and output behavior should use the stable exports. For
