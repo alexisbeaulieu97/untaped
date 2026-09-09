@@ -51,7 +51,7 @@ PROJECT_SPEC = AwxResourceSpec(
         # The project's default execution environment (global, no org scope).
         FkRef(field="default_environment", kind="ExecutionEnvironment"),
     ),
-    actions=(ActionSpec(name="sync", path="update", returns="project_update"),),
+    actions=(ActionSpec(name="sync", path="update", returns=frozenset({"project_update"})),),
     list_columns=("id", "name", "status"),
     commands=("list", "get", "save", "apply", "sync", "delete"),
     fidelity="full",

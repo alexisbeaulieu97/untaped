@@ -149,7 +149,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 name=["--track", "-t"],
                 negative="",
                 help=(
-                    "Stream structured events to stderr while waiting; exit 1 "
+                    "Stream events (workflow status) to stderr while waiting; exit 1 "
                     "if any tracked job ends in a non-successful terminal state."
                 ),
             ),

@@ -220,7 +220,7 @@ def test_parallel_launch_stops_new_submissions_but_retains_inflight(fake_aap: An
         import time
 
         time.sleep(0.05)
-        return httpx.Response(202, json={"id": 100, "status": "pending"})
+        return httpx.Response(202, json={"id": 100, "type": "job", "status": "pending"})
 
     fake_aap.router.routes.clear()
     fake_aap.router.post(url__regex=r".*/job_templates/\d+/launch/").mock(side_effect=launch)

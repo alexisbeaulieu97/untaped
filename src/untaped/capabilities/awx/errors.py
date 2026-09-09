@@ -30,6 +30,21 @@ class AwxApiError(UntapedError):
         self.url = url
 
 
+class ActionResponseError(AwxApiError):
+    """A submitted action returned invalid data; retain only safe execution evidence."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        execution_id: int | None,
+        execution_kind: str | None,
+    ) -> None:
+        super().__init__(message)
+        self.execution_id = execution_id
+        self.execution_kind = execution_kind
+
+
 class BadRequest(AwxApiError):
     """4xx response indicating malformed input (typically 400)."""
 

@@ -82,7 +82,6 @@ def test_run_action_unknown_action_errors() -> None:
 @pytest.mark.parametrize(
     "kind,action,result_kind",
     [
-        ("JobTemplate", "launch", "job"),
         ("WorkflowJobTemplate", "launch", "workflow_job"),
         ("Project", "sync", "project_update"),
         ("InventorySource", "sync", "inventory_update"),
@@ -108,6 +107,6 @@ def test_fixed_action_rejects_conflicting_response_kind_without_retry() -> None:
         find_result={"id": 999},
         action_result={"id": 101, "status": "pending", "type": "inventory_update"},
     )
-    with pytest.raises(AwxApiError, match="unexpected execution kind"):
+    with pytest.raises(AwxApiError, match="missing or unexpected kind"):
         RunAction(cast(ResourceClient, client)).execute(JOB_TEMPLATE_SPEC, 42, action="launch")
     assert len(client.action_calls) == 1
