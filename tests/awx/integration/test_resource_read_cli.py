@@ -984,7 +984,7 @@ def test_scope_aliases_are_advertised_on_generated_commands() -> None:
         ["job-templates", "list", "--help"],
         ["job-templates", "save", "--help"],
         ["job-templates", "delete", "--help"],
-        ["projects", "update", "--help"],
+        ["projects", "sync", "--help"],
     ]
     for args in org_scoped_commands:
         result = runner.invoke(app, args)

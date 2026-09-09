@@ -1,6 +1,6 @@
 """Inventory lifecycle, constructed proxy fields and ordered relationships."""
 
-from untaped.capabilities.awx.domain import FkRef
+from untaped.capabilities.awx.domain import ActionSpec, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 INVENTORY_SPEC = AwxResourceSpec(
@@ -56,6 +56,7 @@ INVENTORY_SPEC = AwxResourceSpec(
             ordered=True,
         ),
     ),
+    actions=(ActionSpec(name="sync", path=None, returns="inventory_update"),),
     list_columns=("id", "name", "organization", "total_hosts"),
     commands=("list", "get", "save", "apply", "patch", "edit", "delete"),
 )

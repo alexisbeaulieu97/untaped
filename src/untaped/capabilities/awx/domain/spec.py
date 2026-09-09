@@ -28,7 +28,7 @@ CommandName = Literal[
     "patch",
     "edit",
     "launch",
-    "update",
+    "sync",
     "delete",
 ]
 """Commands the CLI factory may wire for a kind."""
@@ -86,14 +86,16 @@ class FkRef(BaseModel):
 
 
 class ActionSpec(BaseModel):
-    """A custom POST/PATCH action a kind exposes (e.g. ``launch``, ``update``)."""
+    """A custom POST/PATCH action a kind exposes (e.g. ``launch``, ``sync``)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str
-    path: str
+    path: str | None
+    """Direct action endpoint; None requires fixed-target expansion first."""
+
     method: Literal["POST", "PATCH"] = "POST"
-    returns: Literal["job", "none"] = "none"
+    returns: Literal["job", "workflow_job", "project_update", "inventory_update", "none"] = "none"
     accepts: frozenset[str] = frozenset()
     """Optional payload fields the CLI factory exposes as flags."""
 

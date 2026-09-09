@@ -50,7 +50,7 @@ def _drain_parallel_with_worker(
         except Exception as exc:
             raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
 
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+    with ThreadPoolExecutor(max_workers=min(10, len(jobs))) as pool:
         futures = [(name, pool.submit(_wrap, name, job)) for name, job in jobs]
         if while_running is not None:
             while_running()

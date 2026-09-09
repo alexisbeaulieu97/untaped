@@ -239,8 +239,8 @@ def test_jobs_wait_exits_nonzero_on_timeout(fake_aap: Any) -> None:
     assert "timeout" in (result.output + (result.stderr or ""))
 
 
-def test_project_update_supports_format_json(seeded_default_org: Any) -> None:
-    """The generated `<kind> update` command on Project must honour
+def test_project_sync_supports_format_json(seeded_default_org: Any) -> None:
+    """The generated `<kind> sync` command on Project must honour
     --format too. Symmetric with launch."""
     import json as _json
 
@@ -253,37 +253,24 @@ def test_project_update_supports_format_json(seeded_default_org: Any) -> None:
         scm_type="git",
     )
     result = CliInvoker().invoke(
-        app, ["projects", "update", "playbooks", "--organization", "Default", "--format", "json"]
+        app, ["projects", "sync", "playbooks", "--organization", "Default", "--format", "json"]
     )
     assert result.exit_code == 0, result.output
     parsed = _json.loads(result.stdout)
-    # A single job renders as a bare object {…} via emit, not a one-element list.
-    assert isinstance(parsed, dict) and parsed
+    assert isinstance(parsed, list) and parsed
 
 
-def test_launch_stdin_emits_partial_results_when_one_fails(seeded_default_org: Any) -> None:
-    """A missing name mid-fan-out must not hide the IDs of the jobs that
-    already submitted to AWX. Otherwise a user piping 50 names sees only
-    the error for the first failure and has no record of the running jobs.
-    """
+def test_launch_stdin_preflights_every_name_before_submitting(seeded_default_org: Any) -> None:
+    """Known missing targets invalidate the complete selection before any POST."""
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
     )
-    # No "ghost" template — second call will fail.
     result = CliInvoker().invoke(
         app, ["job-templates", "launch", "--stdin"], input="alpha\nghost\n"
     )
-    # Non-zero exit because ghost failed.
     assert result.exit_code != 0
-    # alpha did launch — its action call is recorded server-side.
-    launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
-    assert any(c[1] == 10 for c in launches)
-    # alpha's job dict must reach stdout — without per-item resilience,
-    # the row rendering call after the loop never runs and the user
-    # has no record of the running job.
-    assert result.stdout.strip(), "expected partial-success stdout, got empty"
-    # ghost's error must surface on stderr.
-    assert "ghost" in (result.output + (result.stderr or ""))
+    assert seeded_default_org.actions_called == []
+    assert "ghost" in result.output
 
 
 def test_jobs_logs_returns_text_not_json(fake_aap: Any) -> None:
@@ -301,7 +288,7 @@ def test_jobs_logs_returns_text_not_json(fake_aap: Any) -> None:
     assert "TASK [run]" in result.stdout
 
 
-def test_project_update_calls_action(seeded_default_org: Any) -> None:
+def test_project_sync_calls_action(seeded_default_org: Any) -> None:
     seeded_default_org.seed(
         "projects",
         id=10,
@@ -312,7 +299,7 @@ def test_project_update_calls_action(seeded_default_org: Any) -> None:
     )
     result = CliInvoker().invoke(
         app,
-        ["projects", "update", "playbooks", "--organization", "Default"],
+        ["projects", "sync", "playbooks", "--organization", "Default"],
     )
     assert result.exit_code == 0, result.output
     assert any(
