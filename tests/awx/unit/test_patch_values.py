@@ -33,6 +33,11 @@ def test_parse_set_pairs_splits_on_first_equals() -> None:
     assert parse_set_pairs(["limit=a=b"]) == {"limit": "a=b"}
 
 
+def test_parse_set_pairs_distinguishes_numeric_fk_name_from_id() -> None:
+    assert parse_set_pairs(['inventory="123"']) == {"inventory": "123"}
+    assert parse_set_pairs(["inventory=123"]) == {"inventory": 123}
+
+
 def test_parse_set_pairs_empty_is_empty_dict() -> None:
     assert parse_set_pairs(None) == {}
     assert parse_set_pairs([]) == {}

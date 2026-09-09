@@ -86,7 +86,17 @@ replacement rule applies to structured variables: an empty map clears the
 map, omitted keys are removed, and ordered lists retain their order.
 
 Foreign-key integers mean controller IDs. Strings mean names in the selected
-scope, including numeric-looking strings. Ambiguous, missing, or out-of-scope
+scope, including numeric-looking strings. Because `--set` JSON-decodes values,
+quote the JSON string when the name itself is numeric:
+
+```bash
+untaped awx job-templates patch deploy --organization Default \
+  --set 'inventory="123"' --dry-run
+```
+
+Here `inventory="123"` selects the resource named `123`; unquoted
+`inventory=123` means controller ID `123`. The same distinction can be made by
+quoting the value in a `--patch-file`. Ambiguous, missing, or out-of-scope
 references fail before any write. Identity, parent, kind, and read-only fields
 cannot be patched: use `apply` for create or declarative create/update, and
 `delete` for removal. A patch never renames, reparents, or creates a resource.
@@ -146,11 +156,12 @@ untaped awx inventory-sources save Cloud --inventory Production \
 ```
 
 Constructed inventory settings use the constructed inventory route and its
-managed source. Smart inventories, source-less inventories, and unsupported or
-manual source configurations are rejected when the operation cannot be
-represented. Editing inventory settings does not recreate or rewrite
-source-managed hosts or groups. Workflow template exports are partial: their
-node graph and edges are not round-tripped.
+managed source. Operation support is specific to the workflow: inventory sync
+rejects smart or source-less inventories and invalid or manual sources during
+preflight, while apply accepts representable inventory documents and rejects
+only incompatible source/configuration combinations. Editing inventory
+settings does not recreate or rewrite source-managed hosts or groups. Workflow
+template exports are partial: their node graph and edges are not round-tripped.
 
 ## Sync and track executions
 
