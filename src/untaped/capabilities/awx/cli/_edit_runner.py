@@ -44,7 +44,10 @@ def run_edit(
     # a TTY-like wrapper. All subprocess I/O goes there, never to machine stdout.
     with ExitStack() as stack:
         try:
-            terminal = stack.enter_context(open("/dev/tty", "r+", encoding="utf-8"))
+            # Buffered update mode (r+) requires seekability; terminals are
+            # nonseekable. Separate read/write streams work for real TTYs.
+            terminal_input = stack.enter_context(open("/dev/tty", encoding="utf-8"))
+            terminal_output = stack.enter_context(open("/dev/tty", "w", encoding="utf-8"))
         except OSError as exc:
             raise ConfigError("external editor requires a controlling terminal") from exc
         directory = Path(tempfile.mkdtemp(prefix="untaped-awx-edit-"))
@@ -56,7 +59,9 @@ def run_edit(
             engine = build_apply_resource(ctx, allow_unverified=allow_unverified).engine
             while True:
                 try:
-                    run_editor(path, stdin=terminal, stdout=terminal, stderr=terminal)
+                    run_editor(
+                        path, stdin=terminal_input, stdout=terminal_output, stderr=terminal_output
+                    )
                 finally:
                     # Atomic-save editors can replace the inode with a looser mode.
                     # The private parent directory protects it throughout the edit.
