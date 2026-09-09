@@ -26,7 +26,7 @@ from cyclopts import App
 from untaped.api import ColumnsOption, FormatOption, create_app, echo, emit, finish, report_errors
 from untaped.capabilities.awx.application import ManageMembership
 from untaped.capabilities.awx.application.mutation_values import redact_error
-from untaped.capabilities.awx.cli._context import open_context
+from untaped.capabilities.awx.cli._context import AwxContext, open_context
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch, validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.options import (
@@ -43,6 +43,7 @@ from untaped.capabilities.awx.cli.options import (
     YesOption,
 )
 from untaped.capabilities.awx.domain import FkRef
+from untaped.capabilities.awx.errors import BadRequest
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -117,7 +118,7 @@ def _add_membership_verb(
                     search=search,
                     all_=all_,
                     mutation=True,
-                    scope=_member_scope(selected_parent.record, ref) or {},
+                    scope=_member_scope(ctx, selected_parent.record, ref),
                 )
                 manager = ManageMembership(ctx.repo)
                 plan = manager.prepare(
@@ -170,52 +171,29 @@ def _add_membership_verb(
                 finish(failed)
 
 
-def _member_scope(parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str] | None:
-    """Derive the scope dict for member name lookups from the parent record.
+def _member_scope(ctx: AwxContext, parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str]:
+    """Resolve required member ancestry from the parent's fixed relationship ID.
 
-    For ``scope_field="organization"`` refs (JobTemplate ``credentials``),
-    members live in the same organization as the parent template.
-
-    For ``scope_field="inventory"`` refs (Group's ``hosts`` / ``children``),
-    members live in the same inventory as the parent and we pull both
-    ``name`` and ``organization_name`` out of ``summary_fields.inventory``
-    so cross-org disambiguation (same-named inventories across orgs)
-    matches the convention ``scope_for_spec`` uses. ``--by-id`` bypasses
-    name lookup entirely so a missing scope only matters when the user
-    pipes names.
+    Summaries can omit organization ancestry or be absent entirely. They may
+    supply a relationship ID, but never replace fetching its complete identity.
+    An unscoped relationship is explicitly global; missing required ancestry is
+    an error rather than permission to expand the member selection globally.
     """
-    if ref.scope_field == "organization":
-        organization = _organization_name(parent_rec)
-        if organization:
-            return {"organization": organization}
-        return None
-    if ref.scope_field != "inventory":
-        return None
-    summary = parent_rec.get("summary_fields")
-    if not isinstance(summary, dict):
-        return None
-    inv = summary.get("inventory")
-    if not isinstance(inv, dict):
-        return None
-    name = inv.get("name")
-    if not isinstance(name, str) or not name:
-        return None
-    scope: dict[str, str] = {"inventory": name}
-    org_name = inv.get("organization_name")
-    if isinstance(org_name, str) and org_name:
-        scope["inventory__organization"] = org_name
-    return scope
-
-
-def _organization_name(parent_rec: dict[str, Any]) -> str | None:
-    value = parent_rec.get("organization_name")
-    if isinstance(value, str) and value:
-        return value
-    summary = parent_rec.get("summary_fields")
-    if not isinstance(summary, dict):
-        return None
-    org = summary.get("organization")
-    if not isinstance(org, dict):
-        return None
-    name = org.get("name")
-    return name if isinstance(name, str) and name else None
+    field = ref.scope_field
+    if field is None:
+        return {}
+    relation_id = parent_rec.get(field)
+    if relation_id is None:
+        summary = parent_rec.get("summary_fields") or {}
+        relation = summary.get(field) if isinstance(summary, dict) else None
+        relation_id = relation.get("id") if isinstance(relation, dict) else None
+    if isinstance(relation_id, bool) or not isinstance(relation_id, int) or relation_id <= 0:
+        raise BadRequest(f"cannot establish required {field} ancestry for membership")
+    if field == "organization":
+        return {"organization": ctx.fk.id_to_name("Organization", relation_id)}
+    if field != "inventory":
+        raise BadRequest(f"unsupported membership scope relationship {field!r}")
+    identity = ctx.fk.id_to_identity("Inventory", relation_id)
+    if not identity.organization:
+        raise BadRequest(f"cannot establish organization ancestry for Inventory#{relation_id}")
+    return {"inventory": identity.name, "inventory__organization": identity.organization}

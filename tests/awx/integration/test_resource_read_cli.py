@@ -524,9 +524,7 @@ def test_get_defaults_to_name_lookup_for_all_digit_names(seeded_default_org: Any
 
 
 def test_get_by_id_validates_organization_scope(fake_aap: Any) -> None:
-    """Numeric ids are globally unique, so the org scope must not be applied
-    (otherwise looking up by id requires the user to know the org, which
-    defeats the purpose of having an id)."""
+    """An explicitly supplied organization constrains an ID lookup too."""
     fake_aap.seed("organizations", id=1, name="Org-A")
     fake_aap.seed("organizations", id=2, name="Org-B")
     fake_aap.seed(
@@ -963,8 +961,7 @@ def test_get_accepts_org_alias_for_name_scope(fake_aap: Any) -> None:
 
 
 def test_get_stdin_rejects_incomplete_selection(seeded_default_org: Any) -> None:
-    """A missing name in a multi-name `get --stdin` batch must not
-    suppress the names that resolved successfully."""
+    """An incomplete multi-name selection fails before emitting any records."""
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
     )
@@ -974,7 +971,7 @@ def test_get_stdin_rejects_incomplete_selection(seeded_default_org: Any) -> None
         input="alpha\nghost\n",
     )
     assert result.exit_code != 0
-    # alpha's row reaches stdout even though ghost failed.
+    # No selected rows are emitted when any requested name fails.
     assert result.stdout == ""
     assert "ghost" in (result.output + (result.stderr or ""))
 

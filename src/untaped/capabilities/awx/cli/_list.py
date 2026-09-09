@@ -12,6 +12,7 @@ from untaped.api import (
     raise_usage,
     report_errors,
 )
+from untaped.capabilities.awx.application.mutation_values import redact_value
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._names import flatten_fks
 from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
@@ -104,4 +105,5 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             # ``inventory``, which lives in ``read_only_fields`` rather
             # than ``fk_refs``) get flattened from ``summary_fields``.
             records = flatten_fks(records, spec, columns=cols)
+        records = [redact_value(record, spec.secret_paths) for record in records]
         emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec), empty=False)
