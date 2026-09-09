@@ -221,11 +221,17 @@ class FakeAap:
         self.next_action_stdout = None
         new_id = self._next_id
         self._next_id += 1
-        store_path = "jobs" if action == "launch" else f"{action}s"
+        result_kind = {
+            "job_templates": "job",
+            "workflow_job_templates": "workflow_job",
+            "projects": "project_update",
+            "inventory_sources": "inventory_update",
+        }.get(api_path, "job")
+        store_path = f"{result_kind}s"
         name = f"{record.get('name', '')}-{action}"
         result = {
             "id": new_id,
-            "type": "job" if action == "launch" else "project_update",
+            "type": result_kind,
             "name": name,
             "status": status,
         }

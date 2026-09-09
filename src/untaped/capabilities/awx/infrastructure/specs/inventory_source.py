@@ -52,7 +52,7 @@ INVENTORY_SOURCE_SPEC = AwxResourceSpec(
         FkRef(field="execution_environment", kind="ExecutionEnvironment"),
     ),
     apply_strategy="inventory_child",
-    actions=(ActionSpec(name="update", path="update", returns="job"),),
-    commands=("list", "get", "save", "apply", "patch", "edit", "update", "delete"),
+    actions=(ActionSpec(name="sync", path="update", returns="inventory_update"),),
+    commands=("list", "get", "save", "apply", "patch", "edit", "sync", "delete"),
     list_columns=("id", "name", "source", "status"),
 )

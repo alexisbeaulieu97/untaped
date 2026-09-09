@@ -565,7 +565,7 @@ def jobs_wait(
 ) -> None:
     """Block until each named job reaches a terminal state.
 
-    Exits non-zero when any job times out or any id fails to resolve —
+    Exits non-zero on unsuccessful terminal states, timeout, or resolution failure —
     same contract as ``awx test``. Multiple ids drain serially; the
     ``--timeout`` budget applies per id.
     """
@@ -590,7 +590,7 @@ def jobs_wait(
         emit(records, fmt=fmt, columns=columns, kind="awx.job")
     for job_id in timed_out:
         echo(f"timeout: job {job_id} did not reach terminal state", err=True)
-    finish(any_failed or bool(timed_out))
+    finish(any_failed or bool(timed_out) or any(r["status"] != "successful" for r in records))
 
 
 app.command(jobs_app, name="jobs")
