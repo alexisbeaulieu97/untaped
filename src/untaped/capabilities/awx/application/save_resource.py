@@ -20,6 +20,10 @@ from typing import Any
 from untaped.capabilities.awx.application.mutation_values import redact_value
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource, ResourceSpec
+from untaped.capabilities.awx.domain.inventory import (
+    CONSTRUCTED_SOURCE_FIELDS,
+    inventory_read_only_fields,
+)
 from untaped.capabilities.awx.errors import BadRequest, ResourceNotFound
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
@@ -35,13 +39,15 @@ _UJT_KIND_MAP: dict[str, str] = {
 
 @dataclass(frozen=True)
 class ResourceSnapshot:
-    """Portable projection plus FK IDs and member rows captured by those same reads.
+    """Complete body baseline, portable projection, FK IDs, and original member rows.
 
     The editor defensively copies this snapshot before launching its process;
     save callers use only the portable resource.
     """
 
     resource: Resource
+    record: dict[str, Any]
+    read_only_fields: tuple[str, ...]
     fk_ids: dict[str, Any]
     memberships: dict[str, tuple[dict[str, Any], ...]]
 
@@ -100,9 +106,7 @@ class SaveResource:
             spec_data.pop("host_filter", None)
         if spec.kind == "InventorySource" and record.get("source") == "constructed":
             spec_data = {
-                k: v
-                for k, v in spec_data.items()
-                if k in {"source", "source_vars", "update_cache_timeout", "limit", "verbosity"}
+                k: v for k, v in spec_data.items() if k in {"source", *CONSTRUCTED_SOURCE_FIELDS}
             }
         # Sub-endpoint multi-FKs (Group.hosts / Group.children /
         # JobTemplate.credentials) are managed via associate/disassociate
@@ -142,6 +146,11 @@ class SaveResource:
                 kind=spec.kind,
                 metadata=metadata,
                 spec=redact_value(spec_data, spec.secret_paths, replacement="$encrypted$"),
+            ),
+            record=copy.deepcopy(record),
+            read_only_fields=(
+                *spec.read_only_fields,
+                *inventory_read_only_fields(spec.kind, record),
             ),
             fk_ids=fk_ids,
             memberships=memberships,

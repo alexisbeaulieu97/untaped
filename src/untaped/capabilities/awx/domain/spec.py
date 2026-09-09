@@ -142,6 +142,8 @@ class ResourceSpec(BaseModel):
     actions: tuple[ActionSpec, ...] = ()
     singleton_parent: bool = False
     """Prepared resource has one managed target per parent, regardless of its name."""
+    parent_field_aliases: tuple[str, ...] = ()
+    """Fields sharing physical storage with the same fields on this resource's parent."""
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.
     The string is opaque to the domain — :class:`StrategyResolver` (an

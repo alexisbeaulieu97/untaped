@@ -131,37 +131,12 @@ class _PlanningFkResolver:
         return self._base.id_to_name(kind, id_)
 
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int | DeferredReference]:
-        normalized = _as_mapping(value)
-        kind = normalized.get("kind")
-        name = normalized.get("name")
-        if not isinstance(kind, str) or not isinstance(name, str):
-            return self._base.resolve_polymorphic(normalized)
-        scope = {
-            key: str(item)
-            for key, item in normalized.items()
-            if key not in {"kind", "name", "parent"} and item is not None
-        }
-        matches = [
-            target
-            for target in self._targets
-            if target.kind == kind
-            and target.identity.get("name") == name
-            and _identity_matches_scope(target.identity, scope)
-            and _nested_identity_matches(target.identity.get("parent"), normalized.get("parent"))
-        ]
-        if len(matches) > 1:
-            raise AmbiguousIdentityError(kind, {"name": name, **scope}, match_count=len(matches))
-        if matches:
-            target = matches[0]
-            if target.id is not None:
-                return kind, target.id
-            return kind, DeferredReference(
-                token=target.token,
-                kind=kind,
-                name=name,
-                scope=dict(scope),
-            )
-        return self._base.resolve_polymorphic(normalized)
+        reference = IdentityRef.model_validate(value)
+        try:
+            scope = reference.lookup_scope()
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from exc
+        return reference.kind, self.name_to_id(reference.kind, reference.name, scope=scope)
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
         self._base.prefetch(plan)
@@ -215,7 +190,8 @@ class BatchMutationEngine:
 
         Name/organization/parent identities are resolved once. Existing
         records and memberships are snapshotted for the later conflict check;
-        editors may supply their earlier membership_snapshots, which must cover
+        editors supply complete pre-editor records via existing and may supply
+        their earlier membership_snapshots, which must cover
         every requested relationship on a selected target. Without that option,
         membership reads establish the baseline during this call. All references
         to resources in this same batch receive a stable typed
@@ -281,6 +257,8 @@ class BatchMutationEngine:
                     found = strategy.find_existing(
                         spec, fixed_identity, client=self._client, fk=resolver
                     )
+                if found is not None and mode != "edit":
+                    found = strategy.snapshot_existing(spec, found, client=self._client)
                 spec, found = strategy.prepare_state(
                     spec,
                     resource,
@@ -355,6 +333,12 @@ class BatchMutationEngine:
                     raise BadRequest(
                         "renaming, reparenting, or changing the kind or ID "
                         "of a selected resource is not supported"
+                    )
+                read_only = set(spec.read_only_fields).intersection(resource.spec)
+                if read_only:
+                    raise BadRequest(
+                        "explicit patch/edit contains read-only fields: "
+                        + ", ".join(sorted(read_only))
                     )
             payload = self._planner.plan_payload(
                 spec,
@@ -449,6 +433,7 @@ class BatchMutationEngine:
                     ),
                 )
             )
+        _validate_parent_field_aliases(operations)
         _validate_dependencies(operations)
         return MutationPlan(operations=tuple(operations), mode=mode)
 
@@ -1026,3 +1011,38 @@ def _is_parent_target(target: _PlannedTarget, resource: Resource) -> bool:
         )
         and _nested_identity_matches(target.identity.get("parent"), parent.parent)
     )
+
+
+def _validate_parent_field_aliases(operations: list[PreparedMutation]) -> None:
+    """Reject inconsistent declarations for fields sharing a parent's physical storage."""
+    for child in operations:
+        if not child.spec.parent_field_aliases or child.create_parent is None:
+            continue
+        kind, parent_id = child.create_parent
+        parent = next(
+            (
+                candidate
+                for candidate in operations
+                if candidate.spec.kind == kind
+                and (
+                    f"planned:{candidate.index}" == parent_id.token
+                    if isinstance(parent_id, DeferredReference)
+                    else candidate.target_id == parent_id
+                )
+            ),
+            None,
+        )
+        if parent is None:
+            continue
+        for field in child.spec.parent_field_aliases:
+            if field not in child.resource.spec or field not in parent.resource.spec:
+                continue
+            if not semantic_equal(
+                child.resource.spec[field],
+                parent.resource.spec[field],
+                structured_text=field in child.spec.structured_text_fields,
+            ):
+                raise MutationConflict(
+                    f"conflicting desired field {field!r} on "
+                    f"{parent.spec.kind} and {child.spec.kind}"
+                )

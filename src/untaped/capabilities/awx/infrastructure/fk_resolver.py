@@ -158,19 +158,12 @@ class FkResolver:
 
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int]:
         """Resolve ``{"kind": ..., "name": ..., "organization": ...}`` to ``(kind, id)``."""
-        kind = value["kind"]
-        name = value["name"]
-        scope = {
-            k: v for k, v in value.items() if k not in {"kind", "name", "parent"} and v is not None
-        }
-        parent = value.get("parent")
-        if kind == "InventorySource":
-            if not isinstance(parent, dict) or parent.get("kind") != "Inventory":
-                raise BadRequest("InventorySource reference requires Inventory parent ancestry")
-            scope = {"inventory": parent["name"]}
-            if parent.get("organization"):
-                scope["inventory__organization"] = parent["organization"]
-        return kind, self.name_to_id(kind, name, scope=scope)
+        reference = IdentityRef.model_validate(value)
+        try:
+            scope = reference.lookup_scope()
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from exc
+        return reference.kind, self.name_to_id(reference.kind, reference.name, scope=scope)
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
         """Warm the cache for one paginated ``list`` per ``(kind, scope)``.

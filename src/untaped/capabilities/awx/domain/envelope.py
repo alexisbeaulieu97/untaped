@@ -38,6 +38,32 @@ class IdentityRef(BaseModel):
     organization: str | None = None
     parent: IdentityRef | None = None
 
+    def lookup_scope(self, required: dict[str, str] | None = None) -> dict[str, str]:
+        """Translate ancestry and refine required scope without allowing an override."""
+        scope = dict(required or {})
+        child = self.kind in {"Host", "Group", "InventorySource"}
+        explicit: dict[str, str] = {}
+        if self.organization is not None:
+            explicit["inventory__organization" if child else "organization"] = self.organization
+        if self.parent is not None:
+            if not child or self.parent.kind != "Inventory" or self.parent.parent is not None:
+                raise ValueError(f"unsupported parent ancestry for {self.kind}")
+            explicit["inventory"] = self.parent.name
+            if self.parent.organization is not None:
+                if (
+                    explicit.get("inventory__organization", self.parent.organization)
+                    != self.parent.organization
+                ):
+                    raise ValueError("foreign key organization conflicts with parent ancestry")
+                explicit["inventory__organization"] = self.parent.organization
+        for key, value in explicit.items():
+            if key in scope and scope[key] != value:
+                raise ValueError(f"foreign key ancestry conflicts with required scope {key!r}")
+            scope[key] = value
+        if self.kind == "InventorySource" and "inventory" not in scope:
+            raise ValueError("InventorySource reference requires Inventory parent ancestry")
+        return scope
+
 
 class Metadata(BaseModel):
     """Identity slice of a Resource doc.
