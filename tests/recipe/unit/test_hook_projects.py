@@ -241,7 +241,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(
     ) as exc_info:
         HookResolver().resolve("check", recipe_dir)
     assert "dependency-groups.dev" in str(exc_info.value)
-    assert "untaped>=5.0.0,<6" in str(exc_info.value)
+    assert "untaped>=6.0.0,<7" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

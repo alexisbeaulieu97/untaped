@@ -41,7 +41,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=5.0.0,<6",
+    "untaped>=6.0.0,<7",
 ]
 
 [project.entry-points."untaped.capabilities"]
