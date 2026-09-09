@@ -19,27 +19,31 @@ re-removing returns 204), so ``add`` and ``remove`` are safe to run
 repeatedly.
 """
 
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from untaped.api import (
-    create_app,
-    finish,
-    read_identifiers,
-    report_errors,
-    resolve_each,
-)
-from untaped.capabilities.awx.application import GetResource, ManageMembership
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.api import ColumnsOption, FormatOption, create_app, echo, emit, finish, report_errors
+from untaped.capabilities.awx.application import ManageMembership
+from untaped.capabilities.awx.application.mutation_values import redact_error
+from untaped.capabilities.awx.cli._context import AwxContext, open_context
+from untaped.capabilities.awx.cli._mutation_runner import confirm_batch, validate_controls
+from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.options import (
+    AllOption,
     ByIdOption,
+    DryRunOption,
+    FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
     OrganizationOption,
+    ParentOption,
+    SearchOption,
+    StdinOption,
+    YesOption,
 )
 from untaped.capabilities.awx.domain import FkRef
+from untaped.capabilities.awx.errors import BadRequest
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -72,106 +76,124 @@ def _add_membership_verb(
 
     @sub.command(name=verb, help=help_text)
     def cmd(
-        parent: Annotated[str, Parameter(help=f"{spec.kind} name.")],
-        members: Annotated[list[str] | None, Parameter(help=f"{ref.kind} name(s).")] = None,
+        parent: str,
+        members: list[str] | None = None,
         *,
-        stdin: Annotated[
-            bool,
-            Parameter(
-                name="--stdin",
-                negative="",
-                help="Read member names from stdin (one per line).",
-            ),
-        ] = False,
+        stdin: StdinOption = False,
         by_id: ByIdOption = False,
         organization: OrganizationOption = None,
         inventory: InventoryOption = None,
         inventory_organization: InventoryOrganizationOption = None,
+        search: SearchOption = None,
+        filter_: FilterOption = None,
+        all_: AllOption = False,
+        parent_scope: ParentOption = None,
+        yes: YesOption = False,
+        dry_run: DryRunOption = False,
+        fmt: FormatOption = "table",
+        columns: ColumnsOption = None,
     ) -> None:
-        any_failed = False
-        with report_errors(), open_context() as ctx:
-            assert ref.kind is not None  # guarded by register_membership_subapp
-            member_spec = ctx.catalog.get(ref.kind)
-            member_ids_input = read_identifiers(
-                list(members or []),
-                stdin=stdin,
-                id_field=id_field_for(member_spec, by_id=by_id),
-            )
-            parent_scope = scope_for_command(
-                ctx,
-                organization,
-                spec,
-                inventory=inventory,
-                inventory_organization=inventory_organization,
-            )
-            getter = GetResource(ctx.repo)
-            parent_rec = getter.by_identifier(spec, parent, scope=parent_scope, by_id=by_id)
-            parent_id = int(parent_rec["id"])
+        with report_errors():
+            validate_controls(yes=yes, dry_run=dry_run)
+            with open_context() as ctx:
+                assert ref.kind is not None
+                member_spec = ctx.catalog.get(ref.kind)
+                selected_parent = select_resources(
+                    ctx,
+                    spec,
+                    [parent],
+                    by_id=by_id,
+                    organization=organization,
+                    inventory=inventory,
+                    inventory_organization=inventory_organization,
+                    parent=parent_scope,
+                )[0]
+                selected_members = select_resources(
+                    ctx,
+                    member_spec,
+                    members,
+                    stdin=stdin,
+                    by_id=by_id,
+                    filters=filter_,
+                    search=search,
+                    all_=all_,
+                    mutation=True,
+                    scope=_member_scope(ctx, selected_parent.record, ref),
+                )
+                manager = ManageMembership(ctx.repo)
+                plan = manager.prepare(
+                    spec,
+                    parent_id=selected_parent.id,
+                    ref=ref,
+                    member_ids=[item.id for item in selected_members],
+                    action=action,
+                )
+                row: dict[str, Any] = {
+                    "id": selected_parent.id,
+                    "kind": spec.kind,
+                    "name": selected_parent.name,
+                    "scope": selected_parent.scope,
+                    "action": "preview" if plan.field_change else "unchanged",
+                    "field": ref.field,
+                    "associate": list(plan.to_associate),
+                    "disassociate": list(plan.to_disassociate),
+                }
+                echo(
+                    f"{verb.capitalize()} {ref.field} on {spec.kind}/{selected_parent.name} "
+                    f"id={selected_parent.id}: add={row['associate']} "
+                    f"remove={row['disassociate']}",
+                    err=True,
+                )
+                failed = False
+                if confirm_batch(
+                    ctx,
+                    count=int(plan.field_change is not None),
+                    verb=verb,
+                    yes=yes,
+                    dry_run=dry_run,
+                ):
+                    select_resources(
+                        ctx,
+                        spec,
+                        [str(selected_parent.id)],
+                        by_id=True,
+                        scope=selected_parent.scope,
+                    )
+                    try:
+                        manager.execute(spec, parent_id=selected_parent.id, plan=plan)
+                        row["action"] = "updated"
+                    except Exception as exc:
+                        row["action"] = "partial"
+                        row["partial"] = True
+                        row["detail"] = redact_error(exc, spec, selected_parent.record)
+                        failed = True
+                emit([row], fmt=fmt, columns=columns, kind="awx.membership_outcome")
+                finish(failed)
 
-            member_scope = _member_scope(parent_rec, ref)
-            resolved_ids, any_failed = resolve_each(
-                member_ids_input,
-                lambda n: int(
-                    getter.by_identifier(member_spec, n, scope=member_scope, by_id=by_id)["id"]
-                ),
-            )
 
-            ManageMembership(ctx.repo)(
-                spec,
-                parent_id=parent_id,
-                ref=ref,
-                member_ids=resolved_ids,
-                action=action,
-            )
-        finish(any_failed)
+def _member_scope(ctx: AwxContext, parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str]:
+    """Resolve required member ancestry from the parent's fixed relationship ID.
 
-
-def _member_scope(parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str] | None:
-    """Derive the scope dict for member name lookups from the parent record.
-
-    For ``scope_field="organization"`` refs (JobTemplate ``credentials``),
-    members live in the same organization as the parent template.
-
-    For ``scope_field="inventory"`` refs (Group's ``hosts`` / ``children``),
-    members live in the same inventory as the parent and we pull both
-    ``name`` and ``organization_name`` out of ``summary_fields.inventory``
-    so cross-org disambiguation (same-named inventories across orgs)
-    matches the convention ``scope_for_spec`` uses. ``--by-id`` bypasses
-    name lookup entirely so a missing scope only matters when the user
-    pipes names.
+    Summaries can omit organization ancestry or be absent entirely. They may
+    supply a relationship ID, but never replace fetching its complete identity.
+    An unscoped relationship is explicitly global; missing required ancestry is
+    an error rather than permission to expand the member selection globally.
     """
-    if ref.scope_field == "organization":
-        organization = _organization_name(parent_rec)
-        if organization:
-            return {"organization": organization}
-        return None
-    if ref.scope_field != "inventory":
-        return None
-    summary = parent_rec.get("summary_fields")
-    if not isinstance(summary, dict):
-        return None
-    inv = summary.get("inventory")
-    if not isinstance(inv, dict):
-        return None
-    name = inv.get("name")
-    if not isinstance(name, str) or not name:
-        return None
-    scope: dict[str, str] = {"inventory": name}
-    org_name = inv.get("organization_name")
-    if isinstance(org_name, str) and org_name:
-        scope["inventory__organization"] = org_name
-    return scope
-
-
-def _organization_name(parent_rec: dict[str, Any]) -> str | None:
-    value = parent_rec.get("organization_name")
-    if isinstance(value, str) and value:
-        return value
-    summary = parent_rec.get("summary_fields")
-    if not isinstance(summary, dict):
-        return None
-    org = summary.get("organization")
-    if not isinstance(org, dict):
-        return None
-    name = org.get("name")
-    return name if isinstance(name, str) and name else None
+    field = ref.scope_field
+    if field is None:
+        return {}
+    relation_id = parent_rec.get(field)
+    if relation_id is None:
+        summary = parent_rec.get("summary_fields") or {}
+        relation = summary.get(field) if isinstance(summary, dict) else None
+        relation_id = relation.get("id") if isinstance(relation, dict) else None
+    if isinstance(relation_id, bool) or not isinstance(relation_id, int) or relation_id <= 0:
+        raise BadRequest(f"cannot establish required {field} ancestry for membership")
+    if field == "organization":
+        return {"organization": ctx.fk.id_to_name("Organization", relation_id)}
+    if field != "inventory":
+        raise BadRequest(f"unsupported membership scope relationship {field!r}")
+    identity = ctx.fk.id_to_identity("Inventory", relation_id)
+    if not identity.organization:
+        raise BadRequest(f"cannot establish organization ancestry for Inventory#{relation_id}")
+    return {"inventory": identity.name, "inventory__organization": identity.organization}

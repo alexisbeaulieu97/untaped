@@ -461,3 +461,28 @@ def test_ui_context_factory_reads_quiet_flag(_isolated_config: Path) -> None:
         assert ui_context().quiet is True
     finally:
         reset()
+
+
+def test_default_prompt_backend_follows_reopened_terminal_streams() -> None:
+    import io
+
+    first = io.StringIO()
+    ui = UiContext(stdin=first)
+    old = ui.prompt_backend
+    first.close()
+    second = io.StringIO()
+    ui.stdin = second
+    current = ui.prompt_backend
+    assert current is not old
+    assert current.stdin is second
+    assert ui.prompt_backend is current
+
+
+def test_injected_prompt_backend_survives_stream_changes() -> None:
+    from untaped.testing import ScriptedPromptBackend
+
+    injected = ScriptedPromptBackend(confirms=[])
+    ui = UiContext(prompt_backend=injected, stdin=io.StringIO())
+    ui.stdin = io.StringIO()
+    ui.stderr = io.StringIO()
+    assert ui.prompt_backend is injected

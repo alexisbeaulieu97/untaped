@@ -11,12 +11,14 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
+from rich.text import Text
 
 from untaped.api import UntapedError
 from untaped.capabilities.awx.application import StreamJobEvents, WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped.capabilities.awx.cli._event_render import render_event_text
 from untaped.capabilities.awx.domain import Job, JobEvent
+from untaped.capabilities.awx.domain.job import JOB_ROUTES
 
 
 def _drain_parallel_with_worker(
@@ -50,7 +52,7 @@ def _drain_parallel_with_worker(
         except Exception as exc:
             raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
 
-    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+    with ThreadPoolExecutor(max_workers=min(10, len(jobs))) as pool:
         futures = [(name, pool.submit(_wrap, name, job)) for name, job in jobs]
         if while_running is not None:
             while_running()
@@ -71,7 +73,7 @@ def _drain_parallel(
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Drain ``--track`` events from multiple jobs concurrently.
 
-    Workers stream :class:`JobEvent`s onto a :class:`queue.Queue`; the
+    Workers stream structured events, or workflow status changes, onto a queue; the
     main thread drains the queue and prints with the originating
     template name as a prefix so concurrent output stays
     disambiguable on a shared stderr. After every worker has signalled
@@ -85,15 +87,22 @@ def _drain_parallel(
     ``shutdown(wait=True)`` blocks until each polling loop next
     iterates and the job goes terminal.
     """
-    q: queue.Queue[tuple[str, JobEvent | None]] = queue.Queue()
+    q: queue.Queue[tuple[str, JobEvent | Job | None]] = queue.Queue()
 
     def _worker(name: str, job: Job) -> Job:
         # Sentinel pushed in ``finally`` *before* ``monitor.fetch`` so
         # a slow or failing fetch never blocks the main thread's queue
         # drain.
         try:
-            for ev in StreamJobEvents(monitor)(job, follow=True):
-                q.put((name, ev))
+            if JOB_ROUTES[job.kind].events is None:
+                final = job
+                for status in monitor.stream_status(job):
+                    q.put((name, status))
+                    final = status
+                return final
+            else:
+                for ev in StreamJobEvents(monitor)(job, follow=True):
+                    q.put((name, ev))
         finally:
             q.put((name, None))
         return monitor.fetch(job)
@@ -107,7 +116,10 @@ def _drain_parallel(
             if ev is None:
                 done += 1
                 continue
-            console.print(render_event_text(ev, prefix=name))
+            if isinstance(ev, Job):
+                console.print(Text(f"[{name}] {ev.kind}#{ev.id}: {ev.status}"))
+            else:
+                console.print(render_event_text(ev, prefix=name))
 
     return _drain_parallel_with_worker(jobs, _worker, while_running=_drain_queue)
 

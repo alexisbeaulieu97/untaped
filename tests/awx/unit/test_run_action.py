@@ -77,3 +77,36 @@ def test_run_action_unknown_action_errors() -> None:
     use = RunAction(cast(ResourceClient, client))
     with pytest.raises(AwxApiError):
         use(JOB_TEMPLATE_SPEC, name="x", action="not-real")
+
+
+@pytest.mark.parametrize(
+    "kind,action,result_kind",
+    [
+        ("WorkflowJobTemplate", "launch", "workflow_job"),
+        ("Project", "sync", "project_update"),
+        ("InventorySource", "sync", "inventory_update"),
+    ],
+)
+def test_fixed_action_uses_declared_result_kind_without_response_type(
+    kind: str,
+    action: str,
+    result_kind: str,
+) -> None:
+    from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
+
+    spec = next(s for s in ALL_SPECS if s.kind == kind)
+    client = _StubClient(find_result={"id": 999}, action_result={"id": 101, "status": "pending"})
+    job = RunAction(cast(ResourceClient, client)).execute(spec, 42, action=action)
+    assert job.kind == result_kind
+    assert job.id == 101
+    assert client.action_calls == [(42, "launch" if action == "launch" else "update", {})]
+
+
+def test_fixed_action_rejects_conflicting_response_kind_without_retry() -> None:
+    client = _StubClient(
+        find_result={"id": 999},
+        action_result={"id": 101, "status": "pending", "type": "inventory_update"},
+    )
+    with pytest.raises(AwxApiError, match="missing or unexpected kind"):
+        RunAction(cast(ResourceClient, client)).execute(JOB_TEMPLATE_SPEC, 42, action="launch")
+    assert len(client.action_calls) == 1

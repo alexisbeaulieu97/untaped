@@ -87,7 +87,10 @@ def test_create_posts_to_nested_inventory_endpoint() -> None:
     s.create(
         HOST_SPEC,
         {"name": "web-01", "description": "frontend"},
-        _identity(),
+        {
+            **_identity(),
+            "_prepared_parent": s.prepare_parent(HOST_SPEC, _identity(), fk=cast(FkResolver, fk)),
+        },
         client=cast(RawHttpResourceClient, client),
         fk=cast(FkResolver, fk),
     )
@@ -108,7 +111,7 @@ def test_create_uses_group_api_path_for_group_kind() -> None:
     s.create(
         GROUP_SPEC,
         {"name": "web", "description": "Web servers"},
-        _identity(name="web"),
+        {**_identity(name="web"), "_prepared_parent": ("Inventory", 42)},
         client=cast(RawHttpResourceClient, client),
         fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
@@ -176,27 +179,21 @@ def test_update_uses_global_endpoint() -> None:
 
 
 def test_create_rejects_missing_parent() -> None:
-    client = _StubClient()
     s = InventoryChildApplyStrategy()
     with pytest.raises(BadRequest):
-        s.create(
+        s.prepare_parent(
             HOST_SPEC,
-            {"name": "x"},
             {"name": "x", "parent": None},
-            client=cast(RawHttpResourceClient, client),
             fk=cast(FkResolver, _StubFk()),
         )
 
 
 def test_create_rejects_non_inventory_parent_kind() -> None:
-    client = _StubClient()
     s = InventoryChildApplyStrategy()
     bad_parent = IdentityRef(kind="Project", name="something")
     with pytest.raises(BadRequest):
-        s.create(
+        s.prepare_parent(
             HOST_SPEC,
-            {"name": "x"},
             {"name": "x", "parent": bad_parent},
-            client=cast(RawHttpResourceClient, client),
             fk=cast(FkResolver, _StubFk()),
         )

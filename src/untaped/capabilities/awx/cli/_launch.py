@@ -2,7 +2,7 @@
 
 Owns the ``LAUNCH_FLAGS`` dispatch table (single source of truth for
 the per-flag visibility / rejection / payload-translation triple), the
-launch command body, and the per-job-error echo helper.
+launch command body; submission and monitoring use the shared action runner.
 """
 
 from collections.abc import Callable
@@ -10,34 +10,29 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 from cyclopts import App, Parameter
-from rich.console import Console
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    UntapedError,
-    echo,
-    finish,
-    raise_usage,
-    read_identifiers,
-    render_rows,
-    report_errors,
-)
-from untaped.capabilities.awx.application import RunAction, StreamJobEvents, WatchJob
+from untaped.api import ColumnsOption, FormatOption, raise_usage, report_errors
 from untaped.capabilities.awx.application.ports import FkResolver
+from untaped.capabilities.awx.cli._action_runner import run_action_selection
 from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._event_render import render_event_text
-from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
-from untaped.capabilities.awx.cli._pipe import id_field_for
-from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption
-from untaped.capabilities.awx.domain import Job
+from untaped.capabilities.awx.cli._mutation_runner import validate_controls
+from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.options import (
+    AllOption,
+    ByIdOption,
+    ContinueOption,
+    DryRunOption,
+    FilterOption,
+    InventoryOrganizationOption,
+    OrganizationOption,
+    ParallelOption,
+    ParentOption,
+    SearchOption,
+    StdinOption,
+)
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 
-# ``_add_launch`` defines a Cyclopts command with 12 parameters, each
-# carrying a ``show=not hidden_by_flag[...]`` lookup from the per-kind
-# ``ActionSpec.accepts`` projection. The complexity comes from the breadth of
-# the CLI signature, not from branchy dispatch.
 def _add_launch(app: App, spec: AwxResourceSpec) -> None:
     accepts = next((a.accepts for a in spec.actions if a.name == "launch"), frozenset())
 
@@ -47,17 +42,19 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
     # guard); a hidden flag still parses, the guard catches misuse.
     hidden_by_flag = {f.flag: f.accepts_key not in accepts for f in LAUNCH_FLAGS}
 
-    # Launch dispatch is a 2x2 matrix: ``--track`` vs ``--wait``, parallel
-    # (>=2 templates) vs sequential, plus per-id error capture and
-    # ``--track`` job-status exit-code propagation.
     @app.command(name="launch")
     def launch_command(
         names: Annotated[list[str] | None, Parameter(help=f"{spec.kind} name(s).")] = None,
         *,
-        stdin: Annotated[
-            bool,
-            Parameter(name="--stdin", negative="", help="Read names from stdin (one per line)."),
-        ] = False,
+        stdin: StdinOption = False,
+        search: SearchOption = None,
+        filter_: FilterOption = None,
+        all_: AllOption = False,
+        parent: ParentOption = None,
+        inventory_organization: InventoryOrganizationOption = None,
+        dry_run: DryRunOption = False,
+        continue_on_error: ContinueOption = False,
+        parallel: ParallelOption = 1,
         by_id: ByIdOption = False,
         organization: OrganizationOption = None,
         extra_vars: Annotated[
@@ -142,7 +139,9 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         ] = None,
         wait: Annotated[
             bool,
-            Parameter(name="--wait", negative="", help="Block until terminal."),
+            Parameter(
+                name="--wait", negative="", help="Wait for success; fail on unsuccessful execution."
+            ),
         ] = False,
         track: Annotated[
             bool,
@@ -150,7 +149,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 name=["--track", "-t"],
                 negative="",
                 help=(
-                    "Stream structured events to stderr while waiting; exit 1 "
+                    "Stream events (workflow status) to stderr while waiting; exit 1 "
                     "if any tracked job ends in a non-successful terminal state."
                 ),
             ),
@@ -170,87 +169,47 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             "--job-type": job_type,
         }
         _reject_unsupported_launch_flags(kind=spec.kind, accepts=accepts, supplied=supplied)
-        jobs: list[Job] = []
-        any_failed = False
-        # Stderr console for ``--track``: ANSI when stderr is a TTY,
-        # plain text when redirected (CI logs, piped through ``tee``).
-        track_console = Console(stderr=True, highlight=False)
-        with report_errors(), open_context() as ctx:
-            scope = scope_for_command(ctx, organization, spec)
-            payload = _build_launch_payload(
-                accepts=accepts,
-                extra_vars=extra_vars,
-                limit=limit,
-                supplied=supplied,
-                fk=ctx.fk,
-                org_scope=scope,
-            )
-            ids = read_identifiers(
-                list(names or []), stdin=stdin, id_field=id_field_for(spec, by_id=by_id)
-            )
-            # Launch phase — every launch is one HTTP POST returning an
-            # in-flight Job; sequential keeps the per-id try/except simple
-            # and the order of stderr error lines stable.
-            launched: list[tuple[str, Job]] = []
-            for n in ids:
-                try:
-                    job = RunAction(ctx.repo)(
-                        spec,
-                        name=n,
-                        action="launch",
-                        scope=scope,
-                        payload=payload,
-                        by_id=by_id,
-                    )
-                    launched.append((n, job))
-                except UntapedError as exc:
-                    echo(f"error: {n}: {exc}", err=True)
-                    any_failed = True
-            # Monitor phase — drains each launched job to its terminal
-            # state. Two or more ``--track`` jobs run concurrently
-            # (wall-clock = max, not sum); single-template stays
-            # sequential for stable tracebacks and zero thread overhead.
-            # ``--track`` takes precedence over ``--wait`` when both
-            # are set, matching the single-template ``if track / elif
-            # wait`` chain below.
-            if track and len(launched) >= 2:
-                results, errors = _drain_parallel(ctx.monitor, launched, track_console)
-                jobs.extend(results)
-                any_failed |= _echo_parallel_errors(errors)
-            elif wait and len(launched) >= 2:
-                results, errors = _wait_parallel(ctx.repo, launched)
-                jobs.extend(results)
-                any_failed |= _echo_parallel_errors(errors)
-            else:
-                for n, job in launched:
-                    try:
-                        if track:
-                            # Render each event to stderr as it lands,
-                            # then let the monitor's terminal flip end
-                            # the loop. ``track_console`` carries the
-                            # TTY-aware colour styling so green-ok /
-                            # red-failed pop in a real terminal but
-                            # stay plain text when piped.
-                            for ev in StreamJobEvents(ctx.monitor)(job, follow=True):
-                                track_console.print(render_event_text(ev))
-                            job = ctx.monitor.fetch(job)
-                        elif wait:
-                            job = WatchJob(ctx.repo)(job)
-                        jobs.append(job)
-                    except UntapedError as exc:
-                        echo(f"error: {n}: {exc}", err=True)
-                        any_failed = True
-        if jobs:
-            echo(
-                render_rows(
-                    [j.model_dump() for j in jobs], fmt=fmt, columns=columns, kind="awx.job"
+        with report_errors():
+            parallel = validate_controls(yes=False, dry_run=dry_run, parallel=parallel)
+            with open_context() as ctx:
+                # --inventory remains a payload override, never template scope.
+                selected = select_resources(
+                    ctx,
+                    spec,
+                    names,
+                    stdin=stdin,
+                    by_id=by_id,
+                    filters=filter_,
+                    search=search,
+                    all_=all_,
+                    mutation=True,
+                    organization=organization,
+                    inventory_organization=inventory_organization,
+                    parent=parent,
                 )
-            )
-        # --track promises CI-friendly exit codes: anything other than a
-        # clean ``successful`` (failed/error/canceled, or still-running
-        # if the monitor returned without terminal — which it shouldn't,
-        # but be defensive) propagates as exit 1.
-        finish(any_failed or (track and any(j.status != "successful" for j in jobs)))
+                scope = scope_for_command(ctx, organization, spec)
+                payload = _build_launch_payload(
+                    accepts=accepts,
+                    extra_vars=extra_vars,
+                    limit=limit,
+                    supplied=supplied,
+                    fk=ctx.fk,
+                    org_scope=scope,
+                )
+                run_action_selection(
+                    ctx,
+                    spec,
+                    selected,
+                    action="launch",
+                    payload=payload,
+                    dry_run=dry_run,
+                    parallel=parallel,
+                    continue_on_error=continue_on_error,
+                    wait=wait,
+                    track=track,
+                    fmt=fmt,
+                    columns=columns,
+                )
 
 
 @dataclass(frozen=True)
@@ -367,16 +326,6 @@ def _build_launch_payload(
             continue
         payload[f.accepts_key] = f.payload_builder(value, fk, org_scope)
     return payload
-
-
-def _echo_parallel_errors(errors: list[tuple[str, UntapedError]]) -> bool:
-    """Echo per-job errors from a parallel-monitor helper and return
-    ``True`` when any were recorded so the caller can flip its
-    ``any_failed`` flag with ``|=``.
-    """
-    for failed_name, failure in errors:
-        echo(f"error: {failed_name}: {failure}", err=True)
-    return bool(errors)
 
 
 __all__ = ["LAUNCH_FLAGS", "LaunchFlag"]

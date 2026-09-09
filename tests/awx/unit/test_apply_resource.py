@@ -16,6 +16,7 @@ from untaped.capabilities.awx.application.ports import (
 )
 from untaped.capabilities.awx.domain import Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.envelope import IdentityRef
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.errors import AwxApiError, BadRequest
 from untaped.capabilities.awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
@@ -24,6 +25,7 @@ from untaped.capabilities.awx.infrastructure.specs import (
     PROJECT_SPEC,
     SCHEDULE_SPEC,
 )
+from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
 
 # ----- Stubs -----
 
@@ -72,7 +74,9 @@ class _StubClient:
         return iter([])
 
     def get(self, spec: ResourceSpec, id_: int) -> Any:
-        raise NotImplementedError
+        if self.existing is None:
+            raise BadRequest("missing record")
+        return _ServerRecord(self.existing)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
         self.find_calls.append(params)
@@ -86,7 +90,7 @@ class _StubClient:
         self.updated = (id_, payload)
         return {"id": id_, **payload}
 
-    def delete(self, spec: ResourceSpec, id_: int) -> None:
+    def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         raise NotImplementedError
 
     def action(
@@ -125,7 +129,7 @@ class _FallbackClient(_StubClient):
 
     def get(self, spec: ResourceSpec, id_: int) -> _ServerRecord:
         self.get_calls.append((spec.kind, id_))
-        return _ServerRecord(self.fetched)
+        return _ServerRecord(self.existing if self.existing is not None else self.fetched)
 
 
 class _ErrorFallbackClient(_StubClient):
@@ -139,13 +143,14 @@ class _ErrorFallbackClient(_StubClient):
         raise self.error
 
 
-class _StubStrategy:
+class _StubStrategy(DefaultApplyStrategy):
     def __init__(self, existing: dict[str, Any] | None = None) -> None:
         self.existing = existing
         self.created: tuple[dict[str, Any], dict[str, Any]] | None = None
         self.updated: tuple[dict[str, Any], dict[str, Any]] | None = None
 
     def find_existing(self, spec, identity, *, client, fk):  # type: ignore[no-untyped-def]
+        client.existing = self.existing
         return self.existing
 
     def create(self, spec, payload, identity, *, client, fk):  # type: ignore[no-untyped-def]
@@ -173,6 +178,7 @@ class _WriteResponseStrategy(_StubStrategy):
 
     def update(self, spec, existing, payload, *, client, fk):  # type: ignore[no-untyped-def]
         self.updated = (existing, payload)
+        client.existing = None
         return dict(self.response)
 
 
@@ -198,7 +204,9 @@ def _make_apply(
     if allow_unverified:
         kwargs["allow_unverified"] = True
     return ApplyResource(
-        client=client if client is not None else cast(RawHttpResourceClient, _StubClient()),
+        client=client
+        if client is not None
+        else cast(RawHttpResourceClient, _StubClient(existing=strategy.existing)),
         catalog=cast(Catalog, _StubCatalog(catalog_specs)),
         fk=cast(FkResolver, _StubFk(fk_names)),
         strategies=cast(StrategyResolver, _StubStrategies(strategy)),
@@ -301,11 +309,11 @@ def test_create_fails_when_written_field_is_not_reflected_after_get() -> None:
         spec={"description": "new", "scm_type": "git"},
     )
 
-    with pytest.raises(BadRequest) as exc_info:
-        apply(resource, write=True)
+    outcome = apply(resource, write=True)
+    assert outcome.action == "partial"
 
     assert client.get_calls == [("Project", 99)]
-    message = str(exc_info.value)
+    message = str(outcome.detail)
     assert "description" in message
     assert "new" not in message
 
@@ -334,6 +342,7 @@ def test_create_allow_unverified_keeps_action_and_records_detail() -> None:
     )
 
     outcome = apply(resource, write=True)
+    assert outcome.unverified is True
 
     assert outcome.action == "created"
     assert outcome.detail is not None
@@ -362,11 +371,11 @@ def test_create_without_id_cannot_fallback_and_fails_unverified() -> None:
         spec={"description": "new", "scm_type": "git"},
     )
 
-    with pytest.raises(BadRequest) as exc_info:
-        apply(resource, write=True)
+    outcome = apply(resource, write=True)
+    assert outcome.action == "partial"
 
     assert client.get_calls == []
-    assert "description" in str(exc_info.value)
+    assert "no integer" in str(outcome.detail)
 
 
 def test_create_strict_fails_when_fallback_get_errors() -> None:
@@ -387,11 +396,11 @@ def test_create_strict_fails_when_fallback_get_errors() -> None:
         spec={"description": "new", "scm_type": "git"},
     )
 
-    with pytest.raises(BadRequest) as exc_info:
-        apply(resource, write=True)
+    outcome = apply(resource, write=True)
+    assert outcome.action == "partial"
 
     assert client.get_calls == [("Project", 99)]
-    message = str(exc_info.value)
+    message = str(outcome.detail)
     assert "description" in message
     assert "new" not in message
     assert "fallback GET failed" in message
@@ -419,6 +428,7 @@ def test_create_allow_unverified_downgrades_when_fallback_get_errors() -> None:
     )
 
     outcome = apply(resource, write=True)
+    assert outcome.unverified is True
 
     assert outcome.action == "created"
     assert outcome.detail is not None
@@ -483,11 +493,11 @@ def test_update_fails_when_written_field_is_not_reflected_after_get() -> None:
         spec={"description": "new", "scm_type": "git"},
     )
 
-    with pytest.raises(BadRequest) as exc_info:
-        apply(resource, write=True)
+    outcome = apply(resource, write=True)
+    assert outcome.action == "partial"
 
-    assert client.get_calls == [("Project", 42)]
-    message = str(exc_info.value)
+    assert client.get_calls == [("Project", 42), ("Project", 42)]
+    message = str(outcome.detail)
     assert "description" in message
     assert "new" not in message
 
@@ -523,7 +533,7 @@ def test_update_uses_fallback_get_when_write_response_omits_field() -> None:
 
     assert outcome.action == "updated"
     assert outcome.detail is None
-    assert client.get_calls == [("Project", 42)]
+    assert client.get_calls == [("Project", 42), ("Project", 42)]
 
 
 def test_update_allow_unverified_keeps_action_and_records_detail() -> None:
@@ -557,6 +567,7 @@ def test_update_allow_unverified_keeps_action_and_records_detail() -> None:
     )
 
     outcome = apply(resource, write=True)
+    assert outcome.unverified is True
 
     assert outcome.action == "updated"
     assert outcome.detail is not None
@@ -931,7 +942,7 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
     """If a strategy ever returns a body without ``id``, membership writes
     can't target it — fail loudly instead of silently dropping members."""
 
-    class _IdLessStrategy:
+    class _IdLessStrategy(DefaultApplyStrategy):
         def find_existing(self, spec, identity, *, client, fk):  # type: ignore[no-untyped-def]
             return None
 
@@ -956,11 +967,12 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
         ),
         spec={"description": "web tier", "hosts": ["web-01"]},
     )
-    with pytest.raises(BadRequest, match="had no 'id'"):
-        apply(resource, write=True)
+    outcome = apply(resource, write=True)
+    assert outcome.action == "partial"
+    assert "no integer" in str(outcome.detail)
 
 
-# ── apply_to_existing: update-only seam for the `apply --stdin` mass-patch path ──
+# ── apply_to_existing: update-only seam for the `patch` mass-patch path ──
 
 
 def test_apply_to_existing_updates_passed_record_and_never_creates() -> None:
@@ -983,6 +995,7 @@ def test_apply_to_existing_updates_passed_record_and_never_creates() -> None:
         catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
         fk_names={("Organization", "Default"): 1},
         strategy=strategy,
+        client=cast(RawHttpResourceClient, _StubClient(existing=existing)),
     )
     resource = Resource(
         kind="JobTemplate",
@@ -1098,7 +1111,7 @@ def test_apply_warns_on_unrecognized_field_but_passes_it_through() -> None:
 
 
 def test_apply_to_existing_does_not_warn_on_unrecognized_field() -> None:
-    """The ``--stdin`` per-item seam stays silent: ``run_apply_stdin`` warns once
+    """The single-resource adapter leaves warnings to its batch planner.
     over the shared overlay, so ``apply_to_existing`` must NOT warn per item
     (else an N-item mass-patch would repeat the warning N times)."""
     existing = {"id": 42, "name": "playbooks", "organization": 1, "scm_type": "git"}

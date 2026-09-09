@@ -6,7 +6,7 @@ projects records the same way as factory-built ``get``.
 """
 
 from collections.abc import Sequence
-from typing import Annotated, Any
+from typing import Annotated
 
 from cyclopts import App, Parameter
 
@@ -15,21 +15,24 @@ from untaped.api import (
     FormatOption,
     OutputFormat,
     emit,
-    finish,
     raise_usage,
-    read_identifiers,
     report_errors,
-    resolve_each,
 )
-from untaped.capabilities.awx.application import GetResource
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
+from untaped.capabilities.awx.application.mutation_values import redact_value
+from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._names import flatten_fks
-from untaped.capabilities.awx.cli._pipe import id_field_for, pipe_kind_for_spec
+from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
+from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.options import (
+    AllOption,
     ByIdOption,
-    InventoryLookupOption,
+    FilterOption,
+    InventoryOption,
     InventoryOrganizationOption,
-    OrganizationLookupOption,
+    OrganizationOption,
+    ParentOption,
+    SearchOption,
+    StdinOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -39,12 +42,13 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
     def get_command(
         names: Annotated[list[str] | None, Parameter(help=f"{spec.kind} name(s).")] = None,
         *,
-        stdin: Annotated[
-            bool,
-            Parameter(name="--stdin", negative="", help="Read names from stdin (one per line)."),
-        ] = False,
-        organization: OrganizationLookupOption = None,
-        inventory: InventoryLookupOption = None,
+        search: SearchOption = None,
+        filter_: FilterOption = None,
+        all_: AllOption = False,
+        parent: ParentOption = None,
+        stdin: StdinOption = False,
+        organization: OrganizationOption = None,
+        inventory: InventoryOption = None,
         inventory_organization: InventoryOrganizationOption = None,
         by_id: ByIdOption = False,
         with_names: Annotated[
@@ -59,33 +63,37 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
         columns: ColumnsOption = None,
     ) -> None:
         """Fetch one or more resources by name, or by explicit AWX id."""
-        if not names and not stdin:
-            raise_usage(f"provide {spec.kind} name(s) or --stdin")
-        records: list[Any] = []
-        any_failed = False
+        if not names and not stdin and not filter_ and search is None and not all_:
+            raise_usage("provide names, --stdin, filters/search, or --all")
         with report_errors(), open_context() as ctx:
-            ids = read_identifiers(
-                list(names or []), stdin=stdin, id_field=id_field_for(spec, by_id=by_id)
-            )
-            scope = scope_for_command(
+            selected = select_resources(
                 ctx,
-                organization,
                 spec,
+                names,
+                stdin=stdin,
+                by_id=by_id,
+                filters=filter_,
+                search=search,
+                all_=all_,
+                mutation=True,
+                organization=organization,
                 inventory=inventory,
                 inventory_organization=inventory_organization,
+                parent=parent,
             )
-            getter = GetResource(ctx.repo)
-            records, any_failed = resolve_each(
-                ids, lambda n: getter.by_identifier(spec, n, scope=scope, by_id=by_id)
-            )
+            records = [item.record for item in selected]
         if records:
             cols = list(columns) if columns else default_get_columns(fmt, spec.list_columns)
             if with_names:
                 # ``cols`` may be ``None`` for non-table formats — that's
                 # fine; ``flatten_fks`` then only flattens declared fk_refs.
                 records = flatten_fks(records, spec, columns=cols)
+            records = [redact_value(record, spec.secret_paths) for record in records]
             emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec))
-        finish(any_failed)
+        if not records:
+            emit(
+                [], fmt=fmt, kind=pipe_kind_for_spec(spec), empty=f"No matching {spec.kind} found."
+            )
 
 
 def default_get_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:

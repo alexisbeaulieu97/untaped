@@ -54,6 +54,10 @@ class AwxClient:
         or ``None`` for empty 204 responses (e.g. DELETE)."""
         return self._http.request_json(method, self._url(path), **kwargs)
 
+    def delete(self, path: str) -> int:
+        """Keep the HTTP status so callers do not confuse 202 with removal."""
+        return self._http.request("DELETE", self._url(path)).status_code
+
     def request_text(self, method: str, path: str, **kwargs: Any) -> str:
         """Generic verb under ``<api_prefix>``; returns the raw response body
         as text (no JSON decode). Use for endpoints like ``jobs/<id>/stdout/``.

@@ -83,6 +83,12 @@ class FakeAap:
         body = self._json_body(request)
 
         if method == "GET":
+            if (
+                len(parts) == 3
+                and parts[0] in _EXECUTION_SUBPATHS
+                and parts[2] not in _EXECUTION_SUBPATHS[parts[0]]
+            ):
+                return _err(404, f"unsupported execution route: {path}")
             if len(parts) == 1:
                 return self._list(parts[0], params)
             if len(parts) == 2 and parts[1].isdigit():
@@ -221,11 +227,17 @@ class FakeAap:
         self.next_action_stdout = None
         new_id = self._next_id
         self._next_id += 1
-        store_path = "jobs" if action == "launch" else f"{action}s"
+        result_kind = {
+            "job_templates": "job",
+            "workflow_job_templates": "workflow_job",
+            "projects": "project_update",
+            "inventory_sources": "inventory_update",
+        }.get(api_path, "job")
+        store_path = f"{result_kind}s"
         name = f"{record.get('name', '')}-{action}"
         result = {
             "id": new_id,
-            "type": "job" if action == "launch" else "project_update",
+            "type": result_kind,
             "name": name,
             "status": status,
         }
@@ -358,6 +370,17 @@ class FakeAap:
             return {}
 
 
+# Strict execution routes mirror Controller URLs; arbitrary subcollections must
+# not mask unsupported event/stdout requests made by production monitors.
+_EXECUTION_SUBPATHS: dict[str, set[str]] = {
+    "jobs": {"job_events", "stdout"},
+    "workflow_jobs": {"workflow_nodes"},
+    "project_updates": {"events", "stdout"},
+    "inventory_updates": {"events", "stdout"},
+    "ad_hoc_commands": {"events", "stdout"},
+}
+
+
 # AWX's snake_case FK column on a child record is the singular form of
 # the parent collection — but English plural rules don't all collapse to
 # "drop the trailing s" (``inventories → inventory``, not ``inventorie``).
@@ -377,6 +400,9 @@ _AWX_FK_PLURAL: dict[str, str] = {
 # ``self.store["children"]``.
 _SUB_PATH_STORE: dict[tuple[str, str], str] = {
     ("groups", "children"): "groups",
+    ("project_updates", "events"): "project_update_events",
+    ("inventory_updates", "events"): "inventory_update_events",
+    ("ad_hoc_commands", "events"): "ad_hoc_command_events",
 }
 
 # Top-level URLs that are collection-wide views of records seeded under

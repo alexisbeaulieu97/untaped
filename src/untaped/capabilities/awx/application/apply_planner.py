@@ -16,11 +16,13 @@ the apply path actually queries.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
+from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
-from untaped.capabilities.awx.domain import FkRef, Resource, ResourceSpec
+from untaped.capabilities.awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
+from untaped.capabilities.awx.errors import BadRequest
 
 
 def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:
@@ -39,7 +41,7 @@ def unrecognized_warning(spec: ResourceSpec, names: Iterable[str]) -> str | None
 
     One source of truth for the message that both the file-mode
     (:meth:`ApplyResource._warn_unrecognized`, per doc) and ``--stdin``
-    (:func:`run_apply_stdin`, once per overlay) paths emit. Callers add their own
+    (the shared mutation planner, once per document) paths emit. Callers add their own
     ``warning:`` prefix / routing.
     """
     unknown = unrecognized_fields(spec, names)
@@ -67,7 +69,11 @@ class ApplyPlanner:
         return identity
 
     def plan_payload(
-        self, spec: ResourceSpec, resource: Resource, *, fk: FkResolver
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        *,
+        fk: FkResolver,
     ) -> dict[str, Any]:
         """Pass ``resource.spec`` through (minus a drop-set) and resolve FKs.
 
@@ -99,7 +105,7 @@ class ApplyPlanner:
         # always metadata-sourced (never overridable by the spec body).
         for key in spec.identity_keys:
             value = getattr(resource.metadata, key, None)
-            if value is not None:
+            if value is not None and key not in spec.read_only_fields:
                 body[key] = value
         # Resolve the FK names that survived the drop-set. Polymorphic and
         # sub_endpoint multi-FKs were excluded above, so every ref reaching here
@@ -111,11 +117,59 @@ class ApplyPlanner:
             scope = scope_for(ref, resource)
             value = body[ref.field]
             if ref.multi:
+                if not isinstance(value, list):
+                    raise BadRequest(f"foreign key {ref.field!r} must be a list")
                 if isinstance(value, list):
-                    body[ref.field] = [fk.name_to_id(ref.kind, str(v), scope=scope) for v in value]
+                    body[ref.field] = [
+                        resolve_fk_value(
+                            ref.kind,
+                            v,
+                            scope=scope,
+                            fk=fk,
+                        )
+                        for v in value
+                    ]
             else:
-                body[ref.field] = fk.name_to_id(ref.kind, str(value), scope=scope)
+                body[ref.field] = resolve_fk_value(
+                    ref.kind,
+                    value,
+                    scope=scope,
+                    fk=fk,
+                )
         return body
+
+
+def resolve_fk_value(
+    kind: str,
+    value: Any,
+    *,
+    scope: dict[str, str] | None,
+    fk: FkResolver,
+) -> PlannedId:
+    """Resolve an FK without confusing numeric names with numeric IDs.
+
+    Integer values are already controller IDs.  Strings, including strings
+    containing only digits, are names by contract. Editor projections bind
+    unchanged display values to their original IDs before reaching this resolver.
+    """
+    if isinstance(value, Mapping):
+        reference = IdentityRef.model_validate({"kind": kind, **value})
+        if reference.kind != kind:
+            raise BadRequest(f"foreign key requires kind {kind}")
+        try:
+            required_scope = reference.lookup_scope(scope)
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from exc
+        return fk.name_to_id(kind, reference.name, scope=required_scope)
+    if isinstance(value, bool):
+        raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+    if isinstance(value, int):
+        if value <= 0:
+            raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+        return fk.validate_id(kind, value, scope=scope)
+    if not isinstance(value, str):
+        raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+    return fk.name_to_id(kind, value, scope=scope)
 
 
 def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
@@ -134,9 +188,12 @@ def scope_for(ref: FkRef, resource: Resource) -> dict[str, str] | None:
         # the polymorphic parent), prefer ``parent.organization`` so
         # name-scoped FK lookups resolve in the parent's org, not the
         # schedule's own (which is typically ``None``).
-        org = (
-            resource.metadata.parent.organization if resource.metadata.parent else None
-        ) or resource.metadata.organization
+        parent = resource.metadata.parent
+        org = None
+        while parent is not None and not org:
+            org = parent.organization
+            parent = parent.parent
+        org = org or resource.metadata.organization
         if org:
             return {"organization": org}
     if ref.scope_field == "inventory":

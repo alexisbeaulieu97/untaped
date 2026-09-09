@@ -10,6 +10,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
     kind="JobTemplate",
     cli_name="job-templates",
     api_path="job_templates",
+    structured_text_fields=("extra_vars",),
     identity_keys=("name", "organization"),
     canonical_fields=(
         "description",
@@ -96,6 +97,10 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         FkRef(field="instance_groups", kind="InstanceGroup", multi=True),
     ),
     secret_paths=("webhook_key", "survey_spec.spec.*.default"),
+    # AWX may normalize and enrich the submitted survey document while
+    # retaining the user-owned questions/defaults.  Batch verification allows
+    # that explicitly instead of silently weakening comparison for all fields.
+    server_enriched_fields=("survey_spec",),
     actions=(
         # ``accepts`` is the public CLI contract: each name listed here
         # gets a CLI flag wired in `_add_launch`. The CLI dispatches
@@ -103,7 +108,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         ActionSpec(
             name="launch",
             path="launch",
-            returns="job",
+            returns=frozenset({"job", "workflow_job"}),
             accepts=frozenset(
                 {
                     "extra_vars",

@@ -1,4 +1,4 @@
-"""Unit tests for the ``apply --stdin`` field overlay (--set / --patch-file)."""
+"""Unit tests for the ``patch`` field overlay (--set / --patch-file)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from untaped.api import ConfigError
-from untaped.capabilities.awx.cli._overlay import build_overlay, parse_set_pairs
+from untaped.capabilities.awx.cli._patch_values import build_patch, parse_set_pairs
 
 
 def test_parse_set_pairs_json_coerces_values() -> None:
@@ -33,6 +33,11 @@ def test_parse_set_pairs_splits_on_first_equals() -> None:
     assert parse_set_pairs(["limit=a=b"]) == {"limit": "a=b"}
 
 
+def test_parse_set_pairs_distinguishes_numeric_fk_name_from_id() -> None:
+    assert parse_set_pairs(['inventory="123"']) == {"inventory": "123"}
+    assert parse_set_pairs(["inventory=123"]) == {"inventory": 123}
+
+
 def test_parse_set_pairs_empty_is_empty_dict() -> None:
     assert parse_set_pairs(None) == {}
     assert parse_set_pairs([]) == {}
@@ -44,40 +49,40 @@ def test_parse_set_pairs_rejects_malformed() -> None:
         parse_set_pairs(["novalue"])
 
 
-def test_build_overlay_reads_patch_file_mapping(tmp_path: Path) -> None:
+def test_build_patch_reads_patch_file_mapping(tmp_path: Path) -> None:
     f = tmp_path / "p.yml"
     f.write_text("verbosity: 3\njob_tags: deploy\n")
-    assert build_overlay(None, f) == {"verbosity": 3, "job_tags": "deploy"}
+    assert build_patch(None, f) == {"verbosity": 3, "job_tags": "deploy"}
 
 
-def test_build_overlay_rejects_non_mapping_with_sdk_error(tmp_path: Path) -> None:
+def test_build_patch_rejects_non_mapping_with_sdk_error(tmp_path: Path) -> None:
     f = tmp_path / "p.yml"
     f.write_text("- a\n- b\n")
     with pytest.raises(ConfigError, match="must contain an object"):
-        build_overlay(None, f)
+        build_patch(None, f)
 
 
-def test_build_overlay_missing_patch_file_raises_sdk_error(tmp_path: Path) -> None:
+def test_build_patch_missing_patch_file_raises_sdk_error(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="could not read"):
-        build_overlay(None, tmp_path / "nope.yml")
+        build_patch(None, tmp_path / "nope.yml")
 
 
-def test_build_overlay_expands_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_patch_expands_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     home.mkdir()
     patch = home / "patch.yml"
     patch.write_text("verbosity: 4\n")
     monkeypatch.setenv("HOME", str(home))
 
-    assert build_overlay(None, Path("~/patch.yml")) == {"verbosity": 4}
+    assert build_patch(None, Path("~/patch.yml")) == {"verbosity": 4}
 
 
-def test_build_overlay_set_overrides_patch_file(tmp_path: Path) -> None:
+def test_build_patch_set_overrides_patch_file(tmp_path: Path) -> None:
     f = tmp_path / "p.yml"
     f.write_text("verbosity: 1\njob_tags: base\n")
-    overlay = build_overlay(["verbosity=5"], f)
+    overlay = build_patch(["verbosity=5"], f)
     assert overlay == {"verbosity": 5, "job_tags": "base"}
 
 
-def test_build_overlay_set_only() -> None:
-    assert build_overlay(["verbosity=2"], None) == {"verbosity": 2}
+def test_build_patch_set_only() -> None:
+    assert build_patch(["verbosity=2"], None) == {"verbosity": 2}

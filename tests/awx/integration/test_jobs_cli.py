@@ -645,7 +645,7 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
     assert result.exit_code == 1, result.output
     # Single-prefix error row, with the original exception class name
     # preserved for debuggability.
-    assert "error: deploy-a: RuntimeError: boom" in result.stderr
+    assert "failed: deploy-a: RuntimeError: boom" in result.stderr
     # The other worker isn't aborted by deploy-a's failure: deploy-b's
     # event still streams with its prefix.
     assert "[deploy-b]" in result.stderr

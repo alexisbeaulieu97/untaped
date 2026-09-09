@@ -1,21 +1,24 @@
-"""``save`` builder for the spec-driven CLI factory."""
+"""Export complete fixed selections as portable resource documents."""
 
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    report_errors,
-)
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._save_runner import run_save_one
+from untaped.api import ColumnsOption, FormatOption, raise_usage, report_errors
+from untaped.capabilities.awx.cli._context import open_context
+from untaped.capabilities.awx.cli._save_runner import run_save_selection
+from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.options import (
+    AllOption,
+    ByIdOption,
+    FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
     OrganizationOption,
+    ParentOption,
+    SearchOption,
+    StdinOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -23,42 +26,41 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 def _add_save(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="save")
     def save_command(
-        name: Annotated[str, Parameter(help=f"{spec.kind} name.")],
+        names: list[str] | None = None,
         *,
-        output: Annotated[
-            Path | None,
-            Parameter(name=["--out", "-o"], help="Write to FILE; default is stdout."),
-        ] = None,
+        stdin: StdinOption = False,
+        by_id: ByIdOption = False,
+        search: SearchOption = None,
+        filter_: FilterOption = None,
+        all_: AllOption = False,
         organization: OrganizationOption = None,
         inventory: InventoryOption = None,
         inventory_organization: InventoryOrganizationOption = None,
+        parent: ParentOption = None,
+        output: Annotated[
+            Path | None,
+            Parameter(name=["--out", "-o"], help="Write portable YAML documents to FILE."),
+        ] = None,
         fmt: FormatOption = "yaml",
         columns: ColumnsOption = None,
     ) -> None:
-        """Dump the resource as a portable YAML envelope.
-
-        Default ``--format yaml`` emits the bare envelope so the output
-        pipes straight into ``apply`` (multi-doc mapping shape that
-        ``read_resources`` ingests). Non-yaml formats go through
-        row rendering for a one-row projection that matches the
-        suite-wide ``--columns`` contract. ``--columns`` applies to
-        non-yaml formats only — yaml emits the bare envelope unfiltered
-        so the round-trip into ``apply`` stays intact.
-        """
+        """Save a fixed selection into one portable YAML document batch."""
+        if not names and not stdin and not filter_ and search is None and not all_:
+            raise_usage("provide names, --stdin, filters/search, or --all")
         with report_errors(), open_context() as ctx:
-            scope = scope_for_command(
+            selected = select_resources(
                 ctx,
-                organization,
                 spec,
+                names,
+                stdin=stdin,
+                by_id=by_id,
+                filters=filter_,
+                search=search,
+                all_=all_,
+                mutation=True,
+                organization=organization,
                 inventory=inventory,
                 inventory_organization=inventory_organization,
+                parent=parent,
             )
-            run_save_one(
-                ctx,
-                spec,
-                name=name,
-                scope=scope,
-                output=output,
-                fmt=fmt,
-                columns=columns,
-            )
+            run_save_selection(ctx, spec, selected, output=output, fmt=fmt, columns=columns)

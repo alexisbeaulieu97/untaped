@@ -60,7 +60,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(
         "dependencies = []\n"
         "\n"
         "[dependency-groups]\n"
-        'dev = ["untaped>=5.0.0,<6", "pytest"]\n'
+        'dev = ["untaped>=6.0.0,<7", "pytest"]\n'
         "\n"
         "[tool.pytest.ini_options]\n"
         'pythonpath = ["src"]\n'

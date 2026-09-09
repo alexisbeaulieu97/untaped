@@ -87,19 +87,18 @@ def test_ping_pipe_tags_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert envelope["kind"] == "awx.status"
 
 
-def test_get_stdin_consumes_pipe_envelope_by_name(
+def test_get_stdin_consumes_pipe_envelope_by_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`list --format pipe | get --stdin` resolves each record's name field
-    (id_field defaults to spec.identity_keys[0])."""
+    """Typed records always resolve the fixed ID even without --by-id."""
     monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
     get_settings.cache_clear()
     envelope = json.dumps(
         {"untaped": "1", "kind": "awx.job_template", "record": {"id": 5, "name": "deploy"}}
     )
     with respx.mock(base_url="https://aap.example.com") as mock:
-        route = mock.get("/api/v2/job_templates/").mock(
-            return_value=_page({"id": 5, "name": "deploy"})
+        route = mock.get("/api/v2/job_templates/5/").mock(
+            return_value=httpx.Response(200, json={"id": 5, "name": "deploy"})
         )
         result = CliInvoker().invoke(
             app,
@@ -109,9 +108,7 @@ def test_get_stdin_consumes_pipe_envelope_by_name(
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "deploy"
-    # The name was extracted from the envelope and used as the lookup filter,
-    # proving id_field consumption (not a literal bare-line read).
-    assert route.calls[0].request.url.params.get("name") == "deploy"
+    assert route.calls[0].request.url.path == "/api/v2/job_templates/5/"
 
 
 def test_get_stdin_bare_line_still_works(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

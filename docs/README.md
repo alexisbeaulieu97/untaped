@@ -6,6 +6,8 @@ cover the workflows and contracts that are useful across commands.
 
 ## Pages
 
+- [AWX/AAP usage](./awx/usage.md) — connection setup, selection, configuration
+  changes, inventory sources, and execution tracking.
 - [Configuration](./configuration.md) — `~/.untaped/config.yml`,
   profiles, secrets, TLS, env-var overrides. Start here.
 - [Building a capability provider](./plugins.md) — package an external

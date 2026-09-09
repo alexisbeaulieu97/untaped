@@ -1,19 +1,15 @@
-"""Compute the field-level diff that drives the apply preview.
+"""Compute exact body-field diffs and annotate preserved secret fields.
 
-Pure value-shaped class: takes the existing record + the (post-strip)
-desired payload + the set of preserved-secret top-level fields, returns
-``list[FieldChange]``. Order-insensitive equality is applied to FK
-lists (``credentials``, etc.) so server-side reordering doesn't appear
-as a spurious diff.
-
-The diff is independent of the spec — it only reads the dicts. Tests
-exercise it directly without a Catalog / FkResolver / Client.
+Body maps and ordered lists use the shared semantic comparator. Enrichment is
+accepted only for explicitly declared fields; sub-endpoint memberships own their
+separate set/order semantics.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from untaped.capabilities.awx.application.mutation_values import semantic_equal
 from untaped.capabilities.awx.domain import FieldChange
 
 PRESERVED_SECRET_NOTE = "preserved existing secret"
@@ -34,6 +30,8 @@ class FieldDiff:
         existing: dict[str, Any] | None,
         desired: dict[str, Any],
         preserved_fields: set[str],
+        server_enriched_fields: tuple[str, ...] = (),
+        structured_text_fields: tuple[str, ...] = (),
     ) -> list[FieldChange]:
         """Return field-level changes between existing and the (stripped) desired payload.
 
@@ -60,7 +58,12 @@ class FieldDiff:
                     )
                 )
                 continue
-            if not _equal(before, after):
+            if not semantic_equal(
+                after,
+                before,
+                allow_server_enrichment=field in server_enriched_fields,
+                structured_text=field in structured_text_fields,
+            ):
                 out.append(FieldChange(field=field, before=before, after=after))
         # Top-level secret fields entirely stripped from ``desired``
         # (e.g. ``webhook_key``) still need a row so the user sees them
@@ -78,13 +81,3 @@ class FieldDiff:
                 )
             )
         return out
-
-
-def _equal(a: Any, b: Any) -> bool:
-    """Order-insensitive equality for FK lists (e.g., credentials)."""
-    if isinstance(a, list) and isinstance(b, list):
-        try:
-            return bool(sorted(a, key=repr) == sorted(b, key=repr))
-        except TypeError:
-            return bool(a == b)
-    return bool(a == b)

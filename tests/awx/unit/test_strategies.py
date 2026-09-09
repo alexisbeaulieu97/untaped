@@ -121,7 +121,13 @@ def test_schedule_strategy_create_uses_parent_endpoint() -> None:
     s.create(
         SCHEDULE_SPEC,
         {"rrule": "FREQ=DAILY"},
-        {"name": "nightly", "parent": parent},
+        {
+            "name": "nightly",
+            "parent": parent,
+            "_prepared_parent": s.prepare_parent(
+                SCHEDULE_SPEC, {"parent": parent}, fk=cast(FkResolver, fk)
+            ),
+        },
         client=cast(RawHttpResourceClient, client),
         fk=cast(FkResolver, fk),
     )
@@ -162,16 +168,11 @@ def test_schedule_strategy_find_uses_parent_endpoint() -> None:
 
 
 def test_schedule_strategy_rejects_unknown_parent_kind() -> None:
-    client = _StubClient()
     s = ScheduleApplyStrategy()
     parent = IdentityRef(kind="UnknownThing", name="x")
     with pytest.raises(BadRequest):
-        s.create(
-            SCHEDULE_SPEC,
-            {},
-            {"name": "x", "parent": parent},
-            client=cast(RawHttpResourceClient, client),
-            fk=cast(FkResolver, _StubFk()),
+        s.prepare_parent(
+            SCHEDULE_SPEC, {"name": "x", "parent": parent}, fk=cast(FkResolver, _StubFk())
         )
 
 

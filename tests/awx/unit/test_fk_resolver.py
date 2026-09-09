@@ -362,3 +362,30 @@ def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
         f"FkResolver let {repo.find_count} concurrent cache misses "
         "through — the read+write window must be locked atomically"
     )
+
+
+def test_prefetch_cannot_hide_ambiguous_names() -> None:
+    from untaped.capabilities.awx.errors import AmbiguousIdentityError
+
+    repo = _StubRepo({"Project": [{"id": 1, "name": "same"}, {"id": 2, "name": "same"}]})
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk.prefetch({"Project": [None]})
+    with pytest.raises(AmbiguousIdentityError):
+        fk.name_to_id("Project", "same")
+
+
+def test_integer_fk_validation_proves_kind_and_scope_without_name_lookup() -> None:
+    repo = _StubRepo(
+        {
+            "Project": [
+                {"id": 1, "name": "same", "organization_name": "Right"},
+                {"id": 2, "name": "same", "organization_name": "Wrong"},
+            ]
+        }
+    )
+    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    assert fk.validate_id("Project", 1, scope={"organization": "Right"}) == 1
+    with pytest.raises(ResourceNotFound):
+        fk.validate_id("Project", 2, scope={"organization": "Right"})
+    with pytest.raises(ResourceNotFound):
+        fk.validate_id("Inventory", 1)

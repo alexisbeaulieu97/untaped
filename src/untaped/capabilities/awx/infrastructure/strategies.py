@@ -15,11 +15,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from untaped.capabilities.awx.domain import ResourceSpec, WritePayload
+from untaped.capabilities.awx.domain import Resource, ResourceSpec, WritePayload
+from untaped.capabilities.awx.domain.inventory import (
+    CONSTRUCTED_SOURCE_FIELDS,
+    inventory_read_only_fields,
+)
 from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path
 
 if TYPE_CHECKING:
+    from untaped.capabilities.awx.application.mutation_refs import PlannedId
     from untaped.capabilities.awx.application.ports import FkResolver, RawHttpResourceClient
 
 
@@ -30,6 +35,28 @@ class DefaultApplyStrategy:
     resources by their identity (so we don't have to pre-resolve scope
     IDs just to look up).
     """
+
+    def snapshot_existing(
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+    ) -> dict[str, Any]:
+        return existing
+
+    def prepare_state(
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        existing: dict[str, Any] | None,
+        *,
+        parent: tuple[str, PlannedId] | None = None,
+        parent_resource: Resource | None = None,
+        client: RawHttpResourceClient,
+    ) -> tuple[ResourceSpec, dict[str, Any] | None]:
+        return spec, existing
+
+    def prepare_parent(
+        self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
+    ) -> tuple[str, PlannedId] | None:
+        return None
 
     def find_existing(
         self,
@@ -92,6 +119,16 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         "InventorySource": "inventory_sources",
     }
 
+    def prepare_parent(
+        self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
+    ) -> tuple[str, PlannedId] | None:
+        parent = identity.get("parent")
+        if parent is None:
+            raise BadRequest("schedule identity missing 'parent'")
+        result = fk.resolve_polymorphic(_as_dict(parent))
+        self._parent_path(result[0])
+        return result
+
     def find_existing(
         self,
         spec: ResourceSpec,
@@ -103,7 +140,9 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         parent = identity.get("parent")
         if parent is None:
             raise BadRequest("schedule identity missing 'parent'")
-        parent_kind, parent_id = fk.resolve_polymorphic(_as_dict(parent))
+        parent_kind, parent_id = identity.get("_prepared_parent") or fk.resolve_polymorphic(
+            _as_dict(parent)
+        )
         path = self._parent_path(parent_kind)
         return _find_unique(
             client,
@@ -125,7 +164,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         parent = identity.get("parent")
         if parent is None:
             raise BadRequest("schedule identity missing 'parent' for create")
-        parent_kind, parent_id = fk.resolve_polymorphic(_as_dict(parent))
+        parent_kind, parent_id = identity["_prepared_parent"]
         path = self._parent_path(parent_kind)
         return client.request(
             "POST",
@@ -157,6 +196,11 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
     endpoint).
     """
 
+    def prepare_parent(
+        self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
+    ) -> tuple[str, PlannedId] | None:
+        return "Inventory", self._resolve_inventory_id(identity, fk=fk)
+
     def find_existing(
         self,
         spec: ResourceSpec,
@@ -165,7 +209,11 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
-        inventory_id = self._resolve_inventory_id(identity, fk=fk)
+        inventory_id = (
+            identity["_prepared_parent"][1]
+            if "_prepared_parent" in identity
+            else self._resolve_inventory_id(identity, fk=fk)
+        )
         return _find_unique(
             client,
             path=f"inventories/{inventory_id}/{awx_api_path(spec)}/",
@@ -183,13 +231,74 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         client: RawHttpResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
-        inventory_id = self._resolve_inventory_id(identity, fk=fk)
+        inventory_id = identity["_prepared_parent"][1]
         path = f"inventories/{inventory_id}/{awx_api_path(spec)}/"
         body = {"name": identity["name"], **payload}
+        if spec.kind == "InventorySource":
+            inventory = client.request("GET", f"inventories/{inventory_id}/")
+            if inventory.get("kind") == "constructed":
+                invalid = set(payload) - {*CONSTRUCTED_SOURCE_FIELDS, "source", "name"}
+                if invalid or payload.get("source", "constructed") != "constructed":
+                    raise BadRequest(
+                        "cannot create an independent source on a constructed inventory"
+                    )
+                generated = _generated_source(client, inventory_id)
+                return client.request(
+                    "PATCH",
+                    f"inventory_sources/{generated['id']}/",
+                    json={k: v for k, v in payload.items() if k in CONSTRUCTED_SOURCE_FIELDS},
+                )
         return client.request("POST", path, json=body)
 
+    def prepare_state(
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        existing: dict[str, Any] | None,
+        *,
+        parent: tuple[str, PlannedId] | None = None,
+        parent_resource: Resource | None = None,
+        client: RawHttpResourceClient,
+    ) -> tuple[ResourceSpec, dict[str, Any] | None]:
+        if spec.kind != "InventorySource":
+            return spec, existing
+        inventory_kind = None
+        if parent is not None and isinstance(parent[1], int):
+            inventory_kind = client.request("GET", f"inventories/{parent[1]}/").get("kind", "")
+        elif parent_resource is not None:
+            inventory_kind = parent_resource.spec.get("kind", "")
+        if inventory_kind == "smart" and existing is None:
+            raise BadRequest("smart inventories do not support inventory sources")
+        generated = inventory_kind == "constructed" or (
+            existing is not None and existing.get("source") == "constructed"
+        )
+        if not generated:
+            if resource.spec.get("source") == "constructed":
+                raise BadRequest("constructed sources require a constructed inventory")
+            return spec, existing
+        if existing is None and parent is not None and isinstance(parent[1], int):
+            existing = _generated_source(client, parent[1])
+        invalid = set(resource.spec) - {*CONSTRUCTED_SOURCE_FIELDS, "source"}
+        if invalid:
+            raise BadRequest(
+                "generated constructed source only permits " + ", ".join(CONSTRUCTED_SOURCE_FIELDS)
+            )
+        if resource.spec.get("source", "constructed") != "constructed":
+            raise BadRequest("generated constructed source type cannot change")
+        spec = spec.model_copy(
+            update={
+                "read_only_fields": (
+                    *spec.read_only_fields,
+                    *inventory_read_only_fields(spec.kind, {"source": "constructed"}),
+                ),
+                "singleton_parent": True,
+                "parent_field_aliases": CONSTRUCTED_SOURCE_FIELDS,
+            }
+        )
+        return spec, existing
+
     @staticmethod
-    def _resolve_inventory_id(identity: dict[str, Any], *, fk: FkResolver) -> int:
+    def _resolve_inventory_id(identity: dict[str, Any], *, fk: FkResolver) -> PlannedId:
         parent = _parent(identity)
         scope = {"organization": parent.organization} if parent.organization else None
         return fk.name_to_id("Inventory", parent.name, scope=scope)
@@ -224,12 +333,13 @@ def _parent(identity: dict[str, Any]) -> Any:
     parent = identity.get("parent")
     if parent is None:
         raise BadRequest(
-            "Host and Group docs require metadata.parent (kind: Inventory) — "
+            "Inventory child docs require metadata.parent (kind: Inventory) — "
             "see examples/inventory-prod.yml"
         )
     if hasattr(parent, "kind") and parent.kind != "Inventory":
         raise BadRequest(
-            f"Host and Group docs require metadata.parent.kind == 'Inventory' (got {parent.kind!r})"
+            "Inventory child docs require metadata.parent.kind == 'Inventory' "
+            f"(got {parent.kind!r})"
         )
     return parent
 
@@ -239,3 +349,58 @@ def _as_dict(value: Any) -> dict[str, Any]:
     if hasattr(value, "model_dump"):
         return dict(value.model_dump())
     return dict(value)
+
+
+class InventoryApplyStrategy(DefaultApplyStrategy):
+    """Freeze constructed proxy routing using the selected inventory ID."""
+
+    def snapshot_existing(
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+    ) -> dict[str, Any]:
+        if existing.get("kind") != "constructed":
+            return existing
+        hydrated = client.get(spec, int(existing["id"])).model_dump()
+        if hydrated.get("id") != existing["id"]:
+            raise BadRequest("constructed inventory hydration changed selected ID")
+        return hydrated
+
+    def prepare_state(
+        self,
+        spec: ResourceSpec,
+        resource: Resource,
+        existing: dict[str, Any] | None,
+        *,
+        parent: tuple[str, PlannedId] | None = None,
+        parent_resource: Resource | None = None,
+        client: RawHttpResourceClient,
+    ) -> tuple[ResourceSpec, dict[str, Any] | None]:
+        kind = existing.get("kind", "") if existing is not None else resource.spec.get("kind", "")
+        if existing is not None and "kind" in resource.spec and resource.spec["kind"] != kind:
+            raise BadRequest("inventory kind cannot change on update")
+        if kind == "constructed":
+            if resource.spec.get("host_filter") not in (None, ""):
+                raise BadRequest("constructed inventories do not support host_filter")
+            spec = spec.model_copy(
+                update={
+                    "api_path": "constructed_inventories",
+                    "read_only_fields": (
+                        *spec.read_only_fields,
+                        *inventory_read_only_fields(spec.kind, {"kind": kind}),
+                    ),
+                }
+            )
+        elif any(
+            field in resource.spec for field in (*CONSTRUCTED_SOURCE_FIELDS, "input_inventories")
+        ):
+            raise BadRequest("constructed inventory settings require kind=constructed")
+        return spec, existing
+
+
+def _generated_source(client: RawHttpResourceClient, inventory_id: int) -> dict[str, Any]:
+    """Read the one managed source, including after a same-batch inventory create."""
+    sources = (
+        client.request("GET", f"inventories/{inventory_id}/inventory_sources/").get("results") or []
+    )
+    if len(sources) != 1 or sources[0].get("source") != "constructed":
+        raise BadRequest("constructed inventory has no unique generated source")
+    return dict(sources[0])

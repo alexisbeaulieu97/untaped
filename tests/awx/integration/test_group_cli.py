@@ -200,7 +200,7 @@ def test_groups_apply_preview_shows_membership_diff_without_writes(
             - web-01
         """
     )
-    result = CliInvoker().invoke(app, ["groups", "apply", str(doc)])
+    result = CliInvoker().invoke(app, ["groups", "apply", "--dry-run", str(doc)])
     assert result.exit_code == 0, result.output
     # No writes — membership stays empty.
     assert fake_aap.memberships[("groups", 200, "hosts")] == set()
@@ -496,7 +496,7 @@ def test_groups_hosts_add_associates_via_stdin(fake_aap: Any) -> None:
     _seed_two_hosts(fake_aap)
     result = CliInvoker().invoke(
         app,
-        ["groups", "hosts", "add", "web-servers", "--stdin"],
+        ["groups", "hosts", "add", "--yes", "web-servers", "--stdin"],
         input="web-01\nweb-02\n",
     )
     assert result.exit_code == 0, result.output
@@ -506,7 +506,9 @@ def test_groups_hosts_add_associates_via_stdin(fake_aap: Any) -> None:
 def test_groups_hosts_add_accepts_positional_names(fake_aap: Any) -> None:
     _seed_groups(fake_aap)
     _seed_two_hosts(fake_aap)
-    result = CliInvoker().invoke(app, ["groups", "hosts", "add", "web-servers", "web-01", "web-02"])
+    result = CliInvoker().invoke(
+        app, ["groups", "hosts", "add", "--yes", "web-servers", "web-01", "web-02"]
+    )
     assert result.exit_code == 0, result.output
     assert fake_aap.memberships[("groups", 200, "hosts")] == {101, 102}
 
@@ -516,7 +518,7 @@ def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> N
     _seed_two_hosts(fake_aap)
     result = CliInvoker().invoke(
         app,
-        ["groups", "hosts", "add", "web-servers", "web-01", "--stdin"],
+        ["groups", "hosts", "add", "--yes", "web-servers", "web-01", "--stdin"],
         input="web-02\n",
     )
     assert result.exit_code != 0
@@ -526,13 +528,13 @@ def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> N
     assert fake_aap.memberships[("groups", 200, "hosts")] == set()
 
 
-def test_groups_hosts_add_empty_stdin_errors(fake_aap: Any) -> None:
+def test_groups_hosts_add_empty_stdin_is_noop(fake_aap: Any) -> None:
     _seed_groups(fake_aap)
     result = CliInvoker().invoke(
-        app, ["groups", "hosts", "add", "web-servers", "--stdin"], input=""
+        app, ["groups", "hosts", "add", "--yes", "web-servers", "--stdin"], input=""
     )
-    assert result.exit_code != 0
-    assert "no identifiers received on stdin" in (result.output + (result.stderr or ""))
+    assert result.exit_code == 0
+    assert "No matching" in (result.output + (result.stderr or ""))
 
 
 def test_groups_hosts_remove_disassociates_listed_members(fake_aap: Any) -> None:
@@ -541,23 +543,24 @@ def test_groups_hosts_remove_disassociates_listed_members(fake_aap: Any) -> None
     _seed_groups(fake_aap)
     _seed_two_hosts(fake_aap)
     fake_aap.memberships[("groups", 200, "hosts")] = {101, 102}
-    result = CliInvoker().invoke(app, ["groups", "hosts", "remove", "web-servers", "web-01"])
+    result = CliInvoker().invoke(
+        app, ["groups", "hosts", "remove", "--yes", "web-servers", "web-01"]
+    )
     assert result.exit_code == 0, result.output
     assert fake_aap.memberships[("groups", 200, "hosts")] == {102}
 
 
-def test_groups_hosts_add_continues_on_missing_name(fake_aap: Any) -> None:
-    """A missing member name surfaces per-id on stderr and exits 1, but
-    the names that resolved still get associated."""
+def test_groups_hosts_add_rejects_batch_with_missing_name(fake_aap: Any) -> None:
+    """All member identifiers must resolve before association begins."""
     _seed_groups(fake_aap)
     _seed_two_hosts(fake_aap)
     result = CliInvoker().invoke(
         app,
-        ["groups", "hosts", "add", "web-servers", "--stdin"],
+        ["groups", "hosts", "add", "--yes", "web-servers", "--stdin"],
         input="web-01\nghost\n",
     )
     assert result.exit_code != 0
-    assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
+    assert fake_aap.memberships[("groups", 200, "hosts")] == set()
     assert "ghost" in (result.output + (result.stderr or ""))
 
 
@@ -601,7 +604,7 @@ def test_groups_hosts_add_disambiguates_parent_with_inventory_flag(fake_aap: Any
     )
     result = CliInvoker().invoke(
         app,
-        ["groups", "hosts", "add", "web-servers", "web-01", "--inventory", "staging"],
+        ["groups", "hosts", "add", "--yes", "web-servers", "web-01", "--inventory", "staging"],
     )
     assert result.exit_code == 0, result.output
     # The staging group (id=300) got the association — not the prod one (200).
@@ -615,7 +618,7 @@ def test_groups_hosts_add_by_id_resolves_parent_and_members_as_ids(fake_aap: Any
     _seed_two_hosts(fake_aap)
     result = CliInvoker().invoke(
         app,
-        ["groups", "hosts", "add", "200", "--stdin", "--by-id"],
+        ["groups", "hosts", "add", "--yes", "200", "--stdin", "--by-id"],
         input="101\n102\n",
     )
     assert result.exit_code == 0, result.output
@@ -629,7 +632,7 @@ def test_groups_children_add_associates(fake_aap: Any) -> None:
     _seed_groups(fake_aap)  # seeds web-servers (200) and api-servers (201)
     result = CliInvoker().invoke(
         app,
-        ["groups", "children", "add", "web-servers", "api-servers"],
+        ["groups", "children", "add", "--yes", "web-servers", "api-servers"],
     )
     assert result.exit_code == 0, result.output
     assert fake_aap.memberships[("groups", 200, "children")] == {201}

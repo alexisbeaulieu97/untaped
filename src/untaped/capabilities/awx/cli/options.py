@@ -36,44 +36,10 @@ OrganizationOption = Annotated[
     Parameter(name=["--organization", "--org"], help="Scope to organization."),
 ]
 
-OrganizationLookupOption = Annotated[
-    str | None,
-    Parameter(
-        name=["--organization", "--org"],
-        help="Scope name lookup to organization.",
-    ),
-]
-
-OrganizationStdinLookupOption = Annotated[
-    str | None,
-    Parameter(
-        name=["--organization", "--org"],
-        help="Scope --stdin name lookups to an organization.",
-    ),
-]
-
 InventoryOption = Annotated[
     str | None,
-    Parameter(name="--inventory", help="Scope to inventory (Host/Group only)."),
-]
-
-InventoryLookupOption = Annotated[
-    str | None,
     Parameter(
-        name="--inventory",
-        help=(
-            "Scope name lookup to inventory (Host/Group only). Without this, "
-            "name lookup is global and ambiguous if the same name exists "
-            "across inventories."
-        ),
-    ),
-]
-
-InventoryStdinLookupOption = Annotated[
-    str | None,
-    Parameter(
-        name="--inventory",
-        help="Scope --stdin name lookups to an inventory (Host/Group only).",
+        name="--inventory", help="Scope Host, Group, or InventorySource selection to an inventory."
     ),
 ]
 
@@ -81,19 +47,66 @@ InventoryOrganizationOption = Annotated[
     str | None,
     Parameter(
         name=["--inventory-organization", "--inventory-org"],
-        help="Disambiguate same-named inventories across orgs (Host/Group only).",
+        help="Scope Host, Group, or InventorySource selection by inventory organization.",
+    ),
+]
+
+
+# Shared controls deliberately use the same names on every configuration command.
+SearchOption = Annotated[str | None, Parameter(name="--search", help="Server-side search.")]
+FilterOption = Annotated[
+    list[str] | None,
+    Parameter(
+        name="--filter", consume_multiple=False, help="Server filter KEY=VALUE (repeatable)."
+    ),
+]
+StdinOption = Annotated[
+    bool,
+    Parameter(name="--stdin", negative="", help="Read names, IDs, or typed records from stdin."),
+]
+AllOption = Annotated[
+    bool, Parameter(name="--all", negative="", help="Explicitly select every resource in scope.")
+]
+ParentOption = Annotated[
+    str | None, Parameter(name="--parent", help="Scope to the parent resource name.")
+]
+YesOption = Annotated[bool, Parameter(name=["--yes", "-y"], negative="", help="Skip confirmation.")]
+DryRunOption = Annotated[
+    bool, Parameter(name="--dry-run", negative="", help="Preview without writing.")
+]
+ContinueOption = Annotated[
+    bool,
+    Parameter(
+        name="--continue-on-error", negative="", help="Continue scheduling after a runtime failure."
+    ),
+]
+ParallelOption = Annotated[
+    int, Parameter(name=["--parallel", "-j"], help="Concurrent writes (default 1, capped at 10).")
+]
+UnverifiedOption = Annotated[
+    bool,
+    Parameter(
+        name="--allow-unverified",
+        negative="",
+        help="Allow unverified configuration writes; requires --yes.",
     ),
 ]
 
 
 __all__ = [
+    "AllOption",
     "ByIdOption",
-    "InventoryLookupOption",
+    "ContinueOption",
+    "DryRunOption",
+    "FilterOption",
     "InventoryOption",
     "InventoryOrganizationOption",
-    "InventoryStdinLookupOption",
-    "OrganizationLookupOption",
     "OrganizationOption",
-    "OrganizationStdinLookupOption",
+    "ParallelOption",
+    "ParentOption",
+    "SearchOption",
+    "StdinOption",
+    "UnverifiedOption",
+    "YesOption",
     "resolve_max_depth",
 ]

@@ -162,6 +162,11 @@ untaped config set log_level DEBUG
 untaped config edit
 ```
 
+The configuration editor uses `VISUAL`, falling back to `EDITOR`, and waits for
+it to exit before validating the saved configuration. Arguments are parsed
+without a shell; quote executable paths containing spaces and include your GUI
+editor's wait option (for example, `EDITOR="code --wait"`).
+
 `--format raw --columns key --columns value` is useful when a script needs a
 stable two-column view. `config get` defaults to raw output and returns only the
 selected value. Structured output includes the key, value, source, profile, and

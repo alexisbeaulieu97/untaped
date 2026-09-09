@@ -165,7 +165,7 @@ no control flow in recipes, and no state or inventory.
   anchors for structural reuse in recipes.
 - A hook module exports `transform()`, `validate()`, or both — the exported
   name is the contract; manifest rows declare only `module`. Keep
-  `untaped>=5.0.0,<6` as a dev-only dependency; runtime hook dependencies go
+  `untaped>=6.0.0,<7` as a dev-only dependency; runtime hook dependencies go
   in `[project].dependencies`.
   Hooks must stay pure at planning time: read only the target tree and their
   own pack, never write or reach the network.
