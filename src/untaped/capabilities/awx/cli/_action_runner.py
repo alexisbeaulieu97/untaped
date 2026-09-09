@@ -15,6 +15,7 @@ from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
+from untaped.capabilities.awx.errors import ActionResponseError
 
 
 def run_action_selection(
@@ -34,7 +35,8 @@ def run_action_selection(
 ) -> None:
     """One bounded POST phase, then monitor every known execution even after failures."""
     spec, targets = prepare_action_targets(ctx.repo, ctx.catalog, spec, selected, action=action)
-    result_kind = next(a.returns for a in spec.actions if a.name == action)
+    result_kinds = next(a.returns for a in spec.actions if a.name == action)
+    result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
     rows: list[dict[str, Any]] = [
         {
             "id": None,
@@ -67,6 +69,8 @@ def run_action_selection(
     for index, outcome in enumerate(outcomes):
         row = rows[index]
         row.update(action=outcome.action, detail=outcome.detail)
+        if isinstance(outcome.error, ActionResponseError):
+            row.update(id=outcome.error.execution_id, kind=outcome.error.execution_kind)
         if outcome.result is not None:
             row.update(outcome.result.model_dump())
             label = labels[index]

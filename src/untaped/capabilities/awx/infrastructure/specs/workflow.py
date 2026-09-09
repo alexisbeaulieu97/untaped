@@ -61,7 +61,7 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         ActionSpec(
             name="launch",
             path="launch",
-            returns="workflow_job",
+            returns=frozenset({"workflow_job"}),
             accepts=frozenset(
                 {
                     "extra_vars",

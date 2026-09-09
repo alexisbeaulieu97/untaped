@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from untaped.capabilities.awx.application.selection import SelectedResource
@@ -14,6 +14,8 @@ class SelectedActionOutcome[T]:
     action: Literal["completed", "failed", "skipped"]
     result: T | None = None
     detail: str | None = None
+    error: Exception | None = field(default=None, repr=False)
+    """Typed evidence for the caller; never render the unsanitized exception."""
 
 
 def run_selected_actions[T](
@@ -47,7 +49,7 @@ def run_selected_actions[T](
                     outcomes[index] = SelectedActionOutcome(target, "completed", future.result())
                 except Exception as exc:
                     outcomes[index] = SelectedActionOutcome(
-                        target, "failed", detail=error_detail(exc, target)
+                        target, "failed", detail=error_detail(exc, target), error=exc
                     )
                     if not continue_on_error:
                         stopped = True

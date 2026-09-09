@@ -95,7 +95,10 @@ class ActionSpec(BaseModel):
     """Direct action endpoint; None requires fixed-target expansion first."""
 
     method: Literal["POST", "PATCH"] = "POST"
-    returns: Literal["job", "workflow_job", "project_update", "inventory_update", "none"] = "none"
+    returns: frozenset[Literal["job", "workflow_job", "project_update", "inventory_update"]] = (
+        frozenset()
+    )
+    """Allowed execution kinds. Only singleton sets can default an omitted response type."""
     accepts: frozenset[str] = frozenset()
     """Optional payload fields the CLI factory exposes as flags."""
 

@@ -340,6 +340,10 @@ class JobMonitor(Protocol):
         """Re-fetch ``job``'s record so callers can see status transitions."""
         ...
 
+    def stream_status(self, job: Job) -> Iterable[Job]:
+        """Yield the initial status and changes until terminal via the detail endpoint."""
+        ...
+
     def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
         """One-shot: return stdout lines starting at ``start_line``.
 

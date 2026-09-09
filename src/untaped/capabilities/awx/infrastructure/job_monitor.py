@@ -1,22 +1,8 @@
-"""Concrete :class:`JobMonitor` that polls AWX for status, stdout, and events.
+"""Poll kind-specific Controller status, stdout and event endpoints.
 
-AWX v2's REST surface is request/response — no SSE, no websocket — so
-"live tail" is implemented as a 2-second polling loop against three
-endpoints, kept in lock-step with the job's terminal status:
-
-- ``GET /<api_path>/<id>/`` — drives terminal detection (same as
-  :class:`untaped.capabilities.awx.application.WatchJob`).
-- ``GET /<api_path>/<id>/stdout/?format=txt&start_line=N`` — text-only
-  log tail. We track the last line index ourselves; AWX honours
-  ``start_line`` as an *exclusive* offset.
-- ``GET /<api_path>/<id>/job_events/?counter__gt=N&order_by=counter`` —
-  paginated structured-event stream. ``counter`` is monotonic per job
-  so we tail by ``counter__gt``.
-
-Bare ``api_path`` strings (``jobs``, ``workflow_jobs``, …) come from
-:data:`untaped.capabilities.awx.domain.job.KIND_TO_API_PATH` so the same monitor
-handles every execution kind without crossing layer boundaries — the
-map is a domain fact about AWX execution records.
+Ordinary jobs expose job_events; project/inventory updates and ad-hoc commands
+expose events. Workflow jobs expose status only: they have neither events nor
+stdout, so tracking uses stream_status without inventing child routes.
 """
 
 from __future__ import annotations
@@ -28,7 +14,8 @@ from urllib.parse import parse_qs, urlparse
 
 from untaped.api import paginate_pages
 from untaped.capabilities.awx.domain import Job, JobEvent
-from untaped.capabilities.awx.domain.job import KIND_TO_API_PATH
+from untaped.capabilities.awx.domain.job import JOB_ROUTES
+from untaped.capabilities.awx.errors import AwxApiError
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import RawHttpResourceClient
@@ -57,8 +44,21 @@ class PollingJobMonitor:
         record = self._client.request("GET", f"{api_path}/{job.id}/")
         return Job.model_validate({**record, "kind": job.kind})
 
+    def stream_status(self, job: Job) -> Iterator[Job]:
+        """Emit initial status and changes until terminal using only the detail route."""
+        current = job
+        yield current
+        while not current.is_terminal:
+            self._sleep(self._interval)
+            refreshed = self.fetch(current)
+            if refreshed.status != current.status:
+                yield refreshed
+            current = refreshed
+
     def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
         api_path = _api_path_for(job)
+        if not JOB_ROUTES[job.kind].stdout:
+            raise AwxApiError(f"{job.kind} does not expose stdout; use jobs get/wait for status")
         text = self._client.request_text(
             "GET",
             f"{api_path}/{job.id}/stdout/",
@@ -90,12 +90,15 @@ class PollingJobMonitor:
         follow: bool = True,
     ) -> Iterator[JobEvent]:
         api_path = _api_path_for(job)
+        events_path = JOB_ROUTES[job.kind].events
+        if events_path is None:
+            raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
         last = from_counter
         current = job
         while True:
             for record in _follow_pages(
                 self._client,
-                f"{api_path}/{current.id}/job_events/",
+                f"{api_path}/{current.id}/{events_path}/",
                 {**(params or {}), "counter__gt": str(last), "order_by": "counter"},
             ):
                 ev = JobEvent.model_validate(record)
@@ -109,7 +112,10 @@ class PollingJobMonitor:
 
 
 def _api_path_for(job: Job) -> str:
-    return KIND_TO_API_PATH.get(job.kind, job.kind)
+    routes = JOB_ROUTES.get(job.kind)
+    if routes is None:
+        raise AwxApiError(f"unsupported execution kind: {job.kind}")
+    return routes.collection
 
 
 def _follow_pages(

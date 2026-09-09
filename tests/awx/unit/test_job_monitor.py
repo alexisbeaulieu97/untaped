@@ -168,3 +168,31 @@ def test_stream_events_forwards_filter_params() -> None:
     assert params["event"] == "runner_on_failed"
     assert params["host"] == "web-01"
     assert params["counter__gt"] == "0"
+
+
+def test_status_stream_emits_only_changes_and_stops_at_terminal() -> None:
+    client = _FakeClient(
+        json_responses=[
+            _terminal_record(status="pending"),
+            _terminal_record(status="running"),
+            _terminal_record(status="running"),
+            _terminal_record(status="successful"),
+        ]
+    )
+    sleeps: list[float] = []
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client), sleep=sleeps.append)
+    states = list(monitor.stream_status(Job(id=7, kind="workflow_job", status="pending")))
+    assert [state.status for state in states] == ["pending", "running", "successful"]
+    assert sleeps == [2.0] * 4
+    assert [path for _, path, _ in client.json_calls] == ["workflow_jobs/7/"] * 4
+    assert client.text_calls == []
+
+
+def test_ad_hoc_events_use_supported_events_subpath() -> None:
+    client = _FakeClient(
+        json_responses=[{"results": [{"counter": 1, "event": "runner_on_ok"}], "next": None}]
+    )
+    monitor = PollingJobMonitor(cast(RawHttpResourceClient, client))
+    events = list(monitor.stream_events(Job(id=7, kind="ad_hoc_command", status="successful")))
+    assert [event.counter for event in events] == [1]
+    assert client.json_calls[0][1] == "ad_hoc_commands/7/events/"
