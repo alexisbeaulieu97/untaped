@@ -12,7 +12,7 @@ Browse-only by design:
   would silently pick the wrong row. For name lookup, drop into the
   per-kind sub-app (``job-templates get deploy``, etc.).
 - Launching stays on the per-kind sub-apps (``job-templates launch``,
-  ``projects update``, …); polymorphic launch dispatch isn't worth the
+  ``projects sync``, …); polymorphic launch dispatch isn't worth the
   complexity when the per-kind path is already complete.
 
 Implementation follows the ``jobs_app`` precedent in

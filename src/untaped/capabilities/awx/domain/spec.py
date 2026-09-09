@@ -20,7 +20,17 @@ from pydantic import BaseModel, ConfigDict, model_validator
 Fidelity = Literal["full", "partial", "read_only"]
 """Restore-fidelity tier per kind, surfaced on save."""
 
-CommandName = Literal["list", "get", "save", "apply", "launch", "update", "delete"]
+CommandName = Literal[
+    "list",
+    "get",
+    "save",
+    "apply",
+    "patch",
+    "edit",
+    "launch",
+    "sync",
+    "delete",
+]
 """Commands the CLI factory may wire for a kind."""
 
 
@@ -47,6 +57,14 @@ class FkRef(BaseModel):
     sub_endpoint: str | None = None
     """Multi-FK exposed via a separate sub-endpoint (e.g. ``credentials/``)."""
 
+    ordered: bool = False
+    """Whether this sub-endpoint relationship is order-sensitive.
+
+    Most AWX relationships are sets.  Ordered many-to-many fields retain the
+    server's returned order and therefore need exact sequence comparison and
+    an explicit reordering operation during reconciliation.
+    """
+
     polymorphic: bool = False
     kind_in_value: str | None = None
     """For polymorphic FKs, the key inside the value that holds the kind."""
@@ -68,14 +86,19 @@ class FkRef(BaseModel):
 
 
 class ActionSpec(BaseModel):
-    """A custom POST/PATCH action a kind exposes (e.g. ``launch``, ``update``)."""
+    """A custom POST/PATCH action a kind exposes (e.g. ``launch``, ``sync``)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str
-    path: str
+    path: str | None
+    """Direct action endpoint; None requires fixed-target expansion first."""
+
     method: Literal["POST", "PATCH"] = "POST"
-    returns: Literal["job", "none"] = "none"
+    returns: frozenset[Literal["job", "workflow_job", "project_update", "inventory_update"]] = (
+        frozenset()
+    )
+    """Allowed execution kinds. Only singleton sets can default an omitted response type."""
     accepts: frozenset[str] = frozenset()
     """Optional payload fields the CLI factory exposes as flags."""
 
@@ -107,7 +130,20 @@ class ResourceSpec(BaseModel):
     ``instance_groups``). Used by the test runner's name resolver.
     """
     secret_paths: tuple[str, ...] = ()
+    structured_text_fields: tuple[str, ...] = ()
+    """Explicit YAML/JSON mapping fields encoded as text at the HTTP boundary."""
+    server_enriched_fields: tuple[str, ...] = ()
+    """Top-level fields AWX may enrich while accepting a user replacement.
+
+    These are narrow, explicit exceptions to the exact replacement contract;
+    an omitted field or extra server key remains a verification failure for
+    every other user-owned map and sequence.
+    """
     actions: tuple[ActionSpec, ...] = ()
+    singleton_parent: bool = False
+    """Prepared resource has one managed target per parent, regardless of its name."""
+    parent_field_aliases: tuple[str, ...] = ()
+    """Fields sharing physical storage with the same fields on this resource's parent."""
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.
     The string is opaque to the domain — :class:`StrategyResolver` (an

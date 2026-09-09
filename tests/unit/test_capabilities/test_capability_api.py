@@ -27,6 +27,7 @@ from untaped.cli import (
     raise_usage,
     report_errors,
 )
+from untaped.editor import run_editor
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.settings import get_config_section
 from untaped.state import StateCollection
@@ -45,6 +46,7 @@ EXPECTED_ALL = [
     "ColumnsOption",
     "ConfigError",
     "FormatOption",
+    "PipeEnvelope",
     "StateCollection",
     "UiContext",
     "UntapedError",
@@ -55,13 +57,15 @@ EXPECTED_ALL = [
     "finish",
     "first_validation_error",
     "get_config_section",
+    "parse_envelope_line",
     "raise_usage",
     "read_identifiers",
     "report_errors",
+    "run_editor",
 ]
 
 
-def test_all_contains_exactly_eight_plus_sixteen() -> None:
+def test_all_contains_exact_surface() -> None:
     assert capi.__all__ == EXPECTED_ALL
 
 
@@ -93,6 +97,7 @@ def test_helpers_resolve_to_canonical_sources() -> None:
     assert capi.finish is finish
     assert capi.get_config_section is get_config_section
     assert capi.read_identifiers is read_identifiers
+    assert capi.run_editor is run_editor
 
 
 def test_helpers_match_sdk_modules() -> None:
@@ -148,3 +153,10 @@ def test_sdk_api_does_not_expose_capability_composition_types() -> None:
 @pytest.mark.parametrize("name", EXPECTED_ALL)
 def test_all_entries_importable_from_module(name: str) -> None:
     assert name in dir(capi)
+
+
+def test_pipe_helpers_are_canonical_exports() -> None:
+    from untaped.pipe import PipeEnvelope, parse_envelope_line
+
+    assert capi.PipeEnvelope is PipeEnvelope
+    assert capi.parse_envelope_line is parse_envelope_line

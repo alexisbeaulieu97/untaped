@@ -8,17 +8,35 @@ use case is the destructive half so the CLI can preview targets
 from __future__ import annotations
 
 from untaped.capabilities.awx.application.ports import ResourceClient
+from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
+from untaped.capabilities.awx.errors import BadRequest
 
 
 class DeleteResource:
     def __init__(self, client: ResourceClient) -> None:
         self._client = client
 
-    def __call__(self, spec: ResourceSpec, record_id: int) -> None:
+    def __call__(self, spec: ResourceSpec, record_id: int) -> DeleteReceipt:
         """Issue the DELETE for ``record_id``.
 
         Typed errors (e.g. :class:`Conflict` on AWX 409 "in use") propagate
         for the caller to render per-id on stderr.
         """
-        self._client.delete(spec, record_id)
+        if spec.kind == "InventorySource":
+            self.validate(spec, record_id)
+        return DeleteReceipt.model_validate(self._client.delete(spec, record_id))
+
+    def validate(self, spec: ResourceSpec, record_id: int) -> None:
+        """Prove existence and the lifecycle deletion policy without writing."""
+        record = self._client.get(spec, record_id)
+        if spec.kind == "InventorySource" and record.get("source") == "constructed":
+            raise BadRequest("generated constructed sources cannot be deleted independently")
+
+    def validate_selection(
+        self, spec: ResourceSpec, selected: tuple[SelectedResource, ...]
+    ) -> None:
+        """Preflight every target before any independently scheduled delete."""
+        for target in selected:
+            self.validate(spec, target.id)

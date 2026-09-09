@@ -10,9 +10,15 @@ def outcome_rows(outcomes: list[ApplyOutcome]) -> list[dict[str, Any]]:
     """Tabular summary rows for ``--format table`` / ``--format raw``."""
     rows: list[dict[str, Any]] = []
     for o in outcomes:
+        data = o.model_dump(mode="json")
         rows.append(
             {
+                "id": o.id,
                 "kind": o.kind,
+                "scope": data["scope"],
+                "identity": data["identity"],
+                "partial": o.partial,
+                "unverified": o.unverified,
                 "name": o.name,
                 "action": o.action,
                 "fields_changed": ",".join(_changed_fields(o.changes)),

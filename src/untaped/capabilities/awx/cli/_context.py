@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING
 
-from untaped.api import AppContext, app_context, echo
+from untaped.api import AppContext, ConfigError, app_context, echo
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig, AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
@@ -95,6 +95,7 @@ def scope_for_command(
     *,
     inventory: str | None = None,
     inventory_organization: str | None = None,
+    parent: str | None = None,
 ) -> dict[str, str] | None:
     """Builder-side wrapper around :func:`scope_for_spec`.
 
@@ -110,6 +111,7 @@ def scope_for_command(
         ctx.default_organization,
         inventory=inventory,
         inventory_organization=inventory_organization,
+        parent=parent,
     )
 
 
@@ -120,29 +122,30 @@ def scope_for_spec(
     *,
     inventory: str | None = None,
     inventory_organization: str | None = None,
+    parent: str | None = None,
 ) -> dict[str, str] | None:
-    """Build the FK lookup scope for ``get`` / ``save``.
-
-    - Org-scoping only applies to specs whose identity includes
-      ``organization``. Global resources (Organization, CredentialType)
-      and parent-scoped ones (Schedule) must not pick up
-      ``awx.default_organization`` as a filter — AWX would interpret
-      ``organization__name=...`` against records that have no such column
-      and silently return zero results.
-    - Inventory-child specs (Host, Group; ``apply_strategy="inventory_child"``)
-      take an explicit ``--inventory`` flag instead. ``--inventory-organization``
-      adds ``?inventory__organization__name=…`` so a same-named inventory
-      across orgs is disambiguated. Without ``--inventory``, the lookup is
-      global by name (the legacy behaviour); first match wins.
-    """
-    if getattr(spec, "apply_strategy", None) == "inventory_child":
-        if inventory is None:
-            return None
-        scope: dict[str, str] = {"inventory": inventory}
+    """Validate applicable scopes and constrain every selection mode."""
+    child = spec.apply_strategy == "inventory_child"
+    if inventory is not None and not child:
+        raise ConfigError(f"--inventory is not supported for {spec.kind}")
+    if inventory_organization is not None and not child:
+        raise ConfigError(f"--inventory-organization is not supported for {spec.kind}")
+    if organization is not None and "organization" not in spec.identity_keys:
+        raise ConfigError(f"--organization is not supported for {spec.kind}")
+    if parent is not None and spec.apply_strategy not in {"inventory_child", "schedule"}:
+        raise ConfigError(f"--parent is not supported for {spec.kind}")
+    if parent is not None and inventory is not None:
+        raise ConfigError("use --parent or --inventory, not both")
+    scope: dict[str, str] = {}
+    if child:
+        if inventory or parent:
+            scope["inventory"] = inventory or parent or ""
         if inventory_organization:
             scope["inventory__organization"] = inventory_organization
-        return scope
-    if "organization" not in spec.identity_keys:
-        return None
-    org = organization or default_organization
-    return {"organization": org} if org else None
+    elif parent:
+        scope["parent"] = parent
+    if "organization" in spec.identity_keys:
+        org = organization or default_organization
+        if org:
+            scope["organization"] = org
+    return scope or None

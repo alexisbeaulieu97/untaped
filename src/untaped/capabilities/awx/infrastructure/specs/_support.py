@@ -49,37 +49,6 @@ ORGANIZATION_SPEC = AwxResourceSpec(
 )
 
 
-INVENTORY_SPEC = AwxResourceSpec(
-    kind="Inventory",
-    cli_name="inventories",
-    api_path="inventories",
-    identity_keys=("name", "organization"),
-    canonical_fields=("description", "kind", "host_filter", "variables"),
-    read_only_fields=(
-        "id",
-        "created",
-        "modified",
-        "summary_fields",
-        "related",
-        "type",
-        "url",
-        "total_hosts",
-        "hosts_with_active_failures",
-        "total_groups",
-        "has_active_failures",
-        "has_inventory_sources",
-        "total_inventory_sources",
-        "inventory_sources_with_failures",
-        "pending_deletion",
-    ),
-    fk_refs=(FkRef(field="organization", kind="Organization"),),
-    list_columns=("id", "name", "organization", "total_hosts"),
-    commands=("list", "get"),
-    fidelity="read_only",
-    fidelity_note="inventory CRUD is out of v0 scope",
-)
-
-
 CREDENTIAL_TYPE_SPEC = AwxResourceSpec(
     kind="CredentialType",
     cli_name="credential-types",

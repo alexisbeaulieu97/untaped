@@ -31,7 +31,7 @@ def hook_api_requirements(
     """
     hook_api = Version(hook_api_version)
     project_requirement = f">={hook_api.major}.{hook_api.minor},<{hook_api.major + 1}"
-    return project_requirement, "untaped>=5.0.0,<6"
+    return project_requirement, "untaped>=6.0.0,<7"
 
 
 _HOOK_API_PROJECT_REQUIREMENT, _HOOK_API_DEV_REQUIREMENT = hook_api_requirements()

@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.application.save_resource import SaveResource
-from untaped.capabilities.awx.domain import Metadata, ResourceSpec, SaveOutcome
+from untaped.capabilities.awx.domain import IdentityRef, Metadata, ResourceSpec, SaveOutcome
 from untaped.capabilities.awx.errors import AwxApiError
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
@@ -122,7 +122,12 @@ def _organization_filter_for_spec(spec: ResourceSpec, organization: str) -> dict
 def _metadata_matches_org(metadata: Metadata, organization: str) -> bool:
     if metadata.organization == organization:
         return True
-    return metadata.parent is not None and metadata.parent.organization == organization
+    parent = metadata.parent
+    while parent is not None:
+        if parent.organization == organization:
+            return True
+        parent = parent.parent
+    return False
 
 
 def _safe_filename_segment(name: str) -> str:
@@ -137,10 +142,13 @@ def resource_filename(kind: str, metadata: Metadata) -> str:
     """Encode the identity tuple in the filename so same-named records do not collide."""
     parts: list[str] = [kind]
     if metadata.parent is not None:
-        parts.append(metadata.parent.kind)
-        if metadata.parent.organization:
-            parts.append(metadata.parent.organization)
-        parts.append(metadata.parent.name)
+        parent: IdentityRef | None = metadata.parent
+        while parent is not None:
+            parts.append(parent.kind)
+            if parent.organization:
+                parts.append(parent.organization)
+            parts.append(parent.name)
+            parent = parent.parent
     elif metadata.organization is not None:
         parts.append(metadata.organization)
     parts.append(metadata.name)

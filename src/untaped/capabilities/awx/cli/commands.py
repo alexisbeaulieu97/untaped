@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 from rich.console import Console
 
 from untaped.api import (
@@ -40,13 +40,20 @@ from untaped.capabilities.awx.application import (
     TailJobLogs,
     WatchJob,
 )
-from untaped.capabilities.awx.application.apply_file import APPLY_PARALLEL_CAP
 from untaped.capabilities.awx.cli._apply_runner import run_apply
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._event_render import render_event_text
 from untaped.capabilities.awx.cli._factory import make_resource_app
+from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._save_runner import run_save_batch
-from untaped.capabilities.awx.cli.options import OrganizationOption
+from untaped.capabilities.awx.cli.options import (
+    ContinueOption,
+    DryRunOption,
+    OrganizationOption,
+    ParallelOption,
+    UnverifiedOption,
+    YesOption,
+)
 from untaped.capabilities.awx.cli.test_commands import app as test_app
 from untaped.capabilities.awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped.capabilities.awx.cli.usage_commands import register_usage_command
@@ -86,60 +93,31 @@ def apply_command(
     file: Annotated[Path, Parameter(help="YAML file or directory.")],
     /,
     *,
-    yes: Annotated[
-        bool,
-        Parameter(
-            name=["--yes", "-y"],
-            negative="",
-            help="Actually write (default is preview only).",
-        ),
-    ] = False,
-    allow_unverified: Annotated[
-        bool,
-        Parameter(
-            name="--allow-unverified",
-            negative="",
-            help=(
-                "Do not fail when a 2xx write response/GET cannot prove requested fields converged."
-            ),
-        ),
-    ] = False,
-    fail_fast: Annotated[
-        bool,
-        Parameter(name="--fail-fast", negative="", help="Abort on first error."),
-    ] = False,
-    parallel: Annotated[
-        int,
-        Parameter(
-            name=["--parallel", "-j"],
-            validator=validators.Number(gte=1),
-            help=(
-                "Concurrent doc writes within a kind. Cross-kind ordering is "
-                "preserved; phase 2 (membership reconciliation) stays serial. "
-                f"Capped at {APPLY_PARALLEL_CAP} (matches the HTTP connection pool default)."
-            ),
-        ),
-    ] = 1,
-    fmt: Annotated[
-        OutputFormat,
-        Parameter(name="--format", help="Result-table format."),
-    ] = "table",
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    continue_on_error: ContinueOption = False,
+    parallel: ParallelOption = 1,
+    allow_unverified: UnverifiedOption = False,
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Apply YAML docs in dependency order. Default = preview; ``--yes`` writes."""
-    if allow_unverified and not yes:
-        raise_usage("--allow-unverified requires --yes")
-    with report_errors(), open_context() as ctx:
-        run_apply(
-            ctx,
-            file,
-            write=yes,
-            allow_unverified=allow_unverified,
-            fail_fast=fail_fast,
-            fmt=fmt,
-            columns=columns,
-            parallel=parallel,
+    """Create/update YAML documents in dependency order, with one confirmation."""
+    with report_errors():
+        parallel = validate_controls(
+            yes=yes, dry_run=dry_run, allow_unverified=allow_unverified, parallel=parallel
         )
+        with open_context() as ctx:
+            run_apply(
+                ctx,
+                file,
+                yes=yes,
+                dry_run=dry_run,
+                continue_on_error=continue_on_error,
+                parallel=parallel,
+                allow_unverified=allow_unverified,
+                fmt=fmt,
+                columns=columns,
+            )
 
 
 # ---- top-level save ----
@@ -587,7 +565,7 @@ def jobs_wait(
 ) -> None:
     """Block until each named job reaches a terminal state.
 
-    Exits non-zero when any job times out or any id fails to resolve —
+    Exits non-zero on unsuccessful terminal states, timeout, or resolution failure —
     same contract as ``awx test``. Multiple ids drain serially; the
     ``--timeout`` budget applies per id.
     """
@@ -612,7 +590,7 @@ def jobs_wait(
         emit(records, fmt=fmt, columns=columns, kind="awx.job")
     for job_id in timed_out:
         echo(f"timeout: job {job_id} did not reach terminal state", err=True)
-    finish(any_failed or bool(timed_out))
+    finish(any_failed or bool(timed_out) or any(r["status"] != "successful" for r in records))
 
 
 app.command(jobs_app, name="jobs")

@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from untaped.capabilities.awx.application.apply_membership import MembershipReconciler
+from untaped.capabilities.awx.application.apply_membership import (
+    MembershipPlan,
+    MembershipReconciler,
+)
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import FkRef, ResourceSpec
 
@@ -33,11 +36,31 @@ class ManageMembership:
     ) -> None:
         if not member_ids:
             return
-        self._reconciler.post_members(
+        plan = self.prepare(
+            spec, parent_id=parent_id, ref=ref, member_ids=member_ids, action=action
+        )
+        self.execute(spec, parent_id=parent_id, plan=plan)
+
+    def prepare(
+        self,
+        spec: ResourceSpec,
+        *,
+        parent_id: int,
+        ref: FkRef,
+        member_ids: list[int],
+        action: Literal["associate", "disassociate"],
+    ) -> MembershipPlan:
+        """Capture additive deltas before preview without writing."""
+        return self._reconciler.plan_additive(
             spec,
-            parent_id=parent_id,
-            ref=ref,
-            member_ids=member_ids,
+            parent_id,
+            ref,
+            member_ids,
             disassociate=action == "disassociate",
             client=self._client,
         )
+
+    def execute(self, spec: ResourceSpec, *, parent_id: int, plan: MembershipPlan) -> None:
+        """Execute the prepared deltas and verify requested presence/absence."""
+        self._reconciler.execute(spec, parent_id, [plan], client=self._client)
+        self._reconciler.verify(spec, parent_id, [plan], client=self._client)

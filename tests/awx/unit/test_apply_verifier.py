@@ -41,15 +41,12 @@ def test_verifier_accepts_reflected_structures_and_secret_paths() -> None:
         },
     }
 
-    assert (
-        verifier.unreflected_fields(
-            JOB_TEMPLATE_SPEC,
-            desired,
-            observed,
-            fields=("name", "numbers", "extra_vars", "survey_spec"),
-        )
-        == ()
-    )
+    assert verifier.unreflected_fields(
+        JOB_TEMPLATE_SPEC,
+        desired,
+        observed,
+        fields=("name", "numbers", "extra_vars", "survey_spec"),
+    ) == ("numbers", "extra_vars")
 
 
 def test_verifier_reports_only_fields_not_reflected() -> None:
@@ -89,29 +86,23 @@ def test_verifier_reports_only_fields_not_reflected() -> None:
 def test_verifier_parses_desired_structured_string() -> None:
     verifier = ApplyVerifier()
 
-    assert (
-        verifier.unreflected_fields(
-            JOB_TEMPLATE_SPEC,
-            {"extra_vars": "wanted: true\n"},
-            {"extra_vars": '{"wanted": true, "server_added": "ok"}'},
-            fields=("extra_vars",),
-        )
-        == ()
-    )
+    assert verifier.unreflected_fields(
+        JOB_TEMPLATE_SPEC,
+        {"extra_vars": "wanted: true\n"},
+        {"extra_vars": '{"wanted": true, "server_added": "ok"}'},
+        fields=("extra_vars",),
+    ) == ("extra_vars",)
 
 
 def test_verifier_parses_yaml_strings_on_both_sides() -> None:
     verifier = ApplyVerifier()
 
-    assert (
-        verifier.unreflected_fields(
-            JOB_TEMPLATE_SPEC,
-            {"extra_vars": "nested:\n  enabled: true\n"},
-            {"extra_vars": "nested:\n  enabled: true\n  server_added: ok\n"},
-            fields=("extra_vars",),
-        )
-        == ()
-    )
+    assert verifier.unreflected_fields(
+        JOB_TEMPLATE_SPEC,
+        {"extra_vars": "nested:\n  enabled: true\n"},
+        {"extra_vars": "nested:\n  enabled: true\n  server_added: ok\n"},
+        fields=("extra_vars",),
+    ) == ("extra_vars",)
 
 
 def test_verifier_keeps_scalar_comparison_strict() -> None:
@@ -125,18 +116,15 @@ def test_verifier_keeps_scalar_comparison_strict() -> None:
     ) == ("enabled", "choice")
 
 
-def test_verifier_treats_lists_as_exact_order_insensitive_replacements() -> None:
+def test_verifier_treats_lists_as_exact_ordered_replacements() -> None:
     verifier = ApplyVerifier()
 
-    assert (
-        verifier.unreflected_fields(
-            JOB_TEMPLATE_SPEC,
-            {"values": [{"name": "b"}, {"name": "a"}], "empty": []},
-            {"values": [{"name": "a"}, {"name": "b"}], "empty": []},
-            fields=("values", "empty"),
-        )
-        == ()
-    )
+    assert verifier.unreflected_fields(
+        JOB_TEMPLATE_SPEC,
+        {"values": [{"name": "b"}, {"name": "a"}], "empty": []},
+        {"values": [{"name": "a"}, {"name": "b"}], "empty": []},
+        fields=("values", "empty"),
+    ) == ("values",)
     assert verifier.unreflected_fields(
         JOB_TEMPLATE_SPEC,
         {"values": [{"name": "a"}], "empty": []},
@@ -145,18 +133,15 @@ def test_verifier_treats_lists_as_exact_order_insensitive_replacements() -> None
     ) == ("values", "empty")
 
 
-def test_verifier_treats_dict_desired_as_subset() -> None:
+def test_verifier_treats_dict_desired_as_replacement() -> None:
     verifier = ApplyVerifier()
 
-    assert (
-        verifier.unreflected_fields(
-            JOB_TEMPLATE_SPEC,
-            {"settings": {"wanted": {"enabled": True}}},
-            {"settings": {"wanted": {"enabled": True, "defaulted": False}, "extra": "ok"}},
-            fields=("settings",),
-        )
-        == ()
-    )
+    assert verifier.unreflected_fields(
+        JOB_TEMPLATE_SPEC,
+        {"settings": {"wanted": {"enabled": True}}},
+        {"settings": {"wanted": {"enabled": True, "defaulted": False}, "extra": "ok"}},
+        fields=("settings",),
+    ) == ("settings",)
 
 
 def test_verifier_currently_requires_none_keys_to_be_present() -> None:

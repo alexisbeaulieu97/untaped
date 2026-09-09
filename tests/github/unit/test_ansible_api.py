@@ -76,10 +76,11 @@ def test_exports_are_canonical_objects() -> None:
     assert GithubSettings is settings.GithubSettings
 
 
-def test_capability_api_helpers_untouched() -> None:
-    # The sixteen provider helpers are NOT the inter-capability
-    # interface: this prerequisite must not widen capability_api.
-    assert len(capability_api.__all__) == 8 + 16
+def test_github_specific_api_does_not_leak_into_capability_api() -> None:
+    # GitHub behavior belongs to its explicit inter-capability interface,
+    # independently of legitimate additions to the shared provider helpers.
+    assert set(EXPECTED_ALL).isdisjoint(capability_api.__all__)
+    assert not any(hasattr(capability_api, name) for name in EXPECTED_ALL)
 
 
 def _params(name: str) -> Any:

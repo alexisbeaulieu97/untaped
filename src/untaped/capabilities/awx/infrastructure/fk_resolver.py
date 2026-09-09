@@ -27,8 +27,15 @@ import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFound
+from untaped.capabilities.awx.domain import IdentityRef
+from untaped.capabilities.awx.errors import (
+    AmbiguousIdentityError,
+    AwxApiError,
+    BadRequest,
+    ResourceNotFound,
+)
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
+from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import ResourceClient
@@ -51,6 +58,7 @@ class FkResolver:
         self._catalog = catalog
         self._warn = warn
         self._name_cache: dict[tuple[str, str, frozenset[tuple[str, str]]], int] = {}
+        self._ambiguous_names: dict[tuple[str, str, frozenset[tuple[str, str]]], set[int]] = {}
         self._id_cache: dict[tuple[str, int], str] = {}
         self._cache_lock = threading.Lock()
 
@@ -64,6 +72,10 @@ class FkResolver:
         scope = scope or {}
         key = (kind, name, frozenset(scope.items()))
         with self._cache_lock:
+            if key in self._ambiguous_names:
+                raise AmbiguousIdentityError(
+                    kind, {"name": name, **scope}, match_count=len(self._ambiguous_names[key])
+                )
             if key in self._name_cache:
                 return self._name_cache[key]
             spec = self._catalog.get(kind)
@@ -74,6 +86,27 @@ class FkResolver:
             self._name_cache[key] = id_
             self._id_cache[(kind, id_)] = name
             return id_
+
+    def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
+        if isinstance(id_, bool) or not isinstance(id_, int) or id_ <= 0:
+            raise BadRequest(f"foreign key {kind} requires a positive integer ID")
+        spec = self._catalog.get(kind)
+        try:
+            record = self._repo.get(spec, id_)
+        except KeyError as exc:
+            raise ResourceNotFound(kind, {"id": id_}) from exc
+        if record.get("id") != id_:
+            raise ResourceNotFound(kind, {"id": id_})
+        if scope:
+            # ID remains the selector. Related-name filters only constrain its
+            # scope; an ambiguous display label never changes this target.
+            scoped_record = self._repo.find(
+                spec,
+                params={"id": str(id_), **{f"{key}__name": value for key, value in scope.items()}},
+            )
+            if scoped_record is None or scoped_record.get("id") != id_:
+                raise ResourceNotFound(kind, {"id": id_, **scope})
+        return id_
 
     def id_to_name(self, kind: str, id_: int) -> str:
         cache_key = (kind, id_)
@@ -86,12 +119,51 @@ class FkResolver:
             self._id_cache[cache_key] = name
             return name
 
+    def id_to_identity(self, kind: str, id_: int) -> IdentityRef:
+        if kind == "UnifiedJobTemplate":
+            lookup = AwxResourceSpec(
+                kind=kind,
+                cli_name="",
+                api_path="unified_job_templates",
+                identity_keys=("name",),
+                canonical_fields=(),
+            )
+            record = self._repo.get(lookup, id_)
+            kinds = {
+                "job_template": "JobTemplate",
+                "workflow_job_template": "WorkflowJobTemplate",
+                "project": "Project",
+                "inventory_source": "InventorySource",
+            }
+            resolved_kind = kinds.get(str(record.get("type", "")))
+            if resolved_kind is None:
+                raise BadRequest("unsupported schedule parent type")
+            return self.id_to_identity(resolved_kind, id_)
+        spec = self._catalog.get(kind)
+        record = self._repo.get(spec, id_)
+        parent = None
+        organization = None
+        if spec.apply_strategy == "inventory_child":
+            inventory_id = record.get("inventory")
+            if not isinstance(inventory_id, int):
+                raise BadRequest(f"{kind}#{id_} is missing inventory ancestry")
+            parent = self.id_to_identity("Inventory", inventory_id)
+        elif "organization" in spec.identity_keys:
+            org_id = record.get("organization")
+            if isinstance(org_id, int):
+                organization = self.id_to_name("Organization", org_id)
+        return IdentityRef(
+            kind=kind, name=str(record["name"]), organization=organization, parent=parent
+        )
+
     def resolve_polymorphic(self, value: dict[str, Any]) -> tuple[str, int]:
         """Resolve ``{"kind": ..., "name": ..., "organization": ...}`` to ``(kind, id)``."""
-        kind = value["kind"]
-        name = value["name"]
-        scope = {k: v for k, v in value.items() if k not in {"kind", "name"} and v is not None}
-        return kind, self.name_to_id(kind, name, scope=scope)
+        reference = IdentityRef.model_validate(value)
+        try:
+            scope = reference.lookup_scope()
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from exc
+        return reference.kind, self.name_to_id(reference.kind, reference.name, scope=scope)
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
         """Warm the cache for one paginated ``list`` per ``(kind, scope)``.
@@ -147,5 +219,13 @@ class FkResolver:
                 if not isinstance(record_name, str):
                     continue
                 record_id = int(record["id"])
-                self._name_cache.setdefault((kind, record_name, cache_scope), record_id)
+                name_key = (kind, record_name, cache_scope)
+                previous = self._name_cache.get(name_key)
+                if name_key in self._ambiguous_names:
+                    self._ambiguous_names[name_key].add(record_id)
+                elif previous is not None and previous != record_id:
+                    self._ambiguous_names[name_key] = {previous, record_id}
+                    del self._name_cache[name_key]
+                else:
+                    self._name_cache[name_key] = record_id
                 self._id_cache.setdefault((kind, record_id), record_name)

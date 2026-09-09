@@ -62,7 +62,7 @@ def test_compute_emits_change_rows_for_modified_fields() -> None:
     assert [(c.field, c.before, c.after) for c in changes] == [("playbook", "old.yml", "new.yml")]
 
 
-def test_compute_treats_lists_as_order_insensitive() -> None:
+def test_compute_treats_body_lists_as_order_sensitive() -> None:
     """FK lists like ``credentials`` are sets semantically; reordering
     them server-side must not produce a spurious diff row."""
     diff = FieldDiff()
@@ -71,7 +71,8 @@ def test_compute_treats_lists_as_order_insensitive() -> None:
         desired={"credentials": [11, 10]},
         preserved_fields=set(),
     )
-    assert changes == []
+    assert len(changes) == 1
+    assert changes[0].after == [11, 10]
 
 
 def test_compute_falls_back_to_equality_for_unsortable_lists() -> None:

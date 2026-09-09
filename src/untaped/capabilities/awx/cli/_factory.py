@@ -15,11 +15,13 @@ from cyclopts import App
 from untaped.api import create_app
 from untaped.capabilities.awx.cli._apply import _add_apply
 from untaped.capabilities.awx.cli._delete import _add_delete
+from untaped.capabilities.awx.cli._edit import _add_edit
 from untaped.capabilities.awx.cli._get import _add_get
 from untaped.capabilities.awx.cli._launch import _add_launch
 from untaped.capabilities.awx.cli._list import _add_list
+from untaped.capabilities.awx.cli._patch import _add_patch
 from untaped.capabilities.awx.cli._save import _add_save
-from untaped.capabilities.awx.cli._update import _add_update
+from untaped.capabilities.awx.cli._sync import _add_sync
 from untaped.capabilities.awx.cli.membership_commands import register_membership_subapp
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -39,6 +41,8 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
         _add_save(app, spec)
     if "apply" in spec.commands:
         _add_apply(app, spec)
+        _add_patch(app, spec)
+        _add_edit(app, spec)
     if "delete" in spec.commands:
         _add_delete(app, spec)
     for action in spec.actions:
@@ -60,7 +64,7 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
 # untouched as new actions are added.
 ACTION_BUILDERS: dict[str, Callable[[App, AwxResourceSpec], None]] = {
     "launch": _add_launch,
-    "update": _add_update,
+    "sync": _add_sync,
 }
 
 

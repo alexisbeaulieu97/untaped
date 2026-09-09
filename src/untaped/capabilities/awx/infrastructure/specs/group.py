@@ -21,6 +21,7 @@ GROUP_SPEC = AwxResourceSpec(
     kind="Group",
     cli_name="groups",
     api_path="groups",
+    structured_text_fields=("variables",),
     identity_keys=("name",),  # unique within parent (Inventory)
     canonical_fields=("description", "variables"),
     read_only_fields=(

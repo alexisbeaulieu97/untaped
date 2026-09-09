@@ -41,7 +41,7 @@ description = "Acme capability for untaped."
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2.13.3,<3",
-    "untaped>=5.0.0,<6",
+    "untaped>=6.0.0,<7",
 ]
 
 [project.entry-points."untaped.capabilities"]
@@ -199,7 +199,17 @@ Provider imports come from `untaped.capability_api` only. The module exports the
 composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`, and related
 records), `CAPABILITY_API_VERSION`, and the supported helpers including
 `create_app`, `app_context`, `get_config_section`, `emit`, `read_identifiers`,
-`report_errors`, `FormatOption`, and `ColumnsOption`.
+`report_errors`, `FormatOption`, and `ColumnsOption`. The canonical v1 wire
+parser and record type are also exported as `parse_envelope_line` and
+`PipeEnvelope`; capabilities retain their own kind and required-ID validation.
+
+`run_editor(path, *, argv=None, stdin=None, stdout=None, stderr=None)` opens an
+external editor and waits for it to exit. Without explicit argv it parses
+`VISUAL`, falling back to `EDITOR`, as shell-free arguments. Configure a GUI
+editor with its wait flag. Omitted streams inherit the process streams; callers
+can route all three streams to a controlling terminal to protect piped stdout.
+The capability owns terminal requirements, temporary-file permissions, validation,
+and cleanup. Launch failures raise `ConfigError`.
 
 Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
 do not reach into `untaped` internals to obtain an unexported helper. Shared

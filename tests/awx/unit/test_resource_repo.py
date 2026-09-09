@@ -145,3 +145,20 @@ def test_request_text_sends_text_plain_accept(awx_config: AwxConfig) -> None:
             text = awx.request_text("GET", "jobs/42/stdout/", params={"format": "txt"})
     assert text == "job log line\n"
     assert captured[0].headers["accept"] == "text/plain"
+
+
+@pytest.mark.parametrize("status,action", [(204, "deleted"), (202, "deletion_requested")])
+def test_delete_receipt_preserves_http_acceptance(
+    awx_config: AwxConfig, status: int, action: str
+) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.delete("/api/v2/job_templates/7/").mock(return_value=httpx.Response(status))
+        with AwxClient(awx_config) as awx:
+            assert ResourceRepository(awx).delete(JOB_TEMPLATE_SPEC, 7).action == action
+
+
+def test_low_level_delete_returns_status(awx_config: AwxConfig) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.delete("/api/v2/inventories/7/").mock(return_value=httpx.Response(202))
+        with AwxClient(awx_config) as awx:
+            assert awx.delete("inventories/7/") == 202

@@ -1,5 +1,20 @@
 # Changelog
 
+## 6.0.0
+
+- Added consistent AWX bulk patch and external-editor workflows across eight
+  writable object types, with complete preflight, conflict checks, one batch
+  confirmation, and per-object outcomes.
+- Added inventory and inventory-source management, including constructed
+  inventories and explicit inventory refresh through `sync`.
+- Standardized project and inventory refresh, execution tracking, and failure
+  reporting.
+- Breaking changes: use `patch` or `edit` instead of `apply --stdin`; use
+  `--continue-on-error` instead of `--fail-fast`; use `projects sync` instead
+  of `projects update`. `apply FILE` remains declarative.
+- Updated AWX user guidance and packaged skills. Private capabilities require
+  `untaped-private` 1.2.0 with this release.
+
 ## 5.0.0
 
 - Removed the orchestration capability, its configuration section, and packaged
