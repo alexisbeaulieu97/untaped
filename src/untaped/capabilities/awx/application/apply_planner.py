@@ -22,7 +22,7 @@ from typing import Any
 from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
-from untaped.capabilities.awx.errors import AwxApiError, BadRequest
+from untaped.capabilities.awx.errors import BadRequest
 
 
 def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:
@@ -74,8 +74,6 @@ class ApplyPlanner:
         resource: Resource,
         *,
         fk: FkResolver,
-        existing: Mapping[str, Any] | None = None,
-        preserve_existing_fk_ids: bool = False,
     ) -> dict[str, Any]:
         """Pass ``resource.spec`` through (minus a drop-set) and resolve FKs.
 
@@ -128,10 +126,8 @@ class ApplyPlanner:
                             v,
                             scope=scope,
                             fk=fk,
-                            existing=_existing_multi_value(existing, ref.field, index),
-                            preserve_existing_id=preserve_existing_fk_ids,
                         )
-                        for index, v in enumerate(value)
+                        for v in value
                     ]
             else:
                 body[ref.field] = resolve_fk_value(
@@ -139,24 +135,8 @@ class ApplyPlanner:
                     value,
                     scope=scope,
                     fk=fk,
-                    existing=existing.get(ref.field) if existing is not None else None,
-                    preserve_existing_id=preserve_existing_fk_ids,
                 )
         return body
-
-
-def _existing_multi_value(existing: Mapping[str, Any] | None, field: str, index: int) -> Any:
-    """Return the existing item at ``index`` for unchanged FK labels.
-
-    The helper intentionally only supplies a positional hint.  A multi-FK
-    reference is still resolved by name when the requested label changed.
-    """
-    if existing is None:
-        return None
-    values = existing.get(field)
-    if isinstance(values, list) and index < len(values):
-        return values[index]
-    return None
 
 
 def resolve_fk_value(
@@ -165,16 +145,12 @@ def resolve_fk_value(
     *,
     scope: dict[str, str] | None,
     fk: FkResolver,
-    existing: Any = None,
-    preserve_existing_id: bool = False,
 ) -> PlannedId:
     """Resolve an FK without confusing numeric names with numeric IDs.
 
     Integer values are already controller IDs.  Strings, including strings
-    containing only digits, are names by contract.  When an editor leaves a
-    name unchanged, retaining the server's original ID avoids a second
-    ambiguous name lookup and preserves the exact reference selected by the
-    user.
+    containing only digits, are names by contract. Editor projections bind
+    unchanged display values to their original IDs before reaching this resolver.
     """
     if isinstance(value, Mapping):
         reference = IdentityRef.model_validate({"kind": kind, **value})
@@ -187,13 +163,6 @@ def resolve_fk_value(
         if value <= 0:
             raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
         return fk.validate_id(kind, value, scope=scope)
-    if preserve_existing_id and isinstance(existing, int) and not isinstance(existing, bool):
-        try:
-            original_name = fk.id_to_name(kind, existing)
-        except AwxApiError, KeyError, ValueError:
-            original_name = None
-        if original_name == value:
-            return fk.validate_id(kind, existing, scope=scope)
     if not isinstance(value, str):
         raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
     return fk.name_to_id(kind, value, scope=scope)

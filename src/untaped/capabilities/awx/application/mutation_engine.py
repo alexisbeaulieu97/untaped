@@ -16,6 +16,7 @@ from typing import Any, Literal, cast
 from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
 from untaped.capabilities.awx.application.apply_membership import (
     MembershipReconciler,
+    MembershipSnapshots,
 )
 from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
@@ -208,15 +209,23 @@ class BatchMutationEngine:
         *,
         mode: MutationMode = "apply",
         existing: Iterable[Mapping[str, Any] | SelectedResource] | None = None,
-        preserve_existing_fk_ids: bool = False,
+        membership_snapshots: MembershipSnapshots | None = None,
     ) -> MutationPlan:
         """Prepare every resource without issuing a write request.
 
         Name/organization/parent identities are resolved once. Existing
         records and memberships are snapshotted for the later conflict check;
-        all references to resources in this same batch receive a stable typed
+        editors may supply their earlier membership_snapshots, which must cover
+        every requested relationship on a selected target. Without that option,
+        membership reads establish the baseline during this call. All references
+        to resources in this same batch receive a stable typed
         deferred reference until a create returns its controller ID.
         """
+        # Editor snapshots describe the state before its process was launched.
+        # Copy once; subsequent planning and conflict checking must not refresh it.
+        membership_snapshots = (
+            copy.deepcopy(dict(membership_snapshots)) if membership_snapshots is not None else None
+        )
         if mode not in {"apply", "patch", "edit"}:
             raise BadRequest(f"unsupported mutation mode {mode!r}")
         docs = [resource.model_copy(deep=True) for resource in resources]
@@ -351,8 +360,6 @@ class BatchMutationEngine:
                 spec,
                 resource,
                 fk=resolver,
-                existing=existing_record,
-                preserve_existing_fk_ids=preserve_existing_fk_ids,
             )
             if selected is not None and existing_record is not None:
                 _validate_selected_identity(
@@ -364,7 +371,7 @@ class BatchMutationEngine:
                 target.id,
                 client=self._client,
                 fk=resolver,
-                preserve_existing_fk_ids=preserve_existing_fk_ids,
+                membership_snapshots=membership_snapshots,
             )
             body = self._body.prepare(spec, resource, payload, existing_record)
             changes = [
@@ -375,7 +382,16 @@ class BatchMutationEngine:
                 ApplyOutcome(
                     kind=spec.kind,
                     name=resource.metadata.name,
-                    action="preview",
+                    action=(
+                        "preview"
+                        if target.id is None
+                        or body.payload
+                        or any(
+                            item.to_associate or item.to_disassociate or item.to_reorder
+                            for item in membership_plans
+                        )
+                        else "unchanged"
+                    ),
                     id=target.id,
                     identity=copy.deepcopy(identity),
                     scope=_scope_from_identity(identity),

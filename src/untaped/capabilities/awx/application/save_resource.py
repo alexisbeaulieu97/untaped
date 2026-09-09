@@ -12,7 +12,9 @@ Schedule's polymorphic parent is extracted from AWX's
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
@@ -31,6 +33,19 @@ _UJT_KIND_MAP: dict[str, str] = {
 }
 
 
+@dataclass(frozen=True)
+class ResourceSnapshot:
+    """Portable projection plus FK IDs and member rows captured by those same reads.
+
+    The editor defensively copies this snapshot before launching its process;
+    save callers use only the portable resource.
+    """
+
+    resource: Resource
+    fk_ids: dict[str, Any]
+    memberships: dict[str, tuple[dict[str, Any], ...]]
+
+
 class SaveResource:
     def __init__(self, client: ResourceClient, fk: FkResolver) -> None:
         self._client = client
@@ -46,7 +61,7 @@ class SaveResource:
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
             raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
-        return self._build_resource(spec, record.model_dump())
+        return self.snapshot_from_record(spec, record.model_dump()).resource
 
     def find_all(
         self,
@@ -64,15 +79,22 @@ class SaveResource:
 
     def from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> Resource:
         """Public access to the record→resource builder for bulk save flows."""
-        return self._build_resource(spec, record)
+        return self.snapshot_from_record(spec, record).resource
 
     def metadata_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> Metadata:
         """Extract ancestry without reading unrelated fields or memberships."""
         return _METADATA_EXTRACTORS.get(spec.kind, _default_metadata)(spec, record, self._fk)
 
-    def _build_resource(self, spec: ResourceSpec, record: dict[str, Any]) -> Resource:
+    def snapshot_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> ResourceSnapshot:
+        """Capture display labels and their original IDs without a second member read."""
         if spec.kind == "Inventory" and record.get("kind") == "constructed":
             record = self._client.get(spec, int(record["id"])).model_dump()
+        fk_ids = {
+            ref.field: copy.deepcopy(record[ref.field])
+            for ref in spec.fk_refs
+            if ref.field in record and not ref.polymorphic
+        }
+        memberships: dict[str, tuple[dict[str, Any], ...]] = {}
         spec_data = self._build_spec_body(spec, record)
         if spec.kind == "Inventory" and record.get("kind") == "constructed":
             spec_data.pop("host_filter", None)
@@ -97,6 +119,8 @@ class SaveResource:
                 members = list(
                     self._client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint)
                 )
+                memberships[ref.field] = tuple(copy.deepcopy(members))
+                fk_ids[ref.field] = [int(member["id"]) for member in members]
                 if ref.kind == "Inventory":
                     spec_data[ref.field] = [
                         self._fk.id_to_identity("Inventory", int(m["id"])).model_dump(
@@ -113,10 +137,14 @@ class SaveResource:
         for fk in spec.fk_refs:
             if fk.polymorphic:
                 spec_data.pop(fk.field, None)
-        return Resource(
-            kind=spec.kind,
-            metadata=metadata,
-            spec=redact_value(spec_data, spec.secret_paths, replacement="$encrypted$"),
+        return ResourceSnapshot(
+            resource=Resource(
+                kind=spec.kind,
+                metadata=metadata,
+                spec=redact_value(spec_data, spec.secret_paths, replacement="$encrypted$"),
+            ),
+            fk_ids=fk_ids,
+            memberships=memberships,
         )
 
     def _build_spec_body(self, spec: ResourceSpec, record: dict[str, Any]) -> dict[str, Any]:

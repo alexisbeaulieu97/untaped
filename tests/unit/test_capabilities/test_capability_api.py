@@ -27,6 +27,7 @@ from untaped.cli import (
     raise_usage,
     report_errors,
 )
+from untaped.editor import run_editor
 from untaped.errors import ConfigError, UntapedError, first_validation_error
 from untaped.settings import get_config_section
 from untaped.state import StateCollection
@@ -60,6 +61,7 @@ EXPECTED_ALL = [
     "raise_usage",
     "read_identifiers",
     "report_errors",
+    "run_editor",
 ]
 
 
@@ -95,6 +97,7 @@ def test_helpers_resolve_to_canonical_sources() -> None:
     assert capi.finish is finish
     assert capi.get_config_section is get_config_section
     assert capi.read_identifiers is read_identifiers
+    assert capi.run_editor is run_editor
 
 
 def test_helpers_match_sdk_modules() -> None:

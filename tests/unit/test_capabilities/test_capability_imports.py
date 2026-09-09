@@ -57,6 +57,7 @@ APPROVED_HELPERS = frozenset(
         "raise_usage",
         "read_identifiers",
         "report_errors",
+        "run_editor",
     }
 )
 

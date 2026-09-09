@@ -19,7 +19,7 @@ write paths.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -28,6 +28,9 @@ from untaped.capabilities.awx.application.mutation_refs import DeferredReference
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequest
+
+# Exact resource kind, selected controller ID, and relationship field.
+type MembershipSnapshots = Mapping[tuple[str, int, str], tuple[dict[str, Any], ...]]
 
 
 @dataclass(frozen=True)
@@ -63,7 +66,7 @@ class MembershipReconciler:
         *,
         client: ResourceClient,
         fk: FkResolver,
-        preserve_existing_fk_ids: bool = False,
+        membership_snapshots: MembershipSnapshots | None = None,
     ) -> list[MembershipPlan]:
         """For each ``multi=True, sub_endpoint != None`` FK, compute the plan.
 
@@ -96,7 +99,15 @@ class MembershipReconciler:
             existing_ids: list[int] = []
             existing_name_by_id: dict[int, str] = {}
             if record_id is not None:
-                for record in client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint):
+                member_records: Iterable[dict[str, Any]]
+                if membership_snapshots is None:
+                    member_records = client.paginate_sub_endpoint(spec, record_id, ref.sub_endpoint)
+                else:
+                    key = (spec.kind, record_id, ref.field)
+                    if key not in membership_snapshots:
+                        raise BadRequest("missing initial editor membership snapshot")
+                    member_records = membership_snapshots[key]
+                for record in member_records:
                     rid = int(record["id"])
                     if rid not in existing_ids:
                         existing_ids.append(rid)
@@ -104,13 +115,8 @@ class MembershipReconciler:
                     if isinstance(rname, str):
                         existing_name_by_id[rid] = rname
 
-            resolved_desired_ids = _resolve_desired_members(
-                ref.kind,
-                desired_names,
-                existing_name_by_id,
-                scope=scope,
-                fk=fk,
-                preserve_existing_fk_ids=preserve_existing_fk_ids,
+            resolved_desired_ids = tuple(
+                resolve_fk_value(ref.kind, value, scope=scope, fk=fk) for value in desired_names
             )
             if len(set(resolved_desired_ids)) != len(resolved_desired_ids):
                 raise BadRequest(
@@ -331,30 +337,3 @@ def _ordered_replacements(
     desired_tail = desired_ids[prefix:]
     current_set = set(current)
     return tuple(member_id for member_id in desired_tail if member_id in current_set)
-
-
-def _resolve_desired_members(
-    kind: str,
-    values: list[Any],
-    existing_names: dict[int, str],
-    *,
-    scope: dict[str, str] | None,
-    fk: FkResolver,
-    preserve_existing_fk_ids: bool,
-) -> tuple[PlannedId, ...]:
-    """Retain validated editor IDs by snapshot label, independently of ordering.
-
-    Repeated existing labels consume their original IDs in snapshot order. A
-    newly entered label still uses normal name resolution and ambiguity checks.
-    """
-    remaining: dict[str, list[int]] = {}
-    if preserve_existing_fk_ids:
-        for member_id, name in existing_names.items():
-            remaining.setdefault(name, []).append(member_id)
-    result: list[PlannedId] = []
-    for value in values:
-        if isinstance(value, str) and remaining.get(value):
-            result.append(fk.validate_id(kind, remaining[value].pop(0), scope=scope))
-        else:
-            result.append(resolve_fk_value(kind, value, scope=scope, fk=fk))
-    return tuple(result)

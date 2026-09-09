@@ -15,6 +15,7 @@ from cyclopts import App
 from untaped.api import create_app
 from untaped.capabilities.awx.cli._apply import _add_apply
 from untaped.capabilities.awx.cli._delete import _add_delete
+from untaped.capabilities.awx.cli._edit import _add_edit
 from untaped.capabilities.awx.cli._get import _add_get
 from untaped.capabilities.awx.cli._launch import _add_launch
 from untaped.capabilities.awx.cli._list import _add_list
@@ -41,6 +42,7 @@ def make_resource_app(spec: AwxResourceSpec) -> App:
     if "apply" in spec.commands:
         _add_apply(app, spec)
         _add_patch(app, spec)
+        _add_edit(app, spec)
     if "delete" in spec.commands:
         _add_delete(app, spec)
     for action in spec.actions:

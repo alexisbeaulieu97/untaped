@@ -70,13 +70,11 @@ class ApplyResource:
         existing: dict[str, Any],
         *,
         write: bool = False,
-        preserve_existing_fk_ids: bool = False,
     ) -> ApplyOutcome:
         plan = self.engine.prepare(
             [resource],
             mode="patch",
             existing=[existing],
-            preserve_existing_fk_ids=preserve_existing_fk_ids,
         )
         if not write:
             return plan.operations[0].preview
