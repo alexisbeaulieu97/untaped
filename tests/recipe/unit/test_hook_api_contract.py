@@ -33,7 +33,7 @@ def test_hook_api_versions_and_scaffold_floor_stay_in_sync() -> None:
 
     assert contract_major_minor
     assert project_requirement == ">=0.10,<1"
-    assert dev_requirement == "untaped>=5.0.0,<6"
+    assert dev_requirement == "untaped>=6.0.0,<7"
     assert project_requirement == pack_scaffold._HOOK_API_PROJECT_REQUIREMENT
     assert dev_requirement == pack_scaffold._HOOK_API_DEV_REQUIREMENT
 
@@ -41,4 +41,4 @@ def test_hook_api_versions_and_scaffold_floor_stay_in_sync() -> None:
 def test_hook_api_requirements_are_derived_from_versions() -> None:
     assert pack_scaffold.hook_api_requirements(
         hook_api_version="1.2.0",
-    ) == (">=1.2,<2", "untaped>=5.0.0,<6")
+    ) == (">=1.2,<2", "untaped>=6.0.0,<7")
