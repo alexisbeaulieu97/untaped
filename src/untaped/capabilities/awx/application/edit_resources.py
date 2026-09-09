@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 from uuid import uuid4
 
@@ -37,7 +38,8 @@ class EditResources:
         )
         if fields is not None and not set(fields) <= writable:
             raise ConfigError("--field must name editable fields; identity fields cannot be edited")
-        self._allowed = set(fields) if fields is not None else writable
+        allowed = set(fields) if fields is not None else writable
+        self._allowed: dict[int, set[str]] = {}
         self._spec = spec
         self._selected = {item.id: copy.deepcopy(item) for item in selected}
         self._snapshots: dict[int, ResourceSnapshot] = {}
@@ -46,6 +48,10 @@ class EditResources:
         self._documents: list[dict[str, Any]] = []
         for item in selected:
             snapshot = copy.deepcopy(saver.snapshot_from_record(spec, item.record))
+            self._selected[item.id] = replace(self._selected[item.id], record=snapshot.record)
+            self._allowed[item.id] = allowed - set(snapshot.read_only_fields)
+            if fields is not None and not set(fields) <= self._allowed[item.id]:
+                raise ConfigError("--field must name editable fields for every selected resource")
             resource = snapshot.resource
             self._snapshots[item.id] = snapshot
             self._memberships.update(
@@ -63,7 +69,9 @@ class EditResources:
                 {
                     "identity": identity,
                     "spec": {
-                        key: value for key, value in resource.spec.items() if key in self._allowed
+                        key: value
+                        for key, value in resource.spec.items()
+                        if key in self._allowed[item.id]
                     },
                 }
             )
@@ -110,7 +118,7 @@ class EditResources:
             if identity != self._identities[id_]:
                 raise ConfigError("editor identity, name, kind and scope must remain unchanged")
             body = document["spec"]
-            if not isinstance(body, dict) or not set(body) <= self._allowed:
+            if not isinstance(body, dict) or not set(body) <= self._allowed[id_]:
                 raise ConfigError("editor spec contains fields outside the allowed edit boundary")
             seen.add(id_)
             resources.append(

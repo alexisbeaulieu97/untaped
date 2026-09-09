@@ -271,6 +271,12 @@ class ApplyStrategy(Protocol):
     :class:`ResourceClient` with raw URL access).
     """
 
+    def snapshot_existing(
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+    ) -> dict[str, Any]:
+        """Hydrate apply/patch baselines; editors supply an already complete snapshot."""
+        ...
+
     def prepare_state(
         self,
         spec: ResourceSpec,
@@ -281,7 +287,7 @@ class ApplyStrategy(Protocol):
         parent_resource: Resource | None = None,
         client: RawHttpResourceClient,
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
-        """Freeze routing, hydrate selected IDs, and validate resource-specific state."""
+        """Freeze routing and validate state without refreshing the existing baseline."""
         ...
 
     def prepare_parent(

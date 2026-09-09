@@ -98,7 +98,9 @@ class Controller:
         records = self.records[collection]
         if len(parts) == 3:
             parent_id, child = int(parts[1]), parts[2]
-            if child in {"input_inventories", "instance_groups"}:
+            if child in {"input_inventories", "instance_groups"} or (
+                collection == "groups" and child in {"hosts", "children"}
+            ):
                 ids = self.members.setdefault((parent_id, child), [])
                 if request.method == "POST":
                     if body.get("disassociate"):
@@ -106,7 +108,9 @@ class Controller:
                     elif body["id"] not in ids:
                         ids.append(body["id"])
                     return httpx.Response(204)
-                child_collection = "inventories" if child == "input_inventories" else child
+                child_collection = {"input_inventories": "inventories", "children": "groups"}.get(
+                    child, child
+                )
                 return httpx.Response(
                     200,
                     json={
@@ -124,7 +128,12 @@ class Controller:
             body["inventory" if collection == "inventories" else "unified_job_template"] = parent_id
         if request.method == "GET":
             if len(parts) == 2:
-                return httpx.Response(200, json=records[int(parts[1])])
+                return httpx.Response(
+                    200,
+                    json=self.inventory_view(records[int(parts[1])])
+                    if endpoint == "constructed_inventories"
+                    else records[int(parts[1])],
+                )
             values = list(records.values())
             for key, value in request.url.params.items():
                 if key in {"name", "id"}:
@@ -155,9 +164,28 @@ class Controller:
             return httpx.Response(202)
         if request.method == "PATCH":
             records[int(parts[1])].update(body)
+            if endpoint == "constructed_inventories":
+                for source in self.records["inventory_sources"].values():
+                    if (
+                        source.get("inventory") == int(parts[1])
+                        and source.get("source") == "constructed"
+                    ):
+                        source.update(
+                            {
+                                k: v
+                                for k, v in body.items()
+                                if k
+                                in {"source_vars", "update_cache_timeout", "limit", "verbosity"}
+                            }
+                        )
             if self.sparse_patch_response:
                 return httpx.Response(200, json={"id": int(parts[1])})
-            return httpx.Response(200, json=records[int(parts[1])])
+            return httpx.Response(
+                200,
+                json=self.inventory_view(records[int(parts[1])])
+                if endpoint == "constructed_inventories"
+                else records[int(parts[1])],
+            )
         assert request.method == "POST"
         rid = max(records, default=100) + 1
         records[rid] = {"id": rid, **body}
@@ -170,8 +198,32 @@ class Controller:
                 "source": "constructed",
                 "source_vars": "{}",
                 "update_cache_timeout": 0,
+                **{
+                    k: v
+                    for k, v in body.items()
+                    if k in {"source_vars", "update_cache_timeout", "limit", "verbosity"}
+                },
             }
         return httpx.Response(201, json=records[rid])
+
+    def inventory_view(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Constructed proxy fields read the generated source's physical storage."""
+        source = next(
+            (
+                s
+                for s in self.records["inventory_sources"].values()
+                if s.get("inventory") == record["id"] and s.get("source") == "constructed"
+            ),
+            {},
+        )
+        return {
+            **record,
+            **{
+                k: v
+                for k, v in source.items()
+                if k in {"source_vars", "update_cache_timeout", "limit", "verbosity"}
+            },
+        }
 
     @property
     def writes(self) -> list[tuple[str, str, dict[str, Any]]]:
@@ -668,3 +720,395 @@ def test_generated_sources_on_distinct_new_parents_are_not_duplicate_targets(
     assert all(outcome.action == "created" for outcome in result.outcomes)
     assert result.outcomes[0].id != result.outcomes[1].id
     assert len(state.records["inventory_sources"]) == 2
+
+
+@pytest.mark.parametrize(
+    "field,before,drift,desired",
+    [("update_cache_timeout", 0, 5, 20), ("description", "old", "remote", "edited")],
+)
+def test_constructed_editor_retains_full_display_snapshot_and_aborts_batch(
+    controller: Any, field: str, before: Any, drift: Any, desired: Any
+) -> None:
+    import yaml
+
+    from untaped.capabilities.awx.application.edit_resources import EditResources
+    from untaped.capabilities.awx.application.selection import SelectedResource
+
+    state, engine, repo, fk = controller
+    state.records["inventories"][10].update(
+        kind="constructed", update_cache_timeout=0, description="old"
+    )
+    state.records["inventories"][11] = {
+        "id": 11,
+        "name": "second",
+        "organization": 1,
+        "kind": "",
+        "description": "old",
+    }
+    selected = [
+        SelectedResource(
+            "Inventory",
+            id_,
+            record["name"],
+            {},
+            {k: v for k, v in record.items() if k != "update_cache_timeout"},
+        )
+        for id_, record in state.records["inventories"].items()
+    ]
+    editor = EditResources(INVENTORY_SPEC, selected, SaveResource(repo, fk))
+    documents = list(yaml.safe_load_all(editor.render()))
+    assert documents[0]["spec"][field] == before
+    state.records["inventories"][10][field] = drift
+    documents[0]["spec"][field] = desired
+    documents[1]["spec"]["description"] = "valid"
+    resources, retained = editor.parse(yaml.safe_dump_all(documents))
+    result = engine.execute(
+        engine.prepare(
+            resources,
+            mode="edit",
+            existing=retained,
+            membership_snapshots=editor.membership_snapshots,
+        )
+    )
+    assert [o.action for o in result.outcomes] == ["conflict", "skipped"]
+    assert state.writes == []
+
+
+@pytest.mark.parametrize(
+    "value", ["external", 21, {"name": "external"}, {"name": "external", "organization": "other"}]
+)
+def test_fk_representations_cannot_escape_required_scope(controller: Any, value: Any) -> None:
+    from untaped.capabilities.awx.application.apply_planner import resolve_fk_value
+    from untaped.capabilities.awx.errors import AwxApiError
+
+    state, _, _, fk = controller
+    state.records["projects"][21] = {"id": 21, "name": "external", "organization": 2}
+    with pytest.raises(AwxApiError):
+        resolve_fk_value("Project", value, scope={"organization": "org"}, fk=fk)
+    assert state.writes == []
+
+
+@pytest.mark.parametrize("kind", ["Host", "Group"])
+def test_mapping_child_reference_uses_inventory_ancestry(controller: Any, kind: str) -> None:
+    from untaped.capabilities.awx.application.apply_planner import resolve_fk_value
+    from untaped.capabilities.awx.errors import AwxApiError
+
+    state, _, _, fk = controller
+    state.records["inventories"][11] = {"id": 11, "name": "outside", "organization": 2, "kind": ""}
+    collection = "hosts" if kind == "Host" else "groups"
+    state.records[collection][20] = {"id": 20, "name": "same", "inventory": 10}
+    state.records[collection][21] = {"id": 21, "name": "same", "inventory": 11}
+    reference = {
+        "name": "same",
+        "parent": {"kind": "Inventory", "name": "inv", "organization": "org"},
+    }
+    assert resolve_fk_value(kind, reference, scope={"inventory": "inv"}, fk=fk) == 20
+    assert fk.resolve_polymorphic({"kind": kind, **reference}) == (kind, 20)
+    reference["parent"]["name"] = "outside"
+    with pytest.raises(AwxApiError):
+        resolve_fk_value(kind, reference, scope={"inventory": "inv"}, fk=fk)
+
+
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize(
+    "field,first,second",
+    [
+        ("update_cache_timeout", 10, 20),
+        ("source_vars", {"a": 1}, '{"a":2}'),
+        ("limit", "first", "second"),
+        ("verbosity", 1, 2),
+    ],
+)
+def test_constructed_proxy_source_contradictions_fail_before_writes(
+    controller: Any, deferred: bool, field: str, first: Any, second: Any
+) -> None:
+    state, engine, _, _ = controller
+    if deferred:
+        state.records["inventories"].clear()
+    else:
+        state.records["inventories"][10].update(kind="constructed", update_cache_timeout=0)
+        state.records["inventory_sources"][20] = {
+            "id": 20,
+            "name": "sync",
+            "inventory": 10,
+            "source": "constructed",
+            "update_cache_timeout": 0,
+        }
+    with pytest.raises(MutationConflict, match=r"conflicting.*field"):
+        engine.prepare(
+            [inventory_doc(kind="constructed", **{field: first}), source_doc(**{field: second})]
+        )
+    assert state.writes == []
+
+
+@pytest.mark.parametrize("mode", ["patch", "edit"])
+@pytest.mark.parametrize("body", [{"status": "failed"}, {"description": "new", "status": "failed"}])
+def test_explicit_readonly_patch_rejects_whole_batch(controller: Any, mode: str, body: Any) -> None:
+    state, engine, _, _ = controller
+    state.records["projects"][20] = {
+        "id": 20,
+        "name": "project",
+        "organization": 1,
+        "description": "old",
+        "status": "successful",
+    }
+    resources = [
+        inventory_doc(description="valid"),
+        Resource(kind="Project", metadata=Metadata(name="project", organization="org"), spec=body),
+    ]
+    with pytest.raises(BadRequest, match=r"read.only.*status"):
+        engine.prepare(resources, mode=mode)
+    assert state.writes == []
+
+
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize("same", [False, True])
+def test_constructed_aliases_preserve_compatible_and_independent_fields(
+    controller: Any, deferred: bool, same: bool
+) -> None:
+    state, engine, repo, _ = controller
+    if deferred:
+        state.records["inventories"].clear()
+    else:
+        state.records["inventories"][10].update(kind="constructed", description="old")
+        state.records["inventory_sources"][20] = {
+            "id": 20,
+            "name": "sync",
+            "inventory": 10,
+            "source": "constructed",
+            "source_vars": "{}",
+            "update_cache_timeout": 0,
+        }
+    parent = inventory_doc(kind="constructed", description="kept", source_vars={"a": 1})
+    child = source_doc(update_cache_timeout=30, **({"source_vars": '{"a": 1}'} if same else {}))
+    result = engine.execute(engine.prepare([child, parent]), parallel=2)
+    assert all(o.action in {"created", "updated"} and not o.unverified for o in result.outcomes)
+    inventory = repo.get(INVENTORY_SPEC, result.outcomes[1].id)
+    assert inventory["description"] == "kept"
+    assert semantic_equal(inventory["source_vars"], {"a": 1}, structured_text=True)
+    assert inventory["update_cache_timeout"] == 30
+    generated = next(iter(state.records["inventory_sources"].values()))
+    assert generated["update_cache_timeout"] == inventory["update_cache_timeout"]
+
+
+@pytest.mark.parametrize("scope", [None, "org", "other"])
+@pytest.mark.parametrize("same_org", [True, False])
+def test_deferred_mapping_fk_retains_job_template_scope(
+    controller: Any, scope: str | None, same_org: bool
+) -> None:
+    from untaped.capabilities.awx.errors import AwxApiError
+
+    state, engine, _, _ = controller
+    org = "org" if same_org else "other"
+    project = Resource(
+        kind="Project",
+        metadata=Metadata(name="new", organization=org),
+        spec={"description": "project"},
+    )
+    reference = {"name": "new", **({"organization": scope} if scope is not None else {})}
+    template = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="job", organization="org"),
+        spec={"project": reference},
+    )
+    if not same_org or scope == "other":
+        with pytest.raises(AwxApiError):
+            engine.prepare([template, project])
+        assert state.writes == []
+    else:
+        result = engine.execute(engine.prepare([template, project]))
+        assert [o.action for o in result.outcomes] == ["created", "created"]
+        assert (
+            state.records["job_templates"][result.outcomes[0].id]["project"]
+            == result.outcomes[1].id
+        )
+
+
+@pytest.mark.parametrize("mode", ["patch", "edit"])
+@pytest.mark.parametrize("source", [True, False])
+def test_explicit_strategy_readonly_fields_reject_batch(
+    controller: Any, mode: str, source: bool
+) -> None:
+    state, engine, _, _ = controller
+    state.records["inventories"][10].update(kind="constructed", source_vars="{}")
+    state.records["inventory_sources"][20] = {
+        "id": 20,
+        "name": "sync",
+        "inventory": 10,
+        "source": "constructed",
+        "source_vars": "{}",
+    }
+    resource = (
+        source_doc(source="constructed", update_cache_timeout=20)
+        if source
+        else inventory_doc(host_filter=None, description="valid")
+    )
+    with pytest.raises(BadRequest, match=r"read.only"):
+        engine.prepare([resource], mode=mode)
+    assert state.writes == []
+
+
+def test_generated_source_editor_omits_readonly_type_but_edits_cache(controller: Any) -> None:
+    import yaml
+
+    from untaped.capabilities.awx.application.edit_resources import EditResources
+    from untaped.capabilities.awx.application.selection import SelectedResource
+
+    state, engine, repo, fk = controller
+    state.records["inventories"][10]["kind"] = "constructed"
+    record = {
+        "id": 20,
+        "name": "sync",
+        "inventory": 10,
+        "source": "constructed",
+        "source_vars": "{}",
+        "update_cache_timeout": 0,
+    }
+    state.records["inventory_sources"][20] = record
+    editor = EditResources(
+        INVENTORY_SOURCE_SPEC,
+        [SelectedResource("InventorySource", 20, "sync", {}, record)],
+        SaveResource(repo, fk),
+    )
+    documents = list(yaml.safe_load_all(editor.render()))
+    assert "source" not in documents[0]["spec"]
+    documents[0]["spec"]["update_cache_timeout"] = 20
+    resources, selected = editor.parse(yaml.safe_dump_all(documents))
+    result = engine.execute(
+        engine.prepare(
+            resources,
+            mode="edit",
+            existing=selected,
+            membership_snapshots=editor.membership_snapshots,
+        )
+    )
+    assert result.outcomes[0].action == "updated"
+    assert state.records["inventory_sources"][20]["update_cache_timeout"] == 20
+
+
+@pytest.mark.parametrize(
+    "kind,field,collection", [("Host", "hosts", "hosts"), ("Group", "children", "groups")]
+)
+@pytest.mark.parametrize("deferred", [False, True])
+@pytest.mark.parametrize("outside", [False, True])
+def test_mapping_memberships_retain_scope_for_existing_and_deferred_children(
+    controller: Any, kind: str, field: str, collection: str, deferred: bool, outside: bool
+) -> None:
+    from untaped.capabilities.awx.errors import AwxApiError
+
+    state, engine, _, _ = controller
+    state.records["inventories"][11] = {"id": 11, "name": "outside", "organization": 2, "kind": ""}
+    parent = IdentityRef(kind="Inventory", name="inv", organization="org")
+    child_parent = (
+        IdentityRef(kind="Inventory", name="outside", organization="other") if outside else parent
+    )
+    child = Resource(
+        kind=kind,
+        metadata=Metadata(name="child", parent=child_parent),
+        spec={"description": "child"},
+    )
+    group = Resource(
+        kind="Group",
+        metadata=Metadata(name="parent", parent=parent),
+        spec={field: [{"name": "child", "parent": child_parent.model_dump(exclude_none=True)}]},
+    )
+    state.records["groups"][30] = {"id": 30, "name": "parent", "inventory": 10}
+    if not deferred:
+        state.records[collection][20] = {
+            "id": 20,
+            "name": "child",
+            "inventory": 11 if outside else 10,
+            "description": "child",
+        }
+    if outside:
+        with pytest.raises(AwxApiError):
+            engine.prepare([group, child])
+        assert state.writes == []
+    else:
+        result = engine.execute(engine.prepare([group, child]))
+        assert all(o.action in {"created", "updated", "unchanged"} for o in result.outcomes)
+        assert state.members[(30, field)] == [result.outcomes[1].id]
+
+
+def test_deferred_constructed_input_inventory_remains_intentionally_cross_org(
+    controller: Any,
+) -> None:
+    state, engine, _, _ = controller
+    state.records["inventories"].clear()
+    child = Resource(
+        kind="Inventory", metadata=Metadata(name="outside", organization="other"), spec={"kind": ""}
+    )
+    parent = inventory_doc(
+        kind="constructed", input_inventories=[{"name": "outside", "organization": "other"}]
+    )
+    result = engine.execute(engine.prepare([parent, child]))
+    assert [o.action for o in result.outcomes] == ["created", "created"]
+    assert state.members[(result.outcomes[0].id, "input_inventories")] == [result.outcomes[1].id]
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        {"name": "same", "parent": {"kind": "Project", "name": "inv"}},
+        {
+            "name": "same",
+            "parent": {
+                "kind": "Inventory",
+                "name": "inv",
+                "parent": {"kind": "Organization", "name": "org"},
+            },
+        },
+        {
+            "name": "same",
+            "organization": "other",
+            "parent": {"kind": "Inventory", "name": "inv", "organization": "org"},
+        },
+    ],
+)
+def test_unsupported_or_conflicting_child_ancestry_is_never_dropped(
+    controller: Any, reference: Any
+) -> None:
+    from untaped.capabilities.awx.application.apply_planner import resolve_fk_value
+
+    state, _, _, fk = controller
+    state.records["hosts"][20] = {"id": 20, "name": "same", "inventory": 10}
+    with pytest.raises(BadRequest, match="ancestry"):
+        resolve_fk_value("Host", reference, scope=None, fk=fk)
+    assert state.writes == []
+
+
+def test_apply_import_still_drops_known_readonly_fields(controller: Any) -> None:
+    state, engine, _, _ = controller
+    state.records["projects"][20] = {
+        "id": 20,
+        "name": "project",
+        "organization": 1,
+        "description": "old",
+        "status": "successful",
+    }
+    doc = Resource(
+        kind="Project",
+        metadata=Metadata(name="project", organization="org"),
+        spec={"description": "new", "status": "failed"},
+    )
+    result = engine.run([doc], write=True)
+    assert result.outcomes[0].action == "updated"
+    assert state.writes == [("PATCH", "/api/v2/projects/20/", {"description": "new"})]
+
+
+@pytest.mark.parametrize(
+    "kind,collection",
+    [("Project", "projects"), ("Inventory", "inventories"), ("Credential", "credentials")],
+)
+@pytest.mark.parametrize("explicit", [False, True])
+def test_mapping_fk_refines_required_scope_without_global_ambiguity(
+    controller: Any, kind: str, collection: str, explicit: bool
+) -> None:
+    from untaped.capabilities.awx.application.apply_planner import resolve_fk_value
+
+    state, _, _, fk = controller
+    state.records[collection][20] = {"id": 20, "name": "same", "organization": 1}
+    state.records[collection][21] = {"id": 21, "name": "same", "organization": 2}
+    reference = {"name": "same", **({"organization": "org"} if explicit else {})}
+    assert resolve_fk_value(kind, reference, scope={"organization": "org"}, fk=fk) == 20
+    assert state.writes == []

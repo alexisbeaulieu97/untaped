@@ -16,6 +16,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from untaped.capabilities.awx.domain import Resource, ResourceSpec, WritePayload
+from untaped.capabilities.awx.domain.inventory import (
+    CONSTRUCTED_SOURCE_FIELDS,
+    inventory_read_only_fields,
+)
 from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path
 
@@ -31,6 +35,11 @@ class DefaultApplyStrategy:
     resources by their identity (so we don't have to pre-resolve scope
     IDs just to look up).
     """
+
+    def snapshot_existing(
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+    ) -> dict[str, Any]:
+        return existing
 
     def prepare_state(
         self,
@@ -278,8 +287,12 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
             raise BadRequest("generated constructed source type cannot change")
         spec = spec.model_copy(
             update={
-                "read_only_fields": (*spec.read_only_fields, "name", "source"),
+                "read_only_fields": (
+                    *spec.read_only_fields,
+                    *inventory_read_only_fields(spec.kind, {"source": "constructed"}),
+                ),
                 "singleton_parent": True,
+                "parent_field_aliases": CONSTRUCTED_SOURCE_FIELDS,
             }
         )
         return spec, existing
@@ -338,11 +351,18 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
-CONSTRUCTED_SOURCE_FIELDS = ("source_vars", "update_cache_timeout", "limit", "verbosity")
-
-
 class InventoryApplyStrategy(DefaultApplyStrategy):
     """Freeze constructed proxy routing using the selected inventory ID."""
+
+    def snapshot_existing(
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+    ) -> dict[str, Any]:
+        if existing.get("kind") != "constructed":
+            return existing
+        hydrated = client.get(spec, int(existing["id"])).model_dump()
+        if hydrated.get("id") != existing["id"]:
+            raise BadRequest("constructed inventory hydration changed selected ID")
+        return hydrated
 
     def prepare_state(
         self,
@@ -363,14 +383,12 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
             spec = spec.model_copy(
                 update={
                     "api_path": "constructed_inventories",
-                    "read_only_fields": (*spec.read_only_fields, "host_filter"),
+                    "read_only_fields": (
+                        *spec.read_only_fields,
+                        *inventory_read_only_fields(spec.kind, {"kind": kind}),
+                    ),
                 }
             )
-            if existing is not None:
-                hydrated = client.get(spec, int(existing["id"])).model_dump()
-                if hydrated.get("id") != existing["id"]:
-                    raise BadRequest("constructed inventory hydration changed selected ID")
-                existing = {**existing, **hydrated}
         elif any(
             field in resource.spec for field in (*CONSTRUCTED_SOURCE_FIELDS, "input_inventories")
         ):

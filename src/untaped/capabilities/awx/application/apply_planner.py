@@ -156,7 +156,11 @@ def resolve_fk_value(
         reference = IdentityRef.model_validate({"kind": kind, **value})
         if reference.kind != kind:
             raise BadRequest(f"foreign key requires kind {kind}")
-        return fk.resolve_polymorphic(reference.model_dump(exclude_none=True))[1]
+        try:
+            required_scope = reference.lookup_scope(scope)
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from exc
+        return fk.name_to_id(kind, reference.name, scope=required_scope)
     if isinstance(value, bool):
         raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
     if isinstance(value, int):

@@ -38,9 +38,9 @@ explicit selection or `--all`.
 
 ```bash
 untaped awx job-templates list --filter name__icontains=deploy
-untaped awx inventory-sources list --inventory Production --organization Default
-untaped awx inventories patch Production --organization Default \
-  --set update_cache_timeout=3600
+untaped awx inventory-sources list --inventory Production --inventory-organization Default
+untaped awx inventory-sources patch Cloud --inventory Production \
+  --inventory-organization Default --set update_cache_timeout=3600
 ```
 
 `--filter` is repeatable and is passed to AWX using its server-side lookup
@@ -97,7 +97,10 @@ untaped awx job-templates patch deploy --organization Default \
 Here `inventory="123"` selects the resource named `123`; unquoted
 `inventory=123` means controller ID `123`. The same distinction can be made by
 quoting the value in a `--patch-file`. Ambiguous, missing, or out-of-scope
-references fail before any write. Identity, parent, kind, and read-only fields
+references fail before any write. Mapping references retain that same scope;
+explicit organization or inventory ancestry must agree with it. Constructed
+input-inventory memberships may span organizations when explicitly identified.
+Identity, parent, kind, and read-only fields
 cannot be patched: use `apply` for create or declarative create/update, and
 `delete` for removal. A patch never renames, reparents, or creates a resource.
 
@@ -152,7 +155,7 @@ exports preserve organization and parent identity:
 untaped awx inventories save Production --organization Default \
   --out inventory.yml
 untaped awx inventory-sources save Cloud --inventory Production \
-  --organization Default --out source.yml
+  --inventory-organization Default --out source.yml
 ```
 
 Constructed inventory settings use the constructed inventory route and its
@@ -160,7 +163,10 @@ managed source. Operation support is specific to the workflow: inventory sync
 rejects smart or source-less inventories and invalid or manual sources during
 preflight, while apply accepts representable inventory documents and rejects
 only incompatible source/configuration combinations. Editing inventory
-settings does not recreate or rewrite source-managed hosts or groups. Workflow
+settings does not recreate or rewrite source-managed hosts or groups. A
+constructed inventory and its generated source share `source_vars`,
+`update_cache_timeout`, `limit`, and `verbosity`. A batch cannot request
+conflicting values for those fields through the two resources. Workflow
 template exports are partial: their node graph and edges are not round-tripped.
 
 ## Sync and track executions
@@ -246,21 +252,21 @@ untaped awx ping
 untaped awx inventories save Disposable --organization Default \
   --out disposable-inventory.yml
 untaped awx inventory-sources save DisposableSource --inventory Disposable \
-  --organization Default --out disposable-source.yml
+  --inventory-organization Default --out disposable-source.yml
 
 untaped awx inventory-sources patch DisposableSource \
-  --inventory Disposable --organization Default \
+  --inventory Disposable --inventory-organization Default \
   --set update_cache_timeout=0 --dry-run
 untaped awx inventory-sources patch DisposableSource \
-  --inventory Disposable --organization Default \
+  --inventory Disposable --inventory-organization Default \
   --set update_cache_timeout=0 --yes
 untaped awx inventory-sources get DisposableSource \
-  --inventory Disposable --organization Default --format yaml
+  --inventory Disposable --inventory-organization Default --format yaml
 
 untaped awx inventory-sources edit DisposableSource \
-  --inventory Disposable --organization Default --dry-run
+  --inventory Disposable --inventory-organization Default --dry-run
 untaped awx inventory-sources sync DisposableSource \
-  --inventory Disposable --organization Default --wait --track
+  --inventory Disposable --inventory-organization Default --wait --track
 
 untaped awx inventory-sources apply disposable-source.yml --yes
 untaped awx inventories apply disposable-inventory.yml --yes
