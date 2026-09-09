@@ -18,6 +18,7 @@ from untaped.api import (
     raise_usage,
     report_errors,
 )
+from untaped.capabilities.awx.application.mutation_values import redact_value
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._names import flatten_fks
 from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
@@ -87,6 +88,7 @@ def _add_get(app: App, spec: AwxResourceSpec) -> None:
                 # ``cols`` may be ``None`` for non-table formats — that's
                 # fine; ``flatten_fks`` then only flattens declared fk_refs.
                 records = flatten_fks(records, spec, columns=cols)
+            records = [redact_value(record, spec.secret_paths) for record in records]
             emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec))
         if not records:
             emit(

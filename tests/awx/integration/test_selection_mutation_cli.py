@@ -581,3 +581,100 @@ def test_membership_already_absent_remove_does_not_prompt_or_write(fake_aap: Any
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["action"] == "unchanged"
     assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
+
+
+@pytest.mark.parametrize("command", ["get", "list"])
+@pytest.mark.parametrize("fmt", ["json", "yaml", "pipe", "table", "raw"])
+@pytest.mark.parametrize("field", ["webhook_key", "survey_spec"])
+def test_reads_redact_known_secrets_with_explicit_columns(
+    fake_aap: Any, command: str, fmt: str, field: str
+) -> None:
+    seed(fake_aap, "job_templates")
+    fake_aap.store["job_templates"][10].update(
+        webhook_key="synthetic-read-secret",
+        survey_spec={"spec": [{"type": "password", "default": "synthetic-nested-secret"}]},
+    )
+    result = CliInvoker().invoke(
+        app, ["job-templates", command, "10", "--by-id", "--columns", field, "--format", fmt]
+    )
+    assert result.exit_code == 0, result.output
+    assert "synthetic-read-secret" not in result.output
+    assert "synthetic-nested-secret" not in result.output
+    assert "redacted" in result.stdout
+    assert fake_aap.get_record("job_templates", 10)["webhook_key"] == "synthetic-read-secret"
+
+
+def test_get_redacts_full_readonly_credential_record(fake_aap: Any) -> None:
+    fake_aap.seed("credentials", id=10, name="machine", inputs={"password": "credential-secret"})
+    result = CliInvoker().invoke(app, ["credentials", "get", "10", "--by-id", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert "credential-secret" not in result.output
+    assert json.loads(result.stdout)[0]["inputs"]["password"] == "<redacted>"
+
+
+@pytest.mark.parametrize("summary", [False, True])
+@pytest.mark.parametrize("verb", ["add", "remove"])
+def test_membership_numeric_ancestry_preflights_entire_batch(
+    fake_aap: Any, summary: bool, verb: str
+) -> None:
+    fake_aap.seed("organizations", id=1, name="one")
+    fake_aap.seed("organizations", id=7, name="two")
+    fake_aap.seed("inventories", id=2, name="prod", organization=1)
+    fake_aap.seed("inventories", id=3, name="prod", organization=7)
+    fields = {"summary_fields": {"inventory": {"id": 2, "name": "prod"}}} if summary else {}
+    fake_aap.seed("groups", id=20, name="group", inventory=2, **fields)
+    fake_aap.seed("hosts", id=30, name="valid", inventory=2)
+    fake_aap.seed("hosts", id=31, name="invalid", inventory=3)
+    fake_aap.memberships[("groups", 20, "hosts")] = {30, 31} if verb == "remove" else set()
+    before = set(fake_aap.memberships[("groups", 20, "hosts")])
+    result = CliInvoker().invoke(
+        app, ["groups", "hosts", verb, "20", "30", "31", "--by-id", "--inventory", "prod", "--yes"]
+    )
+    assert result.exit_code != 0, result.output
+    assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
+    assert fake_aap.memberships[("groups", 20, "hosts")] == before
+
+
+@pytest.mark.parametrize("selector", ["names", "query"])
+def test_membership_fetches_missing_inventory_organization_for_duplicate_names(
+    fake_aap: Any, selector: str
+) -> None:
+    fake_aap.seed("organizations", id=1, name="one")
+    fake_aap.seed("organizations", id=7, name="two")
+    fake_aap.seed("inventories", id=2, name="prod", organization=1)
+    fake_aap.seed("inventories", id=3, name="prod", organization=7)
+    fake_aap.seed(
+        "groups", id=20, name="group", inventory=2, summary_fields={"inventory": {"name": "prod"}}
+    )
+    fake_aap.seed("hosts", id=30, name="member", inventory=2)
+    fake_aap.seed("hosts", id=31, name="member", inventory=3)
+    selection = ["member"] if selector == "names" else ["--filter", "name=member"]
+    result = CliInvoker().invoke(app, ["groups", "hosts", "add", "group", *selection, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 20, "hosts")] == {30}
+
+
+@pytest.mark.parametrize("relation", [None, 999, 2])
+def test_membership_fails_closed_when_required_ancestry_is_missing(
+    fake_aap: Any, relation: int | None
+) -> None:
+    # Inventory 2 deliberately has no organization ancestry.
+    fake_aap.seed("inventories", id=2, name="prod")
+    fake_aap.seed("groups", id=20, name="group", inventory=relation)
+    fake_aap.seed("hosts", id=30, name="member", inventory=2)
+    result = CliInvoker().invoke(app, ["groups", "hosts", "add", "20", "30", "--by-id", "--yes"])
+    assert result.exit_code != 0, result.output
+    assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
+
+
+def test_membership_organization_scope_uses_numeric_parent_relation(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="one")
+    fake_aap.seed("organizations", id=2, name="two")
+    fake_aap.seed("job_templates", id=20, name="template", organization=1)
+    fake_aap.seed("credentials", id=30, name="valid", organization=1)
+    fake_aap.seed("credentials", id=31, name="invalid", organization=2)
+    result = CliInvoker().invoke(
+        app, ["job-templates", "credentials", "add", "20", "30", "31", "--by-id", "--yes"]
+    )
+    assert result.exit_code != 0, result.output
+    assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
