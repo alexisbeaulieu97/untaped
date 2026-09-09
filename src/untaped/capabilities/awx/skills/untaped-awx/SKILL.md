@@ -13,24 +13,51 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 - Settings live under `profiles.<name>.awx`: `base_url`, `token`, `api_prefix`, `default_organization`, and `page_size`.
 - AAP uses the default `awx.api_prefix` of `/api/controller/v2/`; upstream AWX users usually set `/api/v2/`.
 - Use `untaped config set awx.token --prompt` or `--stdin` for tokens.
+- Run `untaped awx ping` before a workflow when the profile or controller may be stale.
 
-## Command Patterns
+## Resource and selection patterns
 
-- Use `untaped awx ping` before deeper workflows when credentials or base URL may be stale.
-- Resource commands are spec-driven. Common resource groups include job templates, workflows, projects, credentials, inventories, hosts, groups, schedules, and execution records.
-- Prefer `list --format raw --columns name` when selecting a resource for a follow-up command.
-- Use `--format pipe` to chain commands richly: it emits one self-describing record per line tagged with a `kind` (e.g. `awx.job_template`, `awx.job`), and any `--stdin` consumer reads that stream back (e.g. `job-templates list --format pipe | job-templates get --stdin`).
-- Use `get --format yaml` or `save` when the next step is editing an AWX object declaratively.
-- Apply workflows preview by default; writes require `--yes` / `-y`. Fields you provide are passed through to AWX as-is (so version-specific fields work without a tool update); identity, read-only, and membership fields are handled automatically, and an unrecognized field is sent with a `warning:` rather than rejected.
-- Apply verifies written body fields after POST/PATCH, checking the write response first and then one fallback GET. Unreflected fields fail the item by default; use `--allow-unverified` with `--yes` / `-y` only when an accepted-but-unproven write should remain best-effort.
-- JobTemplate credentials are membership state, not PATCH-body state. Use `job-templates apply` with `credentials: [...]` for reconciliation or `job-templates credentials add/remove` for additive changes.
-- `delete` is a guarded batch verb: it previews the targets on stderr and confirms before deleting. On a TTY it prompts; reading targets from a pipe (e.g. `inventories list --filter name__contains=test --format pipe | inventories delete --stdin --yes`) requires `--yes` because stdin is the data, not a prompt. Use `--dry-run` to preview the set (rows go to stdout) without deleting. Deleted ids lead each row, so `--format raw` pipes them onward.
-- `--profile <name>` works in any token position (e.g. `untaped --profile prod awx ping`).
+- The eight writable groups are `job-templates`, `workflow-templates`, `projects`, `schedules`, `hosts`, `groups`, `inventories`, and `inventory-sources`. Credentials, credential types, organizations, unified templates, and job records remain read-only or action-specific views.
+- Selection modes are exclusive: positional names, names with `--by-id`, `--stdin`, `--filter`/`--search`, or `--all`. Organization, inventory, inventory-organization, and parent scopes constrain lookup and filters.
+- Prefer typed pipes for composition. `--format pipe` carries kind and ID, and a `--stdin` consumer uses those IDs directly:
 
-## Agent Guidance
+  ```bash
+  untaped awx job-templates list --filter name__icontains=deploy --format pipe \
+    | untaped awx job-templates patch --stdin --set verbosity=2
+  ```
 
-- Keep stdout data-only in shell pipelines; status and warnings are on stderr.
-- For automation, prefer `--format json` or `--format yaml`.
-- Single-entity commands (`ping`, `save`, `<kind> update`) render a vertical detail view under `--format table` and a bare JSON object (`{…}`, not a one-element `[{…}]`) under `--format json`; collection commands (`apply`, `launch`, `jobs list`, `jobs events`/`logs`) render tables and JSON arrays.
-- For human inspection, table output is fine, but do not parse it.
-- Do not reveal secret fields. `$encrypted$` placeholders in saved specs mean preserve existing AWX secrets.
+- Mutation selection is complete before any write. Empty or invalid selections do not partially mutate a batch. Machine data is stdout; previews, prompts, and progress are stderr.
+
+## Patch and edit
+
+- Use `patch` for the same field on existing resources:
+
+  ```bash
+  untaped awx inventory-sources patch \
+    --filter inventory__name=Production \
+    --set update_cache_timeout=3600
+  ```
+
+- `--set` is repeatable and JSON-coerced; `--patch-file` accepts a YAML/JSON mapping, with `--set` taking precedence. Values replace top-level fields; omitted fields remain unchanged and nested maps are not merged. Foreign-key integers are IDs; strings are names in scope.
+- Inventory cache timeouts are seconds, and `0` is valid. Changing the timeout does not toggle `update_on_launch`. Maps replace exactly, lists preserve order, and known secrets are redacted.
+- Patch and edit cannot create, rename, reparent, retarget, or change identity. Use `apply` for create/update and `delete` for removal.
+- `edit` opens one YAML multi-document batch. `--field` limits editable fields; missing fields stay unchanged and removing a document deselects it. Set `VISUAL`/`EDITOR` to a waiting editor such as `code --wait`.
+- Edit requires a real `/dev/tty`, even with piped stdin or `--yes`. Editor streams use that terminal. The session directory is `0700` and the YAML is `0600`; clean sessions remove them, while failures retain the file and print its path. Invalid YAML can be reopened or cancelled, and a no-op does not prompt or write.
+
+## Apply, save, sync, and execution tracking
+
+- `untaped awx apply FILE_OR_DIRECTORY` is the declarative complete-document create/update path. `save` exports a fixed selection as portable YAML; `$encrypted$` placeholders preserve controller secrets. Workflow template exports do not round-trip node graphs.
+- Inventory and source settings preserve organization and parent identity. Constructed inventory settings use their managed source; smart/source-less/manual unsupported cases fail before any POST. Inventory settings changes do not rewrite source-managed hosts or groups.
+- Use `projects sync`, `inventory-sources sync`, and `inventories sync`. Inventory sync freezes source IDs before submitting updates. `--wait` fails on unsuccessful terminal states; `--track` writes progress to stderr. Known invalid sync selections produce zero POSTs.
+- Ordinary jobs expose `job_events`; project and inventory updates expose `events`. Workflow jobs, including sliced launch results, have no events or stdout route: `--track` polls status instead. Use `--kind project_update` or `--kind inventory_update` for non-default `jobs` commands; use `jobs wait` for workflow jobs, not workflow `events` or `logs`.
+- Writes are serial by default, `--parallel` is capped at ten, and runtime failure stops new scheduling unless `--continue-on-error` is supplied. Already-running requests finish; partial results retain IDs. There is no transaction or rollback. Async inventory deletion reports `deletion_requested`.
+
+## Confirmations and removed interfaces
+
+- `patch`, `edit`, `apply`, and `delete` show one redacted preview and default-No confirmation. `--yes` skips it; `--dry-run` never writes and is mutually exclusive with `--yes`. Configuration writes without a controlling terminal require `--yes` or `--dry-run`. Launch and sync are explicit actions and do not add an edit confirmation.
+- The former stdin apply overlay, project update verb, and fail-fast flag are unavailable. Use `patch --stdin --set`, `projects sync`, and `--continue-on-error`.
+- Keep stdout data-only and prefer `--format json`, `yaml`, or `pipe` for automation. Never expose secrets; preserve `$encrypted$` placeholders.
+
+For the full user guide and an opt-in disposable live-AAP smoke procedure, see
+`docs/awx/usage.md` in the source repository. Development used strict HTTP
+fakes and did not validate against a live AAP controller.
