@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.awx.unit.test_mutation_engine import _Catalog, _Client, _Fk, _Strategies
+from awx.unit.support import _Catalog, _Client, _Fk, _Strategies
 from untaped.capabilities.awx.application import ApplyFile, ApplyResource
 from untaped.capabilities.awx.application.ports import (
     Catalog,

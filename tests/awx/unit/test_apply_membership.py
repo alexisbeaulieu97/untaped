@@ -406,7 +406,7 @@ def test_post_members_ref_without_sub_endpoint_is_a_noop() -> None:
 def test_ordered_replacement_interleaves_new_and_reordered_members(
     current: list[int], desired: list[int]
 ) -> None:
-    from tests.awx.unit.test_mutation_engine import _Fk, _MembershipClient
+    from awx.unit.support import _Fk, _MembershipClient
     from untaped.capabilities.awx.domain import Metadata, ResourceSpec
 
     spec = ResourceSpec(

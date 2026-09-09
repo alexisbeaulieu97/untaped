@@ -6,46 +6,9 @@ from typing import Any
 
 import pytest
 
+from awx.integration.support import KINDS, pipe, seed
 from untaped.capabilities.awx.cli.commands import app
 from untaped.testing import CliInvoker, ScriptedPromptBackend
-
-KINDS = [
-    ("job-templates", "job_templates"),
-    ("workflow-templates", "workflow_job_templates"),
-    ("projects", "projects"),
-    ("schedules", "schedules"),
-    ("hosts", "hosts"),
-    ("groups", "groups"),
-    ("inventories", "inventories"),
-    ("inventory-sources", "inventory_sources"),
-]
-
-
-def seed(fake: Any, path: str) -> None:
-    fake.seed("organizations", id=1, name="Default")
-    fake.seed("inventories", id=2, name="prod", organization=1, kind="")
-    fake.seed("projects", id=3, name="parent", organization=1)
-    fake.seed(
-        path,
-        id=10,
-        name="target",
-        description="old",
-        organization=1,
-        inventory=2,
-        unified_job_template=3,
-        source="scm",
-        kind="",
-        summary_fields={
-            "organization": {"id": 1, "name": "Default"},
-            "inventory": {"id": 2, "name": "prod", "organization_name": "Default"},
-            "unified_job_template": {
-                "id": 3,
-                "name": "parent",
-                "unified_job_type": "project",
-                "organization_name": "Default",
-            },
-        },
-    )
 
 
 @pytest.mark.parametrize(("cli", "path"), KINDS)
@@ -108,10 +71,6 @@ def test_apply_wrong_kind_rejects_complete_batch(fake_aap: Any, tmp_path: Path) 
     result = CliInvoker().invoke(app, ["projects", "apply", str(file), "--yes"])
     assert result.exit_code != 0
     assert fake_aap.get_record("projects", 10)["description"] == "old"
-
-
-def pipe(kind: str, id_: Any, name: str = "stale") -> str:
-    return json.dumps({"untaped": "1", "kind": kind, "record": {"id": id_, "name": name}}) + "\n"
 
 
 @pytest.mark.parametrize("command", ["get", "list", "patch", "delete", "save"])
