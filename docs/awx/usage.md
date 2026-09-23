@@ -249,8 +249,10 @@ submitting an action.
 
 `--wait` waits for terminal success and exits nonzero for failed, canceled, or
 error executions. Ctrl-C while waiting or tracking (including
-`awx test run --parallel`) stops polling promptly, exits 130, and prints the
-still-running execution IDs with an `untaped awx jobs wait ...` command to
+`awx test run --parallel`) or while launches are still being submitted stops
+promptly, exits 130, and prints the IDs of executions not known to have
+finished (including ones AWX created while ignoring fields; "was launched"
+when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller. `--track`
 shows progress on stderr while waiting. Ordinary
 jobs expose `job_events`; project and inventory updates expose their `events`

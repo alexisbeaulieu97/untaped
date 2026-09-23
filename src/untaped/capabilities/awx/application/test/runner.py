@@ -70,6 +70,7 @@ class RunTestSuite:
         self._stop = stop
         self.launched: list[Job] = []
         """Executions submitted so far (for reporting after an interrupt)."""
+        self._finals: dict[tuple[str, int], Job] = {}
 
     def __call__(
         self,
@@ -100,6 +101,10 @@ class RunTestSuite:
                         future.cancel()
                     raise
         return TestRunOutcome(results=results)
+
+    def known_executions(self) -> list[Job]:
+        """Every submitted execution with its latest locally known status."""
+        return [self._finals.get((job.kind, job.id), job) for job in self.launched]
 
     def _build_plan(
         self,
@@ -168,6 +173,14 @@ class RunTestSuite:
             self.launched.append(job)
         except Exception as exc:
             # ``ignored_fields`` responses launched a job; keep its ID as evidence.
+            if isinstance(exc, ActionResponseError) and exc.execution_id is not None:
+                self.launched.append(
+                    Job(
+                        id=exc.execution_id,
+                        kind=exc.execution_kind or "job",
+                        status="unknown",
+                    )
+                )
             return CaseResult(
                 suite=item.suite_name,
                 case=item.case_name,
@@ -178,6 +191,7 @@ class RunTestSuite:
             )
         try:
             final = self._watch(job, timeout=timeout)
+            self._finals[(final.kind, final.id)] = final
         except Exception as exc:
             return CaseResult(
                 suite=item.suite_name,

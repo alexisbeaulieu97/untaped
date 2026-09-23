@@ -175,6 +175,7 @@ def run_command(
         ResolveCasePayload,
     )
     from untaped.capabilities.awx.application.test.runner import RunTestSuite  # noqa: PLC0415
+    from untaped.capabilities.awx.cli._action_runner import report_interrupted  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
@@ -209,12 +210,7 @@ def run_command(
                 timeout=timeout,
             )
         except KeyboardInterrupt:
-            ids = [str(job.id) for job in runner.launched]
-            for job_id in ids:
-                echo(f"interrupted: job {job_id} keeps running", err=True)
-            if ids:
-                echo(f"hint: untaped awx jobs wait {' '.join(ids)}", err=True)
-            raise SystemExit(130) from None
+            report_interrupted([(None, job) for job in runner.known_executions()])
 
         if show_logs:
             for result in outcome.results:
