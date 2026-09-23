@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
+from untaped.capabilities.recipe._worker.hook_worker import handle_request
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.ports import HookDebugResult
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe._worker.hook_worker import handle_request
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers

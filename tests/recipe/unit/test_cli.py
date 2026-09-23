@@ -4044,9 +4044,7 @@ def test_recipe_check_rejects_missing_prefix_of_templated_asset_path(tmp_path: P
 
 def test_apply_var_coercion_error_names_the_input(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
-    recipe.write_text(
-        "version: 1\ninputs:\n  replicas: {type: int, required: true}\nsteps: []\n"
-    )
+    recipe.write_text("version: 1\ninputs:\n  replicas: {type: int, required: true}\nsteps: []\n")
     target = tmp_path / "target"
     target.mkdir()
 
