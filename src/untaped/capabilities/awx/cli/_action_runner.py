@@ -66,12 +66,12 @@ def run_action_selection(
             "target_kind": item.kind,
             "target_name": item.name,
             "scope": item.scope,
-            "action": "preview",
+            "action": "planned",
         }
         for item in targets
     ]
     if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
-        emit(rows, fmt=fmt, columns=columns, kind="awx.job")
+        emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
         return
 
     def safe_error(exc: Exception, target: SelectedResource) -> str:
@@ -112,7 +112,7 @@ def run_action_selection(
     for row in rows:
         if row.get("detail"):
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
-    emit(rows, fmt=fmt, columns=columns, kind="awx.job")
+    emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
     finish(any(row["action"] != "completed" for row in rows))
 
 

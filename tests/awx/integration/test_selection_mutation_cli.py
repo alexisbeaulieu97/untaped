@@ -258,6 +258,29 @@ def test_patch_secret_values_redacted_in_all_formats(fake_aap: Any, fmt: str) ->
     assert fake_aap.get_record("job_templates", 10)["webhook_key"] == "new-secret-value"
 
 
+def test_patch_outcome_lists_are_native_lists(fake_aap: Any) -> None:
+    seed(fake_aap, "projects")
+    result = CliInvoker().invoke(
+        app,
+        [
+            "projects",
+            "patch",
+            "target",
+            "--set",
+            "description=new",
+            "--set",
+            "scm_branch=main",
+            "--yes",
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)[0]
+    assert sorted(row["fields_changed"]) == ["description", "scm_branch"]
+    assert row["preserved_secrets"] == []
+
+
 @pytest.mark.parametrize("cli", ["organizations", "credentials", "credential-types"])
 @pytest.mark.parametrize("verb", ["apply", "patch", "export", "delete"])
 def test_readonly_kinds_reject_mutation_commands(cli: str, verb: str) -> None:

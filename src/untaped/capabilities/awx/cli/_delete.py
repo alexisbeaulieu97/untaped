@@ -88,7 +88,7 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         "kind": item.kind,
                         "name": item.name,
                         "scope": item.scope,
-                        "action": "preview",
+                        "action": "planned",
                     }
                     for item in selected
                 ]

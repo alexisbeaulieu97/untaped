@@ -57,8 +57,27 @@ def test_action_dry_run_selects_without_post(
     row = json.loads(result.stdout)[0]
     assert row["target_id"] == target
     assert row["id"] is None
-    assert row["action"] == "preview"
+    assert row["action"] == "planned"
     assert fake_aap.actions_called == []
+
+
+@pytest.mark.parametrize("command,action,name,path,target,kind", CASES)
+def test_action_rows_are_outcomes_that_jobs_accept(
+    fake_aap: Any, command: str, action: str, name: str, path: str, target: int, kind: str
+) -> None:
+    """Launch/sync rows pipe as ``awx.<action>_outcome``, never as ``awx.job``."""
+    seed(fake_aap)
+    result = CliInvoker().invoke(app, [command, action, name, "--format", "pipe"])
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.splitlines()[0])
+    assert envelope["kind"] == f"awx.{action}_outcome"
+
+    fake_aap.seed(f"{kind}s", id=envelope["record"]["id"], name=name, status="successful")
+    waited = CliInvoker().invoke(
+        app, ["jobs", "wait", "--stdin", "--format", "json"], input=result.stdout
+    )
+    assert waited.exit_code == 0, waited.output
+    assert json.loads(waited.stdout)[0]["kind"] == kind
 
 
 @pytest.mark.parametrize("command,action", [(c, a) for c, a, *_ in CASES])

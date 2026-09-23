@@ -168,7 +168,7 @@ def _add_membership_verb(
                     "kind": spec.kind,
                     "name": selected_parent.name,
                     "scope": selected_parent.scope,
-                    "action": "preview" if plan.field_change else "unchanged",
+                    "action": "planned" if plan.field_change else "unchanged",
                     "field": ref.field,
                     "associate": list(plan.to_associate),
                     "disassociate": list(plan.to_disassociate),

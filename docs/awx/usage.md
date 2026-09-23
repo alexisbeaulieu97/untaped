@@ -283,6 +283,13 @@ paging once N records are read. `--limit 0` means no limit on every awx list.
 
 `get` prints a table of the default columns; pass `--format yaml` or
 `--format json` for the complete records. `export` stays YAML by default.
+`list` applies its default columns to `table` and `raw` only; `json`, `yaml`
+and `pipe` carry the complete records unless `--columns` narrows them.
+
+Launch and sync results are `awx.launch_outcome` and `awx.sync_outcome`
+records (`jobs * --stdin` accepts them). Every preview row, including
+`--dry-run` output, has the action `planned`, and apply/patch/edit results
+report `fields_changed` and `preserved_secrets` as lists.
 
 `--kind` accepts `job` (default), `workflow_job`, `project_update`,
 `inventory_update`, and `ad_hoc_command`. Typed records piped with `--stdin`
