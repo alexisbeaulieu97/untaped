@@ -4,7 +4,7 @@ The only wildcard secret-path that fires through engine today
 is JobTemplate / Workflow's
 ``survey_spec.spec.*.default``. ``$encrypted$`` placeholders inside a
 list element produce a preserved path containing a literal ``*``, which
-exercises the intermediate-``*`` branches of ``_remove_at_path``
+exercises the intermediate-``*`` branches of ``_secret_paths.remove_at``
 (``application/apply_resource.py:409-411``) when comparing the user
 payload against the existing record's stripped subtree.
 
@@ -176,7 +176,7 @@ def wildcard_survey_sibling_change() -> tuple[ApplyOutcome, _StubStrategy]:
     """Apply a JT change where the user edits a sibling top-level field
     (``description``) while the survey carries ``$encrypted$``
     placeholders. Exercises the intermediate ``*`` branch of
-    ``apply_secret_policy._remove_at_path`` (walking list items):
+    ``_secret_paths.remove_at`` (walking list items):
     ``survey_spec.spec.*.default`` is a wildcard secret_path on
     ``JobTemplate``, so ``SecretPreservationPolicy.strip_paths`` walks
     the wildcard against the existing record, the equality check finds a
