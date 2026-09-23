@@ -4082,3 +4082,14 @@ def test_check_rejects_required_input_with_default(tmp_path: Path) -> None:
     error = json.loads(result.stdout)[0]["error"]
     assert "inputs.replicas" in error
     assert "required" in error and "default" in error
+
+
+def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+
+    result = CliInvoker().invoke(app, ["add", str(pack), "--rev", "v1", "--yes"])
+
+    assert result.exit_code != 0
+    assert "--rev is only valid for git URL sources" in result.stderr
+    assert not (library_root() / "packs" / "demo").exists()

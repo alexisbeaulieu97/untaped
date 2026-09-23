@@ -369,22 +369,36 @@ def is_git_url(value: str) -> bool:
 
 
 def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
-    """Clone a pack source URL into ``dest`` and return the checkout path."""
+    """Clone a pack source URL into ``dest`` and return the checkout path.
+
+    A ``rev`` is tried as a branch/tag with a shallow clone first; only when
+    git reports that no such branch exists (e.g. a commit sha) does it fall
+    back to a full clone plus ``checkout``. Other failures (auth, network)
+    surface immediately.
+    """
+    if rev is not None and (not rev.strip() or rev.startswith("-")):
+        raise ValueError(f"invalid --rev: {rev!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     clone_args = ["git", "clone", "--depth", "1"]
     if rev is not None:
         clone_args.extend(["--branch", rev])
-    clone_args.extend([url, str(dest)])
+    clone_args.extend(["--", url, str(dest)])
     try:
         _run_git(clone_args)
-    except ValueError:
-        if rev is None:
+    except ValueError as exc:
+        if rev is None or not _is_missing_branch_error(str(exc)):
             raise
         if dest.exists():
             shutil.rmtree(dest)
-        _run_git(["git", "clone", url, str(dest)])
-        _run_git(["git", "checkout", rev], cwd=dest)
+        _run_git(["git", "clone", "--", url, str(dest)])
+        _run_git(["git", "checkout", "--detach", rev, "--"], cwd=dest)
     return dest
+
+
+def _is_missing_branch_error(message: str) -> bool:
+    """Whether ``git clone --branch`` failed only because the ref is not a branch/tag."""
+    lowered = message.lower()
+    return "not found in upstream" in lowered or "could not find remote branch" in lowered
 
 
 def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
