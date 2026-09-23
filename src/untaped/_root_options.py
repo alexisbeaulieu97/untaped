@@ -7,7 +7,7 @@ helpers live here so the bootstrap composition root has one implementation.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextvars import Token
 from dataclasses import dataclass
 from typing import Annotated, cast
@@ -185,7 +185,7 @@ def _dispatch_with_root_options(
     errors surface before the command body runs, so a retry never repeats
     side effects.
     """
-    remaining = list(command_tokens)
+    remaining = canonical_command_tokens(app, command_tokens)
     applied: set[str] = set()
     while True:
         try:
@@ -207,6 +207,42 @@ def _dispatch_with_root_options(
         except CycloptsError as exc:
             echo(f"error: {exc}", err=True)
             raise SystemExit(2) from exc
+
+
+def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
+    """Rewrite leading command tokens to their registered spelling.
+
+    Cyclopts resolves a command token loosely (``job_templates`` or
+    ``JobTemplates`` for ``job-templates``) but keeps the raw token in the
+    command chain, and its help renderer then looks the raw token up exactly
+    and crashes with ``KeyError`` (``untaped awx job_templates --help``).
+    Substituting the one registered name that the loose match would pick
+    keeps the lenient spelling working and gives help the canonical chain.
+    Stops at the first option or non-command token; exact names, aliases and
+    ambiguous spellings are left for cyclopts to handle.
+    """
+    rewritten = list(tokens)
+    current = app
+    for index, token in enumerate(rewritten):
+        if token.startswith("-"):
+            break
+        if token not in current:
+            wanted = _loose_command_key(token)
+            matches = [
+                name
+                for name in current
+                if not name.startswith("-") and _loose_command_key(name) == wanted
+            ]
+            if len(matches) != 1:
+                break
+            token = rewritten[index] = matches[0]
+        current = current[token]
+    return rewritten
+
+
+def _loose_command_key(name: str) -> str:
+    """The spelling-insensitive key cyclopts uses to match command tokens."""
+    return name.replace("-", "").replace("_", "").lower()
 
 
 def _unknown_root_option(
