@@ -5,6 +5,8 @@ in :mod:`untaped.capabilities.awx.application.suites.ports`; tests inject stubs 
 use cases never touch the filesystem, Jinja2, httpx, or the CLI framework directly.
 """
 
+from __future__ import annotations
+
 from untaped.capabilities.awx.application.suites.ports import (
     Filesystem,
     Launcher,

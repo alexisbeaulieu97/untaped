@@ -1,5 +1,7 @@
 """Own the private external-editor session and reuse the common AWX mutation gate."""
 
+from __future__ import annotations
+
 import shutil
 import tempfile
 from collections.abc import Sequence

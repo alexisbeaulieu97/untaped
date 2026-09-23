@@ -5,6 +5,8 @@ Also owns ``default_get_columns`` — the public helper shared with
 projects records the same way as factory-built ``get``.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Annotated
 

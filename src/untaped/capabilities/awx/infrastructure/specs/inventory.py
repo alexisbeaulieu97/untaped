@@ -1,5 +1,7 @@
 """Inventory lifecycle, constructed proxy fields and ordered relationships."""
 
+from __future__ import annotations
+
 from untaped.capabilities.awx.domain import ActionSpec, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 

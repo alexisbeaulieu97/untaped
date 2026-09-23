@@ -1,5 +1,7 @@
 """Shared-selection sync commands for projects, sources and inventories."""
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter

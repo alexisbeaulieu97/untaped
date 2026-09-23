@@ -1,5 +1,7 @@
 """Declarative file/directory apply command for writable resource kinds."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Annotated
 

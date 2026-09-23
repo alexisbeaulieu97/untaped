@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from untaped.capabilities.awx.application.apply_file import prepare_apply_file
 from untaped.capabilities.awx.application.browse_unified_templates import GetUnifiedTemplate
 from untaped.capabilities.awx.application.delete_resource import DeleteResource

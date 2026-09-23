@@ -1,5 +1,7 @@
 """Validate a complete action selection and freeze inventory source expansion."""
 
+from __future__ import annotations
+
 import json
 from collections.abc import Mapping, Sequence
 from typing import Any

@@ -8,6 +8,8 @@
 without editing the factory body.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 
 from cyclopts import App

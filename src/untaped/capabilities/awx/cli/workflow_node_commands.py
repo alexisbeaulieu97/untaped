@@ -7,6 +7,8 @@ and CRUD assumptions don't apply to a nested sub-collection of a
 specific workflow.
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter

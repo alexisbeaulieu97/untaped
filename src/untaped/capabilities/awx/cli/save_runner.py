@@ -1,5 +1,7 @@
 """Shared save runner for top-level and per-resource AWX save commands."""
 
+from __future__ import annotations
+
 import stat
 from pathlib import Path
 

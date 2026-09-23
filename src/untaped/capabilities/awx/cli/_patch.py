@@ -1,5 +1,7 @@
 """Patch existing selected resources through the authoritative mutation engine."""
 
+from __future__ import annotations
+
 import difflib
 from pathlib import Path
 from typing import Annotated
