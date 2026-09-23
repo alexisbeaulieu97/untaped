@@ -42,6 +42,33 @@ def test_git_runs_non_interactively(tmp_path: Path) -> None:
     assert env["GCM_INTERACTIVE"] == "never"
 
 
+def test_ssh_runs_in_batch_mode_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.delenv("GIT_SSH", raising=False)
+    calls, fake_run = _record_calls()
+    with patch("subprocess.run", side_effect=fake_run):
+        GitRunner().fetch(tmp_path / "ws" / "svc-a")
+    assert calls[0]["env"]["GIT_SSH_COMMAND"] == "ssh -o BatchMode=yes"
+
+
+@pytest.mark.parametrize(
+    ("var", "value"), [("GIT_SSH_COMMAND", "ssh -i ~/.ssh/work"), ("GIT_SSH", "/usr/bin/plink")]
+)
+def test_user_ssh_override_is_respected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, var: str, value: str
+) -> None:
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.delenv("GIT_SSH", raising=False)
+    monkeypatch.setenv(var, value)
+    calls, fake_run = _record_calls()
+    with patch("subprocess.run", side_effect=fake_run):
+        GitRunner().fetch(tmp_path / "ws" / "svc-a")
+    env = calls[0]["env"]
+    assert env[var] == value
+    if var == "GIT_SSH":
+        assert "GIT_SSH_COMMAND" not in env
+
+
 def test_per_repo_git_calls_set_ceiling_to_repo_parent(tmp_path: Path) -> None:
     calls, fake_run = _record_calls()
     repo = tmp_path / "ws" / "svc-a"

@@ -34,8 +34,9 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     (`--yes` to skip). `sync` and `branch apply` report failures as `failed`
     and exit 1. `branch apply` no longer creates missing branches unless
     `--create` is passed.
-  - Git never runs in an enclosing repository, never prompts for
-    credentials, and fast-forwards from the branch's upstream. The bare cache
+  - Git never runs in an enclosing repository, does not wait for interactive
+    credential prompts (ssh runs in `BatchMode` unless `GIT_SSH_COMMAND` or
+    `GIT_SSH` is set), and fast-forwards from the branch's upstream. The bare cache
     now actually refreshes; new clones copy objects out of it
     (`--dissociate`) and it is never auto-gc'd, so pruned cache branches
     cannot corrupt clones. Ctrl-C stops queued work and every running child
