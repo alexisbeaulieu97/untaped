@@ -213,9 +213,13 @@ untaped awx job-templates launch Deploy --organization Default \
 Before any POST, each target's `launch/` endpoint is read. A supplied flag
 whose template setting `ask_*_on_launch` is false (AWX would silently ignore
 it, for example running the whole inventory despite `--limit`) is a usage
-error naming the flag and template; `--extra-vars` is also accepted when the
-template has a survey. Missing required survey variables
-(`variables_needed_to_start`) are reported the same way. If AWX still lists
+error naming the flag and template, unless the value equals the template's own
+(credentials: every supplied credential is already on the template), which
+AWX treats as a no-op. An empty `--extra-vars` mapping is never rejected. When
+the template has a survey but does not prompt for variables, `--extra-vars`
+may carry only the survey's variables; others are a usage error naming them.
+Missing required survey variables (`variables_needed_to_start`) are reported
+the same way. If AWX still lists
 `ignored_fields` in a launch response, that row fails with the ignored field
 names and keeps the execution ID; `awx test` reports such a case as an error.
 
