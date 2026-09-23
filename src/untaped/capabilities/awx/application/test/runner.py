@@ -9,6 +9,7 @@ cleaner than racing workers through it.)
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +58,7 @@ class RunTestSuite:
         fk_prefetcher: FkPrefetcher,
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        stop: threading.Event | None = None,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -65,6 +67,9 @@ class RunTestSuite:
         self._fk = fk_prefetcher
         self._jt_scope = jt_scope
         self._clock = clock
+        self._stop = stop
+        self.launched: list[Job] = []
+        """Executions submitted so far (for reporting after an interrupt)."""
 
     def __call__(
         self,
@@ -82,11 +87,18 @@ class RunTestSuite:
             results = [self._launch_and_wait(item, timeout) for item in resolved]
         else:
             with ThreadPoolExecutor(max_workers=parallel) as pool:
-                # ``map`` materialises results in submission order, so the
-                # report follows declaration order regardless of completion.
-                results = list(
-                    pool.map(lambda item: self._launch_and_wait(item, timeout), resolved)
-                )
+                futures = [pool.submit(self._launch_and_wait, item, timeout) for item in resolved]
+                try:
+                    # Collected in submission order, so the report follows
+                    # declaration order regardless of completion.
+                    results = [future.result() for future in futures]
+                except KeyboardInterrupt:
+                    # Stop polling workers and never launch queued cases.
+                    if self._stop is not None:
+                        self._stop.set()
+                    for future in futures:
+                        future.cancel()
+                    raise
         return TestRunOutcome(results=results)
 
     def _build_plan(
@@ -153,6 +165,7 @@ class RunTestSuite:
                 scope=self._jt_scope,
                 payload=item.payload,
             )
+            self.launched.append(job)
         except Exception as exc:
             # ``ignored_fields`` responses launched a job; keep its ID as evidence.
             return CaseResult(

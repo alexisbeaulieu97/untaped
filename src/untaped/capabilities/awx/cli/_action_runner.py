@@ -7,7 +7,15 @@ from typing import Any
 
 from rich.console import Console
 
-from untaped.api import ColumnsOption, FormatOption, echo, emit, finish, raise_usage
+from untaped.api import (
+    ColumnsOption,
+    FormatOption,
+    UntapedError,
+    echo,
+    emit,
+    finish,
+    raise_usage,
+)
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
@@ -86,12 +94,7 @@ def run_action_selection(
             launched.append((label, outcome.result))
             row_by_label[label] = index
     if launched and (wait or track):
-        console = Console(stderr=True, highlight=False)
-        finals, errors = (
-            _drain_parallel(ctx.monitor, launched, console)
-            if track
-            else _wait_parallel(ctx.repo, launched)
-        )
+        finals, errors = _monitor(ctx, launched, track=track)
         row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
         for job in finals:
             row = rows[row_by_job[(job.kind, job.id)]]
@@ -106,6 +109,25 @@ def run_action_selection(
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
     emit(rows, fmt=fmt, columns=columns, kind="awx.job")
     finish(any(row["action"] != "completed" for row in rows))
+
+
+def _monitor(
+    ctx: AwxContext, launched: list[tuple[str, Job]], *, track: bool
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Wait on launched executions; Ctrl-C stops polling and names what still runs."""
+    try:
+        if track:
+            console = Console(stderr=True, highlight=False)
+            return _drain_parallel(ctx.monitor, launched, console, stop=ctx.stop)
+        return _wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop)
+    except KeyboardInterrupt:
+        by_kind: dict[str, list[str]] = {}
+        for label, job in launched:
+            echo(f"interrupted: {label}: {job.kind} {job.id} keeps running", err=True)
+            by_kind.setdefault(job.kind, []).append(str(job.id))
+        for kind, ids in by_kind.items():
+            echo(f"hint: untaped awx jobs wait {' '.join(ids)} --kind {kind}", err=True)
+        raise SystemExit(130) from None
 
 
 def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:

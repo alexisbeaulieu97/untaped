@@ -33,7 +33,7 @@ def test_sliced_launch_wait_keeps_mixed_execution_kinds(
     )
     fake_aap.install(fake_aap.router)
     monkeypatch.setattr(
-        _parallel, "WatchJob", lambda client: WatchJob(client, sleep=lambda _: None)
+        _parallel, "WatchJob", lambda client, **_: WatchJob(client, sleep=lambda _: None)
     )
     result = CliInvoker().invoke(
         app,
@@ -133,7 +133,7 @@ def test_track_pending_to_terminal_uses_only_supported_routes(
     monkeypatch.setattr(
         _context,
         "PollingJobMonitor",
-        lambda client: PollingJobMonitor(client, sleep=lambda _: None),
+        lambda client, **_: PollingJobMonitor(client, sleep=lambda _: None),
     )
     args = [command, action, name, "--track", "--format", "json"]
     if also_wait:
