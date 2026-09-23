@@ -4,16 +4,18 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from untaped.api import ConfigError, OutputFormat, echo
-from untaped.capabilities.awx.application import ApplyFile, ApplyResource
+from untaped.capabilities.awx.application import BatchMutationEngine, prepare_apply_file
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files
 
 
-def build_apply_resource(ctx: AwxContext, *, allow_unverified: bool = False) -> ApplyResource:
+def build_mutation_engine(
+    ctx: AwxContext, *, allow_unverified: bool = False
+) -> BatchMutationEngine:
     """Wire the authoritative application engine for all configuration commands."""
-    return ApplyResource(
+    return BatchMutationEngine(
         client=ctx.repo,
         catalog=ctx.catalog,
         fk=ctx.fk,
@@ -82,11 +84,11 @@ def run_apply(
                 )
         return [_with_default_organization(ctx, doc) for _source, doc in docs]
 
-    apply_one = build_apply_resource(ctx, allow_unverified=allow_unverified)
-    plan = ApplyFile(apply_one, reader, ctx.catalog, ctx.fk).prepare(file)
+    engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
+    plan = prepare_apply_file(engine, reader, file, catalog=ctx.catalog, fk=ctx.fk)
     run_mutation_plan(
         ctx,
-        apply_one.engine,
+        engine,
         plan,
         yes=yes,
         dry_run=dry_run,

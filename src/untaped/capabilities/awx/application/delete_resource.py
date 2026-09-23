@@ -1,6 +1,6 @@
 """Use case: issue DELETE for a resolved resource id.
 
-Resolution (id-or-name → record) lives in :class:`GetResource`; this
+Resolution (id-or-name → record) lives in selection; this
 use case is the destructive half so the CLI can preview targets
 (``--dry-run``) and gate on confirmation before invoking it.
 """
@@ -13,8 +13,9 @@ from typing import Any
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.inventory import is_generated_source
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 
 
 class DeleteResource:
@@ -24,7 +25,7 @@ class DeleteResource:
     def __call__(self, spec: ResourceSpec, record_id: int) -> DeleteReceipt:
         """Issue the DELETE for ``record_id``.
 
-        Typed errors (e.g. :class:`Conflict` on AWX 409 "in use") propagate
+        Typed errors (e.g. :class:`ConflictError` on AWX 409 "in use") propagate
         for the caller to render per-id on stderr.
         """
         if spec.kind == "InventorySource":
@@ -48,5 +49,5 @@ class DeleteResource:
 
 
 def _check_policy(spec: ResourceSpec, record: Mapping[str, Any]) -> None:
-    if spec.kind == "InventorySource" and record.get("source") == "constructed":
-        raise BadRequest("generated constructed sources cannot be deleted independently")
+    if is_generated_source(spec.kind, record):
+        raise BadRequestError("generated constructed sources cannot be deleted independently")

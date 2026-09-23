@@ -23,18 +23,13 @@ from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource, Res
 from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
+    is_constructed_inventory,
+    is_generated_source,
 )
-from untaped.capabilities.awx.errors import BadRequest, ResourceNotFound
+from untaped.capabilities.awx.domain.kinds import unified_template_kind
+from untaped.capabilities.awx.errors import BadRequestError
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
-
-# AWX's snake_case "unified_job_type" → our PascalCase kind names.
-_UJT_KIND_MAP: dict[str, str] = {
-    "job_template": "JobTemplate",
-    "workflow_job_template": "WorkflowJobTemplate",
-    "project": "Project",
-    "inventory_source": "InventorySource",
-}
 
 
 @dataclass(frozen=True)
@@ -56,18 +51,6 @@ class SaveResource:
     def __init__(self, client: ResourceClient, fk: FkResolver) -> None:
         self._client = client
         self._fk = fk
-
-    def __call__(
-        self,
-        spec: ResourceSpec,
-        *,
-        name: str,
-        scope: dict[str, str] | None = None,
-    ) -> Resource:
-        record = self._client.find_by_identity(spec, name=name, scope=scope)
-        if record is None:
-            raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
-        return self.snapshot_from_record(spec, record.model_dump()).resource
 
     def find_all(
         self,
@@ -93,7 +76,7 @@ class SaveResource:
 
     def snapshot_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> ResourceSnapshot:
         """Capture display labels and their original IDs without a second member read."""
-        if spec.kind == "Inventory" and record.get("kind") == "constructed":
+        if is_constructed_inventory(spec.kind, record):
             record = self._client.get(spec, int(record["id"])).model_dump()
         fk_ids = {
             ref.field: copy.deepcopy(record[ref.field])
@@ -102,9 +85,9 @@ class SaveResource:
         }
         memberships: dict[str, tuple[dict[str, Any], ...]] = {}
         spec_data = self._build_spec_body(spec, record)
-        if spec.kind == "Inventory" and record.get("kind") == "constructed":
+        if is_constructed_inventory(spec.kind, record):
             spec_data.pop("host_filter", None)
-        if spec.kind == "InventorySource" and record.get("source") == "constructed":
+        if is_generated_source(spec.kind, record):
             spec_data = {
                 k: v for k, v in spec_data.items() if k in {"source", *CONSTRUCTED_SOURCE_FIELDS}
             }
@@ -198,11 +181,11 @@ def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolve
     parent_summary = summary.get("unified_job_template") or {}
     parent_kind_str = parent_summary.get("unified_job_type")
     parent_name = parent_summary.get("name")
-    parent_kind = _UJT_KIND_MAP.get(parent_kind_str or "")
+    parent_kind = unified_template_kind(parent_kind_str)
     parent: IdentityRef | None = None
     parent_id = record.get("unified_job_template") or parent_summary.get("id")
     if parent_kind == "InventorySource" and not isinstance(parent_id, int):
-        raise BadRequest("cannot save source-parent schedule without inventory ancestry")
+        raise BadRequestError("cannot save source-parent schedule without inventory ancestry")
     if isinstance(parent_id, int) and (
         not parent_kind
         or not parent_name
@@ -216,7 +199,7 @@ def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolve
         parent_org = parent_summary.get("organization_name")
         parent = IdentityRef(kind=parent_kind, name=parent_name, organization=parent_org)
     if parent is None:
-        raise BadRequest("cannot save schedule without resolvable parent ancestry")
+        raise BadRequestError("cannot save schedule without resolvable parent ancestry")
     return Metadata(name=name, parent=parent)
 
 
@@ -249,7 +232,7 @@ def _inventory_child_metadata(
     inventory_id = record.get("inventory")
     if isinstance(inventory_id, int):
         return Metadata(name=name, parent=fk.id_to_identity("Inventory", inventory_id))
-    raise BadRequest(f"cannot save {spec.kind} without inventory ancestry")
+    raise BadRequestError(f"cannot save {spec.kind} without inventory ancestry")
 
 
 _METADATA_EXTRACTORS: dict[str, _MetadataExtractor] = {

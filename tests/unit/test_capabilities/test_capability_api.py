@@ -11,6 +11,7 @@ from untaped import api as sdk_api
 from untaped import batch as batch_mod
 from untaped import cli as cli_mod
 from untaped import errors as errors_mod
+from untaped import git as git_mod
 from untaped import settings as settings_mod
 from untaped import state as state_mod
 from untaped import stdin as stdin_mod
@@ -62,6 +63,12 @@ EXPECTED_ALL = [
     "read_identifiers",
     "report_errors",
     "run_editor",
+    "GitCommandError",
+    "GitResult",
+    "git_auth_header",
+    "run_git",
+    "safe_cache_path",
+    "safe_path_segment",
 ]
 
 
@@ -98,6 +105,12 @@ def test_helpers_resolve_to_canonical_sources() -> None:
     assert capi.get_config_section is get_config_section
     assert capi.read_identifiers is read_identifiers
     assert capi.run_editor is run_editor
+    assert capi.run_git is git_mod.run_git
+    assert capi.GitCommandError is git_mod.GitCommandError
+    assert capi.GitResult is git_mod.GitResult
+    assert capi.git_auth_header is git_mod.git_auth_header
+    assert capi.safe_cache_path is git_mod.safe_cache_path
+    assert capi.safe_path_segment is git_mod.safe_path_segment
 
 
 def test_helpers_match_sdk_modules() -> None:

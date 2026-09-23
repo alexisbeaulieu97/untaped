@@ -1,4 +1,4 @@
-"""Application use cases for untaped-recipe."""
+"""Application use cases for the recipe capability."""
 
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply

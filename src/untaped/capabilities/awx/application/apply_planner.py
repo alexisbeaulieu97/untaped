@@ -22,7 +22,7 @@ from typing import Any
 from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 
 
 def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:
@@ -40,7 +40,7 @@ def unrecognized_warning(spec: ResourceSpec, names: Iterable[str]) -> str | None
     """The shared "field(s) sent as-is" warning body, or ``None`` if all known.
 
     One source of truth for the message that both the file-mode
-    (:meth:`ApplyResource._warn_unrecognized`, per doc) and ``--stdin``
+    (once per distinct message in a batch) and ``--stdin``
     (the shared mutation planner, once per document) paths emit. Callers add their own
     ``warning:`` prefix / routing.
     """
@@ -125,7 +125,7 @@ class ApplyPlanner:
             value = body[ref.field]
             if ref.multi:
                 if not isinstance(value, list):
-                    raise BadRequest(f"foreign key {ref.field!r} must be a list")
+                    raise BadRequestError(f"foreign key {ref.field!r} must be a list")
                 if isinstance(value, list):
                     body[ref.field] = [
                         resolve_fk_value(
@@ -162,20 +162,22 @@ def resolve_fk_value(
     if isinstance(value, Mapping):
         reference = IdentityRef.model_validate({"kind": kind, **value})
         if reference.kind != kind:
-            raise BadRequest(f"foreign key requires kind {kind}")
+            raise BadRequestError(f"foreign key requires kind {kind}")
         try:
             required_scope = reference.lookup_scope(scope)
         except ValueError as exc:
-            raise BadRequest(str(exc)) from exc
+            raise BadRequestError(str(exc)) from exc
         return fk.name_to_id(kind, reference.name, scope=required_scope)
     if isinstance(value, bool):
-        raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+        raise BadRequestError(f"foreign key {kind} must be a positive integer ID or string name")
     if isinstance(value, int):
         if value <= 0:
-            raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+            raise BadRequestError(
+                f"foreign key {kind} must be a positive integer ID or string name"
+            )
         return fk.validate_id(kind, value, scope=scope)
     if not isinstance(value, str):
-        raise BadRequest(f"foreign key {kind} must be a positive integer ID or string name")
+        raise BadRequestError(f"foreign key {kind} must be a positive integer ID or string name")
     return fk.name_to_id(kind, value, scope=scope)
 
 

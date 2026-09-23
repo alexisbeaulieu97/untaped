@@ -6,7 +6,7 @@ import pytest
 
 from untaped.capabilities.awx.application.ports import FkResolver, RawHttpResourceClient
 from untaped.capabilities.awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
-from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
+from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
@@ -170,7 +170,7 @@ def test_schedule_strategy_find_uses_parent_endpoint() -> None:
 def test_schedule_strategy_rejects_unknown_parent_kind() -> None:
     s = ScheduleApplyStrategy()
     parent = IdentityRef(kind="UnknownThing", name="x")
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         s.prepare_parent(
             SCHEDULE_SPEC, {"name": "x", "parent": parent}, fk=cast(FkResolver, _StubFk())
         )
@@ -238,7 +238,7 @@ def test_schedule_strategy_raises_on_ambiguous_lookup() -> None:
 def test_schedule_strategy_rejects_missing_parent() -> None:
     client = _StubClient()
     s = ScheduleApplyStrategy()
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         s.create(
             SCHEDULE_SPEC,
             {},

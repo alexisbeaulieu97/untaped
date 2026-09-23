@@ -4,21 +4,18 @@ Domain layers depend on a ``GitRunner`` Protocol; this is the concrete
 adapter. Every call shells out to the system ``git`` binary; failures are
 mapped to :class:`GitError`.
 
-Invocations do not wait for interactive credential prompts (stdin closed,
-terminal and credential-manager prompts disabled, ssh in ``BatchMode``
-unless the user set ``GIT_SSH_COMMAND``/``GIT_SSH``) so a missing
-credential normally fails fast instead of hanging a sweep, and per-repo
-calls set ``GIT_CEILING_DIRECTORIES`` so git never falls through to a
-repository enclosing the target directory.
+Invocations run through :func:`untaped.api.run_git`, so they never wait
+for interactive credential prompts (a missing credential fails fast instead
+of hanging a sweep), and per-repo calls set ``GIT_CEILING_DIRECTORIES`` so
+git never falls through to a repository enclosing the target directory.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
+from untaped.api import GitCommandError, run_git
 from untaped.capabilities.workspace.domain import BareCacheEntry, RepoStatus
 from untaped.capabilities.workspace.domain.prune_safety import (
     DIRTY_WORKTREE_BLOCKER,
@@ -43,14 +40,11 @@ class GitRunner:
         timeout: float = DEFAULT_TIMEOUT,
         slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
     ) -> None:
+        # A missing binary surfaces at first call, so tests can construct a
+        # runner without git on PATH.
         self._git = git
-        # Resolve the binary once. We don't fail here on missing git so the
-        # error surfaces at first call (and so tests can construct a runner
-        # without git on PATH).
-        self._git_path = shutil.which(git)
         self._timeout = timeout
         self._slow_timeout = slow_timeout
-        self._ssh_configured: bool | None = None
 
     # cache --------------------------------------------------------------
 
@@ -244,92 +238,18 @@ class GitRunner:
         capture: bool = False,
         timeout: float | None = None,
     ) -> str:
-        if self._git_path is None:
-            raise GitError(f"`{self._git}` not found on PATH")
-        effective_timeout = self._timeout if timeout is None else timeout
-        # Name only the subcommand: full argv carries absolute paths and
-        # refspecs that drown the useful part of the message.
-        label = f"git {args[0]}" if args else "git"
         try:
-            result = subprocess.run(
-                [self._git_path, *args],
+            result = run_git(
+                args,
                 cwd=cwd,
-                env=_git_env(cwd, batch_ssh=not self._user_ssh_configured()),
-                stdin=subprocess.DEVNULL,
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=effective_timeout,
+                git=self._git,
+                timeout=self._timeout if timeout is None else timeout,
+                capture=capture,
+                ceiling=True,
             )
-        except subprocess.TimeoutExpired as exc:
-            raise GitError(f"{label} timed out after {effective_timeout:g}s") from exc
-        except OSError as exc:
-            raise GitError(f"{label} could not run: {exc}") from exc
-        if result.returncode != 0:
-            raise GitError(
-                f"{label} failed: {_stderr_gist(result.stderr or '')}",
-                returncode=result.returncode,
-            )
-        return result.stdout if capture else ""
-
-    def _user_ssh_configured(self) -> bool:
-        """Whether git config already sets ``core.sshCommand`` (probed once).
-
-        ``GIT_SSH_COMMAND`` outranks ``core.sshCommand``, so the BatchMode
-        default must not be injected over a user's configured ssh command.
-        The probe uses ``Popen`` directly so it stays out of the per-command
-        ``subprocess.run`` path.
-        """
-        if self._ssh_configured is None:
-            self._ssh_configured = _core_ssh_command_set(self._git_path)
-        return self._ssh_configured
-
-
-_GIST_LIMIT = 300
-
-
-def _core_ssh_command_set(git_path: str | None) -> bool:
-    if git_path is None:
-        return False
-    try:
-        with subprocess.Popen(
-            [git_path, "config", "--get", "core.sshCommand"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ) as proc:
-            out, _ = proc.communicate(timeout=10)
-    except OSError, subprocess.TimeoutExpired:
-        return False
-    return proc.returncode == 0 and bool(out.strip())
-
-
-def _git_env(cwd: Path | None, *, batch_ssh: bool = True) -> dict[str, str]:
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
-    if batch_ssh and "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env:
-        # Stop ssh from waiting on passphrase/host-key prompts. A user's own
-        # GIT_SSH_COMMAND/GIT_SSH or core.sshCommand wins.
-        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
-    if cwd is not None:
-        parent = str(Path(os.path.abspath(cwd)).parent)
-        existing = env.get("GIT_CEILING_DIRECTORIES")
-        env["GIT_CEILING_DIRECTORIES"] = os.pathsep.join(
-            [parent, existing] if existing else [parent]
-        )
-    return env
-
-
-def _stderr_gist(stderr: str) -> str:
-    """Keep the ``fatal:``/``error:`` lines (or the last line), bounded."""
-    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    if not lines:
-        return "no stderr"
-    important = [line for line in lines if line.lower().startswith(("fatal:", "error:"))]
-    gist = "; ".join(important or lines[-1:])
-    if len(gist) > _GIST_LIMIT:
-        gist = gist[: _GIST_LIMIT - 3] + "..."
-    return gist
+        except GitCommandError as exc:
+            raise GitError(str(exc), returncode=exc.returncode) from exc
+        return result.text if capture else ""
 
 
 def _parse_status(out: str) -> RepoStatus:

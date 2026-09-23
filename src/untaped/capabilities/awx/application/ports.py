@@ -161,7 +161,7 @@ class RawHttpResourceClient(ResourceClient, Protocol):
     Use cases that need to construct AWX URLs directly take this wider
     port instead of :class:`ResourceClient`. Today's callers:
 
-    - :class:`ApplyResource`: forwards its ``client`` to
+    - :class:`BatchMutationEngine`: forwards its ``client`` to
       :class:`ApplyStrategy` implementations
       (``find_existing`` / ``create`` / ``update``), some of which
       build nested-endpoint URLs (e.g. ``ScheduleApplyStrategy``,
@@ -392,32 +392,6 @@ class JobMonitor(Protocol):
         ...
 
 
-class JobRecordRepository(Protocol):
-    """Spec-free read access to AWX execution records.
-
-    Today's collections: ``jobs``, ``workflow_jobs``, ``project_updates``,
-    ``inventory_updates``, ``ad_hoc_commands``. ``kind`` is the
-    discriminator used by :class:`Job`; the adapter maps it to the AWX
-    collection via :data:`untaped.capabilities.awx.domain.job.KIND_TO_API_PATH`.
-    Returned dicts carry the full AWX shape so ``--format yaml`` callers
-    see every field (lossless versus a Pydantic round-trip).
-    """
-
-    def list(
-        self,
-        *,
-        kind: str,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        """Walk every execution record of ``kind`` matching ``params``."""
-        ...
-
-    def get(self, *, kind: str, job_id: int) -> dict[str, Any]:
-        """Single record fetch."""
-        ...
-
-
 class UnifiedTemplateRepository(Protocol):
     """Read access to AWX's polymorphic ``/unified_job_templates/`` view.
 
@@ -426,15 +400,6 @@ class UnifiedTemplateRepository(Protocol):
     spec-driven CRUD — it's a virtual collection; per-kind sub-apps
     handle write paths.
     """
-
-    def list(
-        self,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        """Walk every UJT record matching ``params``."""
-        ...
 
     def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
         """Bulk-fetch via ``?id__in=…``; one round trip, paginated when
@@ -498,7 +463,6 @@ __all__ = [
     "Catalog",
     "FkResolver",
     "JobMonitor",
-    "JobRecordRepository",
     "RawHttpResourceClient",
     "ResourceClient",
     "ResourceDocumentReader",

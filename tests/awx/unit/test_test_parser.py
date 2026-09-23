@@ -6,9 +6,9 @@ import pytest
 import yaml
 from jinja2 import UndefinedError
 
-from untaped.capabilities.awx.domain.test_suite import RefSentinel
-from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.test.parser import (
+from untaped.api import ConfigError
+from untaped.capabilities.awx.domain.suite import RefSentinel
+from untaped.capabilities.awx.infrastructure.suites.parser import (
     build_jinja_env,
     load_yaml_with_refs,
     split_frontmatter,
@@ -34,7 +34,7 @@ def test_split_frontmatter_no_frontmatter() -> None:
 
 def test_split_frontmatter_missing_close_delimiter_errors() -> None:
     text = "---\nvariables:\n  env: {}\nkind: AwxTestSuite\n"
-    with pytest.raises(AwxApiError, match="frontmatter"):
+    with pytest.raises(ConfigError, match="frontmatter"):
         split_frontmatter(text)
 
 
@@ -74,7 +74,7 @@ def test_ref_inside_list_resolves_per_item() -> None:
 
 def test_ref_requires_kind_and_name() -> None:
     text = "inventory: !ref { kind: Inventory }\n"
-    with pytest.raises(AwxApiError, match="!ref"):
+    with pytest.raises(ConfigError, match="!ref"):
         load_yaml_with_refs(text)
 
 

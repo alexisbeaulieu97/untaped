@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import time
-from base64 import b64encode
 from collections import Counter
 from collections.abc import Callable, Iterable
 from typing import Literal
 
-from untaped.api import HttpSettings, ProgressHandle, UiContext, echo
+from untaped.api import HttpSettings, ProgressHandle, UiContext, echo, git_auth_header
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshGitSourceIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
 from untaped.capabilities.ansible.domain.identity import github_web_host
@@ -98,7 +97,7 @@ def refresh_source(
         )
         git = GitRepositoryCache()
         selected_backend = backend or settings.source_refresh_backend
-        auth_header = _git_auth_header(token) if token else None
+        auth_header = git_auth_header(token) if token else None
         graphql_probe = GithubRefProbe(github, concurrency=settings.probe_concurrency)
         git_probe = GitRemoteRefProbe(
             git,
@@ -261,8 +260,3 @@ def _format_progress(event: RefreshProgressEvent) -> str:
     if event.changed is not None:
         message = f"{message}, {event.changed} changed"
     return message
-
-
-def _git_auth_header(token: str) -> str:
-    credential = b64encode(f"x-access-token:{token}".encode()).decode()
-    return f"AUTHORIZATION: basic {credential}"

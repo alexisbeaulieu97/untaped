@@ -2,11 +2,15 @@
 
 All four kinds normalise to the same surface for the CLI: a numeric id, a
 status string, a kind discriminator, and a few timing fields. Streaming
-events are exposed as :class:`JobEvent` lines.
+events are exposed as :class:`JobEvent` lines. :func:`poll_until_terminal`
+is the one polling loop every waiter and streamer drives (the fetch and
+sleep are injected, so this module still performs no I/O itself).
 """
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
@@ -52,6 +56,30 @@ class Job(BaseModel):
     @property
     def is_terminal(self) -> bool:
         return self.status in TERMINAL_STATUSES
+
+
+def poll_until_terminal(
+    job: Job,
+    fetch: Callable[[Job], Job],
+    *,
+    sleep: Callable[[float], None],
+    interval: float,
+    timeout: float | None = None,
+) -> Iterator[Job]:
+    """Yield ``job``, then each re-fetched state, until one is terminal.
+
+    Sleeps ``interval`` before every fetch. With ``timeout`` the loop also
+    stops (after yielding the latest state) once that many seconds passed.
+    """
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    current = job
+    yield current
+    while not current.is_terminal:
+        if deadline is not None and time.monotonic() >= deadline:
+            return
+        sleep(interval)
+        current = fetch(current)
+        yield current
 
 
 class JobEvent(BaseModel):

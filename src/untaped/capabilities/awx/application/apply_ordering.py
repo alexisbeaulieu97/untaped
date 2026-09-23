@@ -63,8 +63,7 @@ def topological_sort(docs: Iterable[Resource], *, catalog: Catalog) -> list[Reso
                 edges[doc.kind].add(referenced_kind)
 
     # Tie-break ready kinds by the catalog's canonical order (Organization
-    # before CredentialType, etc. — see AGENTS.md
-    # "Apply ordering"). Falling back to the kind name keeps unknown-but-valid
+    # before CredentialType, etc.). Falling back to the kind name keeps unknown-but-valid
     # kinds deterministic.
     kind_rank = {kind: i for i, kind in enumerate(catalog.kinds())}
     kind_order = _kahn_topological_order(kinds_in_docs, edges, rank=kind_rank)

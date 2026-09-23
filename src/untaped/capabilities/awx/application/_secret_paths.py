@@ -1,7 +1,8 @@
-"""Spec-driven matching of ``$encrypted$`` placeholders in apply payloads.
+"""Secret-path patterns: the one walker and ``$encrypted$`` placeholder stripping.
 
-Patterns use dot notation with ``*`` matching any list element or dict
-key:
+``ResourceSpec.secret_paths`` patterns use dot notation with ``*`` matching
+any list element or dict key; :func:`path_slots` is the single walker every
+read, redact, and remove of a secret path goes through:
 
 - ``webhook_key``                — exact top-level key
 - ``inputs.*``                   — any direct child of ``inputs``
@@ -20,12 +21,55 @@ before invoking.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 from untaped.capabilities.awx.domain import ResourceSpec
 
 PLACEHOLDER = "$encrypted$"
+
+
+def path_slots(value: Any, pattern: str) -> Iterator[tuple[Any, Any]]:
+    """Yield ``(container, key)`` for every existing slot ``pattern`` names.
+
+    ``*`` matches every key of a mapping or index of a list/tuple; a missing
+    key or a non-container along the way yields nothing. Keys are listed
+    before descending, so callers may assign through a yielded slot.
+    """
+    head, _, rest = pattern.partition(".")
+    keys: list[Any]
+    if isinstance(value, Mapping):
+        keys = list(value) if head == "*" else [head] if head in value else []
+    elif isinstance(value, list | tuple) and head == "*":
+        keys = list(range(len(value)))
+    else:
+        return
+    for key in keys:
+        if rest:
+            yield from path_slots(value[key], rest)
+        else:
+            yield value, key
+
+
+def values_at(value: Any, pattern: str) -> Iterator[Any]:
+    """Every value stored at a slot ``pattern`` names."""
+    for container, key in path_slots(value, pattern):
+        yield container[key]
+
+
+def replace_at(value: Any, pattern: str, replacement: Any) -> None:
+    """In place: overwrite every mutable slot ``pattern`` names."""
+    for container, key in path_slots(value, pattern):
+        if isinstance(container, dict | list):
+            container[key] = replacement
+
+
+def remove_at(value: Any, pattern: str) -> None:
+    """In place: delete every mutable slot ``pattern`` names."""
+    # Reverse order keeps list indices valid while deleting several.
+    for container, key in reversed(list(path_slots(value, pattern))):
+        if isinstance(container, dict | list):
+            del container[key]
 
 
 def strip_encrypted_in_place(
@@ -86,6 +130,3 @@ def _pattern_matches(path_parts: list[str], pattern: str) -> bool:
         if p != pp:
             return False
     return True
-
-
-WarnFn = Callable[[str], None]

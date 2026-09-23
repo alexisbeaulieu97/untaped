@@ -1,7 +1,10 @@
 """Concrete :class:`UnifiedTemplateRepository` implementation.
 
 Wraps a :class:`RawHttpResourceClient`; the only AWX-specific piece is
-the collection name ``unified_job_templates/``. Bulk ``get_by_ids`` joins
+the collection name ``unified_job_templates/``. Lists are alphabetical
+unless the caller passes its own ``order_by`` (ordering four aggregated
+kinds by ``-id`` would interleave four creation timelines). Bulk
+``get_by_ids`` joins
 ids with ``,`` for AWX's ``id__in`` filter and orders by ``id`` so the
 returned page is stable across re-runs.
 """
@@ -27,7 +30,9 @@ class UnifiedTemplateRepository:
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        return self._client.paginate_path(_PATH, params=params, limit=limit)
+        return self._client.paginate_path(
+            _PATH, params={"order_by": "name", **(params or {})}, limit=limit
+        )
 
     def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
         # An empty ``id__in=`` filter matches every record at AWX, so a

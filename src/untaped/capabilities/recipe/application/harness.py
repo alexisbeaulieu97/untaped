@@ -14,13 +14,13 @@ from pydantic import ValidationError
 
 from untaped.api import ConfigError
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
-from untaped.capabilities.recipe.application.ports import HookDebugResult, HookExecutorPort
+from untaped.capabilities.recipe.application.files import read_recipe_file
+from untaped.capabilities.recipe.application.ports import HookExecutorPort
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply
 from untaped.capabilities.recipe.application.targets import Target
-from untaped.capabilities.recipe.domain.plan import FileChange, Verdict
+from untaped.capabilities.recipe.domain.pack import InstalledPack
+from untaped.capabilities.recipe.domain.plan import FileChange, HookDebugResult, Verdict
 from untaped.capabilities.recipe.domain.testcase import CaseSpec, VerdictExpectation
-from untaped.capabilities.recipe.infrastructure.pack_store import InstalledPack
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
 
 CaseStatus = Literal["pass", "fail", "error", "updated"]
 
@@ -289,7 +289,7 @@ def _plan_case(
 ) -> tuple[_Trees | None, str | None]:
     """Plan against a temp copy of given/ and return (trees, error)."""
     try:
-        recipe = load_recipe_file(case.recipe_path)
+        recipe = read_recipe_file(case.recipe_path)
     except (ConfigError, ValueError) as exc:
         return None, str(exc)
     with tempfile.TemporaryDirectory() as temp_root:

@@ -1,13 +1,9 @@
 """Render a :class:`JobEvent` as a single human-readable line.
 
-Two surfaces:
-
-- :func:`render_event` — plain string, used by tests, ``--format raw``,
-  and any consumer that wants stable byte-for-byte output.
-- :func:`render_event_text` — :class:`rich.text.Text` carrying status
-  styles. Pass it to a :class:`rich.console.Console`; when stdout/stderr
-  is a TTY, Rich emits ANSI colour, when piped or redirected the styling
-  is stripped automatically — same shape as ``less | grep | tee``.
+:func:`render_event_text` returns a :class:`rich.text.Text` carrying status
+styles. Pass it to a :class:`rich.console.Console`; when stdout/stderr
+is a TTY, Rich emits ANSI colour, when piped or redirected the styling
+is stripped automatically — same shape as ``less | grep | tee``.
 
 Picks an indent and a status word from the AWX event-name discriminator
 so a streaming feed reads like the AWX UI's "Output" tab without needing
@@ -112,8 +108,3 @@ def render_event_text(ev: JobEvent, *, prefix: str = "") -> Text:
     if not prefix:
         return body
     return Text.assemble(Text(f"[{prefix}] ", style=_PREFIX_STYLE), body)
-
-
-def render_event(ev: JobEvent, *, prefix: str = "") -> str:
-    """Return one rendered line for ``ev`` (no trailing newline, no ANSI)."""
-    return render_event_text(ev, prefix=prefix).plain

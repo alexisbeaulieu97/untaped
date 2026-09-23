@@ -6,12 +6,7 @@ import pytest
 
 from untaped.api import ConfigError
 from untaped.capabilities.awx.domain import Metadata, Resource
-from untaped.capabilities.awx.infrastructure.yaml_io import (
-    dump_resource,
-    read_resources,
-    write_resource,
-    write_resources,
-)
+from untaped.capabilities.awx.infrastructure.yaml_io import dump_resource, read_resource_files
 
 
 def _resource(kind: str, name: str, **spec: object) -> Resource:
@@ -20,6 +15,19 @@ def _resource(kind: str, name: str, **spec: object) -> Resource:
         metadata=Metadata(name=name, organization="Default"),
         spec=dict(spec),
     )
+
+
+def write_resource(path: Path, resource: Resource, *, header_comment: str | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_resource(resource, header_comment=header_comment), encoding="utf-8")
+
+
+def write_resources(path: Path, resources: list[Resource]) -> None:
+    path.write_text("---\n".join(dump_resource(r) for r in resources), encoding="utf-8")
+
+
+def read_resources(path: Path) -> list[Resource]:
+    return [resource for _source, resource in read_resource_files(path)]
 
 
 def test_round_trip_single_doc(tmp_path: Path) -> None:

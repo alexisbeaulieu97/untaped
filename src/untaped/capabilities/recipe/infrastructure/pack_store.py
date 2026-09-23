@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import os
 import shutil
-import subprocess
 import tomllib
 import uuid
 from collections.abc import Callable, Mapping
@@ -15,19 +13,25 @@ from pathlib import Path
 
 import tomlkit
 
-from untaped.api import atomic_write
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
-from untaped.capabilities.recipe.domain.hook_project import (
-    hook_module_file,
-    require_pack_lock,
-    validate_hook_modules,
-    validate_hook_project_contract,
+from untaped.api import GitCommandError, atomic_write, run_git
+from untaped.capabilities.recipe.domain.hook_project import hook_module_file
+from untaped.capabilities.recipe.domain.pack import (
+    HookEntry,
+    InstalledPack,
+    PackManifest,
+    PackRef,
+    RecipeEntry,
 )
-from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest, PackRef, RecipeEntry
 from untaped.capabilities.recipe.domain.paths import safe_library_name
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
+from untaped.capabilities.recipe.domain.recipe import parse_recipe
+from untaped.capabilities.recipe.infrastructure.pack_files import (
+    check_hook_project,
+    hook_exports,
+    read_pack_manifest,
+)
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
+_GIT_CLONE_TIMEOUT = 600.0
 
 # Dev/build junk excluded from library installs; pack_content_hash prunes the
 # same names so the recorded install hash and the copied tree always agree.
@@ -43,30 +47,6 @@ PACK_COPY_IGNORE = (
     ".uv-cache",
     "*.egg-info",
 )
-
-
-@dataclass(frozen=True)
-class InstalledPack:
-    """One installed pack plus library bookkeeping."""
-
-    name: str
-    root: Path
-    manifest: PackManifest
-    source: str
-    rev: str
-    installed_version: str
-
-    @classmethod
-    def local(cls, path: Path, manifest: PackManifest) -> InstalledPack:
-        """Wrap an explicit-path pack that is not tracked by the library index."""
-        return cls(
-            name=manifest.name,
-            root=path,
-            manifest=manifest,
-            source=str(path),
-            rev="",
-            installed_version=manifest.version,
-        )
 
 
 @dataclass(frozen=True)
@@ -130,7 +110,7 @@ class PackLibrary:
     ) -> PackManifest:
         """Install a validated pack directory into the library."""
         source_dir = source_dir.expanduser()
-        manifest = PackManifest.from_pyproject(source_dir)
+        manifest = read_pack_manifest(source_dir)
         validate_pack(source_dir, manifest)
         index = self._read_index()
         installed_name = safe_library_name(name or manifest.name, field="pack")
@@ -238,7 +218,7 @@ class PackLibrary:
             if not root.is_dir() or not (root / "pyproject.toml").is_file():
                 continue
             try:
-                manifest = PackManifest.from_pyproject(root)
+                manifest = read_pack_manifest(root)
             except (ValueError, OSError) as exc:
                 load_errors[root.name] = str(exc)
                 continue
@@ -296,6 +276,10 @@ class PackLibrary:
                 return pack
         self._raise_if_broken(installed_name)
         return None
+
+    def local_pack(self, path: Path) -> InstalledPack:
+        """Read an explicit-path pack that is not tracked by the library index."""
+        return InstalledPack.local(path, read_pack_manifest(path))
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
         """Resolve a bare or qualified recipe reference."""
@@ -365,21 +349,16 @@ class PackLibrary:
 
 
 def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
-    """Validate a pack source before install (or before its summary is shown).
-
-    Shares ``check``'s hookless lock exemption via ``require_pack_lock``.
-    """
-    require_pack_lock(source_dir, has_hooks=bool(manifest.hooks))
-    validate_hook_project_contract(source_dir, manifest)
+    """Validate a pack source before install (or before its summary is shown)."""
+    check_hook_project(source_dir, manifest)
     for recipe_name, recipe_entry in manifest.recipes.items():
         recipe_file = source_dir / recipe_entry.path
         if not recipe_file.is_file():
             raise ValueError(f"pack recipe file not found: {recipe_name}")
         try:
-            load_recipe_file(recipe_file)
+            parse_recipe(recipe_file.read_text(encoding="utf-8"), source=recipe_file)
         except ValueError as exc:
             raise ValueError(f"invalid pack recipe: {recipe_name}: {exc}") from exc
-    validate_hook_modules(source_dir, manifest)
     for hook_name, hook_entry in manifest.hooks.items():
         if not hook_exports(hook_module_file(source_dir, hook_entry.module)):
             raise ValueError(
@@ -415,7 +394,7 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
     if rev is not None and (not rev.strip() or rev.startswith("-")):
         raise ValueError(f"invalid --rev: {rev!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    clone_args = ["git", "clone", "--depth", "1"]
+    clone_args = ["clone", "--depth", "1"]
     if rev is not None:
         clone_args.extend(["--branch", rev])
     clone_args.extend(["--", url, str(dest)])
@@ -426,8 +405,8 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
             raise
         if dest.exists():
             shutil.rmtree(dest)
-        _run_git(["git", "clone", "--", url, str(dest)])
-        _run_git(["git", "checkout", "--detach", rev, "--"], cwd=dest)
+        _run_git(["clone", "--", url, str(dest)])
+        _run_git(["checkout", "--detach", rev, "--"], cwd=dest)
     return dest
 
 
@@ -437,31 +416,9 @@ def _is_missing_branch_error(message: str) -> bool:
     return "not found in upstream" in lowered or "could not find remote branch" in lowered
 
 
-def _git_env() -> dict[str, str]:
-    """Environment for non-interactive git with untranslated (C locale) messages.
-
-    :func:`_is_missing_branch_error` matches English git output, and a pack
-    fetch must never block on a credential prompt.
-    """
-    return {
-        **os.environ,
-        "LC_ALL": "C",
-        "LANGUAGE": "C",
-        "GIT_TERMINAL_PROMPT": "0",
-        "GCM_INTERACTIVE": "never",
-    }
-
-
 def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
-    result = subprocess.run(
-        args,
-        cwd=cwd,
-        env=_git_env(),
-        stdin=subprocess.DEVNULL,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip() or "git command failed"
-        raise ValueError(message)
+    """Run git non-interactively in the C locale (see :func:`_is_missing_branch_error`)."""
+    try:
+        run_git(args, cwd=cwd, timeout=_GIT_CLONE_TIMEOUT)
+    except GitCommandError as exc:
+        raise ValueError(str(exc)) from exc

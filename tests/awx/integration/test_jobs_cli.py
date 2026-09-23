@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from untaped.capabilities.awx.cli import app
+from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
@@ -447,20 +448,15 @@ def _seed_two_jts(fake: Any) -> None:
     _seed_jt(fake, name="deploy-b", id=31, playbook="b.yml")
 
 
-class _PrefixingStubStream:
-    """Stand-in for ``StreamJobEvents`` that yields one identifiable
+def _prefixing_stub_stream(_monitor: Any, job: Any, **_kwargs: Any) -> Any:
+    """Stand-in for ``JobMonitor.stream_events`` that yields one identifiable
     event per worker. The play name carries the materialised job id so
     a failing assertion's stderr dump tells us which worker emitted
     what. Used by every test that asserts on prefixed output.
     """
+    from untaped.capabilities.awx.domain import JobEvent
 
-    def __init__(self, monitor: Any) -> None:
-        pass
-
-    def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
-        from untaped.capabilities.awx.domain import JobEvent
-
-        return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
+    return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
 
 
 def test_launch_track_exits_zero_on_successful_job(fake_aap: Any) -> None:
@@ -485,20 +481,14 @@ def test_launch_track_parallel_drains_concurrently(
     """
     import threading
 
-    from untaped.capabilities.awx.cli import _parallel
-
     _seed_two_jts(fake_aap)
     barrier = threading.Barrier(2, timeout=15)
 
-    class _BarrierStream:
-        def __init__(self, monitor: Any) -> None:
-            pass
+    def _barrier_stream(_monitor: Any, job: Any, **_kwargs: Any) -> Any:
+        barrier.wait()
+        return iter(())
 
-        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
-            barrier.wait()
-            return iter(())
-
-    monkeypatch.setattr(_parallel, "StreamJobEvents", _BarrierStream)
+    monkeypatch.setattr(PollingJobMonitor, "stream_events", _barrier_stream)
 
     result = CliInvoker().invoke(
         app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
@@ -512,10 +502,9 @@ def test_launch_track_output_lines_carry_template_prefix(
     """Concurrent multi-template event output must be prefixed with the
     originating template name so a shared stderr stays disambiguable.
     """
-    from untaped.capabilities.awx.cli import _parallel
 
     _seed_two_jts(fake_aap)
-    monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
+    monkeypatch.setattr(PollingJobMonitor, "stream_events", _prefixing_stub_stream)
 
     result = CliInvoker().invoke(
         app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
@@ -538,11 +527,10 @@ def test_launch_track_one_failed_exits_one_and_logs_both(
     ``jobs`` and the post-loop ``any(j.status != "successful")`` block
     triggers ``exit 1``.
     """
-    from untaped.capabilities.awx.cli import _parallel
 
     _seed_two_jts(fake_aap)
     fake_aap.next_action_status = "failed"
-    monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
+    monkeypatch.setattr(PollingJobMonitor, "stream_events", _prefixing_stub_stream)
 
     result = CliInvoker().invoke(
         app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
@@ -621,24 +609,19 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
     Pins the wrap-message format so the ``error: deploy-a: deploy-a:
     ...`` double-prefix bug (round-2 review) cannot regress.
     """
-    from untaped.capabilities.awx.cli import _parallel
     from untaped.capabilities.awx.domain import JobEvent
 
     _seed_two_jts(fake_aap)
 
-    class _StubStreamWithDeployAFailure:
-        def __init__(self, monitor: Any) -> None:
-            pass
+    def _stub_stream_with_deploy_a_failure(_monitor: Any, job: Any, **_kwargs: Any) -> Any:
+        # ``deploy-a`` materialises at the first new job id (32);
+        # ``deploy-b`` at the second (33). Discriminate by parity
+        # so the test isn't coupled to FakeAap's id sequencing.
+        if job.id % 2 == 0:
+            raise RuntimeError("boom")
+        return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
 
-        def __call__(self, job: Any, *, follow: bool = True, **_kwargs: Any) -> Any:
-            # ``deploy-a`` materialises at the first new job id (32);
-            # ``deploy-b`` at the second (33). Discriminate by parity
-            # so the test isn't coupled to FakeAap's id sequencing.
-            if job.id % 2 == 0:
-                raise RuntimeError("boom")
-            return iter([JobEvent(counter=1, event="playbook_on_play_start", play=f"job-{job.id}")])
-
-    monkeypatch.setattr(_parallel, "StreamJobEvents", _StubStreamWithDeployAFailure)
+    monkeypatch.setattr(PollingJobMonitor, "stream_events", _stub_stream_with_deploy_a_failure)
 
     result = CliInvoker().invoke(
         app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]

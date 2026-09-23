@@ -129,11 +129,11 @@ def test_additive_ignored_write_fails_readback() -> None:
     import pytest
 
     from awx.unit.support import _MembershipClient
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
     client = _MembershipClient([])
     client.ignore_membership = True
-    with pytest.raises(BadRequest, match="did not converge"):
+    with pytest.raises(BadRequestError, match="did not converge"):
         ManageMembership(cast(ResourceClient, client))(
             GROUP_SPEC, parent_id=200, ref=_hosts_ref(), member_ids=[101], action="associate"
         )

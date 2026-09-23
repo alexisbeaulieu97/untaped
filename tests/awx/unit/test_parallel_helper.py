@@ -6,8 +6,8 @@ public CLI in ``tests/integration/test_jobs_cli.py`` — that's the right
 home for those assertions per AGENTS.md ("Test through public APIs").
 
 What integration tests *cannot* observe is the timing seam: that
-``while_running`` runs on the main thread *between* ``pool.submit`` and
-``future.result()``-collection, so a caller can drain a shared queue
+``while_running`` runs on the main thread *after* submission and
+*before* result collection, so a caller can drain a shared queue
 while workers are still pending. If a refactor accidentally moved
 ``while_running()`` after the collection loop, every existing
 ``--track`` integration test would still pass — events would still
@@ -30,7 +30,7 @@ def _job(jid: int) -> Job:
 def test_while_running_callback_runs_between_submit_and_collect() -> None:
     """``while_running`` observes the worker as *in-flight* and is the
     one that releases it — proves the helper hasn't blocked on
-    ``future.result()`` yet."""
+    result collection yet."""
     started = threading.Event()
     release = threading.Event()
     observed_started = False

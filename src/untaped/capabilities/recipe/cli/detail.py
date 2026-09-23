@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
+from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.domain.hook_project import hook_module_file
 from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest
 from untaped.capabilities.recipe.domain.recipe import (
@@ -15,7 +15,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
+from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports
 
 
 def recipe_detail(ref: str, recipe: Recipe, path: Path) -> dict[str, object]:
@@ -66,7 +66,7 @@ def pack_detail(installed_name: str, manifest: PackManifest, root: Path) -> dict
         "recipes": [
             {
                 "name": name,
-                "description": _first_line(load_recipe_file(root / entry.path).description),
+                "description": _first_line(read_recipe_file(root / entry.path).description),
             }
             for name, entry in sorted(manifest.recipes.items())
         ],
@@ -84,18 +84,49 @@ def pack_detail(installed_name: str, manifest: PackManifest, root: Path) -> dict
     return record
 
 
+def table_recipe_detail(detail: dict[str, object]) -> dict[str, object]:
+    """Flatten a recipe detail's steps into one readable line for the table view."""
+    steps = detail.get("steps")
+    if not isinstance(steps, list):
+        return detail
+    return {**detail, "steps": "; ".join(_step_summary(step) for step in steps)}
+
+
 def _step_detail(
     step: CopyStep | RemoveStep | TemplateStep | TransformStep | ValidateStep,
 ) -> dict[str, object]:
-    if isinstance(step, TransformStep):
-        return {"type": step.type, "file_or_files": str(step.file), "hook": step.hook}
-    if isinstance(step, ValidateStep):
-        return {"type": step.type, "file_or_files": "", "hook": step.hook}
-    if isinstance(step, TemplateStep):
-        return {"type": step.type, "file_or_files": str(step.dest), "hook": ""}
-    if isinstance(step, CopyStep):
-        return {"type": step.type, "file_or_files": str(step.dest), "hook": ""}
-    return {"type": step.type, "file_or_files": str(step.file), "hook": ""}
+    files: tuple[Path, ...] = ()
+    globs: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    hook = ""
+    if isinstance(step, TransformStep | RemoveStep):
+        files = (step.file,) if step.file is not None else step.files
+        globs, exclude = step.globs, step.exclude
+    elif isinstance(step, TemplateStep | CopyStep):
+        files = (step.dest,)
+    if isinstance(step, TransformStep | ValidateStep):
+        hook = step.hook
+    return {
+        "type": step.type,
+        "files": [file.as_posix() for file in files],
+        "globs": list(globs),
+        "exclude": list(exclude),
+        "hook": hook,
+    }
+
+
+def _step_summary(step: object) -> str:
+    if not isinstance(step, dict):
+        return str(step)
+    parts = [str(step.get("type", ""))]
+    for key in ("files", "globs", "exclude"):
+        values = step.get(key)
+        if values:
+            joined = ",".join(str(value) for value in values)
+            parts.append(joined if key == "files" else f"{key}={joined}")
+    if step.get("hook"):
+        parts.append(f"hook={step['hook']}")
+    return " ".join(parts)
 
 
 def _first_line(text: str) -> str:

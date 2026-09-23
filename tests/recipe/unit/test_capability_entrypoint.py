@@ -1,10 +1,8 @@
-"""Capability-construction checks for the recipe capability (Wave 2 slice 5).
+"""Capability-construction checks for the recipe capability.
 
-Replaces the standalone ``test_tool_entrypoint.py`` (``ToolSpec`` +
-``run_tool`` + ``untaped-recipe`` console script): recipe now ships a
-static ``SPEC: CapabilitySpec`` plus a nullary ``build_app()`` factory,
-mounted as built-in ``untaped recipe ...`` under the unified root.
-``ToolSpec`` assertions are retired per spec §9 gate 2.
+Recipe ships a static ``SPEC: CapabilitySpec`` plus a nullary
+``build_app()`` factory, mounted as built-in ``untaped recipe ...`` under
+the unified root; it has no console script of its own.
 """
 
 from __future__ import annotations
@@ -71,7 +69,7 @@ def test_build_app_is_nullary_factory() -> None:
     assert "recipe" in app.name
 
 
-def test_no_standalone_console_script() -> None:
+def test_no_separate_console_script() -> None:
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
     scripts = data["project"].get("scripts", {})
     assert scripts.get("untaped") == "untaped.__main__:main"

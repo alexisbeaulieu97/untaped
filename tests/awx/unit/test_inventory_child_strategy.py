@@ -15,7 +15,7 @@ import pytest
 
 from untaped.capabilities.awx.application.ports import FkResolver, RawHttpResourceClient
 from untaped.capabilities.awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
-from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
+from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import GROUP_SPEC, HOST_SPEC
 from untaped.capabilities.awx.infrastructure.strategies import InventoryChildApplyStrategy
 
@@ -180,7 +180,7 @@ def test_update_uses_global_endpoint() -> None:
 
 def test_create_rejects_missing_parent() -> None:
     s = InventoryChildApplyStrategy()
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         s.prepare_parent(
             HOST_SPEC,
             {"name": "x", "parent": None},
@@ -191,7 +191,7 @@ def test_create_rejects_missing_parent() -> None:
 def test_create_rejects_non_inventory_parent_kind() -> None:
     s = InventoryChildApplyStrategy()
     bad_parent = IdentityRef(kind="Project", name="something")
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         s.prepare_parent(
             HOST_SPEC,
             {"name": "x", "parent": bad_parent},

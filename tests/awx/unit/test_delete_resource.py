@@ -15,7 +15,7 @@ from untaped.capabilities.awx.application import DeleteResource
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import Conflict, ResourceNotFound
+from untaped.capabilities.awx.errors import ConflictError, ResourceNotFoundError
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
 
@@ -39,16 +39,16 @@ def test_delete_calls_client_with_record_id() -> None:
 
 
 def test_delete_propagates_conflict() -> None:
-    """409 from AWX surfaces as ``Conflict`` (the CLI maps that to a stderr row)."""
-    client = _StubClient(raises=Conflict("resource in use"))
-    with pytest.raises(Conflict):
+    """409 from AWX surfaces as ``ConflictError`` (the CLI maps that to a stderr row)."""
+    client = _StubClient(raises=ConflictError("resource in use"))
+    with pytest.raises(ConflictError):
         DeleteResource(cast(ResourceClient, client))(JOB_TEMPLATE_SPEC, 42)
 
 
 def test_delete_propagates_not_found() -> None:
     """A race (deleted between resolve and delete) still surfaces typed."""
-    client = _StubClient(raises=ResourceNotFound("JobTemplate", {"id": 42}))
-    with pytest.raises(ResourceNotFound):
+    client = _StubClient(raises=ResourceNotFoundError("JobTemplate", {"id": 42}))
+    with pytest.raises(ResourceNotFoundError):
         DeleteResource(cast(ResourceClient, client))(JOB_TEMPLATE_SPEC, 42)
 
 

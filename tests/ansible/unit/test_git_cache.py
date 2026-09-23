@@ -8,12 +8,14 @@ from typing import Any
 
 import pytest
 
-from untaped.api import UntapedError
+from untaped.api import GitResult, UntapedError
 from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
     cache_path_for,
 )
+
+_ORIGIN = "https://github.com/acme/site.git\n"
 
 
 def test_existing_bare_cache_updates_origin_without_remove_add_churn(
@@ -54,6 +56,8 @@ def test_auth_header_is_not_passed_in_git_argv(monkeypatch, tmp_path: Path) -> N
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         cmd = args[0]
         assert isinstance(cmd, list)
+        if cmd[1:3] == ["remote", "get-url"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout=_ORIGIN, stderr="")
         env = kwargs.get("env")
         assert isinstance(env, dict)
         auth_config_path = Path(env["GIT_CONFIG_VALUE_0"])
@@ -295,3 +299,93 @@ def test_read_files_timeout_scales_with_number_of_files(monkeypatch, tmp_path: P
     assert isinstance(many[0], float | int)
     assert few[0] >= 60
     assert many[0] > few[0]
+
+
+def test_authenticated_git_calls_scrub_trace_env(monkeypatch, tmp_path: Path) -> None:
+    """Git/curl tracing would log the injected Authorization header."""
+    envs: list[dict[str, str]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        cmd = args[0]
+        assert isinstance(cmd, list)
+        if cmd[1:3] == ["remote", "get-url"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout=_ORIGIN, stderr="")
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        envs.append(env)
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("GIT_TRACE", "1")
+    monkeypatch.setenv("GIT_TRACE_CURL", "1")
+    monkeypatch.setenv("GIT_CURL_VERBOSE", "1")
+
+    GitRepositoryCache().fetch_refs(
+        tmp_path,
+        refspecs=["+refs/heads/main:refs/heads/main"],
+        depth=1,
+        blob_filter=True,
+        auth_header="AUTHORIZATION: bearer secret-token",
+    )
+
+    (env,) = envs
+    assert not any(key.startswith("GIT_TRACE") for key in env)
+    assert "GIT_CURL_VERBOSE" not in env
+
+
+def _record_run_git(monkeypatch: pytest.MonkeyPatch, origin: str) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run_git(args: list[str], **kwargs: Any) -> GitResult:
+        calls.append({"args": args, **kwargs})
+        stdout = f"{origin}\n".encode() if args[:2] == ["remote", "get-url"] else b""
+        return GitResult(stdout=stdout, stderr="", returncode=0)
+
+    monkeypatch.setattr(
+        "untaped.capabilities.ansible.infrastructure.git_cache.run_git", fake_run_git
+    )
+    return calls
+
+
+def test_auth_header_is_scoped_to_the_repository_https_origin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    url = "https://github.example.com/acme/site.git"
+    calls = _record_run_git(monkeypatch, url)
+    cache = GitRepositoryCache()
+    bare = cache.ensure_bare(url, cache_dir=tmp_path / "cache", auth_header="AUTH")
+
+    cache.fetch_refs(
+        bare,
+        refspecs=["+refs/heads/main:refs/heads/main"],
+        depth=1,
+        blob_filter=True,
+        auth_header="AUTH",
+    )
+    cache.ls_remote(url, patterns=["HEAD"], auth_header="AUTH")
+
+    authed = [call for call in calls if call.get("auth_header")]
+    assert [call["args"][0] for call in authed] == ["fetch", "ls-remote"]
+    assert all(call["auth_url"] == url for call in authed)
+    local = [call for call in calls if call["args"][0] in {"init", "remote"}]
+    assert local and all(call.get("auth_header") is None for call in local)
+
+
+def test_auth_header_is_never_sent_to_non_https_remotes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    url = "git@github.com:acme/site.git"
+    calls = _record_run_git(monkeypatch, url)
+    cache = GitRepositoryCache()
+    bare = cache.ensure_bare(url, cache_dir=tmp_path / "cache", auth_header="AUTH")
+
+    cache.fetch_refs(
+        bare,
+        refspecs=["+refs/heads/main:refs/heads/main"],
+        depth=1,
+        blob_filter=False,
+        auth_header="AUTH",
+    )
+
+    assert all(call.get("auth_header") is None for call in calls)

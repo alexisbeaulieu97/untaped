@@ -1,8 +1,15 @@
-"""Shared target-file validation for application workflows."""
+"""Shared file reads for application workflows (target files and recipe files)."""
 
 from __future__ import annotations
 
 from pathlib import Path
+
+from untaped.capabilities.recipe.domain.recipe import Recipe, parse_recipe
+
+
+def read_recipe_file(path: Path) -> Recipe:
+    """Load and validate one recipe YAML file."""
+    return parse_recipe(path.read_text(encoding="utf-8"), source=path)
 
 
 def read_existing_text_file(

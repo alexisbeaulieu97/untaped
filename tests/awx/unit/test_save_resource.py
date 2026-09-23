@@ -16,14 +16,9 @@ from untaped.capabilities.awx.infrastructure.specs import (
 
 
 class _StubClient:
-    """Minimal stub covering only ``find_by_identity``.
-
-    Returns the canned record directly — no need to assert on the
-    ``(name, scope) → params`` translation path here (see
-    ``test_get_resource.py`` for that). ``SaveResource.__call__`` only
-    invokes ``find_by_identity`` followed by an in-memory record-to-
-    Resource transform; ``paginate_sub_endpoint`` fires for sub-endpoint
-    multi-FKs such as JobTemplate.credentials.
+    """Minimal stub: ``paginate_sub_endpoint`` fires for sub-endpoint
+    multi-FKs such as JobTemplate.credentials; ``record`` is the canned
+    server record handed to ``SaveResource.from_record``.
     """
 
     def __init__(
@@ -35,14 +30,9 @@ class _StubClient:
         self._find_result = find_result
         self._sub_members = sub_members or {}
 
-    def find_by_identity(
-        self,
-        spec: ResourceSpec,
-        *,
-        name: str,
-        scope: dict[str, str] | None = None,
-    ) -> ServerRecord | None:
-        return ServerRecord(**self._find_result)
+    @property
+    def record(self) -> dict[str, Any]:
+        return ServerRecord(**self._find_result).model_dump()
 
     def paginate_sub_endpoint(
         self,
@@ -92,7 +82,7 @@ def test_save_resource_translates_fk_ids_to_names() -> None:
         }
     )
     use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
-    saved = use(JOB_TEMPLATE_SPEC, name="deploy", scope={"organization": "Default"})
+    saved = use.from_record(JOB_TEMPLATE_SPEC, client.record)
 
     assert saved.kind == "JobTemplate"
     assert saved.metadata.name == "deploy"
@@ -116,7 +106,7 @@ def test_save_resource_strips_read_only_fields() -> None:
     )
     fk = _StubFk({("Organization", 1): "Default"})
     use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
-    saved = use(PROJECT_SPEC, name="playbooks", scope={"organization": "Default"})
+    saved = use.from_record(PROJECT_SPEC, client.record)
     assert "last_job_run" not in saved.spec
     assert "summary_fields" not in saved.spec
     assert "id" not in saved.spec
@@ -140,7 +130,7 @@ def test_save_schedule_extracts_polymorphic_parent() -> None:
     )
     fk = _StubFk({})
     use = SaveResource(cast(ResourceClient, client), cast(FkResolver, fk))
-    saved = use(SCHEDULE_SPEC, name="nightly")
+    saved = use.from_record(SCHEDULE_SPEC, client.record)
     assert saved.metadata.parent is not None
     assert saved.metadata.parent.kind == "JobTemplate"
     assert saved.metadata.parent.name == "deploy"

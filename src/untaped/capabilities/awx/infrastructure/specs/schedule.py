@@ -61,6 +61,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         FkRef(field="execution_environment", kind="ExecutionEnvironment"),
     ),
     apply_strategy="schedule",
+    parent_field="unified_job_template",
     list_columns=("id", "name", "last_run", "next_run", "enabled"),
     commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",

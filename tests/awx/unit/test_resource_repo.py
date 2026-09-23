@@ -7,12 +7,13 @@ import pytest
 import respx
 
 from untaped.capabilities.awx.errors import AmbiguousIdentityError
-from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig
+from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.resource_repo import ResourceRepository
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped.capabilities.awx.settings import AwxSettings
 
 
-def test_find_returns_unique_record(awx_config: AwxConfig) -> None:
+def test_find_returns_unique_record(awx_config: AwxSettings) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(
             return_value=httpx.Response(
@@ -27,7 +28,7 @@ def test_find_returns_unique_record(awx_config: AwxConfig) -> None:
     assert record.model_dump() == {"id": 7, "name": "deploy"}
 
 
-def test_find_returns_none_for_zero_results(awx_config: AwxConfig) -> None:
+def test_find_returns_none_for_zero_results(awx_config: AwxSettings) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(
             return_value=httpx.Response(200, json={"count": 0, "results": []})
@@ -37,7 +38,7 @@ def test_find_returns_none_for_zero_results(awx_config: AwxConfig) -> None:
             assert repo.find(JOB_TEMPLATE_SPEC, params={"name": "ghost"}) is None
 
 
-def test_find_raises_ambiguous_on_multi_match(awx_config: AwxConfig) -> None:
+def test_find_raises_ambiguous_on_multi_match(awx_config: AwxSettings) -> None:
     """Two records matching the same params must raise AmbiguousIdentityError
     rather than silently picking whichever AWX ordered first."""
     with respx.mock(base_url="https://aap.example.com") as mock:
@@ -63,7 +64,7 @@ def test_find_raises_ambiguous_on_multi_match(awx_config: AwxConfig) -> None:
     assert "__name" not in str(excinfo.value)
 
 
-def test_find_overrides_caller_supplied_page_size(awx_config: AwxConfig) -> None:
+def test_find_overrides_caller_supplied_page_size(awx_config: AwxSettings) -> None:
     """`find` is unique-or-zero by contract — even if a caller passes
     `page_size=1`, the repo upgrades to 2 so ambiguity is detectable."""
     captured: dict[str, str] = {}
@@ -80,7 +81,7 @@ def test_find_overrides_caller_supplied_page_size(awx_config: AwxConfig) -> None
     assert captured.get("page_size") == "2"
 
 
-def test_find_by_identity_builds_scope_field_name_params(awx_config: AwxConfig) -> None:
+def test_find_by_identity_builds_scope_field_name_params(awx_config: AwxSettings) -> None:
     """`find_by_identity` is the canonical way to look up a name within a
     scope; it must apply the AWX `<key>__name` filter convention so callers
     don't have to."""
@@ -106,7 +107,7 @@ def test_find_by_identity_builds_scope_field_name_params(awx_config: AwxConfig) 
     assert captured["organization__name"] == "Default"
 
 
-def test_find_by_identity_no_scope(awx_config: AwxConfig) -> None:
+def test_find_by_identity_no_scope(awx_config: AwxSettings) -> None:
     """Without scope, `find_by_identity` queries by name alone; the
     underlying `find` still detects ambiguity so unscoped queries that hit
     duplicates raise."""
@@ -124,7 +125,7 @@ def test_find_by_identity_no_scope(awx_config: AwxConfig) -> None:
     assert record.model_dump() == {"id": 7, "name": "deploy"}
 
 
-def test_request_text_sends_text_plain_accept(awx_config: AwxConfig) -> None:
+def test_request_text_sends_text_plain_accept(awx_config: AwxSettings) -> None:
     """``jobs/<id>/stdout/`` returns ``text/plain``; AWX answers 406 when
     the Accept header pins ``application/json``. ``request_text`` must
     override Accept so callers don't have to know — otherwise every
@@ -149,7 +150,7 @@ def test_request_text_sends_text_plain_accept(awx_config: AwxConfig) -> None:
 
 @pytest.mark.parametrize("status,action", [(204, "deleted"), (202, "deletion_requested")])
 def test_delete_receipt_preserves_http_acceptance(
-    awx_config: AwxConfig, status: int, action: str
+    awx_config: AwxSettings, status: int, action: str
 ) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.delete("/api/v2/job_templates/7/").mock(return_value=httpx.Response(status))
@@ -157,7 +158,7 @@ def test_delete_receipt_preserves_http_acceptance(
             assert ResourceRepository(awx).delete(JOB_TEMPLATE_SPEC, 7).action == action
 
 
-def test_low_level_delete_returns_status(awx_config: AwxConfig) -> None:
+def test_low_level_delete_returns_status(awx_config: AwxSettings) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.delete("/api/v2/inventories/7/").mock(return_value=httpx.Response(202))
         with AwxClient(awx_config) as awx:

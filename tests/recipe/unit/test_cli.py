@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+from packaging.version import Version
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 from untaped import bootstrap
@@ -18,7 +20,7 @@ from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS, Builtin
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
 from untaped.capabilities.recipe.domain.plan import FileChange
-from untaped.capabilities.recipe.infrastructure.backup import BackupStore
+from untaped.capabilities.recipe.infrastructure.backup import BackupDraft, BackupStore
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.testing import CliInvoker, assert_destructive_contract
 
@@ -114,7 +116,7 @@ def test_add_pack_prints_recipes_and_hooks_before_confirm(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(app, ["add", str(pack)])
 
@@ -224,7 +226,7 @@ def test_remove_warns_on_local_edits_before_confirm(
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
 
     result = CliInvoker().invoke(app, ["remove", "demo"])
@@ -746,7 +748,7 @@ def test_apply_decline_renders_cancelled_summary_without_writing(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(
         app,
@@ -786,7 +788,7 @@ def test_apply_confirmation_reprints_summary_adjacent_to_prompt(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _PromptUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _PromptUi()
     )
 
     result = CliInvoker().invoke(app, ["apply", str(recipe), str(target), "--preview", "table"])
@@ -819,7 +821,7 @@ def test_confirm_accept_applies_changes(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _AcceptUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _AcceptUi()
     )
     result = CliInvoker().invoke(
         app,
@@ -3417,7 +3419,7 @@ def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) ->
     assert rows[0]["status"] == "error"
     assert "must not depend on untaped at runtime" in rows[0]["error"]
     assert "dependency-groups.dev" in rows[0]["error"]
-    assert "untaped>=6.0.0,<7" in rows[0]["error"]
+    assert _expected_dev_requirement() in rows[0]["error"]
 
 
 def test_recipe_check_validates_unreferenced_local_hook_project_modules(tmp_path: Path) -> None:
@@ -3493,7 +3495,8 @@ def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
     config = target / "config.yml"
     config.write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={"service": "api"},
         changes=[
@@ -3532,7 +3535,8 @@ def test_backup_restore_refuses_non_tty_without_yes_and_restores_with_yes(
     config = target / "config.yml"
     config.write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3568,7 +3572,8 @@ def test_backup_restore_failing_item_exits_nonzero(
     first.write_text("one-before\n")
     second.write_text("two-before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3625,7 +3630,7 @@ def test_backup_restore_flushes_bundle_in_one_transaction(
             )
         )
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(recipe_name="demo", inputs={}, changes=changes)
+    bundle = _create_backup(store, recipe_name="demo", inputs={}, changes=changes)
     for name in ("one.txt", "two.txt", "three.txt"):
         (target / name).write_text(f"{name}-after\n")
 
@@ -3899,7 +3904,8 @@ def test_backup_show_renders_files_as_lines(tmp_path: Path) -> None:
     target.mkdir()
     (target / "config.yml").write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3949,7 +3955,8 @@ def test_backup_restore_decline_prints_no_success(
     target.mkdir()
     (target / "config.yml").write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3965,7 +3972,7 @@ def test_backup_restore_decline_prints_no_success(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.backup_commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(app, ["backup", "restore", bundle.id])
 
@@ -4093,3 +4100,20 @@ def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert "--rev is only valid for git URL sources" in result.stderr
     assert not (library_root() / "packs" / "demo").exists()
+
+
+def _create_backup(
+    store: BackupStore,
+    *,
+    recipe_name: str,
+    inputs: dict[str, object],
+    changes: list[FileChange],
+) -> BackupDraft:
+    draft = store.start(recipe_name=recipe_name, inputs=inputs)
+    draft.commit(draft.stage(changes, inputs=inputs))
+    return draft
+
+
+def _expected_dev_requirement() -> str:
+    installed = Version(version("untaped"))
+    return f"untaped>={installed.public},<{installed.major + 1}"

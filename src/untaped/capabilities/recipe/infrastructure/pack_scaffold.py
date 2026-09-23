@@ -12,10 +12,13 @@ from packaging.version import Version
 from tomlkit import TOMLDocument
 
 from untaped.capabilities.recipe.domain.hook_project import HookKind, normalize_hook_name
-from untaped.capabilities.recipe.domain.pack import PackManifest
 from untaped.capabilities.recipe.domain.paths import safe_library_name
-from untaped.capabilities.recipe.domain.project_toml import read_toml_document, toml_table
 from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
+from untaped.capabilities.recipe.infrastructure.pack_files import (
+    installed_dev_requirement,
+    read_pack_manifest,
+)
+from untaped.capabilities.recipe.infrastructure.project_toml import read_toml_document, toml_table
 from untaped.capabilities.recipe.infrastructure.uv_project import lock_project
 
 
@@ -31,7 +34,7 @@ def hook_api_requirements(
     """
     hook_api = Version(hook_api_version)
     project_requirement = f">={hook_api.major}.{hook_api.minor},<{hook_api.major + 1}"
-    return project_requirement, "untaped>=6.0.0,<7"
+    return project_requirement, installed_dev_requirement()
 
 
 _HOOK_API_PROJECT_REQUIREMENT, _HOOK_API_DEV_REQUIREMENT = hook_api_requirements()
@@ -101,7 +104,7 @@ def scaffold_pack(dest: Path, name: str, *, lock: bool = True) -> Path:
 def scaffold_recipe(pack_dir: Path, name: str, *, lock: bool = True) -> Path:
     """Add a generated recipe plus a starter golden case to a pack."""
     recipe_name = safe_library_name(name, field="recipe")
-    manifest = PackManifest.from_pyproject(pack_dir)
+    manifest = read_pack_manifest(pack_dir)
     if recipe_name in manifest.recipes:
         raise ValueError(f"recipe already exists: {recipe_name}")
     recipe_path = pack_dir / "recipes" / recipe_name / "recipe.yml"
@@ -171,7 +174,7 @@ def scaffold_hook(
     kind). Without ``force`` an existing hook, module, or test is refused.
     """
     hook_name = normalize_hook_name(name)
-    manifest = PackManifest.from_pyproject(pack_dir)
+    manifest = read_pack_manifest(pack_dir)
     already_registered = hook_name in manifest.hooks
     if already_registered and not force:
         raise ValueError(f"hook already exists: {hook_name}")

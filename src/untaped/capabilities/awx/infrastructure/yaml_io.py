@@ -1,34 +1,26 @@
 """Serialise / deserialise :class:`Resource` envelopes from YAML files.
 
-Single-doc and multi-doc YAML are both supported. ``read_resources``
+Single-doc and multi-doc YAML are both supported. ``read_resource_files``
 also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds.
-Writers are atomic and always UTF-8.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import yaml
 
-from untaped.api import ConfigError, atomic_write
+from untaped.api import ConfigError
 from untaped.capabilities.awx.domain import Resource
 
 
-def read_resources(path: Path) -> Iterator[Resource]:
-    """Yield :class:`Resource` objects from ``path``.
+def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
+    """Yield each :class:`Resource` in ``path`` paired with its source file.
 
     ``path`` may be a single ``.yml`` (one or many docs) or a directory
     walked recursively for ``*.yml`` and ``*.yaml``. Empty docs are skipped.
     """
-    for _source, resource in read_resource_files(path):
-        yield resource
-
-
-def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
-    """Like :func:`read_resources`, pairing each document with its source file."""
     p = path.expanduser()
     if not p.exists():
         raise ConfigError(f"file not found: {p}")
@@ -38,33 +30,6 @@ def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
     for f in files:
         for resource in _read_file(f):
             yield f, resource
-
-
-def write_resource(
-    path: Path,
-    resource: Resource,
-    *,
-    header_comment: str | None = None,
-) -> None:
-    """Write a single resource to ``path`` as YAML.
-
-    ``header_comment`` is emitted as a leading ``#`` line — used to
-    flag partial-fidelity saves.
-    """
-    atomic_write(path.expanduser(), _dump(resource, header_comment=header_comment))
-
-
-def write_resources(path: Path, resources: Iterable[Resource]) -> None:
-    """Write multiple resources to ``path`` as a multi-doc YAML stream."""
-    chunks: list[str] = []
-    for r in resources:
-        chunks.append(_dump(r))
-    atomic_write(path.expanduser(), "---\n".join(chunks))
-
-
-def dump_resource(resource: Resource, *, header_comment: str | None = None) -> str:
-    """Return the YAML representation of ``resource`` as a string (for stdout)."""
-    return _dump(resource, header_comment=header_comment)
 
 
 def _read_file(path: Path) -> Iterator[Resource]:
@@ -87,7 +52,8 @@ def _read_file(path: Path) -> Iterator[Resource]:
             raise ConfigError(f"{path}: {exc}") from exc
 
 
-def _dump(resource: Resource, *, header_comment: str | None = None) -> str:
+def dump_resource(resource: Resource, *, header_comment: str | None = None) -> str:
+    """Return the YAML representation of ``resource`` (``header_comment`` as a ``#`` line)."""
     payload = resource.model_dump(exclude_none=True)
     if resource.metadata.organization is None and "organization" in (
         resource.metadata.model_fields_set
@@ -100,10 +66,3 @@ def _dump(resource: Resource, *, header_comment: str | None = None) -> str:
     if header_comment:
         return f"# {header_comment}\n{body}"
     return body
-
-
-def to_dict(payload: Any) -> dict[str, Any]:
-    """Lift ``payload`` to ``dict`` if it's a :class:`Resource`-like model."""
-    if hasattr(payload, "model_dump"):
-        return dict(payload.model_dump())
-    return dict(payload)

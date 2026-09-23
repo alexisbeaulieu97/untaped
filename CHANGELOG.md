@@ -111,6 +111,47 @@ Correctness and safety fixes from a whole-codebase review. Items marked
 - Tests run hermetically: local runs no longer read the developer's config or
   depend on terminal width, and coverage is gated in CI at 89%.
 
+Shared infrastructure consolidation (git, recipe, awx). Items marked
+**behavior change** alter output, exit codes, or error text.
+
+- Core
+  - New `untaped.git` module (`run_git`, `GitResult`, `GitCommandError`,
+    `git_auth_header`, `safe_cache_path`, `safe_path_segment`, re-exported by
+    `untaped.api` and `untaped.capability_api`): every capability's git
+    subprocesses now share one hardened runner (no prompts, stdin closed, ssh
+    `BatchMode` unless ssh is configured, C locale, inherited `GIT_DIR`-style
+    variables dropped, auth header only in a private temporary include file
+    and redacted from errors, timeouts and bounded transient retries).
+  - `bounded_map` gains an optional `while_running` hook for foreground work
+    on the calling thread while workers run.
+- workspace, github
+  - Git runs through `untaped.git`. Workspace git error messages are now
+    always in English (C locale).
+- ansible
+  - The GitHub token is sent only to each repository's own HTTPS origin,
+    never to other hosts or to non-HTTPS remotes.
+- recipe
+  - `recipe add` from git runs through `untaped.git`: it never prompts
+    (ssh in `BatchMode`) and times out after 10 minutes.
+  - **Behavior change:** a missing lockfile is reported as
+    `pack project is missing uv.lock`, and pack problems are reported in the
+    order contract, lock, modules, recipes.
+  - **Behavior change:** `recipe show` json/yaml replaces `file_or_files`
+    with `files`, `globs`, and `exclude`.
+  - **Behavior change:** a non-string `[project].name` or a malformed
+    `[tool.untaped_recipe.recipes]` table is an error; `new recipe|hook` on
+    a pack that fails to load reports why.
+  - **Behavior change:** scaffolded packs (and the missing-dependency hint)
+    use `untaped>=<installed version>,<next major>` as the dev requirement.
+- awx
+  - Batch writes, selected actions (`launch`, `sync`, `delete`, ...), `awx
+    test`, and `--wait`/`--track` share one bounded scheduler, and workers
+    see `--quiet`. Ctrl-C during a serial submission lets the in-flight
+    request finish so its execution is reported.
+  - The mutation engine's patch/edit guard now rejects the same identity and
+    ancestry fields the `patch`/`edit` commands already rejected (one
+    `ResourceSpec.immutable_fields` set).
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP

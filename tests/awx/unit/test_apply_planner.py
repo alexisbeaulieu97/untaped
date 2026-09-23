@@ -16,7 +16,7 @@ from untaped.capabilities.awx.application.apply_planner import ApplyPlanner, sco
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, Metadata, Resource
 from untaped.capabilities.awx.domain.envelope import IdentityRef
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import (
     GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
@@ -347,7 +347,7 @@ def test_plan_payload_rejects_invalid_integer_fk_ids(value: Any) -> None:
         spec={"project": value},
     )
     fk = _StubFk({("Organization", "Default"): 1})
-    with pytest.raises(BadRequest, match="positive"):
+    with pytest.raises(BadRequestError, match="positive"):
         planner.plan_payload(JOB_TEMPLATE_SPEC, resource, fk=fk)
 
 
