@@ -36,6 +36,7 @@ from untaped.capabilities.recipe.cli.common import (
     settings,
 )
 from untaped.capabilities.recipe.domain.hook_project import HookKind, read_hook_metadata
+from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.domain.plan import FileChange, Verdict
 from untaped.capabilities.recipe.infrastructure.diff import unified_diff
 from untaped.capabilities.recipe.infrastructure.hook_executor import (
@@ -251,7 +252,7 @@ def _split_project_hook_ref(name: str, project: Path | None) -> tuple[Path | Non
     name; an explicit ``--project`` keeps precedence and the two forms may not
     be combined.
     """
-    if not name.startswith(("/", "./", "../", "~")):
+    if not is_path_ref(name):
         return project, name
     if project is not None:
         raise ConfigError("pass the hook as a ./pack/hook path or with --project, not both")

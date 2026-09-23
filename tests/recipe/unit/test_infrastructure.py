@@ -1037,9 +1037,7 @@ def test_flush_changes_rollback_restores_mode_of_deleted_file(
     with pytest.raises(ApplyWriteError, match="disk full"):
         flush_changes(
             (
-                FileChange(
-                    target=target, relative_path=Path("run.sh"), before="old\n", after=None
-                ),
+                FileChange(target=target, relative_path=Path("run.sh"), before="old\n", after=None),
                 FileChange(
                     target=target,
                     relative_path=Path("other.txt"),

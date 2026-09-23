@@ -11,6 +11,7 @@ import pytest
 
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
+from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.testing import CliInvoker
 
@@ -745,3 +746,31 @@ def test_show_unsafe_ref_reports_not_found(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "not found: foo bar" in result.stderr
     assert "safe library name" not in result.stderr
+
+
+@pytest.mark.parametrize("pack_arg", [".", "./"])
+def test_apply_dot_pack_path_with_recipe_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pack_arg: str,
+) -> None:
+    pack = tmp_path / "mypack"
+    _write_pack(pack, manifest_name="mypack", recipes={"fix": "recipes/fix.yml"})
+    target = tmp_path / "target"
+    target.mkdir()
+    monkeypatch.chdir(pack)
+
+    result = CliInvoker().invoke(
+        app,
+        ["apply", pack_arg, str(target), "--recipe", "fix", "--yes", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["recipe"] == "mypack/fix"
+
+
+def test_path_ref_helper_classifies_dot_forms() -> None:
+    for value in (".", "..", "./x", "../x", "/abs", "~/x", "~"):
+        assert is_path_ref(value), value
+    for value in ("pack", "pack/recipe", "x.yml", ".hidden"):
+        assert not is_path_ref(value), value

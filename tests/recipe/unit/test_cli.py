@@ -3963,9 +3963,7 @@ def test_recipe_check_accepts_input_templated_asset_paths(tmp_path: Path) -> Non
         "    dest: out.cfg\n"
     )
 
-    result = CliInvoker().invoke(
-        app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"]
-    )
+    result = CliInvoker().invoke(app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["status"] == "pass"
@@ -3984,9 +3982,7 @@ def test_recipe_check_rejects_missing_prefix_of_templated_asset_path(tmp_path: P
         "    dest: out.txt\n"
     )
 
-    result = CliInvoker().invoke(
-        app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"]
-    )
+    result = CliInvoker().invoke(app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     assert "template not found" in json.loads(result.stdout)[0]["error"]

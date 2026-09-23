@@ -58,7 +58,7 @@ from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
 )
 from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest, RecipeEntry, parse_ref
-from untaped.capabilities.recipe.domain.paths import safe_library_name
+from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.infrastructure import (
@@ -773,7 +773,7 @@ def _render_pack_add_preview(
 
 
 def _new_pack_child(ref_text: str) -> tuple[Path, str]:
-    if _is_explicit_new_path(ref_text):
+    if is_path_ref(ref_text):
         path = Path(ref_text).expanduser()
         if not path.name or path.parent == Path("."):
             raise ValueError("qualified refs must use <pack>/<name>")
@@ -786,10 +786,6 @@ def _new_pack_child(ref_text: str) -> tuple[Path, str]:
         if installed.name == installed_name:
             return installed.root, ref.name
     raise ValueError(f"pack not found: {ref.pack}{_new_pack_child_hint(ref.pack, ref.name)}")
-
-
-def _is_explicit_new_path(value: str) -> bool:
-    return value.startswith(("/", "./", "../", "~"))
 
 
 def _new_pack_child_hint(pack: str, name: str) -> str:

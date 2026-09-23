@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
+from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 
 
@@ -20,7 +21,7 @@ class ResolvedRecipe:
 
 def is_explicit_recipe_path(value: str) -> bool:
     """Classify a ref as an explicit filesystem path (never a library ref)."""
-    return value.startswith(("/", "./", "../", "~")) or value.endswith((".yml", ".yaml"))
+    return is_path_ref(value) or value.endswith((".yml", ".yaml"))
 
 
 def existing_path_hint(ref_text: str) -> str:
@@ -92,7 +93,7 @@ def resolve_explicit_recipe(path: Path, *, recipe_id: str | None) -> ResolvedRec
                 raise ValueError(f"recipe not found: {recipe_id}")
             return ResolvedRecipe(
                 path=path / entry.path,
-                ref=f"{path.name}/{recipe_id}",
+                ref=f"{_dir_name(path)}/{recipe_id}",
                 local_hook_project=path,
             )
         recipe_path = path / "recipe.yml"
@@ -100,7 +101,7 @@ def resolve_explicit_recipe(path: Path, *, recipe_id: str | None) -> ResolvedRec
             raise ValueError(f"recipe file not found: {recipe_path}")
         return ResolvedRecipe(
             path=recipe_path,
-            ref=path.name,
+            ref=_dir_name(path),
             local_hook_project=path if (path / "pyproject.toml").is_file() else None,
         )
     return ResolvedRecipe(
@@ -108,3 +109,8 @@ def resolve_explicit_recipe(path: Path, *, recipe_id: str | None) -> ResolvedRec
         ref=path.name,
         local_hook_project=None,
     )
+
+
+def _dir_name(path: Path) -> str:
+    """Directory name for display refs; ``.``/``./`` have no name of their own."""
+    return path.name or path.resolve().name

@@ -6,6 +6,16 @@ import re
 from pathlib import Path
 
 _LIBRARY_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+_PATH_REF_PREFIXES = ("/", "./", "../", "~")
+
+
+def is_path_ref(value: str) -> bool:
+    """Return whether a CLI ref names a filesystem path rather than a library ref.
+
+    ``.``/``..``, absolute paths, ``./``/``../``-relative paths and ``~`` paths
+    are paths; everything else (``name``, ``pack/name``) is a library ref.
+    """
+    return value in {".", ".."} or value.startswith(_PATH_REF_PREFIXES)
 
 
 def safe_relative_path(value: Path, *, field: str) -> Path:
