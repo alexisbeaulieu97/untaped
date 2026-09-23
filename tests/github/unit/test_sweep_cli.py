@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -497,3 +498,24 @@ def test_missing_explicit_repo_is_unscanned_and_strict_fails(
     assert [row["full_name"] for row in json.loads(lenient.stdout)] == ["acme/api"]
     assert "warning: unscanned acme/gone" in lenient.stderr
     assert strict.exit_code == 1, strict.output
+
+
+def test_failed_refresh_warns_that_cached_copy_was_scanned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "needle\n"})
+    listing = [_repo("acme/api", source)]
+    args = ["sweep", "--org", "acme", "--grep", "needle", "--format", "json"]
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=listing))
+        first = CliInvoker().invoke(app, args)
+        shutil.rmtree(source)
+        refreshed = CliInvoker().invoke(app, [*args, "--sync"])
+
+    assert first.exit_code == 0, first.output
+    assert refreshed.exit_code == 0, refreshed.output
+    assert [row["full_name"] for row in json.loads(refreshed.stdout)] == ["acme/api"]
+    assert "refresh failed for 1 repo; scanned cached copies" in refreshed.stderr
+    assert "warning: stale acme/api:" in refreshed.stderr

@@ -297,6 +297,7 @@ def test_failed_refresh_with_covering_cache_scans_cached(tmp_path: Path) -> None
 
     assert [row.full_name for row in report.rows] == ["acme/api"]
     assert report.unscanned == ()
+    assert report.stale == (CorpusFailure(repo="acme/api", reason="fetch denied"),)
     assert report.scanned == 1
     assert report.refreshed == 0
     assert report.cached == 1
