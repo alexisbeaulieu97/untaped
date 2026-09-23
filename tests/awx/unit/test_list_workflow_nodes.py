@@ -10,7 +10,7 @@ import pytest
 from untaped.capabilities.awx.application import ListWorkflowNodes
 from untaped.capabilities.awx.application.ports import ResourceClient, WorkflowNodeRepository
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
-from untaped.capabilities.awx.errors import ResourceNotFound
+from untaped.capabilities.awx.errors import ResourceNotFoundError
 from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
 
@@ -133,7 +133,7 @@ def test_unknown_name_raises_resource_not_found() -> None:
         cast(WorkflowNodeRepository, _StubNodes({})),
         cast(ResourceClient, _StubResources(found=None)),
     )
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         use(WORKFLOW_JOB_TEMPLATE_SPEC, identifier="does-not-exist")
 
 

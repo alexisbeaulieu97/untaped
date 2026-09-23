@@ -26,7 +26,7 @@ from typing import Any
 
 from untaped.capabilities.awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
+from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped.capabilities.awx.infrastructure.awx_client import AwxClient
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.infrastructure.pagination import paginate
@@ -66,7 +66,7 @@ class ResourceRepository:
             ):
                 proxy = self._client.get_json(f"constructed_inventories/{id_}/")
                 if proxy.get("id") != id_:
-                    raise BadRequest("constructed inventory hydration changed requested ID")
+                    raise BadRequestError("constructed inventory hydration changed requested ID")
                 raw = {**raw, **proxy}
         return ServerRecord(**raw)
 

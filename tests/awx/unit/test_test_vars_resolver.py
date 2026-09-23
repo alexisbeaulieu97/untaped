@@ -9,7 +9,7 @@ import pytest
 
 from untaped.capabilities.awx.application.suites.ports import Prompt
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure.suites.vars_resolver import resolve_variables
 
 
@@ -62,7 +62,7 @@ def test_prompt_used_when_required_and_no_other_source() -> None:
 def test_non_interactive_with_missing_required_raises() -> None:
     prompt = StubPrompt(answers={}, interactive=False)
     specs = {"env": _spec("env"), "tag": _spec("tag")}
-    with pytest.raises(AwxApiError, match="env"):
+    with pytest.raises(ConfigError, match="env"):
         resolve_variables(specs, cli={}, files=(), prompt=prompt)
 
 
@@ -129,7 +129,7 @@ def test_list_type_splits_csv() -> None:
 def test_choice_rejects_invalid_value() -> None:
     prompt = StubPrompt(answers={})
     specs = {"env": _spec("env", type="choice", choices=("dev", "prod"))}
-    with pytest.raises(AwxApiError, match="env"):
+    with pytest.raises(ConfigError, match="env"):
         resolve_variables(specs, cli={"env": "staging"}, files=(), prompt=prompt)
 
 
@@ -137,7 +137,7 @@ def test_unknown_variable_in_cli_raises() -> None:
     """Pass-through for unknown vars would silently swallow user typos."""
     prompt = StubPrompt(answers={})
     specs = {"env": _spec("env", default="dev")}
-    with pytest.raises(AwxApiError, match="frooks"):
+    with pytest.raises(ConfigError, match="frooks"):
         resolve_variables(specs, cli={"frooks": "x"}, files=(), prompt=prompt)
 
 
@@ -159,7 +159,7 @@ def test_extra_known_names_accepted_for_disjoint_multi_file_runs() -> None:
 def test_extra_known_names_does_not_silence_unrelated_typos() -> None:
     prompt = StubPrompt(answers={})
     specs = {"env": _spec("env", default="dev")}
-    with pytest.raises(AwxApiError, match="enviornment"):
+    with pytest.raises(ConfigError, match="enviornment"):
         resolve_variables(
             specs,
             cli={"enviornment": "prod"},  # genuine typo, not in any suite

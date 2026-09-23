@@ -11,7 +11,7 @@ from untaped.capabilities.awx.application import GetResource
 from untaped.capabilities.awx.application.get_resource import _BULK_ID_CHUNK
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
-from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFound
+from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFoundError
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
 
@@ -87,7 +87,7 @@ def test_get_resource_by_name() -> None:
 def test_get_resource_missing_raises() -> None:
     client = _StubClient(find_result=None)
     use = GetResource(cast(ResourceClient, client))
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         use(JOB_TEMPLATE_SPEC, name="missing")
 
 

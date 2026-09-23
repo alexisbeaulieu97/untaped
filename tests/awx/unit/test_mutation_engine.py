@@ -10,7 +10,7 @@ import pytest
 from awx.unit.support import _Catalog, _Client, _Fk, _MembershipClient, _Strategies
 from untaped.capabilities.awx.application.mutation_engine import (
     BatchMutationEngine,
-    MutationConflict,
+    MutationConflictError,
     _PlanningFkResolver,
 )
 from untaped.capabilities.awx.application.mutation_types import DeferredReference
@@ -57,7 +57,7 @@ def test_prepare_freezes_existing_id_and_execute_rechecks_before_writes() -> Non
 
 def test_prepare_rejects_create_for_patch_mode() -> None:
     engine = _engine(_Client([]))
-    with pytest.raises(MutationConflict, match="does not exist"):
+    with pytest.raises(MutationConflictError, match="does not exist"):
         engine.prepare([_project("missing", "new")], mode="patch")
 
 
@@ -197,9 +197,9 @@ def test_prepare_rejects_placeholder_create_before_any_write() -> None:
         fk=cast(FkResolver, _Fk({})),
         strategies=cast(StrategyResolver, _Strategies()),
     )
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
-    with pytest.raises(BadRequest, match="placeholder"):
+    with pytest.raises(BadRequestError, match="placeholder"):
         engine.prepare(
             [
                 Resource(
@@ -358,7 +358,7 @@ def test_selected_target_is_fixed_by_id_even_with_same_named_other_record() -> N
 
 def test_selected_kind_change_is_rejected_before_writes() -> None:
     from untaped.capabilities.awx.application.selection import SelectedResource
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
     spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
     client = _Client([{"id": 2, "name": "same"}])
@@ -369,7 +369,7 @@ def test_selected_kind_change_is_rejected_before_writes() -> None:
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
     )
-    with pytest.raises(BadRequest, match="kind"):
+    with pytest.raises(BadRequestError, match="kind"):
         engine.prepare(
             [Resource(kind="Item", metadata=Metadata(name="same"), spec={})],
             mode="patch",
@@ -379,10 +379,10 @@ def test_selected_kind_change_is_rejected_before_writes() -> None:
 
 
 def test_selected_reparenting_is_rejected_before_writes() -> None:
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
     client = _MembershipClient([{"id": 2, "name": "group", "inventory": 99}])
-    with pytest.raises(BadRequest, match="reparenting"):
+    with pytest.raises(BadRequestError, match="reparenting"):
         _group_engine(client).prepare(
             [_group("group", [])], mode="edit", existing=[client.records[2]]
         )
@@ -390,7 +390,7 @@ def test_selected_reparenting_is_rejected_before_writes() -> None:
 
 
 def test_body_dependency_cycles_fail_preparation_before_unrelated_writes() -> None:
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
     spec = ResourceSpec(
         kind="Item",
@@ -410,17 +410,17 @@ def test_body_dependency_cycles_fail_preparation_before_unrelated_writes() -> No
         Resource(kind="Item", metadata=Metadata(name="a"), spec={"parent": "b"}),
         Resource(kind="Item", metadata=Metadata(name="b"), spec={"parent": "a"}),
     ]
-    with pytest.raises(BadRequest, match="cycle"):
+    with pytest.raises(BadRequestError, match="cycle"):
         engine.prepare(docs)
     assert not client.writes
 
 
 def test_new_and_existing_secret_values_are_redacted_from_runtime_errors() -> None:
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
     class Echoing(_Client):
         def update(self, spec: ResourceSpec, id_: int, payload: Any) -> ServerRecord:
-            raise BadRequest("rejected old-secret and new-secret")
+            raise BadRequestError("rejected old-secret and new-secret")
 
     spec = ResourceSpec(
         kind="Secret",
@@ -445,12 +445,12 @@ def test_new_and_existing_secret_values_are_redacted_from_runtime_errors() -> No
 
 
 def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
-    from untaped.capabilities.awx.errors import BadRequest
+    from untaped.capabilities.awx.errors import BadRequestError
 
     class Failing(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
             if payload.name == "parent":
-                raise BadRequest("failed")
+                raise BadRequestError("failed")
             return super().create(spec, payload)
 
     spec = ResourceSpec(
@@ -694,7 +694,7 @@ def test_repeated_selected_id_is_rejected_before_writes() -> None:
         Resource(kind="Item", metadata=Metadata(name="same"), spec={"description": value})
         for value in ("first", "second")
     ]
-    with pytest.raises(MutationConflict, match="duplicate target"):
+    with pytest.raises(MutationConflictError, match="duplicate target"):
         engine.prepare(docs, mode="patch", existing=[client.records[1], client.records[1]])
     assert client.find_calls == 0
     assert client.writes == []

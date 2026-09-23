@@ -8,7 +8,7 @@ from typing import Any
 from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFound
+from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFoundError
 
 # Chunk size for ``?id__in=…`` bulk fetches. Bounds the query string so
 # very large pipelines don't trip URL-length limits on proxies / AWX
@@ -34,7 +34,7 @@ class GetResource:
             raise ValueError("GetResource requires either name= or id_=")
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
-            raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
+            raise ResourceNotFoundError(spec.kind, {"name": name, **(scope or {})})
         return record.model_dump()
 
     def by_identifier(
@@ -109,5 +109,5 @@ def resolve_identity(
         return parse_resource_id(identifier)
     record = resources.find_by_identity(spec, name=identifier, scope=scope)
     if record is None:
-        raise ResourceNotFound(spec.kind, {"name": identifier, **(scope or {})})
+        raise ResourceNotFoundError(spec.kind, {"name": identifier, **(scope or {})})
     return record.id

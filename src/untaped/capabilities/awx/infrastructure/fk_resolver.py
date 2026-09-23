@@ -31,8 +31,8 @@ from untaped.capabilities.awx.domain import IdentityRef
 from untaped.capabilities.awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
-    BadRequest,
-    ResourceNotFound,
+    BadRequestError,
+    ResourceNotFoundError,
 )
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -81,7 +81,7 @@ class FkResolver:
             spec = self._catalog.get(kind)
             record = self._repo.find_by_identity(spec, name=name, scope=scope)
             if record is None:
-                raise ResourceNotFound(kind, {"name": name, **scope})
+                raise ResourceNotFoundError(kind, {"name": name, **scope})
             id_ = int(record["id"])
             self._name_cache[key] = id_
             self._id_cache[(kind, id_)] = name
@@ -89,14 +89,14 @@ class FkResolver:
 
     def validate_id(self, kind: str, id_: int, *, scope: dict[str, str] | None = None) -> int:
         if isinstance(id_, bool) or not isinstance(id_, int) or id_ <= 0:
-            raise BadRequest(f"foreign key {kind} requires a positive integer ID")
+            raise BadRequestError(f"foreign key {kind} requires a positive integer ID")
         spec = self._catalog.get(kind)
         try:
             record = self._repo.get(spec, id_)
         except KeyError as exc:
-            raise ResourceNotFound(kind, {"id": id_}) from exc
+            raise ResourceNotFoundError(kind, {"id": id_}) from exc
         if record.get("id") != id_:
-            raise ResourceNotFound(kind, {"id": id_})
+            raise ResourceNotFoundError(kind, {"id": id_})
         if scope:
             # ID remains the selector. Related-name filters only constrain its
             # scope; an ambiguous display label never changes this target.
@@ -105,7 +105,7 @@ class FkResolver:
                 params={"id": str(id_), **{f"{key}__name": value for key, value in scope.items()}},
             )
             if scoped_record is None or scoped_record.get("id") != id_:
-                raise ResourceNotFound(kind, {"id": id_, **scope})
+                raise ResourceNotFoundError(kind, {"id": id_, **scope})
         return id_
 
     def id_to_name(self, kind: str, id_: int) -> str:
@@ -137,7 +137,7 @@ class FkResolver:
             }
             resolved_kind = kinds.get(str(record.get("type", "")))
             if resolved_kind is None:
-                raise BadRequest("unsupported schedule parent type")
+                raise BadRequestError("unsupported schedule parent type")
             return self.id_to_identity(resolved_kind, id_)
         spec = self._catalog.get(kind)
         record = self._repo.get(spec, id_)
@@ -146,7 +146,7 @@ class FkResolver:
         if spec.apply_strategy == "inventory_child":
             inventory_id = record.get("inventory")
             if not isinstance(inventory_id, int):
-                raise BadRequest(f"{kind}#{id_} is missing inventory ancestry")
+                raise BadRequestError(f"{kind}#{id_} is missing inventory ancestry")
             parent = self.id_to_identity("Inventory", inventory_id)
         elif "organization" in spec.identity_keys:
             org_id = record.get("organization")
@@ -162,7 +162,7 @@ class FkResolver:
         try:
             scope = reference.lookup_scope()
         except ValueError as exc:
-            raise BadRequest(str(exc)) from exc
+            raise BadRequestError(str(exc)) from exc
         return reference.kind, self.name_to_id(reference.kind, reference.name, scope=scope)
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:

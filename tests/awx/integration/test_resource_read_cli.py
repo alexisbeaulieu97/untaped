@@ -430,8 +430,7 @@ def test_get_accepts_multiple_positional_names(seeded_default_org: Any) -> None:
 
 
 def test_get_reads_names_from_stdin(seeded_default_org: Any) -> None:
-    """`list ... | get --stdin` is the documented pipeline shape per
-    AGENTS.md "Output & Piping Conventions"."""
+    """`list ... | get --stdin` is the documented pipeline shape."""
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
     )

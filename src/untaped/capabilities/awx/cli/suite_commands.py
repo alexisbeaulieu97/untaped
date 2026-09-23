@@ -17,6 +17,7 @@ from untaped.api import (
     raise_usage,
     report_errors,
 )
+from untaped.api import ConfigError
 from untaped.capabilities.awx.cli._context import AwxContext, open_context
 from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.suite import Suite
@@ -314,7 +315,7 @@ def validate_command(
             for case_name, case in suite.cases.items():
                 try:
                     resolver(spec, case, defaults=suite.defaults)
-                except AwxApiError as exc:
+                except (AwxApiError, ConfigError) as exc:
                     echo(f"{suite.name}/{case_name}: {exc}", err=True)
                     any_errors = True
 
@@ -325,18 +326,15 @@ def validate_command(
 def _test_case_row(suite: Suite, case_name: str) -> dict[str, Any]:
     # ``suite`` first: under ``--format raw`` (table/raw branch) the
     # first key is what pipelines feed back into the next command
-    # (xargs identifier semantics). See root AGENTS.md
-    # '--format raw default-column contract'; pinned by
-    # tests/unit/test_format_raw_first_key.py.
+    # (xargs identifier semantics); pinned by
+    # tests/awx/unit/test_format_raw_first_key.py.
     return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
 
 
 def _test_suite_row(suite: Suite) -> dict[str, Any]:
     # Suite-level shape for --format json|yaml only (raw uses
     # _test_case_row). Kept ``suite``-first for symmetry with the raw
-    # row source — the contract is documented in
-    # root AGENTS.md '--format raw default-column
-    # contract'; pinned by tests/unit/test_format_raw_first_key.py.
+    # row source; pinned by tests/awx/unit/test_format_raw_first_key.py.
     return {
         "suite": suite.name,
         "job_template": suite.job_template,

@@ -17,7 +17,7 @@ from untaped.capabilities.awx.application.ports import (
 from untaped.capabilities.awx.domain import Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.envelope import IdentityRef
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import AwxApiError, BadRequest
+from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
     GROUP_SPEC,
@@ -75,7 +75,7 @@ class _StubClient:
 
     def get(self, spec: ResourceSpec, id_: int) -> Any:
         if self.existing is None:
-            raise BadRequest("missing record")
+            raise BadRequestError("missing record")
         return _ServerRecord(self.existing)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
@@ -726,7 +726,7 @@ def test_create_with_placeholder_secret_errors() -> None:
         metadata=Metadata(name="deploy", organization="Default"),
         spec={"playbook": "deploy.yml", "webhook_key": "$encrypted$"},
     )
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         apply(resource, write=True)
 
 
@@ -766,7 +766,7 @@ def test_apply_rejects_read_only_kind() -> None:
         metadata=Metadata(name="scm-key", organization="Default"),
         spec={"credential_type": 1},
     )
-    with pytest.raises(BadRequest, match="does not support apply"):
+    with pytest.raises(BadRequestError, match="does not support apply"):
         apply(resource, write=True)
     assert strategy.created is None
     assert strategy.updated is None
@@ -847,7 +847,7 @@ def test_apply_sibling_change_alongside_nested_secret_raises() -> None:
             },
         },
     )
-    with pytest.raises(BadRequest, match="survey_spec"):
+    with pytest.raises(BadRequestError, match="survey_spec"):
         apply(resource, write=True)
     assert strategy.updated is None
 
@@ -1046,7 +1046,7 @@ def test_apply_to_existing_rejects_read_only_kind() -> None:
         metadata=Metadata(name="scm-key"),
         spec={"description": "x"},
     )
-    with pytest.raises(BadRequest, match="does not support apply"):
+    with pytest.raises(BadRequestError, match="does not support apply"):
         apply.apply_to_existing(resource, {"id": 1, "name": "scm-key"}, write=True)
     assert strategy.updated is None
 

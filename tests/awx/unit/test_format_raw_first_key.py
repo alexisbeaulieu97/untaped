@@ -3,8 +3,7 @@
 ``untaped.output._format_raw`` emits ``next(iter(rows[0]))`` for
 every row when ``--columns`` is omitted, so the first key of every row
 is load-bearing for shell pipelines (the ``xargs``-into-next-command
-pattern). The catalogue in ``AGENTS.md`` lists every AWX row source,
-and this module pins those sources in the standalone tool repo.
+pattern). This module pins every AWX row source.
 
 Three parametrised tests pin existing entries:
 
@@ -49,7 +48,7 @@ from untaped.capabilities.awx.domain import Job, JobEvent, WorkflowNode
 from untaped.capabilities.awx.domain.suite import Case, CaseResult, Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 
-_CONTRACT_REF = "see AGENTS.md '--format raw default-column contract'"
+_CONTRACT_REF = "see the --format raw first-key contract in this module's docstring"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 

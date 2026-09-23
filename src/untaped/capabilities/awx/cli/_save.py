@@ -57,7 +57,7 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
                 filters=filter_,
                 search=search,
                 all_=all_,
-                mutation=True,
+                require_explicit=True,
                 organization=organization,
                 inventory=inventory,
                 inventory_organization=inventory_organization,

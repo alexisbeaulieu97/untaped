@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from untaped.capabilities.awx.application.get_resource import parse_resource_id
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ActionPayload, Job, ResourceSpec
-from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError, ResourceNotFound
+from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError, ResourceNotFoundError
 
 
 class RunAction:
@@ -35,7 +35,7 @@ class RunAction:
         else:
             record = self._client.find_by_identity(spec, name=name, scope=scope)
             if record is None:
-                raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
+                raise ResourceNotFoundError(spec.kind, {"name": name, **(scope or {})})
             record_id = record.id
         return self.execute(spec, record_id, action=action, payload=payload)
 

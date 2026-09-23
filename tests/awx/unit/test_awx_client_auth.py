@@ -12,10 +12,11 @@ from __future__ import annotations
 import httpx
 import respx
 
-from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig
+from untaped.capabilities.awx.infrastructure import AwxClient
+from untaped.capabilities.awx.settings import AwxSettings
 
 
-def test_awx_client_sends_bearer_token(awx_config: AwxConfig) -> None:
+def test_awx_client_sends_bearer_token(awx_config: AwxSettings) -> None:
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         route = mock.get(url__regex=r".*/ping/").mock(
             return_value=httpx.Response(200, json={"version": "4.5.0"})
@@ -27,7 +28,7 @@ def test_awx_client_sends_bearer_token(awx_config: AwxConfig) -> None:
 
 
 def test_awx_client_without_token_sends_no_auth() -> None:
-    config = AwxConfig(base_url="https://aap.example.com", api_prefix="/api/v2/")
+    config = AwxSettings(base_url="https://aap.example.com", api_prefix="/api/v2/")
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         route = mock.get(url__regex=r".*/ping/").mock(
             return_value=httpx.Response(200, json={"version": "4.5.0"})

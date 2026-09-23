@@ -37,7 +37,7 @@ class ApplyOutcome(BaseModel):
 
     # Frozen so phase 2's rewrites must produce a new instance (via
     # `model_copy(update=...)`) instead of mutating one shared across
-    # workers. See `AGENTS.md` "Apply parallelism".
+    # workers.
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: str

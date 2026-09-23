@@ -22,7 +22,7 @@ that change.
 
 The stub Protocols mirror ``test_apply_resource.py``; we copy them here
 because pytest's ``--import-mode=importlib`` disallows cross-test-file
-imports per the project's test layout (see AGENTS.md "Test layout").
+imports.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ from untaped.capabilities.awx.domain import (
     ServerRecord,
 )
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
 
@@ -275,7 +275,7 @@ def test_wildcard_survey_patch_excludes_survey_and_keeps_sibling(
 def test_intermediate_list_wildcard_blocks_sibling_change_inside_survey() -> None:
     """If the user changes the survey's structure alongside a placeholder
     (e.g. renames ``question_name`` while keeping ``default: $encrypted$``),
-    the apply pipeline refuses with ``BadRequest``. PATCHing the new
+    the apply pipeline refuses with ``BadRequestError``. PATCHing the new
     structure would clobber AWX's stored encrypted value.
 
     Pins the conflict-detection behaviour for the wildcard path.
@@ -317,7 +317,7 @@ def test_intermediate_list_wildcard_blocks_sibling_change_inside_survey() -> Non
             },
         },
     )
-    with pytest.raises(BadRequest, match="survey_spec"):
+    with pytest.raises(BadRequestError, match="survey_spec"):
         apply(resource, write=True)
 
 
