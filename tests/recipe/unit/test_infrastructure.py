@@ -660,7 +660,7 @@ def test_parallel_bulk_plan_returns_ordered_errors_and_flushes_atomically(tmp_pa
     assert not removable.exists()
 
 
-def test_bulk_plan_resolves_per_target_inputs_and_preserves_duplicate_order(
+def test_bulk_plan_resolves_per_target_inputs_and_dedupes_repeated_targets(
     tmp_path: Path,
 ) -> None:
     recipe_dir = tmp_path / "recipe"
@@ -712,13 +712,14 @@ def test_bulk_plan_resolves_per_target_inputs_and_preserves_duplicate_order(
         parallel=3,
     )
 
-    assert [plan.target for plan in plans] == [target, other, target]
-    assert [plan.display_inputs["token"] for plan in plans] == ["***", "***", "***"]
-    assert [plan.display_inputs["service"] for plan in plans] == ["first", "second", "third"]
+    # A repeated target directory is planned once (first-seen record wins):
+    # planning it twice would make the second flush fail "changed since planning".
+    assert [plan.target for plan in plans] == [target, other]
+    assert [plan.display_inputs["token"] for plan in plans] == ["***", "***"]
+    assert [plan.display_inputs["service"] for plan in plans] == ["first", "second"]
     assert [plan.changes[0].after for plan in plans] == [
         "service=first\n",
         "service=second\n",
-        "service=third\n",
     ]
 
 

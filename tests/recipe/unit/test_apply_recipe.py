@@ -1407,3 +1407,45 @@ def test_apply_recipe_glob_skips_matches_under_symlinked_dirs_with_warning(
     assert [change.relative_path.as_posix() for change in plan.changes] == ["keep.bak"]
     assert any("linked/x.bak" in warning and "symlink" in warning for warning in plan.warnings)
     assert (outside / "x.bak").exists()
+
+
+def test_run_bulk_apply_dedupes_targets_by_resolved_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "out.txt").write_text("hello\n")
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+    (tmp_path / "link").symlink_to(first, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    recipe = Recipe.model_validate(
+        {"version": 1, "steps": [{"type": "copy", "source": "out.txt", "dest": "out.txt"}]}
+    )
+    runner = RunBulkApply(
+        ApplyRecipe(
+            HookExecutor(HookResolver(), workers=InlineWorkers(), helpers_factory=HookHelpers)
+        )
+    )
+
+    plans = runner.plan(
+        recipe=recipe,
+        recipe_dir=recipe_dir,
+        local_hook_project=None,
+        targets=[
+            Target(path=Path("a")),
+            Target(path=second),
+            Target(path=first),
+            Target(path=Path("./a/")),
+            Target(path=tmp_path / "link"),
+        ],
+        inputs={},
+    )
+
+    assert [plan.target for plan in plans] == [tmp_path / "a", second]
+    for plan in plans:
+        flush_changes(plan.changes)
+    assert (first / "out.txt").read_text() == "hello\n"
