@@ -481,12 +481,11 @@ def _content_match(full_name: str, ref: str, hit: GrepHit) -> _ContentMatch:
 
 
 def _dedupe_matches(matches: Iterable[_ContentMatch]) -> tuple[SweepMatch, ...]:
-    grouped: dict[tuple[str, str, str, int, str], list[str]] = {}
+    # Insertion-ordered dicts give O(1) ref dedupe while keeping first-seen order.
+    grouped: dict[tuple[str, str, str, int, str], dict[str, None]] = {}
     for match in matches:
         key = (match.full_name, match.blob_oid, match.path, match.line, match.text)
-        grouped.setdefault(key, [])
-        if match.ref not in grouped[key]:
-            grouped[key].append(match.ref)
+        grouped.setdefault(key, {})[match.ref] = None
     rows = [
         SweepMatch(
             full_name=full_name,
