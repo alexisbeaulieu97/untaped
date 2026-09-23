@@ -293,3 +293,13 @@ def test_invalid_state_section_fails_state_row(_isolated_config: Path) -> None:
     )
     assert code == 1
     assert "cursor" in _failed(rows)["validate state"]
+
+
+def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:
+    missing = tmp_path / "nope.pem"
+    write_config(
+        _isolated_config, f"profiles:\n  default:\n    http:\n      ca_bundle: {missing}\n"
+    )
+    code, rows = _rows(_doctor_app())
+    assert code == 1
+    assert str(missing) in _failed(rows)["validate http"]

@@ -132,9 +132,17 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
     hostname/SAN check — the case where a trusted self-signed cert is still
     rejected by modern Python. The truststore default makes corporate CAs in
     the OS keychain "just work" without per-user configuration.
+
+    A ``ca_bundle`` that does not exist raises :class:`ConfigError` naming
+    the path (instead of a bare ``FileNotFoundError`` at request time).
     """
     if not http.verify_ssl:
         return False
+    if http.ca_bundle is not None and not http.ca_bundle.expanduser().is_file():
+        raise ConfigError(
+            f"http.ca_bundle points to a missing file: {http.ca_bundle.expanduser()} "
+            "(fix it with `untaped config set http.ca_bundle <path>` or unset it)"
+        )
     # Fast path: hostname-checked + a pinned CA → hand httpx the path and let it
     # build the (equivalent) default, hostname-checking context itself.
     if http.verify_hostname and http.ca_bundle is not None:
