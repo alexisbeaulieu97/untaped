@@ -244,6 +244,31 @@ def test_job_template_credentials_apply_reconciles_membership_not_body(
     )
 
 
+def test_job_template_credential_replacement_with_same_type_succeeds(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """AWX rejects two same-type credentials, so the old one must leave first."""
+    _seed_basic(fake_aap)
+    fake_aap.seed("credentials", id=40, name="ssh-old", organization=1, credential_type=1)
+    fake_aap.seed("credentials", id=41, name="ssh-new", organization=1, credential_type=1)
+    fake_aap.memberships[("job_templates", 30, "credentials")] = {40}
+    f = tmp_path / "jt.yml"
+    f.write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: deploy, organization: Default }\n"
+        "spec:\n"
+        "  playbook: deploy.yml\n"
+        "  project: playbooks\n"
+        "  inventory: prod\n"
+        "  credentials: [ssh-new]\n"
+    )
+
+    result = CliInvoker().invoke(app, ["job-templates", "apply", str(f), "--yes"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert fake_aap.memberships[("job_templates", 30, "credentials")] == {41}
+
+
 def test_job_templates_credentials_add_remove_command_scopes_members_by_org(
     fake_aap: Any,
 ) -> None:
