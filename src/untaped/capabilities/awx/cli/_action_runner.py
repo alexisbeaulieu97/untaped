@@ -7,8 +7,6 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from typing import Any, NoReturn
 
-from rich.console import Console
-
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
@@ -158,9 +156,13 @@ def _monitor(
     finished: dict[str, Job] = {}
     try:
         if track:
-            console = Console(stderr=True, highlight=False)
+            ui = ctx.progress_ui()
             return drain_parallel(
-                ctx.monitor, launched, console.print, stop=ctx.stop, finished=finished
+                ctx.monitor,
+                launched,
+                lambda line: ui.styled(line, err=True),
+                stop=ctx.stop,
+                finished=finished,
             )
         return wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
     except KeyboardInterrupt:

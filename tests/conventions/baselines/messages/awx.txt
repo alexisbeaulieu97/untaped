@@ -1,6 +1,3 @@
 # Known violations of the messages convention check for 'awx'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-src/untaped/capabilities/awx/cli/_action_runner.py::rich-console::Console()
-src/untaped/capabilities/awx/cli/commands.py::print::print()
-src/untaped/capabilities/awx/cli/commands.py::rich-console::Console()
