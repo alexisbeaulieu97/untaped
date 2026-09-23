@@ -148,11 +148,22 @@ def test_empty_config_file_yields_schema_defaults(
     assert s.demo.token is None
 
 
-def test_non_dict_yaml_root_is_treated_as_empty(
+def test_non_dict_yaml_root_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A list/scalar document root is a broken config, not an empty one."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("- just\n- a\n- list\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    with pytest.raises(ConfigError, match="root must be a mapping"):
+        get_settings_model()()
+
+
+def test_empty_yaml_document_is_treated_as_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = tmp_path / "config.yml"
-    cfg.write_text("- just\n- a\n- list\n")
+    cfg.write_text("# only a comment\n")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     s = get_settings_model()()
     assert s.log_level == "INFO"

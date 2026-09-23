@@ -21,7 +21,7 @@ from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped.errors import ConfigError
-from untaped.settings import get_settings, resolve_config_path
+from untaped.settings import get_settings, load_config_yaml, resolve_config_path
 
 _MISSING = object()
 # Typed as ``Any`` so ``value is MISSING`` at call sites doesn't
@@ -35,18 +35,11 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     """Load the user's config file as a plain dict.
 
     Returns an empty dict if the file does not exist or is empty.
-    Translates ``yaml.YAMLError`` into :class:`ConfigError` so broken
-    YAML surfaces via ``report_errors`` instead of a PyYAML traceback.
+    Translates YAML syntax errors, read failures (e.g. permissions), and a
+    non-mapping document root into :class:`ConfigError` so they surface via
+    ``report_errors`` instead of a traceback.
     """
-    target = path or resolve_config_path()
-    if not target.is_file():
-        return {}
-    try:
-        with target.open() as f:
-            loaded = yaml.safe_load(f)
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"could not parse {target}: {exc}") from exc
-    return loaded if isinstance(loaded, dict) else {}
+    return load_config_yaml(path or resolve_config_path())
 
 
 def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:

@@ -8,10 +8,11 @@ from untaped.errors import ConfigError
 from untaped.settings import (
     Settings,
     get_settings,
+    load_settings_section,
     register_profile_settings,
     reset_config_registry_for_tests,
     resolve_config_path,
-    validate_settings_isolated,
+    validate_settings_section,
 )
 
 
@@ -243,47 +244,46 @@ def test_get_settings_translates_validation_error_to_config_error(
     assert str(cfg) in str(exc_info.value)
 
 
-# -------------------- validate_settings_isolated -------------------- #
+# -------------------- per-section validation / loading -------------------- #
 
 
-def test_validate_settings_isolated_ignores_env_source(
+def test_validate_settings_section_ignores_env_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # If validation re-ran the source chain, the env var would land on
-    # top of the dict and the bad value would silently validate against
-    # the env-supplied value. The helper exists precisely to bypass that.
+    # Validation judges the dict alone: an env var must not paper over a bad
+    # value on its way to disk.
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
     monkeypatch.setenv("UNTAPED_HTTP__VERIFY_SSL", "true")
-    # Positive control: vanilla Settings() honours the env var, proving
-    # the env precedence chain actually fires. Without this, the next
-    # assertion would still pass on a typo'd env name.
     assert Settings().http.verify_ssl is True
     with pytest.raises(ValidationError):
-        validate_settings_isolated({"http": {"verify_ssl": "not-a-bool"}})
+        validate_settings_section({"http": {"verify_ssl": "not-a-bool"}}, "http")
 
 
-def test_validate_settings_isolated_returns_validated_settings_instance(
+def test_validate_settings_section_ignores_other_sections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    result = validate_settings_isolated({"log_level": "DEBUG", "demo": {"page_size": 50}})
-    assert isinstance(result, Settings)
-    assert result.log_level == "DEBUG"
-    assert result.demo.page_size == 50
+    data = {"log_level": "DEBUG", "demo": {"page_size": "lots"}}
+    assert validate_settings_section(data, "log_level") == "DEBUG"
+    with pytest.raises(ValidationError):
+        validate_settings_section(data, "demo")
 
 
-def test_validate_settings_isolated_does_not_mutate_settings_class(
+def test_load_settings_section_isolated_from_invalid_sibling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Pin method identity directly: the helper must build a one-shot
-    # *subclass* to override settings_customise_sources, never mutate
-    # the base class. A regression that swapped the override onto
-    # ``Settings`` itself would silently break ``get_settings()`` for
-    # every later caller in the process.
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    demo:\n      page_size: lots\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    assert load_settings_section("http").timeout == 30.0
+    with pytest.raises(ConfigError, match=r"demo\.page_size"):
+        load_settings_section("demo")
+
+
+def test_load_settings_section_names_the_env_var_culprit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "missing.yml"))
-    # The ``@classmethod`` descriptor binds a fresh bound-method on every
-    # attribute access, so compare ``.__func__`` (the underlying function)
-    # to pin the no-mutation invariant.
-    before = Settings.settings_customise_sources.__func__
-    validate_settings_isolated({"log_level": "ERROR"})
-    assert Settings.settings_customise_sources.__func__ is before
+    monkeypatch.setenv("UNTAPED_HTTP__TIMEOUT", "abc")
+    with pytest.raises(ConfigError, match="environment variable UNTAPED_HTTP__TIMEOUT"):
+        load_settings_section("http")

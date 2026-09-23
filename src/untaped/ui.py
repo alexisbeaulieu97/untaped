@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
-from typing import Protocol, TextIO, cast
+from typing import TextIO
 
 from untaped.errors import ConfigError
 from untaped.progress import ProgressHandle, progress_reporter
@@ -30,14 +30,9 @@ from untaped.render import (
 from untaped.theme import (
     BUILTIN_THEMES,
     ThemeSpec,
-    UiSettings,
     resolve_theme_or_default,
 )
 from untaped.verbose import is_verbose
-
-
-class _HasUiSettings(Protocol):
-    ui: UiSettings
 
 
 class UiContext:
@@ -283,11 +278,11 @@ def ui_context(
     """
     if theme is None:
         # Keep settings lazy so render-only imports avoid the settings chain.
-        from untaped.settings import get_settings  # noqa: PLC0415
+        # Load only the ``ui`` section: an invalid value in an unrelated
+        # section must not break rendering.
+        from untaped.settings import load_settings_section  # noqa: PLC0415
 
-        theme = resolve_theme_or_default(
-            lambda: cast(_HasUiSettings, get_settings()).ui, strict=strict
-        )
+        theme = resolve_theme_or_default(lambda: load_settings_section("ui"), strict=strict)
     return UiContext(
         theme=theme,
         stdin=stdin,

@@ -7,7 +7,7 @@ of typed capability settings sections over the profiles layout.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
@@ -89,18 +89,18 @@ class _ConfigRegistry:
 _CONFIG_REGISTRY = _ConfigRegistry()
 
 
-class Settings(BaseSettings):
-    """Base settings class; concrete aggregate models are built dynamically."""
+class _SettingsSources(BaseSettings):
+    """Env + YAML-layout source wiring shared by every settings model.
+
+    Split from :class:`Settings` so a single top-level section can be loaded
+    on its own (:func:`load_settings_section`) without validating the rest.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="UNTAPED_",
         env_nested_delimiter="__",
         extra="ignore",
     )
-
-    log_level: str = "INFO"
-    http: HttpSettings = Field(default_factory=HttpSettings)
-    ui: UiSettings = Field(default_factory=UiSettings)
 
     @classmethod
     def settings_customise_sources(
@@ -118,6 +118,14 @@ class Settings(BaseSettings):
             LayoutSettingsSource(settings_cls, yaml_file=path),
             file_secret_settings,
         )
+
+
+class Settings(_SettingsSources):
+    """Base settings class; concrete aggregate models are built dynamically."""
+
+    log_level: str = "INFO"
+    http: HttpSettings = Field(default_factory=HttpSettings)
+    ui: UiSettings = Field(default_factory=UiSettings)
 
 
 _PROFILES_LAYOUT = ProfilesSettingsLayout()
@@ -174,26 +182,54 @@ class LayoutSettingsSource(InitSettingsSource):
     """Pydantic-settings source reading YAML through the active settings layout."""
 
     def __init__(self, settings_cls: type[BaseSettings], yaml_file: Path) -> None:
-        raw = self._load_raw_yaml(yaml_file)
+        raw = load_config_yaml(yaml_file)
         effective = active_settings_layout().effective(raw)
-        splice_registered_state(raw, effective)
+        # Only splice (and so only validate) the state sections this model
+        # actually declares: a broken state section must not block loading
+        # an unrelated one (see :func:`load_settings_section`).
+        splice_registered_state(raw, effective, sections=settings_cls.model_fields)
         super().__init__(settings_cls, effective)
 
-    @staticmethod
-    def _load_raw_yaml(yaml_file: Path) -> dict[str, Any]:
-        if not yaml_file.is_file():
-            return {}
-        try:
-            with yaml_file.open() as f:
-                raw = yaml.safe_load(f)
-        except yaml.YAMLError as exc:
-            raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
-        return raw if isinstance(raw, dict) else {}
+
+def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
+    """Parse the config file into a dict (``{}`` when absent or empty).
+
+    Unreadable files, YAML syntax errors, and a non-mapping document root
+    all raise :class:`ConfigError` naming the path.
+    """
+    if not yaml_file.is_file():
+        return {}
+    try:
+        with yaml_file.open() as f:
+            raw = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
+    except OSError as exc:
+        raise ConfigError(f"could not read {yaml_file}: {exc.strerror or exc}") from exc
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"invalid config in {yaml_file}: the document root must be a mapping, "
+            f"got {type(raw).__name__}"
+        )
+    return raw
 
 
-def splice_registered_state(raw: Mapping[str, Any], effective: dict[str, Any]) -> None:
-    """Merge registered top-level state sections into an effective profile dict."""
+def splice_registered_state(
+    raw: Mapping[str, Any],
+    effective: dict[str, Any],
+    *,
+    sections: Iterable[str] | None = None,
+) -> None:
+    """Merge registered top-level state sections into an effective profile dict.
+
+    ``sections`` limits the splice to the named sections (default: all).
+    """
+    wanted = None if sections is None else set(sections)
     for section, model in _CONFIG_REGISTRY.state_sections.items():
+        if wanted is not None and section not in wanted:
+            continue
         state = raw.get(section)
         if not isinstance(state, dict):
             continue
@@ -232,11 +268,74 @@ def get_profile_settings_model() -> type[Settings]:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return the cached aggregate settings instance."""
-    path = resolve_config_path()
     try:
         return get_settings_model()()
     except ValidationError as exc:
-        raise ConfigError(f"invalid config in {path}: {first_validation_error(exc)}") from exc
+        raise ConfigError(settings_error_message(exc)) from exc
+
+
+@lru_cache(maxsize=64)
+def _section_models(
+    settings_cls: type[Settings], name: str
+) -> tuple[type[BaseModel], type[_SettingsSources]]:
+    """Single-field models for ``name``: a plain validator and an env/YAML loader."""
+    field = settings_cls.model_fields[name]
+    definition: Any = (field.annotation, field)
+    validator = create_model("UntapedSectionValidator", **{name: definition})
+    loader = create_model("UntapedSectionSettings", __base__=_SettingsSources, **{name: definition})
+    return validator, loader
+
+
+def validate_settings_section(
+    data: Mapping[str, Any], name: str, settings_cls: type[Settings] | None = None
+) -> Any:
+    """Validate only the top-level field ``name`` of ``data`` (no disk/env reads).
+
+    A missing key validates the field's default (so a required field that is
+    absent is reported). Raises :class:`pydantic.ValidationError`; error
+    locations start with ``name``.
+    """
+    validator, _ = _section_models(settings_cls or get_settings_model(), name)
+    payload = {name: data[name]} if name in data else {}
+    return getattr(validator.model_validate(payload), name)
+
+
+def load_settings_section(name: str, settings_cls: type[Settings] | None = None) -> Any:
+    """Load one top-level settings field from the YAML layout + environment.
+
+    Unlike :func:`get_settings`, invalid values in *other* sections do not
+    make this fail — only ``name`` (plus its own state section) is
+    validated. Raises :class:`ConfigError` naming the offending key, and the
+    environment variable when an ``UNTAPED_*`` override supplied it.
+    """
+    _, loader = _section_models(settings_cls or get_settings_model(), name)
+    try:
+        return getattr(loader(), name)
+    except ValidationError as exc:
+        raise ConfigError(settings_error_message(exc)) from exc
+
+
+def settings_error_message(exc: ValidationError) -> str:
+    """Describe a settings ``ValidationError``, naming an env var culprit."""
+    detail = first_validation_error(exc)
+    env_var = _env_culprit(exc)
+    if env_var is not None:
+        return f"invalid value in environment variable {env_var}: {detail}"
+    return f"invalid config in {resolve_config_path()}: {detail}"
+
+
+def _env_culprit(exc: ValidationError) -> str | None:
+    errors = exc.errors()
+    if not errors:
+        return None
+    loc = [str(part) for part in errors[0].get("loc", ()) if isinstance(part, str)]
+    # The deepest set ``UNTAPED_A__B__C`` wins; a JSON blob in ``UNTAPED_A``
+    # can also supply a nested value.
+    for depth in range(len(loc), 0, -1):
+        candidate = "UNTAPED_" + "__".join(loc[:depth]).upper()
+        if candidate in os.environ:
+            return candidate
+    return None
 
 
 def get_core_settings() -> Settings:
@@ -299,33 +398,6 @@ def _section_model(
         "type[BaseModel]",
         create_model(f"{section.title()}Settings", __base__=(profile_model, state_model)),
     )
-
-
-def validate_settings_isolated(
-    data: dict[str, Any], settings_cls: type[Settings] | None = None
-) -> Settings:
-    """Validate ``data`` against the current schema without reading disk/env."""
-    target_cls = settings_cls or get_settings_model()
-
-    def _init_only(
-        cls: type[Settings],
-        settings_cls: type[Settings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (init_settings,)
-
-    validator_cls = cast(
-        "type[Settings]",
-        type(
-            "_ValidateOnly",
-            (target_cls,),
-            {"settings_customise_sources": classmethod(_init_only)},
-        ),
-    )
-    return validator_cls.model_validate(data)
 
 
 reset_config_registry_for_tests()
