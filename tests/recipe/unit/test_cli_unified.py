@@ -719,3 +719,29 @@ def test_resolution_ignores_unparsable_pack_unless_named(tmp_path: Path) -> None
         assert result.exit_code != 0
         assert "broken" in result.stderr
         assert "line" in result.stderr
+
+
+def test_missing_recipe_path_with_unsafe_basename_reports_not_found(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="pack", recipes={"demo": "recipes/demo.yml"})
+    _install_pack(source)
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(app, ["apply", "./my recipe.yml", str(target), "--yes"])
+
+    assert result.exit_code == 1
+    assert "recipe file not found: my recipe.yml" in result.stderr
+    assert "safe library name" not in result.stderr
+
+
+def test_show_unsafe_ref_reports_not_found(tmp_path: Path) -> None:
+    result = CliInvoker().invoke(app, ["show", "foo bar"])
+
+    assert result.exit_code == 1
+    assert "not found: foo bar" in result.stderr
+    assert "safe library name" not in result.stderr
