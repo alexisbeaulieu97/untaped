@@ -18,7 +18,6 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     create_app,
-    echo,
     emit,
     read_identifiers,
     report_errors,
@@ -56,10 +55,6 @@ app = create_app(
     name="search",
     help="Search GitHub for repos, code, issues, and users.",
 )
-
-
-def _stderr_warn(message: str) -> None:
-    echo(f"warning: {message}", err=True)
 
 
 def _repo_scopes(values: list[str] | None, *, repo_stdin: bool) -> tuple[str, ...]:
@@ -121,7 +116,7 @@ def repos_command(
             limit=limit,
         )
         with open_client() as (client, ui):
-            use_case = SearchRepos(client, client, warn=_stderr_warn)
+            use_case = SearchRepos(client, client, warn=lambda text: ui.message("warning", text))
             team_scopes = parse_team_scopes(team, orgs=orgs)
             with ui.progress("Searching repositories…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
@@ -177,7 +172,7 @@ def code_command(
             limit=limit,
         )
         with open_client() as (client, ui):
-            use_case = SearchCode(client, client, warn=_stderr_warn)
+            use_case = SearchCode(client, client, warn=lambda text: ui.message("warning", text))
             team_scopes = parse_team_scopes(team, orgs=orgs)
             with ui.progress("Searching code…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
@@ -237,7 +232,7 @@ def issues_command(
             limit=limit,
         )
         with open_client() as (client, ui):
-            use_case = SearchIssues(client, client, warn=_stderr_warn)
+            use_case = SearchIssues(client, client, warn=lambda text: ui.message("warning", text))
             team_scopes = parse_team_scopes(team, orgs=orgs)
             with ui.progress("Searching issues and pull requests…"):
                 rows = [r.model_dump() for r in use_case(filters, team_scopes=team_scopes)]
