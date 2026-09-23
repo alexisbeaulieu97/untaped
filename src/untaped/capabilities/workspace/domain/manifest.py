@@ -9,8 +9,10 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from untaped.capabilities.workspace.errors import WorkspaceError
 
-class DuplicateRepoError(ValueError):
+
+class DuplicateRepoError(WorkspaceError, ValueError):
     """Base class for duplicate-repo invariant failures.
 
     Subclasses carry the *incumbent* (the repo already in the manifest)
@@ -34,14 +36,14 @@ class DuplicateRepoError(ValueError):
         return type(self), (self.existing,)
 
 
-class DuplicateRepoName(DuplicateRepoError):
+class DuplicateRepoNameError(DuplicateRepoError):
     """A repo with the same `name` is already in the manifest."""
 
     def __init__(self, existing: Repo) -> None:
         super().__init__(f"duplicate repo name: {existing.name!r}", existing)
 
 
-class DuplicateRepoUrl(DuplicateRepoError):
+class DuplicateRepoUrlError(DuplicateRepoError):
     """A repo with the same `url` is already in the manifest."""
 
     def __init__(self, existing: Repo) -> None:
@@ -114,8 +116,8 @@ class WorkspaceManifest(BaseModel):
         # exception in the same precedence.
         #
         # Precedence is **url before name** so re-adding an existing URL
-        # surfaces as ``DuplicateRepoUrl`` ("already in workspace")
-        # rather than ``DuplicateRepoName`` — the derived name *also*
+        # surfaces as ``DuplicateRepoUrlError`` ("already in workspace")
+        # rather than ``DuplicateRepoNameError`` — the derived name *also*
         # collides in that case, but the user's correct mental model is
         # "this repo is already here," not "your name conflicts."
         #
@@ -125,9 +127,9 @@ class WorkspaceManifest(BaseModel):
         seen_urls: dict[str, Repo] = {}
         for repo in repos:
             if (incumbent := seen_urls.get(repo.url)) is not None:
-                return DuplicateRepoUrl(incumbent)
+                return DuplicateRepoUrlError(incumbent)
             if (incumbent := seen_names.get(repo.name.casefold())) is not None:
-                return DuplicateRepoName(incumbent)
+                return DuplicateRepoNameError(incumbent)
             seen_urls[repo.url] = repo
             seen_names[repo.name.casefold()] = repo
         return None
@@ -181,7 +183,7 @@ class WorkspaceManifest(BaseModel):
     def add_repo(self, repo: Repo) -> WorkspaceManifest:
         """Return a new manifest with ``repo`` appended.
 
-        Raises ``DuplicateRepoUrl`` or ``DuplicateRepoName`` (in that
+        Raises ``DuplicateRepoUrlError`` or ``DuplicateRepoNameError`` (in that
         precedence) if ``repo`` collides with an existing entry. Each
         carries the incumbent so callers can build CLI-facing messages
         without re-scanning the manifest.

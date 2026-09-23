@@ -14,7 +14,7 @@ from untaped.capability_api import atomic_write, first_validation_error
 MANIFEST_FILENAME = "untaped.yml"
 
 
-class ManifestRepository:
+class YamlManifestRepository:
     """Pydantic-validated round-trip for ``untaped.yml`` files."""
 
     def manifest_path(self, workspace_dir: Path) -> Path:

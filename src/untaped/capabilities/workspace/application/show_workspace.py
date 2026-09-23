@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from untaped.capabilities.workspace.application.ports import ManifestReader
-from untaped.capabilities.workspace.domain import Workspace, WorkspaceDetailRow
+from untaped.capabilities.workspace.domain import (
+    Workspace,
+    WorkspaceDetailRow,
+    WorkspaceSummaryRow,
+)
 
 
 class ShowWorkspace:
     def __init__(self, manifest_repo: ManifestReader) -> None:
         self._manifests = manifest_repo
 
-    def __call__(self, workspace: Workspace) -> list[WorkspaceDetailRow]:
+    def __call__(
+        self, workspace: Workspace
+    ) -> list[WorkspaceDetailRow] | list[WorkspaceSummaryRow]:
         manifest = self._manifests.read(workspace.path)
         repo_count = len(manifest.repos)
         base = {
@@ -21,7 +27,7 @@ class ShowWorkspace:
         }
         if repo_count == 0:
             return [
-                WorkspaceDetailRow(
+                WorkspaceSummaryRow(
                     **base,
                     repo="",
                     url="",
@@ -33,7 +39,7 @@ class ShowWorkspace:
             WorkspaceDetailRow(
                 **base,
                 repo=repo.name,
-                target_path=str(workspace.path / repo.name),
+                target_path=workspace.path / repo.name,
                 url=repo.url,
                 repo_branch=repo.branch,
                 target_branch=manifest.target_branch_for(repo),

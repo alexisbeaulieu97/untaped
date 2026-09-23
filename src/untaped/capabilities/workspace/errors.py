@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.capability_api import UntapedError
+from untaped.capability_api import UntapedError, plural
 
 
 class WorkspaceError(UntapedError):
@@ -32,7 +32,7 @@ class RegistryError(WorkspaceError):
     """Raised for registry mismatches (unknown name, duplicate path, …)."""
 
 
-class UnmatchedRepoFilter(WorkspaceError):
+class UnmatchedRepoFilterError(WorkspaceError):
     """Raised when a repo selector contains identifiers no repo matches.
 
     Carries the unmatched identifiers so callers can react precisely
@@ -41,5 +41,6 @@ class UnmatchedRepoFilter(WorkspaceError):
     """
 
     def __init__(self, unmatched: tuple[str, ...]) -> None:
-        super().__init__(f"unknown repo identifier(s) for --repo: {', '.join(unmatched)}")
+        noun = plural(len(unmatched), "unknown repo identifier")
+        super().__init__(f"{noun} for --repo: {', '.join(unmatched)}")
         self.unmatched = unmatched

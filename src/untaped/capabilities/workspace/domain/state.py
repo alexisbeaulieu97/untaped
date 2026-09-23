@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from untaped.capability_api import OutcomeRecord, TargetRecord
+
 DEFAULT_FOREACH_TIMEOUT = 600.0
 """Default per-repo timeout for ``workspace foreach`` shell commands."""
 
@@ -47,18 +49,18 @@ class RepoStatus(BaseModel):
 
 
 SyncAction = Literal[
-    "clone",
-    "pull",
-    "skip",
+    "cloned",
+    "pulled",
+    "skipped",
     "failed",
-    "remove",
-    "up-to-date",
+    "removed",
+    "unchanged",
     "unmatched",
     "unavailable",
 ]
 """What ``sync`` did (or refused to do) for one repo.
 
-``skip`` is an intentional refusal (dirty tree, wrong branch, diverged,
+``skipped`` is an intentional refusal (dirty tree, wrong branch, diverged,
 unsafe orphan). ``failed`` means a clone, fetch, status, or pull
 attempt errored; the CLI exits non-zero when any row failed.
 
@@ -74,10 +76,12 @@ when a registered workspace exists but its manifest cannot be read. The
 """
 
 
-class SyncOutcome(BaseModel):
-    """One row of `untaped workspace sync` output."""
+class SyncOutcome(OutcomeRecord, TargetRecord):
+    """One row of `untaped workspace sync` output.
 
-    model_config = ConfigDict(frozen=True)
+    ``target_path`` is the repo's clone directory, or the workspace
+    directory for workspace-level rows (``unavailable``, ``unmatched``).
+    """
 
     workspace: str
     repo: str
@@ -94,10 +98,8 @@ manifest could not be read.
 """
 
 
-class StatusEntry(BaseModel):
+class StatusEntry(TargetRecord):
     """One row of `untaped workspace status` output."""
-
-    model_config = ConfigDict(frozen=True)
 
     workspace: str
     repo: str
@@ -111,10 +113,8 @@ class StatusEntry(BaseModel):
     untracked: int = 0
 
 
-class ForeachOutcome(BaseModel):
+class ForeachOutcome(TargetRecord):
     """One row of `untaped workspace foreach` output."""
-
-    model_config = ConfigDict(frozen=True)
 
     workspace: str
     repo: str

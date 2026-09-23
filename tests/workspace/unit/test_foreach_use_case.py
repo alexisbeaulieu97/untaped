@@ -13,7 +13,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
 )
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capabilities.workspace.infrastructure import LocalFilesystem, ManifestRepository
+from untaped.capabilities.workspace.infrastructure import LocalFilesystem, YamlManifestRepository
 
 _FS = LocalFilesystem()
 
@@ -21,7 +21,7 @@ _FS = LocalFilesystem()
 def _seed(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
     ws = tmp_path / "prod"
     ws.mkdir()
-    ManifestRepository().write(ws, manifest)
+    YamlManifestRepository().write(ws, manifest)
     for repo in manifest.repos:
         assert repo.name is not None
         (ws / repo.name).mkdir()
@@ -55,7 +55,9 @@ def test_runs_in_each_repo_serial(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]),
     )
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="echo hi")
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(
+        workspace, command="echo hi"
+    )
     assert [o.repo for o in outcomes] == ["a", "b"]
     assert all(o.returncode == 0 for o in outcomes)
 
@@ -72,7 +74,7 @@ def test_serial_stops_on_error(tmp_path: Path) -> None:
         ),
     )
     runner = _runner_factory(returncode={"b": 2})
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
     assert [o.repo for o in outcomes] == ["a", "b"]
 
 
@@ -88,7 +90,7 @@ def test_continue_on_error(tmp_path: Path) -> None:
         ),
     )
     runner = _runner_factory(returncode={"b": 2})
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(
         workspace, command="x", continue_on_error=True
     )
     assert [o.repo for o in outcomes] == ["a", "b", "c"]
@@ -107,7 +109,7 @@ def test_parallel_preserves_repo_order(tmp_path: Path) -> None:
         ),
     )
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(
         workspace, command="x", parallel=4, continue_on_error=True
     )
     assert [o.repo for o in outcomes] == ["a", "b", "c", "d"]
@@ -116,10 +118,10 @@ def test_parallel_preserves_repo_order(tmp_path: Path) -> None:
 def test_skips_uncloned_repo(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    ManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
+    YamlManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     workspace = Workspace(name="prod", path=ws_path)
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
     assert outcomes[0].returncode == -1
     assert "not cloned" in outcomes[0].stderr
 
@@ -130,7 +132,9 @@ def test_outcome_records_command_and_duration(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
     )
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="echo hi")
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(
+        workspace, command="echo hi"
+    )
     outcome = outcomes[0]
     assert outcome.command == "echo hi"
     assert outcome.duration_s >= 0.0
@@ -144,7 +148,7 @@ def test_passes_timeout_to_runner(tmp_path: Path) -> None:
         seen.append(timeout)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+    Foreach(YamlManifestRepository(), runner=_runner, fs=_FS)(
         workspace,
         command="echo hi",
         timeout=12.5,
@@ -161,7 +165,7 @@ def test_uses_default_foreach_timeout(tmp_path: Path) -> None:
         seen.append(timeout)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    Foreach(ManifestRepository(), runner=_runner, fs=_FS)(workspace, command="echo hi")
+    Foreach(YamlManifestRepository(), runner=_runner, fs=_FS)(workspace, command="echo hi")
 
     assert seen == [DEFAULT_FOREACH_TIMEOUT]
 
@@ -169,10 +173,12 @@ def test_uses_default_foreach_timeout(tmp_path: Path) -> None:
 def test_outcome_records_command_when_uncloned(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    ManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
+    YamlManifestRepository().write(ws_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     workspace = Workspace(name="prod", path=ws_path)
     runner = _runner_factory()
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="echo hi")
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(
+        workspace, command="echo hi"
+    )
     assert outcomes[0].command == "echo hi"
     assert outcomes[0].duration_s == 0.0
 
@@ -205,7 +211,7 @@ def test_parallel_fail_fast_reports_in_flight_outcomes(tmp_path: Path) -> None:
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="b", stderr="")
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=cwd.name, stderr="")
 
-    outcomes = Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+    outcomes = Foreach(YamlManifestRepository(), runner=_runner, fs=_FS)(
         workspace, command="x", parallel=2
     )
 
@@ -238,7 +244,7 @@ def test_serial_fail_fast_treats_timeout_as_failure(tmp_path: Path) -> None:
             )
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=cwd.name, stderr="")
 
-    outcomes = Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+    outcomes = Foreach(YamlManifestRepository(), runner=_runner, fs=_FS)(
         workspace,
         command="x",
         parallel=1,
@@ -257,7 +263,7 @@ def test_file_not_found_yields_runner_error_outcome(tmp_path: Path) -> None:
         WorkspaceManifest(repos=[Repo(url="https://x/a.git")]),
     )
     runner = _runner_factory(raises={"a": FileNotFoundError("/bin/missing-shell: not found")})
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(workspace, command="x")
     assert len(outcomes) == 1
     assert outcomes[0].returncode == -1
     assert outcomes[0].stdout == ""
@@ -271,7 +277,7 @@ def test_filters_by_repo_name(tmp_path: Path) -> None:
     )
     runner = _runner_factory()
 
-    outcomes = Foreach(ManifestRepository(), runner=runner, fs=_FS)(
+    outcomes = Foreach(YamlManifestRepository(), runner=runner, fs=_FS)(
         workspace,
         command="echo hi",
         only=["b"],
@@ -287,7 +293,7 @@ def test_on_result_streams_each_outcome_as_it_finishes(tmp_path: Path) -> None:
     )
     streamed: list[str] = []
 
-    outcomes = Foreach(ManifestRepository(), runner=_runner_factory(), fs=_FS)(
+    outcomes = Foreach(YamlManifestRepository(), runner=_runner_factory(), fs=_FS)(
         workspace, command="echo hi", on_result=lambda o: streamed.append(o.repo)
     )
 
@@ -313,7 +319,7 @@ def test_parallel_interrupt_cancels_queued_repos(tmp_path: Path) -> None:
         raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):
-        Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+        Foreach(YamlManifestRepository(), runner=_runner, fs=_FS)(
             workspace, command="x", parallel=2, on_result=_interrupt
         )
 
@@ -329,7 +335,7 @@ def test_unknown_repo_filter_raises_before_running_command(tmp_path: Path) -> No
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
     with pytest.raises(WorkspaceError, match="ghost"):
-        Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+        Foreach(YamlManifestRepository(), runner=_runner, fs=_FS)(
             workspace,
             command="echo hi",
             only=["ghost"],
