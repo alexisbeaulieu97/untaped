@@ -16,6 +16,7 @@ from untaped.api import (
     existing_file,
     parse_json_pairs,
     parse_kv_pairs,
+    raise_usage,
     read_structured_file,
     report_errors,
     resolve_text_input,
@@ -226,6 +227,11 @@ def issue_edit_command(
             fields=parse_kv_pairs(field, flag="--field"),
             json_fields=parse_json_pairs(json_field, flag="--json-field"),
         )
+        if not payload.get("fields") and not payload.get("update"):
+            raise_usage(
+                "nothing to update: pass --summary, --description, --field, --json-field, "
+                "or a --body-file with fields/update"
+            )
         with open_client() as (client, ui), ui.progress("Updating issue…"):
             row = EditIssue(client)(key, payload).model_dump()
         emit(row, fmt=fmt, columns=columns, kind="jira.issue")
