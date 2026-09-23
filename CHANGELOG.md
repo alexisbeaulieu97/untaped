@@ -196,6 +196,46 @@ Startup and SDK surface.
   goes away with `untaped.api`. `untaped.app_context` now names the submodule
   rather than the function.
 
+UX conventions: core helpers and enforcement (see `docs/conventions.md`).
+
+- Exit codes follow one contract: 1 failure or declined confirmation, 2
+  usage error, 3 predicate hit, 130 interrupted. **Behavior change:** Ctrl-C
+  exits 130 without a traceback, including at a prompt (was 1). Declining
+  the confirmation of workspace `remove --prune`/`forget --prune`, recipe
+  `backup restore`/`backup prune`, github `cache clean` or `profile delete`
+  prints `cancelled; no changes made` and exits 1 (was a silent exit 0, or
+  `delete cancelled`). A command that must confirm but has no terminal exits
+  2 (was 1). Mixing positional identifiers with `--stdin`, passing
+  none, and `--body`/`--body-file` together exit 2.
+- Confirmations reach the controlling terminal when stdin carries piped data,
+  so `... --format pipe | untaped workspace remove --stdin` prompts instead of
+  refusing. Without a terminal, pass `--yes`.
+- `untaped.capability_api` adds (API 1.1, backwards compatible): `UsageError`,
+  `OperationCancelledError`, `ExitCode`, `plural`, `q`, `not_found`, `hint`,
+  `summary`, `YesOption`, `DryRunOption`, `StdinOption`, `ParallelOption`,
+  `LimitOption`, `OutcomeRecord`, `TargetRecord`, `CheckRecord`,
+  `UtcTimestamp`, `read_stdin_input`, `StdinInput` and `read_records`.
+  `read_identifiers`/`read_records` accept `accept_kinds` (a record of another
+  kind exits 2). `UiContext` gains `success`, `confirm_action` and `terminal`.
+  `finish()` takes `predicate_hit`, and `BatchOutcome` gains `cancelled`.
+  `untaped.testing.invoke_cli` gains `terminal=`.
+- Fixed: `untaped awx job_templates --help` (any underscore or camelCase
+  spelling of a multi-word command) crashed with a `KeyError`. It now
+  resolves to the registered name.
+- Fixed: the `config list` warning for an invalid section repeated itself. It
+  is now one sentence.
+- `http.proxy` (and any URL setting) no longer prints a `user:password@`
+  password in `config list/get` or `profile show` unless you pass
+  `--show-secrets`.
+- **Behavior change:** root pipe records use `untaped.*` kinds
+  (`untaped.setting`, `untaped.profile` (was `profile.profile`),
+  `untaped.capability`, `untaped.doctor_check`, `untaped.skill`). "Profile not
+  found" errors read `profile not found: 'x'; known: …` with a `hint:` line.
+  The meaningless `--empty-columns` flag is gone. `skills install` takes
+  names positionally only (no `--skill-names`).
+- `tests/conventions/` lints the help tree, messages, capability structure and
+  layer imports against per-capability baselines that may only shrink.
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP

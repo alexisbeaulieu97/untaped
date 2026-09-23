@@ -40,12 +40,19 @@ src/untaped/capabilities/<name>/
 ├── application/       # use cases (orchestration); ports in application/ports.py
 ├── domain/            # entities, value objects (pure, no I/O)
 ├── infrastructure/    # external adapters (httpx clients, fs, …)
-├── errors.py          # capability exception subclasses (only if it defines its own)
+├── errors.py          # <Cap>Error(UntapedError) and its subclasses
 └── skills/            # packaged agent skills shipped via SPEC.skills
 ```
 
 Import direction inside a capability: `cli → application → domain` and
 `infrastructure → domain`; `domain/` imports nothing from the other layers.
+
+Commands follow [`docs/conventions.md`](docs/conventions.md) (verbs, flags,
+messages, exit codes, record shapes) through the `capability_api` helpers it
+lists: `UsageError`, shared option aliases, `plural`/`q`/`not_found`/`hint`,
+`ui.success`, `batch_apply`/`ui.confirm_action`, `read_identifiers(accept_kinds=…)`,
+and the `OutcomeRecord`/`TargetRecord` bases. `tests/conventions/` enforces them
+against per-capability baselines that may only shrink.
 
 ## Capability registry + capability_api
 

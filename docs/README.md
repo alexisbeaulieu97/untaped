@@ -12,6 +12,9 @@ cover the workflows and contracts that are useful across commands.
   `~/.untaped/state.yml`, profiles, secrets, TLS, env-var overrides. Start here.
 - [Building a capability provider](./plugins.md) — package an external
   capability for the unified CLI.
+- [Command and output conventions](./conventions.md) — flags, messages, exit
+  codes and record shapes every command follows, and the helpers that
+  implement them.
 - [Agent Skills](./skills.md) — list and install the skills shipped with the
   composed application.
 - [Releasing](./release.md) — PyPI/TestPyPI workflow, Trusted Publisher setup,
