@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from untaped.errors import ConfigError
 from untaped.http import resolve_verify
 from untaped.settings import HttpSettings
 
@@ -15,10 +16,20 @@ def test_returns_false_when_verify_disabled() -> None:
     assert resolve_verify(HttpSettings(verify_ssl=False)) is False
 
 
-def test_returns_path_when_ca_bundle_set() -> None:
-    bundle = Path("/etc/ssl/corp-ca.pem")
+def test_returns_path_when_ca_bundle_set(tmp_path: Path) -> None:
+    bundle = tmp_path / "corp-ca.pem"
+    bundle.write_text("dummy")
     result = resolve_verify(HttpSettings(ca_bundle=bundle))
     assert result == str(bundle)
+
+
+@pytest.mark.parametrize("verify_hostname", [True, False])
+def test_missing_ca_bundle_is_a_config_error_naming_the_path(
+    tmp_path: Path, verify_hostname: bool
+) -> None:
+    bundle = tmp_path / "missing.pem"
+    with pytest.raises(ConfigError, match=r"http\.ca_bundle.*missing\.pem"):
+        resolve_verify(HttpSettings(ca_bundle=bundle, verify_hostname=verify_hostname))
 
 
 def test_ca_bundle_takes_precedence_over_default(tmp_path: Path) -> None:
@@ -39,7 +50,9 @@ def test_disabled_beats_ca_bundle() -> None:
     assert result is False
 
 
-def test_ca_bundle_expanduser() -> None:
+def test_ca_bundle_expanduser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "ca.pem").write_text("dummy")
     result = resolve_verify(HttpSettings(ca_bundle=Path("~/ca.pem")))
     assert isinstance(result, str)
     assert "~" not in result

@@ -184,15 +184,16 @@ def test_partial_failure_counts_and_continues(
             raise HttpError("boom")
         return f"done-{item}"
 
+    ui = _ui(interactive=True, confirms=[True])
     outcome = _run(
         interactive=True,
-        confirms=[True],
         items=["a", "b"],
         action=action,
         label=lambda item: f"id={item}",
+        ui=ui,
     )
 
-    assert "error: id=a: boom" in capsys.readouterr().err
+    assert "error: id=a: boom" in ui.stderr.getvalue()  # type: ignore[attr-defined]
     assert outcome.failed == 1
     assert outcome.results == [("b", "done-b")]
     assert outcome.any_failed
@@ -275,3 +276,30 @@ def test_finish_accepts_any_failed_bool() -> None:
     with pytest.raises(SystemExit):
         finish(True)
     finish(False)
+
+
+def test_failure_lines_use_the_shared_error_formatter() -> None:
+    """API messages from an HttpError body are kept (same as ``report_errors``)."""
+
+    def action(item: str) -> str:
+        raise HttpError("HTTP 400", status_code=400, body='{"detail": "name taken"}')
+
+    ui = _ui(interactive=False)
+    _run(interactive=False, items=["a"], action=action, assume_yes=True, ui=ui)
+
+    assert "error: a: HTTP 400 — name taken" in ui.stderr.getvalue()  # type: ignore[attr-defined]
+
+
+def test_failure_lines_do_not_interleave_with_the_spinner() -> None:
+    def action(item: str) -> str:
+        raise HttpError("boom")
+
+    stderr = TtyStringIO()
+    ui = UiContext(stdin=io.StringIO(), stdout=io.StringIO(), stderr=stderr)
+    _run(interactive=False, items=["a"], action=action, assume_yes=True, ui=ui)
+
+    lines = stderr.getvalue().split("\n")
+    error_line = next(line for line in lines if "error: a: boom" in line)
+    # The spinner is cleared before the error prints, so the error line holds
+    # nothing but the error (after the line-clearing carriage return).
+    assert error_line.rsplit("\r", 1)[-1] == "error: a: boom"

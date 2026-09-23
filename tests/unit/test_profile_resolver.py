@@ -249,3 +249,38 @@ def test_effective_active_profile_name_matches_classification(
     monkeypatch.delenv("UNTAPED_PROFILE")
     assert effective_active_profile_name({"active": "prod"}) == "prod"
     assert effective_active_profile_name({}) is None
+
+
+@pytest.mark.parametrize(
+    "config",
+    [{"active": "prod"}, {"profiles": {}, "active": "prod"}, {"profiles": None, "active": "prod"}],
+)
+def test_missing_active_profile_errors_even_without_profiles(config: dict[str, object]) -> None:
+    with pytest.raises(ConfigError, match="'prod'"):
+        resolve_profiles(config)
+
+
+def test_missing_override_errors_even_without_profiles() -> None:
+    with pytest.raises(ConfigError, match="'prod'"):
+        resolve_profiles({}, active_override="prod")
+
+
+def test_conceptual_default_override_resolves_without_profiles() -> None:
+    assert resolve_profiles({}, active_override="default") == ({}, {})
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ({"profiles": ["a"]}, "'profiles' must be a mapping"),
+        ({"profiles": {"default": "x"}}, "profile 'default' must be a mapping"),
+        ({"profiles": {"default": {}}, "active": ["x"]}, "'active' must be a profile name"),
+    ],
+)
+def test_malformed_profiles_raise_config_error(config: dict[str, object], message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        resolve_profiles(config)
+
+
+def test_null_profile_entry_is_an_empty_profile() -> None:
+    assert resolve_profiles({"profiles": {"default": None}}) == ({}, {})

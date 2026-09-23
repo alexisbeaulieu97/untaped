@@ -33,10 +33,18 @@ from untaped.cli import (
 )
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, first_validation_error
+from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
-from untaped.settings import active_settings_layout, resolve_config_path
+from untaped.settings import (
+    HttpSettings,
+    Settings,
+    active_settings_layout,
+    check_settings_field,
+    resolve_config_path,
+)
+from untaped.theme import UiSettings, resolve_theme
 
 _PASS = "pass"
 _FAIL = "fail"
@@ -135,6 +143,9 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
             effective = active_settings_layout().effective(raw)
         except ConfigError as exc:
             settings_error = str(exc)
+        rows.append(_profile_row(shell, raw, settings_error))
+    for field in Settings.model_fields:
+        rows.append(_core_row(shell, field, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
     for scope in _scopes(shell, result):
         settings, error = _validate_section(scope, effective, settings_error)
@@ -145,6 +156,8 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
                 _row("settings", scope.capability, _PASS, "validate settings", "settings OK")
             )
         contexts.append((scope, settings))
+        if scope.state_model is not None and raw is not None:
+            rows.append(_state_row(scope, scope.state_model, raw))
     for scope, settings in contexts:
         for check_item in scope.checks:
             rows.append(_run_check(scope, check_item, settings))
@@ -159,14 +172,58 @@ def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str
         raw = read_config_dict(path)
     except ConfigError as exc:
         return None, _row("config", shell.name, _FAIL, "load config file", str(exc))
+    return raw, _row("config", shell.name, _PASS, "load config file", str(path))
+
+
+def _profile_row(
+    shell: ApplicationSpec, raw: dict[str, Any], settings_error: str | None
+) -> dict[str, object]:
+    """The selected profile (flag/env/``active:``) must exist."""
+    title = "resolve active profile"
+    if settings_error is not None:
+        return _row("profile", shell.name, _FAIL, title, settings_error)
     name, source = classify_active_profile(raw)
-    return raw, _row(
-        "config",
-        shell.name,
-        _PASS,
-        "load config file",
-        f"{path} (active profile: {name or 'default'} via {source})",
-    )
+    return _row("profile", shell.name, _PASS, title, f"{name or 'default'} (via {source})")
+
+
+def _core_row(
+    shell: ApplicationSpec,
+    field: str,
+    effective: Mapping[str, Any] | None,
+    settings_error: str | None,
+) -> dict[str, object]:
+    """Validate one core setting (``log_level``/``http``/``ui``) plus env overrides."""
+    title = f"validate {field}"
+    if effective is None:
+        return _row("settings", shell.name, _FAIL, title, settings_error or "config unreadable")
+    try:
+        value = check_settings_field(field, effective.get(field))
+        if isinstance(value, UiSettings):
+            resolve_theme(value)
+        if isinstance(value, HttpSettings):
+            resolve_verify(value)
+    except ConfigError as exc:
+        return _row("settings", shell.name, _FAIL, title, str(exc))
+    return _row("settings", shell.name, _PASS, title, "settings OK")
+
+
+def _state_row(
+    scope: _SectionScope, state_model: type[BaseModel], raw: Mapping[str, Any]
+) -> dict[str, object]:
+    """Validate a capability's top-level state section (profile-independent)."""
+    title = "validate state"
+    node = raw.get(scope.section)
+    if node is None:
+        return _row("state", scope.capability, _PASS, title, "no state")
+    if not isinstance(node, dict):
+        detail = f"state section {scope.section!r} must be a mapping"
+        return _row("state", scope.capability, _FAIL, title, detail)
+    try:
+        state_model.model_validate(node)
+    except ValidationError as exc:
+        detail = f"invalid {scope.section} state: {first_validation_error(exc)}"
+        return _row("state", scope.capability, _FAIL, title, detail)
+    return _row("state", scope.capability, _PASS, title, "state OK")
 
 
 def _validate_section(
@@ -176,8 +233,10 @@ def _validate_section(
 ) -> tuple[BaseModel | None, str | None]:
     """Validate one section's effective slice without touching other sections.
 
-    Returns ``(settings, error)``: ``settings`` is the validated snapshot for
-    check bodies (``None`` when unavailable), ``error`` the failed-row detail
+    ``UNTAPED_*`` env overrides are layered over the YAML slice, so a bad
+    override fails this row and names the variable. Returns
+    ``(settings, error)``: ``settings`` is the validated snapshot for check
+    bodies (``None`` when unavailable), ``error`` the failed-row detail
     (``None`` when valid). Only YAML reads plus in-process validation run
     here — never network I/O.
     """
@@ -187,9 +246,10 @@ def _validate_section(
     if not isinstance(node, dict):
         return None, f"section {scope.section!r} must be a mapping"
     try:
-        return scope.profile_model.model_validate(node), None
-    except ValidationError as exc:
-        return None, f"invalid {scope.section} settings: {first_validation_error(exc)}"
+        settings = check_settings_field(scope.section, node, model=scope.profile_model)
+    except ConfigError as exc:
+        return None, str(exc)
+    return settings, None
 
 
 def _run_check(

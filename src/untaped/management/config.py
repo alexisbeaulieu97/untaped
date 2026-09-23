@@ -26,6 +26,7 @@ from untaped.cli import (
     ColumnsOption,
     FormatOption,
     create_app,
+    echo,
     emit,
     report_errors,
 )
@@ -160,7 +161,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @app.command(name="set")
     def set_command(
         key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
-        value: Annotated[str | None, Parameter(help="New value (parsed as a YAML scalar).")] = None,
+        value: Annotated[str | None, Parameter(help="New value (validated for its type).")] = None,
         /,
         *,
         target_profile: Annotated[
@@ -216,8 +217,11 @@ def _list(
         if all_profiles:
             entries = ListAllProfilesSettings(repo)(reveal_secrets=show_secrets)
         else:
-            entries = ListSettings(repo)(reveal_secrets=show_secrets)
-        rows = [setting_entry_row(e) for e in entries]
+            list_settings = ListSettings(repo)
+            entries = list_settings(reveal_secrets=show_secrets)
+            for section, error in list_settings.errors.items():
+                echo(f"warning: section {section!r} is invalid: {error}", err=True)
+        rows = [setting_entry_row(e, human=fmt in ("table", "raw")) for e in entries]
         emit(rows, fmt=fmt, columns=columns)
 
 
@@ -226,7 +230,7 @@ def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: b
         resolved = ctx.resolve_key(key)
         entry = GetSetting(SettingsFileRepository())(resolved, reveal_secrets=show_secrets)
         columns = ["value"] if fmt == "raw" else None
-        emit(setting_entry_row(entry), fmt=fmt, columns=columns)
+        emit(setting_entry_row(entry, human=fmt in ("table", "raw")), fmt=fmt, columns=columns)
 
 
 def _set(

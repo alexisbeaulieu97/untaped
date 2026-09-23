@@ -142,7 +142,7 @@ def test_get_http_setting_from_profile(_isolate_settings: Path) -> None:
     entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
 
     assert entry.key == "http.verify_ssl"
-    assert entry.value == "False"
+    assert entry.value is False
     assert entry.source.label == "profile:default"
     assert entry.profile == "default"
 
@@ -150,5 +150,5 @@ def test_get_http_setting_from_profile(_isolate_settings: Path) -> None:
 def test_get_http_setting_uses_schema_default(_isolate_settings: Path) -> None:
     entry = GetSetting(SettingsFileRepository())("http.verify_ssl")
 
-    assert entry.value == "True"
+    assert entry.value is True
     assert entry.source.label == "default"

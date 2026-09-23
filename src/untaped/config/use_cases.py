@@ -8,6 +8,9 @@ from typing import Any
 from untaped.config.models import SettingEntry, Source, display_default, display_value
 from untaped.config.ports import SettingsReader, SettingsRepository
 from untaped.config_schema import FieldDescriptor
+from untaped.errors import ConfigError
+
+_UNRESOLVED: Any = object()
 
 
 class GetSetting:
@@ -27,24 +30,41 @@ class GetSetting:
 
 
 class ListSettings:
-    """Build the root config list — one entry per leaf scalar."""
+    """Build the root config list — one entry per leaf scalar.
+
+    A section that fails validation does not abort the listing: its leaves
+    show their raw (unvalidated) values and the section's error is recorded
+    in :attr:`errors` so the caller can warn about it.
+    """
 
     def __init__(self, repo: SettingsReader) -> None:
         self._repo = repo
+        self.errors: dict[str, str] = {}
 
     def __call__(self, *, reveal_secrets: bool = False) -> list[SettingEntry]:
-        settings = self._repo.current_settings()
         provenance = self._repo.provenance()
-        return [
-            setting_entry_for_descriptor(
-                self._repo,
-                descriptor,
-                settings=settings,
-                provenance=provenance,
-                reveal_secrets=reveal_secrets,
+        entries: list[SettingEntry] = []
+        for descriptor in self._repo.descriptors():
+            section = descriptor.path[0]
+            current: Any
+            if section in self.errors:
+                current = self._repo.raw_setting_value(descriptor)
+            else:
+                try:
+                    current = self._repo.setting_value(descriptor)
+                except ConfigError as exc:
+                    self.errors[section] = str(exc)
+                    current = self._repo.raw_setting_value(descriptor)
+            entries.append(
+                setting_entry_for_descriptor(
+                    self._repo,
+                    descriptor,
+                    current=current,
+                    provenance=provenance,
+                    reveal_secrets=reveal_secrets,
+                )
             )
-            for descriptor in self._repo.descriptors()
-        ]
+        return entries
 
 
 class ListAllProfilesSettings:
@@ -83,7 +103,7 @@ def setting_entry_for_descriptor(
     repo: SettingsReader,
     descriptor: FieldDescriptor,
     *,
-    settings: Any | None = None,
+    current: Any = _UNRESOLVED,
     provenance: dict[tuple[str, ...], str] | None = None,
     reveal_secrets: bool = False,
     include_profile: bool = False,
@@ -92,12 +112,12 @@ def setting_entry_for_descriptor(
 
     ``http``/``ui`` are ordinary per-profile settings, so every key resolves
     through the same provenance path (env → profile → default → unset).
-    ``settings``/``provenance`` may be passed in so a batch caller
+    ``current``/``provenance`` may be passed in so a batch caller
     (``ListSettings``) resolves each once instead of per entry.
     """
-    resolved_settings = repo.current_settings() if settings is None else settings
+    if current is _UNRESOLVED:
+        current = repo.setting_value(descriptor)
     resolved_provenance = repo.provenance() if provenance is None else provenance
-    current = _walk_attr(resolved_settings, descriptor.path)
     in_env = repo.env_value_for(descriptor) is not None
     source = _resolve_source(
         in_env,
@@ -112,15 +132,6 @@ def setting_entry_for_descriptor(
         source=source,
         profile=source.profile if include_profile else None,
     )
-
-
-def _walk_attr(obj: Any, path: tuple[str, ...]) -> Any:
-    cur = obj
-    for key in path:
-        cur = getattr(cur, key, None)
-        if cur is None:
-            return None
-    return cur
 
 
 def _iter_leaves(

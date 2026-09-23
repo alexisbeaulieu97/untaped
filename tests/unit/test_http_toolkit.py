@@ -123,6 +123,33 @@ def test_missing_setting_error_placeholder_uses_last_field_word() -> None:
     assert "`untaped config set demo.base_url <url>`" in str(error)
 
 
+def test_missing_secret_setting_suggests_prompt_not_argv() -> None:
+    error = str(missing_setting_error("demo", "token", secret=("token",)))
+
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "<token>" not in error
+
+
+def test_missing_setting_error_names_every_missing_field() -> None:
+    error = str(missing_setting_error("demo", "base_url", "token", secret=("token",)))
+
+    assert "demo.base_url and demo.token are not configured" in error
+    assert "`untaped config set demo.base_url <url>`" in error
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "UNTAPED_DEMO__BASE_URL" in error
+    assert "UNTAPED_DEMO__TOKEN" in error
+
+
+def test_connected_client_reports_all_missing_fields_and_prompts_for_secrets() -> None:
+    config = DemoSettings(base_url="", token=None)
+
+    with pytest.raises(ConfigError) as excinfo:
+        connected_client(config, section="demo")
+    message = str(excinfo.value)
+    assert "demo.base_url and demo.token are not configured" in message
+    assert "`untaped config set demo.token --prompt`" in message
+
+
 @respx.mock
 def test_connected_client_sends_bearer_token_and_extra_headers() -> None:
     route = respx.get("https://api.example.com/user").mock(
@@ -283,6 +310,62 @@ def test_paginate_link_accepts_rfc_valid_next_link_forms(link_header: str) -> No
         rows = list(paginate_link(client, "/things"))
 
     assert [row["id"] for row in rows] == [1, 2]
+
+
+@respx.mock
+def test_paginate_link_non_json_page_is_an_http_error() -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(200, text="<html>login</html>")
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo") as client,
+        pytest.raises(HttpError, match="non-JSON"),
+    ):
+        list(paginate_link(client, "/things"))
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example.net/things?page=2",
+        "http://api.example.com/things?page=2",
+        "https://api.example.com:8443/things?page=2",
+    ],
+)
+@respx.mock
+def test_paginate_link_refuses_cross_origin_next_link(next_url: str) -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(
+            200, json=[{"id": 1}], headers={"link": f'<{next_url}>; rel="next"'}
+        )
+    )
+    other = respx.route(url__startswith=next_url.split("/things")[0])
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo") as client,
+        pytest.raises(HttpError, match="cross-origin"),
+    ):
+        list(paginate_link(client, "/things"))
+    assert not other.called
+
+
+@respx.mock
+def test_paginate_link_follows_relative_next_link() -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        if httpx.QueryParams(request.url.query).get("page") == "2":
+            return httpx.Response(200, json=[{"id": 2}])
+        return httpx.Response(
+            200, json=[{"id": 1}], headers={"link": '</things?page=2>; rel="next"'}
+        )
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        assert [row["id"] for row in paginate_link(client, "/things")] == [1, 2]
 
 
 @respx.mock

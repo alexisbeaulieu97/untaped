@@ -247,3 +247,26 @@ def test_install_skills_force_restores_existing_when_final_replace_fails(
     assert installed.joinpath("SKILL.md").read_text() == "old\n"
     assert installed.joinpath("STALE.md").read_text() == "stale\n"
     assert not list(target.glob(".untaped-demo.backup-*"))
+
+
+def test_local_install_without_git_on_path_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _skill_dir(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+
+    with pytest.raises(ConfigError, match="--project-dir"):
+        skills_module.install_skills(
+            {source.name: _asset(source)},
+            ["untaped-demo"],
+            stdin=False,
+            all_skills=False,
+            target=SkillInstallTarget.claude,
+            force=False,
+            scope=SkillInstallScope.local,
+            project_dir=None,
+            target_dir=None,
+        )
