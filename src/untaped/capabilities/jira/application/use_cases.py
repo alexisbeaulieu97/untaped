@@ -1,4 +1,4 @@
-"""Application use cases for Jira ticket workflow."""
+"""Application use cases for Jira issue workflow."""
 
 from __future__ import annotations
 
@@ -13,17 +13,18 @@ from untaped.capabilities.jira.application.ports import (
 )
 from untaped.capabilities.jira.domain import (
     BoardResult,
-    CommentResult,
     IssueDetailResult,
-    IssueMutationResult,
+    IssueOutcome,
     IssueResult,
     JiraIssueSearchFilters,
     JiraUser,
     ProjectResult,
     SprintResult,
     TransitionResult,
+    browse_url,
 )
-from untaped.capability_api import ConfigError
+from untaped.capabilities.jira.errors import JiraTransitionError
+from untaped.capability_api import UsageError, not_found, q
 
 
 class WhoAmI:
@@ -62,33 +63,51 @@ class SearchIssues:
 class CreateIssue:
     """Create one issue from a Jira-shaped payload."""
 
-    def __init__(self, client: JiraIssueWriter) -> None:
+    def __init__(self, client: JiraIssueWriter, *, base_url: str | None = None) -> None:
         self._client = client
+        self._base_url = base_url
 
-    def __call__(self, payload: dict[str, Any]) -> IssueMutationResult:
-        return IssueMutationResult.model_validate(self._client.create_issue(payload))
+    def __call__(self, payload: dict[str, Any]) -> IssueOutcome:
+        created = self._client.create_issue(payload)
+        key = _optional_str(created.get("key"))
+        return IssueOutcome(
+            action="created",
+            key=key,
+            id=_optional_str(created.get("id")),
+            url=browse_url(self._base_url, key) if key else None,
+            api_url=_optional_str(created.get("self")),
+        )
 
 
-class EditIssue:
-    """Edit one issue from a Jira-shaped payload."""
+class PatchIssue:
+    """Update fields of one issue from a Jira-shaped payload."""
 
-    def __init__(self, client: JiraIssueWriter) -> None:
+    def __init__(self, client: JiraIssueWriter, *, base_url: str | None = None) -> None:
         self._client = client
+        self._base_url = base_url
 
-    def __call__(self, issue_key: str, payload: dict[str, Any]) -> IssueMutationResult:
+    def __call__(self, issue_key: str, payload: dict[str, Any]) -> IssueOutcome:
         self._client.edit_issue(issue_key, payload)
-        return IssueMutationResult(key=issue_key, status="updated")
+        return IssueOutcome(
+            action="updated", key=issue_key, url=browse_url(self._base_url, issue_key)
+        )
 
 
 class AddComment:
     """Add one comment to an issue."""
 
-    def __init__(self, client: JiraIssueWriter) -> None:
+    def __init__(self, client: JiraIssueWriter, *, base_url: str | None = None) -> None:
         self._client = client
+        self._base_url = base_url
 
-    def __call__(self, issue_key: str, body: str) -> CommentResult:
+    def __call__(self, issue_key: str, body: str) -> IssueOutcome:
         result = self._client.add_comment(issue_key, body)
-        return CommentResult.model_validate({**result, "issue": issue_key})
+        return IssueOutcome(
+            action="commented",
+            key=issue_key,
+            url=browse_url(self._base_url, issue_key),
+            comment_id=_optional_str(result.get("id")),
+        )
 
 
 class ListTransitions:
@@ -107,33 +126,53 @@ class ListTransitions:
 class TransitionIssue:
     """Apply a workflow transition by id or unambiguous name."""
 
-    def __init__(self, client: JiraTransitionService) -> None:
+    def __init__(self, client: JiraTransitionService, *, base_url: str | None = None) -> None:
         self._client = client
+        self._base_url = base_url
 
-    def __call__(
+    @staticmethod
+    def check_selector(transition_id: str | None, transition_name: str | None) -> None:
+        """Reject a call that names neither or both of ``--id`` and ``--to``."""
+        if bool(transition_id) == bool(transition_name):
+            raise UsageError("provide exactly one of --id or --to")
+
+    def resolve(
         self,
         issue_key: str,
         *,
         transition_id: str | None = None,
         transition_name: str | None = None,
-    ) -> IssueMutationResult:
-        if bool(transition_id) == bool(transition_name):
-            raise ConfigError("provide exactly one of --id or --to")
-        resolved = transition_id or self._resolve_transition_name(issue_key, transition_name or "")
-        self._client.transition_issue(issue_key, resolved)
-        return IssueMutationResult(key=issue_key, status="transitioned", transition_id=resolved)
+    ) -> str:
+        """The transition id to apply to ``issue_key`` (a name is looked up)."""
+        self.check_selector(transition_id, transition_name)
+        return transition_id or self._resolve_transition_name(issue_key, transition_name or "")
+
+    def __call__(self, issue_key: str, transition_id: str) -> IssueOutcome:
+        self._client.transition_issue(issue_key, transition_id)
+        return IssueOutcome(
+            action="transitioned",
+            key=issue_key,
+            url=browse_url(self._base_url, issue_key),
+            transition_id=transition_id,
+        )
 
     def _resolve_transition_name(self, issue_key: str, name: str) -> str:
-        matches = [
-            t
-            for t in self._client.list_transitions(issue_key)
-            if str(t.get("name", "")).casefold() == name.casefold()
-        ]
+        transitions = self._client.list_transitions(issue_key)
+        matches = [t for t in transitions if str(t.get("name", "")).casefold() == name.casefold()]
         if not matches:
-            raise ConfigError(f"no transition named {name!r} is available for {issue_key}")
+            known = sorted({str(t.get("name", "")) for t in transitions})
+            raise JiraTransitionError(
+                f"{not_found('transition', name, known=known)} (issue {issue_key})"
+            )
         if len(matches) > 1:
-            raise ConfigError(f"multiple transitions named {name!r} are available for {issue_key}")
+            raise JiraTransitionError(
+                f"multiple transitions named {q(name)} are available for {issue_key}"
+            )
         return str(matches[0]["id"])
+
+
+def _optional_str(value: Any) -> str | None:
+    return None if value is None else str(value)
 
 
 class ListProjects:
@@ -197,7 +236,7 @@ class ListSprints:
     ) -> list[SprintResult]:
         resolved_board_id = board_id or self._default_board_id
         if resolved_board_id is None:
-            raise ConfigError(
+            raise UsageError(
                 "board id is required (pass --board-id or configure jira.default_board_id)"
             )
         return [

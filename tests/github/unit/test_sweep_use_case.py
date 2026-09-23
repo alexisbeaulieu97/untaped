@@ -23,7 +23,7 @@ from untaped.capabilities.github.domain import (
     SweepQuery,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
-from untaped.capability_api import ConfigError, HttpStatusError, UntapedError
+from untaped.capability_api import ConfigError, HttpStatusError, UntapedError, UsageError
 
 
 def _item(full_name: str, *, archived: bool = False) -> RepositoryInventoryItem:
@@ -247,7 +247,7 @@ def test_offline_scope_matches_owner_and_name_case_insensitively(tmp_path: Path)
 
 
 def test_offline_team_scope_rejected(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="--team requires the API"):
+    with pytest.raises(UsageError, match="--team requires the API"):
         _sweep(_Corpus(), _Resolver(()), tmp_path / "corpus")(
             _options(
                 SweepQuery(has_files=("README.md",)),

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from untaped.capabilities.github.application.ports import GitCorpus
 from untaped.capabilities.github.domain import CorpusRepoResult, WorktreeResult
-from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capabilities.github.errors import GitCorpusError
 from untaped.capability_api import UntapedError
 
 

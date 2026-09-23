@@ -40,7 +40,7 @@ untaped awx job-templates list --format raw --columns name \
 
 # --format pipe carries full records between capability commands.
 untaped github search repos --org acme --format pipe \
-  | untaped github search code "BaseModel" --repo-stdin
+  | untaped github search code "BaseModel" --stdin
 ```
 
 Single-entity commands (`whoami`/`get`/`show`/`status`) render a readable detail
