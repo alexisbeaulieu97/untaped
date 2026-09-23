@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -207,6 +208,182 @@ def test_ref_glob_fetches_matching_refs_only(tmp_path: Path) -> None:
     assert _has_ref(bare, "refs/tags/v1.0")
     assert not _has_ref(bare, "refs/heads/feature")
     assert not _has_ref(bare, "refs/tags/ignored")
+
+
+_TRANSIENT_STDERR = (
+    "error: RPC failed; curl 56 GnuTLS recv error (-110): "
+    "The TLS connection was non-properly terminated.\n"
+    "fetch-pack: unexpected disconnect while reading sideband packet\n"
+    "fatal: early EOF\n"
+)
+
+
+def _tagged_repo(tmp_path: Path, tags: int) -> Path:
+    source = _source_repo(tmp_path, "source", {"README.md": "v0\n"})
+    for index in range(tags):
+        _commit_file(source, "README.md", f"v{index + 1}\n", f"release {index + 1}")
+        _git(source, "tag", "-a", f"v{index + 1}", "-m", f"release {index + 1}")
+    return source
+
+
+def _record_fetches(
+    cache: GitCorpusCache,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fail: dict[int, str] | None = None,
+) -> list[list[str]]:
+    """Record ``git fetch`` calls; ``fail`` maps a fetch index to injected stderr."""
+    fetches: list[list[str]] = []
+    real_run = cache._run
+
+    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if args and args[0] == "fetch":
+            fetches.append(args)
+            stderr = (fail or {}).get(len(fetches))
+            if stderr is not None:
+                failed = subprocess.CompletedProcess(args, 128, stdout="", stderr=stderr)
+                if kwargs.get("check", True):
+                    raise GitCorpusError(f"git {' '.join(args)} failed: {stderr.strip()}")
+                return failed
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(cache, "_run", run)
+    return fetches
+
+
+def test_sync_retries_transient_fetch_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    sleeps: list[float] = []
+    cache = GitCorpusCache(sleep=sleeps.append)
+    fetches = _record_fetches(cache, monkeypatch, fail={1: _TRANSIENT_STDERR})
+
+    result = _sync_default(cache, _item("acme/api", source), root=tmp_path / "corpus")
+
+    assert result.status == "synced"
+    assert len(fetches) == 2
+    assert sleeps == [1.0]
+
+
+def test_sync_does_not_retry_permanent_fetch_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    sleeps: list[float] = []
+    cache = GitCorpusCache(sleep=sleeps.append)
+    fetches = _record_fetches(cache, monkeypatch, fail={1: "fatal: repository 'x' not found\n"})
+
+    with pytest.raises(GitCorpusError, match="not found"):
+        _sync_default(cache, _item("acme/api", source), root=tmp_path / "corpus")
+
+    assert len(fetches) == 1
+    assert sleeps == []
+
+
+def test_sync_gives_up_after_bounded_transient_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    sleeps: list[float] = []
+    cache = GitCorpusCache(sleep=sleeps.append, fetch_attempts=3)
+    fetches = _record_fetches(
+        cache, monkeypatch, fail=dict.fromkeys(range(1, 10), _TRANSIENT_STDERR)
+    )
+
+    with pytest.raises(GitCorpusError, match="early EOF") as excinfo:
+        _sync_default(cache, _item("acme/api", source), root=tmp_path / "corpus")
+
+    assert len(fetches) == 3
+    assert sleeps == [1.0, 2.0]
+    assert "after 3 attempts" in str(excinfo.value)
+
+
+def test_wide_profile_fetches_refs_in_bounded_batches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _tagged_repo(tmp_path, tags=5)
+    cache = GitCorpusCache(fetch_batch_size=2)
+    fetches = _record_fetches(cache, monkeypatch)
+
+    result = cache.sync_repo(
+        _item("acme/api", source),
+        root=tmp_path / "corpus",
+        selector=RefSelector(profile="all"),
+        depth=1,
+        auth_header=None,
+    )
+    bare = Path(result.path)
+
+    # main + 5 tags = 6 refs in batches of 2.
+    assert len(fetches) == 3
+    assert all(len([arg for arg in fetch if arg.startswith("+refs/")]) <= 2 for fetch in fetches)
+    assert _has_ref(bare, "refs/heads/main")
+    assert all(_has_ref(bare, f"refs/tags/v{index}") for index in range(1, 6))
+
+
+def test_wide_profile_resync_fetches_only_changed_refs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _tagged_repo(tmp_path, tags=3)
+    cache = GitCorpusCache()
+    repo = _item("acme/api", source)
+    root = tmp_path / "corpus"
+    selector = RefSelector(profile="all")
+    cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+    fetches = _record_fetches(cache, monkeypatch)
+
+    cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+    assert fetches == []
+
+    _commit_file(source, "README.md", "next\n", "next")
+    cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+    assert len(fetches) == 1
+    assert "+refs/heads/main:refs/heads/main" in fetches[0]
+    assert not any(arg.startswith("+refs/tags/") for arg in fetches[0])
+
+
+def test_wide_profile_failed_batch_keeps_earlier_batches_for_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _tagged_repo(tmp_path, tags=3)
+    repo = _item("acme/api", source)
+    root = tmp_path / "corpus"
+    selector = RefSelector(profile="all")
+    cache = GitCorpusCache(fetch_batch_size=2)
+    _record_fetches(cache, monkeypatch, fail={2: "fatal: refusing to fetch\n"})
+
+    with pytest.raises(GitCorpusError, match="refusing"):
+        cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+    assert cache.repo_freshness(repo, root=root) is None
+
+    resumed = GitCorpusCache(fetch_batch_size=2)
+    fetches = _record_fetches(resumed, monkeypatch)
+    result = resumed.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+
+    assert len(fetches) == 1
+    assert all(_has_ref(Path(result.path), f"refs/tags/v{index}") for index in range(1, 4))
+
+
+def test_wide_profile_prunes_refs_deleted_upstream(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "main\n"})
+    _git(source, "branch", "gone")
+    _git(source, "tag", "old")
+    cache = GitCorpusCache()
+    repo = _item("acme/api", source)
+    root = tmp_path / "corpus"
+    selector = RefSelector(profile="all")
+    first = cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+    bare = Path(first.path)
+    assert _has_ref(bare, "refs/heads/gone")
+
+    _git(source, "branch", "-D", "gone")
+    _git(source, "tag", "-d", "old")
+    cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+
+    assert _has_ref(bare, "refs/heads/main")
+    assert not _has_ref(bare, "refs/heads/gone")
+    assert not _has_ref(bare, "refs/tags/old")
 
 
 def test_covers_selector_containment() -> None:
