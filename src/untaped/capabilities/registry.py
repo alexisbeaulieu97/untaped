@@ -13,7 +13,6 @@ stable surface from :mod:`untaped.capability_api` instead.
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import import_module
@@ -22,6 +21,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from cyclopts import App
+from packaging.markers import UndefinedEnvironmentName
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion
 from pydantic import BaseModel
 
 from untaped.errors import ConfigError
@@ -329,103 +332,30 @@ def check_api_range(requires: object, version: float) -> tuple[float, float]:
     return (lo_f, hi_f)
 
 
-_REQUIREMENT_NAME_RE = re.compile(
-    r"^\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(\[[^\]]*\])?\s*(.*?)\s*$",
-    re.DOTALL,
-)
-_SPECIFIER_RE = re.compile(r"^(===|==|~=|!=|>=|<=|>|<)\s*(\S+)\s*$")
-
-
-def _normalize_distribution_name(value: str) -> str:
-    return re.sub(r"[-_.]+", "-", value).lower()
-
-
-def _version_key(value: str) -> tuple[int, ...]:
-    """Numeric dot-tuple for a release string (minimal PEP 440 subset)."""
-    key: list[int] = []
-    for chunk in value.strip().split("."):
-        digits = ""
-        for char in chunk:
-            if char.isdigit():
-                digits += char
-            else:
-                break
-        key.append(int(digits) if digits else 0)
-    return tuple(key)
-
-
-def _compare_versions(left: str, right: str) -> int:
-    left_key = _version_key(left)
-    right_key = _version_key(right)
-    width = max(len(left_key), len(right_key))
-    left_key += (0,) * (width - len(left_key))
-    right_key += (0,) * (width - len(right_key))
-    return (left_key > right_key) - (left_key < right_key)
-
-
-def _specifier_admits(operator: str, wanted: str, actual: str) -> bool:
-    if operator == "===":
-        return actual == wanted
-    if operator == "==":
-        if wanted.endswith(".*"):
-            prefix = _version_key(wanted[:-2])
-            return _version_key(actual)[: len(prefix)] == prefix
-        return _compare_versions(actual, wanted) == 0
-    if operator == "!=":
-        if wanted.endswith(".*"):
-            prefix = _version_key(wanted[:-2])
-            return _version_key(actual)[: len(prefix)] != prefix
-        return _compare_versions(actual, wanted) != 0
-    if operator == ">=":
-        return _compare_versions(actual, wanted) >= 0
-    if operator == "<=":
-        return _compare_versions(actual, wanted) <= 0
-    if operator == ">":
-        return _compare_versions(actual, wanted) > 0
-    if operator == "<":
-        return _compare_versions(actual, wanted) < 0
-    if operator == "~=":
-        release = wanted.split(".")
-        if len(release) < 2:
-            return False
-        prefix = _version_key(".".join(release[:-1]))
-        return _compare_versions(actual, wanted) >= 0 and (
-            _version_key(actual)[: len(prefix)] == prefix
-        )
-    return False
-
-
-def _requirement_name(requirement: object) -> str | None:
+def _parse_requirement(requirement: object) -> Requirement | None:
+    """Parse one PEP 508 Requires-Dist string; ``None`` when malformed."""
     if not isinstance(requirement, str):
         return None
-    match = _REQUIREMENT_NAME_RE.match(requirement.split(";", 1)[0])
-    if match is None:
+    try:
+        return Requirement(requirement)
+    except InvalidRequirement:
         return None
-    return _normalize_distribution_name(match.group(1))
 
 
-def _requirement_admits(requirement: str, sdk_version: str) -> bool:
-    """Whether one Requires-Dist string admits ``sdk_version``.
+def _requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
+    """Whether a parsed Requires-Dist entry admits ``sdk_version``.
 
-    Raises :class:`ValueError` when the string is not a requirement.
+    An entry whose environment marker does not apply (e.g. an ``extra``
+    nobody requested) constrains nothing. A direct reference (PEP 508 URL)
+    is a pinned source, not a version range, so admission cannot be
+    disproved. Pre-releases of the running SDK are compared per PEP 440
+    (``6.1.0.dev3`` does not satisfy ``>=6.1.0``).
     """
-    match = _REQUIREMENT_NAME_RE.match(requirement.split(";", 1)[0])
-    if match is None:
-        raise ValueError(f"malformed Requires-Dist entry {requirement!r}")
-    specifiers = match.group(3)
-    if not specifiers.strip():
+    if requirement.marker is not None and not requirement.marker.evaluate({"extra": ""}):
         return True
-    if specifiers.strip().startswith("@"):
-        # Direct reference (PEP 508 URL): a pinned source, not a version
-        # range, so admission cannot be disproved.
+    if requirement.url:
         return True
-    for specifier in specifiers.split(","):
-        part = _SPECIFIER_RE.match(specifier.strip())
-        if part is None:
-            raise ValueError(f"malformed Requires-Dist entry {requirement!r}")
-        if not _specifier_admits(part.group(1), part.group(2), sdk_version):
-            return False
-    return True
+    return requirement.specifier.contains(sdk_version, prereleases=True)
 
 
 def _running_sdk_version() -> str | None:
@@ -447,17 +377,17 @@ def _check_entry_point_group(candidate: ExternalProvider) -> None:
 
 
 def _check_requires_dist(candidate: ExternalProvider) -> None:
-    untaped_requirements: list[str] = []
+    untaped_requirements: list[tuple[str, Requirement]] = []
     for requirement in candidate.requires_dist:
-        name = _requirement_name(requirement)
-        if name is None:
+        parsed = _parse_requirement(requirement)
+        if parsed is None:
             raise _Quarantine(
                 "bad-metadata",
                 f"malformed Requires-Dist entry {requirement!r} of distribution "
                 f"{candidate.distribution!r}",
             )
-        if name == _BUILTIN_DISTRIBUTION and isinstance(requirement, str):
-            untaped_requirements.append(requirement)
+        if canonicalize_name(parsed.name) == _BUILTIN_DISTRIBUTION:
+            untaped_requirements.append((str(requirement), parsed))
     if not untaped_requirements:
         return
     sdk_version = _running_sdk_version()
@@ -467,10 +397,10 @@ def _check_requires_dist(candidate: ExternalProvider) -> None:
             f"could not resolve running SDK version to check Requires-Dist "
             f"of distribution {candidate.distribution!r}",
         )
-    for requirement in untaped_requirements:
+    for requirement, parsed in untaped_requirements:
         try:
-            admits = _requirement_admits(requirement, sdk_version)
-        except ValueError:
+            admits = _requirement_admits(parsed, sdk_version)
+        except InvalidVersion, UndefinedEnvironmentName:
             raise _Quarantine(
                 "bad-metadata",
                 f"malformed Requires-Dist entry {requirement!r} of distribution "
@@ -618,7 +548,7 @@ def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
             or not callable(check.run)
         ):
             raise _Quarantine(
-                "duplicate-doctor-check",
+                "doctor-check-failed",
                 f"malformed doctor check of capability {spec.name!r}: {check!r}",
             )
         if check.id in state.doctor_ids or check.id in seen_checks:
