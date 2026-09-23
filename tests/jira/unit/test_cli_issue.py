@@ -424,6 +424,33 @@ def test_issue_edit_sends_body_file_and_overlays_flags(jira_config: Path, tmp_pa
     }
 
 
+def test_issue_edit_without_changes_is_usage_error(jira_config: Path, tmp_path: Path) -> None:
+    empty_body = tmp_path / "empty.yml"
+    empty_body.write_text("fields: {}\n")
+    with respx.mock(base_url="https://jira.example.com", assert_all_called=False) as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        bare = CliInvoker().invoke(app, ["issue", "edit", "ABC-1"])
+        empty = CliInvoker().invoke(app, ["issue", "edit", "ABC-1", "--body-file", str(empty_body)])
+
+    for result in (bare, empty):
+        assert result.exit_code == 2, result.output
+        assert "nothing to update" in result.stderr
+    assert len(route.calls) == 0
+
+
+def test_issue_edit_with_only_update_operations_is_sent(jira_config: Path, tmp_path: Path) -> None:
+    body_file = tmp_path / "labels.yml"
+    body_file.write_text("update:\n  labels:\n    - add: urgent\n")
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        result = CliInvoker().invoke(
+            app, ["issue", "edit", "ABC-1", "--body-file", str(body_file), "--format", "json"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls[0].request.content)["update"] == {"labels": [{"add": "urgent"}]}
+
+
 def test_issue_comment_reads_body_from_stdin(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
