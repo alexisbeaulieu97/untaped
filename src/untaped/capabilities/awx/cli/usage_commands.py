@@ -12,21 +12,23 @@ spec decides which kind the identifier resolves against; the underlying
 query is the same either way.
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application import ListTemplateUsage
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.capabilities.awx.cli.context import open_context, scope_for_command
 from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
+from untaped.capabilities.awx.cli.pipe import id_field_for, pipe_kind_for_spec
 from untaped.capabilities.awx.domain import WorkflowUsage
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
-    echo,
+    deprecated_alias,
     emit,
     finish,
     parse_kv_pairs,
@@ -46,13 +48,14 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
             list[str] | None,
             Parameter(
                 help=(
-                    "Template name(s) — one or more, or omit and pass "
+                    "Template names (one or more), or omit them and pass "
                     "``--stdin``. Pass ``--by-id`` to resolve AWX ids "
                     "instead. Multiple targets concatenate their usage "
                     "rows in the order given (dedup is per target)."
                 ),
             ),
         ] = None,
+        /,
         *,
         stdin: Annotated[
             bool,
@@ -72,7 +75,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         recursive: Annotated[
             bool,
             Parameter(
-                name=["--recursive", "-r"],
+                name="--recursive",
                 negative="",
                 help=(
                     "Walk up the ancestry: every workflow that contains "
@@ -99,6 +102,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 name="--filter",
                 help="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         fmt: FormatOption = "table",
@@ -114,13 +118,14 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 list(identifiers or []),
                 stdin=stdin,
                 id_field=id_field_for(spec, by_id=by_id),
+                accept_kinds={pipe_kind_for_spec(spec)},
             )
             filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_command(ctx, organization, spec)
             use = ListTemplateUsage(
                 ctx.workflow_nodes,
                 ctx.repo,
-                warn=lambda msg: echo(f"warning: {msg}", err=True),
+                warn=lambda msg: ctx.progress_ui().message("warning", msg),
             )
             for target in targets:
                 try:
@@ -135,9 +140,11 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    echo(f"warning: {target}: {exc}", err=True)
+                    ctx.progress_ui().message("warning", f"{target}: {exc}")
                     any_failed = True
         rows = [u.model_dump() for u in usages]
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         emit(rows, fmt=fmt, columns=cols, kind="awx.template_usage")
         finish(any_failed)
+
+    deprecated_alias(parent["usage"], "-r", "--recursive")

@@ -12,12 +12,12 @@ from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFoundError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
-from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
+from untaped.capabilities.awx.infrastructure.fk_resolver import HttpFkResolver
 
 
 class _StubRepo:
     """Partial in-memory stub covering the subset of ``ResourceClient`` that
-    ``FkResolver`` actually calls (``find_by_identity``, ``get``, ``list``).
+    ``HttpFkResolver`` actually calls (``find_by_identity``, ``get``, ``list``).
 
     Each test cast()s into ``ResourceClient`` at the call site — the cast
     is load-bearing because the stub omits 6 of the port's 10 methods
@@ -110,7 +110,7 @@ def test_name_to_id_caches() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     first = fk.name_to_id("Organization", "Default")
     second = fk.name_to_id("Organization", "Default")
     assert first == 7 == second
@@ -126,7 +126,7 @@ def test_name_to_id_with_scope_uses_nested_lookup() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     pid = fk.name_to_id("Project", "playbooks", scope={"organization": "Default"})
     assert pid == 42
     assert repo.find_calls[0][1] == {"name": "playbooks", "organization__name": "Default"}
@@ -134,14 +134,14 @@ def test_name_to_id_with_scope_uses_nested_lookup() -> None:
 
 def test_name_to_id_raises_when_missing() -> None:
     repo = _StubRepo({"Organization": []})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     with pytest.raises(ResourceNotFoundError):
         fk.name_to_id("Organization", "Nope")
 
 
 def test_id_to_name_caches() -> None:
     repo = _StubRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     assert fk.id_to_name("Organization", 7) == "Default"
     assert fk.id_to_name("Organization", 7) == "Default"
     assert len(repo.get_calls) == 1
@@ -153,7 +153,7 @@ def test_resolve_polymorphic_dispatches_on_kind() -> None:
             "JobTemplate": [{"id": 99, "name": "deploy", "organization_name": "Default"}],
         }
     )
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     kind, id_ = fk.resolve_polymorphic(
         {"kind": "JobTemplate", "name": "deploy", "organization": "Default"}
     )
@@ -163,7 +163,7 @@ def test_resolve_polymorphic_dispatches_on_kind() -> None:
 
 def test_name_to_id_populates_id_to_name_cache() -> None:
     repo = _StubRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.name_to_id("Organization", "Default")
     # Reverse lookup should be a cache hit
     assert fk.id_to_name("Organization", 7) == "Default"
@@ -179,7 +179,7 @@ def test_prefetch_warms_both_caches_with_one_list_call() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
     fk.prefetch({"Organization": [None]})
 
@@ -201,7 +201,7 @@ def test_prefetch_one_list_per_kind_scope_pair() -> None:
             ],
         }
     )
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
     fk.prefetch(
         {
@@ -226,7 +226,7 @@ def test_prefetch_swallows_awx_errors() -> None:
     visible during development; only AWX-side failures are absorbed.
     """
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.prefetch({"Organization": [None]})  # must not raise
     # Per-call lookup still works.
     assert fk.name_to_id("Organization", "Default") == 7
@@ -236,7 +236,7 @@ def test_prefetch_propagates_programming_errors() -> None:
     """Bare `Exception` would mask typos / KeyErrors. Confirm those
     bubble up so they can be caught in development."""
     repo = _BuggyRepo({})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     with pytest.raises(KeyError):
         fk.prefetch({"Organization": [None]})
 
@@ -247,7 +247,7 @@ def test_prefetch_propagates_programming_errors() -> None:
 def test_prefetch_warns_on_awx_error() -> None:
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
     warns: list[str] = []
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
 
     fk.prefetch({"Organization": [None]})
 
@@ -261,7 +261,7 @@ def test_prefetch_warns_on_awx_error() -> None:
 def test_prefetch_warn_renders_scope() -> None:
     repo = _BoomRepo({"Project": [{"id": 42, "name": "playbooks"}]})
     warns: list[str] = []
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
 
     fk.prefetch({"Project": [{"organization": "Default"}]})
 
@@ -272,7 +272,7 @@ def test_prefetch_warn_renders_scope() -> None:
 def test_prefetch_no_warn_on_programming_error() -> None:
     repo = _BuggyRepo({})
     warns: list[str] = []
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=warns.append)
 
     with pytest.raises(KeyError):
         fk.prefetch({"Organization": [None]})
@@ -289,7 +289,7 @@ def test_prefetch_propagates_warn_raise() -> None:
     def _exploding_warn(_msg: str) -> None:
         raise RuntimeError("warn broke")
 
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=_exploding_warn)
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog(), warn=_exploding_warn)
     with pytest.raises(RuntimeError, match="warn broke"):
         fk.prefetch({"Organization": [None]})
 
@@ -299,7 +299,7 @@ def test_prefetch_default_warn_is_silent(capsys: pytest.CaptureFixture[str]) -> 
     # that haven't wired the hook — preserves today's contract and defends
     # against an accidental ``print(...)`` slipping in next to ``self._warn``.
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
     fk.prefetch({"Organization": [None]})
 
@@ -317,7 +317,7 @@ def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
 
     Without the lock, both threads pass the ``if key in self._name_cache``
     gate before either writes back, producing duplicate ``find_by_identity``
-    calls — silently defeating the "FkResolver caches are read-mostly
+    calls — silently defeating the "HttpFkResolver caches are read-mostly
     once prefetch has finished" guarantee `_apply_kind`'s parallel branch
     rests on.
     """
@@ -344,7 +344,7 @@ def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
             return super().find_by_identity(spec, name=name, scope=scope)
 
     repo = _SlowCountingRepo({"Organization": [{"id": 7, "name": "Default"}]})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
 
     start = threading.Event()
 
@@ -359,7 +359,7 @@ def test_concurrent_name_to_id_dedups_repo_calls_under_contention() -> None:
 
     assert results == [7] * 20
     assert repo.find_count == 1, (
-        f"FkResolver let {repo.find_count} concurrent cache misses "
+        f"HttpFkResolver let {repo.find_count} concurrent cache misses "
         "through — the read+write window must be locked atomically"
     )
 
@@ -368,7 +368,7 @@ def test_prefetch_cannot_hide_ambiguous_names() -> None:
     from untaped.capabilities.awx.errors import AmbiguousIdentityError
 
     repo = _StubRepo({"Project": [{"id": 1, "name": "same"}, {"id": 2, "name": "same"}]})
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     fk.prefetch({"Project": [None]})
     with pytest.raises(AmbiguousIdentityError):
         fk.name_to_id("Project", "same")
@@ -383,7 +383,7 @@ def test_integer_fk_validation_proves_kind_and_scope_without_name_lookup() -> No
             ]
         }
     )
-    fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     assert fk.validate_id("Project", 1, scope={"organization": "Right"}) == 1
     with pytest.raises(ResourceNotFoundError):
         fk.validate_id("Project", 2, scope={"organization": "Right"})

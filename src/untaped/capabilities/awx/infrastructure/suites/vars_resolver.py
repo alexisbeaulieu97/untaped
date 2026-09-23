@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, plural
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.suites.ports import Prompt
@@ -71,8 +71,8 @@ def resolve_variables(
     if missing_in_non_interactive:
         joined = ", ".join(missing_in_non_interactive)
         raise ConfigError(
-            f"required variable(s) not provided: {joined}. "
-            "Set them with --var <name>=<value> or run interactively."
+            f"required {plural(len(missing_in_non_interactive), 'variable')} "
+            f"not provided: {joined}; set them with --var NAME=VALUE or run interactively"
         )
     return resolved
 
@@ -83,8 +83,8 @@ def _reject_unknown(names: Iterable[str], known: Iterable[str], origin: str) -> 
     if unknown:
         joined = ", ".join(unknown)
         raise ConfigError(
-            f"unknown variable(s) in {origin}: {joined}. "
-            f"Declared variables: {', '.join(sorted(known_set)) or '(none)'}"
+            f"unknown {plural(len(unknown), 'variable')} in {origin}: {joined}; "
+            f"declared variables: {', '.join(sorted(known_set)) or '(none)'}"
         )
 
 

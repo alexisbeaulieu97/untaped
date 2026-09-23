@@ -10,8 +10,9 @@ import pytest
 from untaped.capabilities.awx.application.scheduling import (
     MAX_PARALLEL,
     Schedule,
-    ScheduleInterrupted,
+    ScheduleInterruptedError,
 )
+from untaped.capability_api import UsageError
 
 
 def test_serial_run_follows_lowest_ready_index_after_dependencies() -> None:
@@ -98,7 +99,7 @@ def test_interrupt_reports_finished_items_and_releases_dependency_waits() -> Non
             raise KeyboardInterrupt
         return index
 
-    with pytest.raises(ScheduleInterrupted) as caught:
+    with pytest.raises(ScheduleInterruptedError) as caught:
         Schedule(parallel=1).run(3, work, skipped=lambda index: -1, dependencies=[(), (0,), (1,)])
     assert caught.value.results == {0: 0}
 
@@ -115,5 +116,5 @@ def test_items_run_off_the_main_thread_even_when_serial() -> None:
 
 
 def test_parallel_must_be_positive() -> None:
-    with pytest.raises(ValueError, match="parallel"):
+    with pytest.raises(UsageError, match="parallel"):
         Schedule(parallel=0)

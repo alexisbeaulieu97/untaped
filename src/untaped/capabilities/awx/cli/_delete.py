@@ -1,13 +1,15 @@
 """Fixed-selection deletion with whole-batch validation and strict receipts."""
 
+from __future__ import annotations
+
 from cyclopts import App
 
 from untaped.capabilities.awx.application import DeleteResource
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.selected_actions import run_selected_actions
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch, validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.cli.options import (
     AllOption,
@@ -17,6 +19,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -39,7 +42,8 @@ from untaped.capability_api import (
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="delete")
     def delete_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -86,7 +90,7 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                         "kind": item.kind,
                         "name": item.name,
                         "scope": item.scope,
-                        "action": "preview",
+                        "action": "planned",
                     }
                     for item in selected
                 ]

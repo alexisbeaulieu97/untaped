@@ -1,5 +1,7 @@
 """Inventory-scoped source configuration; runtime update state is not restorable."""
 
+from __future__ import annotations
+
 from untaped.capabilities.awx.domain import ActionSpec, FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs._support import UNIVERSAL_READ_ONLY

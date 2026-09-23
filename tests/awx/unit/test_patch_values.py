@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.awx.cli._patch_values import build_patch, parse_set_pairs
+from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capability_api import ConfigError
 
 

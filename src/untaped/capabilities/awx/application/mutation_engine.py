@@ -46,11 +46,16 @@ from untaped.capabilities.awx.application.scheduling import Schedule
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import ApplyOutcome, BatchResult, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.payloads import as_dict
-from untaped.capabilities.awx.errors import AwxApiError, BadRequestError, MutationConflictError
+from untaped.capabilities.awx.errors import (
+    AwxApiError,
+    AwxError,
+    BadRequestError,
+    MutationConflictError,
+)
 from untaped.capability_api import ConfigError
 
 
-class _AbortBatch(Exception):
+class _AbortBatchError(AwxError):
     """Carries the failed row of a write that must stop the whole batch."""
 
     def __init__(self, outcome: ApplyOutcome) -> None:
@@ -254,7 +259,7 @@ class BatchMutationEngine:
             operation = operations[index]
             try:
                 outcome = self._execute_body(operation, bindings)
-            except _AbortBatch as abort:
+            except _AbortBatchError as abort:
                 # Authentication/configuration failures doom every
                 # remaining request; keep completed rows, stop the rest.
                 aborted.set()
@@ -363,7 +368,7 @@ class BatchMutationEngine:
                 }
             )
             if isinstance(exc, ConfigError):
-                raise _AbortBatch(outcome) from exc
+                raise _AbortBatchError(outcome) from exc
             return outcome
 
     def _execute_memberships(

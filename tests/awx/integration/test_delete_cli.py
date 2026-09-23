@@ -126,7 +126,7 @@ def test_delete_stdin_without_yes_or_dry_run_errors(seeded_default_org: Any) -> 
         input="10\n",
     )
     # Usage errors exit before touching the store.
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--yes or --dry-run" in (result.stderr or result.output)
     # Record must still exist.
     assert 10 in seeded_default_org.store["job_templates"]
@@ -198,7 +198,7 @@ def test_delete_prompt_accepts_yes(
     )
     assert result.exit_code == 0, result.output
     assert 10 not in seeded_default_org.store["job_templates"]
-    assert backend.calls == [("confirm", "Delete 1 resource(s)?")]
+    assert backend.calls == [("confirm", "Delete 1 resource?")]
     # Preamble lands on stderr so stdout stays clean for piping.
     preview = result.stderr or result.output
     assert "Delete JobTemplate/alpha" in preview
@@ -218,9 +218,10 @@ def test_delete_prompt_declines_aborts(
         interactive=True,
         prompt_backend=backend,
     )
-    # Exit 0 — user-initiated abort isn't an error.
-    assert result.exit_code == 0, result.output
-    assert backend.calls == [("confirm", "Delete 1 resource(s)?")]
+    # A decline exits 1 with the standard line and writes nothing.
+    assert result.exit_code == 1, result.output
+    assert "cancelled; no changes made" in result.stderr
+    assert backend.calls == [("confirm", "Delete 1 resource?")]
     assert 10 in seeded_default_org.store["job_templates"]
 
 
@@ -231,7 +232,7 @@ def test_delete_prompt_requires_yes_when_non_interactive(
 
     result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--yes or --dry-run" in result.output
     assert 10 in seeded_default_org.store["job_templates"]
 

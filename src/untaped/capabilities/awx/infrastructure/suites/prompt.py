@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-
 from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capability_api import PromptChoice, ui_context
 
@@ -17,7 +15,7 @@ class UiPrompt:
             return False
         # Only ``stdin`` matters: stderr being redirected (``2>/dev/null``)
         # is normal log practice and must not silently disable prompts.
-        return sys.stdin.isatty()
+        return ui_context(strict=False).stdin.isatty()
 
     def ask(self, spec: VariableSpec) -> str:
         prompt_text = spec.description or spec.name

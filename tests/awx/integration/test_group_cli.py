@@ -302,7 +302,7 @@ def test_groups_save_emits_metadata_parent_and_membership(fake_aap: Any) -> None
     # And one child group.
     fake_aap.memberships[("groups", 200, "children")] = {201}
 
-    result = CliInvoker().invoke(app, ["groups", "save", "web-servers"])
+    result = CliInvoker().invoke(app, ["groups", "export", "web-servers"])
     assert result.exit_code == 0, result.output
     parsed = _yaml.safe_load(result.stdout)
     assert parsed["kind"] == "Group"
@@ -321,7 +321,7 @@ def test_groups_save_round_trips_through_apply(fake_aap: Any, tmp_path: Path) ->
     fake_aap.memberships[("groups", 200, "hosts")] = {101}
     fake_aap.memberships[("groups", 200, "children")] = {201}
 
-    save_result = CliInvoker().invoke(app, ["groups", "save", "web-servers"])
+    save_result = CliInvoker().invoke(app, ["groups", "export", "web-servers"])
     assert save_result.exit_code == 0, save_result.output
     saved = tmp_path / "group.yml"
     saved.write_text(save_result.stdout)
@@ -524,11 +524,11 @@ def test_groups_hosts_add_parent_flag_scopes_the_target(fake_aap: Any) -> None:
     assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
 
 
-def test_membership_help_uses_an_before_vowels() -> None:
-    result = CliInvoker().invoke(app, ["inventories", "input_inventories", "--help"])
+def test_membership_help_uses_plural_nouns_and_an_before_vowels() -> None:
+    result = CliInvoker().invoke(app, ["inventories", "input-inventories", "--help"])
     assert result.exit_code == 0, result.output
-    assert "a Inventory" not in result.output
-    assert "an Inventory" in result.output
+    assert "(s)" not in result.output
+    assert "Associate inventories with an inventory." in result.output
 
 
 def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
@@ -546,13 +546,14 @@ def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> N
     assert fake_aap.memberships[("groups", 200, "hosts")] == set()
 
 
-def test_groups_hosts_add_empty_stdin_is_noop(fake_aap: Any) -> None:
+def test_groups_hosts_add_empty_stdin_is_an_error(fake_aap: Any) -> None:
     _seed_groups(fake_aap)
     result = CliInvoker().invoke(
         app, ["groups", "hosts", "add", "--yes", "web-servers", "--stdin"], input=""
     )
-    assert result.exit_code == 0
-    assert "No matching" in (result.output + (result.stderr or ""))
+    assert result.exit_code == 1
+    assert "no identifiers received on stdin" in result.stderr
+    assert not fake_aap.memberships[("groups", 200, "hosts")]
 
 
 def test_groups_hosts_remove_disassociates_listed_members(fake_aap: Any) -> None:

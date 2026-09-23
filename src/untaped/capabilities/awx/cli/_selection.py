@@ -1,7 +1,7 @@
 """Translate CLI selection flags into the AWX-owned fixed-target resolver."""
 
-import json
-import sys
+from __future__ import annotations
+
 from collections.abc import Mapping
 
 from untaped.capabilities.awx.application.selection import (
@@ -9,15 +9,15 @@ from untaped.capabilities.awx.application.selection import (
     SelectionRequest,
     SelectionResolver,
 )
-from untaped.capabilities.awx.cli._context import AwxContext, scope_for_command
+from untaped.capabilities.awx.cli.context import AwxContext, scope_for_command
+from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
-    ConfigError,
     PipeEnvelope,
+    UsageError,
     echo,
-    is_envelope_line,
-    parse_envelope_line,
     parse_kv_pairs,
+    read_stdin_input,
 )
 
 
@@ -58,28 +58,19 @@ def select_resources(
     )
     sources = sum((bool(names), stdin, bool(filters) or search is not None, all_))
     if sources > 1:
-        raise ConfigError(
+        raise UsageError(
             "selection sources are exclusive: use names, --stdin, filters/search, or --all"
         )
     values = tuple(names or ())
     pipe: tuple[PipeEnvelope, ...] | None = None
     effective_by_id = by_id
     if stdin:
-        lines = (
-            []
-            if sys.stdin.isatty()
-            else [(i, text.strip()) for i, text in enumerate(sys.stdin, 1) if text.strip()]
-        )
-        if not lines:
-            pipe = ()
-            effective_by_id = False
-        elif is_pipe_line(lines[0][1]):
-            pipe = tuple(parse_envelope_line(i, text) for i, text in lines)
+        piped = read_stdin_input(accept_kinds={pipe_kind_for_spec(spec)})
+        if piped.records is not None:
+            pipe = piped.records
             effective_by_id = False
         else:
-            if any(is_pipe_line(text) for _, text in lines):
-                raise ConfigError("mixed bare/envelope input on stdin")
-            values = tuple(text for _, text in lines)
+            values = piped.values
     request = SelectionRequest(
         names=() if effective_by_id else values,
         ids=values if effective_by_id else (),
@@ -96,10 +87,3 @@ def select_resources(
     if not selected:
         echo(f"No matching {spec.kind} found.", err=True)
     return selected
-
-
-def is_pipe_line(text: str) -> bool:
-    try:
-        return is_envelope_line(json.loads(text))
-    except json.JSONDecodeError:
-        return False

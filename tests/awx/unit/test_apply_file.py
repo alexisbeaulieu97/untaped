@@ -63,7 +63,7 @@ def test_file_prepares_whole_batch_before_writing(tmp_path: Path) -> None:
 def test_preview_and_empty_file_do_not_write(tmp_path: Path) -> None:
     client = _Client([])
     result = _file(client, _docs())(tmp_path)
-    assert [item.action for item in result] == ["preview"] * 3
+    assert [item.action for item in result] == ["planned"] * 3
     assert _file(client, [])(tmp_path, write=True) == []
     assert client.writes == []
 
