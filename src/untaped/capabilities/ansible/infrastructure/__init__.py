@@ -14,7 +14,10 @@ from untaped.capabilities.ansible.infrastructure.github_ref_probe import GithubR
 from untaped.capabilities.ansible.infrastructure.multi_source_index import (
     MultiSourceDependencyIndex,
 )
-from untaped.capabilities.ansible.infrastructure.overlay_index import OverlayDependencyIndex
+from untaped.capabilities.ansible.infrastructure.overlay_index import (
+    NullDependencyIndex,
+    OverlayDependencyIndex,
+)
 from untaped.capabilities.ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 
 __all__ = [
@@ -26,6 +29,7 @@ __all__ = [
     "GithubDependencyIndex",
     "GithubRefProbe",
     "MultiSourceDependencyIndex",
+    "NullDependencyIndex",
     "OverlayDependencyIndex",
     "SourceRepository",
     "SqliteDependencyIndex",

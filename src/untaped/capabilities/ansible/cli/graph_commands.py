@@ -11,6 +11,7 @@ from cyclopts import App, Group, Parameter, validators
 
 import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.api import (
+    HttpSettings,
     UntapedError,
     app_context,
     echo,
@@ -36,6 +37,7 @@ from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
     GithubDependencyIndex,
     MultiSourceDependencyIndex,
+    NullDependencyIndex,
     OverlayDependencyIndex,
     SourceRepository,
     SqliteDependencyIndex,
@@ -237,6 +239,7 @@ def graph_command(
       untaped ansible graph acme/app --source prod --both --cached
       untaped ansible graph ./roles/web --target-repo acme/web --downstream
     """
+    depth_limit = _parse_depth(depth)
     if refresh and not any((source, orgs, teams, source_repos)):
         raise_usage("--refresh requires --source or inline source selectors")
     if backend is not None and not refresh:
@@ -305,11 +308,13 @@ def graph_command(
             source_state=graph_source,
             index=sqlite_index,
             direction=direction,
+            live=live,
         )
         refresh_hint = _refresh_hint(graph_source)
         parse_warnings: list[str] = []
 
         target_path = Path(target).expanduser()
+        local_dependencies: _LocalDependencies | None = None
         if target_path.exists():
             local_dependencies = _local_dependencies(
                 target_path,
@@ -320,59 +325,31 @@ def graph_command(
                 github_host=github_host,
             )
             parse_warnings.extend(local_dependencies.warnings)
-            index = OverlayDependencyIndex(
-                index,
-                local_dependencies.edges,
-                authoritative_sources={(target_repo_name, ref)},
-            )
-            graph = _graph_from_index(
-                index,
+
+        graph, read_warnings = _graph_for_target(
+            index,
+            request=GraphRequest(
                 repo=target_repo_name,
                 ref=ref,
                 source_key=graph_source.key,
                 direction=direction,
-                depth=depth,
+                depth=depth_limit,
                 stale_after=settings.stale_after,
                 refresh_hint=refresh_hint,
-            )
-        else:
-            if _should_use_live_dependencies(
+            ),
+            local=local_dependencies,
+            use_live=_should_use_live_dependencies(
                 direction=direction,
                 source_key=graph_source.key,
                 live=live,
-            ):
-                with GithubClient(github_settings, http=ctx.http) as github:
-                    live_index = GithubDependencyIndex(
-                        github=github,
-                        wrapped=index,
-                        aliases=aliases,
-                        dependency_paths=settings.dependency_paths,
-                        github_host=github_host,
-                        concurrency=settings.probe_concurrency,
-                    )
-                    graph = _graph_from_index(
-                        live_index,
-                        repo=target_repo_name,
-                        ref=ref,
-                        source_key=graph_source.key,
-                        direction=direction,
-                        depth=depth,
-                        stale_after=settings.stale_after,
-                        refresh_hint=refresh_hint,
-                    )
-                    parse_warnings.extend(live_index.errors)
-                    parse_warnings.extend(_live_parse_warning_messages(live_index.warnings))
-            else:
-                graph = _graph_from_index(
-                    index,
-                    repo=target_repo_name,
-                    ref=ref,
-                    source_key=graph_source.key,
-                    direction=direction,
-                    depth=depth,
-                    stale_after=settings.stale_after,
-                    refresh_hint=refresh_hint,
-                )
+            ),
+            github_settings=github_settings,
+            http=ctx.http,
+            aliases=aliases,
+            settings=settings,
+            github_host=github_host,
+        )
+        parse_warnings.extend(read_warnings)
 
         graph = _with_graph_warnings(
             graph,
@@ -522,6 +499,7 @@ def _effective_direction(
     source_state: _GraphSource,
     index: SqliteDependencyIndex,
     direction: GraphDirection,
+    live: bool,
 ) -> tuple[GraphDirection, list[str]]:
     if not source_state.selections:
         if direction == "deps":
@@ -538,10 +516,23 @@ def _effective_direction(
     missing = tuple(
         selection for selection in source_state.selections if index.status(selection.key) is None
     )
+    if missing and live and direction != "impact":
+        # --live reads downstream from GitHub, so it never needs the cache;
+        # only the upstream half of --both does.
+        if direction == "deps":
+            return direction, []
+        labels = ", ".join(selection.label for selection in missing)
+        return "deps", [
+            f"only showing downstream; upstream omitted because {labels} has no cached "
+            f"source data. Run {_source_refresh_commands(missing)} first."
+            if source_state.saved
+            else "only showing downstream; upstream omitted because the inline source has "
+            "no cached source data. Re-run with `--refresh` first."
+        ]
     if missing:
-        raise UntapedError(_missing_source_index_message(target, source_state, missing))
-    if direction == "deps":
-        return direction, []
+        raise UntapedError(
+            _missing_source_index_message(target, source_state, missing, direction=direction)
+        )
     return direction, []
 
 
@@ -549,7 +540,15 @@ def _missing_source_index_message(
     target: str,
     source_state: _GraphSource,
     missing: tuple[_GraphSourceSelection, ...],
+    *,
+    direction: GraphDirection,
 ) -> str:
+    direction_flag = _DIRECTION_FLAGS[direction]
+    live_hint = (
+        " Or pass `--live` to read downstream dependencies from GitHub without cached data."
+        if direction == "deps"
+        else ""
+    )
     if source_state.saved:
         refresh_commands = _source_refresh_commands(missing)
         if len(missing) > 1:
@@ -560,18 +559,27 @@ def _missing_source_index_message(
             return (
                 f"no cached source data found for sources {labels}. Run: {refresh_commands}. "
                 f"Or re-run graph with: "
-                f"`untaped ansible graph {target} {source_flags} --upstream --refresh`."
+                f"`untaped ansible graph {target} {source_flags}{direction_flag} --refresh`."
+                f"{live_hint}"
             )
         label = missing[0].label
         return (
             f"no cached source data found for source {label!r}. Run: {refresh_commands}. "
             f"Or re-run graph with: "
-            f"`untaped ansible graph {target} --source {label} --upstream --refresh`."
+            f"`untaped ansible graph {target} --source {label}{direction_flag} --refresh`."
+            f"{live_hint}"
         )
     return (
         "no cached source data found for inline source. Re-run this graph command with "
-        "`--refresh` to scan GitHub and cache the result."
+        f"`--refresh` to scan GitHub and cache the result.{live_hint}"
     )
+
+
+_DIRECTION_FLAGS: dict[GraphDirection, str] = {
+    "impact": " --upstream",
+    "deps": " --downstream",
+    "both": "",
+}
 
 
 def _resolve_target_repo(
@@ -637,28 +645,56 @@ def _live_parse_warning_messages(warnings: Iterable[SkippedDependencyFile]) -> l
     return [format_skipped_dependency_file(warning) for warning in warnings]
 
 
-def _graph_from_index(
+def _graph_for_target(
     index: DependencyIndex,
     *,
-    repo: str,
-    ref: str | None,
-    source_key: str | None,
-    direction: GraphDirection,
-    depth: str,
-    stale_after: int,
-    refresh_hint: str | None,
-) -> DependencyGraph:
-    return BuildGraph(index)(
-        GraphRequest(
-            repo=repo,
-            ref=ref,
-            source_key=source_key,
-            direction=direction,
-            depth=_parse_depth(depth),
-            stale_after=stale_after,
-            refresh_hint=refresh_hint,
+    request: GraphRequest,
+    local: _LocalDependencies | None,
+    use_live: bool,
+    github_settings: GithubSettings,
+    http: HttpSettings,
+    aliases: dict[str, str],
+    settings: AnsibleSettings,
+    github_host: str | None,
+) -> tuple[DependencyGraph, list[str]]:
+    """Build the graph, reading transitive dependencies live when requested.
+
+    Local target edges always overlay the chosen read index. Without a
+    source there is no cache to scope reads to, so local and remote targets
+    alike read transitive dependencies live; a local target without a
+    GitHub token stays offline and only shows its own declarations.
+    """
+
+    def build(read_index: DependencyIndex) -> DependencyGraph:
+        if local is not None:
+            read_index = OverlayDependencyIndex(
+                read_index,
+                local.edges,
+                authoritative_sources={(request.repo, request.ref)},
+            )
+        return BuildGraph(read_index)(request)
+
+    if not use_live:
+        return build(index), []
+    if local is not None and request.source_key is None and github_settings.token is None:
+        warnings = []
+        if any(edge.dependency_repo is not None for edge in local.edges):
+            warnings.append(
+                "transitive dependencies were not expanded: pass --source NAME to use "
+                "cached source data, or configure github.token for live GitHub reads"
+            )
+        return build(NullDependencyIndex()), warnings
+    with GithubClient(github_settings, http=http) as github:
+        live_index = GithubDependencyIndex(
+            github=github,
+            wrapped=index,
+            aliases=aliases,
+            dependency_paths=settings.dependency_paths,
+            github_host=github_host,
+            concurrency=settings.probe_concurrency,
         )
-    )
+        graph = build(live_index)
+    return graph, [*live_index.errors, *_live_parse_warning_messages(live_index.warnings)]
 
 
 def _refresh_hint(source_state: _GraphSource) -> str | None:
