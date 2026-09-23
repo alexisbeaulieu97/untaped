@@ -50,6 +50,7 @@ class GitRunner:
         self._git_path = shutil.which(git)
         self._timeout = timeout
         self._slow_timeout = slow_timeout
+        self._ssh_configured: bool | None = None
 
     # cache --------------------------------------------------------------
 
@@ -253,7 +254,7 @@ class GitRunner:
             result = subprocess.run(
                 [self._git_path, *args],
                 cwd=cwd,
-                env=_git_env(cwd),
+                env=_git_env(cwd, batch_ssh=not self._user_ssh_configured()),
                 stdin=subprocess.DEVNULL,
                 text=True,
                 capture_output=True,
@@ -271,16 +272,44 @@ class GitRunner:
             )
         return result.stdout if capture else ""
 
+    def _user_ssh_configured(self) -> bool:
+        """Whether git config already sets ``core.sshCommand`` (probed once).
+
+        ``GIT_SSH_COMMAND`` outranks ``core.sshCommand``, so the BatchMode
+        default must not be injected over a user's configured ssh command.
+        The probe uses ``Popen`` directly so it stays out of the per-command
+        ``subprocess.run`` path.
+        """
+        if self._ssh_configured is None:
+            self._ssh_configured = _core_ssh_command_set(self._git_path)
+        return self._ssh_configured
+
 
 _GIST_LIMIT = 300
 
 
-def _git_env(cwd: Path | None) -> dict[str, str]:
+def _core_ssh_command_set(git_path: str | None) -> bool:
+    if git_path is None:
+        return False
+    try:
+        with subprocess.Popen(
+            [git_path, "config", "--get", "core.sshCommand"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ) as proc:
+            out, _ = proc.communicate(timeout=10)
+    except OSError, subprocess.TimeoutExpired:
+        return False
+    return proc.returncode == 0 and bool(out.strip())
+
+
+def _git_env(cwd: Path | None, *, batch_ssh: bool = True) -> dict[str, str]:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
-    if "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env:
+    if batch_ssh and "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env:
         # Stop ssh from waiting on passphrase/host-key prompts. A user's own
-        # GIT_SSH_COMMAND/GIT_SSH wins (note: this env var does take
-        # precedence over a ``core.sshCommand`` setting).
+        # GIT_SSH_COMMAND/GIT_SSH or core.sshCommand wins.
         env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
     if cwd is not None:
         parent = str(Path(os.path.abspath(cwd)).parent)

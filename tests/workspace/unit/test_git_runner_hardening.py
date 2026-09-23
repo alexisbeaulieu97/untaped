@@ -69,6 +69,23 @@ def test_user_ssh_override_is_respected(
         assert "GIT_SSH_COMMAND" not in env
 
 
+def test_configured_core_ssh_command_is_not_overridden(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # GIT_SSH_COMMAND outranks core.sshCommand, so the BatchMode default must
+    # stay out of the way when the user configured ssh through git config.
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.delenv("GIT_SSH", raising=False)
+    subprocess.run(
+        ["git", "config", "--global", "core.sshCommand", "ssh -i ~/.ssh/work"],
+        check=True,
+    )
+    calls, fake_run = _record_calls()
+    with patch("subprocess.run", side_effect=fake_run):
+        GitRunner().fetch(tmp_path / "ws" / "svc-a")
+    assert "GIT_SSH_COMMAND" not in calls[0]["env"]
+
+
 def test_per_repo_git_calls_set_ceiling_to_repo_parent(tmp_path: Path) -> None:
     calls, fake_run = _record_calls()
     repo = tmp_path / "ws" / "svc-a"
