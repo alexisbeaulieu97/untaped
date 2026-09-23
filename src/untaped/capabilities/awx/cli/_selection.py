@@ -72,11 +72,11 @@ def select_resources(
         if not lines:
             pipe = ()
             effective_by_id = False
-        elif _is_pipe_line(lines[0][1]):
+        elif is_pipe_line(lines[0][1]):
             pipe = tuple(parse_envelope_line(i, text) for i, text in lines)
             effective_by_id = False
         else:
-            if any(_is_pipe_line(text) for _, text in lines):
+            if any(is_pipe_line(text) for _, text in lines):
                 raise ConfigError("mixed bare/envelope input on stdin")
             values = tuple(text for _, text in lines)
     request = SelectionRequest(
@@ -96,7 +96,7 @@ def select_resources(
     return selected
 
 
-def _is_pipe_line(text: str) -> bool:
+def is_pipe_line(text: str) -> bool:
     try:
         return is_envelope_line(json.loads(text))
     except json.JSONDecodeError:
