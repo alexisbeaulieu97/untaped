@@ -8,10 +8,17 @@ from pydantic import BaseModel, ConfigDict
 
 
 class JiraIssueSearchFilters(BaseModel):
-    """Common issue search shortcuts plus an optional raw JQL base."""
+    """Common issue search shortcuts plus an optional raw JQL base.
+
+    ``scope_jql`` always applies and is ANDed with ``raw_jql`` and the
+    shortcuts (``raw_jql``'s ``ORDER BY`` wins over the scope's).
+    ``default_jql`` is the whole query only when nothing else filters.
+    """
 
     model_config = ConfigDict(frozen=True)
 
+    scope_jql: str | None = None
+    default_jql: str | None = None
     raw_jql: str | None = None
     project: str | None = None
     assignee: str | None = None
@@ -20,15 +27,17 @@ class JiraIssueSearchFilters(BaseModel):
     sprint: str | None = None
 
     def to_jql(self) -> str:
-        base, order_by = _split_order_by(self.raw_jql.strip() if self.raw_jql else None)
-        parts: list[str] = []
-        if base:
-            parts.append(f"({base})")
+        scope, scope_order_by = _split_order_by(_stripped(self.scope_jql))
+        base, order_by = _split_order_by(_stripped(self.raw_jql))
+        parts = [f"({clause})" for clause in (scope, base) if clause]
         parts.extend(self._shortcut_clauses())
+        default_order_by: str | None = None
         if not parts:
-            parts = ["assignee = currentUser()", "resolution = Unresolved"]
+            default, default_order_by = _split_order_by(_stripped(self.default_jql))
+            parts = [default] if default else []
         jql = " AND ".join(parts)
-        return f"{jql} {order_by or 'ORDER BY updated DESC'}"
+        order = order_by or scope_order_by or default_order_by or "ORDER BY updated DESC"
+        return f"{jql} {order}".strip()
 
     def _shortcut_clauses(self) -> list[str]:
         clauses: list[str] = []
@@ -43,6 +52,10 @@ class JiraIssueSearchFilters(BaseModel):
         if self.sprint:
             clauses.append(f"sprint = {_quote_sprint(self.sprint)}")
         return clauses
+
+
+def _stripped(jql: str | None) -> str | None:
+    return jql.strip() if jql else None
 
 
 def _split_order_by(jql: str | None) -> tuple[str | None, str | None]:

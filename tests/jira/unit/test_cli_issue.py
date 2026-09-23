@@ -221,7 +221,7 @@ def test_issue_assigned_uses_configured_assigned_jql(jira_config: Path) -> None:
     )
 
 
-def test_issue_assigned_jql_option_overrides_configured_assigned_jql(
+def test_issue_assigned_jql_option_narrows_configured_assigned_jql(
     jira_config: Path,
 ) -> None:
     jira_config.write_text(
@@ -250,7 +250,7 @@ def test_issue_assigned_jql_option_overrides_configured_assigned_jql(
                 "issue",
                 "assigned",
                 "--jql",
-                "assignee = currentUser() AND project = SEC",
+                "project = SEC ORDER BY priority DESC",
                 "--status",
                 "In Progress",
                 "--format",
@@ -264,9 +264,31 @@ def test_issue_assigned_jql_option_overrides_configured_assigned_jql(
     assert result.stdout.strip() == "SEC-3"
     request_json = json.loads(route.calls[0].request.content)
     assert request_json["jql"] == (
-        '(assignee = currentUser() AND project = SEC) AND status = "In Progress" '
-        "ORDER BY updated DESC"
+        "(assignee = currentUser() AND project = OPS) AND (project = SEC) "
+        'AND status = "In Progress" ORDER BY priority DESC'
     )
+
+
+def test_issue_search_without_filters_uses_configured_assigned_jql(jira_config: Path) -> None:
+    jira_config.write_text(
+        "profiles:\n"
+        "  default:\n"
+        "    jira:\n"
+        "      base_url: https://jira.example.com\n"
+        "      token: jira_pat\n"
+        "      assigned_jql: assignee = currentUser() AND project = OPS\n"
+    )
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.post("/rest/api/2/search").mock(
+            return_value=httpx.Response(
+                200, json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []}
+            )
+        )
+        result = CliInvoker().invoke(app, ["issue", "search", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    request_json = json.loads(route.calls[0].request.content)
+    assert request_json["jql"] == "assignee = currentUser() AND project = OPS ORDER BY updated DESC"
 
 
 def test_issue_assigned_rejects_blank_jql_override(jira_config: Path) -> None:

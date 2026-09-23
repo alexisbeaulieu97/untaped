@@ -19,7 +19,8 @@ Use this skill when the user wants an agent to operate the `untaped jira` CLI fo
 
 - Use `untaped jira --help` and subcommand `--help` output to confirm the available V1 surface before acting.
 - Jira platform calls use `/rest/api/2`; Jira Software board and sprint calls use `/rest/agile/1.0`.
-- Use `untaped jira issue assigned` to list tickets assigned to the authenticated Jira user. It uses `jira.assigned_jql` unless `--jql` is passed.
+- Use `untaped jira issue assigned` to list issues assigned to the authenticated Jira user. It always applies `jira.assigned_jql`; `--jql` and the shortcut flags narrow it (ANDed), and an `ORDER BY` in `--jql` replaces the default `updated DESC` order.
+- `untaped jira issue search` with no `--jql` or shortcut flags falls back to `jira.assigned_jql`.
 - Use `untaped jira issue get KEY` to fetch one concise ticket row by key or id.
 - Prefer JSON output for issue, board, sprint, transition, project, and search workflows.
 - Single-entity commands (`me`, `issue get`/`create`/`edit`/`comment`/`transition`, `project get`) render a vertical key:value detail view under `--format table` and a bare JSON object (`{…}`, not a one-element `[{…}]`) under `--format json`; list/search commands render tables and JSON arrays.
