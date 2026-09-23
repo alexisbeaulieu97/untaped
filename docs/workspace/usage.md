@@ -345,11 +345,11 @@ Git does not wait for interactive credential prompts: stdin is closed,
 terminal/credential-manager prompts are disabled (`GIT_TERMINAL_PROMPT=0`,
 `GCM_INTERACTIVE=never`), and ssh runs with `GIT_SSH_COMMAND="ssh -o
 BatchMode=yes"`, so a remote that needs credentials fails that repo
-instead of hanging the sweep. If you set `GIT_SSH_COMMAND` or `GIT_SSH`
-yourself, untaped leaves it alone (add `-o BatchMode=yes` to keep the
-fail-fast behavior). A `core.sshCommand` git setting is overridden by
-the default above; export it as `GIT_SSH_COMMAND` instead. Configure an
-SSH agent or a credential helper for private remotes.
+instead of hanging the sweep. If you configure ssh yourself
+(`GIT_SSH_COMMAND`, `GIT_SSH`, or the `core.sshCommand` git setting),
+untaped leaves it alone; add `-o BatchMode=yes` to keep the fail-fast
+behavior. Configure an SSH agent or a credential helper for private
+remotes.
 
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
 This works for a single workspace and for `--all`; the cap is global
