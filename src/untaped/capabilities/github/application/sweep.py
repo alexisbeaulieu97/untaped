@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from untaped.api import ConfigError, bounded_map
+from untaped.api import ConfigError, UntapedError, bounded_map
 from untaped.capabilities.github.application.inventory import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
@@ -130,7 +130,7 @@ class Sweep:
 
     def __call__(self, options: SweepOptions) -> SweepReport:
         options.query.validate()
-        repos = self._resolve_scope(options)
+        repos, scope_failures = self._resolve_scope(options)
         ready, prep_failures = self._prepare_repos(repos, options)
 
         scans: list[_RepoScan] = []
@@ -139,8 +139,8 @@ class Sweep:
         def scan_one(ready_repo: _ReadyRepo) -> _RepoScan | CorpusFailure:
             try:
                 return self._scan_repo(ready_repo, options)
-            except GitCorpusError as exc:
-                return CorpusFailure(repo=ready_repo.repo.full_name, reason=str(exc))
+            except (GitCorpusError, OSError) as exc:
+                return _failure(ready_repo.repo, exc)
 
         def record(_ready_repo: _ReadyRepo, outcome: _RepoScan | CorpusFailure) -> None:
             if isinstance(outcome, CorpusFailure):
@@ -162,27 +162,40 @@ class Sweep:
         return SweepReport(
             rows=rows,
             matches=_dedupe_matches(all_matches),
-            unscanned=(*prep_failures, *scan_failures),
+            unscanned=(*scope_failures, *prep_failures, *scan_failures),
             scanned=len(scans),
             refreshed=refreshed,
             cached=cached,
             oldest_fetched_at=min(scanned_dates) if scanned_dates else None,
         )
 
-    def _resolve_scope(self, options: SweepOptions) -> tuple[CorpusRepoTarget, ...]:
+    def _resolve_scope(
+        self, options: SweepOptions
+    ) -> tuple[tuple[CorpusRepoTarget, ...], tuple[CorpusFailure, ...]]:
         if options.sync == "off":
-            return self._resolve_offline_scope(options)
+            return self._resolve_offline_scope(options), ()
 
-        repos = tuple(dict.fromkeys((*options.scope.repos, *options.stdin_repos)))
-        scope = RepositoryInventoryScope(
-            orgs=options.scope.orgs,
-            teams=options.scope.teams,
-            repos=repos,
-        )
+        items: dict[str, RepositoryInventoryItem] = {}
+        if options.scope.orgs or options.scope.teams:
+            scope = RepositoryInventoryScope(orgs=options.scope.orgs, teams=options.scope.teams)
+            for item in self._inventory(scope):
+                items.setdefault(item.full_name, item)
+        # Expand explicit names one at a time so one missing or inaccessible
+        # repo becomes an unscanned row instead of aborting the whole sweep.
+        failures: list[CorpusFailure] = []
+        for name in dict.fromkeys((*options.scope.repos, *options.stdin_repos)):
+            try:
+                resolved = self._inventory(RepositoryInventoryScope(repos=(name,)))
+            except UntapedError as exc:
+                failures.append(CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__))
+                continue
+            items.update((item.full_name, item) for item in resolved)
         rows = (
-            item for item in self._inventory(scope) if options.include_archived or not item.archived
+            items[name]
+            for name in sorted(items)
+            if options.include_archived or not items[name].archived
         )
-        return tuple(_target(item) for item in rows)
+        return tuple(_target(item) for item in rows), tuple(failures)
 
     def _resolve_offline_scope(self, options: SweepOptions) -> tuple[CorpusRepoTarget, ...]:
         if options.scope.teams:
@@ -216,23 +229,28 @@ class Sweep:
         repos: tuple[CorpusRepoTarget, ...],
         options: SweepOptions,
     ) -> tuple[tuple[_ReadyRepo, ...], tuple[CorpusFailure, ...]]:
-        if options.sync == "off":
-            return tuple(
-                _ReadyRepo(
-                    repo=repo,
-                    fetched_at=_freshness_datetime(
-                        self._corpus.repo_freshness(repo, root=self._root)
-                    ),
-                    refreshed=False,
-                )
-                for repo in repos
-            ), ()
-
         ready: list[_ReadyRepo] = []
         failures: list[CorpusFailure] = []
 
+        if options.sync == "off":
+            for repo in repos:
+                try:
+                    freshness = self._corpus.repo_freshness(repo, root=self._root)
+                except (GitCorpusError, OSError) as exc:
+                    failures.append(_failure(repo, exc))
+                    continue
+                ready.append(
+                    _ReadyRepo(
+                        repo=repo, fetched_at=_freshness_datetime(freshness), refreshed=False
+                    )
+                )
+            return tuple(ready), tuple(failures)
+
         def prepare_one(repo: CorpusRepoTarget) -> _ReadyRepo | CorpusFailure:
-            freshness = self._corpus.repo_freshness(repo, root=self._root)
+            try:
+                freshness = self._corpus.repo_freshness(repo, root=self._root)
+            except (GitCorpusError, OSError) as exc:
+                return _failure(repo, exc)
             must_refresh = options.sync == "force" or _needs_refresh(
                 freshness,
                 selector=options.query.refs,
@@ -250,10 +268,10 @@ class Sweep:
                     depth=options.depth,
                     auth_header=self._auth_header(),
                 )
-            except GitCorpusError as exc:
+            except (GitCorpusError, OSError) as exc:
                 if freshness is not None and covers(freshness, options.query.refs):
                     return _ReadyRepo(repo=repo, fetched_at=freshness.fetched_at, refreshed=False)
-                return CorpusFailure(repo=repo.full_name, reason=str(exc))
+                return _failure(repo, exc)
             return _ReadyRepo(
                 repo=repo,
                 fetched_at=_parse_datetime(result.fetched_at),
@@ -388,6 +406,10 @@ def _target(item: RepositoryInventoryItem) -> CorpusRepoTarget:
         html_url=item.html_url,
         archived=item.archived,
     )
+
+
+def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
+    return CorpusFailure(repo=repo.full_name, reason=str(exc) or type(exc).__name__)
 
 
 def _needs_refresh(
