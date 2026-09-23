@@ -271,7 +271,7 @@ def test_add_rejects_mixed_positional_and_stdin(tmp_path: Path) -> None:
 
 def test_add_repo_name_rejected_with_multiple_urls(tmp_path: Path) -> None:
     """``--repo-name`` is single-valued — applying it to a batch would
-    produce a guaranteed ``DuplicateRepoName`` cascade on URL #2. The
+    produce a guaranteed ``DuplicateRepoNameError`` cascade on URL #2. The
     CLI rejects upfront with a ``BadParameter`` rather than letting the
     batch half-land."""
     runner = CliInvoker()

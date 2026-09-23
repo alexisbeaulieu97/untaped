@@ -20,8 +20,8 @@ from untaped.capabilities.workspace.cli.common import (
 )
 from untaped.capabilities.workspace.domain import Workspace, WorkspaceDetailRow
 from untaped.capabilities.workspace.infrastructure import (
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
     editor_runner,
     resolve_editor_argv,
 )
@@ -76,7 +76,7 @@ def show_command(
     """Show manifest details for one workspace."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        rows = [_show_row(row) for row in ShowWorkspace(ManifestRepository())(ws)]
+        rows = [_show_row(row) for row in ShowWorkspace(YamlManifestRepository())(ws)]
         emit(rows, fmt=fmt, columns=columns, kind=_show_kind(rows))
 
 

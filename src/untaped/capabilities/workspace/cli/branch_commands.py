@@ -22,7 +22,7 @@ from untaped.capabilities.workspace.domain import BranchApplyOutcome
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
-    ManifestRepository,
+    YamlManifestRepository,
 )
 from untaped.capability_api import (
     ColumnsOption,
@@ -82,7 +82,7 @@ def branch_set_command(
     """Set the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        change = SetWorkspaceBranch(ManifestRepository())(ws, branch=branch, repo=repo)
+        change = SetWorkspaceBranch(YamlManifestRepository())(ws, branch=branch, repo=repo)
         if change.repo is None:
             echo(f"set default branch for {change.workspace!r} to {change.branch}", err=True)
         else:
@@ -93,7 +93,7 @@ def branch_set_command(
         if apply_checkout:
             with progress_ui().progress("Applying branches…"):
                 outcomes = ApplyWorkspaceBranch(
-                    ManifestRepository(),
+                    YamlManifestRepository(),
                     GitRunner(),
                     fs=LocalFilesystem(),
                 )(ws, repo=change.repo, create=create)
@@ -117,7 +117,7 @@ def branch_unset_command(
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        change = UnsetWorkspaceBranch(ManifestRepository())(ws, repo=repo)
+        change = UnsetWorkspaceBranch(YamlManifestRepository())(ws, repo=repo)
         if change.repo is None:
             echo(f"unset default branch for {change.workspace!r}", err=True)
             return
@@ -142,7 +142,7 @@ def branch_apply_command(
         ws = resolve_workspace(workspace, path)
         with progress_ui().progress("Applying branches…"):
             outcomes = ApplyWorkspaceBranch(
-                ManifestRepository(),
+                YamlManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
             )(ws, repo=repo, create=create)

@@ -35,7 +35,7 @@ from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     InterruptibleShellRunner,
     LocalFilesystem,
-    ManifestRepository,
+    YamlManifestRepository,
 )
 from untaped.capability_api import (
     ColumnsOption,
@@ -134,7 +134,7 @@ def sync_command(
             )
         ui = progress_ui()
         with ui.progress("Syncing repos…") as p:
-            sweep = SyncWorkspaces(ManifestRepository(), engine, notify=p.update)
+            sweep = SyncWorkspaces(YamlManifestRepository(), engine, notify=p.update)
             outcomes = sweep(
                 targets,
                 only=repo,
@@ -239,7 +239,7 @@ def status_command(
     """Per-repo `git status` snapshot."""
     with report_errors():
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
-        use_case = WorkspaceStatus(ManifestRepository(), GitRunner(), fs=LocalFilesystem())
+        use_case = WorkspaceStatus(YamlManifestRepository(), GitRunner(), fs=LocalFilesystem())
         rows: list[dict[str, object]] = []
         with progress_ui().progress("Gathering workspace status…"):
             for ws in targets:
@@ -327,7 +327,7 @@ def foreach_command(
         keep_going = continue_on_error or ignore_errors
         shell = InterruptibleShellRunner()
         outcomes = Foreach(
-            ManifestRepository(),
+            YamlManifestRepository(),
             runner=shell,
             fs=LocalFilesystem(),
             on_interrupt=shell.terminate_all,

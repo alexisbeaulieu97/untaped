@@ -137,6 +137,14 @@ class ShellRunner(Protocol):
 EditorRunner = Callable[[Sequence[str]], int]
 
 
+class ProgressNotify(Protocol):
+    """Progress callback a long-running sweep reports through."""
+
+    def __call__(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None: ...
+
+
 __all__ = [
     "BranchOperations",
     "CompletedCommand",
@@ -148,6 +156,7 @@ __all__ = [
     "ManifestReader",
     "ManifestRemover",
     "ManifestRepository",
+    "ProgressNotify",
     "PruneSafetyInspector",
     "RegistryReader",
     "RepoDiscoverer",

@@ -16,7 +16,7 @@ from untaped.capabilities.workspace.domain import (
     StatusEntry,
     Workspace,
 )
-from untaped.capabilities.workspace.errors import GitError, ManifestError, UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import GitError, ManifestError, UnmatchedRepoFilterError
 
 
 class WorkspaceStatus:
@@ -46,7 +46,7 @@ class WorkspaceStatus:
             raise
         repos, unmatched = select_repos(manifest, only)
         if unmatched:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
         return [self._row_for(workspace, repo) for repo in repos]
 
     def _row_for(self, workspace: Workspace, repo: Repo) -> StatusEntry:

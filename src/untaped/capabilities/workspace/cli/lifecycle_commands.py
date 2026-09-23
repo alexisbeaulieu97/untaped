@@ -24,8 +24,8 @@ from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
     LocalRepoDiscoverer,
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
 )
 from untaped.capability_api import (
     UntapedError,
@@ -70,7 +70,9 @@ def init_command(
     """
     with report_errors():
         target = path or (workspace_settings().workspaces_dir.expanduser() / name)
-        bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
+        bootstrapper = WorkspaceBootstrapper(
+            YamlManifestRepository(), WorkspaceRegistryRepository()
+        )
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
         echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
 
@@ -92,7 +94,9 @@ def adopt_command(
     its current `origin` URL and checked-out branch.
     """
     with report_errors():
-        bootstrapper = WorkspaceBootstrapper(ManifestRepository(), WorkspaceRegistryRepository())
+        bootstrapper = WorkspaceBootstrapper(
+            YamlManifestRepository(), WorkspaceRegistryRepository()
+        )
         result = AdoptWorkspace(
             bootstrapper,
             LocalRepoDiscoverer(GitRunner()),
@@ -144,7 +148,7 @@ def forget_command(
         registry = WorkspaceRegistryRepository()
         forget_workspace = ForgetWorkspace(
             registry,
-            ManifestRepository(),
+            YamlManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=GitRunner(),
             warn=lambda m: echo(f"warning: {m}", err=True),
@@ -199,14 +203,14 @@ def import_command(
 ) -> None:
     """Adopt a workspace from a local YAML manifest."""
     with report_errors():
-        manifests = ManifestRepository()
+        manifests = YamlManifestRepository()
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
         result = ImportWorkspace(manifests, bootstrapper)(source, path=dest, name=name)
         ws = result.workspace
         echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
         if sync:
             outcomes = SyncWorkspace(
-                ManifestRepository(),
+                YamlManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
                 cache_dir=workspace_settings().cache_dir,

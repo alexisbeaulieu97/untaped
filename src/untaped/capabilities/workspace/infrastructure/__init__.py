@@ -6,7 +6,7 @@ from untaped.capabilities.workspace.infrastructure.git_runner import (
 )
 from untaped.capabilities.workspace.infrastructure.manifest_repo import (
     MANIFEST_FILENAME,
-    ManifestRepository,
+    YamlManifestRepository,
 )
 from untaped.capabilities.workspace.infrastructure.registry_repo import (
     WorkspaceRegistryRepository,
@@ -30,8 +30,8 @@ __all__ = [
     "InterruptibleShellRunner",
     "LocalFilesystem",
     "LocalRepoDiscoverer",
-    "ManifestRepository",
     "WorkspaceRegistryRepository",
+    "YamlManifestRepository",
     "cache_path_for",
     "editor_runner",
     "resolve_editor_argv",
