@@ -79,6 +79,13 @@ def _read_file(path: Path) -> Iterator[Resource]:
 
 def _dump(resource: Resource, *, header_comment: str | None = None) -> str:
     payload = resource.model_dump(exclude_none=True)
+    if resource.metadata.organization is None and "organization" in (
+        resource.metadata.model_fields_set
+    ):
+        # Explicit null identity (org-less record) survives the round trip.
+        payload["metadata"] = {"name": resource.metadata.name, "organization": None} | payload[
+            "metadata"
+        ]
     body = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
     if header_comment:
         return f"# {header_comment}\n{body}"
