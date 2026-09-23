@@ -4,10 +4,12 @@ Domain layers depend on a ``GitRunner`` Protocol; this is the concrete
 adapter. Every call shells out to the system ``git`` binary; failures are
 mapped to :class:`GitError`.
 
-Every invocation is non-interactive (stdin closed, terminal and credential
-manager prompts disabled) so a missing credential fails fast instead of
-hanging a sweep, and per-repo calls set ``GIT_CEILING_DIRECTORIES`` so git
-never falls through to a repository enclosing the target directory.
+Invocations do not wait for interactive credential prompts (stdin closed,
+terminal and credential-manager prompts disabled, ssh in ``BatchMode``
+unless the user set ``GIT_SSH_COMMAND``/``GIT_SSH``) so a missing
+credential normally fails fast instead of hanging a sweep, and per-repo
+calls set ``GIT_CEILING_DIRECTORIES`` so git never falls through to a
+repository enclosing the target directory.
 """
 
 from __future__ import annotations
@@ -275,6 +277,11 @@ _GIST_LIMIT = 300
 
 def _git_env(cwd: Path | None) -> dict[str, str]:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    if "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env:
+        # Stop ssh from waiting on passphrase/host-key prompts. A user's own
+        # GIT_SSH_COMMAND/GIT_SSH wins (note: this env var does take
+        # precedence over a ``core.sshCommand`` setting).
+        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
     if cwd is not None:
         parent = str(Path(os.path.abspath(cwd)).parent)
         existing = env.get("GIT_CEILING_DIRECTORIES")

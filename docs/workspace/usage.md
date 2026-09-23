@@ -341,11 +341,15 @@ both at 30s (CI-friendly fail-fast). A clone that fails or times out
 removes the directory it created, so the next sync retries the clone
 instead of treating a partial directory as an existing repo.
 
-Git runs non-interactively: stdin is closed and terminal/credential
-manager prompts are disabled (`GIT_TERMINAL_PROMPT=0`,
-`GCM_INTERACTIVE=never`), so a remote that needs credentials fails that
-repo instead of hanging the sweep. Configure an SSH agent or a
-credential helper for private remotes.
+Git does not wait for interactive credential prompts: stdin is closed,
+terminal/credential-manager prompts are disabled (`GIT_TERMINAL_PROMPT=0`,
+`GCM_INTERACTIVE=never`), and ssh runs with `GIT_SSH_COMMAND="ssh -o
+BatchMode=yes"`, so a remote that needs credentials fails that repo
+instead of hanging the sweep. If you set `GIT_SSH_COMMAND` or `GIT_SSH`
+yourself, untaped leaves it alone (add `-o BatchMode=yes` to keep the
+fail-fast behavior). A `core.sshCommand` git setting is overridden by
+the default above; export it as `GIT_SSH_COMMAND` instead. Configure an
+SSH agent or a credential helper for private remotes.
 
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
 This works for a single workspace and for `--all`; the cap is global
