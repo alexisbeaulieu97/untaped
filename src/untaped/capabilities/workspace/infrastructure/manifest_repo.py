@@ -7,9 +7,9 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from untaped.api import atomic_write, first_validation_error
 from untaped.capabilities.workspace.domain import ManifestSource, WorkspaceManifest
 from untaped.capabilities.workspace.errors import ManifestError
+from untaped.capability_api import atomic_write, first_validation_error
 
 MANIFEST_FILENAME = "untaped.yml"
 

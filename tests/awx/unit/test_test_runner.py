@@ -262,7 +262,7 @@ def test_case_filter_with_unmatched_names_raises() -> None:
     runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
     suite = _suite("s", {"keep": {}})
 
-    from untaped.api import ConfigError
+    from untaped.capability_api import ConfigError
 
     with pytest.raises(ConfigError, match="nope"):
         runner([suite], case_filter={"nope"})
@@ -276,7 +276,7 @@ def test_case_filter_partial_match_reports_only_unmatched() -> None:
     runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
     suite = _suite("s", {"keep": {}, "skip": {}})
 
-    from untaped.api import ConfigError
+    from untaped.capability_api import ConfigError
 
     with pytest.raises(ConfigError, match="bogus") as exc_info:
         runner([suite], case_filter={"keep", "bogus"})

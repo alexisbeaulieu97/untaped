@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 
-from untaped.api import GitResult
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -23,6 +22,7 @@ from untaped.capabilities.github.infrastructure.git_corpus import (
     GitCorpusCache,
     cache_path_for,
 )
+from untaped.capability_api import GitResult
 
 
 def _git(cwd: Path, *args: str) -> str:

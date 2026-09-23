@@ -13,9 +13,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from untaped.api import StateCollection
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.errors import RegistryError
+from untaped.capability_api import StateCollection
 
 _SECTION = "workspace"
 _KEY = "workspaces"

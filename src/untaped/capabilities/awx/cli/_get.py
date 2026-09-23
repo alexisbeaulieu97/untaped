@@ -10,14 +10,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    OutputFormat,
-    emit,
-    raise_usage,
-    report_errors,
-)
 from untaped.capabilities.awx.application.mutation_values import redact_value
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._names import flatten_fks
@@ -35,6 +27,14 @@ from untaped.capabilities.awx.cli.options import (
     StdinOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    OutputFormat,
+    emit,
+    raise_usage,
+    report_errors,
+)
 
 
 def _add_get(app: App, spec: AwxResourceSpec) -> None:

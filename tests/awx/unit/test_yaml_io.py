@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.domain import Metadata, Resource
 from untaped.capabilities.awx.infrastructure.yaml_io import dump_resource, read_resource_files
+from untaped.capability_api import ConfigError
 
 
 def _resource(kind: str, name: str, **spec: object) -> Resource:

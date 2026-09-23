@@ -6,7 +6,6 @@ from collections.abc import Sequence
 
 import pytest
 
-from untaped.api import HttpStatusError
 from untaped.capabilities.ansible.application.graph import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.domain.payloads import (
     CachedRef,
@@ -14,6 +13,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SkippedDependencyFile,
 )
 from untaped.capabilities.ansible.infrastructure.github_index import GithubDependencyIndex
+from untaped.capability_api import HttpStatusError
 
 
 class StubGithub:

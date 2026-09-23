@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, SecretStr
 
-from untaped import ConfigError
 from untaped.config import GetSetting, SettingsFileRepository
+from untaped.errors import ConfigError
 from untaped.settings import (
     get_settings,
     register_profile_settings,

@@ -11,8 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from untaped.api import ConfigError, UiContext, get_config_section, report_errors
 from untaped.capabilities.recipe.settings import RecipeSettings
+from untaped.capability_api import ConfigError, UiContext, get_config_section, report_errors
 
 
 def settings() -> RecipeSettings:

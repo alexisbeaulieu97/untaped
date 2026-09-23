@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.application.save_resources import SaveResources
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
@@ -17,6 +16,7 @@ from untaped.capabilities.awx.infrastructure.specs import (
     JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
 )
+from untaped.capability_api import ConfigError
 
 
 class _StubClient:

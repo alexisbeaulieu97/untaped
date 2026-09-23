@@ -6,7 +6,7 @@ the generic use cases need. Commands construct the context inside a
 ``with`` block to ensure the HTTP client is closed.
 
 This module is the **only** place in the ``awx`` capability that reads
-core settings (via :func:`untaped.api.app_context`); everything
+core settings (via :func:`untaped.capability_api.app_context`); everything
 downstream consumes the :class:`AwxSettings` section.
 """
 
@@ -17,7 +17,6 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING
 
-from untaped.api import AppContext, ConfigError, app_context, echo
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import WaitCancelledError
 from untaped.capabilities.awx.infrastructure import AwxClient, AwxResourceCatalog
@@ -29,11 +28,12 @@ from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStra
 from untaped.capabilities.awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
 from untaped.capabilities.awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
 from untaped.capabilities.awx.settings import AwxSettings
+from untaped.capability_api import AppContext, ConfigError, app_context, echo
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from untaped.api import UiContext
+    from untaped.capability_api import UiContext
 
 
 class AwxContext:

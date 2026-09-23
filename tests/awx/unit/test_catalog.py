@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS, UNIVERSAL_READ_ONLY
+from untaped.capability_api import ConfigError
 
 
 def test_lookup_by_kind() -> None:

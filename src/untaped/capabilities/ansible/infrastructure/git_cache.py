@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from untaped.api import GitCommandError, GitResult, run_git, safe_cache_path
 from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
+from untaped.capability_api import GitCommandError, GitResult, run_git, safe_cache_path
 
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0

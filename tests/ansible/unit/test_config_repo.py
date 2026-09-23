@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from untaped.api import ConfigError
 from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
 from untaped.capabilities.ansible.settings import SourceDefinition
+from untaped.capability_api import ConfigError
 
 
 def _write_config(tmp_path: Path, ansible_state: dict[str, object]) -> Path:

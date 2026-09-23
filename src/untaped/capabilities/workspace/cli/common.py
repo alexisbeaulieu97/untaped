@@ -8,7 +8,6 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import UiContext, get_config_section, raise_usage, ui_context
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.infrastructure import (
@@ -16,6 +15,7 @@ from untaped.capabilities.workspace.infrastructure import (
     WorkspaceRegistryRepository,
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
+from untaped.capability_api import UiContext, get_config_section, raise_usage, ui_context
 
 RepoSelectorOption = Annotated[
     list[str] | None,

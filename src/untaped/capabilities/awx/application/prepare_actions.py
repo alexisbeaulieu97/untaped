@@ -4,7 +4,6 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.application.selection import (
     SelectedResource,
@@ -13,6 +12,7 @@ from untaped.capabilities.awx.application.selection import (
 )
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import LaunchPromptError
+from untaped.capability_api import ConfigError
 
 # Launch payload field → (template prompt flag, CLI flag that sets it).
 LAUNCH_PROMPTS: dict[str, tuple[str, str]] = {

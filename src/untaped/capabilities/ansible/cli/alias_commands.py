@@ -6,7 +6,9 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import (
+from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
+from untaped.capabilities.ansible.settings import is_repo_name
+from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
@@ -15,8 +17,6 @@ from untaped.api import (
     emit,
     report_errors,
 )
-from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
-from untaped.capabilities.ansible.settings import is_repo_name
 
 app = create_app(name="alias", help="Manage dependency aliases.")
 

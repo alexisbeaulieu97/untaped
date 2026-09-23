@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 
 import pytest
@@ -69,7 +70,78 @@ EXPECTED_ALL = [
     "run_git",
     "safe_cache_path",
     "safe_path_segment",
+    # Additive helpers folded in from the retired ``untaped.api`` module.
+    "AppContext",
+    "BatchOutcome",
+    "HttpClient",
+    "HttpError",
+    "HttpSettings",
+    "HttpStatusError",
+    "HttpTransportError",
+    "OutputFormat",
+    "ProgressHandle",
+    "PromptChoice",
+    "RetryPolicy",
+    "StateMap",
+    "atomic_write",
+    "batch_apply",
+    "bounded_map",
+    "clamp_parallel",
+    "connected_client",
+    "existing_file",
+    "get_core_settings",
+    "is_envelope_line",
+    "paginate_link",
+    "paginate_offset",
+    "paginate_pages",
+    "parse_json_pairs",
+    "parse_kv_pairs",
+    "read_stdin",
+    "read_structured_file",
+    "render_rows",
+    "resolve_each",
+    "resolve_text_input",
+    "resolve_verify",
+    "ui_context",
+    "unified_diff_text",
 ]
+
+#: Canonical defining module for each additive helper.
+ADDITIVE_SOURCES = {
+    "AppContext": "untaped.app_context",
+    "BatchOutcome": "untaped.batch",
+    "HttpClient": "untaped.http",
+    "HttpError": "untaped.errors",
+    "HttpSettings": "untaped.settings",
+    "HttpStatusError": "untaped.errors",
+    "HttpTransportError": "untaped.errors",
+    "OutputFormat": "untaped.render",
+    "ProgressHandle": "untaped.progress",
+    "PromptChoice": "untaped.prompts",
+    "RetryPolicy": "untaped.http",
+    "StateMap": "untaped.state",
+    "atomic_write": "untaped.fs",
+    "batch_apply": "untaped.batch",
+    "bounded_map": "untaped.concurrency",
+    "clamp_parallel": "untaped.cli",
+    "connected_client": "untaped.http",
+    "existing_file": "untaped.cli",
+    "get_core_settings": "untaped.settings",
+    "is_envelope_line": "untaped.pipe",
+    "paginate_link": "untaped.http",
+    "paginate_offset": "untaped.http",
+    "paginate_pages": "untaped.http",
+    "parse_json_pairs": "untaped.cli",
+    "parse_kv_pairs": "untaped.cli",
+    "read_stdin": "untaped.stdin",
+    "read_structured_file": "untaped.fs",
+    "render_rows": "untaped.cli",
+    "resolve_each": "untaped.cli",
+    "resolve_text_input": "untaped.stdin",
+    "resolve_verify": "untaped.http",
+    "ui_context": "untaped.ui",
+    "unified_diff_text": "untaped.diff",
+}
 
 
 def test_all_contains_exact_surface() -> None:
@@ -111,6 +183,11 @@ def test_helpers_resolve_to_canonical_sources() -> None:
     assert capi.git_auth_header is git_mod.git_auth_header
     assert capi.safe_cache_path is git_mod.safe_cache_path
     assert capi.safe_path_segment is git_mod.safe_path_segment
+
+
+@pytest.mark.parametrize(("name", "module"), sorted(ADDITIVE_SOURCES.items()))
+def test_additive_helpers_resolve_to_canonical_sources(name: str, module: str) -> None:
+    assert getattr(capi, name) is getattr(importlib.import_module(module), name)
 
 
 def test_helpers_match_sdk_modules() -> None:

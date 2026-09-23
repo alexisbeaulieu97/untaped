@@ -8,14 +8,13 @@ import yaml
 from cyclopts import App
 from pydantic import BaseModel
 
-from untaped import (
+from untaped.capability_api import (
     HttpError,
     HttpTransportError,
     UntapedError,
     clamp_parallel,
     create_app,
     emit,
-    get_settings,
     parse_json_pairs,
     parse_kv_pairs,
     render_rows,
@@ -23,6 +22,7 @@ from untaped import (
     resolve_each,
 )
 from untaped.cli import run_cyclopts_app
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 

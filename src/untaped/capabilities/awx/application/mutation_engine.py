@@ -15,7 +15,6 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Literal
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
 from untaped.capabilities.awx.application.apply_membership import (
     MembershipReconciler,
@@ -48,6 +47,7 @@ from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import ApplyOutcome, BatchResult, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.payloads import as_dict
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError, MutationConflictError
+from untaped.capability_api import ConfigError
 
 
 class _AbortBatch(Exception):

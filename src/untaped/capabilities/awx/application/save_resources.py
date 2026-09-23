@@ -7,10 +7,10 @@ import json
 import re
 from collections.abc import Iterator
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, ResourceSpec, SaveOutcome
+from untaped.capability_api import ConfigError
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
 

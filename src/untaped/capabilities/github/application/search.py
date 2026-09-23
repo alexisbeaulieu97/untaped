@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from untaped.api import HttpStatusError, UntapedError
 from untaped.capabilities.github.application.ports import GithubSearchService, GithubTeamService
 from untaped.capabilities.github.application.scopes import TeamScope
 from untaped.capabilities.github.domain import (
@@ -23,6 +22,7 @@ from untaped.capabilities.github.domain import (
 )
 from untaped.capabilities.github.domain.errors import is_rate_limited
 from untaped.capabilities.github.domain.queries import ScopedQueryBase
+from untaped.capability_api import HttpStatusError, UntapedError
 
 WarnFn = Callable[[str], None]
 

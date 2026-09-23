@@ -506,7 +506,7 @@ def test_unexpected_worker_exception_becomes_a_failed_row() -> None:
 
 
 def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
-    from untaped.api import ConfigError
+    from untaped.capability_api import ConfigError
 
     class Unauthorized(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:

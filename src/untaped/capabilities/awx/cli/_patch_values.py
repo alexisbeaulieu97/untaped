@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from untaped.api import parse_kv_pairs, read_structured_file
+from untaped.capability_api import parse_kv_pairs, read_structured_file
 
 
 def parse_set_pairs(

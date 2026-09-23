@@ -14,7 +14,6 @@ import time
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
-from untaped.api import ConfigError, bounded_map
 from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
@@ -27,6 +26,7 @@ from untaped.capabilities.awx.domain.suite import (
     SuiteRunOutcome,
 )
 from untaped.capabilities.awx.errors import ActionResponseError
+from untaped.capability_api import ConfigError, bounded_map
 
 _LAUNCH_ACTION = "launch"
 

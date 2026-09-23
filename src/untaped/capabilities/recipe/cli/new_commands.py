@@ -7,12 +7,12 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.api import create_app, echo
 from untaped.capabilities.recipe.cli.common import library_root, report_config_errors
 from untaped.capabilities.recipe.domain.pack import parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
 from untaped.capabilities.recipe.infrastructure import pack_scaffold
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.capability_api import create_app, echo
 
 app = create_app(name="new", help="Scaffold recipe packs, recipes, and hooks.")
 

@@ -12,10 +12,10 @@ from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
-from untaped.api import paginate_pages
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES, poll_until_terminal
 from untaped.capabilities.awx.errors import AwxApiError
+from untaped.capability_api import paginate_pages
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import RawHttpResourceClient

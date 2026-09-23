@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from untaped.api import UntapedError, bounded_map
 from untaped.capabilities.ansible.domain.identity import IdentityResolver, repo_key
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import (
@@ -15,6 +14,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 )
 from untaped.capabilities.ansible.errors import AnsibleError
 from untaped.capabilities.github.ansible import is_global_github_failure
+from untaped.capability_api import UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

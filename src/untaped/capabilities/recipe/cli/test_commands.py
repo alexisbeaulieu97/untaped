@@ -8,15 +8,6 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    ConfigError,
-    FormatOption,
-    echo,
-    finish,
-    render_rows,
-    unified_diff_text,
-)
 from untaped.capabilities.recipe.application.harness import (
     CaseResult,
     DiscoveredCase,
@@ -39,6 +30,15 @@ from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure import HookExecutor, HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.capability_api import (
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    echo,
+    finish,
+    render_rows,
+    unified_diff_text,
+)
 
 MessageKind = Literal["success", "warning", "error", "info"]
 

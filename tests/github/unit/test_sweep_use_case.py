@@ -7,7 +7,6 @@ from typing import Literal
 
 import pytest
 
-from untaped.api import ConfigError, HttpStatusError, UntapedError
 from untaped.capabilities.github.application import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
@@ -24,6 +23,7 @@ from untaped.capabilities.github.domain import (
     SweepQuery,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capability_api import ConfigError, HttpStatusError, UntapedError
 
 
 def _item(full_name: str, *, archived: bool = False) -> RepositoryInventoryItem:

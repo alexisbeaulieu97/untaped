@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.cli._patch_values import build_patch, parse_set_pairs
+from untaped.capability_api import ConfigError
 
 
 def test_parse_set_pairs_json_coerces_values() -> None:

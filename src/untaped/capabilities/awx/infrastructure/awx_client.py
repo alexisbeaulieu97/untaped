@@ -10,9 +10,9 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from untaped.api import HttpSettings, connected_client
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 from untaped.capabilities.awx.settings import AwxSettings
+from untaped.capability_api import HttpSettings, connected_client
 
 
 class AwxClient:

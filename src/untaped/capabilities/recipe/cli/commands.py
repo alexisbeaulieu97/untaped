@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from untaped.api import create_app
 from untaped.capabilities.recipe.cli.apply_commands import apply_command
 from untaped.capabilities.recipe.cli.backup_commands import app as backup_app
 from untaped.capabilities.recipe.cli.hook_commands import app as hook_app
@@ -16,6 +15,7 @@ from untaped.capabilities.recipe.cli.library_commands import (
 )
 from untaped.capabilities.recipe.cli.new_commands import app as new_app
 from untaped.capabilities.recipe.cli.test_commands import test_command
+from untaped.capability_api import create_app
 
 app = create_app(name="recipe", help="Apply reusable local recipes to plain directories.")
 app.command(new_app, name="new")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.api import UiContext, ui_context
+from untaped.capability_api import UiContext, ui_context
 
 
 def recipe_ui() -> UiContext:

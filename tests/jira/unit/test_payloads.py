@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.api import read_structured_file
 from untaped.capabilities.jira.domain import build_issue_payload
+from untaped.capability_api import read_structured_file
 
 
 def test_build_issue_payload_applies_overlay_precedence(tmp_path: Path) -> None:

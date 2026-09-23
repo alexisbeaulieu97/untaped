@@ -7,19 +7,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    ConfigError,
-    FormatOption,
-    OutputFormat,
-    batch_apply,
-    clamp_parallel,
-    echo,
-    emit,
-    finish,
-    raise_usage,
-    report_errors,
-)
 from untaped.capabilities.workspace.application import (
     Foreach,
     RepoSyncEngine,
@@ -49,6 +36,19 @@ from untaped.capabilities.workspace.infrastructure import (
     InterruptibleShellRunner,
     LocalFilesystem,
     ManifestRepository,
+)
+from untaped.capability_api import (
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    OutputFormat,
+    batch_apply,
+    clamp_parallel,
+    echo,
+    emit,
+    finish,
+    raise_usage,
+    report_errors,
 )
 
 

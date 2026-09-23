@@ -13,7 +13,6 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.application.suites.ports import (
     Filesystem,
     Parser,
@@ -21,6 +20,7 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
+from untaped.capability_api import ConfigError
 
 
 class LoadTestSuite:

@@ -9,7 +9,6 @@ from typing import Protocol
 
 import yaml
 
-from untaped.api import ConfigError
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.input_jinja import (
     UNRESOLVED,
@@ -20,6 +19,7 @@ from untaped.capabilities.recipe.domain.input_jinja import (
     ensure_derived_value_within_bound,
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
+from untaped.capability_api import ConfigError
 
 REDACTED = "***"
 _UNSET = object()

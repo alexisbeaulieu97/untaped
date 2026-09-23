@@ -1,13 +1,17 @@
-"""Stable import surface for capability provider authors (spec §2).
+"""The single public SDK surface for capability code (spec §2).
 
-The v1 composition set (eight names) plus the supported helpers.
-Provider packages MUST obtain helpers only via this module.
+Every capability — built-in or external provider — imports untaped helpers
+from this module only. It carries the composition set, the provider
+``CAPABILITY_API_VERSION``, and the supported runtime helpers (output,
+errors, settings, HTTP, git, stdin/pipe, state, UI, batch, concurrency).
+Additions are backwards compatible; removals or signature breaks require a
+major ``CAPABILITY_API_VERSION`` bump.
 """
 
 from __future__ import annotations
 
-from untaped.app_context import app_context
-from untaped.batch import finish
+from untaped.app_context import AppContext, app_context
+from untaped.batch import BatchOutcome, batch_apply, finish
 from untaped.capabilities.registry import (
     CAPABILITY_API_VERSION,
     ApplicationSpec,
@@ -21,14 +25,30 @@ from untaped.capabilities.registry import (
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
+    clamp_parallel,
     create_app,
     echo,
     emit,
+    existing_file,
+    parse_json_pairs,
+    parse_kv_pairs,
     raise_usage,
+    render_rows,
     report_errors,
+    resolve_each,
 )
+from untaped.concurrency import bounded_map
+from untaped.diff import unified_diff_text
 from untaped.editor import run_editor
-from untaped.errors import ConfigError, UntapedError, first_validation_error
+from untaped.errors import (
+    ConfigError,
+    HttpError,
+    HttpStatusError,
+    HttpTransportError,
+    UntapedError,
+    first_validation_error,
+)
+from untaped.fs import atomic_write, read_structured_file
 from untaped.git import (
     GitCommandError,
     GitResult,
@@ -37,11 +57,23 @@ from untaped.git import (
     safe_cache_path,
     safe_path_segment,
 )
-from untaped.pipe import PipeEnvelope, parse_envelope_line
-from untaped.settings import get_config_section
-from untaped.state import StateCollection
-from untaped.stdin import read_identifiers
-from untaped.ui import UiContext
+from untaped.http import (
+    HttpClient,
+    RetryPolicy,
+    connected_client,
+    paginate_link,
+    paginate_offset,
+    paginate_pages,
+    resolve_verify,
+)
+from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.progress import ProgressHandle
+from untaped.prompts import PromptChoice
+from untaped.render import OutputFormat
+from untaped.settings import HttpSettings, get_config_section, get_core_settings
+from untaped.state import StateCollection, StateMap
+from untaped.stdin import read_identifiers, read_stdin, resolve_text_input
+from untaped.ui import UiContext, ui_context
 
 __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by test_all_contains_exact_surface
     "ApplicationSpec",
@@ -77,4 +109,38 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "run_git",
     "safe_cache_path",
     "safe_path_segment",
+    # Additive helpers folded in from the retired ``untaped.api`` module.
+    "AppContext",
+    "BatchOutcome",
+    "HttpClient",
+    "HttpError",
+    "HttpSettings",
+    "HttpStatusError",
+    "HttpTransportError",
+    "OutputFormat",
+    "ProgressHandle",
+    "PromptChoice",
+    "RetryPolicy",
+    "StateMap",
+    "atomic_write",
+    "batch_apply",
+    "bounded_map",
+    "clamp_parallel",
+    "connected_client",
+    "existing_file",
+    "get_core_settings",
+    "is_envelope_line",
+    "paginate_link",
+    "paginate_offset",
+    "paginate_pages",
+    "parse_json_pairs",
+    "parse_kv_pairs",
+    "read_stdin",
+    "read_structured_file",
+    "render_rows",
+    "resolve_each",
+    "resolve_text_input",
+    "resolve_verify",
+    "ui_context",
+    "unified_diff_text",
 ]

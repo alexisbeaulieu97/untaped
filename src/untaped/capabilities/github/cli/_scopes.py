@@ -6,8 +6,8 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import ConfigError
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
+from untaped.capability_api import ConfigError
 
 OrgOption = Annotated[
     list[str] | None,

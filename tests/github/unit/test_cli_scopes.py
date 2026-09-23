@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.github.application import TeamScope
 from untaped.capabilities.github.cli._scopes import parse_team_scopes
+from untaped.capability_api import ConfigError
 
 
 def test_parse_team_scopes_accepts_repeated_org_slug_values() -> None:

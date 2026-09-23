@@ -4,7 +4,7 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import raise_usage
+from untaped.capability_api import raise_usage
 
 
 def resolve_max_depth(depth: int | None, recursive: bool) -> int | None:

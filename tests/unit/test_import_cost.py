@@ -35,6 +35,10 @@ def _loaded_heavy_modules(snippet: str) -> str:
 
 
 def test_public_api_import_does_not_load_prompt_toolkit_or_httpx() -> None:
+    assert _loaded_heavy_modules("import untaped.capability_api") == ""
+
+
+def test_deprecated_api_shim_import_does_not_load_prompt_toolkit_or_httpx() -> None:
     assert _loaded_heavy_modules("import untaped.api") == ""
 
 

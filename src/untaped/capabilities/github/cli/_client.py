@@ -9,14 +9,14 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from untaped.api import app_context
 from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import app_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from untaped.api import UiContext
     from untaped.capabilities.github.infrastructure import GithubClient
+    from untaped.capability_api import UiContext
 
 
 @contextmanager
