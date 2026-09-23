@@ -44,12 +44,14 @@ def _library_ref_hint(root: Path, ref_text: str, error: ValueError) -> str:
         name = name.removesuffix(suffix)
     if not name:
         return ""
+    # A hint must never mask the original error, so any lookup failure
+    # (unsafe name, unloadable pack, ...) simply means "no hint".
     library = PackLibrary(library_root=root)
-    if library.find_pack(name) is None:
-        try:
+    try:
+        if library.find_pack(name) is None:
             library.find_recipe(parse_ref(name))
-        except ValueError:
-            return ""
+    except ValueError:
+        return ""
     return f" (did you mean the library ref '{name}'?)"
 
 

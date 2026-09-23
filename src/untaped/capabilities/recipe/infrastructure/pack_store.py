@@ -249,7 +249,12 @@ class PackLibrary:
         """Return the installed pack whose library identity is ``name``, if any."""
         if "/" in name:
             return None
-        installed_name = safe_library_name(name, field="pack")
+        try:
+            installed_name = safe_library_name(name, field="pack")
+        except ValueError:
+            # A name no pack could be installed under simply isn't a pack;
+            # callers fall through to recipe/hook resolution and its error.
+            return None
         for pack in self.packs():
             if pack.name == installed_name:
                 return pack
