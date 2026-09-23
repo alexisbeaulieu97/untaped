@@ -486,3 +486,26 @@ def test_injected_prompt_backend_survives_stream_changes() -> None:
     ui.stdin = io.StringIO()
     ui.stderr = io.StringIO()
     assert ui.prompt_backend is injected
+
+
+def test_styled_writes_rich_text_to_stdout_with_color_only_on_a_tty() -> None:
+    from rich.text import Text
+
+    piped, tty = io.StringIO(), TtyStringIO()
+    line = Text("ok: host", style="green")
+
+    UiContext(stdout=piped).styled(line)
+    UiContext(stdout=tty).styled(line)
+
+    assert piped.getvalue() == "ok: host\n"
+    assert _has_ansi(tty.getvalue())
+    assert _strip_ansi(tty.getvalue()) == "ok: host\n"
+
+
+def test_styled_err_writes_to_stderr_and_ignores_quiet() -> None:
+    stdout, stderr = io.StringIO(), io.StringIO()
+
+    UiContext(stdout=stdout, stderr=stderr, quiet=True).styled("PLAY [all]", err=True)
+
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == "PLAY [all]\n"

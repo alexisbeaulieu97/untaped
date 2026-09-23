@@ -245,8 +245,8 @@ The shared runtime helpers are exported from the same module:
   `parse_envelope_line`, `PipeEnvelope`.
 - Files and state: `atomic_write`, `read_structured_file`, `unified_diff_text`,
   `StateCollection`, `StateMap`.
-- UI: `UiContext` (including `success`, `confirm_action` and `terminal`),
-  `ui_context`, `ProgressHandle`, `PromptChoice`.
+- UI: `UiContext` (including `success`, `styled`, `confirm_action` and
+  `terminal`), `ui_context`, `ProgressHandle`, `PromptChoice`.
 - Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
   `bounded_map`.
 

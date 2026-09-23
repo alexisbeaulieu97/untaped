@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
-from rich.console import Console
 
 from untaped.capabilities.awx.application import Ping, TailJobLogs, WatchJob
 from untaped.capabilities.awx.cli._apply_runner import run_apply
@@ -43,6 +42,7 @@ from untaped.capability_api import (
     ConfigError,
     FormatOption,
     OutputFormat,
+    UiContext,
     create_app,
     deprecated_alias,
     echo,
@@ -423,7 +423,7 @@ def jobs_events(
             events = ctx.monitor.stream_events(
                 job, from_counter=from_counter, params=filters, follow=follow
             )
-            _emit_events(events, fmt=fmt, cols=cols, follow=follow)
+            _emit_events(events, fmt=fmt, cols=cols, follow=follow, ui=ctx.progress_ui())
 
         _, any_failed = resolve_each(ids, _events_for_id)
     finish(any_failed)
@@ -435,6 +435,7 @@ def _emit_events(
     fmt: OutputFormat,
     cols: list[str],
     follow: bool,
+    ui: UiContext,
 ) -> None:
     """Lifted out of the per-id closure so multi-id callers reuse
     the single-id rendering verbatim — no behavioural drift between
@@ -449,13 +450,10 @@ def _emit_events(
     if fmt == "table":
         # Table mode under --follow renders each event as a colored
         # human-readable line (PLAY [..] / TASK [..] / "  ok: host"),
-        # similar to the AWX UI's Output tab. ``rich.console.Console``
-        # auto-detects TTY: ANSI on a real terminal, plain text when
-        # piped or redirected. No new dependency — Rich is already
-        # used for table rendering elsewhere.
-        console = Console(highlight=False)
+        # similar to the AWX UI's Output tab. ``ui.styled`` emits ANSI
+        # on a real terminal and plain text when piped or redirected.
         for ev in events:
-            console.print(render_event_text(ev))
+            ui.styled(render_event_text(ev))
         return
     # Other formats (json/yaml/raw) stream one structured row at a
     # time — useful for ``--follow | jq``-style pipelines.

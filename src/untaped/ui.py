@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from typing import TextIO
+from typing import TYPE_CHECKING, TextIO
 
 from untaped.errors import ConfigError, UsageError
 from untaped.messages import plural
@@ -26,6 +26,7 @@ from untaped.render import (
     Renderer,
     RichTerminalRenderer,
     Row,
+    render_styled,
     should_colorize,
     stream_is_tty,
 )
@@ -35,6 +36,9 @@ from untaped.theme import (
     resolve_theme_or_default,
 )
 from untaped.verbose import is_verbose
+
+if TYPE_CHECKING:
+    from rich.text import Text
 
 
 class UiContext:
@@ -153,6 +157,17 @@ class UiContext:
     def success(self, text: str) -> None:
         """Print a success line to stderr (muted by ``--quiet``)."""
         self.message("success", text)
+
+    def styled(self, text: Text | str, *, err: bool = False) -> None:
+        """Print a Rich-styled line to stdout, or to stderr with ``err``.
+
+        Color is emitted only where the stream supports it (TTY, honoring
+        ``NO_COLOR``/``FORCE_COLOR``). Use it for streamed human-readable
+        output such as live job events; unlike :meth:`message`, ``--quiet``
+        does not mute it.
+        """
+        stream = self.stderr if err else self.stdout
+        print(render_styled(text, colorize=should_colorize(stream)), file=stream, flush=True)
 
     def progress(self, label: str) -> AbstractContextManager[ProgressHandle]:
         """Report progress for a blocking operation on stderr.

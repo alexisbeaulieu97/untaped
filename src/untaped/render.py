@@ -315,6 +315,15 @@ def should_colorize(stream: TextIO) -> bool:
     return stream_is_tty(stream)
 
 
+def render_styled(text: Text | str, *, colorize: bool) -> str:
+    """Render one Rich ``Text`` line (a plain ``str`` is taken literally).
+
+    ANSI styling is kept only when ``colorize``; the line wraps at the
+    terminal width and carries no trailing newline.
+    """
+    return _render_rich(text if isinstance(text, Text) else Text(text), colorize=colorize)
+
+
 def _render_text(text: Text, *, colorize: bool) -> str:
     return _render_rich(text, colorize=colorize)
 
