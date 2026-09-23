@@ -12,9 +12,12 @@ import inspect
 from collections.abc import Iterable, Sequence
 from contextvars import ContextVar, Token
 from importlib import metadata
+from itertools import chain
 from typing import Any
 
 from cyclopts import App
+from cyclopts.command_spec import CommandSpec
+from cyclopts.core import _apply_parent_defaults_to_app
 from pydantic import BaseModel
 
 from untaped._root_options import (
@@ -29,6 +32,8 @@ from untaped.capabilities.registry import (
     CapabilitySpec,
     CompositionResult,
     ExternalProvider,
+    RegisteredCapability,
+    build_deferred_app,
     compose,
     discover_external_providers,
 )
@@ -276,7 +281,7 @@ def build_root_app(
         name="capabilities",
     )
     for capability in result.capabilities:
-        _mount(root, capability.spec.app_factory(), name=capability.spec.name)
+        _mount_capability(root, capability)
     root.version = _resolve_version
     capability_names = frozenset(capability.spec.name for capability in result.capabilities)
     _install_root_callback(root, _root_options(), capability_names)
@@ -293,6 +298,54 @@ def _mount(app: App, sub: App, *, name: str) -> None:
     if name in app:
         del app[name]
     app.command(sub, name=name)
+
+
+class _LazyCapabilityCommand(CommandSpec):
+    """Cyclopts lazy command backed by a capability's nullary app factory.
+
+    Cyclopts lists an unresolved :class:`CommandSpec` from its ``help``
+    without resolving it, and resolves it only when dispatch selects the
+    command. Resolution calls the factory exactly once and applies the same
+    parent defaults an eager ``App.command(sub)`` mount would, against the
+    root the command was mounted on (not whichever app dispatch passes in,
+    which may be the meta app). The private cyclopts internals touched here
+    are pinned by ``uv.lock`` and guarded by the internals-presence and
+    lazy-vs-eager rendering tests in ``tests/unit/test_bootstrap.py``.
+    """
+
+    def __init__(self, spec: CapabilitySpec, mount_parent: App) -> None:
+        super().__init__(import_path=f"<capability {spec.name}>", name=spec.name, help=spec.help)
+        self._capability = spec
+        self._mount_parent = mount_parent
+
+    def resolve(self, parent_app: App) -> App:
+        """Build, validate, and cache the capability app on first access."""
+        resolved = self._resolved
+        if resolved is not None:
+            return resolved
+        spec = self._capability
+        app = build_deferred_app(spec)
+        _apply_parent_defaults_to_app(app, self._mount_parent)
+        for flag in chain(app.help_flags, app.version_flags):
+            app[flag].show = False
+        if app._name_transform is None:
+            app.name_transform = self._mount_parent.name_transform
+        self._resolved = app
+        return app
+
+
+def _mount_capability(root: App, capability: RegisteredCapability) -> None:
+    """Mount one composed capability, lazily when its factory was deferred."""
+    spec = capability.spec
+    if capability.app is not None:
+        _mount(root, capability.app, name=spec.name)
+        return
+    if spec.help is None:
+        _mount(root, build_deferred_app(spec), name=spec.name)
+        return
+    if spec.name in root:
+        del root[spec.name]
+    root._commands[spec.name] = _LazyCapabilityCommand(spec, root)
 
 
 def _install_root_callback(

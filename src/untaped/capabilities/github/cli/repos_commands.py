@@ -7,7 +7,10 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import (
+from untaped.capabilities.github.application.scopes import TeamScope
+from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
@@ -15,9 +18,6 @@ from untaped.api import (
     emit,
     report_errors,
 )
-from untaped.capabilities.github.application.scopes import TeamScope
-from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
 
 PatternArgument = Annotated[
     str | None,

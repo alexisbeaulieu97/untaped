@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import sys
 
-from untaped.api import PromptChoice, ui_context
 from untaped.capabilities.awx.domain.suite import VariableSpec
+from untaped.capability_api import PromptChoice, ui_context
 
 
 class UiPrompt:

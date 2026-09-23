@@ -6,7 +6,13 @@ from typing import Annotated, Any
 
 from cyclopts import Parameter, validators
 
-from untaped.api import (
+from untaped.capabilities.awx.cli._context import AwxContext, open_context
+from untaped.capabilities.awx.domain import Job
+from untaped.capabilities.awx.domain.suite import Suite
+from untaped.capabilities.awx.errors import AwxApiError
+from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
+from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
@@ -18,12 +24,6 @@ from untaped.api import (
     raise_usage,
     report_errors,
 )
-from untaped.capabilities.awx.cli._context import AwxContext, open_context
-from untaped.capabilities.awx.domain import Job
-from untaped.capabilities.awx.domain.suite import Suite
-from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
-from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
 app = create_app(
     name="test",

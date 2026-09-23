@@ -10,11 +10,11 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from untaped.api import UntapedError
 from untaped.capabilities.github.domain.errors import GithubGraphqlError
 from untaped.capabilities.github.domain.models import BatchRepoRefsFailure
 from untaped.capabilities.github.infrastructure import GithubClient
 from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import UntapedError
 
 
 def _client(base_url: str = "https://api.github.com") -> GithubClient:

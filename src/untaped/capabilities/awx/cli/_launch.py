@@ -16,13 +16,6 @@ from typing import Annotated, Any
 import yaml
 from cyclopts import App, Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    raise_usage,
-    read_structured_file,
-    report_errors,
-)
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.cli._action_runner import run_action_selection
 from untaped.capabilities.awx.cli._context import open_context, scope_for_command
@@ -43,6 +36,13 @@ from untaped.capabilities.awx.cli.options import (
     YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    raise_usage,
+    read_structured_file,
+    report_errors,
+)
 
 
 def _add_launch(app: App, spec: AwxResourceSpec) -> None:

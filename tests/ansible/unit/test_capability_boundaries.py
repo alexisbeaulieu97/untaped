@@ -2,8 +2,7 @@
 
 The ansible capability consumes GitHub behavior ONLY through the reviewed
 closed API (:mod:`untaped.capabilities.github.ansible`, import-plan
-amendment 1) — never through sibling implementation modules, and never
-through the sixteen ``untaped.capability_api`` provider helpers. No
+amendment 1) — never through sibling implementation modules. No
 ``untaped-ansible`` standalone remnant (package imports, console-script
 wiring, ``ToolSpec``/``run_tool`` composition) may survive anywhere in
 src or tests.
@@ -21,28 +20,6 @@ TESTS_ROOT = REPO_ROOT / "tests" / "ansible"
 
 #: The single sanctioned ansible→github import path (import-plan amendment 1).
 GITHUB_API_MODULE = "untaped.capabilities.github.ansible"
-
-#: The sixteen provider helpers that are NOT the inter-capability interface.
-CAPABILITY_API_HELPERS = frozenset(
-    {
-        "ColumnsOption",
-        "ConfigError",
-        "FormatOption",
-        "StateCollection",
-        "UiContext",
-        "UntapedError",
-        "app_context",
-        "create_app",
-        "echo",
-        "emit",
-        "finish",
-        "first_validation_error",
-        "get_config_section",
-        "raise_usage",
-        "read_identifiers",
-        "report_errors",
-    }
-)
 
 
 def _runtime_imports(tree: ast.Module) -> list[ast.Import | ast.ImportFrom]:
@@ -78,21 +55,6 @@ def test_ansible_imports_only_closed_github_api() -> None:
     assert not violations, (
         "ansible capability must consume github ONLY through "
         f"{GITHUB_API_MODULE} (§6(b), amendment 1):\n  " + "\n  ".join(violations)
-    )
-
-
-def test_ansible_uses_no_capability_api_helpers() -> None:
-    violations: list[str] = []
-    for py_file in sorted([*SRC_ROOT.rglob("*.py"), *TESTS_ROOT.rglob("*.py")]):
-        tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "untaped.capability_api":
-                bad = {alias.name for alias in node.names} & set(CAPABILITY_API_HELPERS)
-                if bad:
-                    violations.append(f"{py_file.relative_to(REPO_ROOT)} imports {sorted(bad)}")
-    assert not violations, (
-        "ansible tree must not use the sixteen capability_api helpers "
-        "(not the inter-capability interface):\n  " + "\n  ".join(violations)
     )
 
 

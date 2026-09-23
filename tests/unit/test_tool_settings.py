@@ -121,3 +121,29 @@ def test_state_splice_only_uses_registered_state_fields() -> None:
 
     assert effective["demo"]["endpoint"] == "https://layout.example"
     assert effective["demo"]["entries"] == ["alpha"]
+
+
+class PagedSettings(BaseModel):
+    page_size: int = 10
+
+
+class BrokenState(BaseModel):
+    entries: list[str] = Field(default_factory=list)
+
+
+def test_get_config_section_ignores_invalid_sibling_sections(_isolated_config: Path) -> None:
+    register_profile_settings("demo", DemoSettings)
+    register_profile_settings("paged", PagedSettings)
+    register_state_settings("paged_state", BrokenState)
+    _isolated_config.write_text(
+        "profiles:\n  default:\n"
+        "    paged:\n      page_size: notanint\n"
+        "    demo:\n      endpoint: https://configured.example\n"
+        "paged_state:\n  entries: notalist\n"
+    )
+
+    assert get_config_section("demo", DemoSettings).endpoint == "https://configured.example"
+    # An unregistered (one-off) section is equally isolated.
+    assert get_config_section("adhoc", PagedSettings).page_size == 10
+    with pytest.raises(ConfigError, match=r"paged\.page_size"):
+        get_config_section("paged", PagedSettings)

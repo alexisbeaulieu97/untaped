@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
+from untaped.capability_api import ConfigError
 
 
 class AwxResourceCatalog:

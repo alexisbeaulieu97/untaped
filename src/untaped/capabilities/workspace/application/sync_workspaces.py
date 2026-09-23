@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from untaped.api import bounded_map
 from untaped.capabilities.workspace.application.ports import ManifestReader
 from untaped.capabilities.workspace.application.repo_selector import select_repos
 from untaped.capabilities.workspace.application.sync_workspace import (
@@ -16,6 +15,7 @@ from untaped.capabilities.workspace.application.sync_workspace import (
 )
 from untaped.capabilities.workspace.domain import Repo, SyncOutcome, Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.errors import ManifestError, UnmatchedRepoFilter, WorkspaceError
+from untaped.capability_api import bounded_map
 
 
 class ProgressNotify(Protocol):

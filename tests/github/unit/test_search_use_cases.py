@@ -8,7 +8,6 @@ from typing import Any, cast
 import pytest
 
 import untaped.capabilities.github.application.search as search_module
-from untaped.api import HttpStatusError, UntapedError
 from untaped.capabilities.github.application import (
     GithubSearchService,
     GithubTeamService,
@@ -25,6 +24,7 @@ from untaped.capabilities.github.domain import (
     RepoSearchFilters,
     UserSearchFilters,
 )
+from untaped.capability_api import HttpStatusError, UntapedError
 
 
 class _StubSearch:

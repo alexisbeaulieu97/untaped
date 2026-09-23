@@ -8,17 +8,6 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter, validators
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    UntapedError,
-    app_context,
-    create_app,
-    echo,
-    emit,
-    get_config_section,
-    report_errors,
-)
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
 from untaped.capabilities.ansible.cli._refresh import (
     pluralize,
@@ -39,6 +28,17 @@ from untaped.capabilities.ansible.settings import (
     normalize_team_refs,
 )
 from untaped.capabilities.github.ansible import GithubSettings
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    UntapedError,
+    app_context,
+    create_app,
+    echo,
+    emit,
+    get_config_section,
+    report_errors,
+)
 
 _FINGERPRINT_HEX_CHARS = 16
 

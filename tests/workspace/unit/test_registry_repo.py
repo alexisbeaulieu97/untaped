@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.workspace.errors import RegistryError
 from untaped.capabilities.workspace.infrastructure import WorkspaceRegistryRepository
+from untaped.capability_api import ConfigError
 from untaped.settings import get_settings
 
 

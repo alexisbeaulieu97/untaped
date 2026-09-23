@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped.api import ConfigError
 from untaped.capabilities.jira.application.ports import (
     JiraIssueReader,
     JiraIssueWriter,
@@ -24,6 +23,7 @@ from untaped.capabilities.jira.domain import (
     SprintResult,
     TransitionResult,
 )
+from untaped.capability_api import ConfigError
 
 
 class WhoAmI:

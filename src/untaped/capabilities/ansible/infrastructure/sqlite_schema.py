@@ -5,8 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from untaped.api import echo
 from untaped.capabilities.ansible.errors import DependencyIndexError
+from untaped.capability_api import echo
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
 # case-insensitive, and repo joins compare these keys with BINARY collation so

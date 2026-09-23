@@ -6,16 +6,6 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    OutputFormat,
-    create_app,
-    echo,
-    emit,
-    finish,
-    report_errors,
-)
 from untaped.capabilities.workspace.application import (
     ApplyWorkspaceBranch,
     SetWorkspaceBranch,
@@ -33,6 +23,16 @@ from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
     ManifestRepository,
+)
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    OutputFormat,
+    create_app,
+    echo,
+    emit,
+    finish,
+    report_errors,
 )
 
 CreateOption = Annotated[

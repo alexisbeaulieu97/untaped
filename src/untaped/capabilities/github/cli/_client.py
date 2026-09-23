@@ -9,21 +9,21 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from untaped.api import app_context
 from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import app_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from untaped.api import UiContext
     from untaped.capabilities.github.infrastructure import GithubClient
+    from untaped.capability_api import UiContext
 
 
 @contextmanager
 def open_client() -> Iterator[tuple[GithubClient, UiContext]]:
     """Build a :class:`GithubClient` and themed UI from a one-shot context.
 
-    ``app_context()`` resolves settings exactly once (honoring the root
+    ``app_context()`` resolves each settings section at most once (honoring the root
     ``--profile`` selector applied by core) and hands back a frozen context;
     nothing leaks into ambient process state. The same context yields the
     themed :class:`UiContext` so commands can report progress without resolving

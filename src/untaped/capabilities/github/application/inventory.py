@@ -7,9 +7,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from untaped.api import HttpError, UntapedError
 from untaped.capabilities.github.application.ports import GithubRepositoryInventoryService
 from untaped.capabilities.github.application.scopes import TeamScope
+from untaped.capability_api import HttpError, UntapedError
 
 
 class RepositoryInventoryItem(BaseModel):

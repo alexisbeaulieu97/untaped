@@ -6,7 +6,7 @@ import io
 
 import pytest
 
-from untaped import ConfigError
+from untaped.errors import ConfigError
 from untaped.stdin import read_identifiers
 
 

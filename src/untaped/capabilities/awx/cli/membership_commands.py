@@ -22,7 +22,6 @@ from typing import Any, Literal
 
 from cyclopts import App
 
-from untaped.api import ColumnsOption, FormatOption, create_app, echo, emit, finish, report_errors
 from untaped.capabilities.awx.application import ManageMembership
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.cli._context import AwxContext, open_context
@@ -44,6 +43,15 @@ from untaped.capabilities.awx.cli.options import (
 from untaped.capabilities.awx.domain import FkRef
 from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    create_app,
+    echo,
+    emit,
+    finish,
+    report_errors,
+)
 
 
 def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRef) -> None:

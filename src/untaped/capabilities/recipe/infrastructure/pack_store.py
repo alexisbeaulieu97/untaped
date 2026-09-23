@@ -13,7 +13,6 @@ from pathlib import Path
 
 import tomlkit
 
-from untaped.api import GitCommandError, atomic_write, run_git
 from untaped.capabilities.recipe.domain.hook_project import hook_module_file
 from untaped.capabilities.recipe.domain.pack import (
     HookEntry,
@@ -29,6 +28,7 @@ from untaped.capabilities.recipe.infrastructure.pack_files import (
     hook_exports,
     read_pack_manifest,
 )
+from untaped.capability_api import GitCommandError, atomic_write, run_git
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
 _GIT_CLONE_TIMEOUT = 600.0

@@ -11,7 +11,13 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import (
+from untaped.capabilities.awx.application import ListWorkflowNodes
+from untaped.capabilities.awx.cli._context import open_context, scope_for_command
+from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
+from untaped.capabilities.awx.domain import WorkflowNode, WorkflowNodeType
+from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
+from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
@@ -22,12 +28,6 @@ from untaped.api import (
     read_identifiers,
     report_errors,
 )
-from untaped.capabilities.awx.application import ListWorkflowNodes
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for
-from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
-from untaped.capabilities.awx.domain import WorkflowNode, WorkflowNodeType
-from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 
 _DEFAULT_COLUMNS = ["id", "name", "type", "depth"]
 

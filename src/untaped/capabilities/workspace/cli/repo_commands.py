@@ -6,16 +6,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import (
-    batch_apply,
-    echo,
-    finish,
-    raise_usage,
-    read_identifiers,
-    report_errors,
-    resolve_each,
-    ui_context,
-)
 from untaped.capabilities.workspace.application import AddRepo, RemoveRepo, SyncWorkspace
 from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
@@ -31,6 +21,16 @@ from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
     ManifestRepository,
+)
+from untaped.capability_api import (
+    batch_apply,
+    echo,
+    finish,
+    raise_usage,
+    read_identifiers,
+    report_errors,
+    resolve_each,
+    ui_context,
 )
 
 

@@ -91,3 +91,64 @@ def test_ui_degrades_unknown_theme_per_strict_flag(_isolated_config: Path) -> No
     assert ctx.ui(strict=False).theme == BUILTIN_THEMES["default"]
     with pytest.raises(ConfigError, match="unknown UI theme"):
         ctx.ui(strict=True)
+
+
+class OtherSettings(BaseModel):
+    page_size: int = 10
+
+
+_BROKEN_OTHER = (
+    "profiles:\n  default:\n"
+    "    other:\n      page_size: notanint\n"
+    "    demo:\n      endpoint: https://configured.example\n"
+)
+
+
+def test_invalid_sibling_section_does_not_block_this_section(_isolated_config: Path) -> None:
+    """One capability's bad section must not break another capability's commands."""
+    register_profile_settings("demo", DemoSettings)
+    register_profile_settings("other", OtherSettings)
+    _isolated_config.write_text(_BROKEN_OTHER)
+
+    ctx = app_context()
+
+    assert ctx.section("demo", DemoSettings).endpoint == "https://configured.example"
+    assert ctx.http.verify_ssl is True
+    assert ctx.ui(strict=True).theme == BUILTIN_THEMES["default"]
+
+
+def test_invalid_section_error_names_section_and_file(_isolated_config: Path) -> None:
+    register_profile_settings("demo", DemoSettings)
+    register_profile_settings("other", OtherSettings)
+    _isolated_config.write_text(_BROKEN_OTHER)
+
+    ctx = app_context()
+
+    with pytest.raises(ConfigError) as excinfo:
+        ctx.section("other", OtherSettings)
+    message = str(excinfo.value)
+    assert "'other'" in message
+    assert "page_size" in message
+    assert str(_isolated_config) in message
+
+
+def test_full_settings_snapshot_still_validates_every_section(_isolated_config: Path) -> None:
+    register_profile_settings("demo", DemoSettings)
+    register_profile_settings("other", OtherSettings)
+    _isolated_config.write_text(_BROKEN_OTHER)
+
+    with pytest.raises(ConfigError, match="other"):
+        _ = app_context().settings
+
+
+def test_section_is_resolved_once_per_context(_isolated_config: Path) -> None:
+    register_profile_settings("demo", DemoSettings)
+    _isolated_config.write_text("profiles:\n  default:\n    demo:\n      endpoint: https://a\n")
+    ctx = app_context()
+    assert ctx.section("demo", DemoSettings).endpoint == "https://a"
+
+    _isolated_config.write_text("profiles:\n  default:\n    demo:\n      endpoint: https://b\n")
+    get_settings.cache_clear()
+
+    assert ctx.section("demo", DemoSettings).endpoint == "https://a"
+    assert app_context().section("demo", DemoSettings).endpoint == "https://b"

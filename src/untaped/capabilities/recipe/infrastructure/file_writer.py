@@ -8,9 +8,9 @@ import uuid
 from collections.abc import Iterable
 from pathlib import Path
 
-from untaped.api import UntapedError
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import FileChange
+from untaped.capability_api import UntapedError
 
 
 class ApplyWriteError(UntapedError):

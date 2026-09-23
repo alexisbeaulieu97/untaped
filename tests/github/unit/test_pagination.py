@@ -5,8 +5,8 @@ from __future__ import annotations
 import httpx
 import respx
 
-from untaped.api import HttpClient
 from untaped.capabilities.github.infrastructure.pagination import paginate_list, paginate_search
+from untaped.capability_api import HttpClient
 
 
 def _client() -> HttpClient:

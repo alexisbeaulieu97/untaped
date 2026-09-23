@@ -25,6 +25,7 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="jira",
     app_factory=build_app,
+    help="Manage Jira Data Center issues from untaped.",
     config_section="jira",
     profile_model=JiraSettings,
     skills=(

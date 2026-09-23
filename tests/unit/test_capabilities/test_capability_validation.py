@@ -324,6 +324,18 @@ def test_api_range_covering_ranges_compose(rng: Any, expected: Any) -> None:
     assert result.quarantine == ()
 
 
+def test_api_1_1_accepts_1_0_providers_and_additive_ranges() -> None:
+    """1.1 is additive: ranges written for 1.0 still compose; 1.1 floors do too."""
+    for rng in ((1.0, 2.0), (1.1, 2.0)):
+        spec = make_spec(name="ranged")
+        result = compose(make_shell(), [], [make_external(spec, api_requires=rng)])
+        assert [c.spec.name for c in result.capabilities] == ["ranged"], rng
+    capped = compose(
+        make_shell(), [], [make_external(make_spec(name="old"), api_requires=(1.0, 1.1))]
+    )
+    assert [record.reason for record in capped.quarantine] == ["api-range"]
+
+
 BAD_RANGES = [
     ((1.0, 1.0), "inverted"),
     ((2.0, 1.0), "inverted"),

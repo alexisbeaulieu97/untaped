@@ -7,7 +7,6 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from typing import Literal
 
-from untaped.api import HttpSettings, ProgressHandle, UiContext, echo, git_auth_header
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshGitSourceIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
 from untaped.capabilities.ansible.domain.identity import github_web_host
@@ -26,6 +25,7 @@ from untaped.capabilities.ansible.infrastructure import (
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
+from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, echo, git_auth_header
 
 
 def run_source_refresh(

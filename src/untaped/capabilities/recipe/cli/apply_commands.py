@@ -10,21 +10,6 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.api import (
-    BatchOutcome,
-    ColumnsOption,
-    ConfigError,
-    FormatOption,
-    UntapedError,
-    batch_apply,
-    clamp_parallel,
-    echo,
-    finish,
-    parse_kv_pairs,
-    read_stdin,
-    render_rows,
-    ui_context,
-)
 from untaped.capabilities.recipe.application import RunBulkApply
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.files import read_recipe_file
@@ -54,6 +39,21 @@ from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
 from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.capability_api import (
+    BatchOutcome,
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    UntapedError,
+    batch_apply,
+    clamp_parallel,
+    echo,
+    finish,
+    parse_kv_pairs,
+    read_stdin,
+    render_rows,
+    ui_context,
+)
 
 MessageKind = Literal["success", "warning", "error", "info"]
 

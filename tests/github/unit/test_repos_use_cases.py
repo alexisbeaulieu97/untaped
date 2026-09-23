@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.api import HttpError, UntapedError
 from untaped.capabilities.github.application import (
     GithubRepoListService,
     ListRepos,
@@ -17,6 +16,7 @@ from untaped.capabilities.github.application import (
     TeamScope,
     normalize_team_scopes,
 )
+from untaped.capability_api import HttpError, UntapedError
 
 
 class _StubRepoLists:

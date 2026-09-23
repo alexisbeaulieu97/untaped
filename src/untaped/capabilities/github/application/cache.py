@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.api import UntapedError
 from untaped.capabilities.github.application.ports import GitCorpus
 from untaped.capabilities.github.domain import CorpusRepoResult, WorktreeResult
 from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capability_api import UntapedError
 
 
 class StatusCorpus:

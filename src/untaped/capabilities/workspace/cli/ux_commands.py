@@ -6,16 +6,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    echo,
-    emit,
-    finish,
-    read_identifiers,
-    report_errors,
-    resolve_each,
-)
 from untaped.capabilities.workspace.application import (
     EditWorkspace,
     ListWorkspaces,
@@ -34,6 +24,16 @@ from untaped.capabilities.workspace.infrastructure import (
     WorkspaceRegistryRepository,
     editor_runner,
     resolve_editor_argv,
+)
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    echo,
+    emit,
+    finish,
+    read_identifiers,
+    report_errors,
+    resolve_each,
 )
 
 

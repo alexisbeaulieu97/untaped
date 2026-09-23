@@ -1,8 +1,17 @@
-"""Contract tests for the ``untaped.api`` SDK namespace."""
+"""Back-compat tests for the deprecated ``untaped.api`` re-export shim.
+
+``untaped.capability_api`` is the single SDK surface. ``untaped.api`` keeps
+re-exporting every name it historically published (for one release) so
+existing imports keep working.
+"""
 
 from __future__ import annotations
 
 import importlib
+import subprocess
+import sys
+
+import untaped.capability_api as capi
 
 EXPECTED_SURFACE = frozenset(
     {
@@ -120,14 +129,23 @@ def test_api_names_resolve() -> None:
     assert not unresolved, f"untaped.api.__all__ names that do not resolve: {unresolved}"
 
 
-def test_package_root_reexports_api_surface() -> None:
-    """``from untaped import X`` must mirror ``from untaped.api import X``."""
-    import untaped
-
+def test_shim_names_are_the_capability_api_objects() -> None:
+    """Every name the shim shares with the canonical surface is the same object."""
     api = importlib.import_module("untaped.api")
-    assert set(untaped.__all__) == set(api.__all__)
-    for name in api.__all__:
-        assert getattr(untaped, name) is getattr(api, name)
+    shared = set(api.__all__) & set(capi.__all__)
+    for name in shared:
+        assert getattr(api, name) is getattr(capi, name), name
+
+
+def test_shim_import_emits_no_warning() -> None:
+    proc = subprocess.run(
+        [sys.executable, "-W", "error", "-c", "import untaped.api"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stderr == ""
 
 
 def test_api_drops_retired_plugin_contract() -> None:
@@ -160,10 +178,8 @@ def test_api_exposes_get_settings_for_root_option_handlers() -> None:
 
 def test_skills_install_transaction_stays_off_public_api() -> None:
     """The install transaction is module-internal SDK plumbing, not tool API."""
-    import untaped
-
     api = importlib.import_module("untaped.api")
     assert "install_skills" not in api.__all__
     assert not hasattr(api, "install_skills")
-    assert "install_skills" not in untaped.__all__
-    assert not hasattr(untaped, "install_skills")
+    assert "install_skills" not in capi.__all__
+    assert not hasattr(capi, "install_skills")

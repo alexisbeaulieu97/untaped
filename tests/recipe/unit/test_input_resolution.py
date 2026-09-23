@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.recipe.application.inputs import (
     InputResolutionConfig,
     InputResolutionResult,
@@ -20,6 +19,7 @@ from untaped.capabilities.recipe.application.inputs import (
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain import input_jinja
 from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capability_api import ConfigError
 
 
 class PromptRecorder:

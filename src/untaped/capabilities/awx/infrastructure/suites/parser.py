@@ -20,8 +20,8 @@ from typing import Any
 import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.domain.suite import RefSentinel
+from untaped.capability_api import ConfigError
 
 __all__ = [
     "DefaultParser",

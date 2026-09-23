@@ -3,12 +3,20 @@
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 
-from untaped.api import ConfigError, OutputFormat, UiContext, clamp_parallel, echo, emit, finish
 from untaped.capabilities.awx.application.mutation_engine import BatchMutationEngine
 from untaped.capabilities.awx.application.mutation_types import MutationPlan
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli.format import format_scope, format_value, outcome_rows
 from untaped.capabilities.awx.domain import ApplyOutcome
+from untaped.capability_api import (
+    ConfigError,
+    OutputFormat,
+    UiContext,
+    clamp_parallel,
+    echo,
+    emit,
+    finish,
+)
 
 
 def validate_controls(

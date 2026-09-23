@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from untaped.api import create_app
 from untaped.capabilities.workspace.cli.branch_commands import app as branch_app
 from untaped.capabilities.workspace.cli.lifecycle_commands import (
     register_import_command,
@@ -14,6 +13,7 @@ from untaped.capabilities.workspace.cli.ux_commands import (
     register_display_commands,
     register_ux_commands,
 )
+from untaped.capability_api import create_app
 
 app = create_app(
     name="workspace",

@@ -257,3 +257,33 @@ def test_config_edit_waits_then_validates_with_shared_editor(
     assert (result.exit_code == 0) is valid, result.output
     assert _isolated_config.read_text() == content
     assert ("saved and validated" in result.output) is valid
+
+
+def test_set_preserves_comments_and_key_order(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "# hand edited\n"
+        "profiles:\n"
+        "  # shared base\n"
+        "  default:\n"
+        "    jira:\n"
+        "      timeout: 5  # seconds\n"
+        "    github:\n"
+        "      token: keep  # rotate monthly\n",
+    )
+    app = _config_app()
+
+    result = CliInvoker().invoke(app, ["set", "github.base_url", "https://ghe.example"])  # type: ignore[arg-type]
+
+    assert result.exit_code == 0, result.output
+    assert _isolated_config.read_text(encoding="utf-8") == (
+        "# hand edited\n"
+        "profiles:\n"
+        "  # shared base\n"
+        "  default:\n"
+        "    jira:\n"
+        "      timeout: 5  # seconds\n"
+        "    github:\n"
+        "      token: keep  # rotate monthly\n"
+        "      base_url: https://ghe.example\n"
+    )

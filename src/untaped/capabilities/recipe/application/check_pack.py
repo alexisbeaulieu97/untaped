@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.api import ConfigError
 from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.harness import orphaned_test_dirs
 from untaped.capabilities.recipe.application.inputs import validate_recipe_input_sources
@@ -24,6 +23,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
+from untaped.capability_api import ConfigError
 
 
 def check_ref(

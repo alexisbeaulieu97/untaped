@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 
-from untaped.api import UntapedError
 from untaped.capabilities.ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     _repo_candidate,
@@ -31,6 +30,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 from untaped.capabilities.ansible.infrastructure.git_cache import GitCacheError
 from untaped.capabilities.ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped.capabilities.ansible.settings import SourceDefinition
+from untaped.capability_api import UntapedError
 
 
 class FakeGitHub:
