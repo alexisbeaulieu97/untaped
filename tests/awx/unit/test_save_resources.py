@@ -136,6 +136,28 @@ def test_save_resources_resolves_cli_name_and_generates_safe_full_identity_filen
     assert outcome.resource.metadata.organization == "Default"
 
 
+def test_save_resources_filenames_never_collide() -> None:
+    """``a/b`` and ``a_b`` (and case-only variants) would sanitize to one file."""
+    use, _client = _use(
+        records={
+            "JobTemplate": [
+                {"id": 30, "name": "a/b", "organization": 1, "playbook": "x.yml"},
+                {"id": 31, "name": "a_b", "organization": 1, "playbook": "x.yml"},
+                {"id": 32, "name": "A_B", "organization": 1, "playbook": "x.yml"},
+                {"id": 33, "name": "plain", "organization": 1, "playbook": "x.yml"},
+            ]
+        },
+        specs=[JOB_TEMPLATE_SPEC],
+        names={("Organization", 1): "Default"},
+    )
+
+    filenames = [outcome.filename or "" for outcome in use(kind="JobTemplate")]
+
+    assert len({name.casefold() for name in filenames}) == 4
+    assert filenames[0] == "JobTemplate__Default__a_b.yml"
+    assert filenames[3] == "JobTemplate__Default__plain.yml"
+
+
 def test_save_resources_resolves_domain_kind() -> None:
     use, client = _use(
         records={
