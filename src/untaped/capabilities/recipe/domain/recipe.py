@@ -12,6 +12,7 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -182,15 +183,17 @@ class ValidateStep(BaseStep):
     hook: str
 
 
-class TransformStep(BaseStep):
-    """Content transform hook step."""
+class _FileTargetStep(BaseStep):
+    """A step aimed at target files: exactly one of ``file``, ``files``, or ``globs``.
 
-    type: Literal["transform"]
+    ``files`` stays a list on the step; the planner visits each entry in order,
+    exactly as it expands ``globs`` against the target.
+    """
+
     file: Path | None = None
+    files: tuple[Path, ...] = ()
     globs: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
-    hook: str
-    optional: bool = False
 
     @field_validator("file")
     @classmethod
@@ -199,13 +202,49 @@ class TransformStep(BaseStep):
             return None
         return safe_relative_path(value, field="file")
 
+    @field_validator("files", mode="before")
+    @classmethod
+    def _non_empty_files(cls, value: object) -> object:
+        if not isinstance(value, Sequence) or isinstance(value, str | bytes) or not value:
+            raise ValueError("files must not be empty")
+        return value
+
+    @field_validator("files")
+    @classmethod
+    def _safe_files(cls, value: tuple[Path, ...]) -> tuple[Path, ...]:
+        return tuple(safe_relative_path(entry, field="file") for entry in value)
+
+    @field_validator("globs", "exclude", mode="before")
+    @classmethod
+    def _non_empty_patterns(cls, value: object, info: ValidationInfo) -> object:
+        field = info.field_name
+        if not isinstance(value, Sequence) or isinstance(value, str | bytes) or not value:
+            raise ValueError(f"{field} must not be empty")
+        if any(not isinstance(entry, str) or not entry for entry in value):
+            raise ValueError(f"{field} entries must be non-empty strings")
+        return value
+
     @model_validator(mode="after")
-    def _validate_file_or_globs(self) -> TransformStep:
-        if (self.file is None) == (not self.globs):
-            raise ValueError("transform step requires exactly one of file, files, or globs")
-        if self.exclude and not self.globs:
+    def _one_file_selector(self) -> _FileTargetStep:
+        given = self.model_fields_set
+        if "exclude" in given and "globs" not in given:
             raise ValueError("exclude is only valid with globs")
-        if self.optional and self.globs:
+        selectors = given & {"file", "files", "globs"}
+        if len(selectors) != 1 or (selectors == {"file"} and self.file is None):
+            raise ValueError(f"{self.type} step requires exactly one of file, files, or globs")
+        return self
+
+
+class TransformStep(_FileTargetStep):
+    """Content transform hook step."""
+
+    type: Literal["transform"]
+    hook: str
+    optional: bool = False
+
+    @model_validator(mode="after")
+    def _optional_needs_named_files(self) -> TransformStep:
+        if "optional" in self.model_fields_set and self.globs:
             raise ValueError("optional is not valid with globs")
         return self
 
@@ -239,28 +278,10 @@ class CopyStep(BaseStep):
         return safe_relative_path(value, field="path")
 
 
-class RemoveStep(BaseStep):
-    """Remove one target-relative file."""
+class RemoveStep(_FileTargetStep):
+    """Remove target-relative files."""
 
     type: Literal["remove"]
-    file: Path | None = None
-    globs: tuple[str, ...] = ()
-    exclude: tuple[str, ...] = ()
-
-    @field_validator("file")
-    @classmethod
-    def _safe_file(cls, value: Path | None) -> Path | None:
-        if value is None:
-            return None
-        return safe_relative_path(value, field="file")
-
-    @model_validator(mode="after")
-    def _validate_file_or_globs(self) -> RemoveStep:
-        if (self.file is None) == (not self.globs):
-            raise ValueError("remove step requires exactly one of file, files, or globs")
-        if self.exclude and not self.globs:
-            raise ValueError("exclude is only valid with globs")
-        return self
 
 
 Step = Annotated[
@@ -278,66 +299,6 @@ class Recipe(BaseModel):
     description: str = ""
     inputs: dict[str, InputSpec] = Field(default_factory=dict)
     steps: tuple[Step, ...] = ()
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_file_fanout(cls, value: object) -> object:
-        if not isinstance(value, Mapping):
-            return value
-        data = dict(value)
-        steps = data.get("steps")
-        if not isinstance(steps, list | tuple):
-            return value
-        normalized: list[object] = []
-        for step in steps:
-            normalized.extend(_normalize_file_step(step))
-        data["steps"] = normalized
-        return data
-
-
-def _normalize_file_step(step: object) -> list[object]:
-    if not isinstance(step, Mapping):
-        return [step]
-    step_type = step.get("type")
-    if step_type not in {"transform", "remove"}:
-        return [step]
-
-    has_file = "file" in step
-    has_files = "files" in step
-    has_globs = "globs" in step
-    if "exclude" in step and not has_globs:
-        raise ValueError("exclude is only valid with globs")
-    if step_type == "transform" and has_globs and "optional" in step:
-        raise ValueError("optional is not valid with globs")
-    if sum((has_file, has_files, has_globs)) != 1:
-        raise ValueError(f"{step_type} step requires exactly one of file, files, or globs")
-    if has_globs:
-        _validate_non_empty_strings(step["globs"], field="globs")
-        if "exclude" in step:
-            _validate_non_empty_strings(step["exclude"], field="exclude")
-        return [step]
-    if not has_files:
-        return [step]
-
-    files = step["files"]
-    if not isinstance(files, Sequence) or isinstance(files, str | bytes) or not files:
-        raise ValueError("files must not be empty")
-
-    base = dict(step)
-    del base["files"]
-    expanded: list[object] = []
-    for file_value in files:
-        single = dict(base)
-        single["file"] = file_value
-        expanded.append(single)
-    return expanded
-
-
-def _validate_non_empty_strings(value: object, *, field: str) -> None:
-    if not isinstance(value, Sequence) or isinstance(value, str | bytes) or not value:
-        raise ValueError(f"{field} must not be empty")
-    if any(not isinstance(entry, str) or not entry for entry in value):
-        raise ValueError(f"{field} entries must be non-empty strings")
 
 
 def parse_recipe(text: str, *, source: Path) -> Recipe:

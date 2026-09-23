@@ -11,7 +11,12 @@ import pytest
 from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
-from untaped.capabilities.recipe.cli.detail import hook_detail, pack_detail, recipe_detail
+from untaped.capabilities.recipe.cli.detail import (
+    hook_detail,
+    pack_detail,
+    recipe_detail,
+    table_recipe_detail,
+)
 from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
 from untaped.testing import CliInvoker
 
@@ -105,10 +110,17 @@ def test_recipe_detail_lists_inputs_steps_and_hooks(tmp_path: Path) -> None:
             "sensitive": True,
         },
     ]
-    assert {"type": "transform", "file_or_files": "config.yml", "hook": "set_owner"} in detail[
-        "steps"
+    assert detail["steps"] == [
+        {"type": "template", "files": ["config.yml"], "globs": [], "exclude": [], "hook": ""},
+        {
+            "type": "transform",
+            "files": ["config.yml"],
+            "globs": [],
+            "exclude": [],
+            "hook": "set_owner",
+        },
+        {"type": "validate", "files": [], "globs": [], "exclude": [], "hook": "check_owner"},
     ]
-    assert {"type": "validate", "file_or_files": "", "hook": "check_owner"} in detail["steps"]
     assert detail["hooks"] == ["check_owner", "set_owner"]
     assert detail["path"] == str(recipe_path)
 
@@ -161,3 +173,34 @@ def test_show_recipe_cli_emits_structured_recipe_record(tmp_path: Path) -> None:
     assert detail["ref"] == "ansible/playbook"
     assert detail["inputs"][0]["name"] == "owner"
     assert detail["inputs"][0]["required"] is True
+
+
+def test_recipe_detail_describes_fanout_and_glob_steps(tmp_path: Path) -> None:
+    recipe_path = tmp_path / "recipe.yml"
+    recipe_path.write_text(
+        "version: 1\n"
+        "steps:\n"
+        "  - type: transform\n"
+        "    files: [a.yml, b.yml]\n"
+        "    hook: edit\n"
+        "  - type: remove\n"
+        "    globs: ['**/*.bak']\n"
+        "    exclude: [keep.bak]\n",
+        encoding="utf-8",
+    )
+
+    detail = recipe_detail("demo", read_recipe_file(recipe_path), recipe_path)
+
+    assert detail["steps"] == [
+        {
+            "type": "transform",
+            "files": ["a.yml", "b.yml"],
+            "globs": [],
+            "exclude": [],
+            "hook": "edit",
+        },
+        {"type": "remove", "files": [], "globs": ["**/*.bak"], "exclude": ["keep.bak"], "hook": ""},
+    ]
+    assert table_recipe_detail(detail)["steps"] == (
+        "transform a.yml,b.yml hook=edit; remove globs=**/*.bak exclude=keep.bak"
+    )

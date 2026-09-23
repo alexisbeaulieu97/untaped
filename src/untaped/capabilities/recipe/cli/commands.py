@@ -49,9 +49,20 @@ from untaped.capabilities.recipe.cli.common import (
     report_config_errors,
     settings,
 )
-from untaped.capabilities.recipe.cli.detail import hook_detail, pack_detail, recipe_detail
+from untaped.capabilities.recipe.cli.detail import (
+    hook_detail,
+    pack_detail,
+    recipe_detail,
+    table_recipe_detail,
+)
 from untaped.capabilities.recipe.cli.hook_commands import app as hook_app
-from untaped.capabilities.recipe.cli.preview import PreviewMode, preview_summary, render_preview
+from untaped.capabilities.recipe.cli.preview import (
+    PlanCounts,
+    PreviewMode,
+    plural,
+    preview_summary,
+    render_preview,
+)
 from untaped.capabilities.recipe.cli.test_commands import test_command
 from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
@@ -502,12 +513,13 @@ def show_command(
         assert target.pack is not None
         if target.recipe is not None:
             recipe_path = target.pack.root / target.recipe.path
+            detail = recipe_detail(
+                f"{target.pack.name}/{target.name}",
+                _load_recipe(recipe_path),
+                recipe_path,
+            )
             emit(
-                recipe_detail(
-                    f"{target.pack.name}/{target.name}",
-                    _load_recipe(recipe_path),
-                    recipe_path,
-                ),
+                table_recipe_detail(detail) if fmt == "table" else detail,
                 fmt=fmt,
                 columns=columns,
                 kind="recipe.recipe",
@@ -1018,13 +1030,10 @@ def _render_result_summary(
     check: bool,
     dry_run: bool,
 ) -> None:
-    non_terminal = {"error", "skipped"}
-    failed = sum(1 for plan in plans if plan.status == "error") + len(execution.failed)
-    skipped = sum(1 for plan in plans if plan.status == "skipped")
-    changed = sum(1 for plan in plans if plan.status not in non_terminal and plan.changes)
-    unchanged = sum(1 for plan in plans if plan.status not in non_terminal and not plan.changes)
-    applied = len(execution.applied)
-    skipped_note = f", {skipped} skipped" if skipped else ""
+    counts = PlanCounts.of(plans)
+    failed = counts.failed + len(execution.failed)
+    changed, unchanged = counts.changing, counts.unchanged
+    skipped_note = f", {counts.skipped} skipped" if counts.skipped else ""
     ui = ui_context(strict=False)
     if check:
         kind: MessageKind = "warning" if failed or changed else "info"
@@ -1046,7 +1055,7 @@ def _render_result_summary(
         ui.message(
             "warning",
             "Recipe apply cancelled: "
-            f"{_plural(changed, 'changing target')} not applied, "
+            f"{plural(changed, 'changing target')} not applied, "
             f"{unchanged} unchanged{skipped_note}, {failed} failed",
         )
         return
@@ -1054,14 +1063,9 @@ def _render_result_summary(
     backup = f", backup {execution.backup_id}" if execution.backup_id else ""
     ui.message(
         kind,
-        f"Recipe apply: {applied} applied, {unchanged} unchanged"
+        f"Recipe apply: {len(execution.applied)} applied, {unchanged} unchanged"
         f"{skipped_note}, {failed} failed{backup}",
     )
-
-
-def _plural(count: int, noun: str) -> str:
-    suffix = "" if count == 1 else "s"
-    return f"{count} {noun}{suffix}"
 
 
 def _inputs_cell(inputs: object) -> str:

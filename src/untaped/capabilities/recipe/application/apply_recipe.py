@@ -176,32 +176,10 @@ class ApplyRecipe:
         buffer: dict[Path, str | None],
         warnings: list[str],
     ) -> None:
-        if step.globs:
-            globs = _render_path_patterns(
-                step.globs, specs=recipe.inputs, values=inputs, field="globs"
-            )
-            exclude = _render_path_patterns(
-                step.exclude, specs=recipe.inputs, values=inputs, field="exclude"
-            )
-            matches = _expand_glob_files(target, globs, exclude, warnings)
-            if not matches:
-                warnings.append(f"globs matched no files: {', '.join(globs)}")
-            for relative in matches:
-                self._plan_remove_file(relative, target, buffer)
-            return
-        assert step.file is not None
-        relative = _render_path(step.file, specs=recipe.inputs, values=inputs, field="file")
-        self._plan_remove_file(relative, target, buffer)
-
-    def _plan_remove_file(
-        self,
-        relative: Path,
-        target: Path,
-        buffer: dict[Path, str | None],
-    ) -> None:
-        path = confined_path(target, relative, field="file")
-        if path.exists() or relative in buffer:
-            buffer[relative] = None
+        for relative in _step_files(step, recipe, target, inputs, warnings):
+            path = confined_path(target, relative, field="file")
+            if path.exists() or relative in buffer:
+                buffer[relative] = None
 
     def _plan_transform(
         self,
@@ -213,38 +191,16 @@ class ApplyRecipe:
         buffer: dict[Path, str | None],
         warnings: list[str],
     ) -> None:
-        if step.globs:
-            globs = _render_path_patterns(
-                step.globs, specs=recipe.inputs, values=inputs, field="globs"
+        for relative in _step_files(step, recipe, target, inputs, warnings):
+            self._plan_transform_file(
+                step,
+                relative,
+                local_hook_project,
+                target,
+                inputs,
+                buffer,
+                warnings,
             )
-            exclude = _render_path_patterns(
-                step.exclude, specs=recipe.inputs, values=inputs, field="exclude"
-            )
-            matches = _expand_glob_files(target, globs, exclude, warnings)
-            if not matches:
-                warnings.append(f"globs matched no files: {', '.join(globs)}")
-            for relative in matches:
-                self._plan_transform_file(
-                    step,
-                    relative,
-                    local_hook_project,
-                    target,
-                    inputs,
-                    buffer,
-                    warnings,
-                )
-            return
-        assert step.file is not None
-        relative = _render_path(step.file, specs=recipe.inputs, values=inputs, field="file")
-        self._plan_transform_file(
-            step,
-            relative,
-            local_hook_project,
-            target,
-            inputs,
-            buffer,
-            warnings,
-        )
 
     def _plan_transform_file(
         self,
@@ -293,6 +249,29 @@ class ApplyRecipe:
                 FileChange(target=target, relative_path=relative, before=before, after=after)
             )
         return changes
+
+
+def _step_files(
+    step: TransformStep | RemoveStep,
+    recipe: Recipe,
+    target: Path,
+    inputs: dict[str, object],
+    warnings: list[str],
+) -> list[Path]:
+    """Target-relative files a step acts on: its rendered file(s), or its glob matches."""
+    if not step.globs:
+        named = (step.file,) if step.file is not None else step.files
+        return [
+            _render_path(file, specs=recipe.inputs, values=inputs, field="file") for file in named
+        ]
+    globs = _render_path_patterns(step.globs, specs=recipe.inputs, values=inputs, field="globs")
+    exclude = _render_path_patterns(
+        step.exclude, specs=recipe.inputs, values=inputs, field="exclude"
+    )
+    matches = _expand_glob_files(target, globs, exclude, warnings)
+    if not matches:
+        warnings.append(f"globs matched no files: {', '.join(globs)}")
+    return matches
 
 
 def _destination_exists(
