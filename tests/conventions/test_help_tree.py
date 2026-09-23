@@ -6,6 +6,8 @@ and checks each visible command against ``docs/conventions.md``:
 - ``missing-help`` — a parameter (positional or option) has no help text;
 - ``duplicate-option`` — two parameters of one command answer to one name;
 - ``empty-negative`` — an ``--empty-*`` negative flag is exposed;
+- ``needless-negative`` — a ``--no-*`` flag for a boolean that defaults to
+  false (declare it with ``negative=""``);
 - ``positional-or-keyword`` — a parameter can be passed both ways (options
   must never be positional);
 - ``command-name`` — a command or group name is not kebab-case;
@@ -143,6 +145,8 @@ def _argument_violations(arguments: list[Any]) -> Iterator[tuple[str, str]]:
         for flag in names:
             if flag.startswith("--empty-"):
                 yield "empty-negative", flag
+            elif flag.startswith("--no-") and argument.field_info.default is False:
+                yield "needless-negative", flag
         if argument.field_info.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD:
             yield "positional-or-keyword", label
         seen.update(names)

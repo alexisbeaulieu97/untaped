@@ -224,7 +224,8 @@ The shared runtime helpers are exported from the same module:
 
 - Output and arguments: `echo`, `emit`, `render_rows`, `OutputFormat`,
   `raise_usage`, `parse_kv_pairs`, `parse_json_pairs`, `existing_file`,
-  `resolve_each`, `clamp_parallel`.
+  `resolve_each`, `clamp_parallel`, and `deprecated_alias` (a hidden old
+  spelling of a renamed command or flag).
 - Shared options: `FormatOption`, `ColumnsOption`, `YesOption`,
   `DryRunOption`, `StdinOption`, `ParallelOption` (>= 1), `LimitOption`
   (>= 1).

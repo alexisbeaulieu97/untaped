@@ -4,9 +4,11 @@ One parametrized check per built-in capability flags:
 
 - ``errors-module`` — no ``errors.py`` with the capability's error classes;
 - ``exception-base`` — an ``Exception`` subclass that is not an
-  ``UntapedError`` (``report_errors`` would show a traceback);
+  ``UntapedError`` (``report_errors`` would show a traceback); ``Warning``
+  categories are exempt;
 - ``exception-name`` — an exception class whose name does not end in ``Error``;
-- ``protocol-location`` — a ``Protocol`` defined outside ``application/ports.py``;
+- ``protocol-location`` — a ``Protocol`` defined outside an
+  ``application/**/ports.py`` module;
 - ``port-adapter-clash`` — a port and an infrastructure class share a name;
 - ``foreign-section`` — code reads another capability's config section;
 - ``settings-not-frozen`` — the profile or state model is mutable;
@@ -49,26 +51,28 @@ def _own_classes(module: Any) -> Iterator[type]:
 
 def _runtime_violations(name: str) -> Iterator[str]:
     package = f"untaped.capabilities.{name}"
-    ports_module = f"{package}.application.ports"
-    ports: set[str] = set()
+    ports: dict[str, str] = {}
     adapters: set[str] = set()
     for module in _modules(package):
+        is_ports = module.__name__.startswith(f"{package}.application") and (
+            module.__name__.endswith(".ports")
+        )
         for cls in _own_classes(module):
             where = f"{module.__name__}.{cls.__qualname__}"
-            if issubclass(cls, BaseException):
+            if issubclass(cls, BaseException) and not issubclass(cls, Warning):
                 if issubclass(cls, Exception) and not issubclass(cls, UntapedError):
                     yield f"{where}::exception-base"
                 if not cls.__name__.endswith("Error"):
                     yield f"{where}::exception-name"
             if getattr(cls, "_is_protocol", False):
-                if module.__name__ == ports_module:
-                    ports.add(cls.__name__)
+                if is_ports:
+                    ports[cls.__name__] = where
                 else:
                     yield f"{where}::protocol-location"
             if module.__name__.startswith(f"{package}.infrastructure"):
                 adapters.add(cls.__name__)
-    for clash in sorted(ports & adapters):
-        yield f"{ports_module}.{clash}::port-adapter-clash"
+    for clash in sorted(ports.keys() & adapters):
+        yield f"{ports[clash]}::port-adapter-clash"
 
 
 def _source_violations(name: str, section: str) -> Iterator[str]:

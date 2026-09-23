@@ -130,12 +130,15 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         columns: ColumnsOption = None,
         show_secrets: Annotated[
             bool,
-            Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+            Parameter(
+                name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
+            ),
         ] = False,
         all_profiles: Annotated[
             bool,
             Parameter(
                 name="--all-profiles",
+                negative="",
                 help="Show one row per (profile, key) instead of the resolved view.",
             ),
         ] = False,
@@ -151,7 +154,9 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
         fmt: FormatOption = "raw",
         show_secrets: Annotated[
             bool,
-            Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+            Parameter(
+                name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
+            ),
         ] = False,
     ) -> None:
         """Print one effective scalar setting value."""
@@ -171,10 +176,13 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
             ),
         ] = None,
         stdin: Annotated[
-            bool, Parameter(name="--stdin", help="Read the value from stdin.")
+            bool, Parameter(name="--stdin", negative="", help="Read the value from stdin.")
         ] = False,
         prompt: Annotated[
-            bool, Parameter(name="--prompt", help="Prompt for the value using the setting type.")
+            bool,
+            Parameter(
+                name="--prompt", negative="", help="Prompt for the value using the setting type."
+            ),
         ] = False,
     ) -> None:
         """Persist ``section.key = value`` (validated against the schema)."""

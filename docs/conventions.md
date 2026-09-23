@@ -65,6 +65,17 @@ Rules for parameters:
   positional.
 - Every parameter has help text.
 - Do not use `--empty-*` negative flags. Declare list options with `negative=""`.
+- Negative `--no-*` flags exist only for booleans that default to true.
+  Declare other booleans with `negative=""`.
+
+To rename a command, group or flag, keep the old spelling as a hidden,
+deprecated alias until the next major release:
+`deprecated_alias(parent_app, "me", "whoami")` for a command or group, and
+`deprecated_alias(command_app, "--repo-stdin", "--stdin")` for a flag. The
+root shell rewrites the old token and prints
+``warning: `me` is deprecated and will be removed in 7.0; use `whoami` ``.
+The old spelling never appears in `--help`. Aliases apply through the
+`untaped` root, so test them with `build_root_app()`.
 
 Command names are kebab-case. Use plural nouns for collections. Leaf verbs
 come from a closed set:

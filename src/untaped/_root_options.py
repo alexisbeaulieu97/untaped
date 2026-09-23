@@ -15,11 +15,12 @@ from typing import Annotated, cast
 from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError, UnknownOptionError
 
-from untaped.cli import echo, raise_usage
+from untaped.cli import deprecated_aliases, echo, raise_usage
 from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.quiet import enable as _enable_quiet
 from untaped.quiet import reset as _reset_quiet
 from untaped.settings import get_settings
+from untaped.ui import ui_context
 from untaped.verbose import enable as _enable_verbose
 from untaped.verbose import reset as _reset_verbose
 
@@ -218,15 +219,23 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     and crashes with ``KeyError`` (``untaped awx job_templates --help``).
     Substituting the one registered name that the loose match would pick
     keeps the lenient spelling working and gives help the canonical chain.
-    Stops at the first option or non-command token; exact names, aliases and
-    ambiguous spellings are left for cyclopts to handle.
+    Exact names, cyclopts aliases and ambiguous spellings are left for
+    cyclopts to handle. Spellings registered with
+    :func:`untaped.cli.deprecated_alias` are rewritten too, with a warning:
+    command aliases along the chain, then option aliases of the selected
+    command (up to a ``--`` separator).
     """
     rewritten = list(tokens)
     current = app
+    index = 0
     for index, token in enumerate(rewritten):
         if token.startswith("-"):
             break
-        if token not in current:
+        aliases = deprecated_aliases(current)
+        if token not in current and token in aliases:
+            _warn_deprecated(token, aliases[token])
+            token = rewritten[index] = aliases[token]
+        elif token not in current:
             wanted = _loose_command_key(token)
             matches = [
                 name
@@ -237,7 +246,24 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
                 break
             token = rewritten[index] = matches[0]
         current = current[token]
+    else:
+        return rewritten
+    options = {old: new for old, new in deprecated_aliases(current).items() if old[0] == "-"}
+    if options:
+        for position in range(index, len(rewritten)):
+            name, separator, value = rewritten[position].partition("=")
+            if name == "--":
+                break
+            if name in options:
+                _warn_deprecated(name, options[name])
+                rewritten[position] = f"{options[name]}{separator}{value}"
     return rewritten
+
+
+def _warn_deprecated(old: str, new: str) -> None:
+    ui_context(strict=False).message(
+        "warning", f"`{old}` is deprecated and will be removed in 7.0; use `{new}`"
+    )
 
 
 def _loose_command_key(name: str) -> str:
