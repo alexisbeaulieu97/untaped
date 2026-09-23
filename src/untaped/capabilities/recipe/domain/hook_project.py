@@ -48,6 +48,16 @@ def ensure_hook_supports(exports: frozenset[str], hook: str, *, verb: str) -> No
         raise ValueError(f"{verb} step hook {hook!r} does not export a {verb}() function")
 
 
+def untaped_dev_requirement(untaped_version: str) -> str:
+    """Return the dev-only ``untaped`` requirement for an installed ``untaped`` version.
+
+    Packs depend on the CLI only for editor/type discovery, so the range
+    starts at the running release and stays within its major version.
+    """
+    version = Version(untaped_version)
+    return f"untaped>={version.public},<{version.major + 1}"
+
+
 def validate_hook_project_contract(
     project_root: Path,
     manifest: PackManifest,

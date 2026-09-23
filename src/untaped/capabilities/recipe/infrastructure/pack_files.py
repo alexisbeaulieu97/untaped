@@ -9,20 +9,24 @@ hook resolution.
 from __future__ import annotations
 
 import tomllib
+from functools import cache
+from importlib.metadata import version
 from pathlib import Path
 
 from untaped.capabilities.recipe.domain.hook_exports import hook_exports_from_source
 from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
+    untaped_dev_requirement,
     validate_hook_project_contract,
 )
 from untaped.capabilities.recipe.domain.pack import PackManifest
 from untaped.capabilities.recipe.infrastructure.uv_project import check_lock
 
 
+@cache
 def installed_dev_requirement() -> str:
-    """The dev-only ``untaped`` requirement pack projects declare."""
-    return "untaped>=6.0.0,<7"
+    """The dev-only ``untaped`` requirement matching the running installation."""
+    return untaped_dev_requirement(version("untaped"))
 
 
 def read_pack_manifest(project_root: Path) -> PackManifest:

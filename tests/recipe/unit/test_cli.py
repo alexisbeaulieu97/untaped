@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+from packaging.version import Version
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 from untaped import bootstrap
@@ -3417,7 +3419,7 @@ def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) ->
     assert rows[0]["status"] == "error"
     assert "must not depend on untaped at runtime" in rows[0]["error"]
     assert "dependency-groups.dev" in rows[0]["error"]
-    assert "untaped>=6.0.0,<7" in rows[0]["error"]
+    assert _expected_dev_requirement() in rows[0]["error"]
 
 
 def test_recipe_check_validates_unreferenced_local_hook_project_modules(tmp_path: Path) -> None:
@@ -4110,3 +4112,8 @@ def _create_backup(
     draft = store.start(recipe_name=recipe_name, inputs=inputs)
     draft.commit(draft.stage(changes, inputs=inputs))
     return draft
+
+
+def _expected_dev_requirement() -> str:
+    installed = Version(version("untaped"))
+    return f"untaped>={installed.public},<{installed.major + 1}"
