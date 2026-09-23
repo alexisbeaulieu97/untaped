@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from untaped.capabilities.awx.domain.envelope import Resource
 
 ApplyAction = Literal[
-    "preview",
+    "planned",
     "created",
     "updated",
     "unchanged",

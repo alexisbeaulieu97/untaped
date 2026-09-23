@@ -205,7 +205,7 @@ def test_hosts_apply_preview_does_not_write(seeded_default_org: Any, tmp_path: P
 
 def test_hosts_save_round_trips_to_yaml(fake_aap: Any) -> None:
     _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(app, ["hosts", "save", "web-01"])
+    result = CliInvoker().invoke(app, ["hosts", "export", "web-01"])
     assert result.exit_code == 0, result.output
     out = result.stdout
     # Save dumps YAML — exact field ordering varies, but kind + name must appear.
@@ -219,7 +219,7 @@ def test_hosts_save_emits_metadata_parent_inventory(fake_aap: Any) -> None:
     ``InventoryChildApplyStrategy`` succeeds. The strategy rejects with
     ``identity missing 'parent'`` otherwise — silent restore breakage."""
     _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(app, ["hosts", "save", "web-01"])
+    result = CliInvoker().invoke(app, ["hosts", "export", "web-01"])
     assert result.exit_code == 0, result.output
     import yaml as _yaml
 
@@ -235,7 +235,7 @@ def test_hosts_save_round_trips_through_apply(fake_aap: Any, tmp_path: Path) -> 
     """Save → apply round-trip: a saved Host must reapply cleanly with
     ``unchanged`` (or at worst no diff) against the same AWX state."""
     _seed_inventory_with_hosts(fake_aap)
-    save_result = CliInvoker().invoke(app, ["hosts", "save", "web-01"])
+    save_result = CliInvoker().invoke(app, ["hosts", "export", "web-01"])
     assert save_result.exit_code == 0, save_result.output
     saved = tmp_path / "host.yml"
     saved.write_text(save_result.stdout)

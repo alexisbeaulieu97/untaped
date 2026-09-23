@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.capabilities.awx.cli._names import flatten_fks
+from untaped.capabilities.awx.cli.names import flatten_fks
 from untaped.capabilities.awx.domain import FkRef
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 

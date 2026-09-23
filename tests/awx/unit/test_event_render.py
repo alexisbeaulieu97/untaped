@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`untaped.capabilities.awx.cli._event_render`.
+"""Unit tests for :mod:`untaped.capabilities.awx.cli.event_render`.
 
 Covers the plain text of :func:`render_event_text` (byte-stable) and
 the :class:`rich.text.Text` status styles. We assert the *style* attached to each runner verdict so
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from untaped.capabilities.awx.cli._event_render import render_event_text
+from untaped.capabilities.awx.cli.event_render import render_event_text
 from untaped.capabilities.awx.domain import JobEvent
 
 

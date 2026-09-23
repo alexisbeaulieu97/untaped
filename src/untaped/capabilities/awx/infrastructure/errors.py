@@ -19,7 +19,7 @@ from untaped.capabilities.awx.errors import (
     ConflictError,
     PermissionDeniedError,
 )
-from untaped.capability_api import ConfigError, HttpError, UntapedError
+from untaped.capability_api import ConfigError, HttpError, UntapedError, hint
 
 _BODY_SNIPPET = 500
 
@@ -31,8 +31,7 @@ def to_awx_error(err: HttpError) -> UntapedError:
 
     if status == 401:
         return ConfigError(
-            "AWX rejected the token (HTTP 401); update via "
-            "`untaped config set awx.token <new-token>`"
+            "AWX rejected the token (HTTP 401)\n" + hint("config set awx.token --prompt")
         )
     if status == 403:
         return PermissionDeniedError(

@@ -82,7 +82,7 @@ def test_awx_mounts_under_root(_isolate: Path) -> None:
     for cmd in (
         "ping",
         "apply",
-        "save",
+        "export",
         "jobs",
         "test",
         "unified-templates",

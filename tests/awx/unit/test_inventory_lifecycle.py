@@ -22,7 +22,7 @@ from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource
 from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
-from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
+from untaped.capabilities.awx.infrastructure.fk_resolver import HttpFkResolver
 from untaped.capabilities.awx.infrastructure.resource_repo import ResourceRepository
 from untaped.capabilities.awx.infrastructure.specs import (
     INVENTORY_SOURCE_SPEC,
@@ -234,14 +234,14 @@ class Controller:
 @pytest.fixture
 def controller(
     awx_config: AwxSettings,
-) -> Iterator[tuple[Controller, BatchMutationEngine, ResourceRepository, FkResolver]]:
+) -> Iterator[tuple[Controller, BatchMutationEngine, ResourceRepository, HttpFkResolver]]:
     state = Controller()
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.route().mock(side_effect=state.dispatch)
         with AwxClient(awx_config) as client:
             repo = ResourceRepository(client)
             catalog = AwxResourceCatalog()
-            fk = FkResolver(repo, catalog)
+            fk = HttpFkResolver(repo, catalog)
             yield state, BatchMutationEngine(repo, catalog, fk, StaticStrategyResolver()), repo, fk
 
 

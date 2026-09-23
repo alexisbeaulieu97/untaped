@@ -1,5 +1,7 @@
 """Patch existing selected resources through the authoritative mutation engine."""
 
+from __future__ import annotations
+
 import difflib
 from pathlib import Path
 from typing import Annotated
@@ -9,10 +11,9 @@ from cyclopts import App, Parameter
 from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.apply_planner import unrecognized_fields
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan, validate_controls
-from untaped.capabilities.awx.cli._patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -21,6 +22,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -29,12 +31,14 @@ from untaped.capabilities.awx.cli.options import (
     UnverifiedOption,
     YesOption,
 )
+from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    plural,
     raise_usage,
     report_errors,
 )
@@ -43,7 +47,8 @@ from untaped.capability_api import (
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="patch")
     def patch_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -59,6 +64,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
             Parameter(
                 name="--set",
                 consume_multiple=False,
+                negative="",
                 help=(
                     "Replace a top-level field KEY=VALUE (repeatable; JSON-coerced "
                     "unless the field is a string)."
@@ -101,7 +107,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                 )
             if not allow_unknown_fields and (typos := _likely_typos(spec, overlay)):
                 raise_usage(
-                    f"{spec.kind} has no field(s) "
+                    f"{spec.kind} has no {plural(len(typos), 'field')} "
                     + ", ".join(f"{name} (did you mean {match}?)" for name, match in typos)
                     + "; fix the spelling or pass --allow-unknown-fields"
                 )

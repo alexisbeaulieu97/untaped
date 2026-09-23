@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped.capabilities.awx.application._secret_paths import (
+from untaped.capabilities.awx.application.secret_paths import (
     path_slots,
     remove_at,
     replace_at,

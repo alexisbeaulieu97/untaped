@@ -1,4 +1,4 @@
-"""Direct unit pin for ``_drain_parallel_with_worker``'s ``while_running`` seam.
+"""Direct unit pin for ``drain_parallel_with_worker``'s ``while_running`` seam.
 
 Most of the helper's behaviour (launch-order collection, ``UntapedError``
 capture, ``"<ClassName>: <message>"`` wrap format) is covered through the
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import threading
 
-from untaped.capabilities.awx.cli._parallel import _drain_parallel_with_worker
+from untaped.capabilities.awx.cli.parallel import drain_parallel_with_worker
 from untaped.capabilities.awx.domain import Job
 
 
@@ -47,7 +47,7 @@ def test_while_running_callback_runs_between_submit_and_collect() -> None:
         observed_release_before_result = True
         release.set()
 
-    results, errors = _drain_parallel_with_worker(
+    results, errors = drain_parallel_with_worker(
         [("deploy-a", _job(1))], worker, while_running=drain
     )
 
