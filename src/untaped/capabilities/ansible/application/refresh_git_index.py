@@ -22,7 +22,7 @@ from untaped.capabilities.ansible.application.source_refs import (
     pattern_matches,
     source_ref_selections,
 )
-from untaped.capabilities.ansible.domain.identity import IdentityResolver
+from untaped.capabilities.ansible.domain.identity import DEFAULT_GITHUB_HOST, IdentityResolver
 from untaped.capabilities.ansible.domain.models import ParseReport, ParseWarning
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import (
@@ -137,6 +137,7 @@ class RefreshGitSourceIndex:
         repo_batch_size: int = 100,
         rate_limit_floor: int = 500,
         on_progress: ProgressCallback | None = None,
+        github_host: str | None = None,
     ) -> None:
         if clone_protocol not in {"https", "ssh"}:
             raise ValueError("clone_protocol must be 'https' or 'ssh'")
@@ -162,12 +163,13 @@ class RefreshGitSourceIndex:
         self._repo_batch_size = repo_batch_size
         self._rate_limit_floor = rate_limit_floor
         self._on_progress = on_progress
+        self._github_host = github_host
 
     def __call__(self, source: SourceDefinition, *, source_key: str) -> RefreshResult:
         repos = self._expand_repos(source)
         paths = source.dependency_paths or self._default_dependency_paths
         paths_fingerprint = _dependency_paths_fingerprint(paths)
-        aliases_fingerprint = _aliases_fingerprint(self._aliases)
+        aliases_fingerprint = _aliases_fingerprint(self._aliases, self._github_host)
         source_fingerprint = _source_refresh_fingerprint(
             source,
             repos=repos,
@@ -363,7 +365,7 @@ class RefreshGitSourceIndex:
     ) -> Iterable[tuple[str, _RepoRefreshResult | str]]:
         """Run per-repo fetch/parse workers; collect results or failure reasons."""
         paths_fingerprint = _dependency_paths_fingerprint(paths)
-        aliases_fingerprint = _aliases_fingerprint(self._aliases)
+        aliases_fingerprint = _aliases_fingerprint(self._aliases, self._github_host)
         total = len(tasks)
         done = 0
         changed = 0
@@ -512,7 +514,7 @@ class RefreshGitSourceIndex:
             auth_header=self._auth_header,
         )
         parsed_by_sha: dict[str, _ParsedDependencyFiles] = {}
-        resolver = IdentityResolver(self._aliases)
+        resolver = IdentityResolver(self._aliases, github_host=self._github_host)
         repo_skipped_files: list[SkippedDependencyFile] = []
         for ref in changed_refs:
             parsed = parsed_by_sha.get(ref.sha)
@@ -704,8 +706,16 @@ def _dependency_paths_fingerprint(paths: list[str]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _aliases_fingerprint(aliases: dict[str, str]) -> str:
-    payload = json.dumps(aliases, sort_keys=True, separators=(",", ":")).encode()
+def _aliases_fingerprint(aliases: dict[str, str], github_host: str | None = None) -> str:
+    """Fingerprint of everything identity resolution depends on.
+
+    The default ``github.com`` host keeps the historical aliases-only payload
+    so existing snapshots stay reusable; an Enterprise host is folded in.
+    """
+    resolution: object = aliases
+    if github_host and github_host.lower() != DEFAULT_GITHUB_HOST:
+        resolution = {"aliases": aliases, "github_host": github_host.lower()}
+    payload = json.dumps(resolution, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
 
 

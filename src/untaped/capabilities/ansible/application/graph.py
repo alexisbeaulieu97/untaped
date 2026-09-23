@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.domain.cycles import detect_cycles
 from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphEdge, GraphNode
+from untaped.capabilities.ansible.domain.identity import repo_key
 from untaped.capabilities.ansible.domain.payloads import CachedRef, IndexedDependency
 from untaped.capabilities.ansible.domain.ref_display import RefDisplay, sort_ref_displays
 
@@ -161,8 +162,8 @@ class _GraphBuilder:
         Each depth level's uncached index reads are bulk-loaded before any
         entry in that level is expanded, so expansion reads only from the
         per-run caches. Emissions are recorded per entry and replayed
-        depth-first afterwards, keeping node/edge/warning ordering identical
-        to the previous recursive depth-first traversal.
+        depth-first afterwards, so node/edge/warning ordering stays
+        depth-first. Each node is expanded once (see :meth:`_claim`).
         """
         self._scheduled = {_node_id(root.repo, root.ref): root.remaining}
         level = [root]
@@ -335,7 +336,7 @@ class _GraphBuilder:
         )
         self._add_warning(
             f"unresolved dependency {unresolved} from "
-            f"{_node_id(indexed.source_repo, indexed.source_ref)} in {indexed.source_path}"
+            f"{_label(indexed.source_repo, indexed.source_ref)} in {indexed.source_path}"
         )
 
     def _add_node(self, repo: str, ref: str | None, *, ref_kind: str | None = None) -> str:
@@ -392,7 +393,7 @@ class _GraphBuilder:
         if self._request.source_key is None or ref is None:
             return
         cached_refs = self._cached_refs_for(repo)
-        node = _node_id(repo, ref)
+        node = _label(repo, ref)
         if ref in cached_refs:
             return
         if cached_refs:
@@ -512,7 +513,9 @@ def _deeper(remaining: int | None, best: int | None) -> bool:
 
 
 def _node_id(repo: str, ref: str | None) -> str:
-    return f"{repo}@{ref}" if ref else repo
+    """Node id: GitHub repo ids are case-insensitive, so the repo part is folded."""
+    key = repo_key(repo)
+    return f"{key}@{ref}" if ref else key
 
 
 def _dependency_target_id(indexed: IndexedDependency) -> str:
@@ -523,7 +526,7 @@ def _dependency_target_id(indexed: IndexedDependency) -> str:
 
 
 def _label(repo: str, ref: str | None) -> str:
-    return _node_id(repo, ref)
+    return f"{repo}@{ref}" if ref else repo
 
 
 def _first_default_branch(refs: list[CachedRef] | tuple[CachedRef, ...]) -> str | None:

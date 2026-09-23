@@ -17,6 +17,7 @@ DEFAULT_DEPENDENCY_PATHS = (
     "meta/requirements.yml",
     "meta/requirements.yaml",
     "meta/main.yml",
+    "meta/main.yaml",
 )
 ALLOWED_REF_KINDS = ("heads", "tags")
 

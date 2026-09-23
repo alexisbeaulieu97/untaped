@@ -11,6 +11,7 @@ from typing import Literal
 from untaped.api import HttpSettings, ProgressHandle, UiContext, echo
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshGitSourceIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.domain.identity import github_web_host
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
     GRAPHQL_TRANSIENT_FALLBACK,
@@ -121,6 +122,7 @@ def refresh_source(
             repo_batch_size=settings.source_refresh_repo_batch_size,
             rate_limit_floor=settings.source_refresh_rate_limit_floor,
             on_progress=on_progress,
+            github_host=github_web_host(github_settings.base_url),
         )(source, source_key=source_key)
     return result
 
