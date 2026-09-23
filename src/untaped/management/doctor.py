@@ -6,7 +6,8 @@ validation only, never network I/O. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). Capability state
 sections still at the top level of ``config.yml`` (the pre-``state.yml``
-layout) render as a ``warn`` row, which does not fail the run.
+layout) render as a ``warn`` row, which does not fail the run; so does a
+capability check that returns ``DoctorResult(..., warn=True)``.
 """
 
 from __future__ import annotations
@@ -363,6 +364,8 @@ def _run_check(
         )
     if not outcome.ok:
         return _row(check_item.id, scope.capability, _FAIL, check_item.title, outcome.detail)
+    if outcome.warn:
+        return _row(check_item.id, scope.capability, _WARN, check_item.title, outcome.detail)
     return _row(check_item.id, scope.capability, _PASS, check_item.title, outcome.detail or "OK")
 
 
