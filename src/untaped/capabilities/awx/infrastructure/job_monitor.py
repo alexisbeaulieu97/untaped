@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from untaped.api import paginate_pages
 from untaped.capabilities.awx.domain import Job, JobEvent
-from untaped.capabilities.awx.domain.job import JOB_ROUTES
+from untaped.capabilities.awx.domain.job import JOB_ROUTES, poll_until_terminal
 from untaped.capabilities.awx.errors import AwxApiError
 
 if TYPE_CHECKING:
@@ -44,16 +44,16 @@ class PollingJobMonitor:
         record = self._client.request("GET", f"{api_path}/{job.id}/")
         return Job.model_validate({**record, "kind": job.kind})
 
+    def _poll(self, job: Job) -> Iterator[Job]:
+        return poll_until_terminal(job, self.fetch, sleep=self._sleep, interval=self._interval)
+
     def stream_status(self, job: Job) -> Iterator[Job]:
         """Emit initial status and changes until terminal using only the detail route."""
-        current = job
-        yield current
-        while not current.is_terminal:
-            self._sleep(self._interval)
-            refreshed = self.fetch(current)
-            if refreshed.status != current.status:
-                yield refreshed
-            current = refreshed
+        previous: str | None = None
+        for current in self._poll(job):
+            if current.status != previous:
+                yield current
+            previous = current.status
 
     def fetch_stdout(self, job: Job, *, start_line: int = 0) -> list[str]:
         api_path = _api_path_for(job)
@@ -68,18 +68,13 @@ class PollingJobMonitor:
 
     def stream_stdout(self, job: Job, *, start_line: int = 0) -> Iterator[str]:
         cursor = start_line
-        current = job
-        # Emit existing lines first, then poll until terminal, then drain a
-        # final time so we never miss the tail emitted between the last
-        # poll and the status transition.
-        while True:
+        # Emit existing lines first, then poll until terminal; the terminal
+        # state drains a final time so we never miss the tail emitted
+        # between the last poll and the status transition.
+        for current in self._poll(job):
             lines = self.fetch_stdout(current, start_line=cursor)
             yield from lines
             cursor += len(lines)
-            if current.is_terminal:
-                return
-            self._sleep(self._interval)
-            current = self.fetch(current)
 
     def stream_events(
         self,
@@ -94,8 +89,7 @@ class PollingJobMonitor:
         if events_path is None:
             raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
         last = from_counter
-        current = job
-        while True:
+        for current in self._poll(job):
             for record in _follow_pages(
                 self._client,
                 f"{api_path}/{current.id}/{events_path}/",
@@ -105,10 +99,8 @@ class PollingJobMonitor:
                 if ev.counter > last:
                     last = ev.counter
                 yield ev
-            if not follow or current.is_terminal:
+            if not follow:
                 return
-            self._sleep(self._interval)
-            current = self.fetch(current)
 
 
 def _api_path_for(job: Job) -> str:
