@@ -139,3 +139,36 @@ def test_spinner_falls_back_to_ascii_frames_on_non_utf8_stream() -> None:
     out = stream.getvalue()
     assert any(ch in out for ch in "|/-\\")
     assert not any(ch in out for ch in _SPINNER_FRAMES)
+
+
+def test_spinner_log_clears_the_line_then_redraws() -> None:
+    stream = TtyStringIO()
+    with progress_reporter("Working", stream=stream, verbose=False, isatty=True) as handle:
+        handle.log("error: x: failed")
+        after_log = stream.getvalue()
+    head, _, tail = after_log.partition("error: x: failed\n")
+    assert head.endswith("\r")  # the spinner line was cleared first
+    assert "Working" in tail  # and redrawn after the logged line
+
+
+@pytest.mark.parametrize(
+    ("verbose", "isatty", "quiet"),
+    [(False, False, False), (True, True, False), (False, True, True)],
+)
+def test_log_writes_a_plain_line_in_every_mode(verbose: bool, isatty: bool, quiet: bool) -> None:
+    stream = io.StringIO()
+    with progress_reporter(
+        "Working", stream=stream, verbose=verbose, isatty=isatty, quiet=quiet
+    ) as handle:
+        handle.log("error: x: failed")
+    assert "error: x: failed\n" in stream.getvalue()
+
+
+def test_spinner_line_is_truncated_to_terminal_width(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COLUMNS", "30")
+    stream = TtyStringIO()
+    with progress_reporter("x" * 200, stream=stream, verbose=False, isatty=True):
+        pass
+    drawn = [chunk for chunk in stream.getvalue().split("\r") if chunk.strip()]
+    assert drawn
+    assert all(len(chunk) < 30 for chunk in drawn)
