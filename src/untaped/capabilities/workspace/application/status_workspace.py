@@ -10,6 +10,7 @@ from untaped.capabilities.workspace.application.ports import (
     ManifestReader,
 )
 from untaped.capabilities.workspace.application.repo_selector import select_repos
+from untaped.capabilities.workspace.application.sync_workspace import NOT_A_GIT_REPOSITORY
 from untaped.capabilities.workspace.domain import (
     Repo,
     StatusEntry,
@@ -52,10 +53,24 @@ class WorkspaceStatus:
         local = workspace.path / repo.name
         if not self._fs.is_dir(local):
             return StatusEntry(workspace=workspace.name, repo=repo.name, cloned=False)
+        if not self._fs.exists(local / ".git"):
+            return StatusEntry(
+                workspace=workspace.name,
+                repo=repo.name,
+                cloned=False,
+                detail=NOT_A_GIT_REPOSITORY,
+            )
         try:
             status = self._git.status(local)
-        except GitError:
-            return StatusEntry(workspace=workspace.name, repo=repo.name, cloned=False)
+        except GitError as exc:
+            # The clone exists; surface why it could not be inspected
+            # rather than pretending it is missing.
+            return StatusEntry(
+                workspace=workspace.name,
+                repo=repo.name,
+                cloned=True,
+                detail=f"status failed: {exc}",
+            )
         return StatusEntry(
             workspace=workspace.name,
             repo=repo.name,

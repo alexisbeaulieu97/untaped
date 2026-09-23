@@ -375,6 +375,12 @@ Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
 Under `--all`, a registered workspace whose manifest cannot be read
 emits one `action="unavailable"` row with `repo=""`, `cloned=false`,
 and a `detail` message; single-workspace status remains strict.
+A declared directory without its own `.git` reports `cloned=false` with
+`detail="not a git repository"`; git is never run there, so it cannot
+fall through to a repository enclosing the workspace (`sync` and
+`branch apply` skip such directories with the same detail). A clone
+whose `git status` fails keeps `cloned=true` and carries the error in
+`detail`.
 Pipe-friendly:
 
 ```bash
