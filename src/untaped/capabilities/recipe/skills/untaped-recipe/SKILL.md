@@ -191,7 +191,8 @@ no control flow in recipes, and no state or inventory.
   first-match `{where: {...}}` selectors; string values render `{{ input }}`
   tokens and honor args-level `unknown_tokens: keep`. `ensure` idempotently adds
   a value if absent (list membership by `match` keys / equality, or mapping
-  set-if-absent) and is byte-identical when nothing changes.
+  set-if-absent). Every op leaves the file byte-identical when nothing
+  changes (`set`/`merge` to the value already present are no-ops).
 
 ## Backups and safety
 
