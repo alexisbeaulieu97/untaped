@@ -69,7 +69,8 @@ def _make_list_command(empty_hint: str) -> Callable[..., None]:
         """List every profile, marking which one is active."""
         with report_errors():
             profiles = ListProfiles(ProfileFileRepository())()
-            rows: list[dict[str, object]] = [_profile_row(p) for p in profiles]
+            human = fmt in ("table", "raw")
+            rows: list[dict[str, object]] = [_profile_row(p, human=human) for p in profiles]
             emit(
                 rows,
                 fmt=fmt,
@@ -240,12 +241,13 @@ def _confirm_delete(preview: ProfileDeletePreview) -> None:
         raise SystemExit(1)
 
 
-def _profile_row(p: Profile) -> dict[str, object]:
+def _profile_row(p: Profile, *, human: bool) -> dict[str, object]:
     # ``name`` first: under ``--format raw`` the first key is what
     # pipelines feed back into the next command (xargs identifier
     # semantics). See root AGENTS.md '--format raw default-column contract'.
+    # ``active`` is a ✓ glyph for humans (table/raw) and a boolean otherwise.
     return {
         "name": p.name,
-        "active": "✓" if p.is_active else "",
+        "active": ("✓" if p.is_active else "") if human else p.is_active,
         "keys": p.key_count,
     }
