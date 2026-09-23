@@ -19,7 +19,7 @@ Use this skill when the user wants an agent to operate the `untaped jira` CLI fo
 
 - Use `untaped jira --help` and subcommand `--help` output to confirm the available commands and flags before acting.
 - Jira platform calls use `/rest/api/2`; Jira Software board and sprint calls use `/rest/agile/1.0`.
-- Use `untaped jira issue assigned` to list issues assigned to the authenticated Jira user. It always applies `jira.assigned_jql`; `--jql` and the shortcut flags narrow it (ANDed), and an `ORDER BY` in `--jql` replaces the default `updated DESC` order.
+- Use `untaped jira issue assigned` to list issues assigned to the authenticated Jira user. It always applies `jira.assigned_jql`; `--jql` and the shortcut flags narrow it (ANDed), and an `ORDER BY` in `--jql` replaces the default `updated DESC` order. Earlier releases let `--jql` replace `jira.assigned_jql` entirely; for an unrestricted query (not limited to your assigned issues) use `untaped jira issue search --jql ...` instead.
 - `untaped jira issue search` with no `--jql` or shortcut flags falls back to `jira.assigned_jql`.
 - `--sprint` accepts a sprint id, a sprint name, or `openSprints()`/`futureSprints()`/`closedSprints()` (rendered as `sprint in openSprints()`).
 - Use `untaped jira issue get KEY` to fetch one issue by key or id with its detail fields (`summary`, `status`, `assignee`, `updated`, `url`, plus `issuetype`, `priority`, `reporter`, `labels`, `created`, `resolution`, `description`). Search rows keep only `key`, `summary`, `status`, `assignee`, `updated`, and `url`.
