@@ -7,7 +7,7 @@ from io import StringIO
 
 from ruamel.yaml import YAML
 
-from untaped.capabilities.recipe.yaml_options import apply_yaml_dump_options
+from untaped.capabilities.recipe._worker.yaml_options import apply_yaml_dump_options
 
 
 def load_yaml(content: str) -> object:

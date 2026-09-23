@@ -64,15 +64,58 @@ def _apply_edit(
     if op == "ensure":
         return _ensure(data, path, value, edit.get("match"))
     if op == "set":
+        found, current = _lookup(data, path)
+        if found and _same(current, value):
+            return False
         _set(data, path, value)
         return True
     if not isinstance(value, Mapping):
         raise ValueError("yaml_edit merge value must be a mapping")
+    found, current = _lookup(data, path)
+    if (
+        found
+        and isinstance(current, Mapping)
+        and all(key in current and _same(current[key], item) for key, item in value.items())
+    ):
+        return False
     target = _resolve(data, path, create=True, final_container=CommentedMap())
     if not isinstance(target, MutableMapping):
         raise ValueError("yaml_edit merge target must be a mapping")
     target.update(value)
     return True
+
+
+def _lookup(data: object, path: list[PathSegment]) -> tuple[bool, object]:
+    """Return ``(True, value)`` when ``path`` already exists, without creating it."""
+    try:
+        return True, _resolve(data, path, create=False)
+    except ValueError:
+        return False, None
+
+
+def _same(current: object, value: object) -> bool:
+    """Semantic YAML equality: key order matters, and bools never equal ints."""
+    if isinstance(current, Mapping) and isinstance(value, Mapping):
+        return list(current) == list(value) and all(
+            _same(current[key], value[key]) for key in current
+        )
+    if isinstance(current, Mapping) or isinstance(value, Mapping):
+        return False
+    if _is_list(current) and _is_list(value):
+        current_items = list(cast(Sequence[object], current))
+        value_items = list(cast(Sequence[object], value))
+        return len(current_items) == len(value_items) and all(
+            _same(left, right) for left, right in zip(current_items, value_items, strict=True)
+        )
+    if _is_list(current) or _is_list(value):
+        return False
+    if isinstance(current, bool) or isinstance(value, bool):
+        return isinstance(current, bool) and isinstance(value, bool) and current == value
+    return current == value
+
+
+def _is_list(value: object) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, str)
 
 
 def _path(raw: object) -> list[PathSegment]:
@@ -126,7 +169,8 @@ def _ensure(
     ``match``-key equality for mapping values, whole-mapping equality for
     mapping values without ``match``, and scalar equality for scalar values;
     absent values are appended verbatim. A mapping ``path`` sets only keys the
-    target mapping lacks (shallow, set-if-absent). See docs/hooks.md.
+    target mapping lacks (shallow, set-if-absent). See the packaged
+    ``untaped-recipe`` skill for the full yaml_edit reference.
     """
     if not path:
         raise ValueError("yaml_edit ensure path cannot be empty")

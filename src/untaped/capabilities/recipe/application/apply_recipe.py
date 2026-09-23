@@ -183,7 +183,7 @@ class ApplyRecipe:
             exclude = _render_path_patterns(
                 step.exclude, specs=recipe.inputs, values=inputs, field="exclude"
             )
-            matches = _expand_glob_files(target, globs, exclude)
+            matches = _expand_glob_files(target, globs, exclude, warnings)
             if not matches:
                 warnings.append(f"globs matched no files: {', '.join(globs)}")
             for relative in matches:
@@ -220,7 +220,7 @@ class ApplyRecipe:
             exclude = _render_path_patterns(
                 step.exclude, specs=recipe.inputs, values=inputs, field="exclude"
             )
-            matches = _expand_glob_files(target, globs, exclude)
+            matches = _expand_glob_files(target, globs, exclude, warnings)
             if not matches:
                 warnings.append(f"globs matched no files: {', '.join(globs)}")
             for relative in matches:
@@ -330,7 +330,10 @@ def _render_path_patterns(
 
 
 def _expand_glob_files(
-    target: Path, globs: tuple[str, ...], exclude: tuple[str, ...]
+    target: Path,
+    globs: tuple[str, ...],
+    exclude: tuple[str, ...],
+    warnings: list[str],
 ) -> list[Path]:
     matches: dict[str, Path] = {}
     for pattern in globs:
@@ -341,7 +344,14 @@ def _expand_glob_files(
                 relative = candidate.relative_to(target)
             except ValueError:
                 continue
-            relative = confined_path(target, relative, field="file").relative_to(target)
+            # confined_path resolves the target root, so it is only a check
+            # here: the relative path stays anchored to the unresolved target
+            # (which may itself be a symlink, e.g. /tmp on macOS).
+            try:
+                confined_path(target, relative, field="file")
+            except ValueError as exc:
+                warnings.append(f"glob match skipped: {relative.as_posix()}: {exc}")
+                continue
             relative_posix = relative.as_posix()
             if _is_excluded(relative_posix, exclude):
                 continue
