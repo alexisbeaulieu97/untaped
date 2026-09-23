@@ -93,7 +93,7 @@ def run_edit(
                         reopen = ui.confirm("Reopen editor?", default=False)
                     if reopen:
                         continue
-                    raise ConfigError("editor validation cancelled; no changes written") from None
+                    raise OperationCancelledError from None
                 try:
                     outcomes = preview_and_execute(
                         ctx,
