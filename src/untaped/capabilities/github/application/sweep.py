@@ -366,10 +366,7 @@ class Sweep:
                 return ()
             if text is None:
                 continue
-            try:
-                rules = parse_codeowners(text)
-            except Exception:
-                return ()
+            rules = parse_codeowners(text)
             break
         if rules is None:
             return ()

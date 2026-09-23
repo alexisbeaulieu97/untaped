@@ -68,3 +68,50 @@ README.md @docs
     )
 
     assert rules.default_owners() == ("@all", "@backup")
+
+
+def test_anchored_path_pattern_owns_directory_contents() -> None:
+    rules = parse_codeowners("apps/web @web\n")
+
+    assert rules.owners_for("apps/web/index.js") == ("@web",)
+    assert rules.owners_for("apps/web") == ("@web",)
+    assert rules.owners_for("x/apps/web/index.js") == ()
+
+
+def test_unanchored_name_owns_matching_directory_at_any_depth() -> None:
+    rules = parse_codeowners("docs @d\n")
+
+    assert rules.owners_for("docs/readme.md") == ("@d",)
+    assert rules.owners_for("src/docs/deep/readme.md") == ("@d",)
+    assert rules.owners_for("documents/readme.md") == ()
+
+
+def test_trailing_star_owns_direct_children_only() -> None:
+    rules = parse_codeowners("/src/* @s\n")
+
+    assert rules.owners_for("src/a.py") == ("@s",)
+    assert rules.owners_for("src/a/b.py") == ()
+
+
+def test_single_star_does_not_cross_slashes() -> None:
+    rules = parse_codeowners("src/*.py @py\n")
+
+    assert rules.owners_for("src/a.py") == ("@py",)
+    assert rules.owners_for("src/nested/a.py") == ()
+
+
+def test_leading_double_star_matches_root_and_nested() -> None:
+    rules = parse_codeowners("**/logs @logs\n")
+
+    assert rules.owners_for("logs") == ("@logs",)
+    assert rules.owners_for("logs/app.log") == ("@logs",)
+    assert rules.owners_for("build/logs/app.log") == ("@logs",)
+    assert rules.owners_for("build/mylogs/app.log") == ()
+
+
+def test_middle_double_star_matches_zero_or_more_directories() -> None:
+    rules = parse_codeowners("a/**/b @ab\n")
+
+    assert rules.owners_for("a/b") == ("@ab",)
+    assert rules.owners_for("a/x/y/b/file.txt") == ("@ab",)
+    assert rules.owners_for("z/a/b") == ()
