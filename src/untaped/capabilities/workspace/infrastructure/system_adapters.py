@@ -10,12 +10,14 @@ the default implementations so ``application/`` never imports
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 from untaped.capabilities.workspace.domain import DEFAULT_FOREACH_TIMEOUT
@@ -147,6 +149,11 @@ class LocalFilesystem:
     recursive delete). The port exists so application use cases never
     import :mod:`pathlib` or :mod:`shutil` for I/O — all disk reads and
     writes flow through this single seam, which tests stub.
+
+    Destructive operations raise :class:`WorkspaceError` instead of a raw
+    :class:`OSError` so users get an error line, not a traceback.
+    ``rmtree`` clears read-only bits and retries (git marks object files
+    read-only, which blocks deletion on Windows).
     """
 
     def exists(self, path: Path) -> bool:
@@ -165,7 +172,35 @@ class LocalFilesystem:
         return path.iterdir()
 
     def rmtree(self, path: Path) -> None:
-        shutil.rmtree(path)
+        try:
+            shutil.rmtree(path, onexc=_retry_writable)
+        except OSError as exc:
+            raise WorkspaceError(f"could not remove {path}: {exc}") from exc
+
+    def unlink(self, path: Path) -> None:
+        try:
+            path.unlink()
+        except OSError as exc:
+            raise WorkspaceError(f"could not remove {path}: {exc}") from exc
+
+    def rmdir(self, path: Path) -> None:
+        try:
+            path.rmdir()
+        except OSError as exc:
+            raise WorkspaceError(f"could not remove {path}: {exc}") from exc
+
+
+def _retry_writable(func: Callable[..., object], path: str, exc: BaseException) -> None:
+    """``shutil.rmtree`` ``onexc``: make ``path`` (and its parent) writable, retry once."""
+    if not isinstance(exc, PermissionError):
+        raise exc
+    for target, bits in ((os.path.dirname(path), stat.S_IRWXU), (path, stat.S_IWRITE)):
+        with contextlib.suppress(OSError):
+            mode = os.lstat(target).st_mode
+            # Never chmod through a symlink: that would touch its target.
+            if not stat.S_ISLNK(mode):
+                os.chmod(target, stat.S_IMODE(mode) | bits)
+    func(path)
 
 
 __all__ = [
