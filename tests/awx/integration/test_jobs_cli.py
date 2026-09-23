@@ -573,7 +573,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
     _seed_two_jts(fake_aap)
 
     class _StubWatch:
-        def __init__(self, client: Any) -> None:
+        def __init__(self, client: Any, **_kwargs: Any) -> None:
             pass
 
         def __call__(self, job: Job, **_kwargs: Any) -> Job:

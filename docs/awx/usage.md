@@ -203,8 +203,11 @@ manual, or otherwise invalid target fails complete preflight with zero POSTs;
 invalid selection. `--dry-run` resolves and previews targets without
 submitting an action.
 
-`--wait` waits for terminal success and exits nonzero for failed, cancelled, or
-error executions. `--track` shows progress on stderr while waiting. Ordinary
+`--wait` waits for terminal success and exits nonzero for failed, canceled, or
+error executions. Ctrl-C while waiting or tracking (including
+`awx test run --parallel`) stops polling promptly, exits 130, and prints the
+still-running execution IDs with an `untaped awx jobs wait ...` command to
+resume; the executions themselves keep running on the controller. `--track` shows progress on stderr while waiting. Ordinary
 jobs expose `job_events`; project and inventory updates expose their `events`
 routes. Workflow jobs, including sliced launches that return a workflow job,
 have no own events or stdout route, so tracking emits status transitions from

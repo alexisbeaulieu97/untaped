@@ -108,6 +108,42 @@ def _make_runner(
     )
 
 
+def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
+    """Ctrl-C sets the stop event, skips queued launches, and keeps launched jobs."""
+    import os
+    import signal
+
+    from untaped.capabilities.awx.errors import WaitCancelled
+
+    stop = threading.Event()
+
+    class BlockingWatcher:
+        def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+            if stop.wait(5):
+                raise WaitCancelled("wait interrupted")
+            return job
+
+    fk = StubFk()
+    launcher = StubLauncher({"__default__": {"job": _job(id_=7, status="running")}})
+    runner = RunTestSuite(
+        resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog()),
+        launcher=cast(Launcher, launcher),
+        watcher=cast(Watcher, BlockingWatcher()),
+        spec=JOB_TEMPLATE_SPEC,
+        fk_prefetcher=cast(FkPrefetcher, fk),
+        stop=stop,
+    )
+    suite = _suite("s", {f"c{i}": {"extra_vars": {"case_name": f"c{i}"}} for i in range(6)})
+    threading.Timer(0.2, os.kill, (os.getpid(), signal.SIGINT)).start()
+    started = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        runner([suite], parallel=2)
+    assert time.monotonic() - started < 2
+    assert stop.is_set()
+    assert len(launcher.calls) == 2
+    assert [job.id for job in runner.launched] == [7, 7]
+
+
 # ---- sequential runner --------------------------------------------------
 
 
