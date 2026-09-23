@@ -336,6 +336,15 @@ def _footer(report: SweepReport) -> None:
         ),
         err=True,
     )
+    if report.stale:
+        count = len(report.stale)
+        echo(
+            f"warning: refresh failed for {count} repo{'s' if count != 1 else ''}; "
+            "scanned cached copies",
+            err=True,
+        )
+        for failure in report.stale:
+            echo(f"warning: stale {failure.repo}: {failure.reason}", err=True)
     if report.unscanned:
         for failure in report.unscanned:
             echo(f"warning: unscanned {failure.repo}: {failure.reason}", err=True)

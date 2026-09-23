@@ -80,6 +80,8 @@ class SweepReport:
     refreshed: int
     cached: int
     oldest_fetched_at: datetime | None
+    # Repos whose refresh failed but whose covering cached copy was scanned.
+    stale: tuple[CorpusFailure, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,7 @@ class _ReadyRepo:
     repo: CorpusRepoTarget
     fetched_at: datetime | None
     refreshed: bool
+    refresh_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +170,18 @@ class Sweep:
             refreshed=refreshed,
             cached=cached,
             oldest_fetched_at=min(scanned_dates) if scanned_dates else None,
+            stale=tuple(
+                sorted(
+                    (
+                        CorpusFailure(
+                            repo=ready_repo.repo.full_name, reason=ready_repo.refresh_error
+                        )
+                        for ready_repo in ready
+                        if ready_repo.refresh_error is not None
+                    ),
+                    key=lambda failure: failure.repo,
+                )
+            ),
         )
 
     def _resolve_scope(
@@ -270,7 +285,12 @@ class Sweep:
                 )
             except (GitCorpusError, OSError) as exc:
                 if freshness is not None and covers(freshness, options.query.refs):
-                    return _ReadyRepo(repo=repo, fetched_at=freshness.fetched_at, refreshed=False)
+                    return _ReadyRepo(
+                        repo=repo,
+                        fetched_at=freshness.fetched_at,
+                        refreshed=False,
+                        refresh_error=_failure(repo, exc).reason,
+                    )
                 return _failure(repo, exc)
             return _ReadyRepo(
                 repo=repo,
