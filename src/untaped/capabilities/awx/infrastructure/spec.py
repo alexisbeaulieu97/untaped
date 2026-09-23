@@ -32,12 +32,12 @@ def awx_api_path(spec: ResourceSpec) -> str:
     rather than at the next HTTP call.
     """
     if not isinstance(spec, AwxResourceSpec):
-        raise TypeError(f"AwxResourceSpec required, got {type(spec).__name__}")
+        raise TypeError(f"expected an AwxResourceSpec, got {type(spec).__name__}")
     return spec.api_path
 
 
 def awx_relationship_path(spec: ResourceSpec) -> str:
     """Relationships can stay on the base resource when the detail route is a proxy."""
     if not isinstance(spec, AwxResourceSpec):
-        raise TypeError(f"AwxResourceSpec required, got {type(spec).__name__}")
+        raise TypeError(f"expected an AwxResourceSpec, got {type(spec).__name__}")
     return spec.relationship_api_path or spec.api_path

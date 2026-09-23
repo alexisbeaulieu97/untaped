@@ -330,12 +330,12 @@ def _parent(identity: dict[str, Any]) -> Any:
     parent = identity.get("parent")
     if parent is None:
         raise BadRequestError(
-            "Inventory child docs require metadata.parent (kind: Inventory) — "
+            "inventory child documents require metadata.parent (kind: Inventory); "
             "see examples/inventory-prod.yml"
         )
     if hasattr(parent, "kind") and parent.kind != "Inventory":
         raise BadRequestError(
-            "Inventory child docs require metadata.parent.kind == 'Inventory' "
+            "inventory child documents require metadata.parent.kind == 'Inventory' "
             f"(got {parent.kind!r})"
         )
     return parent

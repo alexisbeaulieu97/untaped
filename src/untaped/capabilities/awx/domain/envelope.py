@@ -63,7 +63,7 @@ class IdentityRef(BaseModel):
                 raise ValueError(f"foreign key ancestry conflicts with required scope {key!r}")
             scope[key] = value
         if self.kind == "InventorySource" and "inventory" not in scope:
-            raise ValueError("InventorySource reference requires Inventory parent ancestry")
+            raise ValueError("an inventory source reference requires inventory parent ancestry")
         return scope
 
 

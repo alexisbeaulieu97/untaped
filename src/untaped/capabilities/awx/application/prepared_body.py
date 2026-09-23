@@ -19,6 +19,7 @@ from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
 from untaped.capabilities.awx.domain import FieldChange, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
+from untaped.capability_api import plural
 
 
 @dataclass(frozen=True)
@@ -65,8 +66,8 @@ class BodyOperations:
             )
         if existing is None and preserved:
             raise BadRequestError(
-                f"{spec.kind} {resource.metadata.name!r} has placeholder secret(s) "
-                f"at {', '.join(preserved)} — provide real values or pre-create "
+                f"{spec.kind} {resource.metadata.name!r} has placeholder secrets "
+                f"at {', '.join(preserved)}; provide real values or pre-create "
                 "the resource in AWX first"
             )
         preserved_fields, conflicts = self._secret_policy.partition(
@@ -74,10 +75,10 @@ class BodyOperations:
         )
         if conflicts:
             raise BadRequestError(
-                f"Cannot apply {spec.kind} {resource.metadata.name!r}: "
-                f"{', '.join(sorted(conflicts))} contain a $encrypted$ placeholder "
-                "alongside a sibling change. PATCH would overwrite the existing secret. "
-                "Provide the actual secret value(s) or revert the sibling change(s)."
+                f"cannot apply {spec.kind} {resource.metadata.name!r}: "
+                f"{', '.join(sorted(conflicts))} contain an $encrypted$ placeholder "
+                "alongside a sibling change, and PATCH would overwrite the existing secret; "
+                "provide the actual secret values or revert the sibling changes"
             )
         changes = self._field_diff.compute(
             existing=existing,
@@ -149,7 +150,7 @@ class BodyOperations:
         if not unreflected:
             return None
         detail = (
-            "unverified field(s): "
+            f"unverified {plural(len(unreflected), 'field')}: "
             f"{', '.join(sorted(unreflected))}; requested state was not reflected by AWX"
         )
         if fallback_error is not None:

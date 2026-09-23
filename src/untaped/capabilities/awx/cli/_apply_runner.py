@@ -8,7 +8,7 @@ from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files
-from untaped.capability_api import ConfigError, OutputFormat, echo
+from untaped.capability_api import ConfigError, OutputFormat
 
 
 def build_mutation_engine(
@@ -20,7 +20,7 @@ def build_mutation_engine(
         catalog=ctx.catalog,
         fk=ctx.fk,
         strategies=ctx.strategies,
-        warn=lambda msg: echo(f"warning: {msg}", err=True),
+        warn=lambda msg: ctx.progress_ui().message("warning", msg),
         allow_unverified=allow_unverified,
     )
 

@@ -23,6 +23,7 @@ from untaped.capabilities.awx.application.mutation_refs import PlannedId
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.domain import FkRef, IdentityRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequestError
+from untaped.capability_api import plural
 
 
 def unrecognized_fields(spec: ResourceSpec, names: Iterable[str]) -> list[str]:
@@ -47,7 +48,8 @@ def unrecognized_warning(spec: ResourceSpec, names: Iterable[str]) -> str | None
     unknown = unrecognized_fields(spec, names)
     if not unknown:
         return None
-    return f"{spec.kind}: field(s) sent as-is (not in this tool's known schema): " + ", ".join(
+    fields = plural(len(unknown), "field")
+    return f"{spec.kind}: {fields} sent as-is (not in this tool's known schema): " + ", ".join(
         unknown
     )
 

@@ -27,7 +27,6 @@ from untaped.capability_api import (
     FormatOption,
     UntapedError,
     deprecated_alias,
-    echo,
     emit,
     finish,
     parse_kv_pairs,
@@ -47,7 +46,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
             list[str] | None,
             Parameter(
                 help=(
-                    "Template name(s) — one or more, or omit and pass "
+                    "Template names (one or more), or omit them and pass "
                     "``--stdin``. Pass ``--by-id`` to resolve AWX ids "
                     "instead. Multiple targets concatenate their usage "
                     "rows in the order given (dedup is per target)."
@@ -124,7 +123,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
             use = ListTemplateUsage(
                 ctx.workflow_nodes,
                 ctx.repo,
-                warn=lambda msg: echo(f"warning: {msg}", err=True),
+                warn=lambda msg: ctx.progress_ui().message("warning", msg),
             )
             for target in targets:
                 try:
@@ -139,7 +138,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    echo(f"warning: {target}: {exc}", err=True)
+                    ctx.progress_ui().message("warning", f"{target}: {exc}")
                     any_failed = True
         rows = [u.model_dump() for u in usages]
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)

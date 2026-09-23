@@ -36,6 +36,7 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    plural,
     raise_usage,
     report_errors,
 )
@@ -104,7 +105,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                 )
             if not allow_unknown_fields and (typos := _likely_typos(spec, overlay)):
                 raise_usage(
-                    f"{spec.kind} has no field(s) "
+                    f"{spec.kind} has no {plural(len(typos), 'field')} "
                     + ", ".join(f"{name} (did you mean {match}?)" for name, match in typos)
                     + "; fix the spelling or pass --allow-unknown-fields"
                 )

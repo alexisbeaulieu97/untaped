@@ -36,10 +36,12 @@ from untaped.capability_api import (
     emit,
     finish,
     parse_kv_pairs,
+    q,
     raise_usage,
     read_identifiers,
     render_rows,
     report_errors,
+    ui_context,
 )
 
 app = create_app(
@@ -144,15 +146,16 @@ def get_command(
                 # specifically about the id-only contract instead of a
                 # vague 404.
                 raise_usage(
-                    f"unified-templates get is id-only ({raw!r} isn't a number); "
-                    "names are not unique across kinds — use the per-kind sub-app "
-                    "for name lookup.",
+                    f"unified-templates get takes numeric ids ({q(raw)} is not a number); "
+                    "names are not unique across kinds, so use the per-kind sub-app "
+                    "for name lookup",
                 )
         if not identifiers:
             return
         records, missing = GetUnifiedTemplate(ctx.ujts)(ids=identifiers)
+    ui = ui_context(strict=False)
     for raw in missing:
-        echo(f"error: {raw}: not found", err=True)
+        ui.message("error", f"{raw}: not found")
     if records:
         cols = list(columns) if columns else default_get_columns(fmt, _DEFAULT_LIST_COLUMNS)
         emit(records, fmt=fmt, columns=cols, kind="awx.unified_template")

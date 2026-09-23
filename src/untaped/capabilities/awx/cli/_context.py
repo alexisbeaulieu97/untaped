@@ -28,7 +28,7 @@ from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStra
 from untaped.capabilities.awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
 from untaped.capabilities.awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
 from untaped.capabilities.awx.settings import AwxSettings
-from untaped.capability_api import AppContext, ConfigError, app_context, echo
+from untaped.capability_api import AppContext, ConfigError, UsageError, app_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -49,7 +49,7 @@ class AwxContext:
         self.fk = FkResolver(
             self.repo,
             self.catalog,
-            warn=lambda msg: echo(f"warning: {msg}", err=True),
+            warn=lambda msg: self.progress_ui().message("warning", msg),
         )
         self.strategies = StaticStrategyResolver()
         # Set on Ctrl-C so polling workers stop instead of blocking the exit.
@@ -145,7 +145,7 @@ def scope_for_spec(
     if parent is not None and spec.parent_field is None:
         raise ConfigError(f"--parent is not supported for {spec.kind}")
     if parent is not None and inventory is not None:
-        raise ConfigError("use --parent or --inventory, not both")
+        raise UsageError("use --parent or --inventory, not both")
     scope: dict[str, str] = {}
     if child:
         if inventory or parent:
