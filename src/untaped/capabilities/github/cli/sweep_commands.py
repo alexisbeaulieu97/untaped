@@ -59,12 +59,18 @@ def sweep_command(
     archived: Annotated[bool, Parameter(name="--archived", negative="")] = False,
     grep: Annotated[
         list[str] | None,
-        Parameter(name="--grep", help="Content regex. Repeatable.", consume_multiple=False),
+        Parameter(
+            name="--grep",
+            help="Content regex, POSIX extended (`a|b`, `\\(`; no `\\d`). Repeatable.",
+            consume_multiple=False,
+        ),
     ] = None,
     not_grep: Annotated[
         list[str] | None,
         Parameter(
-            name="--not-grep", help="Content regex that must not match.", consume_multiple=False
+            name="--not-grep",
+            help="Content regex (POSIX extended) that must not match.",
+            consume_multiple=False,
         ),
     ] = None,
     path: Annotated[
