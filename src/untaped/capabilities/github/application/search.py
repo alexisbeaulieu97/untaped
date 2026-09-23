@@ -21,6 +21,7 @@ from untaped.capabilities.github.domain import (
     UserResult,
     UserSearchFilters,
 )
+from untaped.capabilities.github.domain.errors import is_rate_limited
 from untaped.capabilities.github.domain.queries import ScopedQueryBase
 
 WarnFn = Callable[[str], None]
@@ -32,6 +33,10 @@ WarnFn = Callable[[str], None]
 MAX_SEARCH_QUERY_TEXT_LENGTH = 256
 MAX_SEARCH_BOOLEAN_OPERATORS = 5
 MAX_TEAM_REPO_QUALIFIERS = MAX_SEARCH_BOOLEAN_OPERATORS + 1
+# GitHub allows 10 code-search and 30 other search requests per minute; stay
+# under those per invocation so large teams do not trip 403/429 responses.
+MAX_CODE_SEARCH_BATCHES = 9
+MAX_ISSUE_SEARCH_BATCHES = 25
 _REPOSITORY_SEARCH_ENDPOINT = "/search/repositories"
 _SEARCH_BOOLEAN_OPERATORS = {"AND", "OR", "NOT"}
 _REPO_SEARCH_QUALIFIER_KEYS = frozenset(
@@ -286,6 +291,39 @@ def _sort_repo_results(rows: list[RepoResult], sort: str | None) -> list[RepoRes
     return rows
 
 
+def _cap_batches[F: ScopedQueryBase](
+    batches: tuple[F, ...], *, kind: str, max_batches: int, warn: WarnFn
+) -> tuple[F, ...]:
+    """Keep the first ``max_batches`` batches, warning which repos were searched."""
+    if len(batches) <= max_batches:
+        return batches
+    kept = batches[:max_batches]
+    searched = sum(len(batch.repos) for batch in kept)
+    total = sum(len(batch.repos) for batch in batches)
+    warn(
+        f"GitHub {kind} search is rate limited per minute; results cover only the "
+        f"first {searched} of {total} repositories ({max_batches} requests); "
+        "narrow the scope with --repo or a smaller team to search the rest"
+    )
+    return kept
+
+
+def _raw_issue_sort(raw_query: str | None) -> tuple[str, bool] | None:
+    """Return the last ``sort:<field>[-asc|-desc]`` qualifier as (field, descending)."""
+    found: tuple[str, bool] | None = None
+    for token in _tokenize_search_query(raw_query or ""):
+        if token.quoted or not token.value.lower().startswith("sort:"):
+            continue
+        value = token.value[len("sort:") :].lower()
+        descending = True
+        if value.endswith("-asc"):
+            value, descending = value[: -len("-asc")], False
+        elif value.endswith("-desc"):
+            value = value[: -len("-desc")]
+        found = (value, descending)
+    return found
+
+
 def _merged_batch_search[F: ScopedQueryBase, R: BaseModel](
     batches: tuple[F, ...],
     run: Callable[[F], Iterable[dict[str, Any]]],
@@ -294,31 +332,48 @@ def _merged_batch_search[F: ScopedQueryBase, R: BaseModel](
     identity: Callable[[R], object],
     limit: int | None,
     sort_key: Callable[[dict[str, Any]], Any] | None = None,
+    descending: bool = True,
+    kind: str = "",
+    warn: WarnFn = _noop,
 ) -> Iterator[R]:
     """Run each batch, dedupe by ``identity``, and apply ``limit`` across batches.
 
     With a ``sort_key`` and more than one batch, every batch is queried and
-    the merged rows are re-sorted descending (GitHub's default order) before
-    the limit, so the selection does not depend on batch order.
+    the merged rows are re-sorted (descending, GitHub's default order, unless
+    ``descending`` is false) before the limit, so the selection does not
+    depend on batch order. A rate limit after the first batch returns the
+    rows merged so far with a warning instead of discarding them.
     """
     merging = len(batches) > 1
     globally_sort = sort_key is not None and merging
     rows: list[tuple[dict[str, Any], R]] = []
     seen: set[object] = set()
-    for batch in batches:
-        for row in run(batch):
-            result = result_cls.model_validate(row)
-            key = identity(result)
-            if merging and key in seen:
-                continue
-            seen.add(key)
-            rows.append((row, result))
-            if not globally_sort and limit is not None and len(rows) >= limit:
-                break
+    for index, batch in enumerate(batches):
+        try:
+            for row in run(batch):
+                result = result_cls.model_validate(row)
+                key = identity(result)
+                if merging and key in seen:
+                    continue
+                seen.add(key)
+                rows.append((row, result))
+                if not globally_sort and limit is not None and len(rows) >= limit:
+                    break
+        except HttpStatusError as exc:
+            if index == 0 or not is_rate_limited(exc.status_code, exc.body):
+                raise
+            searched = sum(len(done.repos) for done in batches[:index])
+            total = sum(len(each.repos) for each in batches)
+            warn(
+                f"GitHub {kind} search hit a rate limit after {index} of {len(batches)} "
+                f"requests; returning partial results covering {searched} of {total} "
+                "repositories"
+            )
+            break
         if not globally_sort and limit is not None and len(rows) >= limit:
             break
     if globally_sort and sort_key is not None:
-        rows.sort(key=lambda pair: sort_key(pair[0]), reverse=True)
+        rows.sort(key=lambda pair: sort_key(pair[0]), reverse=descending)
     if limit is not None:
         rows = rows[:limit]
     return iter([result for _, result in rows])
@@ -407,12 +462,20 @@ class SearchCode:
     ) -> Iterator[CodeResult]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
         effective = _apply_scope_defaults(filters, team_repos)
-        return _merged_batch_search(
+        batches = _cap_batches(
             _scoped_search_batches(effective, kind="code"),
+            kind="code",
+            max_batches=MAX_CODE_SEARCH_BATCHES,
+            warn=self._warn,
+        )
+        return _merged_batch_search(
+            batches,
             lambda batch: self._search.search_code(batch.to_query_string(), limit=batch.limit),
             CodeResult,
             identity=lambda row: row.html_url,
             limit=effective.limit,
+            kind="code",
+            warn=self._warn,
         )
 
 
@@ -438,15 +501,35 @@ class SearchIssues:
     ) -> Iterator[IssueResult]:
         team_repos = _resolve_team_repos(self._teams, team_scopes=team_scopes)
         effective = _apply_scope_defaults(filters, team_repos)
-        return _merged_batch_search(
+        batches = _cap_batches(
             _scoped_search_batches(effective, kind="issue"),
+            kind="issue",
+            max_batches=MAX_ISSUE_SEARCH_BATCHES,
+            warn=self._warn,
+        )
+        sort_key = _ISSUE_SORT_KEYS.get(effective.sort) if effective.sort else None
+        descending = True
+        raw_sort = None if effective.sort else _raw_issue_sort(effective.raw_query)
+        if raw_sort is not None:
+            field, descending = raw_sort
+            sort_key = _ISSUE_SORT_KEYS.get(field)
+            if sort_key is None and len(batches) > 1:
+                self._warn(
+                    f"search issues cannot merge batches by sort:{field}; "
+                    "multi-batch results use batch order"
+                )
+        return _merged_batch_search(
+            batches,
             lambda batch: self._search.search_issues(
                 batch.to_query_string(), sort=batch.sort, limit=batch.limit
             ),
             IssueResult,
             identity=lambda row: row.id,
             limit=effective.limit,
-            sort_key=_ISSUE_SORT_KEYS.get(effective.sort) if effective.sort else None,
+            sort_key=sort_key,
+            descending=descending,
+            kind="issue",
+            warn=self._warn,
         )
 
 

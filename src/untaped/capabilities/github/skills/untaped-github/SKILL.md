@@ -52,7 +52,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   - `untaped github sweep --org acme --grep old_api --not-grep new_api`
   - `untaped github sweep --org acme --ref 'release/*' --grep jenkins --show matches`
 - Use `--fail-on-match` as the CI gate for banned patterns: the sweep still reports rows, then exits `1` if any repo matched. Use `--strict` only when any unscanned repo should also fail the run.
-- Per-repo problems never abort a sweep: an explicit `--repo`/`--stdin` name that GitHub cannot resolve (404, no access), corrupt corpus metadata, or a local filesystem/Git error becomes an unscanned repo with its reason in the footer, and the rest of the sweep completes (`--strict` still exits `1`).
+- Per-repo problems never abort a sweep: an explicit `--repo`/`--stdin` name that GitHub cannot resolve (404, no access), corrupt corpus metadata, or a local filesystem/Git error becomes an unscanned repo with its reason in the footer, and the rest of the sweep completes (`--strict` still exits `1`). Bad credentials (401) and rate limits (429, rate-limited 403) abort the sweep instead, and a sweep whose explicitly requested repos all fail to resolve exits non-zero.
 - Sweep freshness footer semantics: default online sweeps refresh uncached, stale, or under-profiled repos according to `github.sweep.max_age_seconds`; `--sync` forces refresh; `--no-sync` scans only cached metadata. The footer reports matched/scanned counts, refreshed/cached counts, oldest fetch, and warnings for unscanned repos. A failed refresh scans a covering cached copy and counts it as cached, but the footer warns `refresh failed for N repos; scanned cached copies` and lists each stale repo with its failure reason; without a usable covering copy it becomes unscanned.
 - Sweep refreshes retry transient Git transport failures (dropped TLS/TCP streams, `early EOF`, HTTP 429/5xx) with short backoff. Wide ref selections (`--refs branches|tags|all`, `--ref GLOB`) list remote refs first, fetch only new or moved refs in bounded batches, and prune refs deleted upstream, so an interrupted refresh resumes from the refs already fetched on the next run.
 - Sweep content predicates use local `git grep -I --extended-regexp`: patterns are POSIX extended regexes regardless of the user's `grep.patternType` (`a|b` alternates, `\(` matches a literal parenthesis, Perl classes such as `\d` are unsupported — use `[0-9]`). Binary files are skipped. `-i`, `-F`, and `-w` apply to every `--grep` and `--not-grep` in the query. `--any` ORs positive predicates only; negative predicates remain ANDed.
@@ -85,7 +85,13 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   `updated` query all batches and locally merge-sort before the final limit.
 - `search code` and `search issues` batch team-expanded and `--repo`/`--repo-stdin`
   scopes the same way (at most five boolean operators per request, counting
-  unquoted `AND`/`OR`/`NOT` in the query), never truncating a team. Code results
+  unquoted `AND`/`OR`/`NOT` in the query). To stay under GitHub's per-minute
+  search limits, one invocation sends at most 9 code-search or 25 issue-search
+  batch requests; beyond that it warns that results cover only the first N
+  repositories — narrow the scope to search the rest. A rate limit after the
+  first batch returns the partial merged results with a warning. Code results
   are deduped by `html_url` and issue results by `id`; `--limit` applies across
-  batches, and a sorted multi-batch issue search queries every batch and
-  merge-sorts locally (descending) before the limit.
+  batches, and a sorted multi-batch issue search (`--sort`, or a
+  `sort:<field>[-asc|-desc]` qualifier in the raw query) queries every batch and
+  merge-sorts locally before the limit; an unsupported `sort:` field warns and
+  keeps batch order.
