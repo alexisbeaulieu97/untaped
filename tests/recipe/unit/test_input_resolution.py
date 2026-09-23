@@ -250,7 +250,7 @@ def test_recipe_from_still_falls_back_to_default() -> None:
 
 
 def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
-    with pytest.raises(ConfigError, match="cannot combine --var/--vars and --input-from"):
+    with pytest.raises(ConfigError, match="cannot combine --var/--vars-file and --input-from"):
         _config(
             _recipe(),
             fixed_values={"service": "api", "token": "secret"},

@@ -1,4 +1,4 @@
-"""Structured detail records for ``recipe show``."""
+"""Structured detail records for ``recipe get``."""
 
 from __future__ import annotations
 

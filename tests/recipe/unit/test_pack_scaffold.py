@@ -352,7 +352,7 @@ def test_scaffolded_hook_pack_passes_check(
 
     manifest = read_pack_manifest(pack_dir)
     assert orphaned_test_dirs(InstalledPack.local(pack_dir, manifest)) == []
-    result = CliInvoker().invoke(app, ["check", str(pack_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(pack_dir), "--format", "json"])
     assert result.exit_code == 0, result.output
 
 
@@ -387,7 +387,7 @@ def test_new_pack_no_lock_never_invokes_uv_and_writes_scaffold(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(pack_scaffold, "lock_project", _fail_if_lock_called)
 
-    result = CliInvoker().invoke(app, ["new", "pack", "ansible", "--no-lock"])
+    result = CliInvoker().invoke(app, ["init", "pack", "ansible", "--no-lock"])
 
     assert result.exit_code == 0, result.output
     assert str(tmp_path / "ansible") in result.stdout
@@ -407,7 +407,7 @@ def test_new_recipe_no_lock_never_invokes_uv_and_writes_scaffold(
     pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
     monkeypatch.setattr(pack_scaffold, "lock_project", _fail_if_lock_called)
 
-    result = CliInvoker().invoke(app, ["new", "recipe", "./ansible/playbook", "--no-lock"])
+    result = CliInvoker().invoke(app, ["init", "recipe", "./ansible/playbook", "--no-lock"])
 
     assert result.exit_code == 0, result.output
     recipe_path = tmp_path / "ansible" / "recipes" / "playbook" / "recipe.yml"
@@ -429,7 +429,7 @@ def test_new_hook_no_lock_never_invokes_uv_and_writes_scaffold(
     pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
     monkeypatch.setattr(pack_scaffold, "lock_project", _fail_if_lock_called)
 
-    result = CliInvoker().invoke(app, ["new", "hook", "./ansible/set_owner", "--no-lock"])
+    result = CliInvoker().invoke(app, ["init", "hook", "./ansible/set_owner", "--no-lock"])
 
     assert result.exit_code == 0, result.output
     module_path = tmp_path / "ansible" / "src" / "ansible_pack" / "hooks" / "set_owner.py"
@@ -449,7 +449,7 @@ def test_new_hook_explicit_local_path_splits_on_last_segment(
     monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
     pack_scaffold.scaffold_pack(tmp_path / "some-local-pack", "some-local-pack")
 
-    result = CliInvoker().invoke(app, ["new", "hook", "./some-local-pack/probe"])
+    result = CliInvoker().invoke(app, ["init", "hook", "./some-local-pack/probe"])
 
     assert result.exit_code == 0, result.output
     assert (
@@ -467,7 +467,7 @@ def test_new_hook_names_kind_and_force_replaces_wrong_kind(
     monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
     pack_scaffold.scaffold_pack(tmp_path / "ansible", "ansible")
 
-    made = CliInvoker().invoke(app, ["new", "hook", "./ansible/probe"])
+    made = CliInvoker().invoke(app, ["init", "hook", "./ansible/probe"])
     assert made.exit_code == 0, made.output
     assert "scaffolded transform hook" in made.stderr
     assert "--kind" in made.stderr
@@ -475,12 +475,12 @@ def test_new_hook_names_kind_and_force_replaces_wrong_kind(
     test_path = tmp_path / "ansible" / "tests" / "test_hook_probe.py"
     assert "transform" in test_path.read_text(encoding="utf-8")
 
-    refused = CliInvoker().invoke(app, ["new", "hook", "./ansible/probe", "--kind", "validate"])
+    refused = CliInvoker().invoke(app, ["init", "hook", "./ansible/probe", "--kind", "validate"])
     assert refused.exit_code != 0
     assert "hook already exists" in refused.output
 
     forced = CliInvoker().invoke(
-        app, ["new", "hook", "./ansible/probe", "--kind", "validate", "--force"]
+        app, ["init", "hook", "./ansible/probe", "--kind", "validate", "--force"]
     )
     assert forced.exit_code == 0, forced.output
     assert "scaffolded validate hook" in forced.stderr
@@ -494,7 +494,7 @@ def test_new_hook_rejects_bare_multi_segment_ref_with_exact_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    result = CliInvoker().invoke(app, ["new", "hook", "a/b/c"])
+    result = CliInvoker().invoke(app, ["init", "hook", "a/b/c"])
 
     assert result.exit_code != 0
     assert "qualified refs must use <pack>/<name>" in result.output
@@ -507,7 +507,7 @@ def test_new_hook_pack_not_found_hints_when_matching_directory_exists(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "demo").mkdir()
 
-    result = CliInvoker().invoke(app, ["new", "hook", "demo/probe"])
+    result = CliInvoker().invoke(app, ["init", "hook", "demo/probe"])
 
     assert result.exit_code != 0
     assert (
@@ -522,7 +522,7 @@ def test_new_hook_pack_not_found_omits_hint_when_no_matching_directory(
 ) -> None:
     monkeypatch.chdir(tmp_path)
 
-    result = CliInvoker().invoke(app, ["new", "hook", "missing/probe"])
+    result = CliInvoker().invoke(app, ["init", "hook", "missing/probe"])
 
     assert result.exit_code != 0
     assert "pack not found: missing" in result.output

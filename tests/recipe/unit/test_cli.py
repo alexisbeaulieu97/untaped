@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from importlib.metadata import version
 from pathlib import Path
 from types import ModuleType
@@ -22,34 +21,9 @@ from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.infrastructure.backup import BackupDraft, BackupStore
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.settings import get_settings
-from untaped.testing import CliInvoker, assert_destructive_contract
+from untaped.testing import CliInvoker, ScriptedPromptBackend, assert_destructive_contract
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
-
-
-class _DeclineUi:
-    stdin = object()
-
-    def confirm(self, message: str, *, default: bool = False) -> bool:
-        return False
-
-    def progress(self, message: str) -> _DeclineUi:
-        return self
-
-    def terminal(self, *, refusal: str = "") -> _DeclineUi:
-        return self
-
-    def update(self, label: str, *, fraction: float | None = None) -> None:
-        pass
-
-    def message(self, kind: str, message: str) -> None:
-        print(message, file=sys.stderr)
-
-    def __enter__(self) -> _DeclineUi:
-        return self
-
-    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
-        return False
 
 
 def _write_hook_project(
@@ -110,23 +84,28 @@ def _write_pack_project(root: Path) -> None:
     (root / "uv.lock").write_text("version = 1\n")
 
 
-def test_add_pack_prints_recipes_and_hooks_before_confirm(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_add_pack_installs_without_prompting_and_prints_summary(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
 
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
-    )
-    result = CliInvoker().invoke(app, ["add", str(pack)])
+    result = CliInvoker().invoke(app, ["add", str(pack), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert "demo-recipe" in result.stderr
     assert "demo_hook" in result.stderr
-    assert not (library_root() / "packs" / "demo").exists()
+    assert json.loads(result.stdout) == {
+        "action": "created",
+        "name": "demo",
+        "source": str(pack),
+        "rev": None,
+    }
+    assert (library_root() / "packs" / "demo").exists()
+
+    again = CliInvoker().invoke(app, ["add", str(pack), "--force", "-f", "pipe"])
+    assert again.exit_code == 0, again.output
+    envelope = json.loads(again.stdout)
+    assert envelope["kind"] == "recipe.add_outcome"
+    assert envelope["record"]["action"] == "updated"
 
 
 def _write_hookless_pack_project(root: Path, *, lock: bool = True) -> None:
@@ -151,7 +130,7 @@ def test_add_and_check_hookless_pack_without_lock(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     _write_hookless_pack_project(pack, lock=False)
 
-    check = CliInvoker().invoke(app, ["check", str(pack)])
+    check = CliInvoker().invoke(app, ["validate", str(pack)])
     assert check.exit_code == 0, check.output
 
     added = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
@@ -208,7 +187,7 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
     )
 
     assert result.exit_code == 0, result.output
-    assert "warning: library copy has local edits; --discard-edits will overwrite them." in (
+    assert "warning: library copy has local edits; --discard-edits will overwrite them" in (
         result.stderr
     )
     assert installed_recipe.read_text() == "version: 1\nsteps: []\n"
@@ -217,30 +196,47 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
     assert result.exit_code == 0, result.output
 
 
-def test_remove_warns_on_local_edits_before_confirm(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_remove_warns_on_local_edits_before_confirm(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     _write_pack_project(pack)
-    result = CliInvoker().invoke(app, ["add", str(pack), "--yes"])
+    result = CliInvoker().invoke(app, ["add", str(pack)])
     assert result.exit_code == 0, result.output
     installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
-    )
+    backend = ScriptedPromptBackend(confirms=[False])
 
-    result = CliInvoker().invoke(app, ["remove", "demo"])
+    result = CliInvoker().invoke(app, ["remove", "demo"], interactive=True, prompt_backend=backend)
+
+    assert result.exit_code == 1, result.output
+    assert "About to remove 1 pack:\n  - demo\n" in result.stderr
+    assert (
+        "warning: pack 'demo' has local edits in the library (via edit or init "
+        "recipe/hook); removing discards them"
+    ) in result.stderr
+    assert "cancelled; no changes made" in result.stderr
+    assert backend.calls == [("confirm", "Continue?")]
+    assert (library_root() / "packs" / "demo").exists()
+
+
+def test_remove_dry_run_previews_without_removing(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["add", str(pack)]).exit_code == 0
+
+    result = CliInvoker().invoke(app, ["remove", "demo", "--dry-run", "--format", "json"])
 
     assert result.exit_code == 0, result.output
-    assert "About to remove 1 pack(s):\n  - demo\n" in result.stderr
-    assert (
-        "warning: pack 'demo' has local edits in the library (via edit or new "
-        "recipe/hook); removing discards them."
-    ) in result.stderr
+    assert json.loads(result.stdout) == [
+        {"action": "planned", "name": "demo", "source": None, "rev": None}
+    ]
     assert (library_root() / "packs" / "demo").exists()
+
+    removed = CliInvoker().invoke(app, ["remove", "demo", "--yes", "-f", "pipe"])
+    assert removed.exit_code == 0, removed.output
+    envelope = json.loads(removed.stdout)
+    assert envelope["kind"] == "recipe.remove_outcome"
+    assert envelope["record"]["action"] == "removed"
+    assert not (library_root() / "packs" / "demo").exists()
 
 
 def test_remove_rejects_index_rows_without_content_hash(
@@ -316,7 +312,7 @@ def test_apply_yes_writes_and_emits_json_summary(
     assert result.exit_code == 0, result.output
     assert (target / "out.txt").read_text() == "service=api\n"
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "applied"
+    assert rows[0]["action"] == "applied"
     assert "Recipe preview:" in result.stderr
     assert str(target / "out.txt") in result.stderr
     assert "Recipe apply:" in result.stderr
@@ -342,7 +338,7 @@ def test_apply_dry_run_defaults_to_table_preview(
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "dry-run"
+    assert rows[0]["action"] == "planned"
     assert "Recipe preview:" in result.stderr
     assert "path" in result.stderr
     assert "action" in result.stderr
@@ -543,7 +539,7 @@ def test_apply_preview_none_keeps_summary_without_table_or_hunks(tmp_path: Path)
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout)[0]["status"] == "dry-run"
+    assert json.loads(result.stdout)[0]["action"] == "planned"
     assert "Recipe preview:" in result.stderr
     assert str(target / "out.txt") not in result.stderr
     assert "--- a/out.txt" not in result.stderr
@@ -571,12 +567,12 @@ def test_apply_preview_none_keeps_stdout_format_independent(tmp_path: Path) -> N
             "--format",
             "json",
             "--columns",
-            "target",
+            "target_path",
         ],
     )
 
     assert result.exit_code == 0, result.output
-    assert json.loads(result.stdout) == [{"target": str(target)}]
+    assert json.loads(result.stdout) == [{"target_path": str(target)}]
     assert "Recipe preview:" in result.stderr
     assert "out.txt" not in result.stderr
 
@@ -598,7 +594,7 @@ def test_apply_table_preview_reports_planning_failures(
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
+    assert rows[0]["action"] == "failed"
     assert "Recipe preview:" in result.stderr
     assert "error" in result.stderr
     assert str(target) in result.stderr
@@ -737,10 +733,7 @@ def test_apply_table_preview_uses_configured_preview_max_rows(
     assert "two.txt" not in result.stderr
 
 
-def test_apply_decline_renders_cancelled_summary_without_writing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_apply_decline_renders_cancelled_summary_without_writing(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
         "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
@@ -749,25 +742,21 @@ def test_apply_decline_renders_cancelled_summary_without_writing(
     target = tmp_path / "target"
     target.mkdir()
 
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
-    )
     result = CliInvoker().invoke(
         app,
-        ["apply", str(recipe), str(target), "--preview", "none"],
+        ["apply", str(recipe), str(target), "--preview", "none", "--format", "json"],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[False]),
     )
 
-    assert result.exit_code == 0, result.output
+    # A declined confirmation exits 1 with the standard decline line.
+    assert result.exit_code == 1, result.output
     assert not (target / "out.txt").exists()
-    assert "Recipe apply cancelled:" in result.stderr
-    assert "1 changing target not applied" in result.stderr
+    assert result.stderr.rstrip().endswith("cancelled; no changes made")
+    assert [row["action"] for row in json.loads(result.stdout)] == ["cancelled"]
 
 
-def test_apply_confirmation_reprints_summary_adjacent_to_prompt(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_apply_confirmation_reprints_summary_adjacent_to_prompt(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
         "version: 1\n"
@@ -783,33 +772,27 @@ def test_apply_confirmation_reprints_summary_adjacent_to_prompt(
     (tmp_path / "two.txt").write_text("two\n")
     target = tmp_path / "target"
     target.mkdir()
+    backend = ScriptedPromptBackend(confirms=[False])
 
-    class _PromptUi(_DeclineUi):
-        def confirm(self, message: str, *, default: bool = False) -> bool:
-            print(f"PROMPT {message}", file=sys.stderr)
-            return False
-
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _PromptUi()
+    result = CliInvoker().invoke(
+        app,
+        ["apply", str(recipe), str(target), "--preview", "table"],
+        interactive=True,
+        prompt_backend=backend,
     )
 
-    result = CliInvoker().invoke(app, ["apply", str(recipe), str(target), "--preview", "table"])
-
-    assert result.exit_code == 0, result.output
-    before_prompt = result.stderr.rsplit("PROMPT Continue?", maxsplit=1)[0]
-    assert before_prompt.rstrip().endswith(
+    assert result.exit_code == 1, result.output
+    assert backend.calls == [("confirm", "Continue?")]
+    before_decline = result.stderr.rsplit("cancelled; no changes made", maxsplit=1)[0]
+    assert before_decline.rstrip().endswith(
         "Recipe preview: 1 target, 1 changing, 0 unchanged, 0 failed, 2 files changed"
     )
-    assert before_prompt.count("Recipe preview:") == 2
+    assert before_decline.count("Recipe preview:") == 2
     assert not (target / "one.txt").exists()
     assert not (target / "two.txt").exists()
 
 
-def test_confirm_accept_applies_changes(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_confirm_accept_applies_changes(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
         "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
@@ -818,22 +801,39 @@ def test_confirm_accept_applies_changes(
     target = tmp_path / "target"
     target.mkdir()
 
-    class _AcceptUi(_DeclineUi):
-        def confirm(self, message: str, *, default: bool = False) -> bool:
-            return True
-
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _AcceptUi()
-    )
     result = CliInvoker().invoke(
         app,
         ["apply", str(recipe), str(target), "--preview", "none"],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[True]),
     )
 
     assert result.exit_code == 0, result.output
     assert (target / "out.txt").read_text(encoding="utf-8") == "hello\n"
-    assert "Recipe apply cancelled:" not in result.stderr
+    assert "cancelled; no changes made" not in result.stderr
+
+
+def test_apply_stdin_confirms_on_the_controlling_terminal(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
+    )
+    (tmp_path / "template.txt").write_text("hello\n")
+    target = tmp_path / "target"
+    target.mkdir()
+    backend = ScriptedPromptBackend(confirms=[True])
+
+    result = CliInvoker().invoke(
+        app,
+        ["apply", str(recipe), "--stdin", "--preview", "none"],
+        input=f"{target}\n",
+        terminal=True,
+        prompt_backend=backend,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert backend.calls == [("confirm", "Continue?")]
+    assert (target / "out.txt").read_text(encoding="utf-8") == "hello\n"
 
 
 def test_apply_preview_only_modes_do_not_render_cancelled_summary(tmp_path: Path) -> None:
@@ -849,9 +849,9 @@ def test_apply_preview_only_modes_do_not_render_cancelled_summary(tmp_path: Path
     check = CliInvoker().invoke(app, ["apply", str(recipe), str(target), "--check"])
 
     assert dry_run.exit_code == 0, dry_run.output
-    assert check.exit_code == 1, check.output
-    assert "Recipe apply cancelled:" not in dry_run.stderr
-    assert "Recipe apply cancelled:" not in check.stderr
+    assert check.exit_code == 3, check.output
+    assert "cancelled; no changes made" not in dry_run.stderr
+    assert "cancelled; no changes made" not in check.stderr
     assert not (target / "out.txt").exists()
 
 
@@ -981,11 +981,11 @@ def test_apply_check_reports_drift_without_writing_or_backing_up(
         ["apply", str(recipe), str(target), "--check", "--format", "json"],
     )
 
-    assert drift.exit_code == 1, drift.output
+    assert drift.exit_code == 3, drift.output
     assert not (target / "out.txt").exists()
     assert BackupStore(library_root() / "backups").list() == []
     rows = json.loads(drift.stdout)
-    assert rows[0]["status"] == "check"
+    assert rows[0]["action"] == "planned"
     assert rows[0]["files_changed"] == 1
     assert "Recipe preview:" in drift.stderr
     assert str(target / "out.txt") not in drift.stderr
@@ -1000,7 +1000,7 @@ def test_apply_check_reports_drift_without_writing_or_backing_up(
 
     assert clean.exit_code == 0, clean.output
     rows = json.loads(clean.stdout)
-    assert rows[0]["status"] == "check"
+    assert rows[0]["action"] == "unchanged"
     assert rows[0]["files_changed"] == 0
     assert "Recipe preview:" in clean.stderr
     assert str(target / "out.txt") not in clean.stderr
@@ -1024,7 +1024,7 @@ def test_apply_check_explicit_table_preview_reports_drift(
         ["apply", str(recipe), str(target), "--check", "--preview", "table"],
     )
 
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 3, result.output
     assert "Recipe preview:" in result.stderr
     assert str(target / "out.txt") in result.stderr
     assert "action" in result.stderr
@@ -1049,7 +1049,7 @@ def test_apply_check_explicit_diff_preview_reports_drift_without_writing(
         ["apply", "./recipe.yml", str(target), "--check", "--preview", "diff"],
     )
 
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 3, result.output
     assert not (target / "out.txt").exists()
     assert BackupStore(library_root() / "backups").list() == []
     assert f"# {tmp_path / 'target'}" in result.stderr
@@ -1184,7 +1184,7 @@ def test_apply_check_allows_stdin_without_yes(tmp_path: Path) -> None:
         input=str(target) + "\n",
     )
 
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 3, result.output
     assert "requires --yes" not in result.output
     assert not (target / "out.txt").exists()
 
@@ -1221,8 +1221,8 @@ def test_apply_stdin_without_yes_refuses_before_hooks_run(tmp_path: Path) -> Non
         input=str(target) + "\n",
     )
 
-    assert refused.exit_code != 0
-    assert "requires --yes" in refused.output
+    assert refused.exit_code == 2
+    assert "error: apply requires --yes when not interactive" in refused.output
     assert not marker.exists()
 
 
@@ -1303,7 +1303,7 @@ def test_apply_backup_bundle_records_only_successful_targets(tmp_path: Path) -> 
 
     assert result.exit_code != 0
     rows = json.loads(result.stdout)
-    assert [row["status"] for row in rows] == ["applied", "error"]
+    assert [row["action"] for row in rows] == ["applied", "failed"]
     assert (target / "config.txt").read_text() == "after\n"
     bundles = BackupStore(library_root() / "backups").list()
     assert len(bundles) == 1
@@ -1471,7 +1471,7 @@ def test_apply_vars_file_native_list_skips_string_parsing(
             "apply",
             str(recipe),
             str(target),
-            "--vars",
+            "--vars-file",
             str(vars_file),
             "--yes",
             "--format",
@@ -1598,7 +1598,7 @@ def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
     assert secret not in result.stdout
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
+    assert rows[0]["action"] == "failed"
     assert rows[0]["error"] == "input 'token': cannot coerce value to int"
     assert rows[0]["inputs"] == {}
 
@@ -1692,7 +1692,7 @@ def test_apply_sensitive_inputs_redact_warnings_and_suppress_diffs(
     assert "files_changed" in result.stderr
     assert "out.txt" not in result.stderr
     rows = json.loads(result.stdout)
-    assert rows[0]["warnings"] == "diagnostic suppressed for target with sensitive inputs"
+    assert rows[0]["warnings"] == ["diagnostic suppressed for target with sensitive inputs"]
     assert rows[0]["inputs"] == {"token": "***"}
 
 
@@ -1734,7 +1734,7 @@ def test_apply_skip_verdict_end_to_end(tmp_path: Path) -> None:
         ["apply", str(recipe_dir), str(out_target), "--yes", "--format", "json"],
     )
     assert all_skip.exit_code == 0, all_skip.output
-    assert json.loads(all_skip.stdout)[0]["status"] == "skipped"
+    assert json.loads(all_skip.stdout)[0]["action"] == "skipped"
     assert not (out_target / "out.txt").exists()
     assert backups.list() == []
     assert "1 skipped" in all_skip.stderr
@@ -1745,7 +1745,7 @@ def test_apply_skip_verdict_end_to_end(tmp_path: Path) -> None:
         ["apply", str(recipe_dir), str(out_target), "--check", "--format", "json"],
     )
     assert checked.exit_code == 0, checked.output
-    assert json.loads(checked.stdout)[0]["status"] == "skipped"
+    assert json.loads(checked.stdout)[0]["action"] == "skipped"
 
     # Mixed run: applicable target applies (and is backed up), other skips.
     mixed = CliInvoker().invoke(
@@ -1761,9 +1761,9 @@ def test_apply_skip_verdict_end_to_end(tmp_path: Path) -> None:
         ],
     )
     assert mixed.exit_code == 0, mixed.output
-    rows = {row["target"]: row for row in json.loads(mixed.stdout)}
-    assert rows[str(in_target)]["status"] == "applied"
-    assert rows[str(out_target)]["status"] == "skipped"
+    rows = {row["target_path"]: row for row in json.loads(mixed.stdout)}
+    assert rows[str(in_target)]["action"] == "applied"
+    assert rows[str(out_target)]["action"] == "skipped"
     assert (in_target / "out.txt").read_text() == "applied\n"
     assert not (out_target / "out.txt").exists()
     assert len(backups.list()) == 1
@@ -1777,8 +1777,8 @@ def test_apply_skip_verdict_end_to_end(tmp_path: Path) -> None:
     )
     assert piped.exit_code == 0, piped.output
     record = json.loads(piped.stdout)
-    assert record["kind"] == "recipe.outcome"
-    assert record["record"]["status"] == "skipped"
+    assert record["kind"] == "recipe.apply_outcome"
+    assert record["record"]["action"] == "skipped"
 
     # Skip flows through --stdin targets too.
     from_stdin = CliInvoker().invoke(
@@ -1787,7 +1787,7 @@ def test_apply_skip_verdict_end_to_end(tmp_path: Path) -> None:
         input=f"{out_target}\n",
     )
     assert from_stdin.exit_code == 0, from_stdin.output
-    assert json.loads(from_stdin.stdout)[0]["status"] == "skipped"
+    assert json.loads(from_stdin.stdout)[0]["action"] == "skipped"
 
 
 def test_apply_transform_warn_reaches_outcome(tmp_path: Path) -> None:
@@ -1872,7 +1872,7 @@ def test_apply_sensitive_inputs_redact_hook_failures(
     assert secret not in result.stdout
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
+    assert rows[0]["action"] == "failed"
     assert rows[0]["error"] == (
         "target planning failed; diagnostic suppressed for target with sensitive inputs"
     )
@@ -1980,7 +1980,7 @@ def test_apply_record_valued_source_fails_without_copying_record_contents(
     assert secret not in result.stdout
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
-    assert rows[0]["status"] == "error"
+    assert rows[0]["action"] == "failed"
     assert rows[0]["error"] == "derived input value must be a scalar"
 
 
@@ -2065,7 +2065,7 @@ def test_apply_derives_inputs_from_pipe_record_and_input_from_override(
     assert result.exit_code == 0, result.output
     assert (target / "out.txt").read_text() == "api workspace\n"
     row = json.loads(result.stdout)
-    assert row["kind"] == "recipe.outcome"
+    assert row["kind"] == "recipe.apply_outcome"
     assert row["record"]["inputs"] == {"service": "api", "owner": "workspace"}
 
 
@@ -2105,7 +2105,7 @@ def test_apply_derives_structured_input_from_pipe_record(
 
     assert result.exit_code == 0, result.output
     row = json.loads(result.stdout)
-    assert row["kind"] == "recipe.outcome"
+    assert row["kind"] == "recipe.apply_outcome"
     assert row["record"]["inputs"] == {"collections": ["ansible.builtin", "community.general"]}
 
 
@@ -2139,7 +2139,7 @@ def test_apply_rejects_input_from_conflicts_global_scope_and_interactive_check(
         ],
     )
     assert conflict.exit_code != 0
-    assert "cannot combine --var/--vars and --input-from for service" in conflict.output
+    assert "cannot combine --var/--vars-file and --input-from for service" in conflict.output
 
     global_source = CliInvoker().invoke(
         app,
@@ -2159,8 +2159,8 @@ def test_apply_rejects_input_from_conflicts_global_scope_and_interactive_check(
         app,
         ["apply", str(recipe), str(target), "--interactive", "--check"],
     )
-    assert interactive_check.exit_code != 0
-    assert "--interactive cannot be used with --check" in interactive_check.output
+    assert interactive_check.exit_code == 2
+    assert "--interactive cannot be combined with --check" in interactive_check.output
 
 
 def test_apply_stdin_interactive_without_tty_fails_before_prompting(
@@ -2239,14 +2239,14 @@ def test_apply_outcome_includes_optional_transform_warnings(tmp_path: Path) -> N
     )
     assert json_result.exit_code == 0, json_result.output
     rows = json.loads(json_result.stdout)
-    assert rows[0]["warnings"] == "optional transform skipped missing file: missing.yml"
+    assert rows[0]["warnings"] == ["optional transform skipped missing file: missing.yml"]
 
     yaml_result = CliInvoker().invoke(
         app,
         ["apply", str(recipe), str(target), "--dry-run", "--format", "yaml"],
     )
     assert yaml_result.exit_code == 0, yaml_result.output
-    assert "warnings: 'optional transform skipped missing file: missing.yml'" in yaml_result.stdout
+    assert "- 'optional transform skipped missing file: missing.yml'" in yaml_result.stdout
 
     pipe_result = CliInvoker().invoke(
         app,
@@ -2254,10 +2254,10 @@ def test_apply_outcome_includes_optional_transform_warnings(tmp_path: Path) -> N
     )
     assert pipe_result.exit_code == 0, pipe_result.output
     pipe_row = json.loads(pipe_result.stdout)
-    assert pipe_row["kind"] == "recipe.outcome"
-    assert pipe_row["record"]["warnings"] == (
+    assert pipe_row["kind"] == "recipe.apply_outcome"
+    assert pipe_row["record"]["warnings"] == [
         "optional transform skipped missing file: missing.yml"
-    )
+    ]
 
 
 def test_apply_outcome_includes_zero_match_glob_warnings(tmp_path: Path) -> None:
@@ -2275,7 +2275,7 @@ def test_apply_outcome_includes_zero_match_glob_warnings(tmp_path: Path) -> None
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["warnings"] == "globs matched no files: **/*.generated"
+    assert rows[0]["warnings"] == ["globs matched no files: **/*.generated"]
 
 
 def test_ansible_style_optional_multi_file_recipe_acceptance(tmp_path: Path) -> None:
@@ -2323,11 +2323,11 @@ def test_ansible_style_optional_multi_file_recipe_acceptance(tmp_path: Path) -> 
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert rows[0]["warnings"] == (
-        "optional transform skipped missing file: site.yml; "
-        "optional transform skipped missing file: playbooks/deploy.yml"
-    )
-    assert rows[1]["warnings"] == ""
+    assert rows[0]["warnings"] == [
+        "optional transform skipped missing file: site.yml",
+        "optional transform skipped missing file: playbooks/deploy.yml",
+    ]
+    assert rows[1]["warnings"] == []
     assert "# collections added to local.yml" in (first / "local.yml").read_text()
     assert not (first / "ansible.cfg").exists()
     assert "# collections added to local.yml" in (second / "local.yml").read_text()
@@ -2445,7 +2445,7 @@ def test_hook_run_accepts_path_ref_form_like_new_hook(
             str(target),
         ],
     )
-    assert conflict.exit_code != 0
+    assert conflict.exit_code == 2
     assert "not both" in conflict.output
 
 
@@ -3206,8 +3206,8 @@ def test_hook_run_quiet_suppresses_context_but_not_hook_diagnostics(tmp_path: Pa
 @pytest.mark.parametrize(
     "args",
     [
-        ["show", "missing"],
-        ["backup", "show", "latest"],
+        ["get", "missing"],
+        ["backup", "get", "latest"],
     ],
 )
 def test_library_command_value_errors_are_reported_cleanly(args: list[str]) -> None:
@@ -3242,7 +3242,7 @@ def test_recipe_check_validates_package_assets_and_hooks(tmp_path: Path) -> None
         code="def validate(*, inputs, target, args, helpers):\n    return helpers.pass_()\n",
     )
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
@@ -3285,7 +3285,7 @@ def test_recipe_check_rejects_step_hook_kind_mismatch(tmp_path: Path) -> None:
     )
     (recipe_dir / "uv.lock").write_text("version = 1\n")
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -3330,7 +3330,7 @@ def test_recipe_check_reports_invalid_packages(
 
     result = CliInvoker().invoke(
         app,
-        ["check", str(recipe_dir / "recipe.yml"), "--format", "json"],
+        ["validate", str(recipe_dir / "recipe.yml"), "--format", "json"],
     )
 
     assert result.exit_code == 1, result.output
@@ -3369,7 +3369,7 @@ def test_recipe_check_reports_broken_local_hook_projects(
     if remove_module:
         (recipe_dir / "src" / "recipe_hooks" / "hooks" / "check.py").unlink()
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -3389,7 +3389,7 @@ def test_recipe_check_validates_unreferenced_local_hook_project_lockfile(tmp_pat
     )
     (recipe_dir / "uv.lock").unlink()
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -3415,7 +3415,7 @@ def test_recipe_check_rejects_runtime_unified_hook_dependency(tmp_path: Path) ->
         )
     )
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -3444,7 +3444,7 @@ def test_recipe_check_validates_unreferenced_local_hook_project_modules(tmp_path
     )
     (recipe_dir / "src" / "recipe_hooks" / "hooks" / "check.py").unlink()
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -3484,7 +3484,7 @@ def test_recipe_check_validates_unreferenced_local_hook_project_metadata(
     (recipe_dir / "pyproject.toml").write_text(pyproject)
     (recipe_dir / "uv.lock").write_text("version = 1\n")
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe_dir), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -3517,10 +3517,10 @@ def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
     listed = invoker.invoke(app, ["backup", "list", "--format", "json"])
     assert listed.exit_code == 0, listed.output
     assert json.loads(listed.stdout)[0]["id"] == bundle.id
-    shown = invoker.invoke(app, ["backup", "show", bundle.id])
+    shown = invoker.invoke(app, ["backup", "get", bundle.id])
     assert shown.exit_code == 0, shown.output
     assert "recipe: demo" in shown.stdout
-    shown_json = invoker.invoke(app, ["backup", "show", bundle.id, "--format", "json"])
+    shown_json = invoker.invoke(app, ["backup", "get", bundle.id, "--format", "json"])
     assert shown_json.exit_code == 0, shown_json.output
     assert json.loads(shown_json.stdout)["id"] == bundle.id
 
@@ -3552,7 +3552,6 @@ def test_backup_restore_refuses_non_tty_without_yes_and_restores_with_yes(
         ],
     )
     config.write_text("after\n")
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: False)
     invoker = CliInvoker()
 
     refused = invoker.invoke(app, ["backup", "restore", bundle.id])
@@ -3679,7 +3678,7 @@ def test_backup_prune_keep_prunes_oldest(tmp_path: Path) -> None:
     assert mid.exists()
     assert new.exists()
     assert "20250101T000000000000Z-aaaaaaaa" in result.stdout
-    assert "pruned 1 of 3 backup(s)" in result.stderr
+    assert "pruned 1 of 3 backups" in result.stderr
     assert "reclaimed" in result.stderr
 
 
@@ -3756,15 +3755,54 @@ def test_backup_prune_conforms_to_destructive_contract(tmp_path: Path) -> None:
 def test_new_help_placeholders_render_meaningfully(tmp_path: Path) -> None:
     invoker = CliInvoker()
 
-    recipe_help = invoker.invoke(app, ["new", "recipe", "--help"])
-    hook_help = invoker.invoke(app, ["new", "hook", "--help"])
+    init_help = invoker.invoke(app, ["init", "--help"])
     hook_run_help = invoker.invoke(app, ["hook", "run", "--help"])
 
-    assert "PACK/RECIPE reference." in recipe_help.stdout
-    assert "PACK/HOOK reference." in hook_help.stdout
+    assert "PACK/RECIPE or PACK/HOOK reference" in init_help.stdout
     assert "PACK/HOOK reference." in hook_run_help.stdout
-    for result in (recipe_help, hook_help, hook_run_help):
+    for result in (init_help, hook_run_help):
         assert "REF  /." not in result.stdout
+
+
+def test_init_rejects_hook_only_flags_for_packs_and_recipes(tmp_path: Path) -> None:
+    result = CliInvoker().invoke(app, ["init", "pack", "demo", "--kind", "validate"])
+
+    assert result.exit_code == 2
+    assert "error: --kind and --force apply only to init hook" in result.stderr
+    assert not (tmp_path / "demo").exists()
+
+
+def test_renamed_commands_keep_deprecated_aliases(tmp_path: Path) -> None:
+    root = bootstrap.build_root_app(externals=[])
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text("version: 1\nsteps: []\n")
+    vars_file = tmp_path / "vars.yml"
+    vars_file.write_text("{}\n")
+    target = tmp_path / "target"
+    target.mkdir()
+
+    checked = CliInvoker().invoke(root, ["recipe", "check", str(recipe), "-f", "json"])
+    shown = CliInvoker().invoke(root, ["recipe", "show", "yaml_edit", "-f", "json"])
+    applied = CliInvoker().invoke(
+        root,
+        ["recipe", "apply", str(recipe), str(target), "--vars", str(vars_file), "--dry-run"],
+    )
+
+    assert checked.exit_code == 0, checked.output
+    assert "warning: `check` is deprecated" in checked.stderr
+    assert "use `validate`" in checked.stderr
+    assert shown.exit_code == 0, shown.output
+    assert "use `get`" in shown.stderr
+    assert applied.exit_code == 0, applied.output
+    assert "use `--vars-file`" in applied.stderr
+    backups = CliInvoker().invoke(root, ["recipe", "backup", "show", "latest"])
+    assert "use `get`" in backups.stderr
+    with pytest.MonkeyPatch.context() as patch:
+        patch.chdir(tmp_path)
+        scaffolded = CliInvoker().invoke(root, ["recipe", "new", "pack", "demo", "--no-lock"])
+    assert scaffolded.exit_code == 0, scaffolded.output
+    assert "use `init`" in scaffolded.stderr
+    assert (tmp_path / "demo" / "pyproject.toml").is_file()
 
 
 def test_apply_help_uses_slash_ref_grammar(tmp_path: Path) -> None:
@@ -3779,13 +3817,13 @@ def test_empty_library_list_and_check_print_guidance(tmp_path: Path) -> None:
 
     listed = invoker.invoke(app, ["list"])
     packs = invoker.invoke(app, ["list", "--packs"])
-    checked = invoker.invoke(app, ["check"])
+    checked = invoker.invoke(app, ["validate"])
 
     for result in (listed, packs, checked):
         assert result.exit_code == 0, result.output
         assert result.stdout == ""
         assert "no packs installed" in result.stderr
-        assert "new pack" in result.stderr
+        assert "init pack" in result.stderr
         assert "add" in result.stderr
 
 
@@ -3835,7 +3873,7 @@ def test_apply_unchanged_targets_report_unchanged_status(tmp_path: Path) -> None
     )
 
     assert result.exit_code == 0, result.output
-    rows = {row["target"]: row["status"] for row in json.loads(result.stdout)}
+    rows = {row["target_path"]: row["action"] for row in json.loads(result.stdout)}
     assert rows[str(changing)] == "applied"
     assert rows[str(unchanged)] == "unchanged"
     assert "planned" not in result.stdout
@@ -3921,7 +3959,7 @@ def test_backup_show_renders_files_as_lines(tmp_path: Path) -> None:
         ],
     )
 
-    result = CliInvoker().invoke(app, ["backup", "show", bundle.id])
+    result = CliInvoker().invoke(app, ["backup", "get", bundle.id])
 
     assert result.exit_code == 0, result.output
     assert "files:" in result.stdout
@@ -3946,14 +3984,11 @@ def test_apply_all_unchanged_run_reports_unchanged_not_planned(tmp_path: Path) -
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert [row["status"] for row in rows] == ["unchanged"]
+    assert [row["action"] for row in rows] == ["unchanged"]
     assert "0 applied, 1 unchanged" in result.stderr
 
 
-def test_backup_restore_decline_prints_no_success(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_backup_restore_decline_prints_no_success(tmp_path: Path) -> None:
     target = tmp_path / "target"
     target.mkdir()
     (target / "config.yml").write_text("before\n")
@@ -3973,11 +4008,17 @@ def test_backup_restore_decline_prints_no_success(
     )
     (target / "config.yml").write_text("after\n")
 
-    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
-    monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
+    dry_run = CliInvoker().invoke(app, ["backup", "restore", bundle.id, "--dry-run"])
+    assert dry_run.exit_code == 0, dry_run.output
+    assert "About to restore 1 file:" in dry_run.stderr
+    assert (target / "config.yml").read_text() == "after\n"
+
+    result = CliInvoker().invoke(
+        app,
+        ["backup", "restore", bundle.id],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[False]),
     )
-    result = CliInvoker().invoke(app, ["backup", "restore", bundle.id])
 
     # A declined confirmation exits 1 with the standard decline line.
     assert result.exit_code == 1, result.output
@@ -4031,7 +4072,9 @@ def test_recipe_check_accepts_input_templated_asset_paths(tmp_path: Path) -> Non
         "    dest: out.cfg\n"
     )
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"])
+    result = CliInvoker().invoke(
+        app, ["validate", str(recipe_dir / "recipe.yml"), "--format", "json"]
+    )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["status"] == "pass"
@@ -4050,7 +4093,9 @@ def test_recipe_check_rejects_missing_prefix_of_templated_asset_path(tmp_path: P
         "    dest: out.txt\n"
     )
 
-    result = CliInvoker().invoke(app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"])
+    result = CliInvoker().invoke(
+        app, ["validate", str(recipe_dir / "recipe.yml"), "--format", "json"]
+    )
 
     assert result.exit_code == 1, result.output
     assert "template not found" in json.loads(result.stdout)[0]["error"]
@@ -4074,7 +4119,7 @@ def test_check_rejects_uncoercible_input_default(tmp_path: Path) -> None:
     recipe = tmp_path / "recipe.yml"
     recipe.write_text("version: 1\ninputs:\n  replicas: {type: int, default: many}\nsteps: []\n")
 
-    result = CliInvoker().invoke(app, ["check", str(recipe), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     error = json.loads(result.stdout)[0]["error"]
@@ -4088,7 +4133,7 @@ def test_check_rejects_required_input_with_default(tmp_path: Path) -> None:
         "version: 1\ninputs:\n  replicas: {type: int, required: true, default: 2}\nsteps: []\n"
     )
 
-    result = CliInvoker().invoke(app, ["check", str(recipe), "--format", "json"])
+    result = CliInvoker().invoke(app, ["validate", str(recipe), "--format", "json"])
 
     assert result.exit_code == 1, result.output
     error = json.loads(result.stdout)[0]["error"]
@@ -4102,7 +4147,7 @@ def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
 
     result = CliInvoker().invoke(app, ["add", str(pack), "--rev", "v1", "--yes"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--rev is only valid for git URL sources" in result.stderr
     assert not (library_root() / "packs" / "demo").exists()
 

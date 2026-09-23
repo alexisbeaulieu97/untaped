@@ -170,7 +170,7 @@ def _resolve_one(
             if spec.required:
                 raise ConfigError(
                     f"interactive prompting is not supported for structured input {name!r}; "
-                    "pass --var or --vars"
+                    "pass --var or --vars-file"
                 )
             return _UNSET
         prompt_target = None if target is None else target.path
@@ -200,7 +200,7 @@ def _validate_config(
             raise ConfigError(f"cannot use --input-from for input {name!r} with scope global")
     conflicts = sorted(set(fixed_values) & set(input_from))
     if conflicts:
-        raise ConfigError(f"cannot combine --var/--vars and --input-from for {conflicts[0]}")
+        raise ConfigError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
 
 
 def _coerce_fixed_values(

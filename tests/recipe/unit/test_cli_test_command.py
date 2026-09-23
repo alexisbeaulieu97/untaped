@@ -184,7 +184,7 @@ def test_test_rejects_recipe_file_paths(tmp_path: Path) -> None:
 def test_update_requires_an_explicit_argument(tmp_path: Path) -> None:
     result = CliInvoker().invoke(app, ["test", "--update"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--update requires an explicit pack or recipe argument" in result.output
 
 
