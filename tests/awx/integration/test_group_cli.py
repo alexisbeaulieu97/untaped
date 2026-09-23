@@ -546,13 +546,14 @@ def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> N
     assert fake_aap.memberships[("groups", 200, "hosts")] == set()
 
 
-def test_groups_hosts_add_empty_stdin_is_noop(fake_aap: Any) -> None:
+def test_groups_hosts_add_empty_stdin_is_an_error(fake_aap: Any) -> None:
     _seed_groups(fake_aap)
     result = CliInvoker().invoke(
         app, ["groups", "hosts", "add", "--yes", "web-servers", "--stdin"], input=""
     )
-    assert result.exit_code == 0
-    assert "No matching" in (result.output + (result.stderr or ""))
+    assert result.exit_code == 1
+    assert "no identifiers received on stdin" in result.stderr
+    assert not fake_aap.memberships[("groups", 200, "hosts")]
 
 
 def test_groups_hosts_remove_disassociates_listed_members(fake_aap: Any) -> None:

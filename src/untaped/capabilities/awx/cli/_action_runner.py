@@ -210,16 +210,16 @@ def _submitted_execution(outcome: SelectedActionOutcome[Job]) -> Job | None:
 
 
 def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:
-    """Preview every target on stderr, then ask once with No as the default."""
+    """Preview every target on stderr, then ask once with No as the default.
+
+    A decline raises :class:`OperationCancelledError` (exit 1).
+    """
     for item in targets:
         echo(
             f"{action} {item.kind}/{item.name} id={item.id} scope={format_scope(item.scope)}",
             err=True,
         )
-    if confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False):
-        return True
-    echo(f"Cancelled; nothing to {action}.", err=True)
-    return False
+    return confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False)
 
 
 def _prepare(

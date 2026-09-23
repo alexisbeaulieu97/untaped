@@ -786,15 +786,15 @@ def test_list_empty_result_still_renders_in_non_stdin_mode(seeded_default_org: A
     assert result.stdout.strip() == "[]"
 
 
-def test_list_stdin_empty_is_noop(seeded_default_org: Any) -> None:
-    """An explicitly empty stdin selection is a clear no-op."""
+def test_list_stdin_empty_is_an_error(seeded_default_org: Any) -> None:
+    """An explicitly empty stdin selection is the core "no identifiers" error."""
     result = CliInvoker().invoke(
         app,
         ["projects", "list", "--stdin"],
         input="",
     )
-    assert result.exit_code == 0
-    assert "No matching" in (result.output + (result.stderr or ""))
+    assert result.exit_code == 1
+    assert "error: no identifiers received on stdin" in result.stderr
 
 
 @pytest.mark.parametrize(

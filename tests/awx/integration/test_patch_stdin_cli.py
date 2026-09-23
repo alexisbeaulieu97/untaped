@@ -372,7 +372,7 @@ def test_patch_stdin_allow_unverified_requires_yes(seeded_default_org: Any) -> N
         ],
         input="deploy\n",
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--yes" in (result.output + (result.stderr or ""))
 
 

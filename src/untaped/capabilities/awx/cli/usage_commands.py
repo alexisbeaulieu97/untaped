@@ -18,7 +18,7 @@ from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application import ListTemplateUsage
 from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.capabilities.awx.cli._pipe import id_field_for, pipe_kind_for_spec
 from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
 from untaped.capabilities.awx.domain import WorkflowUsage
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -117,6 +117,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 list(identifiers or []),
                 stdin=stdin,
                 id_field=id_field_for(spec, by_id=by_id),
+                accept_kinds={pipe_kind_for_spec(spec)},
             )
             filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_command(ctx, organization, spec)

@@ -135,7 +135,9 @@ def get_command(
     records: list[dict[str, object]] = []
     missing: list[str] = []
     with report_errors(), open_context() as ctx:
-        identifiers = read_identifiers(list(ids or []), stdin=stdin, id_field="id")
+        identifiers = read_identifiers(
+            list(ids or []), stdin=stdin, id_field="id", accept_kinds={"awx.unified_template"}
+        )
         for raw in identifiers:
             if not raw.isdecimal():
                 # Fast-fail before hitting AWX so the error message is

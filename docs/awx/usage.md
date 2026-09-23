@@ -61,7 +61,10 @@ untaped awx job-templates list --filter name__icontains=deploy --format pipe \
 ```
 
 Bare stdin lines retain the command's normal name or `--by-id` meaning. Do not
-mix bare lines and typed envelopes. Piped selections still use the controlling
+mix bare lines and typed envelopes. A typed record of another kind (for
+example `awx.host` piped into `projects patch`) exits 2, and empty stdin is an
+error (`no identifiers received on stdin`). `jobs * --stdin` accepts `awx.job`
+records and launch/sync results. Piped selections still use the controlling
 terminal for confirmation when one is available; machine data stays on
 stdout, while previews, prompts, progress, and warnings go to stderr.
 
@@ -296,8 +299,9 @@ retained in the failed result.
 
 `patch`, `edit`, `apply`, and `delete` show one complete redacted preview and
 ask once with No as the default. `--yes` skips the prompt. `--dry-run` never
-writes; it is mutually exclusive with `--yes`. Configuration writes without a
-controlling terminal require `--yes` or `--dry-run`. `launch` and `sync` of a
+writes and wins over `--yes`. Declining exits 1 with `cancelled; no changes
+made`. Configuration writes without a controlling terminal require `--yes` or
+`--dry-run` (exit 2 otherwise). `launch` and `sync` of a
 single named target submit immediately; when more than one target is selected,
 or the selection came from `--all`, `--filter`, `--search`, or `--stdin`, they
 list the targets on stderr and ask once (No by default). `--yes` skips that
