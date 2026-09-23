@@ -1330,7 +1330,13 @@ def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: P
         "    return helpers.pass_()\n"
     )
     worker = (
-        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "_worker" / "hook_worker.py"
+        Path(__file__).parents[3]
+        / "src"
+        / "untaped"
+        / "capabilities"
+        / "recipe"
+        / "_worker"
+        / "hook_worker.py"
     )
     proc = subprocess.Popen(
         [sys.executable, str(worker)],
@@ -1401,7 +1407,13 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
         "    raise RuntimeError('fake yaml_options imported')\n"
     )
     worker = (
-        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "_worker" / "hook_worker.py"
+        Path(__file__).parents[3]
+        / "src"
+        / "untaped"
+        / "capabilities"
+        / "recipe"
+        / "_worker"
+        / "hook_worker.py"
     )
     proc = subprocess.Popen(
         [sys.executable, str(worker)],
@@ -1449,7 +1461,13 @@ def test_worker_script_rejects_invalid_validate_return_object(tmp_path: Path) ->
         "def validate(*, inputs, target, args, helpers):\n    return object()\n"
     )
     worker = (
-        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "_worker" / "hook_worker.py"
+        Path(__file__).parents[3]
+        / "src"
+        / "untaped"
+        / "capabilities"
+        / "recipe"
+        / "_worker"
+        / "hook_worker.py"
     )
     proc = subprocess.Popen(
         [sys.executable, str(worker)],

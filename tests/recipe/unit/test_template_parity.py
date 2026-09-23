@@ -7,8 +7,8 @@ from collections.abc import Callable, Mapping
 
 import pytest
 
-from untaped.capabilities.recipe.domain.templates import render_template
 from untaped.capabilities.recipe._worker.hook_worker import HookHelpers as WorkerHookHelpers
+from untaped.capabilities.recipe.domain.templates import render_template
 
 Renderer = Callable[[str, Mapping[str, object]], str]
 
