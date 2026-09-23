@@ -1,8 +1,10 @@
 import json
 import sys
+from enum import Enum
 from pathlib import Path
 
 import pytest
+import yaml
 from cyclopts import App
 from pydantic import BaseModel
 
@@ -434,6 +436,37 @@ def test_emit_sequence_json_is_array(capsys: pytest.CaptureFixture[str]) -> None
         {"name": "alpha", "value": 1},
         {"name": "beta", "value": 2},
     ]
+
+
+class _Color(Enum):
+    RED = "red"
+
+
+class _Located(BaseModel):
+    path: Path
+    color: _Color
+
+
+@pytest.mark.parametrize("fmt", ["yaml", "json", "pipe"])
+def test_emit_model_with_path_and_enum_uses_json_values(
+    capsys: pytest.CaptureFixture[str], fmt: str
+) -> None:
+    emit([_Located(path=Path("/tmp/x"), color=_Color.RED)], fmt=fmt)  # type: ignore[arg-type]
+    out = capsys.readouterr().out
+    assert "/tmp/x" in out
+    assert "red" in out
+    assert "_Color" not in out
+
+
+def test_emit_yaml_mapping_with_unknown_values_falls_back_to_str(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit({"path": Path("/tmp/x"), "color": _Color.RED, "tags": [Path("a")]}, fmt="yaml")
+    assert yaml.safe_load(capsys.readouterr().out) == {
+        "path": "/tmp/x",
+        "color": "red",
+        "tags": ["a"],
+    }
 
 
 def test_emit_accepts_a_single_mapping(capsys: pytest.CaptureFixture[str]) -> None:

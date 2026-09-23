@@ -156,9 +156,13 @@ def emit(
 
 
 def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
-    """Normalize a model or mapping into a plain row dict."""
+    """Normalize a model or mapping into a plain row dict.
+
+    Models dump in JSON mode so paths, enums, dates, etc. become plain
+    JSON-compatible values every output format can encode.
+    """
     if isinstance(record, BaseModel):
-        return record.model_dump()
+        return record.model_dump(mode="json")
     return dict(record)
 
 
