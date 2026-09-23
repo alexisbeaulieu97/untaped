@@ -203,7 +203,7 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
     )
 
     assert result.exit_code == 0, result.output
-    assert "Warning: library copy has local edits; --discard-edits will overwrite them." in (
+    assert "warning: library copy has local edits; --discard-edits will overwrite them." in (
         result.stderr
     )
     assert installed_recipe.read_text() == "version: 1\nsteps: []\n"
@@ -232,7 +232,7 @@ def test_remove_warns_on_local_edits_before_confirm(
     assert result.exit_code == 0, result.output
     assert "About to remove 1 pack(s):\n  - demo\n" in result.stderr
     assert (
-        "Warning: pack 'demo' has local edits in the library (via edit or new "
+        "warning: pack 'demo' has local edits in the library (via edit or new "
         "recipe/hook); removing discards them."
     ) in result.stderr
     assert (library_root() / "packs" / "demo").exists()
