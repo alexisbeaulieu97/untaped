@@ -370,6 +370,8 @@ def add_command(
 ) -> None:
     """Install a recipe pack from a path or git URL."""
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
+        if rev is not None and not is_git_url(source):
+            raise ConfigError("--rev is only valid for git URL sources")
         source_dir = (
             fetch_pack_source(source, rev=rev, dest=Path(temp_root) / "pack")
             if is_git_url(source)

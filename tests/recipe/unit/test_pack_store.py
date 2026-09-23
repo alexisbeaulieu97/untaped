@@ -285,3 +285,64 @@ def test_fetch_pack_source_clones_local_file_url(tmp_path: Path) -> None:
     assert checkout == tmp_path / "checkout"
     assert (checkout / "pyproject.toml").is_file()
     assert (checkout / "recipes" / "playbook" / "recipe.yml").is_file()
+
+
+def _git_pack_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    _write_pack(repo, manifest_name="ansible", recipes={"playbook": "recipes/playbook/recipe.yml"})
+    shutil.rmtree(repo / ".git")
+    git = ["git", "-c", "user.email=test@example.invalid", "-c", "user.name=Test User"]
+    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [*git, "commit", "--no-gpg-sign", "-m", "first"], cwd=repo, check=True, stdout=subprocess.PIPE
+    )
+    first = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (repo / "later.txt").write_text("later\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [*git, "commit", "--no-gpg-sign", "-m", "second"], cwd=repo, check=True, stdout=subprocess.PIPE
+    )
+    return repo, first
+
+
+def test_fetch_pack_source_checks_out_commit_rev(tmp_path: Path) -> None:
+    repo, first = _git_pack_repo(tmp_path)
+
+    checkout = fetch_pack_source(repo.as_uri(), rev=first, dest=tmp_path / "checkout")
+
+    assert (checkout / "pyproject.toml").is_file()
+    assert not (checkout / "later.txt").exists()
+
+
+def test_fetch_pack_source_rejects_option_like_rev(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: calls.append(args))
+
+    with pytest.raises(ValueError, match="rev"):
+        fetch_pack_source("https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d")
+    assert calls == []
+
+
+def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args, 128, stdout="", stderr="fatal: Authentication failed for 'https://x/'"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="Authentication failed"):
+        fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
+    assert len(calls) == 1

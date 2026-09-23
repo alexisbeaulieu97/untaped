@@ -108,7 +108,7 @@ no control flow in recipes, and no state or inventory.
 ## Library and packs
 
 - `add <path|git-url>` installs a pack after previewing its recipes and hooks;
-  `--rev` picks a git revision, `--name` overrides the installed key (the pack
+  `--rev` picks a git revision (git URL sources only), `--name` overrides the installed key (the pack
   identity everywhere), `--yes` skips confirmation. The pack must load and
   contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
