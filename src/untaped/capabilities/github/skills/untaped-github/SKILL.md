@@ -82,3 +82,9 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
   `help-wanted-issues` stop once `--limit` unique rows are available. Multi-batch
   `help-wanted-issues` emits a warning, while `stars`, `forks`, and
   `updated` query all batches and locally merge-sort before the final limit.
+- `search code` and `search issues` batch team-expanded and `--repo`/`--repo-stdin`
+  scopes the same way (at most five boolean operators per request, counting
+  unquoted `AND`/`OR`/`NOT` in the query), never truncating a team. Code results
+  are deduped by `html_url` and issue results by `id`; `--limit` applies across
+  batches, and a sorted multi-batch issue search queries every batch and
+  merge-sorts locally (descending) before the limit.
