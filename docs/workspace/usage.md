@@ -168,22 +168,33 @@ untaped workspace forget <name> [--prune] [--yes]
 
 Remove a workspace from the central registry. The on-disk manifest and
 clones are preserved by default — `forget` is the inverse of `init` /
-`adopt`, not of `sync --prune`. Pass `--prune` to also `rmtree` the
-workspace directory; the command previews and confirms the destructive
+`adopt`, not of `sync --prune`. Pass `--prune` to also delete what
+untaped manages in the workspace directory; the command previews the
+workspace name and its absolute path and confirms the destructive
 operation unless `--yes` / `-y` is passed. A declined prompt exits
-cleanly without changing registry state or files. Pruning is refused (mirroring
-`remove --prune`) when any git clone that would be deleted has unsafe
-local state. Before deleting the workspace directory, `forget --prune`
-inspects every existing declared repo path and every immediate child
-directory containing `.git`, including undeclared/orphan clones. It
-refuses on dirty/untracked/staged work, stash entries, or commits not
-reachable from local remote-tracking refs, including commits reachable
-only from local tags. Symlinked child entries are not inspected because
-the workspace deletion only unlinks them, not their targets. Loose
-files, non-git child directories, workspace-root git repos, and nested
-repos below non-repo child directories are outside this safety contract.
-A missing manifest or missing directory is tolerated; the registry entry
-is removed regardless.
+cleanly without changing registry state or files.
+
+`forget --prune` deletes only:
+
+- declared repo clones and immediate child directories containing their
+  own `.git` (undeclared/orphan clones), after they pass the safety check;
+- symlinks standing in for a declared repo or pointing at a git clone
+  (the link only, never its target);
+- `untaped.yml`.
+
+Everything else — loose files, non-git child directories, and declared
+repo directories without their own `.git` — is left alone. The
+workspace directory is removed only if it is empty afterwards;
+otherwise the command prints a `warning: left <path> in place: …` line
+naming what was kept.
+
+Pruning is refused (mirroring `remove --prune`) when any clone that
+would be deleted has unsafe local state or cannot be inspected: dirty,
+untracked, or staged work, stash entries, or commits not reachable from
+local remote-tracking refs, including commits reachable only from local
+tags. With `--prune`, a missing manifest is refused (delete the
+directory manually); a missing directory is tolerated. The registry
+entry is removed regardless.
 
 ### `import`
 

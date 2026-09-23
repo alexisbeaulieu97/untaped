@@ -7,7 +7,7 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import batch_apply, echo, finish, report_errors, ui_context
+from untaped.api import UntapedError, batch_apply, echo, finish, report_errors, ui_context
 from untaped.capabilities.workspace.application import (
     AdoptWorkspace,
     ForgetWorkspace,
@@ -114,7 +114,10 @@ def forget_command(
         Parameter(
             name="--prune",
             negative="",
-            help="Also delete the workspace directory (refuses unsafe local state).",
+            help=(
+                "Also delete managed clones and untaped.yml, then the workspace "
+                "directory if nothing else is left (refuses unsafe local state)."
+            ),
         ),
     ] = False,
     yes: Annotated[
@@ -125,16 +128,29 @@ def forget_command(
     """Remove a workspace from the registry.
 
     The on-disk manifest and clones are preserved by default. Pass
-    `--prune` to also remove the workspace directory (refused if any
-    git clone that would be deleted has unsafe local state).
+    `--prune` to also delete declared and orphan clones plus `untaped.yml`
+    (refused if any clone that would be deleted has unsafe local state).
+    Other files are kept; the workspace directory is removed only when
+    it ends up empty.
     """
     with report_errors():
+        registry = WorkspaceRegistryRepository()
         forget_workspace = ForgetWorkspace(
-            WorkspaceRegistryRepository(),
+            registry,
             ManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=GitRunner(),
+            warn=lambda m: echo(f"warning: {m}", err=True),
         )
+
+        def _describe(workspace_name: str) -> dict[str, object]:
+            # The confirmation preview must show *where* files will be
+            # deleted, not just the registry name.
+            try:
+                location = str(registry.get(workspace_name).path)
+            except UntapedError:
+                location = "(not registered)"
+            return {"workspace": workspace_name, "path": location}
 
         def _forget_one(workspace_name: str) -> str:
             ws = forget_workspace(workspace_name, prune=prune)
@@ -148,7 +164,7 @@ def forget_command(
             verb="forget",
             noun="workspace",
             label=lambda workspace_name: workspace_name,
-            describe=lambda workspace_name: {"workspace": workspace_name},
+            describe=_describe,
             ui=ui_context(strict=False),
             destructive=prune,
             assume_yes=yes,
