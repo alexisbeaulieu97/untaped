@@ -483,3 +483,21 @@ def test_supplied_membership_snapshot_cannot_refresh_missing_relationship() -> N
             membership_snapshots={},
         )
     assert not client.subendpoint_calls
+
+
+def test_ordered_replacement_removes_unwanted_members_after_adding() -> None:
+    ref = FkRef(field="members", kind="Item", multi=True, sub_endpoint="members", ordered=True)
+    client = _StubClient()
+    plan = MembershipPlan(
+        ref=ref,
+        to_associate=(3,),
+        to_disassociate=(2,),
+        field_change=None,
+        existing_ids=(1, 2),
+        desired_ids=(1, 3),
+    )
+    MembershipReconciler().execute(GROUP_SPEC, 42, [plan], client=cast(ResourceClient, client))
+    assert client.subendpoint_calls == [
+        (42, "members", "POST", {"id": 3}),
+        (42, "members", "POST", {"id": 2, "disassociate": True}),
+    ]

@@ -306,10 +306,14 @@ class MembershipReconciler:
         """POST associate / disassociate per ``plans`` against the resource's id."""
         for plan in plans:
             if plan.ref.ordered and plan.mode == "replacement":
+                # Reordered members must leave to be re-appended in order;
+                # members no longer wanted leave only after the adds succeed.
                 associate = set(plan.to_reorder) | set(plan.to_associate)
+                reorder = plan.to_reorder
                 operations: tuple[tuple[tuple[PlannedId, ...], bool], ...] = (
-                    (tuple(dict.fromkeys((*plan.to_disassociate, *plan.to_reorder))), True),
+                    (reorder, True),
                     (tuple(member for member in plan.desired_ids if member in associate), False),
+                    (tuple(m for m in plan.to_disassociate if m not in reorder), True),
                 )
             else:
                 # Associate first so a refused associate leaves the resource
