@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -30,6 +32,32 @@ from untaped.capabilities.github.domain.errors import GitCorpusError
 
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0
+DEFAULT_FETCH_ATTEMPTS = 3
+DEFAULT_FETCH_BATCH_SIZE = 50
+# Lowercased stderr fragments of transport failures that a later identical
+# fetch can plausibly survive (dropped TLS/TCP streams, proxy/5xx hiccups).
+TRANSIENT_FETCH_MARKERS = (
+    "rpc failed",
+    "early eof",
+    "unexpected disconnect",
+    "remote end hung up unexpectedly",
+    "connection reset",
+    "connection timed out",
+    "operation timed out",
+    "failed to connect",
+    "could not resolve host",
+    "gnutls recv error",
+    "tls connection was non-properly terminated",
+    "ssl_read",
+    "invalid index-pack output",
+    "index-pack failed",
+    "unpack-objects failed",
+    "returned error: 429",
+    "returned error: 500",
+    "returned error: 502",
+    "returned error: 503",
+    "returned error: 504",
+)
 METADATA_FILE = "untaped-corpus.json"
 
 
@@ -42,11 +70,21 @@ class GitCorpusCache:
         git: str = "git",
         timeout: float = DEFAULT_TIMEOUT,
         slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
+        fetch_attempts: int = DEFAULT_FETCH_ATTEMPTS,
+        fetch_batch_size: int = DEFAULT_FETCH_BATCH_SIZE,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        if fetch_attempts < 1:
+            raise ValueError("fetch_attempts must be positive")
+        if fetch_batch_size < 1:
+            raise ValueError("fetch_batch_size must be positive")
         self._git = git
         self._git_path = shutil.which(git)
         self._timeout = timeout
         self._slow_timeout = slow_timeout
+        self._fetch_attempts = fetch_attempts
+        self._fetch_batch_size = fetch_batch_size
+        self._sleep = sleep
 
     def sync_repo(
         self,
@@ -72,23 +110,24 @@ class GitCorpusCache:
         ref_globs = _join_globs(stored.ref_globs if stored else (), selector.globs)
         effective = RefSelector(profile=profile, globs=ref_globs)
 
-        self._fetch_refspecs(
-            bare,
-            url=url,
-            depth=depth,
-            auth_header=scoped_auth_header,
-            refspecs=_profile_refspecs(effective.profile, branch),
-        )
-        for glob in effective.globs:
-            for namespace in ("heads", "tags"):
-                self._fetch_optional_refspec(
-                    bare,
-                    url=url,
-                    depth=depth,
-                    auth_header=scoped_auth_header,
-                    refspec=f"+refs/{namespace}/{glob}:refs/{namespace}/{glob}",
-                )
-        self._prune_uncovered_refs(bare, selector=effective, default_branch=branch)
+        if effective.beyond_default():
+            self._sync_selected_refs(
+                bare,
+                url=url,
+                depth=depth,
+                auth_header=scoped_auth_header,
+                selector=effective,
+                default_branch=branch,
+            )
+        else:
+            self._fetch_refspecs(
+                bare,
+                url=url,
+                depth=depth,
+                auth_header=scoped_auth_header,
+                refspecs=(f"+refs/heads/{branch}:refs/heads/{branch}",),
+            )
+            self._prune_uncovered_refs(bare, selector=effective, default_branch=branch)
 
         fetched_at = datetime.now(UTC).isoformat()
         _write_metadata(
@@ -371,6 +410,80 @@ class GitCorpusCache:
                 auth_url=url,
             )
 
+    def _sync_selected_refs(
+        self,
+        bare: Path,
+        *,
+        url: str,
+        depth: int,
+        auth_header: str | None,
+        selector: RefSelector,
+        default_branch: str,
+    ) -> None:
+        """Mirror the selected remote refs in bounded, individually retried batches.
+
+        Wide profiles can select hundreds of refs; one fetch for all of them
+        streams a single huge pack that a dropped connection discards whole.
+        Listing the remote first lets unchanged refs skip the network, lets
+        each batch land independently (a failed run resumes where it
+        stopped), and replaces ``--prune`` for refs deleted upstream.
+        """
+        remote = {
+            ref: oid
+            for ref, oid in self._remote_refs(bare, url=url, auth_header=auth_header).items()
+            if _selector_covers_ref(selector, ref, default_branch=default_branch)
+        }
+        local = self._local_ref_oids(bare)
+        stale = [ref for ref in local if ref not in remote]
+        if stale:
+            self._run(
+                ["update-ref", "--stdin"],
+                cwd=bare,
+                stdin="".join(f"delete {ref}\n" for ref in stale),
+            )
+        wanted = sorted(ref for ref, oid in remote.items() if local.get(ref) != oid)
+        for start in range(0, len(wanted), self._fetch_batch_size):
+            batch = wanted[start : start + self._fetch_batch_size]
+            self._fetch_refspecs(
+                bare,
+                url=url,
+                depth=depth,
+                auth_header=auth_header,
+                refspecs=tuple(f"+{ref}:{ref}" for ref in batch),
+                prune=False,
+            )
+
+    def _remote_refs(self, bare: Path, *, url: str, auth_header: str | None) -> dict[str, str]:
+        result = self._run_network(
+            ["ls-remote", "--heads", "--tags", "--refs", "origin"],
+            cwd=bare,
+            auth_header=auth_header,
+            auth_url=url,
+            timeout=self._slow_timeout,
+        )
+        refs: dict[str, str] = {}
+        for line in (result.stdout or "").splitlines():
+            oid, _, ref = line.partition("\t")
+            if ref:
+                refs[ref] = oid
+        return refs
+
+    def _local_ref_oids(self, bare: Path) -> dict[str, str]:
+        result = cast(
+            subprocess.CompletedProcess[str],
+            self._run(
+                ["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags"],
+                cwd=bare,
+                capture_text=True,
+            ),
+        )
+        refs: dict[str, str] = {}
+        for line in (result.stdout or "").splitlines():
+            oid, _, ref = line.partition(" ")
+            if ref:
+                refs[ref] = oid
+        return refs
+
     def _fetch_refspecs(
         self,
         bare: Path,
@@ -379,12 +492,13 @@ class GitCorpusCache:
         depth: int,
         auth_header: str | None,
         refspecs: tuple[str, ...],
+        prune: bool = True,
     ) -> None:
-        args = ["fetch", "--prune", "--no-tags", "origin"]
+        args = ["fetch", *(["--prune"] if prune else []), "--no-tags", "origin"]
         if depth > 0:
             args.append(f"--depth={depth}")
         args.extend(refspecs)
-        self._run(
+        self._run_network(
             args,
             cwd=bare,
             timeout=self._slow_timeout,
@@ -392,36 +506,41 @@ class GitCorpusCache:
             auth_url=url,
         )
 
-    def _fetch_optional_refspec(
+    def _run_network(
         self,
-        bare: Path,
+        args: list[str],
         *,
-        url: str,
-        depth: int,
+        cwd: Path,
+        timeout: float,
         auth_header: str | None,
-        refspec: str,
-    ) -> None:
-        args = ["fetch", "--prune", "origin"]
-        if depth > 0:
-            args.append(f"--depth={depth}")
-        args.append(refspec)
-        result = self._run(
-            args,
-            cwd=bare,
-            timeout=self._slow_timeout,
-            auth_header=auth_header,
-            auth_url=url,
-            capture_text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            return
-        stderr = _stderr_text(result)
-        if not stderr or "couldn't find remote ref" in stderr:
-            return
-        raise GitCorpusError(
-            f"git {' '.join(args)} failed: {_redact(stderr, auth_header) or 'no stderr'}"
-        )
+        auth_url: str,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run an idempotent remote Git command, retrying transient transport failures."""
+        for attempt in range(1, self._fetch_attempts + 1):
+            result = cast(
+                subprocess.CompletedProcess[str],
+                self._run(
+                    args,
+                    cwd=cwd,
+                    timeout=timeout,
+                    auth_header=auth_header,
+                    auth_url=auth_url,
+                    capture_text=True,
+                    check=False,
+                ),
+            )
+            if result.returncode == 0:
+                return result
+            stderr = _stderr_text(result)
+            if attempt < self._fetch_attempts and _is_transient(stderr):
+                self._sleep(float(2 ** (attempt - 1)))
+                continue
+            suffix = f" after {attempt} attempts" if attempt > 1 else ""
+            raise GitCorpusError(
+                f"git {' '.join(args)} failed{suffix}: "
+                f"{_redact(stderr, auth_header) or 'no stderr'}"
+            )
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _prune_uncovered_refs(
         self,
@@ -490,6 +609,7 @@ class GitCorpusCache:
         timeout: float | None = None,
         auth_header: str | None = None,
         auth_url: str | None = None,
+        stdin: str | None = None,
     ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
         if self._git_path is None:
             raise GitCorpusError(f"`{self._git}` not found on PATH")
@@ -510,6 +630,7 @@ class GitCorpusCache:
                 text=capture_text,
                 stdout=capture_stdout,
                 stderr=capture_stderr,
+                input=_stdin_payload(stdin, text=capture_text),
                 check=False,
                 timeout=effective_timeout,
             )
@@ -572,16 +693,6 @@ def _remote_url(repo: CorpusRepoTarget) -> str:
 
 def _join_globs(stored: tuple[str, ...], requested: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*stored, *requested)))
-
-
-def _profile_refspecs(profile: RefProfile, branch: str) -> tuple[str, ...]:
-    if profile == "default":
-        return (f"+refs/heads/{branch}:refs/heads/{branch}",)
-    if profile == "branches":
-        return ("+refs/heads/*:refs/heads/*",)
-    if profile == "tags":
-        return ("+refs/tags/*:refs/tags/*",)
-    return ("+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
 
 
 def _selector_covers_ref(selector: RefSelector, ref: str, *, default_branch: str) -> bool:
@@ -774,6 +885,17 @@ def _stderr_text(
     if isinstance(stderr, bytes):
         return stderr.decode(errors="replace").strip()
     return (stderr or "").strip()
+
+
+def _is_transient(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return any(marker in lowered for marker in TRANSIENT_FETCH_MARKERS)
+
+
+def _stdin_payload(stdin: str | None, *, text: bool) -> str | bytes | None:
+    if stdin is None or text:
+        return stdin
+    return stdin.encode()
 
 
 def _redact(value: str, secret: str | None) -> str:

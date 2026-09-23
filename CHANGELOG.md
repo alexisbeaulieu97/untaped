@@ -1,5 +1,14 @@
 # Changelog
 
+## 6.0.1
+
+- `github sweep` now retries transient Git transport failures (dropped TLS/TCP
+  connections, `early EOF`, HTTP 429/5xx) with short backoff instead of
+  reporting the repository as unscanned.
+- Wide sweeps (`--refs branches|tags|all`, `--ref GLOB`) list remote refs first
+  and fetch only new or moved refs in bounded batches, so interrupted refreshes
+  resume where they stopped and unchanged repositories skip fetching.
+
 ## 6.0.0
 
 - Added consistent AWX bulk patch and external-editor workflows across eight
