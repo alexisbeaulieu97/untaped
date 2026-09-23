@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -47,37 +46,3 @@ class HookExecutorPort(Protocol):
         capture_diagnostics: bool = False,
     ) -> HookDebugResult[Verdict]:
         """Run a validate hook and return its coerced verdict plus diagnostics."""
-
-
-class HookHelpersPort(Protocol):
-    """Helpers passed to trusted local hooks (one instance per invocation)."""
-
-    def pass_(self, message: str = "") -> Verdict:
-        """Return a passing validation verdict."""
-
-    def fail(self, message: str) -> Verdict:
-        """Return a failing validation verdict."""
-
-    def skip(self, message: str = "") -> Verdict:
-        """Return a skip verdict marking the target not applicable."""
-
-    def warn(self, message: str) -> None:
-        """Accumulate a non-fatal warning for the current target."""
-
-    def drain_warnings(self) -> tuple[str, ...]:
-        """Return and clear warnings accumulated during this invocation."""
-
-    def render_template(
-        self,
-        template: str,
-        inputs: dict[str, object],
-        *,
-        unknown_tokens: str = "error",
-    ) -> str:
-        """Render simple recipe placeholders."""
-
-    def load_yaml(self, content: str) -> object:
-        """Round-trip-load YAML content."""
-
-    def dump_yaml(self, data: object, *, options: Mapping[str, object] | None = None) -> str:
-        """Round-trip-dump YAML data."""

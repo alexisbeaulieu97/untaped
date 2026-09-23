@@ -16,7 +16,6 @@ from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
-from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver, UvHookRef
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import HookWorkerCallResult
 
@@ -50,7 +49,6 @@ def _planner(tmp_path: Path):
         HookExecutor(
             HookResolver(),
             workers=InlineWorkers(),
-            helpers_factory=HookHelpers,
         )
     )
 
@@ -538,7 +536,6 @@ def test_apply_recipe_renders_template_source_and_dest_fields_per_target(
             HookExecutor(
                 HookResolver(),
                 workers=InlineWorkers(),
-                helpers_factory=HookHelpers,
             )
         )
     )
@@ -1046,7 +1043,6 @@ def test_apply_recipe_glob_transform_binary_file_reports_target_error(tmp_path: 
             HookExecutor(
                 HookResolver(),
                 workers=InlineWorkers(),
-                helpers_factory=HookHelpers,
             )
         )
     )
@@ -1425,11 +1421,7 @@ def test_run_bulk_apply_dedupes_targets_by_resolved_path(
     recipe = Recipe.model_validate(
         {"version": 1, "steps": [{"type": "copy", "source": "out.txt", "dest": "out.txt"}]}
     )
-    runner = RunBulkApply(
-        ApplyRecipe(
-            HookExecutor(HookResolver(), workers=InlineWorkers(), helpers_factory=HookHelpers)
-        )
-    )
+    runner = RunBulkApply(ApplyRecipe(HookExecutor(HookResolver(), workers=InlineWorkers())))
 
     plans = runner.plan(
         recipe=recipe,

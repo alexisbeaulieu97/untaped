@@ -89,10 +89,6 @@ class UvHookWorkerPool:
         startup_notice: Callable[[Path], None] | None = None,
     ) -> None:
         self._max_workers_per_project = max(max_workers_per_project, 1)
-        if hook_timeout_seconds < 0:
-            raise ValueError("hook timeout must be greater than or equal to 0")
-        if startup_timeout_seconds < 0:
-            raise ValueError("startup timeout must be greater than or equal to 0")
         self._hook_timeout_seconds = hook_timeout_seconds
         self._startup_timeout_seconds = startup_timeout_seconds
         self._startup_notice = startup_notice
@@ -182,19 +178,6 @@ class _UvHookWorkerGroup:
         settle_seconds: float = 0,
     ) -> HookWorkerCallResult:
         """Lease one serialized worker for a request."""
-        return self._request(
-            payload,
-            diagnostic_limit=diagnostic_limit,
-            settle_seconds=settle_seconds,
-        )
-
-    def _request(
-        self,
-        payload: dict[str, object],
-        *,
-        diagnostic_limit: int | None,
-        settle_seconds: float,
-    ) -> HookWorkerCallResult:
         worker = self._lease()
         try:
             return worker.request(
@@ -276,10 +259,6 @@ class UvHookWorker:
         startup_timeout_seconds: float = 300,
         startup_notice: Callable[[Path], None] | None = None,
     ) -> None:
-        if hook_timeout_seconds < 0:
-            raise ValueError("hook timeout must be greater than or equal to 0")
-        if startup_timeout_seconds < 0:
-            raise ValueError("startup timeout must be greater than or equal to 0")
         self._project_root = project_root
         self._hook_timeout_seconds = hook_timeout_seconds
         self._startup_timeout_seconds = startup_timeout_seconds
