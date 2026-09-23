@@ -16,16 +16,21 @@ from pathlib import Path
 import tomlkit
 
 from untaped.api import atomic_write
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
-from untaped.capabilities.recipe.domain.hook_project import (
-    hook_module_file,
-    require_pack_lock,
-    validate_hook_modules,
-    validate_hook_project_contract,
+from untaped.capabilities.recipe.domain.hook_project import hook_module_file
+from untaped.capabilities.recipe.domain.pack import (
+    HookEntry,
+    InstalledPack,
+    PackManifest,
+    PackRef,
+    RecipeEntry,
 )
-from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest, PackRef, RecipeEntry
 from untaped.capabilities.recipe.domain.paths import safe_library_name
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
+from untaped.capabilities.recipe.domain.recipe import parse_recipe
+from untaped.capabilities.recipe.infrastructure.pack_files import (
+    check_hook_project,
+    hook_exports,
+    read_pack_manifest,
+)
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
 
@@ -43,30 +48,6 @@ PACK_COPY_IGNORE = (
     ".uv-cache",
     "*.egg-info",
 )
-
-
-@dataclass(frozen=True)
-class InstalledPack:
-    """One installed pack plus library bookkeeping."""
-
-    name: str
-    root: Path
-    manifest: PackManifest
-    source: str
-    rev: str
-    installed_version: str
-
-    @classmethod
-    def local(cls, path: Path, manifest: PackManifest) -> InstalledPack:
-        """Wrap an explicit-path pack that is not tracked by the library index."""
-        return cls(
-            name=manifest.name,
-            root=path,
-            manifest=manifest,
-            source=str(path),
-            rev="",
-            installed_version=manifest.version,
-        )
 
 
 @dataclass(frozen=True)
@@ -130,7 +111,7 @@ class PackLibrary:
     ) -> PackManifest:
         """Install a validated pack directory into the library."""
         source_dir = source_dir.expanduser()
-        manifest = PackManifest.from_pyproject(source_dir)
+        manifest = read_pack_manifest(source_dir)
         validate_pack(source_dir, manifest)
         index = self._read_index()
         installed_name = safe_library_name(name or manifest.name, field="pack")
@@ -238,7 +219,7 @@ class PackLibrary:
             if not root.is_dir() or not (root / "pyproject.toml").is_file():
                 continue
             try:
-                manifest = PackManifest.from_pyproject(root)
+                manifest = read_pack_manifest(root)
             except (ValueError, OSError) as exc:
                 load_errors[root.name] = str(exc)
                 continue
@@ -296,6 +277,10 @@ class PackLibrary:
                 return pack
         self._raise_if_broken(installed_name)
         return None
+
+    def local_pack(self, path: Path) -> InstalledPack:
+        """Read an explicit-path pack that is not tracked by the library index."""
+        return InstalledPack.local(path, read_pack_manifest(path))
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
         """Resolve a bare or qualified recipe reference."""
@@ -365,21 +350,16 @@ class PackLibrary:
 
 
 def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
-    """Validate a pack source before install (or before its summary is shown).
-
-    Shares ``check``'s hookless lock exemption via ``require_pack_lock``.
-    """
-    require_pack_lock(source_dir, has_hooks=bool(manifest.hooks))
-    validate_hook_project_contract(source_dir, manifest)
+    """Validate a pack source before install (or before its summary is shown)."""
+    check_hook_project(source_dir, manifest)
     for recipe_name, recipe_entry in manifest.recipes.items():
         recipe_file = source_dir / recipe_entry.path
         if not recipe_file.is_file():
             raise ValueError(f"pack recipe file not found: {recipe_name}")
         try:
-            load_recipe_file(recipe_file)
+            parse_recipe(recipe_file.read_text(encoding="utf-8"), source=recipe_file)
         except ValueError as exc:
             raise ValueError(f"invalid pack recipe: {recipe_name}: {exc}") from exc
-    validate_hook_modules(source_dir, manifest)
     for hook_name, hook_entry in manifest.hooks.items():
         if not hook_exports(hook_module_file(source_dir, hook_entry.module)):
             raise ValueError(

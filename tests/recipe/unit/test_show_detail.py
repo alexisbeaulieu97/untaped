@@ -8,12 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
 from untaped.capabilities.recipe.cli.detail import hook_detail, pack_detail, recipe_detail
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
-from untaped.capabilities.recipe.domain.pack import PackManifest
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
+from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -86,7 +85,7 @@ def test_recipe_detail_lists_inputs_steps_and_hooks(tmp_path: Path) -> None:
     _write_detail_pack(tmp_path)
     recipe_path = tmp_path / "recipes" / "playbook" / "recipe.yml"
 
-    detail = recipe_detail("ansible/playbook", load_recipe_file(recipe_path), recipe_path)
+    detail = recipe_detail("ansible/playbook", read_recipe_file(recipe_path), recipe_path)
 
     assert detail["inputs"] == [
         {
@@ -116,7 +115,7 @@ def test_recipe_detail_lists_inputs_steps_and_hooks(tmp_path: Path) -> None:
 
 def test_hook_detail_reports_ast_exports(tmp_path: Path) -> None:
     _write_detail_pack(tmp_path)
-    manifest = PackManifest.from_pyproject(tmp_path)
+    manifest = read_pack_manifest(tmp_path)
     module_file = tmp_path / "src" / "ansible_pack" / "hooks" / "set_owner.py"
 
     detail = hook_detail(
@@ -136,7 +135,7 @@ def test_hook_detail_reports_ast_exports(tmp_path: Path) -> None:
 
 def test_pack_detail_lists_recipe_summaries_and_hook_exports(tmp_path: Path) -> None:
     _write_detail_pack(tmp_path)
-    manifest = PackManifest.from_pyproject(tmp_path)
+    manifest = read_pack_manifest(tmp_path)
 
     detail = pack_detail("alias", manifest, tmp_path)
 

@@ -31,6 +31,7 @@ from untaped.api import (
 from untaped.capabilities.recipe.application import RunBulkApply
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.check_pack import check_library, check_ref
+from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.inputs import PromptFunc
 from untaped.capabilities.recipe.application.resolution import (
     existing_path_hint,
@@ -52,11 +53,16 @@ from untaped.capabilities.recipe.cli.detail import hook_detail, pack_detail, rec
 from untaped.capabilities.recipe.cli.hook_commands import app as hook_app
 from untaped.capabilities.recipe.cli.preview import PreviewMode, preview_summary, render_preview
 from untaped.capabilities.recipe.cli.test_commands import test_command
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
 from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
 )
-from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest, RecipeEntry, parse_ref
+from untaped.capabilities.recipe.domain.pack import (
+    HookEntry,
+    InstalledPack,
+    PackManifest,
+    RecipeEntry,
+    parse_ref,
+)
 from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
@@ -69,15 +75,15 @@ from untaped.capabilities.recipe.infrastructure import (
 from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
 from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
+from untaped.capabilities.recipe.infrastructure.pack_inspector import PackInspector
+from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary as UnifiedPackLibrary
 from untaped.capabilities.recipe.infrastructure.pack_store import (
-    InstalledPack,
     fetch_pack_source,
     is_git_url,
     local_edits_message,
     validate_pack,
 )
-from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary as UnifiedPackLibrary
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
 
 app = create_app(name="recipe", help="Apply reusable local recipes to plain directories.")
 new_app = create_app(name="new", help="Scaffold recipe packs, recipes, and hooks.")
@@ -381,7 +387,7 @@ def add_command(
             if is_git_url(source)
             else Path(source).expanduser()
         )
-        manifest = PackManifest.from_pyproject(source_dir)
+        manifest = read_pack_manifest(source_dir)
         # Validate before printing the pack summary: error output leads, and
         # the summary follows only on a pack that will actually install.
         validate_pack(source_dir, manifest)
@@ -542,7 +548,13 @@ def check_command(
     """Validate a pack, recipe, or the whole installed library."""
     with report_config_errors():
         root = library_root()
-        rows = check_library(root) if ref_text is None else [check_ref(root, ref_text)]
+        library = UnifiedPackLibrary(library_root=root)
+        inspector = PackInspector(library_root=root)
+        rows = (
+            check_library(library=library, inspector=inspector)
+            if ref_text is None
+            else [check_ref(ref_text, library=library, inspector=inspector)]
+        )
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.check")
         if rendered:
             echo(rendered)
@@ -631,7 +643,9 @@ def _apply_context(
     recipe_id: str | None = None,
 ) -> ApplyContext:
     root = library_root()
-    recipe_resolution = resolve_apply_recipe(root, recipe, recipe_id=recipe_id)
+    recipe_resolution = resolve_apply_recipe(
+        UnifiedPackLibrary(library_root=root), recipe, recipe_id=recipe_id
+    )
     recipe_path = recipe_resolution.path
     loaded = _load_recipe(recipe_path)
     target_input = _targets(dirs, stdin=stdin)
@@ -806,7 +820,7 @@ def _new_pack_child_hint(pack: str, name: str) -> str:
 
 def _load_recipe(recipe_path: Path) -> Recipe:
     try:
-        return load_recipe_file(recipe_path)
+        return read_recipe_file(recipe_path)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
 
