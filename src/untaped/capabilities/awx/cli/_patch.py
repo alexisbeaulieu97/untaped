@@ -89,18 +89,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
             overlay = build_patch(set_, patch_file)
             if not overlay:
                 raise ConfigError("provide --set and/or --patch-file with at least one field")
-            immutable = {
-                "id",
-                "name",
-                "organization",
-                "parent",
-                "kind",
-                "type",
-                "unified_job_template",
-            }
-            if spec.apply_strategy == "inventory_child":
-                immutable.add("inventory")
-            if forbidden := immutable.intersection(overlay):
+            if forbidden := spec.immutable_fields.intersection(overlay):
                 raise ConfigError(
                     f"patch cannot change identity fields: {', '.join(sorted(forbidden))}"
                 )

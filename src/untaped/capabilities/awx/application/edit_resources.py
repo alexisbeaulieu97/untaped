@@ -28,12 +28,9 @@ class EditResources:
         *,
         fields: Sequence[str] | None = None,
     ) -> None:
-        immutable = {"id", "name", "organization", "parent", "kind", "type", "unified_job_template"}
-        if spec.apply_strategy == "inventory_child":
-            immutable.add("inventory")
         writable = (
             (set(spec.canonical_fields) | {ref.field for ref in spec.fk_refs})
-            - immutable
+            - spec.immutable_fields
             - set(spec.read_only_fields)
         )
         if fields is not None and not set(fields) <= writable:

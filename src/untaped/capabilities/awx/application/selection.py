@@ -8,18 +8,15 @@ re-resolve a name after preview or confirmation.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.kinds import pipe_kind, unified_template_kind
 from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
 from untaped.capability_api import ConfigError, PipeEnvelope
-
-_CAMEL_TAIL = re.compile(r"(.)([A-Z][a-z]+)")
-_CAMEL_RUN = re.compile(r"([a-z0-9])([A-Z])")
 
 
 @dataclass(frozen=True)
@@ -130,7 +127,7 @@ class SelectionResolver:
         envelopes: tuple[PipeEnvelope, ...],
         scope: dict[str, str],
     ) -> tuple[SelectedResource, ...]:
-        expected_kind = _pipe_kind(spec.kind)
+        expected_kind = pipe_kind(spec.kind)
         selected: list[SelectedResource] = []
         for envelope in envelopes:
             if envelope.kind != expected_kind:
@@ -288,23 +285,15 @@ def validate_scope(
             current = referenced
 
 
-def _pipe_kind(kind: str) -> str:
-    snake = _CAMEL_RUN.sub(r"\1_\2", _CAMEL_TAIL.sub(r"\1_\2", kind)).lower()
-    return f"awx.{snake}"
-
-
 __all__ = ["SelectedResource", "SelectionRequest", "SelectionResolver"]
 
 
 def _scope_path(spec: ResourceSpec, path: str) -> str:
     first, separator, tail = path.partition("__")
     if first == "parent":
-        if spec.apply_strategy == "inventory_child":
-            first = "inventory"
-        elif spec.apply_strategy == "schedule":
-            first = "unified_job_template"
-        else:
+        if spec.parent_field is None:
             raise BadRequestError(f"{spec.kind} does not have a parent scope")
+        first = spec.parent_field
     return first + (separator + tail if separator else "")
 
 
@@ -331,14 +320,9 @@ def _scope_reference(
     if kind is None and relationship == "unified_job_template" and isinstance(summary, Mapping):
         raw_kind = summary.get("unified_job_type") or summary.get("type")
         if isinstance(raw_kind, str):
-            kind = next(
-                (
-                    item
-                    for item in catalog.kinds()
-                    if item.casefold() == raw_kind.replace("_", "").casefold()
-                ),
-                None,
-            )
+            kind = unified_template_kind(raw_kind)
+            if kind not in catalog.kinds():
+                kind = None
     if kind is None:
         raise BadRequestError(f"unsupported scope relationship {relationship!r}")
     if cache is None:

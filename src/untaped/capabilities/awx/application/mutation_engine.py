@@ -50,6 +50,7 @@ from untaped.capabilities.awx.domain import (
     Resource,
     ResourceSpec,
 )
+from untaped.capabilities.awx.domain.kinds import type_matches_kind
 from untaped.capabilities.awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
@@ -337,17 +338,7 @@ class BatchMutationEngine:
             target = targets[index]
             identity = target.identity
             if mode in {"patch", "edit"}:
-                forbidden = set(spec.identity_keys) | {"id", "kind", "type"}
-                if spec.apply_strategy in {"schedule", "inventory_child"}:
-                    forbidden.update(
-                        {
-                            "parent",
-                            "inventory"
-                            if spec.apply_strategy == "inventory_child"
-                            else "unified_job_template",
-                        }
-                    )
-                if forbidden.intersection(resource.spec):
+                if spec.immutable_fields.intersection(resource.spec):
                     raise BadRequestError(
                         "renaming, reparenting, or changing the kind or ID "
                         "of a selected resource is not supported"
@@ -438,12 +429,8 @@ class BatchMutationEngine:
                                 *payload,
                                 *spec.identity_keys,
                                 *(
-                                    (
-                                        "inventory"
-                                        if spec.apply_strategy == "inventory_child"
-                                        else "unified_job_template",
-                                    )
-                                    if parents[index] is not None
+                                    (spec.parent_field,)
+                                    if parents[index] is not None and spec.parent_field
                                     else ()
                                 ),
                             )
@@ -1002,7 +989,7 @@ def _validate_selected_identity(
     if record_type is not None and (
         not isinstance(record_type, str)
         or (
-            record_type.replace("_", "").casefold() != spec.kind.casefold()
+            not type_matches_kind(record_type, spec.kind)
             and not (spec.kind == "Inventory" and record_type == "constructed_inventory")
         )
     ):
@@ -1010,8 +997,8 @@ def _validate_selected_identity(
     for field in spec.identity_keys:
         if field in payload and payload[field] != record.get(field):
             raise BadRequestError(f"changing selected identity field {field!r} is not supported")
-    if parent is not None:
-        field = "inventory" if spec.apply_strategy == "inventory_child" else "unified_job_template"
+    if parent is not None and spec.parent_field is not None:
+        field = spec.parent_field
         actual = record.get(field)
         if actual is None:
             summary = record.get("summary_fields") or {}

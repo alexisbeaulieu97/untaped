@@ -13,13 +13,14 @@ in-place strip / diff / preserve passes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain import Resource, ResourceSpec, WritePayload
 from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
 )
+from untaped.capabilities.awx.domain.kinds import UNIFIED_TEMPLATE_KINDS, snake_kind
 from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path
 
@@ -114,13 +115,6 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
     ``resource.metadata.parent``.
     """
 
-    _PARENT_PATHS: ClassVar[dict[str, str]] = {
-        "JobTemplate": "job_templates",
-        "WorkflowJobTemplate": "workflow_job_templates",
-        "Project": "projects",
-        "InventorySource": "inventory_sources",
-    }
-
     def prepare_parent(
         self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
     ) -> tuple[str, PlannedId] | None:
@@ -174,15 +168,15 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
             json={"name": identity["name"], **payload},
         )
 
-    @classmethod
-    def _parent_path(cls, parent_kind: str) -> str:
-        try:
-            return cls._PARENT_PATHS[parent_kind]
-        except KeyError as exc:
+    @staticmethod
+    def _parent_path(parent_kind: str) -> str:
+        """Parents are the unified templates; each lives at ``<snake_kind>s``."""
+        if parent_kind not in UNIFIED_TEMPLATE_KINDS:
             raise BadRequestError(
                 f"schedule parent kind {parent_kind!r} not supported "
-                f"(use one of {sorted(cls._PARENT_PATHS)})"
-            ) from exc
+                f"(use one of {sorted(UNIFIED_TEMPLATE_KINDS)})"
+            )
+        return f"{snake_kind(parent_kind)}s"
 
 
 class InventoryChildApplyStrategy(DefaultApplyStrategy):

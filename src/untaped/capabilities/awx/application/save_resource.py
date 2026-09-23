@@ -24,17 +24,10 @@ from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
 )
+from untaped.capabilities.awx.domain.kinds import unified_template_kind
 from untaped.capabilities.awx.errors import BadRequestError
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
-
-# AWX's snake_case "unified_job_type" → our PascalCase kind names.
-_UJT_KIND_MAP: dict[str, str] = {
-    "job_template": "JobTemplate",
-    "workflow_job_template": "WorkflowJobTemplate",
-    "project": "Project",
-    "inventory_source": "InventorySource",
-}
 
 
 @dataclass(frozen=True)
@@ -186,7 +179,7 @@ def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolve
     parent_summary = summary.get("unified_job_template") or {}
     parent_kind_str = parent_summary.get("unified_job_type")
     parent_name = parent_summary.get("name")
-    parent_kind = _UJT_KIND_MAP.get(parent_kind_str or "")
+    parent_kind = unified_template_kind(parent_kind_str)
     parent: IdentityRef | None = None
     parent_id = record.get("unified_job_template") or parent_summary.get("id")
     if parent_kind == "InventorySource" and not isinstance(parent_id, int):
