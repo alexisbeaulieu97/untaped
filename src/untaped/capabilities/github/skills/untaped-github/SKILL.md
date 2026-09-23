@@ -70,8 +70,9 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - Use `--format pipe` to chain sweep results into another sweep: `untaped github repos list 'svc-*' --org acme --format pipe | untaped github sweep --stdin --grep old_api --format pipe | untaped github sweep --stdin --not-grep new_api`.
 - For `untaped workspace add --stdin`, use raw URL lines:
   `untaped github sweep --org acme --grep old_api --format raw --columns clone_url |
-  untaped workspace add --stdin --workspace remediation`. `sweep --format pipe`
-  emits typed `github.sweep_repo` records, but workspace add does not consume typed pipe records today.
+  untaped workspace add --stdin --workspace remediation`. `workspace add --stdin`
+  also reads `github.repo`, `github.repo_hit` and `github.sweep_repo` pipe records
+  (`untaped github search repos --org acme --format pipe | untaped workspace add --stdin`).
 - `--profile <name>` works in any token position (e.g. `untaped github --profile work whoami`).
 - Use `--limit` intentionally; GitHub search has stricter rate limits than normal REST reads.
 - When no repo/org/user/team scope is passed to repo/code/issue search, the CLI defaults to the authenticated user.

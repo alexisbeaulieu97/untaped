@@ -98,4 +98,3 @@ def parallel_cap() -> int:
     tests stays live.
     """
     return (os.cpu_count() or 1) * 2
-
