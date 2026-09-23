@@ -15,12 +15,14 @@ from untaped.capability_api import (
     ConfigError,
     FormatOption,
     OutputFormat,
+    UiContext,
     app_context,
     clamp_parallel,
     echo,
     emit,
     finish,
     git_auth_header,
+    plural,
     read_identifiers,
     report_errors,
 )
@@ -195,7 +197,7 @@ def sweep_command(
                 kind="github.sweep_repo",
                 empty="No matching repositories found.",
             )
-        _footer(report)
+        _footer(report, ctx.ui(strict=False))
         finish((strict and bool(report.unscanned)) or (fail_on_match and bool(report.rows)))
 
 
@@ -325,7 +327,7 @@ def _default_columns(*, query: SweepQuery, owners: bool) -> list[str] | None:
     return columns
 
 
-def _footer(report: SweepReport) -> None:
+def _footer(report: SweepReport, ui: UiContext) -> None:
     oldest = report.oldest_fetched_at.isoformat() if report.oldest_fetched_at else "n/a"
     echo(
         (
@@ -335,14 +337,12 @@ def _footer(report: SweepReport) -> None:
         err=True,
     )
     if report.stale:
-        count = len(report.stale)
-        echo(
-            f"warning: refresh failed for {count} repo{'s' if count != 1 else ''}; "
-            "scanned cached copies",
-            err=True,
+        ui.message(
+            "warning",
+            f"refresh failed for {plural(len(report.stale), 'repo')}; scanned cached copies",
         )
         for failure in report.stale:
-            echo(f"warning: stale {failure.repo}: {failure.reason}", err=True)
+            ui.message("warning", f"stale {failure.repo}: {failure.reason}")
     if report.unscanned:
         for failure in report.unscanned:
-            echo(f"warning: unscanned {failure.repo}: {failure.reason}", err=True)
+            ui.message("warning", f"unscanned {failure.repo}: {failure.reason}")

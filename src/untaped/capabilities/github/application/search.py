@@ -178,7 +178,7 @@ def _ensure_search_boolean_operators_fit(filters: ScopedQueryBase, *, kind: str)
             f"GitHub {kind} search has "
             f"{user_operators} boolean operators; GitHub allows at most "
             f"{MAX_SEARCH_BOOLEAN_OPERATORS}. Narrow the query or remove "
-            "AND/OR/NOT operators before adding repository scopes."
+            "AND/OR/NOT operators before adding repository scopes"
         )
     return user_operators
 
@@ -258,7 +258,7 @@ def _ensure_search_query_fits(filters: RepoSearchFilters) -> None:
         raise UntapedError(
             "GitHub repository search query text length "
             f"{length} exceeds {MAX_SEARCH_QUERY_TEXT_LENGTH}; narrow the free-text query "
-            "or search with fewer literal terms."
+            "or search with fewer literal terms"
         )
 
 
