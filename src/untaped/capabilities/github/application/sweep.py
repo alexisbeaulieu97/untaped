@@ -30,7 +30,7 @@ from untaped.capabilities.github.domain import (
     ref_display_names,
     ref_matches,
 )
-from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capabilities.github.domain.errors import GitCorpusError, is_global_github_failure
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
 AuthHeaderSupplier = Callable[[], str | None]
@@ -198,14 +198,21 @@ class Sweep:
                 items.setdefault(item.full_name, item)
         # Expand explicit names one at a time so one missing or inaccessible
         # repo becomes an unscanned row instead of aborting the whole sweep.
+        # Auth and rate-limit failures hit every repo alike, so they abort.
         failures: list[CorpusFailure] = []
-        for name in dict.fromkeys((*options.scope.repos, *options.stdin_repos)):
+        names = tuple(dict.fromkeys((*options.scope.repos, *options.stdin_repos)))
+        for name in names:
             try:
                 resolved = self._inventory(RepositoryInventoryScope(repos=(name,)))
             except UntapedError as exc:
+                if is_global_github_failure(exc):
+                    raise
                 failures.append(CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__))
                 continue
             items.update((item.full_name, item) for item in resolved)
+        if names and len(failures) == len(names) and not items:
+            detail = "; ".join(failure.reason for failure in failures)
+            raise UntapedError(f"no requested repository could be resolved: {detail}")
         rows = (
             items[name]
             for name in sorted(items)
