@@ -515,14 +515,53 @@ def test_local_refs_default_first_then_sorted(tmp_path: Path) -> None:
     )
 
     assert cache.local_refs(repo, root=root, selector=RefSelector(profile="branches")) == (
-        "main",
-        "alpha",
-        "zeta",
+        "refs/heads/main",
+        "refs/heads/alpha",
+        "refs/heads/zeta",
     )
     assert cache.local_refs(repo, root=root, selector=RefSelector(globs=("v*",))) == (
-        "main",
-        "v2.0",
+        "refs/heads/main",
+        "refs/tags/v2.0",
     )
+
+
+def test_branch_and_tag_with_same_name_are_both_listed_and_greppable(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "main\n"})
+    _git(source, "tag", "x")
+    _git(source, "checkout", "-q", "-b", "x")
+    _commit_file(source, "branch.txt", "needle\n", "branch only")
+    _git(source, "checkout", "-q", "main")
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    cache.sync_repo(repo, root=root, selector=RefSelector(profile="all"), depth=1, auth_header=None)
+
+    refs = cache.local_refs(repo, root=root, selector=RefSelector(profile="all"))
+    branch_hits = cache.grep_ref(
+        repo,
+        root=root,
+        ref="refs/heads/x",
+        pattern="needle",
+        paths=(),
+        ignore_case=False,
+        fixed_strings=False,
+        word_regexp=False,
+    )
+    tag_hits = cache.grep_ref(
+        repo,
+        root=root,
+        ref="refs/tags/x",
+        pattern="needle",
+        paths=(),
+        ignore_case=False,
+        fixed_strings=False,
+        word_regexp=False,
+    )
+
+    assert refs == ("refs/heads/main", "refs/heads/x", "refs/tags/x")
+    assert [hit.path for hit in branch_hits] == ["branch.txt"]
+    assert tag_hits == ()
+    assert cache.tree_paths(repo, root=root, ref="refs/tags/x") == ("README.md",)
 
 
 def test_tree_paths_recursive(tmp_path: Path) -> None:

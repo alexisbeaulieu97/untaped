@@ -38,6 +38,7 @@ from untaped.capabilities.github.domain.sweep import (
     RepoSweepOutcome,
     SweepQuery,
     profile_join,
+    ref_display_names,
     ref_matches,
 )
 
@@ -73,5 +74,6 @@ __all__ = [
     "covers",
     "parse_codeowners",
     "profile_join",
+    "ref_display_names",
     "ref_matches",
 ]

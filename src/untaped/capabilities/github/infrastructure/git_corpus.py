@@ -184,7 +184,10 @@ class GitCorpusCache:
         root: Path,
         selector: RefSelector,
     ) -> tuple[str, ...]:
-        """Return cached refs selected for a sweep, with default branch first."""
+        """Return full refnames selected for a sweep, with the default branch first.
+
+        Full names keep a branch and a tag that share a short name distinct.
+        """
         branch = _default_branch(repo)
         bare = cache_path_for(_remote_url(repo), cache_dir=root)
         if not (bare / "HEAD").is_file():
@@ -198,11 +201,11 @@ class GitCorpusCache:
             ),
         )
         refs = (
-            _short_ref(ref)
+            ref
             for ref in (result.stdout or "").splitlines()
             if _selector_covers_ref(selector, ref, default_branch=branch)
         )
-        return _order_refs(tuple(dict.fromkeys(refs)), default_branch=branch)
+        return _order_refs(tuple(dict.fromkeys(refs)), default_branch=f"refs/heads/{branch}")
 
     def grep_ref(
         self,
@@ -704,14 +707,6 @@ def _selector_covers_ref(selector: RefSelector, ref: str, *, default_branch: str
     else:
         return False
     return any(fnmatch.fnmatchcase(name, glob) for glob in selector.globs)
-
-
-def _short_ref(ref: str) -> str:
-    if ref.startswith("refs/heads/"):
-        return ref.removeprefix("refs/heads/")
-    if ref.startswith("refs/tags/"):
-        return ref.removeprefix("refs/tags/")
-    return ref
 
 
 def _order_refs(refs: tuple[str, ...], *, default_branch: str) -> tuple[str, ...]:
