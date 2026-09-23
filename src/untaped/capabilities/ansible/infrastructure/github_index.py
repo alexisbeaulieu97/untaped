@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from untaped.api import HttpError, UntapedError, bounded_map
 from untaped.capabilities.ansible.domain.identity import IdentityResolver, repo_key
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import (
@@ -11,6 +13,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     IndexedDependency,
     SkippedDependencyFile,
 )
+from untaped.capabilities.ansible.errors import AnsibleError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,8 +24,22 @@ if TYPE_CHECKING:
     )
 
 
+@dataclass
+class _LiveRead:
+    """Outcome of one live repo/ref read: edges plus what to tell the user."""
+
+    edges: list[IndexedDependency] = field(default_factory=list)
+    skipped: list[SkippedDependencyFile] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
 class GithubDependencyIndex:
-    """Read declared dependencies live from GitHub, with indexed impact fallback."""
+    """Read declared dependencies live from GitHub, with indexed impact fallback.
+
+    A failed read (deleted repo, missing tag, permission error) is recorded in
+    :attr:`errors` and leaves that node unexpanded instead of aborting the
+    whole graph. Uncached pairs of a batch are read concurrently.
+    """
 
     def __init__(
         self,
@@ -32,19 +49,27 @@ class GithubDependencyIndex:
         aliases: dict[str, str],
         dependency_paths: list[str],
         github_host: str | None = None,
+        concurrency: int = 1,
     ) -> None:
         self._github = github
         self._github_host = github_host
+        self._concurrency = concurrency
         self._wrapped = wrapped
         self._aliases = aliases
         self._dependency_paths = dependency_paths
         self._cache: dict[tuple[str, str | None], list[IndexedDependency]] = {}
         self._warnings: list[SkippedDependencyFile] = []
+        self._errors: list[str] = []
 
     @property
     def warnings(self) -> tuple[SkippedDependencyFile, ...]:
         """Parse warnings accumulated during live dependency reads."""
         return tuple(self._warnings)
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        """Per-repo read failures and incomplete listings, as graph warnings."""
+        return tuple(self._errors)
 
     def dependencies(
         self,
@@ -53,10 +78,7 @@ class GithubDependencyIndex:
         *,
         source_key: str | None,
     ) -> list[IndexedDependency]:
-        key = (repo_key(repo), ref)
-        if key not in self._cache:
-            self._cache[key] = self._live_dependencies(repo, ref)
-        return self._cache[key]
+        return self.dependencies_batch([(repo, ref)], source_key=source_key)[(repo, ref)]
 
     def dependents(
         self,
@@ -73,11 +95,33 @@ class GithubDependencyIndex:
         *,
         source_key: str | None,
     ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
-        # Intentionally per-pair: live reads (per-repo tree/content fetches) don't batch.
-        return {
-            (repo, ref): self.dependencies(repo, ref, source_key=source_key)
-            for repo, ref in dict.fromkeys(pairs)
-        }
+        requested = list(dict.fromkeys(pairs))
+        pending = list(
+            {
+                (repo_key(repo), ref): (repo, ref)
+                for repo, ref in requested
+                if (repo_key(repo), ref) not in self._cache
+            }.values()
+        )
+        reads: dict[tuple[str, str | None], _LiveRead] = {}
+
+        def record(pair: tuple[str, str | None], read: _LiveRead) -> None:
+            reads[pair] = read
+
+        if pending:
+            bounded_map(
+                lambda pair: self._live_read(*pair),
+                pending,
+                concurrency=self._concurrency,
+                on_each=record,
+            )
+        # Record in request order so warnings are deterministic under concurrency.
+        for repo, ref in pending:
+            read = reads[(repo, ref)]
+            self._cache[(repo_key(repo), ref)] = read.edges
+            self._warnings.extend(read.skipped)
+            self._errors.extend(read.errors)
+        return {(repo, ref): self._cache[(repo_key(repo), ref)] for repo, ref in requested}
 
     def dependents_batch(
         self,
@@ -127,13 +171,32 @@ class GithubDependencyIndex:
             metadata.append(CachedRef(name=cached_ref))
         return tuple(metadata)
 
-    def _live_dependencies(self, repo: str, ref: str | None) -> list[IndexedDependency]:
+    def _live_read(self, repo: str, ref: str | None) -> _LiveRead:
+        read = _LiveRead()
+        label = f"{repo}@{ref}" if ref else repo
+        try:
+            self._read_into(read, repo, ref)
+        except UntapedError as exc:
+            if isinstance(exc, HttpError) and exc.status_code in _GLOBAL_FAILURE_STATUSES:
+                raise
+            read.edges.clear()
+            read.errors.append(
+                f"could not read {label} live: {exc}; not expanding its dependencies"
+            )
+        return read
+
+    def _read_into(self, read: _LiveRead, repo: str, ref: str | None) -> None:
         owner, name = _split_repo(repo)
         read_ref = self._read_ref(owner, name, ref)
         source_ref = ref or read_ref
-        paths = self._tree_paths(owner, name, read_ref)
+        paths, truncated = self._tree_paths(owner, name, read_ref)
+        if truncated:
+            read.errors.append(
+                f"GitHub truncated the file listing for {repo}@{source_ref}; "
+                "dependency files missing from it were not read"
+            )
         resolver = IdentityResolver(self._aliases, github_host=self._github_host)
-        edges: list[IndexedDependency] = []
+        edges = read.edges
         for path in self._dependency_paths:
             if path not in paths:
                 continue
@@ -141,7 +204,7 @@ class GithubDependencyIndex:
                 path,
                 self._github.get_raw_content(owner, name, path, ref=read_ref),
             )
-            self._warnings.extend(
+            read.skipped.extend(
                 SkippedDependencyFile(
                     repo=repo,
                     ref=source_ref,
@@ -163,7 +226,6 @@ class GithubDependencyIndex:
                         unresolved=resolved.unresolved,
                     )
                 )
-        return edges
 
     def _read_ref(self, owner: str, repo: str, ref: str | None) -> str:
         if ref is None:
@@ -184,10 +246,12 @@ class GithubDependencyIndex:
                     return sha
         return None
 
-    def _tree_paths(self, owner: str, repo: str, ref: str) -> set[str]:
-        tree = self._github.get_tree(owner, repo, ref, recursive=True).get("tree")
+    def _tree_paths(self, owner: str, repo: str, ref: str) -> tuple[set[str], bool]:
+        response = self._github.get_tree(owner, repo, ref, recursive=True)
+        truncated = response.get("truncated") is True
+        tree = response.get("tree")
         if not isinstance(tree, list):
-            return set()
+            return set(), truncated
         paths = set()
         for entry in tree:
             if not isinstance(entry, dict):
@@ -195,13 +259,17 @@ class GithubDependencyIndex:
             path = entry.get("path")
             if isinstance(path, str) and path:
                 paths.add(path)
-        return paths
+        return paths, truncated
+
+
+# Auth and rate-limit failures hit every repo alike: surface them as one error.
+_GLOBAL_FAILURE_STATUSES = frozenset({401, 429})
 
 
 def _split_repo(repo: str) -> tuple[str, str]:
     owner, separator, name = repo.partition("/")
     if not owner or not separator or not name:
-        raise ValueError(f"repo must be owner/name (got {repo!r})")
+        raise AnsibleError(f"repo must be owner/name (got {repo!r})")
     return owner, name
 
 
