@@ -5,22 +5,23 @@ description: Use the built-in `untaped jira` capability for Jira workflows.
 
 # Untaped Jira
 
-Use this skill when the user wants an agent to operate the `untaped jira` CLI for Jira Data Center ticket workflows.
+Use this skill when the user wants an agent to operate the `untaped jira` CLI for Jira Data Center issue workflows.
 
 ## Setup
 
 - The command is `untaped jira`. It ships with the unified `untaped` CLI (no separate install).
-- V1 targets Jira Data Center and self-hosted Jira, not Jira Cloud REST v3.
+- `untaped jira` targets Jira Data Center and self-hosted Jira, not Jira Cloud REST v3.
 - Settings live under `profiles.<name>.jira`: `base_url`, `token`, `assigned_jql`, and optional defaults such as `default_board_id`.
 - Use `untaped config set jira.token --prompt` or `--stdin` for personal access tokens.
 - Set the base URL with `untaped config set jira.base_url https://HOST`.
 
 ## Command Patterns
 
-- Use `untaped jira --help` and subcommand `--help` output to confirm the available V1 surface before acting.
+- Use `untaped jira --help` and subcommand `--help` output to confirm the available commands and flags before acting.
 - Jira platform calls use `/rest/api/2`; Jira Software board and sprint calls use `/rest/agile/1.0`.
 - Use `untaped jira issue assigned` to list issues assigned to the authenticated Jira user. It always applies `jira.assigned_jql`; `--jql` and the shortcut flags narrow it (ANDed), and an `ORDER BY` in `--jql` replaces the default `updated DESC` order.
 - `untaped jira issue search` with no `--jql` or shortcut flags falls back to `jira.assigned_jql`.
+- `--sprint` accepts a sprint id, a sprint name, or `openSprints()`/`futureSprints()`/`closedSprints()` (rendered as `sprint in openSprints()`).
 - Use `untaped jira issue get KEY` to fetch one issue by key or id with its detail fields (`summary`, `status`, `assignee`, `updated`, `url`, plus `issuetype`, `priority`, `reporter`, `labels`, `created`, `resolution`, `description`). Search rows keep only `key`, `summary`, `status`, `assignee`, `updated`, and `url`.
 - Prefer JSON output for issue, board, sprint, transition, project, and search workflows.
 - Single-entity commands (`me`, `issue get`/`create`/`edit`/`comment`/`transition`, `project get`) render a vertical key:value detail view under `--format table` and a bare JSON object (`{…}`, not a one-element `[{…}]`) under `--format json`; list/search commands render tables and JSON arrays.
@@ -33,5 +34,5 @@ Use this skill when the user wants an agent to operate the `untaped jira` CLI fo
 
 - Keep stdout data-only; parse `--format json` rather than table output.
 - Do not assume Jira Cloud authentication or endpoints.
-- Treat ticket mutations such as transitions or comments as explicit user intent.
+- Treat issue mutations such as transitions or comments as explicit user intent.
 - Never echo tokens or raw authorization headers.
