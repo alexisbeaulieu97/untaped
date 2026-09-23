@@ -25,7 +25,7 @@ from untaped.capabilities.ansible.infrastructure import (
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
-from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, echo, git_auth_header
+from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
 
 
 def run_source_refresh(
@@ -58,7 +58,8 @@ def run_source_refresh(
             backend=backend,
             on_progress=progress_reporter(progress),
         )
-    echo(
+    ui.message(
+        "info",
         refresh_summary(
             action,
             label,
@@ -66,12 +67,11 @@ def run_source_refresh(
             concurrency=concurrency,
             elapsed=time.perf_counter() - started_at,
         ),
-        err=True,
     )
-    warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor)
-    warn_skipped_files(result)
-    warn_ignored_collections(result.ignored_collections)
-    warn_probe_fallbacks(result)
+    warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor, ui=ui)
+    warn_skipped_files(result, ui=ui)
+    warn_ignored_collections(result.ignored_collections, ui=ui)
+    warn_probe_fallbacks(result, ui=ui)
     return result
 
 
@@ -151,60 +151,55 @@ def refresh_summary(
 ) -> str:
     """One-line stderr summary for a completed source refresh."""
     message = (
-        f"{action} {label}: {result.repos} repos, {result.refs} refs, {result.edges} edges, "
+        f"{action} {label}: {plural(result.repos, 'repo')}, {plural(result.refs, 'ref')}, "
+        f"{plural(result.edges, 'edge')}, "
         f"{result.changed_refs} changed, {result.unchanged_refs} unchanged in {elapsed:.2f}s"
     )
     return f"{message} (concurrency {concurrency})"
 
 
-def warn_low_rate_limit(result: RefreshResult, *, threshold: int) -> None:
+def warn_low_rate_limit(result: RefreshResult, *, threshold: int, ui: UiContext) -> None:
     """Warn on stderr when the GraphQL rate limit budget is running out."""
     remaining = result.rate_limit_remaining
     if remaining is not None and remaining < threshold:
-        echo(
-            f"warning: GitHub GraphQL rate limit is low: {remaining} points remaining",
-            err=True,
-        )
+        ui.message("warning", f"GitHub GraphQL rate limit is low: {remaining} points remaining")
 
 
-def warn_probe_fallbacks(result: RefreshResult) -> None:
+def warn_probe_fallbacks(result: RefreshResult, *, ui: UiContext) -> None:
     """Warn when GraphQL probing fell back to per-repo Git ls-remote calls."""
     if not result.probe_fallbacks:
         return
     counts = Counter(result.probe_fallbacks.values())
     rate_limited = counts.pop(GRAPHQL_RATE_LIMIT_FALLBACK, 0)
     if rate_limited:
-        echo(
-            "warning: "
-            f"{pluralize(rate_limited, 'repo')} fell back to git ls-remote after "
+        ui.message(
+            "warning",
+            f"{plural(rate_limited, 'repo')} fell back to git ls-remote after "
             "GitHub GraphQL rate limit exhaustion; large fallbacks can be much slower "
             "because Git probing runs one network subprocess per repo",
-            err=True,
         )
     transient = counts.pop(GRAPHQL_TRANSIENT_FALLBACK, 0)
     if transient:
-        echo(
-            "warning: "
-            f"{pluralize(transient, 'repo')} fell back to git ls-remote after transient "
+        ui.message(
+            "warning",
+            f"{plural(transient, 'repo')} fell back to git ls-remote after transient "
             "GitHub GraphQL probe failures",
-            err=True,
         )
     unknown = sum(counts.values())
     if unknown:
         reasons = ", ".join(f"{reason} ({count})" for reason, count in sorted(counts.items()))
-        echo(
-            "warning: "
-            f"{pluralize(unknown, 'repo')} fell back to git ls-remote for "
-            f"unrecognized fallback reason(s): {reasons}",
-            err=True,
+        ui.message(
+            "warning",
+            f"{plural(unknown, 'repo')} fell back to git ls-remote for "
+            f"{plural(len(counts), 'unrecognized fallback reason')}: {reasons}",
         )
 
 
-def warn_ignored_collections(names: Iterable[str]) -> None:
+def warn_ignored_collections(names: Iterable[str], *, ui: UiContext) -> None:
     """Warn once that requirements-file collections are not graphed."""
     message = ignored_collections_warning(names)
     if message is not None:
-        echo(f"warning: {message}", err=True)
+        ui.message("warning", message)
 
 
 def ignored_collections_warning(names: Iterable[str]) -> str | None:
@@ -217,7 +212,7 @@ def ignored_collections_warning(names: Iterable[str]) -> str | None:
     more = f", and {extra} more" if extra > 0 else ""
     verb = "was" if len(unique) == 1 else "were"
     return (
-        f"{pluralize(len(unique), 'collection')} in requirements files {verb} ignored "
+        f"{plural(len(unique), 'collection')} in requirements files {verb} ignored "
         f"(only roles are graphed): {shown}{more}"
     )
 
@@ -225,31 +220,26 @@ def ignored_collections_warning(names: Iterable[str]) -> str | None:
 _MAX_LISTED_COLLECTIONS = 10
 
 
-def warn_deprecated_settings(settings: AnsibleSettings) -> None:
+def warn_deprecated_settings(settings: AnsibleSettings, *, ui: UiContext) -> None:
     """Warn about profile keys kept only for config compatibility."""
     if settings.freshness_ttl is not None:
-        echo(
-            "warning: ansible.freshness_ttl is deprecated and ignored; pass --refresh or run "
+        ui.message(
+            "warning",
+            "ansible.freshness_ttl is deprecated and ignored; pass --refresh or run "
             "`untaped ansible source refresh NAME` to check remote data",
-            err=True,
         )
 
 
-def warn_skipped_files(result: RefreshResult) -> None:
+def warn_skipped_files(result: RefreshResult, *, ui: UiContext) -> None:
     """Warn when dependency files were skipped during parsing."""
     for skipped in result.skipped_files:
-        echo(f"warning: {format_skipped_dependency_file(skipped)}", err=True)
+        ui.message("warning", format_skipped_dependency_file(skipped))
 
 
 def format_skipped_dependency_file(skipped: SkippedDependencyFile) -> str:
     """Render a skipped dependency file warning body."""
     ref = f"@{skipped.ref}" if skipped.ref is not None else ""
     return f"skipped {skipped.repo}{ref} {skipped.source_path}: {skipped.reason}"
-
-
-def pluralize(count: int, noun: str) -> str:
-    """Render ``count`` with a naively pluralized noun, e.g. ``2 repo failures``."""
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _format_progress(event: RefreshProgressEvent) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from untaped.capabilities.github.ansible import normalize_team_scopes
 
@@ -56,6 +56,8 @@ class SourceDefinition(BaseModel):
 class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
+    model_config = ConfigDict(frozen=True)
+
     index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
     stale_after: int = 86_400
     # Deprecated and ignored; kept so existing configs still validate.
@@ -75,6 +77,8 @@ class AnsibleSettings(BaseModel):
 
 class AnsibleState(BaseModel):
     """Top-level Ansible tool app state."""
+
+    model_config = ConfigDict(frozen=True)
 
     sources: list[SourceDefinition] = Field(default_factory=list)
     aliases: dict[str, str] = Field(default_factory=dict)

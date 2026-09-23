@@ -10,7 +10,7 @@ private sources still need credentials; it only replaces the probe transport.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from untaped.capabilities.ansible.domain.payloads import (
     GitRef,
@@ -23,17 +23,10 @@ from untaped.capabilities.ansible.domain.repo_targets import remote_url_for
 from untaped.capabilities.ansible.errors import GitCacheError
 from untaped.capability_api import bounded_map
 
+if TYPE_CHECKING:
+    from untaped.capabilities.ansible.application.ports import LsRemoteGit
+
 GIT_REF_PROBE_FAILURE_PREFIX = "git ref probe failed: "
-
-
-class _LsRemoteGit(Protocol):
-    def ls_remote(
-        self,
-        url: str,
-        *,
-        patterns: list[str],
-        auth_header: str | None,
-    ) -> str: ...
 
 
 class GitRemoteRefProbe:
@@ -41,7 +34,7 @@ class GitRemoteRefProbe:
 
     def __init__(
         self,
-        git: _LsRemoteGit,
+        git: LsRemoteGit,
         *,
         clone_protocol: str,
         auth_header: str | None,

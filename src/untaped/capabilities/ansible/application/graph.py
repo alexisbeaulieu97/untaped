@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import Literal, NamedTuple, Protocol, assert_never
+from collections.abc import Callable
+from typing import Literal, NamedTuple, assert_never
 
 from pydantic import BaseModel, ConfigDict
 
-from untaped.capabilities.ansible.application.ports import DependencyIndex
+from untaped.capabilities.ansible.application.ports import DependencyIndex, EdgeBatchRead
 from untaped.capabilities.ansible.domain.cycles import detect_cycles
 from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphEdge, GraphNode
 from untaped.capabilities.ansible.domain.identity import repo_key
@@ -70,17 +70,6 @@ class _MissingRefItem(NamedTuple):
 
 
 _ReplayItem = _AddNodeItem | _AddTargetItem | _AddEdgeItem | _MissingRefItem
-
-
-class _EdgeBatchRead(Protocol):
-    """Batch edge read matching ``dependencies_batch``/``dependents_batch``."""
-
-    def __call__(
-        self,
-        pairs: Sequence[tuple[str, str | None]],
-        *,
-        source_key: str | None,
-    ) -> dict[tuple[str, str | None], list[IndexedDependency]]: ...
 
 
 class _Walk:
@@ -328,7 +317,7 @@ class _GraphBuilder:
         level: list[_Walk],
         *,
         cache: dict[tuple[str, str | None, str | None], list[IndexedDependency]],
-        batch: _EdgeBatchRead,
+        batch: EdgeBatchRead,
     ) -> None:
         source_key = self._request.source_key
         pairs = list(

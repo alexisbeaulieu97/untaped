@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
@@ -13,19 +13,11 @@ from untaped.capabilities.ansible.domain.payloads import (
 )
 from untaped.capabilities.github.ansible import GithubGraphqlError
 
+if TYPE_CHECKING:
+    from untaped.capabilities.ansible.application.ports import RefProbe
+
 BackendMode = Literal["auto", "graphql", "git"]
 _FALLBACK_KINDS = {"transient", "chunk"}
-
-
-class _RefProbe(Protocol):
-    def probe(
-        self,
-        repos: Sequence[ProbeTarget],
-        *,
-        kinds: Sequence[str],
-        mode: Literal["all", "default_branch"] = "all",
-        on_progress: Callable[[int, int], None] | None = None,
-    ) -> ProbeReport: ...
 
 
 class AutoRefProbe:
@@ -33,8 +25,8 @@ class AutoRefProbe:
 
     def __init__(
         self,
-        graphql: _RefProbe,
-        git: _RefProbe,
+        graphql: RefProbe,
+        git: RefProbe,
         *,
         backend: BackendMode,
     ) -> None:

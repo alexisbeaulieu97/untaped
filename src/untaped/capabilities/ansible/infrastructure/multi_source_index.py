@@ -28,7 +28,7 @@ class MultiSourceDependencyIndex:
 
     def __init__(self, wrapped: DependencyIndex, source_keys: tuple[str, ...]) -> None:
         if not source_keys:
-            raise ValueError("MultiSourceDependencyIndex requires at least one source key")
+            raise ValueError("multi-source index requires at least one source key")
         self._wrapped = wrapped
         self._source_keys = tuple(dict.fromkeys(source_keys))
 
