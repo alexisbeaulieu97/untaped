@@ -23,6 +23,22 @@ def build_apply_resource(ctx: AwxContext, *, allow_unverified: bool = False) -> 
     )
 
 
+def _with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
+    """Scope org-less documents of org-scoped kinds by ``awx.default_organization``.
+
+    Selection and ``awx test`` already scope this way; without it an apply
+    would match a same-named resource in whichever organization held one.
+    With no default, a name found in several organizations stays ambiguous.
+    """
+    default = ctx.default_organization
+    if default is None or doc.metadata.organization is not None:
+        return doc
+    if "organization" not in ctx.catalog.get(doc.kind).identity_keys:
+        return doc
+    metadata = doc.metadata.model_copy(update={"organization": default})
+    return doc.model_copy(update={"metadata": metadata})
+
+
 def run_apply(
     ctx: AwxContext,
     file: Path,
@@ -43,7 +59,7 @@ def run_apply(
         wrong = sorted({doc.kind for doc in docs if kind_filter and doc.kind != kind_filter})
         if wrong:
             raise ConfigError(f"expected only {kind_filter} documents; found {', '.join(wrong)}")
-        return docs
+        return [_with_default_organization(ctx, doc) for doc in docs]
 
     apply_one = build_apply_resource(ctx, allow_unverified=allow_unverified)
     plan = ApplyFile(apply_one, reader, ctx.catalog, ctx.fk).prepare(file)
