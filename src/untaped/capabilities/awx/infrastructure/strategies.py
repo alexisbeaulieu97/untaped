@@ -21,6 +21,7 @@ from untaped.capabilities.awx.domain.inventory import (
     inventory_read_only_fields,
 )
 from untaped.capabilities.awx.domain.kinds import UNIFIED_TEMPLATE_KINDS, snake_kind
+from untaped.capabilities.awx.domain.payloads import as_dict
 from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path
 
@@ -121,7 +122,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         parent = identity.get("parent")
         if parent is None:
             raise BadRequestError("schedule identity missing 'parent'")
-        result = fk.resolve_polymorphic(_as_dict(parent))
+        result = fk.resolve_polymorphic(as_dict(parent))
         self._parent_path(result[0])
         return result
 
@@ -137,7 +138,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         if parent is None:
             raise BadRequestError("schedule identity missing 'parent'")
         parent_kind, parent_id = identity.get("_prepared_parent") or fk.resolve_polymorphic(
-            _as_dict(parent)
+            as_dict(parent)
         )
         path = self._parent_path(parent_kind)
         return _find_unique(
@@ -338,13 +339,6 @@ def _parent(identity: dict[str, Any]) -> Any:
             f"(got {parent.kind!r})"
         )
     return parent
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Lift a Pydantic IdentityRef (or dict) to a plain dict for resolution."""
-    if hasattr(value, "model_dump"):
-        return dict(value.model_dump())
-    return dict(value)
 
 
 class InventoryApplyStrategy(DefaultApplyStrategy):

@@ -15,6 +15,7 @@ from typing import Any
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.kinds import pipe_kind, unified_template_kind
+from untaped.capabilities.awx.domain.payloads import as_dict
 from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
 from untaped.capability_api import ConfigError, PipeEnvelope
 
@@ -140,7 +141,7 @@ class SelectionResolver:
                 raise ConfigError(
                     f"line {envelope.lineno}: pipe record requires a positive integer id"
                 )
-            record = _record_dict(self._client.get(spec, id_))
+            record = as_dict(self._client.get(spec, id_))
             self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
@@ -156,7 +157,7 @@ class SelectionResolver:
             record = self._client.find_by_identity(spec, name=name, scope=scope or None)
             if record is None:
                 raise ResourceNotFoundError(spec.kind, {"name": name, **scope})
-            values = _record_dict(record)
+            values = as_dict(record)
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
@@ -170,7 +171,7 @@ class SelectionResolver:
         selected: list[SelectedResource] = []
         for raw_id in ids:
             id_ = _positive_id(raw_id)
-            record = _record_dict(self._client.get(spec, id_))
+            record = as_dict(self._client.get(spec, id_))
             self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
@@ -194,7 +195,7 @@ class SelectionResolver:
             params[scoped_key] = value
         selected: list[SelectedResource] = []
         for record in self._client.list(spec, params=params or None, limit=limit):
-            values = _record_dict(record)
+            values = as_dict(record)
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
@@ -210,12 +211,6 @@ def _positive_id(raw_id: str) -> int:
     if id_ <= 0:
         raise ConfigError(f"resource id must be positive: {raw_id!r}")
     return id_
-
-
-def _record_dict(record: Any) -> dict[str, Any]:
-    if hasattr(record, "model_dump"):
-        return dict(record.model_dump())
-    return dict(record)
 
 
 def _selected(
@@ -326,8 +321,8 @@ def _scope_reference(
     if kind is None:
         raise BadRequestError(f"unsupported scope relationship {relationship!r}")
     if cache is None:
-        return _record_dict(client.get(catalog.get(kind), value))
+        return as_dict(client.get(catalog.get(kind), value))
     key = (kind, value)
     if key not in cache:
-        cache[key] = _record_dict(client.get(catalog.get(kind), value))
+        cache[key] = as_dict(client.get(catalog.get(kind), value))
     return cache[key]
