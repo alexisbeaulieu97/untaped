@@ -926,3 +926,43 @@ def test_materialize_worktree_emits_no_git_chatter(
     captured = capfd.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+
+
+def test_grep_uses_extended_regex_alternation_and_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "grep.patternType")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "fixed")
+    source = _source_repo(
+        tmp_path,
+        "source",
+        {"a.txt": "uses log4j here\n", "b.py": "requests.get(url)\n"},
+    )
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    _sync_default(cache, repo, root=root)
+
+    alternation = _grep_main(cache, repo, root=root, pattern="log4j|slf4j")
+    escaped = _grep_main(cache, repo, root=root, pattern=r"requests\.get\(")
+
+    assert [hit.path for hit in alternation] == ["a.txt"]
+    assert [hit.path for hit in escaped] == ["b.py"]
+
+
+def test_validate_pattern_accepts_extended_regex(tmp_path: Path) -> None:
+    cache = GitCorpusCache()
+
+    assert (
+        cache.validate_pattern(
+            root=tmp_path / "corpus",
+            pattern=r"requests\.get\(",
+            paths=(),
+            fixed_strings=False,
+        )
+        is None
+    )
+    assert cache.validate_pattern(
+        root=tmp_path / "corpus", pattern="(", paths=(), fixed_strings=False
+    )

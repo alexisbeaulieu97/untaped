@@ -220,8 +220,8 @@ class GitCorpusCache:
         args = ["grep", "-n", "--column", "-z", "-I"]
         if ignore_case:
             args.append("--ignore-case")
-        if fixed_strings:
-            args.append("--fixed-strings")
+        # Pin the pattern syntax so a user's grep.patternType cannot change results.
+        args.append("--fixed-strings" if fixed_strings else "--extended-regexp")
         if word_regexp:
             args.append("--word-regexp")
         args.extend(["-e", pattern, ref, "--"])
@@ -289,9 +289,7 @@ class GitCorpusCache:
         with tempfile.TemporaryDirectory(prefix=".validate-", dir=managed_root) as scratch:
             scratch_path = Path(scratch)
             self._run(["init", "-q"], cwd=scratch_path)
-            args = ["grep", "-n"]
-            if fixed_strings:
-                args.append("--fixed-strings")
+            args = ["grep", "-n", "--fixed-strings" if fixed_strings else "--extended-regexp"]
             args.extend(["-e", pattern, "--"])
             args.extend(paths)
             result = cast(
