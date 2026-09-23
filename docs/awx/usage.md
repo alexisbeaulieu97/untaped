@@ -75,10 +75,11 @@ stays a string unless the value is a JSON object or array (`scm_branch=1.10`
 stays `"1.10"`). A supplied value replaces that top-level field, and an
 omitted field is unchanged. Nested objects are not implicitly merged.
 
-Field names this tool does not know are rejected as likely typos
-(`verbostiy=2` exits 2 before any request). Pass `--allow-unknown-fields` to
-send them anyway; `apply`, `patch`, and `edit` all warn on stderr when a
-document carries unknown fields.
+An unknown field name that closely matches a known field is rejected as a
+likely typo (`verbostiy=2` exits 2 with "did you mean verbosity?" before any
+request); pass `--allow-unknown-fields` to send it anyway. Other unknown names
+(for example a field a newer AWX added) are sent, and `apply`, `patch`, and
+`edit` all warn on stderr when a document carries unknown fields.
 
 ```bash
 untaped awx inventory-sources patch \
