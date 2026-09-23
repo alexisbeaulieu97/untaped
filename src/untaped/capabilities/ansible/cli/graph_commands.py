@@ -13,10 +13,9 @@ import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.capabilities.ansible.application import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
-from untaped.capabilities.ansible.cli._refresh import (
+from untaped.capabilities.ansible.cli.refresh import (
     format_skipped_dependency_file,
     ignored_collections_warning,
-    pluralize,
     run_source_refresh,
     warn_deprecated_settings,
 )
@@ -44,6 +43,7 @@ from untaped.capability_api import (
     app_context,
     echo,
     get_config_section,
+    plural,
     raise_usage,
     report_errors,
 )
@@ -252,7 +252,7 @@ def graph_command(
     with report_errors():
         ctx = app_context()
         settings = get_config_section("ansible", AnsibleSettings)
-        warn_deprecated_settings(settings)
+        warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
         aliases = AliasRepository().entries()
         github_settings = get_config_section("github", GithubSettings)
         github_host = github_web_host(github_settings.base_url)
@@ -305,7 +305,7 @@ def graph_command(
                 if result.failures:
                     refresh_warnings.append(
                         f"refresh of {selection.label} had "
-                        f"{pluralize(len(result.failures), 'failure')}; "
+                        f"{plural(len(result.failures), 'failure')}; "
                         "data for those repos may be stale"
                     )
 

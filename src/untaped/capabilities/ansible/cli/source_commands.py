@@ -9,8 +9,7 @@ from typing import Annotated, Literal
 from cyclopts import Parameter, validators
 
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
-from untaped.capabilities.ansible.cli._refresh import (
-    pluralize,
+from untaped.capabilities.ansible.cli.refresh import (
     run_source_refresh,
     warn_deprecated_settings,
 )
@@ -37,6 +36,7 @@ from untaped.capability_api import (
     echo,
     emit,
     get_config_section,
+    plural,
     report_errors,
 )
 
@@ -328,7 +328,7 @@ def source_refresh_command(
         if source is None:
             raise UntapedError(f"unknown source: {name!r}")
         settings = get_config_section("ansible", AnsibleSettings)
-        warn_deprecated_settings(settings)
+        warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
         aliases = AliasRepository().entries()
         git_concurrency = concurrency or settings.git_fetch_concurrency
         result = run_source_refresh(
@@ -364,8 +364,8 @@ def _refresh_pause_message(result: RefreshResult, name: str) -> str:
 def _refresh_failure_message(result: RefreshResult) -> str:
     count = len(result.failures)
     if count == result.repos:
-        return f"refresh failed for all {pluralize(count, 'repo')}; index left unchanged"
-    return f"refresh completed with {pluralize(count, 'repo failure')}; successes were saved"
+        return f"refresh failed for all {plural(count, 'repo')}; index left unchanged"
+    return f"refresh completed with {plural(count, 'repo failure')}; successes were saved"
 
 
 def _has_transient_ref_probe_failure(result: RefreshResult) -> bool:
