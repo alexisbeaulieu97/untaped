@@ -278,7 +278,7 @@ def test_doctor_empty_id_quarantine() -> None:
         spec, "doctor_checks", (DoctorCheck(id="  ", title="T", run=lambda ctx: None),)
     )
     record = quarantine_reason(spec)
-    assert record.reason == "duplicate-doctor-check"
+    assert record.reason == "doctor-check-failed"
 
 
 def test_doctor_empty_title_quarantine() -> None:
@@ -286,7 +286,7 @@ def test_doctor_empty_title_quarantine() -> None:
     object.__setattr__(check, "title", "  ")
     spec = make_spec(name="d", checks=(check,))
     record = quarantine_reason(spec)
-    assert record.reason == "duplicate-doctor-check"
+    assert record.reason == "doctor-check-failed"
 
 
 def test_doctor_non_callable_body_quarantine() -> None:
@@ -294,7 +294,7 @@ def test_doctor_non_callable_body_quarantine() -> None:
     object.__setattr__(check, "run", None)
     spec = make_spec(name="d", checks=(check,))
     record = quarantine_reason(spec)
-    assert record.reason == "duplicate-doctor-check"
+    assert record.reason == "doctor-check-failed"
 
 
 def test_doctor_within_spec_duplicate_fatal() -> None:
