@@ -1,9 +1,9 @@
-"""Tests for BrowseUnifiedTemplates and GetUnifiedTemplate.
+"""Tests for GetUnifiedTemplate.
 
 UJT is AWX's polymorphic ``/unified_job_templates/`` view aggregating
-JobTemplate, WorkflowJobTemplate, Project, and InventorySource. The
-browse use case applies an alphabetical default; the get use case
-returns ``(records, missing_ids)`` so the CLI can report per-id misses.
+JobTemplate, WorkflowJobTemplate, Project, and InventorySource. The get
+use case returns ``(records, missing_ids)`` so the CLI can report per-id
+misses.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from typing import Any, cast
 
-from untaped.capabilities.awx.application import BrowseUnifiedTemplates, GetUnifiedTemplate
+from untaped.capabilities.awx.application import GetUnifiedTemplate
 from untaped.capabilities.awx.application.ports import UnifiedTemplateRepository
 
 
@@ -24,57 +24,12 @@ class _FakeUjtRepo:
     ) -> None:
         self._records = records or []
         self._by_id = records_by_id or {}
-        self.list_calls: list[dict[str, Any]] = []
         self.get_by_ids_calls: list[list[str]] = []
-
-    def list(
-        self,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        self.list_calls.append({"params": dict(params or {}), "limit": limit})
-        return iter(self._records)
 
     def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
         materialised = list(ids)
         self.get_by_ids_calls.append(materialised)
         return iter(self._by_id[i] for i in materialised if i in self._by_id)
-
-
-# ---- BrowseUnifiedTemplates ----
-
-
-def test_browse_applies_alphabetical_default() -> None:
-    """Default ordering is ``order_by=name``; aggregating four kinds by
-    ``-id`` would interleave creation timelines from four different tables."""
-    repo = _FakeUjtRepo()
-    list(BrowseUnifiedTemplates(cast(UnifiedTemplateRepository, repo))())
-    assert repo.list_calls[0]["params"] == {"order_by": "name"}
-
-
-def test_browse_preserves_caller_order_by() -> None:
-    repo = _FakeUjtRepo()
-    list(
-        BrowseUnifiedTemplates(cast(UnifiedTemplateRepository, repo))(
-            params={"order_by": "id", "type": "job_template"}
-        )
-    )
-    assert repo.list_calls[0]["params"] == {"order_by": "id", "type": "job_template"}
-
-
-def test_browse_forwards_filters_and_limit() -> None:
-    repo = _FakeUjtRepo(records=[{"id": 1}, {"id": 2}])
-    out = list(
-        BrowseUnifiedTemplates(cast(UnifiedTemplateRepository, repo))(
-            params={"name__icontains": "deploy"},
-            limit=25,
-        )
-    )
-    assert [r["id"] for r in out] == [1, 2]
-    call = repo.list_calls[0]
-    assert call["limit"] == 25
-    assert call["params"] == {"name__icontains": "deploy", "order_by": "name"}
 
 
 # ---- GetUnifiedTemplate ----

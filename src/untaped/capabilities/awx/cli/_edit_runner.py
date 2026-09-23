@@ -10,7 +10,7 @@ from untaped.api import OutputFormat
 from untaped.capabilities.awx.application.edit_resources import EditResources
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
-from untaped.capabilities.awx.cli._apply_runner import build_apply_resource
+from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import (
     emit_outcomes,
@@ -56,7 +56,7 @@ def run_edit(
         try:
             path.write_text(batch.render(), encoding="utf-8")
             path.chmod(0o600)
-            engine = build_apply_resource(ctx, allow_unverified=allow_unverified).engine
+            engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
             while True:
                 try:
                     run_editor(

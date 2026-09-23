@@ -125,18 +125,6 @@ class BackupStore:
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    def create(
-        self,
-        *,
-        recipe_name: str,
-        inputs: dict[str, object],
-        changes: tuple[FileChange, ...] | list[FileChange],
-    ) -> BackupBundle:
-        """Create a backup for touched files."""
-        draft = self.start(recipe_name=recipe_name, inputs=inputs)
-        draft.commit(draft.stage(changes, inputs=inputs))
-        return BackupBundle(id=draft.id, path=draft.path)
-
     def start(self, *, recipe_name: str, inputs: dict[str, object]) -> BackupDraft:
         """Start one invocation-level backup bundle."""
         backup_id = f"{datetime.now(tz=UTC).strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:8]}"

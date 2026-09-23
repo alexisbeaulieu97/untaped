@@ -7,10 +7,10 @@ from typing import Any, cast
 
 import pytest
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.application.save_resources import SaveResources
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
-from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
     HOST_SPEC,
@@ -76,7 +76,7 @@ class _StubCatalog:
         try:
             return self._by_kind[kind]
         except KeyError as exc:
-            raise AwxApiError(f"unknown kind {kind!r}") from exc
+            raise ConfigError(f"unknown kind {kind!r}") from exc
 
     def kinds(self) -> tuple[str, ...]:
         return tuple(self._by_kind)
@@ -85,7 +85,7 @@ class _StubCatalog:
         try:
             return self.get(self._cli_names[cli_name])
         except KeyError as exc:
-            raise AwxApiError(f"unknown CLI name {cli_name!r}") from exc
+            raise ConfigError(f"unknown CLI name {cli_name!r}") from exc
 
 
 def _use(

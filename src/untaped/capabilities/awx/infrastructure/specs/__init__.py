@@ -42,8 +42,7 @@ ALL_SPECS: tuple[AwxResourceSpec, ...] = (
     WORKFLOW_JOB_TEMPLATE_SPEC,
     SCHEDULE_SPEC,
 )
-"""Canonical ordering follows apply-time dependency order
-(see ``AGENTS.md`` "Apply ordering"); the topological
+"""Canonical ordering follows apply-time dependency order; the topological
 sort in ``apply_ordering.topological_sort`` uses this order as its tie-breaker."""
 
 __all__ = [

@@ -21,7 +21,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.capabilities.awx.infrastructure import AwxConfig
+from untaped.capabilities.awx.settings import AwxSettings
 from untaped.settings import get_settings, register_profile_settings
 
 
@@ -680,7 +680,7 @@ def _register_awx_settings(_isolate_config_registry_for_tests: None) -> None:
     config-registry reset (production registers via composition;
     capability tests invoking the sub-app directly mirror that here).
     """
-    register_profile_settings("awx", AwxConfig)
+    register_profile_settings("awx", AwxSettings)
     get_settings.cache_clear()
 
 
@@ -770,9 +770,9 @@ def seeded_job_template_with_credentials(
 
 
 @pytest.fixture
-def awx_config() -> AwxConfig:
+def awx_config() -> AwxSettings:
     """Standard test config matching the YAML in :func:`aap_config`."""
-    return AwxConfig(
+    return AwxSettings(
         base_url="https://aap.example.com",
         token="secret",  # type: ignore[arg-type]
         api_prefix="/api/v2/",

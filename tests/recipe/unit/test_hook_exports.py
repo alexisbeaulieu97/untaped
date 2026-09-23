@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports, hook_exports_from_source
+from untaped.capabilities.recipe.domain.hook_exports import hook_exports_from_source
+from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports
 
 
 def test_detects_transform_only() -> None:

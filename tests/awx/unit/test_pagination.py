@@ -3,8 +3,9 @@ from __future__ import annotations
 import httpx
 import respx
 
-from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig
+from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.pagination import paginate
+from untaped.capabilities.awx.settings import AwxSettings
 
 
 def _page(*items: dict[str, int], next_url: str | None = None) -> httpx.Response:
@@ -14,7 +15,7 @@ def _page(*items: dict[str, int], next_url: str | None = None) -> httpx.Response
     )
 
 
-def test_paginate_follows_next_url(awx_config: AwxConfig) -> None:
+def test_paginate_follows_next_url(awx_config: AwxSettings) -> None:
     pages = iter(
         [
             _page({"id": 1}, {"id": 2}, next_url="/api/v2/job_templates/?page=2"),
@@ -28,7 +29,7 @@ def test_paginate_follows_next_url(awx_config: AwxConfig) -> None:
     assert ids == [1, 2, 3]
 
 
-def test_paginate_respects_limit(awx_config: AwxConfig) -> None:
+def test_paginate_respects_limit(awx_config: AwxSettings) -> None:
     big_page = _page(*[{"id": i} for i in range(50)], next_url="/api/v2/x/?page=2")
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.get(url__regex=r".*/job_templates/.*").mock(return_value=big_page)
@@ -37,7 +38,7 @@ def test_paginate_respects_limit(awx_config: AwxConfig) -> None:
     assert ids == [0, 1, 2, 3, 4]
 
 
-def test_paginate_passes_initial_params_then_follows_next(awx_config: AwxConfig) -> None:
+def test_paginate_passes_initial_params_then_follows_next(awx_config: AwxSettings) -> None:
     seen_paths: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:

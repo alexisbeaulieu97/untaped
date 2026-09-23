@@ -18,7 +18,7 @@ from untaped.capabilities.awx.application.apply_secret_policy import SecretPrese
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
 from untaped.capabilities.awx.domain import FieldChange, Resource, ResourceSpec
-from untaped.capabilities.awx.errors import AwxApiError, BadRequest
+from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class BodyOperations:
                 "declare in spec.secret_paths to silence"
             )
         if existing is None and preserved:
-            raise BadRequest(
+            raise BadRequestError(
                 f"{spec.kind} {resource.metadata.name!r} has placeholder secret(s) "
                 f"at {', '.join(preserved)} — provide real values or pre-create "
                 "the resource in AWX first"
@@ -73,7 +73,7 @@ class BodyOperations:
             write_payload=write_payload, existing=existing, preserved=preserved
         )
         if conflicts:
-            raise BadRequest(
+            raise BadRequestError(
                 f"Cannot apply {spec.kind} {resource.metadata.name!r}: "
                 f"{', '.join(sorted(conflicts))} contain a $encrypted$ placeholder "
                 "alongside a sibling change. PATCH would overwrite the existing secret. "
@@ -92,7 +92,9 @@ class BodyOperations:
         for text_field in spec.structured_text_fields:
             if text_field in write_payload and not isinstance(write_payload[text_field], str):
                 if not isinstance(write_payload[text_field], dict):
-                    raise BadRequest(f"{spec.kind}.{text_field} must be mapping or YAML/JSON text")
+                    raise BadRequestError(
+                        f"{spec.kind}.{text_field} must be mapping or YAML/JSON text"
+                    )
                 write_payload[text_field] = json.dumps(write_payload[text_field])
         return PreparedBody(write_payload, tuple(changes), tuple(preserved), tuple(dropped))
 
@@ -163,5 +165,5 @@ class BodyOperations:
             "Use --allow-unverified with --yes to keep an accepted-but-unproven write."
         )
         if fallback_error is not None:
-            raise BadRequest(message) from fallback_error
-        raise BadRequest(message)
+            raise BadRequestError(message) from fallback_error
+        raise BadRequestError(message)

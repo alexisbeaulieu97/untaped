@@ -1,4 +1,4 @@
-"""LoadTestSuite use case: file → rendered → validated TestSuite."""
+"""LoadTestSuite use case: file → rendered → validated Suite."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from typing import cast
 
 import pytest
 
-from untaped.capabilities.awx.application.test.loader import LoadTestSuite
-from untaped.capabilities.awx.application.test.ports import Filesystem, Prompt
-from untaped.capabilities.awx.domain.test_suite import RefSentinel, VariableSpec
-from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.test import DefaultParser, resolve_variables
+from untaped.api import ConfigError
+from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
+from untaped.capabilities.awx.application.suites.ports import Filesystem, Prompt
+from untaped.capabilities.awx.domain.suite import RefSentinel, VariableSpec
+from untaped.capabilities.awx.infrastructure.suites import DefaultParser, resolve_variables
 
 
 class FakeFilesystem(Filesystem):
@@ -84,7 +84,7 @@ def test_invalid_jinja2_syntax_raises_awx_api_error() -> None:
         "jobTemplate: y\n"
         "cases:\n  c:\n    launch:\n      limit: '{{ unclosed }'\n"
     )
-    with pytest.raises(AwxApiError, match=r"syntax|Jinja"):
+    with pytest.raises(ConfigError, match=r"syntax|Jinja"):
         _load(text)
 
 
@@ -95,7 +95,7 @@ def test_invalid_yaml_body_raises_awx_api_error() -> None:
         "jobTemplate: y\n"
         "cases:\n  c:\n    launch:\n      limit: 'closing-quote-missing\n"
     )
-    with pytest.raises(AwxApiError, match="YAML"):
+    with pytest.raises(ConfigError, match="YAML"):
         _load(text)
 
 
@@ -118,7 +118,7 @@ def test_duplicate_case_names_in_rendered_yaml_are_rejected() -> None:
         "      extra_vars: { region: {{ r | to_yaml }} }\n"
         "{% endfor %}"
     )
-    with pytest.raises(AwxApiError, match=r"duplicate"):
+    with pytest.raises(ConfigError, match=r"duplicate"):
         _load(text)
 
 
@@ -144,7 +144,7 @@ def test_invalid_yaml_frontmatter_raises_awx_api_error() -> None:
         "---\nvariables: : invalid\n---\n"
         "kind: AwxTestSuite\njobTemplate: y\ncases: {c: {launch: {}}}\n"
     )
-    with pytest.raises(AwxApiError, match=r"YAML|frontmatter"):
+    with pytest.raises(ConfigError, match=r"YAML|frontmatter"):
         _load(text)
 
 
@@ -162,7 +162,7 @@ def test_strict_undefined_on_missing_var() -> None:
         "    launch:\n"
         "      limit: {{ unknown_var }}\n"
     )
-    with pytest.raises(AwxApiError, match="undefined"):
+    with pytest.raises(ConfigError, match="undefined"):
         _load(text, cli_vars={"env": "prod"})
 
 
@@ -177,7 +177,7 @@ def test_assert_block_non_empty_is_rejected() -> None:
         "    assert:\n"
         "      stdout_contains: ['x']\n"
     )
-    with pytest.raises(AwxApiError, match="assert"):
+    with pytest.raises(ConfigError, match="assert"):
         _load(text)
 
 
@@ -197,13 +197,13 @@ def test_empty_assert_block_is_allowed() -> None:
 
 def test_case_without_launch_is_rejected() -> None:
     text = "kind: AwxTestSuite\nname: x\njobTemplate: y\ncases:\n  c:\n    extra_vars: {x: 1}\n"
-    with pytest.raises(AwxApiError, match="launch"):
+    with pytest.raises(ConfigError, match="launch"):
         _load(text)
 
 
 def test_missing_kind_is_rejected() -> None:
     text = "name: x\njobTemplate: y\ncases: {c: {launch: {}}}\n"
-    with pytest.raises(AwxApiError):
+    with pytest.raises(ConfigError):
         _load(text)
 
 

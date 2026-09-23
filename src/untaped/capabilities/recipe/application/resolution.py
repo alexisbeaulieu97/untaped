@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
+from untaped.capabilities.recipe.application.ports import PackLibraryPort
+from untaped.capabilities.recipe.domain.pack import parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
-from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 
 
 @dataclass(frozen=True)
@@ -34,7 +34,7 @@ def existing_path_hint(ref_text: str) -> str:
     )
 
 
-def _library_ref_hint(root: Path, ref_text: str, error: ValueError) -> str:
+def _library_ref_hint(library: PackLibraryPort, ref_text: str, error: ValueError) -> str:
     """Suffix for an explicit-path miss whose basename is an installed ref."""
     if not str(error).startswith("recipe file not found"):
         return ""
@@ -47,7 +47,6 @@ def _library_ref_hint(root: Path, ref_text: str, error: ValueError) -> str:
         return ""
     # A hint must never mask the original error, so any lookup failure
     # (unsafe name, unloadable pack, ...) simply means "no hint".
-    library = PackLibrary(library_root=root)
     try:
         if library.find_pack(name) is None:
             library.find_recipe(parse_ref(name))
@@ -56,20 +55,25 @@ def _library_ref_hint(root: Path, ref_text: str, error: ValueError) -> str:
     return f" (did you mean the library ref '{name}'?)"
 
 
-def resolve_apply_recipe(root: Path, ref_text: str, *, recipe_id: str | None) -> ResolvedRecipe:
+def resolve_apply_recipe(
+    library: PackLibraryPort,
+    ref_text: str,
+    *,
+    recipe_id: str | None,
+) -> ResolvedRecipe:
     """Resolve an apply ref: explicit path, pack path + --recipe, or library ref."""
     if recipe_id is not None:
         if not is_explicit_recipe_path(ref_text):
             raise ValueError("--recipe requires an explicit pack path")
-        return resolve_explicit_recipe(Path(ref_text).expanduser(), recipe_id=recipe_id)
+        return resolve_explicit_recipe(library, Path(ref_text).expanduser(), recipe_id=recipe_id)
     if is_explicit_recipe_path(ref_text):
         try:
-            return resolve_explicit_recipe(Path(ref_text).expanduser(), recipe_id=None)
+            return resolve_explicit_recipe(library, Path(ref_text).expanduser(), recipe_id=None)
         except ValueError as exc:
-            raise ValueError(f"{exc}{_library_ref_hint(root, ref_text, exc)}") from exc
+            raise ValueError(f"{exc}{_library_ref_hint(library, ref_text, exc)}") from exc
     ref = parse_ref(ref_text)
     try:
-        pack, recipe = PackLibrary(library_root=root).find_recipe(ref)
+        pack, recipe = library.find_recipe(ref)
     except ValueError as exc:
         if not str(exc).startswith("recipe not found"):
             raise
@@ -81,14 +85,18 @@ def resolve_apply_recipe(root: Path, ref_text: str, *, recipe_id: str | None) ->
     )
 
 
-def resolve_explicit_recipe(path: Path, *, recipe_id: str | None) -> ResolvedRecipe:
+def resolve_explicit_recipe(
+    library: PackLibraryPort,
+    path: Path,
+    *,
+    recipe_id: str | None,
+) -> ResolvedRecipe:
     """Resolve an explicit path to a recipe file, pack recipe, or bare recipe.yml."""
     if not path.exists():
         raise ValueError(f"recipe file not found: {path}")
     if path.is_dir():
         if recipe_id is not None:
-            manifest = PackManifest.from_pyproject(path)
-            entry = manifest.recipes.get(recipe_id)
+            entry = library.local_pack(path).manifest.recipes.get(recipe_id)
             if entry is None:
                 raise ValueError(f"recipe not found: {recipe_id}")
             return ResolvedRecipe(

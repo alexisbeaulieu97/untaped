@@ -1,22 +1,23 @@
 """Parallel monitor scaffolding shared by ``--track`` and ``--wait``.
 
-Owns the executor / future-collection / error-wrap shape that both
-``_drain_parallel`` (``--track``) and ``_wait_parallel`` (``--wait``)
-need; each caller contributes only its unique mechanics (queue + print
-loop for track; ``WatchJob`` lambda for wait).
+Owns the bounded-worker / launch-order collection / error-wrap shape that
+both ``_drain_parallel`` (``--track``) and ``_wait_parallel`` (``--wait``)
+need, on top of :func:`untaped.api.bounded_map`; each caller contributes
+only its unique mechanics (queue + print loop for track; ``WatchJob``
+lambda for wait).
 """
 
 import queue
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
 from rich.text import Text
 
-from untaped.api import UntapedError
-from untaped.capabilities.awx.application import StreamJobEvents, WatchJob
+from untaped.api import UntapedError, bounded_map
+from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
+from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL
 from untaped.capabilities.awx.cli._event_render import render_event_text
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
@@ -41,51 +42,55 @@ def _drain_parallel_with_worker(
     ``errors``; any other ``Exception`` is wrapped at the worker
     boundary as ``UntapedError("<ClassName>: <message>")``.
 
-    ``while_running``, if given, runs on the main thread between
-    ``pool.submit`` and result-collection — the seam a caller needs to
-    interleave foreground work with the still-pending pool, before
-    ``future.result()`` would block. It runs inside the same ``with``
-    block, so a raise still triggers ``shutdown(wait=True)``.
+    ``while_running``, if given, runs on the main thread once every job is
+    submitted and before results are collected — the seam a caller needs to
+    interleave foreground work with the still-pending workers.
 
     On ``KeyboardInterrupt`` the ``stop`` event is set (workers poll via a
-    stop-aware sleep and return promptly) and not-yet-started futures are
-    cancelled before the executor joins, so Ctrl-C does not block until
+    stop-aware sleep and return promptly) and not-yet-started jobs are
+    cancelled before the workers are joined, so Ctrl-C does not block until
     every execution reaches a terminal state.
     """
+    outcomes: dict[int, Job | UntapedError] = {}
 
-    def _wrap(name: str, job: Job) -> Job:
+    def _wrap(index: int) -> Job | UntapedError:
         # Catch ``Exception`` (not ``BaseException``) so ``KeyboardInterrupt``
-        # propagates to the main thread for the executor's ``shutdown(wait=True)``
-        # to cancel pending work cleanly. Widening this clause swallows Ctrl-C.
+        # still reaches the main thread's cancellation path. Widening this
+        # clause swallows Ctrl-C.
+        name, job = jobs[index]
         try:
             result = worker_fn(name, job)
-        except UntapedError:
-            raise
+        except UntapedError as exc:
+            return exc
         except Exception as exc:
-            raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
+            return UntapedError(f"{type(exc).__name__}: {exc}")
         if finished is not None:
             finished[name] = result
         return result
 
-    with ThreadPoolExecutor(max_workers=min(10, len(jobs))) as pool:
-        futures = [(name, pool.submit(_wrap, name, job)) for name, job in jobs]
-        results: list[Job] = []
-        errors: list[tuple[str, UntapedError]] = []
-        try:
-            if while_running is not None:
-                while_running()
-            for name, future in futures:
-                try:
-                    results.append(future.result())
-                except UntapedError as exc:
-                    errors.append((name, exc))
-        except KeyboardInterrupt:
-            if stop is not None:
-                stop.set()
-            for _name, future in futures:
-                future.cancel()
-            raise
+    bounded_map(
+        _wrap,
+        range(len(jobs)),
+        concurrency=MAX_PARALLEL,
+        on_each=outcomes.__setitem__,
+        on_abort=stop.set if stop is not None else None,
+        # Always on worker threads (even one job): Ctrl-C then lands in the
+        # main thread's wait, never inside a worker's HTTP call.
+        while_running=while_running or _idle,
+    )
+    results: list[Job] = []
+    errors: list[tuple[str, UntapedError]] = []
+    for index, (name, _job) in enumerate(jobs):
+        outcome = outcomes[index]
+        if isinstance(outcome, UntapedError):
+            errors.append((name, outcome))
+        else:
+            results.append(outcome)
     return results, errors
+
+
+def _idle() -> None:
+    return None
 
 
 def _drain_parallel(
@@ -124,7 +129,7 @@ def _drain_parallel(
                     final = status
                 return final
             else:
-                for ev in StreamJobEvents(monitor)(job, follow=True):
+                for ev in monitor.stream_events(job, follow=True):
                     q.put((name, ev))
         finally:
             q.put((name, None))

@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from untaped.capabilities.awx.application._secret_paths import replace_at, values_at
 from untaped.capabilities.awx.domain import ApplyOutcome, FieldChange, ResourceSpec
 
 REDACTED = "<redacted>"
@@ -53,7 +54,7 @@ def redact_value(value: Any, paths: Iterable[str], *, replacement: str = REDACTE
     """Deep-copy ``value`` and replace every known secret path."""
     result = copy.deepcopy(value)
     for path in paths:
-        _redact_at_path(result, path.split("."), replacement)
+        replace_at(result, path, replacement)
     return result
 
 
@@ -81,49 +82,11 @@ def redact_outcome(outcome: ApplyOutcome, spec: ResourceSpec) -> ApplyOutcome:
     )
 
 
-def relative_secret_paths(paths: Iterable[str], field: str) -> list[str]:
-    """Return secret patterns relative to one top-level field."""
-    relative: list[str] = []
-    for path in paths:
-        first, separator, rest = path.partition(".")
-        if first != field:
-            continue
-        relative.append(rest if separator else "")
-    return relative
-
-
-def _redact_at_path(value: Any, parts: list[str], replacement: str) -> None:  # noqa: C901
-    if not parts or value is None:
-        return
-    head, *tail = parts
-    if not tail:
-        if isinstance(value, dict):
-            if head == "*":
-                for key in list(value):
-                    value[key] = replacement
-            elif head in value:
-                value[head] = replacement
-        elif isinstance(value, list) and head == "*":
-            for index in range(len(value)):
-                value[index] = replacement
-        return
-    if isinstance(value, dict):
-        if head == "*":
-            for child in value.values():
-                _redact_at_path(child, tail, replacement)
-        elif head in value:
-            _redact_at_path(value[head], tail, replacement)
-    elif isinstance(value, list) and head == "*":
-        for child in value:
-            _redact_at_path(child, tail, replacement)
-
-
 __all__ = [
     "REDACTED",
     "redact_field_change",
     "redact_outcome",
     "redact_value",
-    "relative_secret_paths",
     "semantic_equal",
 ]
 
@@ -147,26 +110,10 @@ def redact_error(error: Exception, spec: ResourceSpec, *records: Any) -> str:
     values: set[str] = set()
     for record in records:
         for path in spec.secret_paths:
-            for value in _values_at_path(record, path.split(".")):
+            for value in values_at(record, path):
                 if isinstance(value, str) and value:
                     values.add(value)
                     values.add(json.dumps(value)[1:-1])
     for value in sorted(values, key=len, reverse=True):
         message = message.replace(value, REDACTED)
     return message
-
-
-def _values_at_path(value: Any, parts: list[str]) -> Iterable[Any]:
-    if not parts:
-        yield value
-        return
-    head, *tail = parts
-    children: Iterable[Any]
-    if isinstance(value, Mapping):
-        children = value.values() if head == "*" else [value.get(head)]
-    elif isinstance(value, list | tuple) and head == "*":
-        children = value
-    else:
-        return
-    for child in children:
-        yield from _values_at_path(child, tail)

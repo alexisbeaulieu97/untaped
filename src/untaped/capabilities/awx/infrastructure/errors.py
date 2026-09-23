@@ -16,9 +16,9 @@ from typing import Any
 from untaped.api import ConfigError, HttpError, UntapedError
 from untaped.capabilities.awx.errors import (
     AwxApiError,
-    BadRequest,
-    Conflict,
-    PermissionDenied,
+    BadRequestError,
+    ConflictError,
+    PermissionDeniedError,
 )
 
 _BODY_SNIPPET = 500
@@ -35,7 +35,7 @@ def to_awx_error(err: HttpError) -> UntapedError:
             "`untaped config set awx.token <new-token>`"
         )
     if status == 403:
-        return PermissionDenied(
+        return PermissionDeniedError(
             f"permission denied: {body_msg}",
             status=status,
             body=err.body,
@@ -49,14 +49,14 @@ def to_awx_error(err: HttpError) -> UntapedError:
             url=err.url,
         )
     if status == 409:
-        return Conflict(
+        return ConflictError(
             f"conflict: {body_msg}",
             status=status,
             body=err.body,
             url=err.url,
         )
     if status is not None and 400 <= status < 500:
-        return BadRequest(
+        return BadRequestError(
             f"HTTP {status}: {body_msg}",
             status=status,
             body=err.body,

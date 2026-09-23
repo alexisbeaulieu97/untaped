@@ -5,20 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from untaped.api import ConfigError
+from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.harness import orphaned_test_dirs
 from untaped.capabilities.recipe.application.inputs import validate_recipe_input_sources
+from untaped.capabilities.recipe.application.ports import PackInspectorPort, PackLibraryPort
 from untaped.capabilities.recipe.application.resolution import (
     is_explicit_recipe_path,
     resolve_explicit_recipe,
 )
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
-from untaped.capabilities.recipe.domain.hook_project import (
-    read_hook_metadata,
-    require_pack_lock,
-    validate_hook_modules,
-    validate_hook_project_contract,
-)
-from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
+from untaped.capabilities.recipe.domain.hook_project import ensure_hook_supports
+from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.recipe import (
     CopyStep,
@@ -27,50 +24,28 @@ from untaped.capabilities.recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
-from untaped.capabilities.recipe.infrastructure import HookResolver
-from untaped.capabilities.recipe.infrastructure.hook_resolver import ensure_hook_supports
-from untaped.capabilities.recipe.infrastructure.pack_store import InstalledPack, PackLibrary
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
-from untaped.capabilities.recipe.infrastructure.uv_project import check_lock
 
 
-class _LockFreshness:
-    """Probe `uv lock --check` at most once per project root per command."""
-
-    def __init__(self) -> None:
-        self._results: dict[Path, str | None] = {}
-
-    def check(self, project_root: Path) -> None:
-        key = project_root.resolve()
-        if key not in self._results:
-            try:
-                check_lock(project_root)
-            except ValueError as exc:
-                self._results[key] = str(exc)
-            else:
-                self._results[key] = None
-        error = self._results[key]
-        if error is not None:
-            raise ValueError(error)
-
-
-def check_ref(root: Path, ref_text: str) -> dict[str, object]:
+def check_ref(
+    ref_text: str,
+    *,
+    library: PackLibraryPort,
+    inspector: PackInspectorPort,
+) -> dict[str, object]:
     """Check one installed pack, recipe ref, or explicit path."""
-    library = PackLibrary(library_root=root)
-    locks = _LockFreshness()
     if is_explicit_recipe_path(ref_text):
         path = Path(ref_text).expanduser()
         if path.is_dir() and (path / "pyproject.toml").is_file():
             try:
-                manifest = PackManifest.from_pyproject(path)
+                local = library.local_pack(path)
             except (ValueError, OSError) as exc:
                 return _pack_check_row(path.name, path, status="error", error=str(exc))
-            return _check_pack(root, InstalledPack.local(path, manifest), locks)
-        resolved = resolve_explicit_recipe(path, recipe_id=None)
-        return _check_recipe(root, resolved.path, resolved.ref, resolved.local_hook_project, locks)
+            return _check_pack(local, inspector)
+        resolved = resolve_explicit_recipe(library, path, recipe_id=None)
+        return _check_recipe(resolved.path, resolved.ref, resolved.local_hook_project, inspector)
     pack = library.find_pack(ref_text)
     if pack is not None:
-        return _check_pack(root, pack, locks)
+        return _check_pack(pack, inspector)
     ref = parse_ref(ref_text)
     try:
         pack, recipe = library.find_recipe(ref)
@@ -80,15 +55,17 @@ def check_ref(root: Path, ref_text: str) -> dict[str, object]:
             if builtin is not None:
                 return _builtin_check_row(ref_text, Path(builtin.module.__file__ or ""))
         raise
-    return _check_recipe(root, pack.root / recipe.path, f"{pack.name}/{ref.name}", pack.root, locks)
+    return _check_recipe(pack.root / recipe.path, f"{pack.name}/{ref.name}", pack.root, inspector)
 
 
-def check_library(root: Path) -> list[dict[str, object]]:
+def check_library(
+    *,
+    library: PackLibraryPort,
+    inspector: PackInspectorPort,
+) -> list[dict[str, object]]:
     """Check every installed pack plus index/directory reconciliation."""
-    library = PackLibrary(library_root=root)
-    locks = _LockFreshness()
-    rows = [_check_reconcile_problem(root, problem) for problem in library.reconcile()]
-    pack_rows = [_check_pack(root, pack, locks) for pack in library.packs()]
+    rows = [_check_reconcile_problem(library.packs_dir, problem) for problem in library.reconcile()]
+    pack_rows = [_check_pack(pack, inspector) for pack in library.packs()]
     pack_rows.extend(
         _pack_check_row(name, library.packs_dir / name, status="error", error=error)
         for name, error in library.load_errors().items()
@@ -97,11 +74,11 @@ def check_library(root: Path) -> list[dict[str, object]]:
     return rows
 
 
-def _check_reconcile_problem(root: Path, problem: str) -> dict[str, object]:
+def _check_reconcile_problem(packs_dir: Path, problem: str) -> dict[str, object]:
     name = _quoted_name(problem)
     return _pack_check_row(
         name,
-        root / "packs" / name if name else None,
+        packs_dir / name if name else None,
         status="error",
         error=problem,
     )
@@ -140,16 +117,12 @@ def _pack_check_row(
     }
 
 
-def _check_pack(root: Path, pack: InstalledPack, locks: _LockFreshness) -> dict[str, object]:
+def _check_pack(pack: InstalledPack, inspector: PackInspectorPort) -> dict[str, object]:
     try:
-        require_pack_lock(pack.root, has_hooks=bool(pack.manifest.hooks))
-        if pack.manifest.hooks:
-            locks.check(pack.root)
-        validate_hook_project_contract(pack.root, pack.manifest)
-        validate_hook_modules(pack.root, pack.manifest)
+        inspector.check_hook_project(pack.root, pack.manifest)
         for recipe_name, recipe in sorted(pack.manifest.recipes.items()):
             row = _check_recipe(
-                root, pack.root / recipe.path, f"{pack.name}/{recipe_name}", pack.root, locks
+                pack.root / recipe.path, f"{pack.name}/{recipe_name}", pack.root, inspector
             )
             if row["status"] == "error":
                 raise ValueError(f"{recipe_name}: {row['error']}")
@@ -175,18 +148,17 @@ def _check_pack(root: Path, pack: InstalledPack, locks: _LockFreshness) -> dict[
 
 
 def _check_recipe(
-    root: Path,
     recipe_path: Path,
     recipe_ref: str,
     local_hook_project: Path | None,
-    locks: _LockFreshness,
+    inspector: PackInspectorPort,
 ) -> dict[str, object]:
     try:
-        recipe = load_recipe_file(recipe_path)
+        recipe = read_recipe_file(recipe_path)
         validate_recipe_input_sources(recipe)
         _check_assets(recipe, recipe_path.parent)
-        _check_local_hook_project(local_hook_project, locks)
-        _check_hooks(recipe, root, local_hook_project)
+        _check_local_hook_project(local_hook_project, inspector)
+        _check_hooks(recipe, local_hook_project, inspector)
     except (ConfigError, ValueError, OSError) as exc:
         return {
             "recipe": recipe_ref,
@@ -225,25 +197,23 @@ def _check_asset(recipe_dir: Path, relative: Path, *, field: str, noun: str) -> 
         raise ValueError(f"{noun} not found: {relative} (no directory {prefix})")
 
 
-def _check_local_hook_project(local_hook_project: Path | None, locks: _LockFreshness) -> None:
+def _check_local_hook_project(
+    local_hook_project: Path | None,
+    inspector: PackInspectorPort,
+) -> None:
     if local_hook_project is None or not (local_hook_project / "pyproject.toml").is_file():
         return
-    metadata = read_hook_metadata(local_hook_project)
-    if not metadata.hooks:
-        return
-    validate_hook_project_contract(local_hook_project, metadata)
-    if not (local_hook_project / "uv.lock").is_file():
-        raise ValueError(f"hook project is missing uv.lock: {local_hook_project}")
-    locks.check(local_hook_project)
-    validate_hook_modules(local_hook_project, metadata)
+    manifest = inspector.read_hook_project(local_hook_project)
+    if manifest.hooks:
+        inspector.check_hook_project(local_hook_project, manifest)
 
 
-def _check_hooks(recipe: Recipe, root: Path, local_hook_project: Path | None) -> None:
-    resolver = HookResolver(library_root=root)
+def _check_hooks(
+    recipe: Recipe,
+    local_hook_project: Path | None,
+    inspector: PackInspectorPort,
+) -> None:
     for step in recipe.steps:
-        if isinstance(step, TransformStep):
-            ref = resolver.resolve(step.hook, local_hook_project)
-            ensure_hook_supports(ref, step.hook, verb="transform")
-        elif isinstance(step, ValidateStep):
-            ref = resolver.resolve(step.hook, local_hook_project)
-            ensure_hook_supports(ref, step.hook, verb="validate")
+        if isinstance(step, TransformStep | ValidateStep):
+            exports = inspector.hook_exports(step.hook, local_hook_project)
+            ensure_hook_supports(exports, step.hook, verb=step.type)

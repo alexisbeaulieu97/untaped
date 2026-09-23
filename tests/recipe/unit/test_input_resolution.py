@@ -18,8 +18,8 @@ from untaped.capabilities.recipe.application.inputs import (
     resolve_target_inputs,
 )
 from untaped.capabilities.recipe.application.targets import Target
+from untaped.capabilities.recipe.domain import input_jinja
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe.infrastructure import input_jinja
 
 
 class PromptRecorder:

@@ -12,8 +12,7 @@ def test_apply_outcome_is_frozen() -> None:
     """Rebinding a field on an existing :class:`ApplyOutcome` must raise.
 
     Pins the parallelism contract: phase 2's outcome rewrites can't
-    silently regress into in-place mutations. See
-    `AGENTS.md` "Apply parallelism".
+    silently regress into in-place mutations.
     """
     outcome = ApplyOutcome(kind="Project", name="p", action="preview")
     with pytest.raises(ValidationError):

@@ -31,7 +31,7 @@ def select_resources(
     filters: list[str] | None = None,
     search: str | None = None,
     all_: bool = False,
-    mutation: bool = False,
+    require_explicit: bool = False,
     default_all: bool = False,
     organization: str | None = None,
     inventory: str | None = None,
@@ -89,7 +89,7 @@ def select_resources(
         search=search,
         scope=selected_scope,
         all=all_ or (default_all and sources == 0),
-        mutation=mutation,
+        require_explicit=require_explicit,
         limit=limit,
     )
     selected = SelectionResolver(ctx.repo, ctx.catalog).resolve(spec, request)

@@ -479,7 +479,8 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
     import sys
     import threading
     import time
-    from concurrent.futures import Future
+
+    from untaped.capabilities.awx.cli import _parallel
 
     seed(fake_aap)
     fake_aap.next_action_status = "running"
@@ -489,23 +490,19 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
         3.0, lambda: [job.update(status="successful") for job in fake_aap.list_records("jobs")]
     )
     timer.start()
-    real_result = Future.result
     real_get = queue.Queue.get
 
-    def from_parallel() -> bool:
-        return sys._getframe(2).f_code.co_filename.endswith("_parallel.py")
-
-    def interrupted_result(self: Future[Any], timeout: float | None = None) -> Any:
-        if from_parallel():
-            raise KeyboardInterrupt
-        return real_result(self, timeout)
+    def interrupt() -> None:
+        raise KeyboardInterrupt
 
     def interrupted_get(self: Any, *args: Any, **kwargs: Any) -> Any:
-        if from_parallel():
+        if sys._getframe(1).f_code.co_filename.endswith("_parallel.py"):
             raise KeyboardInterrupt
         return real_get(self, *args, **kwargs)
 
-    monkeypatch.setattr(Future, "result", interrupted_result)
+    # Ctrl-C lands on the main thread while workers poll: in the idle wait
+    # (``--wait``) or the event-queue drain (``--track``).
+    monkeypatch.setattr(_parallel, "_idle", interrupt)
     monkeypatch.setattr(queue.Queue, "get", interrupted_get)
     started = time.monotonic()
     try:
@@ -523,9 +520,9 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
 def test_ctrl_c_while_waiting_lists_only_executions_still_running(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import sys
     import threading
-    from concurrent.futures import Future
+
+    from untaped.capabilities.awx.cli import _parallel
 
     seed(fake_aap)
     fake_aap.seed("job_templates", id=51, name="other", organization=1)
@@ -534,14 +531,11 @@ def test_ctrl_c_while_waiting_lists_only_executions_still_running(
         3.0, lambda: [job.update(status="successful") for job in fake_aap.list_records("jobs")]
     )
     timer.start()
-    real_result = Future.result
 
-    def interrupted_result(self: Future[Any], timeout: float | None = None) -> Any:
-        if sys._getframe(2).f_code.co_filename.endswith("_parallel.py"):
-            raise KeyboardInterrupt
-        return real_result(self, timeout)
+    def interrupt() -> None:
+        raise KeyboardInterrupt
 
-    monkeypatch.setattr(Future, "result", interrupted_result)
+    monkeypatch.setattr(_parallel, "_idle", interrupt)
     try:
         result = CliInvoker().invoke(
             app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait"]

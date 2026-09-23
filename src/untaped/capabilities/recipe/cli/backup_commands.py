@@ -17,8 +17,8 @@ from untaped.api import (
     emit,
     finish,
     render_rows,
-    ui_context,
 )
+from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import library_root, report_config_errors, settings
 from untaped.capabilities.recipe.infrastructure.backup import (
     BackupBundle,
@@ -93,7 +93,7 @@ def restore_command(
     with report_config_errors():
         store = BackupStore(library_root() / "backups")
         items = store.plan_restore(backup_id, force=force)
-        ui = ui_context(strict=False)
+        ui = recipe_ui()
         file_rows = [{"path": str(item.path), "action": item.action} for item in items]
 
         def _preview(rows: object) -> None:
@@ -164,7 +164,7 @@ def prune_command(
             now=datetime.now(tz=UTC),
         )
         sizes = {bundle.id: bundle_bytes(bundle) for bundle in pruned}
-        ui = ui_context(strict=False)
+        ui = recipe_ui()
 
         def _delete(bundle: BackupBundle) -> BackupBundle:
             try:

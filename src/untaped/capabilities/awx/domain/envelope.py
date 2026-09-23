@@ -20,6 +20,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from untaped.capabilities.awx.domain.inventory import INVENTORY_CHILD_KINDS
+
 API_VERSION = "untaped.dev/awx/v1"
 
 
@@ -41,7 +43,7 @@ class IdentityRef(BaseModel):
     def lookup_scope(self, required: dict[str, str] | None = None) -> dict[str, str]:
         """Translate ancestry and refine required scope without allowing an override."""
         scope = dict(required or {})
-        child = self.kind in {"Host", "Group", "InventorySource"}
+        child = self.kind in INVENTORY_CHILD_KINDS
         explicit: dict[str, str] = {}
         if self.organization is not None:
             explicit["inventory__organization" if child else "organization"] = self.organization

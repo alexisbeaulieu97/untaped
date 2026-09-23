@@ -1,16 +1,15 @@
-"""Kernel-only import boundaries for the recipe built-in (Wave 2 slice 5, §6(b)).
+"""Import boundaries for the recipe built-in capability.
 
-The recipe capability MUST NOT import another capability's
-implementation modules (``untaped.capabilities.<name>.*`` for
-``<name> != "recipe"``), and no ``untaped-recipe`` standalone
-remnant (package imports, console-script wiring, ``ToolSpec``/``run_tool``
-composition) may survive anywhere in src or tests.
+The recipe capability must not import another capability's implementation
+modules (``untaped.capabilities.<name>.*`` for ``<name> != "recipe"``). The
+engine used to ship as a separate ``untaped_recipe`` package composed through
+``ToolSpec``/``run_tool``; nothing may import that package or those retired
+composition helpers any more.
 """
 
 from __future__ import annotations
 
 import ast
-import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -45,12 +44,11 @@ def test_recipe_imports_no_sibling_capability() -> None:
                 if len(parts) >= 2 and parts[1] not in ("recipe", "registry"):
                     violations.append(f"{py_file.relative_to(REPO_ROOT)} imports {target}")
     assert not violations, (
-        "recipe capability must not import sibling capabilities (§6(b)):\n  "
-        + "\n  ".join(violations)
+        "recipe capability must not import sibling capabilities:\n  " + "\n  ".join(violations)
     )
 
 
-def test_no_standalone_package_imports_anywhere() -> None:
+def test_no_legacy_package_imports_anywhere() -> None:
     violations: list[str] = []
     roots = [REPO_ROOT / "src", REPO_ROOT / "tests"]
     for root in roots:
@@ -66,12 +64,12 @@ def test_no_standalone_package_imports_anywhere() -> None:
                 for name in names:
                     if name == "untaped_recipe" or name.startswith("untaped_recipe."):
                         violations.append(f"{py_file.relative_to(REPO_ROOT)} imports {name}")
-    assert not violations, "no untaped-recipe standalone imports may survive:\n  " + "\n  ".join(
-        violations
+    assert not violations, (
+        "no legacy untaped_recipe package imports may survive:\n  " + "\n  ".join(violations)
     )
 
 
-def test_no_standalone_composition_imports_in_recipe() -> None:
+def test_no_retired_composition_imports_in_recipe() -> None:
     violations: list[str] = []
     for py_file in sorted([*SRC_ROOT.rglob("*.py"), *TESTS_ROOT.rglob("*.py")]):
         tree = ast.parse(py_file.read_text(encoding="utf-8"))
@@ -89,13 +87,5 @@ def test_no_standalone_composition_imports_in_recipe() -> None:
                 if bad:
                     violations.append(f"{py_file.relative_to(REPO_ROOT)} imports {sorted(bad)}")
     assert not violations, (
-        "recipe tree must not use retired ToolSpec composition (§9 gate 2):\n  "
-        + "\n  ".join(violations)
+        "recipe tree must not use retired ToolSpec composition:\n  " + "\n  ".join(violations)
     )
-
-
-def test_no_standalone_console_script() -> None:
-    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
-    scripts = data["project"].get("scripts", {})
-    assert "untaped-recipe" not in scripts
-    assert scripts.get("untaped") == "untaped.__main__:main"

@@ -8,18 +8,16 @@ re-resolve a name after preview or confirmation.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog, ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.errors import BadRequest, ResourceNotFound
+from untaped.capabilities.awx.domain.kinds import pipe_kind, unified_template_kind
+from untaped.capabilities.awx.domain.payloads import as_dict
+from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
 from untaped.capability_api import ConfigError, PipeEnvelope
-
-_CAMEL_TAIL = re.compile(r"(.)([A-Z][a-z]+)")
-_CAMEL_RUN = re.compile(r"([a-z0-9])([A-Z])")
 
 
 @dataclass(frozen=True)
@@ -39,7 +37,7 @@ class SelectionRequest:
     scope: Mapping[str, str] = field(default_factory=dict)
     all: bool = False
     by_id: bool = False
-    mutation: bool = False
+    require_explicit: bool = False
     limit: int | None = None
     """Cap for query selections, pushed to the paginator (reads only)."""
 
@@ -84,7 +82,7 @@ class SelectionResolver:
                 "selection sources are exclusive: use names, --by-id, --stdin, filters/search, "
                 "or --all"
             )
-        if request.mutation and sources == 0:
+        if request.require_explicit and sources == 0:
             raise ConfigError("mutation requires an explicit selection or --all")
         if request.by_id and not request.ids:
             raise ConfigError("--by-id requires explicit IDs")
@@ -130,7 +128,7 @@ class SelectionResolver:
         envelopes: tuple[PipeEnvelope, ...],
         scope: dict[str, str],
     ) -> tuple[SelectedResource, ...]:
-        expected_kind = _pipe_kind(spec.kind)
+        expected_kind = pipe_kind(spec.kind)
         selected: list[SelectedResource] = []
         for envelope in envelopes:
             if envelope.kind != expected_kind:
@@ -143,7 +141,7 @@ class SelectionResolver:
                 raise ConfigError(
                     f"line {envelope.lineno}: pipe record requires a positive integer id"
                 )
-            record = _record_dict(self._client.get(spec, id_))
+            record = as_dict(self._client.get(spec, id_))
             self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
@@ -158,8 +156,8 @@ class SelectionResolver:
         for name in names:
             record = self._client.find_by_identity(spec, name=name, scope=scope or None)
             if record is None:
-                raise ResourceNotFound(spec.kind, {"name": name, **scope})
-            values = _record_dict(record)
+                raise ResourceNotFoundError(spec.kind, {"name": name, **scope})
+            values = as_dict(record)
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
@@ -173,7 +171,7 @@ class SelectionResolver:
         selected: list[SelectedResource] = []
         for raw_id in ids:
             id_ = _positive_id(raw_id)
-            record = _record_dict(self._client.get(spec, id_))
+            record = as_dict(self._client.get(spec, id_))
             self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
@@ -197,7 +195,7 @@ class SelectionResolver:
             params[scoped_key] = value
         selected: list[SelectedResource] = []
         for record in self._client.list(spec, params=params or None, limit=limit):
-            values = _record_dict(record)
+            values = as_dict(record)
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
@@ -215,12 +213,6 @@ def _positive_id(raw_id: str) -> int:
     return id_
 
 
-def _record_dict(record: Any) -> dict[str, Any]:
-    if hasattr(record, "model_dump"):
-        return dict(record.model_dump())
-    return dict(record)
-
-
 def _selected(
     spec: ResourceSpec,
     record: dict[str, Any],
@@ -228,7 +220,7 @@ def _selected(
 ) -> SelectedResource:
     id_ = record.get("id")
     if not isinstance(id_, int) or isinstance(id_, bool) or id_ <= 0:
-        raise BadRequest(f"{spec.kind} selection returned an invalid id")
+        raise BadRequestError(f"{spec.kind} selection returned an invalid id")
     name = record.get("name")
     return SelectedResource(
         kind=spec.kind,
@@ -274,7 +266,9 @@ def validate_scope(
                 name = summary_record.get("name")
                 if name is not None:
                     if name != expected:
-                        raise ResourceNotFound(spec.kind, {"id": record.get("id"), path: expected})
+                        raise ResourceNotFoundError(
+                            spec.kind, {"id": record.get("id"), path: expected}
+                        )
                     break
             referenced = _scope_reference(
                 current, relationship, client=client, catalog=catalog, cache=cache
@@ -282,13 +276,8 @@ def validate_scope(
             if referenced is None or (
                 index == len(parts) - 1 and referenced.get("name") != expected
             ):
-                raise ResourceNotFound(spec.kind, {"id": record.get("id"), path: expected})
+                raise ResourceNotFoundError(spec.kind, {"id": record.get("id"), path: expected})
             current = referenced
-
-
-def _pipe_kind(kind: str) -> str:
-    snake = _CAMEL_RUN.sub(r"\1_\2", _CAMEL_TAIL.sub(r"\1_\2", kind)).lower()
-    return f"awx.{snake}"
 
 
 __all__ = ["SelectedResource", "SelectionRequest", "SelectionResolver"]
@@ -297,12 +286,9 @@ __all__ = ["SelectedResource", "SelectionRequest", "SelectionResolver"]
 def _scope_path(spec: ResourceSpec, path: str) -> str:
     first, separator, tail = path.partition("__")
     if first == "parent":
-        if spec.apply_strategy == "inventory_child":
-            first = "inventory"
-        elif spec.apply_strategy == "schedule":
-            first = "unified_job_template"
-        else:
-            raise BadRequest(f"{spec.kind} does not have a parent scope")
+        if spec.parent_field is None:
+            raise BadRequestError(f"{spec.kind} does not have a parent scope")
+        first = spec.parent_field
     return first + (separator + tail if separator else "")
 
 
@@ -329,19 +315,14 @@ def _scope_reference(
     if kind is None and relationship == "unified_job_template" and isinstance(summary, Mapping):
         raw_kind = summary.get("unified_job_type") or summary.get("type")
         if isinstance(raw_kind, str):
-            kind = next(
-                (
-                    item
-                    for item in catalog.kinds()
-                    if item.casefold() == raw_kind.replace("_", "").casefold()
-                ),
-                None,
-            )
+            kind = unified_template_kind(raw_kind)
+            if kind not in catalog.kinds():
+                kind = None
     if kind is None:
-        raise BadRequest(f"unsupported scope relationship {relationship!r}")
+        raise BadRequestError(f"unsupported scope relationship {relationship!r}")
     if cache is None:
-        return _record_dict(client.get(catalog.get(kind), value))
+        return as_dict(client.get(catalog.get(kind), value))
     key = (kind, value)
     if key not in cache:
-        cache[key] = _record_dict(client.get(catalog.get(kind), value))
+        cache[key] = as_dict(client.get(catalog.get(kind), value))
     return cache[key]

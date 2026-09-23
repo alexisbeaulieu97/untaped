@@ -108,7 +108,9 @@ update callers); don't fork. Every module opens with a docstring describing
 what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 (`# noqa: PLC0415` only where Ruff flags it). Absolute imports only
 (`ban-relative-imports = "all"`, tests included). Secrets are
-`pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`.
+`pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`. Git
+subprocesses go through `untaped.git` (`run_git`, re-exported by
+`untaped.api`); never fork your own `subprocess` git plumbing.
 
 ## Planning and decisions
 

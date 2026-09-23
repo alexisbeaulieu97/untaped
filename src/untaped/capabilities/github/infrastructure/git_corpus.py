@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import base64
 import fnmatch
 import hashlib
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import time
 from collections.abc import Callable
@@ -17,7 +15,14 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse
 
-from untaped.api import echo
+from untaped.api import (
+    GitCommandError,
+    GitResult,
+    echo,
+    run_git,
+    safe_cache_path,
+    safe_path_segment,
+)
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -34,35 +39,10 @@ DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0
 DEFAULT_FETCH_ATTEMPTS = 3
 DEFAULT_FETCH_BATCH_SIZE = 50
-# Lowercased stderr fragments of transport failures that a later identical
-# fetch can plausibly survive (dropped TLS/TCP streams, proxy/5xx hiccups).
-TRANSIENT_FETCH_MARKERS = (
-    "rpc failed",
-    "early eof",
-    "unexpected disconnect",
-    "remote end hung up unexpectedly",
-    "connection reset",
-    "connection timed out",
-    "operation timed out",
-    "failed to connect",
-    "could not resolve host",
-    "gnutls recv error",
-    "tls connection was non-properly terminated",
-    "ssl_read",
-    "invalid index-pack output",
-    "index-pack failed",
-    "unpack-objects failed",
-    "returned error: 429",
-    "returned error: 500",
-    "returned error: 502",
-    "returned error: 503",
-    "returned error: 504",
-)
 METADATA_FILE = "untaped-corpus.json"
 # Bare repos live at <root>/<host>/<name>-<digest>.git (see cache_path_for);
 # a fixed-depth glob avoids walking objects/ and managed worktrees.
 METADATA_GLOB = f"*/*.git/{METADATA_FILE}"
-NON_INTERACTIVE_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 
 class GitCorpusCache:
@@ -84,7 +64,6 @@ class GitCorpusCache:
         if fetch_batch_size < 1:
             raise ValueError("fetch_batch_size must be positive")
         self._git = git
-        self._git_path = shutil.which(git)
         self._timeout = timeout
         self._slow_timeout = slow_timeout
         self._fetch_attempts = fetch_attempts
@@ -197,17 +176,14 @@ class GitCorpusCache:
         bare = cache_path_for(_remote_url(repo), cache_dir=root)
         if not (bare / "HEAD").is_file():
             return ()
-        result = cast(
-            subprocess.CompletedProcess[str],
-            self._run(
-                ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"],
-                cwd=bare,
-                capture_text=True,
-            ),
+        result = self._run(
+            ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"],
+            cwd=bare,
+            capture=True,
         )
         refs = (
             ref
-            for ref in (result.stdout or "").splitlines()
+            for ref in result.text.splitlines()
             if _selector_covers_ref(selector, ref, default_branch=branch)
         )
         return _order_refs(tuple(dict.fromkeys(refs)), default_branch=f"refs/heads/{branch}")
@@ -235,19 +211,17 @@ class GitCorpusCache:
             args.append("--word-regexp")
         args.extend(["-e", pattern, ref, "--"])
         args.extend(paths)
-        result = cast(
-            subprocess.CompletedProcess[bytes],
-            self._run(args, cwd=bare, capture_bytes=True, check=False),
-        )
+        # Keep the user's locale: it decides how the regex treats non-ASCII text.
+        result = self._run(args, cwd=bare, capture=True, check=False, locale_c=False)
         if result.returncode == 1:
             return ()
         if result.returncode != 0:
-            stderr = (result.stderr or b"").decode(errors="replace").strip()
+            stderr = result.stderr.strip()
             raise GitCorpusError(stderr or f"git grep failed with status {result.returncode}")
 
         oids: dict[str, str] = {}
         hits: list[GrepHit] = []
-        for path, line, text in _parse_ref_grep_output(result.stdout or b"", ref=ref):
+        for path, line, text in _parse_ref_grep_output(result.stdout, ref=ref):
             oid = oids.get(path)
             if oid is None:
                 oid = _blob_oid(self, bare, ref=ref, path=path)
@@ -258,13 +232,8 @@ class GitCorpusCache:
     def tree_paths(self, repo: CorpusRepoTarget, *, root: Path, ref: str) -> tuple[str, ...]:
         """List paths in one cached ref tree."""
         bare = _cached_bare(repo, root=root)
-        result = cast(
-            subprocess.CompletedProcess[bytes],
-            self._run(["ls-tree", "-r", "--name-only", "-z", ref], cwd=bare, capture_bytes=True),
-        )
-        return tuple(
-            part.decode(errors="replace") for part in (result.stdout or b"").split(b"\0") if part
-        )
+        result = self._run(["ls-tree", "-r", "--name-only", "-z", ref], cwd=bare, capture=True)
+        return tuple(part.decode(errors="replace") for part in result.stdout.split(b"\0") if part)
 
     def read_blob(
         self,
@@ -276,13 +245,10 @@ class GitCorpusCache:
     ) -> str | None:
         """Read a text blob from one cached ref, returning None when absent."""
         bare = _cached_bare(repo, root=root)
-        result = cast(
-            subprocess.CompletedProcess[bytes],
-            self._run(["show", f"{ref}:{path}"], cwd=bare, capture_bytes=True, check=False),
-        )
+        result = self._run(["show", f"{ref}:{path}"], cwd=bare, capture=True, check=False)
         if result.returncode != 0:
             return None
-        return (result.stdout or b"").decode(errors="replace")
+        return result.text
 
     def validate_pattern(
         self,
@@ -301,13 +267,10 @@ class GitCorpusCache:
             args = ["grep", "-n", "--fixed-strings" if fixed_strings else "--extended-regexp"]
             args.extend(["-e", pattern, "--"])
             args.extend(paths)
-            result = cast(
-                subprocess.CompletedProcess[str],
-                self._run(args, cwd=scratch_path, capture_text=True, check=False),
-            )
+            result = self._run(args, cwd=scratch_path, check=False, locale_c=False)
         if result.returncode in {0, 1}:
             return None
-        return _stderr_text(result)
+        return result.stderr.strip()
 
     def list_repos(self, *, root: Path) -> tuple[CorpusRepoResult, ...]:
         """List repositories with corpus metadata under ``root``."""
@@ -401,13 +364,8 @@ class GitCorpusCache:
 
     def _ensure_origin(self, bare: Path, url: str) -> None:
         # Purely local config commands: never hand them the auth header.
-        current = self._run(
-            ["remote", "get-url", "origin"],
-            cwd=bare,
-            capture_text=True,
-            check=False,
-        )
-        current_url = (current.stdout or "").strip()
+        current = self._run(["remote", "get-url", "origin"], cwd=bare, capture=True, check=False)
+        current_url = current.text.strip()
         if not current_url:
             self._run(["remote", "add", "origin", url], cwd=bare)
         elif current_url != url:
@@ -457,31 +415,30 @@ class GitCorpusCache:
             )
 
     def _remote_refs(self, bare: Path, *, url: str, auth_header: str | None) -> dict[str, str]:
-        result = self._run_network(
+        result = self._run(
             ["ls-remote", "--heads", "--tags", "--refs", "origin"],
             cwd=bare,
+            capture=True,
             auth_header=auth_header,
             auth_url=url,
             timeout=self._slow_timeout,
+            retry=True,
         )
         refs: dict[str, str] = {}
-        for line in (result.stdout or "").splitlines():
+        for line in result.text.splitlines():
             oid, _, ref = line.partition("\t")
             if ref:
                 refs[ref] = oid
         return refs
 
     def _local_ref_oids(self, bare: Path) -> dict[str, str]:
-        result = cast(
-            subprocess.CompletedProcess[str],
-            self._run(
-                ["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags"],
-                cwd=bare,
-                capture_text=True,
-            ),
+        result = self._run(
+            ["for-each-ref", "--format=%(objectname) %(refname)", "refs/heads", "refs/tags"],
+            cwd=bare,
+            capture=True,
         )
         refs: dict[str, str] = {}
-        for line in (result.stdout or "").splitlines():
+        for line in result.text.splitlines():
             oid, _, ref = line.partition(" ")
             if ref:
                 refs[ref] = oid
@@ -501,49 +458,14 @@ class GitCorpusCache:
         if depth > 0:
             args.append(f"--depth={depth}")
         args.extend(refspecs)
-        self._run_network(
+        self._run(
             args,
             cwd=bare,
             timeout=self._slow_timeout,
             auth_header=auth_header,
             auth_url=url,
+            retry=True,
         )
-
-    def _run_network(
-        self,
-        args: list[str],
-        *,
-        cwd: Path,
-        timeout: float,
-        auth_header: str | None,
-        auth_url: str,
-    ) -> subprocess.CompletedProcess[str]:
-        """Run an idempotent remote Git command, retrying transient transport failures."""
-        for attempt in range(1, self._fetch_attempts + 1):
-            result = cast(
-                subprocess.CompletedProcess[str],
-                self._run(
-                    args,
-                    cwd=cwd,
-                    timeout=timeout,
-                    auth_header=auth_header,
-                    auth_url=auth_url,
-                    capture_text=True,
-                    check=False,
-                ),
-            )
-            if result.returncode == 0:
-                return result
-            stderr = _stderr_text(result)
-            if attempt < self._fetch_attempts and _is_transient(stderr):
-                self._sleep(float(2 ** (attempt - 1)))
-                continue
-            suffix = f" after {attempt} attempts" if attempt > 1 else ""
-            raise GitCorpusError(
-                f"git {' '.join(args)} failed{suffix}: "
-                f"{_redact(stderr, auth_header) or 'no stderr'}"
-            )
-        raise AssertionError("unreachable")  # pragma: no cover
 
     def _prune_uncovered_refs(
         self,
@@ -552,40 +474,26 @@ class GitCorpusCache:
         selector: RefSelector,
         default_branch: str,
     ) -> None:
-        result = cast(
-            subprocess.CompletedProcess[str],
-            self._run(
-                ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"],
-                cwd=bare,
-                capture_text=True,
-            ),
+        result = self._run(
+            ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/tags"],
+            cwd=bare,
+            capture=True,
         )
-        for ref in (result.stdout or "").splitlines():
+        for ref in result.text.splitlines():
             if not _selector_covers_ref(selector, ref, default_branch=default_branch):
                 self._run(["update-ref", "-d", ref], cwd=bare)
 
     def _ref_exists(self, bare: Path, ref: str) -> bool:
         result = self._run(
-            ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
-            cwd=bare,
-            capture_text=True,
-            check=False,
+            ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], cwd=bare, check=False
         )
         return result.returncode == 0
 
     def _remove_managed_worktrees(self, bare: Path, *, managed_root: Path) -> None:
-        result = cast(
-            subprocess.CompletedProcess[str],
-            self._run(
-                ["worktree", "list", "--porcelain"],
-                cwd=bare,
-                capture_text=True,
-                check=False,
-            ),
-        )
+        result = self._run(["worktree", "list", "--porcelain"], cwd=bare, capture=True, check=False)
         if result.returncode != 0:
             return
-        for line in (result.stdout or "").splitlines():
+        for line in result.text.splitlines():
             if not line.startswith("worktree "):
                 continue
             worktree = Path(line.removeprefix("worktree ")).expanduser().resolve()
@@ -606,56 +514,41 @@ class GitCorpusCache:
         args: list[str],
         *,
         cwd: Path | None = None,
-        capture_text: bool = False,
-        capture_bytes: bool = False,
+        capture: bool = False,
         check: bool = True,
         timeout: float | None = None,
         auth_header: str | None = None,
         auth_url: str | None = None,
         stdin: str | None = None,
-    ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
-        if self._git_path is None:
-            raise GitCorpusError(f"`{self._git}` not found on PATH")
-        effective_timeout = self._timeout if timeout is None else timeout
-        auth_config_path: Path | None = None
+        locale_c: bool = True,
+        retry: bool = False,
+    ) -> GitResult:
+        """Run one git command; ``retry`` marks an idempotent network command.
+
+        A sweep runs unattended across many repos, so ``run_git`` never lets
+        git prompt, and uncaptured stdout is discarded so stray git chatter
+        cannot corrupt piped output.
+        """
         if auth_header is not None:
-            env, auth_config_path = _auth_config_env(auth_header, auth_url=auth_url)
-        else:
-            env = os.environ.copy()
-        # A sweep runs unattended across many repos: fail fast instead of
-        # letting git or a credential manager block on an interactive prompt.
-        env.update(NON_INTERACTIVE_GIT_ENV)
-        # Never inherit the CLI's stdio: stray git chatter would corrupt piped
-        # output, and piping stderr keeps failure text available for errors.
-        capture_stdout = subprocess.PIPE if capture_text or capture_bytes else subprocess.DEVNULL
-        capture_stderr = subprocess.PIPE
+            _require_https_remote(auth_url)
         try:
-            result = subprocess.run(
-                [self._git_path, *args],
+            return run_git(
+                args,
                 cwd=cwd,
-                env=env,
-                text=capture_text,
-                # With no payload, close stdin so git never reads the terminal.
-                stdin=subprocess.DEVNULL if stdin is None else None,
-                stdout=capture_stdout,
-                stderr=capture_stderr,
-                input=_stdin_payload(stdin, text=capture_text),
-                check=False,
-                timeout=effective_timeout,
+                git=self._git,
+                timeout=self._timeout if timeout is None else timeout,
+                capture=capture,
+                stdin=stdin,
+                check=check,
+                auth_header=auth_header,
+                auth_url=auth_url,
+                locale_c=locale_c,
+                retry_transient=retry,
+                attempts=self._fetch_attempts,
+                sleep=self._sleep,
             )
-        except subprocess.TimeoutExpired as exc:
-            raise GitCorpusError(
-                f"git {' '.join(args)} timed out after {effective_timeout:g}s"
-            ) from exc
-        finally:
-            if auth_config_path is not None:
-                auth_config_path.unlink(missing_ok=True)
-        if check and result.returncode != 0:
-            stderr = _stderr_text(result)
-            raise GitCorpusError(
-                f"git {' '.join(args)} failed: {_redact(stderr, auth_header) or 'no stderr'}"
-            )
-        return result
+        except GitCommandError as exc:
+            raise GitCorpusError(str(exc)) from exc
 
 
 def _echo_warning(message: str) -> None:
@@ -664,30 +557,7 @@ def _echo_warning(message: str) -> None:
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:
     """Return the deterministic bare-cache path for a remote URL."""
-    parsed = urlparse(url)
-    if parsed.scheme and parsed.path:
-        base_name = Path(parsed.path.rstrip("/")).name
-        host = parsed.netloc or "local"
-    elif ":" in url and "@" in url.split(":", maxsplit=1)[0]:
-        host_part, _, path_part = url.partition(":")
-        host = host_part.rsplit("@", maxsplit=1)[-1]
-        base_name = Path(path_part.rstrip("/")).name
-    else:
-        host = "local"
-        base_name = Path(url.rstrip("/")).name
-    if not base_name:
-        base_name = "repository"
-    if not base_name.endswith(".git"):
-        base_name = f"{base_name}.git"
-    digest = hashlib.sha256(url.encode()).hexdigest()[:16]
-    safe_name = _safe_path_part(base_name[:-4])
-    return cache_dir.expanduser() / _safe_path_part(host) / f"{safe_name}-{digest}.git"
-
-
-def git_auth_header(token: str) -> str:
-    """Return the transient Git HTTP auth header for a GitHub token."""
-    credential = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    return f"AUTHORIZATION: basic {credential}"
+    return safe_cache_path(url, root=cache_dir)
 
 
 def _default_branch(repo: CorpusRepoTarget) -> str:
@@ -737,11 +607,8 @@ def _cached_bare(repo: CorpusRepoTarget, *, root: Path) -> Path:
 
 
 def _blob_oid(cache: GitCorpusCache, bare: Path, *, ref: str, path: str) -> str:
-    result = cast(
-        subprocess.CompletedProcess[str],
-        cache._run(["rev-parse", "--verify", f"{ref}:{path}"], cwd=bare, capture_text=True),
-    )
-    return (result.stdout or "").strip()
+    result = cache._run(["rev-parse", "--verify", f"{ref}:{path}"], cwd=bare, capture=True)
+    return result.text.strip()
 
 
 def _auth_header_for_url(url: str, auth_header: str | None) -> str | None:
@@ -794,12 +661,8 @@ def _read_until(payload: bytes, cursor: int, delimiter: bytes) -> tuple[bytes, i
 
 def _worktree_path(repo: str, ref: str, *, root: Path) -> Path:
     digest = hashlib.sha256(f"{repo}@{ref}".encode()).hexdigest()[:12]
-    name = f"{_safe_path_part(repo)}-{_safe_path_part(ref)}-{digest}"
+    name = f"{safe_path_segment(repo)}-{safe_path_segment(ref)}-{digest}"
     return root.expanduser() / "worktrees" / name
-
-
-def _safe_path_part(value: str) -> str:
-    return "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
 
 
 def _write_metadata(path: Path, data: dict[str, object]) -> None:
@@ -843,67 +706,9 @@ def _metadata_archived(data: dict[str, object]) -> bool:
     return bool(data.get("archived", False))
 
 
-def _auth_config_env(auth_header: str, *, auth_url: str | None) -> tuple[dict[str, str], Path]:
+def _require_https_remote(auth_url: str | None) -> None:
     if auth_url is None:
         raise GitCorpusError("authenticated Git operation missing HTTPS remote URL")
     parsed = urlparse(auth_url)
     if parsed.scheme != "https" or not parsed.netloc:
         raise GitCorpusError("authenticated Git corpus sync requires an HTTPS clone_url")
-    scope = f"https://{parsed.netloc}/"
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        prefix="untaped-git-auth-",
-        suffix=".config",
-        delete=False,
-    ) as auth_config:
-        auth_config.write(f'[http "{scope}"]\n')
-        auth_config.write(f"\textraheader = {auth_header}\n")
-        path = Path(auth_config.name)
-    env = os.environ.copy()
-    # Git/curl trace output can include the injected Authorization header.
-    for key in list(env):
-        if key.startswith("GIT_TRACE") or key == "GIT_CURL_VERBOSE":
-            env.pop(key, None)
-    count = _git_config_count(env)
-    env[f"GIT_CONFIG_KEY_{count}"] = "include.path"
-    env[f"GIT_CONFIG_VALUE_{count}"] = str(path)
-    env["GIT_CONFIG_COUNT"] = str(count + 1)
-    return env, path
-
-
-def _git_config_count(env: dict[str, str]) -> int:
-    raw = env.get("GIT_CONFIG_COUNT")
-    if raw is None:
-        return 0
-    try:
-        count = int(raw)
-    except ValueError:
-        return 0
-    return max(count, 0)
-
-
-def _stderr_text(
-    result: subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes],
-) -> str:
-    stderr = result.stderr
-    if isinstance(stderr, bytes):
-        return stderr.decode(errors="replace").strip()
-    return (stderr or "").strip()
-
-
-def _is_transient(stderr: str) -> bool:
-    lowered = stderr.lower()
-    return any(marker in lowered for marker in TRANSIENT_FETCH_MARKERS)
-
-
-def _stdin_payload(stdin: str | None, *, text: bool) -> str | bytes | None:
-    if stdin is None or text:
-        return stdin
-    return stdin.encode()
-
-
-def _redact(value: str, secret: str | None) -> str:
-    if secret is None:
-        return value
-    return value.replace(secret, "<redacted>")

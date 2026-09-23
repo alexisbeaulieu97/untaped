@@ -3,10 +3,10 @@ from __future__ import annotations
 from untaped.api import HttpError, UntapedError
 from untaped.capabilities.awx.errors import (
     AwxApiError,
-    BadRequest,
-    Conflict,
-    PermissionDenied,
-    ResourceNotFound,
+    BadRequestError,
+    ConflictError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
 )
 from untaped.capabilities.awx.infrastructure.errors import to_awx_error
 
@@ -19,7 +19,7 @@ def test_awx_api_error_is_untaped_error() -> None:
 
 
 def test_resource_not_found_message_includes_identity() -> None:
-    err = ResourceNotFound("JobTemplate", {"name": "deploy", "organization": "Default"})
+    err = ResourceNotFoundError("JobTemplate", {"name": "deploy", "organization": "Default"})
     assert "JobTemplate" in str(err)
     assert "deploy" in str(err)
     assert err.kind == "JobTemplate"
@@ -27,8 +27,8 @@ def test_resource_not_found_message_includes_identity() -> None:
 
 
 def test_conflict_and_permission_denied_subclass_awx_api_error() -> None:
-    assert issubclass(Conflict, AwxApiError)
-    assert issubclass(PermissionDenied, AwxApiError)
+    assert issubclass(ConflictError, AwxApiError)
+    assert issubclass(PermissionDeniedError, AwxApiError)
 
 
 def test_to_awx_error_degrades_gracefully_on_body_truncated_mid_token() -> None:
@@ -43,5 +43,5 @@ def test_to_awx_error_degrades_gracefully_on_body_truncated_mid_token() -> None:
 
     mapped = to_awx_error(err)
 
-    assert isinstance(mapped, BadRequest)
+    assert isinstance(mapped, BadRequestError)
     assert truncated in str(mapped)

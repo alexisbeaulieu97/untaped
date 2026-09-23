@@ -43,6 +43,13 @@ EXPECTED_SURFACE = frozenset(
         "render_rows",
         "report_errors",
         "resolve_each",
+        # Git subprocesses
+        "GitCommandError",
+        "GitResult",
+        "git_auth_header",
+        "run_git",
+        "safe_cache_path",
+        "safe_path_segment",
         # Concurrency
         "bounded_map",
         # Settings access

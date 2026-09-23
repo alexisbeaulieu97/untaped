@@ -13,14 +13,14 @@ from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.delete_resource import DeleteResource
 from untaped.capabilities.awx.application.mutation_engine import (
     BatchMutationEngine,
-    MutationConflict,
+    MutationConflictError,
 )
 from untaped.capabilities.awx.application.mutation_values import semantic_equal
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.application.save_resources import resource_filename
 from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource
-from untaped.capabilities.awx.errors import BadRequest
-from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig
+from untaped.capabilities.awx.errors import BadRequestError
+from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.catalog import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
 from untaped.capabilities.awx.infrastructure.resource_repo import ResourceRepository
@@ -31,6 +31,7 @@ from untaped.capabilities.awx.infrastructure.specs import (
     SCHEDULE_SPEC,
 )
 from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStrategyResolver
+from untaped.capabilities.awx.settings import AwxSettings
 
 
 def test_inventory_is_mutable_and_ordered():
@@ -232,7 +233,7 @@ class Controller:
 
 @pytest.fixture
 def controller(
-    awx_config: AwxConfig,
+    awx_config: AwxSettings,
 ) -> Iterator[tuple[Controller, BatchMutationEngine, ResourceRepository, FkResolver]]:
     state = Controller()
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
@@ -353,7 +354,7 @@ def test_generated_source_invalid_configuration_is_prewrite_error(controller: An
         "inventory": 10,
         "source": "constructed",
     }
-    with pytest.raises(BadRequest, match="only permits"):
+    with pytest.raises(BadRequestError, match="only permits"):
         engine.prepare([inventory_doc(description="changed"), source_doc(update_on_launch=True)])
     assert state.writes == []
 
@@ -455,7 +456,7 @@ def test_new_constructed_parent_rejects_independent_source_before_writes(
 ) -> None:
     state, engine, _, _ = controller
     state.records["inventories"].clear()
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         engine.prepare([inventory_doc(kind="constructed"), source_doc(**{field: value})])
     assert state.writes == []
 
@@ -585,7 +586,7 @@ def test_known_mapping_fields_have_real_text_wire_and_exact_semantics(
 
 def test_missing_schedule_ancestry_is_not_exported_as_restorable(controller: Any) -> None:
     _, _, repo, fk = controller
-    with pytest.raises(BadRequest, match="ancestry"):
+    with pytest.raises(BadRequestError, match="ancestry"):
         SaveResource(repo, fk).from_record(SCHEDULE_SPEC, {"id": 30, "name": "night"})
 
 
@@ -617,7 +618,7 @@ def test_generated_source_cannot_be_deleted_independently(controller: Any) -> No
         "inventory": 10,
         "source": "constructed",
     }
-    with pytest.raises(BadRequest, match="cannot be deleted independently"):
+    with pytest.raises(BadRequestError, match="cannot be deleted independently"):
         DeleteResource(repo)(INVENTORY_SOURCE_SPEC, 20)
     assert state.writes == []
 
@@ -634,14 +635,14 @@ def test_generated_source_aliases_cannot_schedule_two_writes_to_same_id(controll
     first = source_doc(source="constructed", update_cache_timeout=1)
     second = first.model_copy(deep=True)
     second.metadata.name = "different-alias"
-    with pytest.raises(MutationConflict, match="duplicate resolved target"):
+    with pytest.raises(MutationConflictError, match="duplicate resolved target"):
         engine.prepare([first, second])
     assert state.writes == []
 
 
 def test_inventory_kind_change_is_rejected_before_write(controller: Any) -> None:
     state, engine, _, _ = controller
-    with pytest.raises(BadRequest, match="kind cannot change"):
+    with pytest.raises(BadRequestError, match="kind cannot change"):
         engine.prepare([inventory_doc(kind="smart")])
     assert state.writes == []
 
@@ -658,7 +659,7 @@ def test_mapping_text_semantic_equality_avoids_spurious_write(controller: Any) -
 def test_new_standard_parent_cannot_create_generated_source(controller: Any) -> None:
     state, engine, _, _ = controller
     state.records["inventories"].clear()
-    with pytest.raises(BadRequest, match="constructed sources require"):
+    with pytest.raises(BadRequestError, match="constructed sources require"):
         engine.prepare([source_doc(source="constructed"), inventory_doc()])
     assert state.writes == []
 
@@ -697,7 +698,7 @@ def test_new_generated_source_aliases_fail_before_parent_creation(
     )
     inventory = inventory_doc(kind="constructed")
     docs = [inventory, first, second] if parent_first else [first, second, inventory]
-    with pytest.raises(MutationConflict, match="duplicate parent-owned target"):
+    with pytest.raises(MutationConflictError, match="duplicate parent-owned target"):
         engine.prepare(docs)
     assert state.writes == []
     assert state.records["inventories"] == {}
@@ -834,7 +835,7 @@ def test_constructed_proxy_source_contradictions_fail_before_writes(
             "source": "constructed",
             "update_cache_timeout": 0,
         }
-    with pytest.raises(MutationConflict, match=r"conflicting.*field"):
+    with pytest.raises(MutationConflictError, match=r"conflicting.*field"):
         engine.prepare(
             [inventory_doc(kind="constructed", **{field: first}), source_doc(**{field: second})]
         )
@@ -856,7 +857,7 @@ def test_explicit_readonly_patch_rejects_whole_batch(controller: Any, mode: str,
         inventory_doc(description="valid"),
         Resource(kind="Project", metadata=Metadata(name="project", organization="org"), spec=body),
     ]
-    with pytest.raises(BadRequest, match=r"read.only.*status"):
+    with pytest.raises(BadRequestError, match=r"read.only.*status"):
         engine.prepare(resources, mode=mode)
     assert state.writes == []
 
@@ -943,7 +944,7 @@ def test_explicit_strategy_readonly_fields_reject_batch(
         if source
         else inventory_doc(host_filter=None, description="valid")
     )
-    with pytest.raises(BadRequest, match=r"read.only"):
+    with pytest.raises(BadRequestError, match=r"read.only"):
         engine.prepare([resource], mode=mode)
     assert state.writes == []
 
@@ -1072,7 +1073,7 @@ def test_unsupported_or_conflicting_child_ancestry_is_never_dropped(
 
     state, _, _, fk = controller
     state.records["hosts"][20] = {"id": 20, "name": "same", "inventory": 10}
-    with pytest.raises(BadRequest, match="ancestry"):
+    with pytest.raises(BadRequestError, match="ancestry"):
         resolve_fk_value("Host", reference, scope=None, fk=fk)
     assert state.writes == []
 

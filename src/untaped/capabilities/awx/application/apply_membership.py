@@ -27,7 +27,7 @@ from untaped.capabilities.awx.application.apply_planner import resolve_fk_value,
 from untaped.capabilities.awx.application.mutation_refs import DeferredReference, PlannedId
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Resource, ResourceSpec
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 
 # Exact resource kind, selected controller ID, and relationship field.
 type MembershipSnapshots = Mapping[tuple[str, int, str], tuple[dict[str, Any], ...]]
@@ -101,7 +101,7 @@ class MembershipReconciler:
                 # otherwise be normalised to [] and silently
                 # disassociate every existing member on --yes, which is
                 # the most destructive failure mode possible here.
-                raise BadRequest(
+                raise BadRequestError(
                     f"{spec.kind} {resource.metadata.name!r}: {ref.field!r} must be a "
                     f"list of names (got {type(raw_value).__name__}); wrap a single "
                     f"value in [ ... ] to clarify intent."
@@ -118,7 +118,7 @@ class MembershipReconciler:
                 else:
                     key = (spec.kind, record_id, ref.field)
                     if key not in membership_snapshots:
-                        raise BadRequest("missing initial editor membership snapshot")
+                        raise BadRequestError("missing initial editor membership snapshot")
                     member_records = membership_snapshots[key]
                 for record in member_records:
                     rid = int(record["id"])
@@ -134,7 +134,7 @@ class MembershipReconciler:
                 resolve_fk_value(ref.kind, value, scope=scope, fk=fk) for value in desired_names
             )
             if len(set(resolved_desired_ids)) != len(resolved_desired_ids):
-                raise BadRequest(
+                raise BadRequestError(
                     f"{spec.kind} {resource.metadata.name!r}: "
                     f"{ref.field!r} contains duplicate members"
                 )
@@ -238,7 +238,7 @@ class MembershipReconciler:
         """Capture an explicit add/remove operation without replacing other members."""
         ids = tuple(dict.fromkeys(member_ids))
         if any(isinstance(item, bool) or not isinstance(item, int) or item <= 0 for item in ids):
-            raise BadRequest("membership IDs must be positive integers")
+            raise BadRequestError("membership IDs must be positive integers")
         existing = (
             tuple(
                 int(item["id"])
@@ -291,7 +291,7 @@ class MembershipReconciler:
             else:
                 matches = set(observed) == set(plan.desired_ids)
             if not matches:
-                raise BadRequest(
+                raise BadRequestError(
                     f"{spec.kind}#{record_id}: membership {plan.ref.field!r} did not converge"
                 )
 
@@ -352,7 +352,7 @@ class MembershipReconciler:
         removed: list[PlannedId],
         error: Exception,
         client: ResourceClient,
-    ) -> BadRequest:
+    ) -> BadRequestError:
         """Re-add members removed earlier in this reconcile after an associate failed."""
         lost: list[PlannedId] = []
         for member_id in removed:
@@ -368,7 +368,7 @@ class MembershipReconciler:
             if lost
             else f"restored removed members {members}"
         )
-        return BadRequest(f"{plan.ref.field}: associate failed ({error}); {outcome}")
+        return BadRequestError(f"{plan.ref.field}: associate failed ({error}); {outcome}")
 
     def post_members(
         self,
@@ -400,7 +400,7 @@ class MembershipReconciler:
             return
         for member_id in member_ids:
             if isinstance(member_id, DeferredReference):
-                raise BadRequest(
+                raise BadRequestError(
                     f"membership reference {member_id.kind} {member_id.name!r} "
                     "was not bound before execution"
                 )

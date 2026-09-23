@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 
 from awx.unit.support import _Catalog, _Client, _Fk, _Strategies
-from untaped.capabilities.awx.application import ApplyFile, ApplyResource
+from untaped.capabilities.awx.application import BatchMutationEngine, prepare_apply_file
 from untaped.capabilities.awx.application.ports import (
     Catalog,
     FkResolver,
@@ -17,7 +17,7 @@ from untaped.capabilities.awx.application.ports import (
     StrategyResolver,
 )
 from untaped.capabilities.awx.domain import Metadata, Resource, ResourceSpec
-from untaped.capabilities.awx.errors import AwxApiError, BadRequest
+from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 
 SPEC = ResourceSpec(
     kind="Item",
@@ -27,13 +27,21 @@ SPEC = ResourceSpec(
 )
 
 
-def _file(client: _Client, docs: list[Resource], *, parallel: int = 1) -> ApplyFile:
+def _file(client: _Client, docs: list[Resource], *, parallel: int = 1) -> Any:
+    """Prepare the file batch once, then preview or execute it (the CLI flow)."""
     catalog = cast(Catalog, _Catalog(SPEC))
     fk = cast(FkResolver, _Fk({}))
-    apply = ApplyResource(
+    engine = BatchMutationEngine(
         cast(RawHttpResourceClient, client), catalog, fk, cast(StrategyResolver, _Strategies())
     )
-    return ApplyFile(apply, lambda path: docs, catalog, fk, parallel=parallel)
+
+    def run(path: Path, *, write: bool = False, continue_on_error: bool = False) -> Any:
+        plan = prepare_apply_file(engine, lambda _path: docs, path, catalog=catalog, fk=fk)
+        if not write:
+            return [operation.preview for operation in plan.operations]
+        return engine.execute(plan, parallel=parallel, continue_on_error=continue_on_error).outcomes
+
+    return run
 
 
 def _docs(count: int = 3) -> list[Resource]:
@@ -47,7 +55,7 @@ def test_file_prepares_whole_batch_before_writing(tmp_path: Path) -> None:
     client = _Client([])
     docs = _docs()
     docs[-1].spec["password"] = "$encrypted$"
-    with pytest.raises(BadRequest, match="placeholder"):
+    with pytest.raises(BadRequestError, match="placeholder"):
         _file(client, docs)(tmp_path, write=True)
     assert client.writes == []
 
@@ -74,7 +82,7 @@ def test_serial_stops_scheduling_unless_requested(tmp_path: Path, continue_on_er
     class Failing(_Client):
         def create(self, spec: ResourceSpec, payload: Any) -> Any:
             if payload.name == "0":
-                raise BadRequest("write failed")
+                raise BadRequestError("write failed")
             return super().create(spec, payload)
 
     client = Failing([])
@@ -94,7 +102,7 @@ def test_parallel_collects_inflight_and_never_submits_entire_queue(tmp_path: Pat
         def create(self, spec: ResourceSpec, payload: Any) -> Any:
             if payload.name == "0":
                 assert second_started.wait(2)
-                raise BadRequest("write failed")
+                raise BadRequestError("write failed")
             second_started.set()
             assert release_second.wait(2)
             return super().create(spec, payload)
@@ -113,8 +121,8 @@ def test_parallel_collects_inflight_and_never_submits_entire_queue(tmp_path: Pat
 
 
 def test_parallel_rejects_zero(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="parallel"):
-        _file(_Client([]), [], parallel=0)
+    with pytest.raises(BadRequestError, match="parallel"):
+        _file(_Client([]), [], parallel=0)(tmp_path, write=True)
 
 
 def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS, UNIVERSAL_READ_ONLY
 
@@ -31,7 +31,7 @@ def test_kinds_returns_all() -> None:
 
 def test_unknown_kind_errors() -> None:
     cat = AwxResourceCatalog()
-    with pytest.raises(AwxApiError) as exc_info:
+    with pytest.raises(ConfigError) as exc_info:
         cat.get("NotARealKind")
     assert "JobTemplate" in str(exc_info.value)  # message lists known kinds
 
@@ -172,3 +172,40 @@ def test_mutable_specs_declare_universal_read_only_fields() -> None:
         )
 
     assert not missing, f"mutable specs missing universal read-only fields: {missing}"
+
+
+def test_parent_owned_specs_declare_their_parent_field() -> None:
+    """Parent-owned write strategies read the parent ID from ``parent_field``."""
+    parents = {spec.kind: spec.parent_field for spec in ALL_SPECS}
+    assert parents["Host"] == parents["Group"] == parents["InventorySource"] == "inventory"
+    assert parents["Schedule"] == "unified_job_template"
+    for spec in ALL_SPECS:
+        if spec.apply_strategy not in {"inventory_child", "schedule"}:
+            assert spec.parent_field is None, spec.kind
+
+
+def test_inventory_child_kinds_match_specs() -> None:
+    """Identity references scope children by inventory; keep that set in step."""
+    from untaped.capabilities.awx.domain.inventory import INVENTORY_CHILD_KINDS
+
+    children = {spec.kind for spec in ALL_SPECS if spec.parent_field == "inventory"}
+    assert children == INVENTORY_CHILD_KINDS
+
+
+def test_only_inventory_deletes_asynchronously_and_expands_sync() -> None:
+    assert {spec.kind for spec in ALL_SPECS if spec.async_delete} == {"Inventory"}
+    expanding = {
+        (spec.kind, action.name, action.expand_to)
+        for spec in ALL_SPECS
+        for action in spec.actions
+        if action.expand_to is not None
+    }
+    assert expanding == {("Inventory", "sync", "InventorySource")}
+
+
+def test_immutable_fields_cover_identity_and_ancestry() -> None:
+    cat = AwxResourceCatalog()
+    host = cat.get("Host").immutable_fields
+    assert {"id", "kind", "type", "name", "organization", "parent", "inventory"} <= host
+    assert "inventory" not in cat.get("JobTemplate").immutable_fields
+    assert "description" not in host

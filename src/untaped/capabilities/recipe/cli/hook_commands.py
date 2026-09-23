@@ -18,7 +18,6 @@ from untaped.api import (
     emit,
     finish,
     parse_kv_pairs,
-    ui_context,
     unified_diff_text,
 )
 from untaped.capabilities.recipe.application.run_hook import (
@@ -28,6 +27,7 @@ from untaped.capabilities.recipe.application.run_hook import (
     ValidateHookRun,
     select_verb,
 )
+from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
@@ -36,7 +36,7 @@ from untaped.capabilities.recipe.cli.common import (
     report_config_errors,
     settings,
 )
-from untaped.capabilities.recipe.domain.hook_project import HookKind, read_hook_metadata
+from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import (
@@ -45,6 +45,7 @@ from untaped.capabilities.recipe.infrastructure.hook_executor import (
 )
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
 
 app = create_app(name="hook", help="Run installed recipe hooks.")
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]
@@ -146,7 +147,7 @@ def run_command(
         with UvHookWorkerPool(
             hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
             startup_timeout_seconds=settings().hook_startup_timeout_seconds,
-            startup_notice=hook_startup_notice(ui_context(strict=False)),
+            startup_notice=hook_startup_notice(recipe_ui()),
         ) as workers:
             executor = HookExecutor(
                 resolver,
@@ -269,7 +270,7 @@ def _local_hook_project(project: Path | None) -> Path | None:
             raise ConfigError(f"hook project not found: {project}")
         if not (resolved / "pyproject.toml").is_file():
             raise ConfigError(f"hook project has no pyproject.toml: {project}")
-        metadata = read_hook_metadata(resolved)
+        metadata = read_hook_project(resolved)
         if not metadata.hooks:
             raise ConfigError(f"hook project has no hook metadata: {project}")
         return resolved
@@ -318,7 +319,7 @@ def _render_hook_run_context(
     inputs: dict[str, object],
     args: dict[str, object],
 ) -> None:
-    ui = ui_context(strict=False)
+    ui = recipe_ui()
     ui.message("info", f"Hook run: {hook} ({kind})")
     ui.message("info", f"target: {target}")
     if file is not None:
@@ -347,7 +348,7 @@ def _print_hook_diagnostics(diagnostics: str) -> None:
 
 
 def _print_hook_warnings(warnings: tuple[str, ...]) -> None:
-    ui = ui_context(strict=False)
+    ui = recipe_ui()
     for warning in warnings:
         ui.message("warning", warning)
 

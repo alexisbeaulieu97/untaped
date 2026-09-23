@@ -59,6 +59,6 @@ PROJECT_SPEC = AwxResourceSpec(
     ),
     actions=(ActionSpec(name="sync", path="update", returns=frozenset({"project_update"})),),
     list_columns=("id", "name", "status"),
-    commands=("list", "get", "save", "apply", "sync", "delete"),
+    commands=("list", "get", "save", "apply", "delete"),
     fidelity="full",
 )
