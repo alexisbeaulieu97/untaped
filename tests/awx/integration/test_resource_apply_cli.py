@@ -374,3 +374,41 @@ def test_apply_preserves_encrypted_secret(fake_aap: Any, tmp_path: Path) -> None
     jt = fake_aap.get_record("job_templates", 30)
     assert jt["webhook_key"] == "$encrypted$"  # untouched
     assert jt["description"] == "still-deploy"
+
+
+def _two_orgs_with_project(fake: Any) -> None:
+    fake.seed("organizations", id=1, name="Default")
+    fake.seed("organizations", id=2, name="Other")
+    fake.seed(
+        "projects",
+        id=10,
+        name="playbooks",
+        organization=2,
+        organization_name="Other",
+        scm_type="git",
+        description="other-org",
+    )
+
+
+def test_apply_without_org_uses_default_organization(
+    fake_aap: Any, aap_config: Path, tmp_path: Path
+) -> None:
+    """A same-named resource in another org must not be updated."""
+    config = aap_config.read_text()
+    prefix = "api_prefix: /api/v2/"
+    indent = config.split(prefix)[0].rsplit("\n", 1)[1]
+    aap_config.write_text(
+        config.replace(prefix, f"{prefix}\n{indent}default_organization: Default")
+    )
+    _two_orgs_with_project(fake_aap)
+    doc = tmp_path / "p.yml"
+    doc.write_text(
+        "kind: Project\nmetadata: { name: playbooks }\nspec: { scm_type: git, description: mine }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["projects", "apply", str(doc), "--yes"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert fake_aap.get_record("projects", 10)["description"] == "other-org"
+    created = [p for p in fake_aap.list_records("projects") if p["id"] != 10]
+    assert [(p["name"], p["organization"]) for p in created] == [("playbooks", 1)]
