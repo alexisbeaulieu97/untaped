@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from untaped.api import GitCommandError, GitResult, run_git, safe_cache_path
 from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
@@ -26,6 +27,7 @@ class GitRepositoryCache:
         self._git = git
         self._timeout = timeout
         self._slow_timeout = slow_timeout
+        self._origins: dict[Path, str] = {}
 
     def ensure_bare(
         self,
@@ -39,22 +41,31 @@ class GitRepositoryCache:
         if not (bare / "HEAD").is_file():
             bare.parent.mkdir(parents=True, exist_ok=True)
             self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
-        self._ensure_origin(bare, url, auth_header=auth_header)
+        self._ensure_origin(bare, url)
         return bare
 
-    def _ensure_origin(self, bare: Path, url: str, *, auth_header: str | None) -> None:
+    def _ensure_origin(self, bare: Path, url: str) -> None:
+        # Purely local commands: the auth header is never needed here.
         current_url = self._run(
-            ["remote", "get-url", "origin"],
-            cwd=bare,
-            capture=True,
-            check=False,
-            auth_header=auth_header,
+            ["remote", "get-url", "origin"], cwd=bare, capture=True, check=False
         ).strip()
         if not current_url:
-            self._run(["remote", "add", "origin", url], cwd=bare, auth_header=auth_header)
-            return
-        if current_url != url:
-            self._run(["remote", "set-url", "origin", url], cwd=bare, auth_header=auth_header)
+            self._run(["remote", "add", "origin", url], cwd=bare)
+        elif current_url != url:
+            self._run(["remote", "set-url", "origin", url], cwd=bare)
+        self._origins[bare] = url
+
+    def _origin_auth(self, bare: Path, auth_header: str | None) -> tuple[str | None, str | None]:
+        if auth_header is None:
+            return None, None
+        return _scoped_auth(auth_header, self._origin_url(bare))
+
+    def _origin_url(self, bare: Path) -> str:
+        if bare not in self._origins:
+            self._origins[bare] = self._run(
+                ["remote", "get-url", "origin"], cwd=bare, capture=True, check=False
+            ).strip()
+        return self._origins[bare]
 
     def fetch_refs(
         self,
@@ -74,7 +85,14 @@ class GitRepositoryCache:
         if blob_filter:
             args.append("--filter=blob:none")
         args.extend(refspecs)
-        self._run(args, cwd=bare_path, timeout=self._slow_timeout, auth_header=auth_header)
+        header, auth_url = self._origin_auth(bare_path, auth_header)
+        self._run(
+            args,
+            cwd=bare_path,
+            timeout=self._slow_timeout,
+            auth_header=header,
+            auth_url=auth_url,
+        )
 
     def ls_remote(
         self,
@@ -84,10 +102,12 @@ class GitRepositoryCache:
         auth_header: str | None,
     ) -> str:
         """Run ``git ls-remote --symref`` without requiring a local repository."""
+        header, auth_url = _scoped_auth(auth_header, url)
         return self._run(
             ["ls-remote", "--symref", url, *patterns],
             capture=True,
-            auth_header=auth_header,
+            auth_header=header,
+            auth_url=auth_url,
         )
 
     def read_file(
@@ -123,7 +143,6 @@ class GitRepositoryCache:
             ["ls-tree", "-z", sha, "--", *wanted],
             cwd=bare_path,
             capture=True,
-            auth_header=auth_header,
         )
         blob_by_path: dict[str, str] = {}
         for entry in listing.split("\0"):
@@ -134,11 +153,14 @@ class GitRepositoryCache:
         if not blob_by_path:
             return {}
         blob_ids = list(dict.fromkeys(blob_by_path.values()))
+        # Blob-filtered caches fetch missing blobs lazily from origin.
+        header, auth_url = self._origin_auth(bare_path, auth_header)
         output = self._run_bytes(
             ["cat-file", "--batch"],
             cwd=bare_path,
             stdin_data="".join(f"{blob}\n" for blob in blob_ids).encode(),
-            auth_header=auth_header,
+            auth_header=header,
+            auth_url=auth_url,
             timeout=self._timeout + PER_FILE_READ_TIMEOUT * len(blob_ids),
         )
         contents = _parse_cat_file_batch(output, blob_ids)
@@ -153,8 +175,16 @@ class GitRepositoryCache:
         check: bool = True,
         timeout: float | None = None,
         auth_header: str | None = None,
+        auth_url: str | None = None,
     ) -> str:
-        result = self._exec(args, cwd=cwd, timeout=timeout, auth_header=auth_header, check=check)
+        result = self._exec(
+            args,
+            cwd=cwd,
+            timeout=timeout,
+            auth_header=auth_header,
+            auth_url=auth_url,
+            check=check,
+        )
         return result.text if capture else ""
 
     def _run_bytes(
@@ -163,11 +193,17 @@ class GitRepositoryCache:
         *,
         cwd: Path,
         stdin_data: bytes,
-        auth_header: str | None,
+        auth_header: str | None = None,
+        auth_url: str | None = None,
         timeout: float | None = None,
     ) -> bytes:
         return self._exec(
-            args, cwd=cwd, timeout=timeout, auth_header=auth_header, stdin_data=stdin_data
+            args,
+            cwd=cwd,
+            timeout=timeout,
+            auth_header=auth_header,
+            auth_url=auth_url,
+            stdin_data=stdin_data,
         ).stdout
 
     def _exec(
@@ -177,6 +213,7 @@ class GitRepositoryCache:
         cwd: Path | None,
         timeout: float | None,
         auth_header: str | None,
+        auth_url: str | None = None,
         stdin_data: bytes | None = None,
         check: bool = True,
     ) -> GitResult:
@@ -190,9 +227,18 @@ class GitRepositoryCache:
                 stdin=stdin_data,
                 check=check,
                 auth_header=auth_header,
+                auth_url=auth_url,
             )
         except GitCommandError as exc:
             raise GitCacheError(str(exc)) from exc
+
+
+def _scoped_auth(auth_header: str | None, url: str) -> tuple[str | None, str | None]:
+    """Send the token only to the repository's own HTTPS origin, never elsewhere."""
+    parsed = urlparse(url)
+    if auth_header is None or parsed.scheme != "https" or not parsed.netloc:
+        return None, None
+    return auth_header, url
 
 
 def local_remote_url(
