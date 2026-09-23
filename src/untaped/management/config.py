@@ -26,7 +26,6 @@ from untaped.cli import (
     ColumnsOption,
     FormatOption,
     create_app,
-    echo,
     emit,
     report_errors,
 )
@@ -219,9 +218,10 @@ def _list(
         else:
             list_settings = ListSettings(repo)
             entries = list_settings(reveal_secrets=show_secrets)
+            ui = ui_context(strict=False)
             for error in list_settings.errors.values():
                 # The error already names the section (or env var) and file.
-                echo(f"warning: {error} (its keys show unvalidated values)", err=True)
+                ui.message("warning", f"{error} (its keys show unvalidated values)")
         rows = [setting_entry_row(e, human=fmt in ("table", "raw")) for e in entries]
         emit(rows, fmt=fmt, columns=columns, kind="untaped.setting")
 
@@ -256,7 +256,7 @@ def _set(
         )
         profile = repo.set_value(resolved, resolved_value, profile=target_profile)
         message = f"set {resolved} in profile {profile} (config: {resolve_config_path()})"
-        ui_context(strict=False).message("success", message)
+        ui_context(strict=False).success(message)
 
 
 def _unset(ctx: RootConfigContext, key: str, *, target_profile: str | None) -> None:
@@ -266,7 +266,7 @@ def _unset(ctx: RootConfigContext, key: str, *, target_profile: str | None) -> N
         ui = ui_context(strict=False)
         where = f"in profile {profile}"
         if removed:
-            ui.message("success", f"unset {resolved} {where}")
+            ui.success(f"unset {resolved} {where}")
         else:
             ui.message("info", f"{resolved} was not set {where}")
 

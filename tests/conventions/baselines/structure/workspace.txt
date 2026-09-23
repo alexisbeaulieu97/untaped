@@ -1,0 +1,16 @@
+# Known violations of the structure convention check for 'workspace'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+tests/workspace/unit/test_format_raw_first_key.py::private-test-import::untaped.capabilities.workspace.cli.ux_commands:_workspace_row
+untaped.capabilities.workspace.application.ports.ManifestRepository::port-adapter-clash
+untaped.capabilities.workspace.application.sync_workspace._Failed::exception-base
+untaped.capabilities.workspace.application.sync_workspace._Failed::exception-name
+untaped.capabilities.workspace.application.sync_workspaces.ProgressNotify::protocol-location
+untaped.capabilities.workspace.domain.manifest.DuplicateRepoError::exception-base
+untaped.capabilities.workspace.domain.manifest.DuplicateRepoName::exception-base
+untaped.capabilities.workspace.domain.manifest.DuplicateRepoName::exception-name
+untaped.capabilities.workspace.domain.manifest.DuplicateRepoUrl::exception-base
+untaped.capabilities.workspace.domain.manifest.DuplicateRepoUrl::exception-name
+untaped.capabilities.workspace.errors.UnmatchedRepoFilter::exception-name
+untaped.capabilities.workspace.settings.WorkspaceSettings::settings-not-frozen::profile
+untaped.capabilities.workspace.settings.WorkspaceState::settings-not-frozen::state

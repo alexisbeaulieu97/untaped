@@ -32,6 +32,7 @@ ColumnsOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--columns", "-c"],
+        negative="",
         help="Columns to include (repeatable or comma-separated).",
         consume_multiple=False,
     ),

@@ -1,0 +1,40 @@
+# Known violations of the structure convention check for 'awx'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+tests/awx/integration/test_action_execution_cli.py::private-test-import::untaped.capabilities.awx.cli:_context
+tests/awx/integration/test_action_execution_cli.py::private-test-import::untaped.capabilities.awx.cli:_parallel
+tests/awx/integration/test_action_selection_cli.py::private-test-import::untaped.capabilities.awx.cli._parallel:_drain_parallel
+tests/awx/integration/test_action_selection_cli.py::private-test-import::untaped.capabilities.awx.cli._parallel:_parallel
+tests/awx/integration/test_action_selection_cli.py::private-test-import::untaped.capabilities.awx.cli:_parallel
+tests/awx/integration/test_action_selection_cli.py::private-test-import::untaped.capabilities.awx.cli:_parallel
+tests/awx/integration/test_jobs_cli.py::private-test-import::untaped.capabilities.awx.cli:_parallel
+tests/awx/unit/test_action_registry.py::private-test-import::untaped.capabilities.awx.cli._factory:_factory
+tests/awx/unit/test_event_render.py::private-test-import::untaped.capabilities.awx.cli._event_render:_event_render
+tests/awx/unit/test_format_raw_first_key.py::private-test-import::untaped.capabilities.awx.cli.suite_commands:_test_case_row
+tests/awx/unit/test_format_raw_first_key.py::private-test-import::untaped.capabilities.awx.cli.suite_commands:_test_suite_row
+tests/awx/unit/test_launch_flags.py::private-test-import::untaped.capabilities.awx.cli._launch:_launch
+tests/awx/unit/test_names.py::private-test-import::untaped.capabilities.awx.cli._names:_names
+tests/awx/unit/test_parallel_helper.py::private-test-import::untaped.capabilities.awx.cli._parallel:_drain_parallel_with_worker
+tests/awx/unit/test_parallel_helper.py::private-test-import::untaped.capabilities.awx.cli._parallel:_parallel
+tests/awx/unit/test_patch_values.py::private-test-import::untaped.capabilities.awx.cli._patch_values:_patch_values
+tests/awx/unit/test_pipe_kind.py::private-test-import::untaped.capabilities.awx.cli._pipe:_pipe
+tests/awx/unit/test_save_runner.py::private-test-import::untaped.capabilities.awx.cli._context:_context
+tests/awx/unit/test_save_runner.py::private-test-import::untaped.capabilities.awx.cli._save_runner:_save_runner
+tests/awx/unit/test_secret_path_walker.py::private-test-import::untaped.capabilities.awx.application._secret_paths:_secret_paths
+untaped.capabilities.awx.application.mutation_engine._AbortBatch::exception-base
+untaped.capabilities.awx.application.mutation_engine._AbortBatch::exception-name
+untaped.capabilities.awx.application.ports.FkResolver::port-adapter-clash
+untaped.capabilities.awx.application.ports.UnifiedTemplateRepository::port-adapter-clash
+untaped.capabilities.awx.application.ports.WorkflowNodeRepository::port-adapter-clash
+untaped.capabilities.awx.application.scheduling.ScheduleInterrupted::exception-name
+untaped.capabilities.awx.application.selected_actions.ActionsInterrupted::exception-name
+untaped.capabilities.awx.application.suites.ports.Filesystem::protocol-location
+untaped.capabilities.awx.application.suites.ports.FkLookup::protocol-location
+untaped.capabilities.awx.application.suites.ports.FkPrefetcher::protocol-location
+untaped.capabilities.awx.application.suites.ports.Launcher::protocol-location
+untaped.capabilities.awx.application.suites.ports.Parser::protocol-location
+untaped.capabilities.awx.application.suites.ports.Prompt::protocol-location
+untaped.capabilities.awx.application.suites.ports.VarsResolver::protocol-location
+untaped.capabilities.awx.application.suites.ports.Watcher::protocol-location
+untaped.capabilities.awx.application.suites.resolver.UnknownLaunchFieldWarning::exception-base
+untaped.capabilities.awx.application.suites.resolver.UnknownLaunchFieldWarning::exception-name
