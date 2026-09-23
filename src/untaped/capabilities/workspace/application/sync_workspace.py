@@ -173,12 +173,6 @@ class RepoSyncEngine:
         except _Failed as exc:
             return _outcome(workspace, repo, "failed", exc.detail)
 
-    def prune_orphans(self, workspace: Workspace, manifest: WorkspaceManifest) -> list[SyncOutcome]:
-        """Plan and immediately delete safe orphans (no confirmation)."""
-        outcomes, candidates = self.plan_prune(workspace, manifest)
-        outcomes.extend(self.prune_candidate(candidate) for candidate in candidates)
-        return outcomes
-
     def plan_prune(
         self, workspace: Workspace, manifest: WorkspaceManifest
     ) -> tuple[list[SyncOutcome], list[PruneCandidate]]:
@@ -266,7 +260,6 @@ class SyncWorkspace:
         workspace: Workspace,
         *,
         only: Sequence[str] | None = None,
-        prune: bool = False,
         strict_only: bool = True,
         bare_tracker: BareFetchTracker | None = None,
     ) -> list[SyncOutcome]:
@@ -294,8 +287,6 @@ class SyncWorkspace:
         outcomes.extend(
             self._engine.sync_repo(workspace, manifest, repo, tracker) for repo in repos
         )
-        if prune:
-            outcomes.extend(self._engine.prune_orphans(workspace, manifest))
         return outcomes
 
 

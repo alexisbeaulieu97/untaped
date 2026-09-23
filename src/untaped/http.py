@@ -144,19 +144,30 @@ def resolve_verify(http: HttpSettings) -> VerifyTypes:
             f"http.ca_bundle points to a missing file: {http.ca_bundle.expanduser()} "
             "(fix it with `untaped config set http.ca_bundle <path>` or unset it)"
         )
-    # Fast path: hostname-checked + a pinned CA → hand httpx the path and let it
-    # build the (equivalent) default, hostname-checking context itself.
+    context = _ssl_context(http.ca_bundle)
+    # Hostname-checked + a pinned CA → hand httpx the path and let it build
+    # the (equivalent) default, hostname-checking context itself. The bundle
+    # was still loaded above so an unreadable/invalid one fails here.
     if http.verify_hostname and http.ca_bundle is not None:
         return str(http.ca_bundle.expanduser())
-    context = _ssl_context(http.ca_bundle)
     context.check_hostname = http.verify_hostname
     return context
 
 
 def _ssl_context(ca_bundle: Path | None) -> ssl.SSLContext:
-    """Build an SSLContext: a bundle-loaded default context, else OS trust."""
+    """Build an SSLContext: a bundle-loaded default context, else OS trust.
+
+    An unreadable or unparsable ``ca_bundle`` raises :class:`ConfigError`.
+    """
     if ca_bundle is not None:
-        return ssl.create_default_context(cafile=str(ca_bundle.expanduser()))
+        path = ca_bundle.expanduser()
+        try:
+            return ssl.create_default_context(cafile=str(path))
+        except (ssl.SSLError, OSError) as exc:
+            raise ConfigError(
+                f"http.ca_bundle could not be loaded from {path}: {exc} "
+                "(fix it with `untaped config set http.ca_bundle <path>` or unset it)"
+            ) from exc
     import truststore  # noqa: PLC0415
 
     return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)

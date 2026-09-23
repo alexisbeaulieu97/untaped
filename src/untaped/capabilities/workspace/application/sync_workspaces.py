@@ -41,16 +41,9 @@ class _PlannedOutcome:
 
 
 @dataclass(frozen=True)
-class _PruneTarget:
-    workspace: Workspace
-    manifest: WorkspaceManifest
-
-
-@dataclass(frozen=True)
 class _SyncPlan:
     rows: list[_PlannedOutcome]
     jobs: list[RepoSyncJob]
-    prune_targets: list[_PruneTarget]
 
 
 class SyncWorkspaces:
@@ -70,7 +63,6 @@ class SyncWorkspaces:
         workspaces: Sequence[Workspace],
         *,
         only: Sequence[str] | None = None,
-        prune: bool = False,
         strict_only: bool = True,
         skip_manifest_errors: bool = False,
         parallel: int = 1,
@@ -80,7 +72,6 @@ class SyncWorkspaces:
         plan = self._build_plan(
             workspaces,
             only=only,
-            prune=prune,
             strict_only=strict_only,
             skip_manifest_errors=skip_manifest_errors,
         )
@@ -94,11 +85,7 @@ class SyncWorkspaces:
             if unexpected:
                 raise _unexpected_sync_error(unexpected)
 
-        outcomes = [row.outcome for row in sorted(planned, key=lambda row: row.ordinal)]
-        if prune:
-            for target in plan.prune_targets:
-                outcomes.extend(self._engine.prune_orphans(target.workspace, target.manifest))
-        return outcomes
+        return [row.outcome for row in sorted(planned, key=lambda row: row.ordinal)]
 
     def plan_prune(
         self,
@@ -132,13 +119,11 @@ class SyncWorkspaces:
         workspaces: Sequence[Workspace],
         *,
         only: Sequence[str] | None,
-        prune: bool,
         strict_only: bool,
         skip_manifest_errors: bool,
     ) -> _SyncPlan:
         rows: list[_PlannedOutcome] = []
         jobs: list[RepoSyncJob] = []
-        prune_targets: list[_PruneTarget] = []
         unmatched_errors: list[str] = []
         ordinal = 0
         for workspace in workspaces:
@@ -182,11 +167,9 @@ class SyncWorkspaces:
                     )
                 )
                 ordinal += 1
-            if prune:
-                prune_targets.append(_PruneTarget(workspace=workspace, manifest=manifest))
         if unmatched_errors:
             raise UnmatchedRepoFilter(tuple(sorted(set(unmatched_errors))))
-        return _SyncPlan(rows=rows, jobs=jobs, prune_targets=prune_targets)
+        return _SyncPlan(rows=rows, jobs=jobs)
 
     def _run_jobs(
         self,

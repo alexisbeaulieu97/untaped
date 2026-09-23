@@ -988,13 +988,13 @@ def test_f13_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bare = cache_path_for(f"file://{upstream}", cache_dir=cache.expanduser().resolve())
     assert bare.is_dir()
     alternates = target / "upstream" / ".git" / "objects" / "info" / "alternates"
-    assert alternates.is_file()
-    assert "objects" in alternates.read_text()
+    # --dissociate: the cache only accelerates the clone, never backs it.
+    assert not alternates.exists()
     shutil.rmtree(bare)
     result = _run(["workspace", "sync", "--workspace", "prod"])
     assert result.exit_code == 0, result.output
     assert "1 repo (1 up to date)" in result.stderr
-    assert fix["clone"].startswith("git clone --reference <bare>")
+    assert fix["clone"].startswith("git clone --reference <bare> --dissociate")
 
     # sync skip details (P36)
     (target / "upstream" / "dirty.txt").write_text("dirty")

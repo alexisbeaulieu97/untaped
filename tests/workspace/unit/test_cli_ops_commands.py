@@ -15,6 +15,7 @@ import pytest
 from untaped import bootstrap
 from untaped.capabilities.workspace import SPEC
 from untaped.capabilities.workspace.cli import app
+from untaped.capabilities.workspace.infrastructure import InterruptibleShellRunner
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -877,6 +878,15 @@ def test_status_all_malformed_registry_entry_stays_hard_error(isolate_config: Pa
     assert "invalid workspace registry entry 'prod': missing or empty 'path'" in result.output
 
 
+def _patch_shell_runner(monkeypatch: pytest.MonkeyPatch, fake: Any) -> None:
+    """Route the CLI's foreach runner through ``fake``."""
+
+    def _call(_self: object, cmd: str, cwd: Path, *, timeout: float) -> Any:
+        return fake(cmd, cwd, timeout=timeout)
+
+    monkeypatch.setattr(InterruptibleShellRunner, "__call__", _call)
+
+
 def test_foreach_runs_command_in_each_repo(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
@@ -904,7 +914,7 @@ def test_foreach_repo_filter_runs_command_once(
         calls.append(cwd.name)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok", stderr="")
 
-    monkeypatch.setattr("untaped.capabilities.workspace.cli.ops_commands.shell_runner", _runner)
+    _patch_shell_runner(monkeypatch, _runner)
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -933,7 +943,7 @@ def test_foreach_unknown_repo_filter_exits_before_running_command(
         calls.append(cwd.name)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("untaped.capabilities.workspace.cli.ops_commands.shell_runner", _runner)
+    _patch_shell_runner(monkeypatch, _runner)
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -998,7 +1008,7 @@ def test_foreach_timeout_option_wires_to_runner(
         seen.append(timeout)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("untaped.capabilities.workspace.cli.ops_commands.shell_runner", _runner)
+    _patch_shell_runner(monkeypatch, _runner)
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
@@ -1033,7 +1043,7 @@ def test_foreach_default_timeout_wires_to_runner(
         seen.append(timeout)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("untaped.capabilities.workspace.cli.ops_commands.shell_runner", _runner)
+    _patch_shell_runner(monkeypatch, _runner)
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])

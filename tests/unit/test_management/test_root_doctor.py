@@ -303,3 +303,19 @@ def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path
     code, rows = _rows(_doctor_app())
     assert code == 1
     assert str(missing) in _failed(rows)["validate http"]
+
+
+@pytest.mark.parametrize("verify_hostname", ["true", "false"])
+def test_invalid_ca_bundle_fails_http_row(
+    _isolated_config: Path, tmp_path: Path, verify_hostname: str
+) -> None:
+    bundle = tmp_path / "garbage.pem"
+    bundle.write_text("not a certificate")
+    write_config(
+        _isolated_config,
+        "profiles:\n  default:\n    http:\n"
+        f"      ca_bundle: {bundle}\n      verify_hostname: {verify_hostname}\n",
+    )
+    code, rows = _rows(_doctor_app())
+    assert code == 1
+    assert str(bundle) in _failed(rows)["validate http"]

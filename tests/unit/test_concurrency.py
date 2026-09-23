@@ -2,6 +2,7 @@
 
 import contextvars
 import threading
+import time
 
 import pytest
 
@@ -64,3 +65,51 @@ def test_worker_sees_caller_contextvars() -> None:
 def test_concurrency_must_be_positive_before_fast_path(items: list[int]) -> None:
     with pytest.raises(ValueError, match="concurrency must be positive"):
         bounded_map(lambda x: x, items, concurrency=0, on_each=lambda i, r: None)
+
+
+def test_on_abort_runs_before_waiting_for_in_flight_work() -> None:
+    """``on_abort`` can release blocked workers; otherwise shutdown would hang."""
+    release = threading.Event()
+
+    def work(item: int) -> int:
+        if item != 0:
+            release.wait(timeout=10)
+        return item
+
+    def interrupt(_item: int, _result: int) -> None:
+        raise KeyboardInterrupt
+
+    start = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        bounded_map(work, [0, 1, 2], concurrency=3, on_each=interrupt, on_abort=release.set)
+    assert release.is_set()
+    assert time.monotonic() - start < 5
+
+
+def test_on_abort_runs_on_serial_path() -> None:
+    aborted: list[bool] = []
+
+    def boom(_item: int) -> int:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        bounded_map(
+            boom,
+            [1],
+            concurrency=1,
+            on_each=lambda i, r: None,
+            on_abort=lambda: aborted.append(True),
+        )
+    assert aborted == [True]
+
+
+def test_on_abort_not_called_on_success() -> None:
+    aborted: list[bool] = []
+    bounded_map(
+        lambda x: x,
+        [1, 2, 3],
+        concurrency=2,
+        on_each=lambda i, r: None,
+        on_abort=lambda: aborted.append(True),
+    )
+    assert aborted == []

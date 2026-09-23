@@ -94,10 +94,10 @@ class _Engine:
             with self._lock:
                 self._active -= 1
 
-    def prune_orphans(
+    def plan_prune(
         self, workspace: Workspace, _manifest: WorkspaceManifest
-    ) -> list[SyncOutcome]:
-        return list(self._prune_rows.get(workspace.name, []))
+    ) -> tuple[list[SyncOutcome], list[Any]]:
+        return list(self._prune_rows.get(workspace.name, [])), []
 
     def wait_for_started(self, count: int) -> None:
         with self._started:
@@ -220,7 +220,6 @@ def test_parallel_phase_order_is_unmatched_sync_then_prune(tmp_path: Path) -> No
             ("prod", "a-repo"): a_gate,
         },
         release_after={("prod", "a-repo"): z_gate},
-        prune_rows={"prod": [_outcome("prod", "old-repo", "remove")]},
     )
     use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("z-repo", "a-repo")}, engine)
 
@@ -228,7 +227,6 @@ def test_parallel_phase_order_is_unmatched_sync_then_prune(tmp_path: Path) -> No
         workspaces,
         only=["ghost", "z-repo", "a-repo"],
         strict_only=False,
-        prune=True,
         parallel=2,
     )
 
@@ -236,7 +234,6 @@ def test_parallel_phase_order_is_unmatched_sync_then_prune(tmp_path: Path) -> No
         ("ghost", "unmatched"),
         ("z-repo", "up-to-date"),
         ("a-repo", "up-to-date"),
-        ("old-repo", "remove"),
     ]
 
 
@@ -261,12 +258,12 @@ def test_skip_manifest_errors_emits_unavailable_row_and_skips_prune(tmp_path: Pa
         }
     )
 
-    outcomes = SyncWorkspaces(manifests, engine)(
-        workspaces,
-        prune=True,
-        skip_manifest_errors=True,
-    )
+    sweep = SyncWorkspaces(manifests, engine)
+    outcomes = sweep(workspaces, skip_manifest_errors=True)
+    skipped, candidates = sweep.plan_prune(workspaces, skip_manifest_errors=True)
+    outcomes.extend(skipped)
 
+    assert candidates == []
     assert [(o.workspace, o.repo, o.action) for o in outcomes] == [
         ("alpha", "api", "up-to-date"),
         ("missing", "", "unavailable"),

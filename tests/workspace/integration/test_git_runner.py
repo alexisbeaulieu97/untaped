@@ -82,9 +82,10 @@ def test_clone_with_reference(tmp_path: Path, upstream: Path) -> None:
     workspace = tmp_path / "ws"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace / "svc-a", bare=bare)
     assert (workspace / "svc-a" / ".git").is_dir()
-    # Reference points to the bare's objects
+    # The cache only accelerates the clone: objects are copied in
+    # (``--dissociate``) so later cache pruning/gc can't corrupt it.
     alt = workspace / "svc-a" / ".git" / "objects" / "info" / "alternates"
-    assert alt.is_file()
+    assert not alt.exists()
 
 
 def test_clone_with_reference_specific_branch(tmp_path: Path, upstream: Path) -> None:
@@ -647,3 +648,39 @@ def test_has_branch_checks_local_and_origin(tmp_path: Path, upstream: Path) -> N
     _git(ws, "branch", "-D", "main")
     assert runner.has_branch(ws, branch="main") is True  # origin/main
     assert runner.has_branch(ws, branch="mian") is False
+
+
+def test_clone_survives_cache_prune_and_gc_of_deleted_branch(
+    tmp_path: Path, upstream: Path
+) -> None:
+    """Objects only reachable from a deleted cache branch must not break clones."""
+    seed = tmp_path / "_seed_gc"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    _configure_identity(seed)
+    _git(seed, "checkout", "-b", "feature")
+    _commit(seed, "feature.txt", "f", "feature work")
+    _git(seed, "push", "origin", "feature")
+
+    runner = GitRunner()
+    url = f"file://{upstream}"
+    bare = runner.ensure_bare(url, cache_dir=tmp_path / "cache").path
+    runner.bare_fetch(bare)
+    clone = tmp_path / "ws" / "svc"
+    runner.clone_with_reference(url=url, dest=clone, bare=bare, branch="feature")
+
+    _git(seed, "push", "origin", "--delete", "feature")
+    runner.bare_fetch(bare)
+    _git(bare, "gc", "--prune=now")
+
+    assert _git(clone, "fsck", "--full", check=False).returncode == 0
+    assert _git(clone, "log", "-1", "--format=%s").stdout.strip() == "feature work"
+
+
+def test_bare_cache_disables_auto_gc_and_pruning(tmp_path: Path, upstream: Path) -> None:
+    """Clones made before ``--dissociate`` still borrow cache objects."""
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    _git(bare, "config", "--unset", "gc.pruneExpire", check=False)
+    runner.bare_fetch(bare)
+    assert _git(bare, "config", "gc.pruneExpire").stdout.strip() == "never"
+    assert _git(bare, "config", "gc.auto").stdout.strip() == "0"

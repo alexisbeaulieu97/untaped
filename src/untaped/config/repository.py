@@ -211,10 +211,14 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
     ``str``/``SecretStr`` fields keep the input verbatim (no YAML parsing, so
     ``p4ss #word`` or ``0123`` survive intact). Other types validate the raw
     string in pydantic's lax mode and store the JSON-mode dump (e.g. a
-    ``Path`` as a string).
+    ``Path`` as a string). For those non-string types the literal ``null``
+    stores ``None``; the section validation in ``set_value`` rejects it when
+    the field is not optional. (``config unset`` removes a key instead.)
     """
     if descriptor.annotation in (str, SecretStr):
         return raw_value
+    if raw_value == "null":
+        return None
     adapter: TypeAdapter[Any] = TypeAdapter(descriptor.annotation)
     try:
         value = adapter.validate_strings(raw_value)
