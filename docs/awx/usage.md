@@ -220,8 +220,11 @@ retained in the failed result.
 `patch`, `edit`, `apply`, and `delete` show one complete redacted preview and
 ask once with No as the default. `--yes` skips the prompt. `--dry-run` never
 writes; it is mutually exclusive with `--yes`. Configuration writes without a
-controlling terminal require `--yes` or `--dry-run`. Launch and sync are
-explicit actions and do not add a configuration-edit confirmation. An
+controlling terminal require `--yes` or `--dry-run`. `launch` and `sync` of a
+single named target submit immediately; when more than one target is selected,
+or the selection came from `--all`, `--filter`, `--search`, or `--stdin`, they
+list the targets on stderr and ask once (No by default). `--yes` skips that
+prompt and `--dry-run` previews without submitting. An
 explicit `--allow-unverified --yes` can accept an unverified configuration
 write, but the result remains labeled unverified. A configuration plan with no
 changes does not prompt or write.

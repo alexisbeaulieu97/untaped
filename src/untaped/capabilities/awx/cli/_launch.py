@@ -39,6 +39,7 @@ from untaped.capabilities.awx.cli.options import (
     ParentOption,
     SearchOption,
     StdinOption,
+    YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -63,6 +64,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         parent: ParentOption = None,
         inventory_organization: InventoryOrganizationOption = None,
         dry_run: DryRunOption = False,
+        yes: YesOption = False,
         continue_on_error: ContinueOption = False,
         parallel: ParallelOption = 1,
         by_id: ByIdOption = False,
@@ -183,7 +185,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         }
         _reject_unsupported_launch_flags(kind=spec.kind, accepts=accepts, supplied=supplied)
         with report_errors():
-            parallel = validate_controls(yes=False, dry_run=dry_run, parallel=parallel)
+            parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
                 # --inventory remains a payload override, never template scope.
                 selected = select_resources(
@@ -216,6 +218,10 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     action="launch",
                     payload=payload,
                     dry_run=dry_run,
+                    yes=yes,
+                    # Mass or multi-target selections preview and confirm first.
+                    confirm=len(selected) > 1
+                    or bool(stdin or all_ or filter_ or search is not None),
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,
