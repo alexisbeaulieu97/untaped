@@ -1,1 +1,1 @@
-"""Packaged built-ins for untaped-recipe."""
+"""Packaged built-ins for the recipe capability."""
