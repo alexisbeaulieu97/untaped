@@ -1,47 +1,67 @@
-"""Cyclopts commands for Jira Data Center ticket workflow."""
+"""Cyclopts commands for Jira Data Center issue workflow."""
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 
 from untaped.capabilities.jira.cli._client import current_jira_settings, open_client
 from untaped.capabilities.jira.domain import (
+    IssueOutcome,
     JiraIssueSearchFilters,
+    browse_url,
     build_issue_payload,
 )
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
+    DryRunOption,
     FormatOption,
+    LimitOption,
+    OperationCancelledError,
+    StdinOption,
+    UsageError,
+    YesOption,
+    batch_apply,
     create_app,
+    deprecated_alias,
+    echo,
     emit,
     existing_file,
+    finish,
     parse_json_pairs,
     parse_kv_pairs,
     raise_usage,
+    read_identifiers,
     read_structured_file,
     report_errors,
+    resolve_each,
     resolve_text_input,
 )
 
-LimitOption = Annotated[
-    int,
+if TYPE_CHECKING:
+    from untaped.capability_api import UiContext
+
+SetOption = Annotated[
+    list[str] | None,
     Parameter(
-        name="--limit",
-        validator=validators.Number(gte=1),
-        help="Maximum rows to return.",
+        name="--set",
+        help="Set a string field KEY=VALUE (repeatable).",
+        negative="",
+        consume_multiple=False,
     ),
 ]
-FieldOption = Annotated[
+SetJsonOption = Annotated[
     list[str] | None,
-    Parameter(name="--field", help="Set a string field KEY=VALUE.", consume_multiple=False),
-]
-JsonFieldOption = Annotated[
-    list[str] | None,
-    Parameter(name="--json-field", help="Set a field from JSON KEY=JSON.", consume_multiple=False),
+    Parameter(
+        name="--set-json",
+        help="Set a field from JSON KEY=JSON (repeatable).",
+        negative="",
+        consume_multiple=False,
+    ),
 ]
 ProjectFilterOption = Annotated[
     str | None,
@@ -62,18 +82,27 @@ SprintFilterOption = Annotated[
         help="Sprint id or name, or openSprints()/futureSprints()/closedSprints().",
     ),
 ]
+IssueKeyArgument = Annotated[str, Parameter(help="Issue key or id.")]
+IssueKeysArgument = Annotated[
+    list[str] | None,
+    Parameter(help="Issue keys or ids (or pass --stdin).", negative=""),
+]
+# Pipe records that carry an issue ``key`` a consumer can act on.
+ISSUE_KINDS = frozenset({"jira.issue", "jira.issue_outcome"})
+OUTCOME_KIND = "jira.issue_outcome"
+
 app = create_app(
     name="jira",
     help="Manage Jira Data Center issues from untaped.",
 )
-issue_app = create_app(name="issue", help="Manage Jira issues.")
-project_app = create_app(name="project", help="Look up Jira projects.")
-board_app = create_app(name="board", help="Look up Jira Software boards.")
-sprint_app = create_app(name="sprint", help="Look up Jira Software sprints.")
+issues_app = create_app(name="issues", help="Manage Jira issues.")
+projects_app = create_app(name="projects", help="Look up Jira projects.")
+boards_app = create_app(name="boards", help="Look up Jira Software boards.")
+sprints_app = create_app(name="sprints", help="Look up Jira Software sprints.")
 
 
-@app.command(name="me")
-def me_command(
+@app.command(name="whoami")
+def whoami_command(
     *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -84,29 +113,39 @@ def me_command(
 
     with report_errors():
         with open_client() as (client, ui), ui.progress("Fetching authenticated user…"):
-            row = WhoAmI(client)().model_dump()
+            row = WhoAmI(client)()
         emit(row, fmt=fmt, columns=columns, kind="jira.user")
 
 
-@issue_app.command(name="get")
+@issues_app.command(name="get")
 def issue_get_command(
-    key: Annotated[str, Parameter(help="Issue key or id.")],
+    keys: IssueKeysArgument = None,
     /,
     *,
+    stdin: StdinOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Fetch one issue."""
+    """Fetch one or more issues."""
 
     from untaped.capabilities.jira.application import GetIssue  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, ui), ui.progress("Fetching issue…"):
-            row = GetIssue(client)(key).model_dump()
-        emit(row, fmt=fmt, columns=columns, kind="jira.issue")
+        resolved = read_identifiers(
+            list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
+        )
+        single = not stdin and len(resolved) == 1
+        with open_client() as (client, ui), ui.progress("Fetching issues…"):
+            get_issue = GetIssue(client)
+            if single:
+                rows, any_failed = [get_issue(resolved[0])], False
+            else:
+                rows, any_failed = resolve_each(resolved, get_issue)
+        emit(rows[0] if single else rows, fmt=fmt, columns=columns, kind="jira.issue")
+        finish(any_failed)
 
 
-@issue_app.command(name="search")
+@issues_app.command(name="search")
 def issue_search_command(
     *,
     jql: Annotated[str | None, Parameter(name="--jql", help="Raw JQL base query.")] = None,
@@ -137,11 +176,11 @@ def issue_search_command(
             sprint=sprint,
         )
         with open_client() as (client, ui), ui.progress("Querying Jira issues…"):
-            rows = [issue.model_dump() for issue in SearchIssues(client)(filters, limit=limit)]
+            rows = SearchIssues(client)(filters, limit=limit)
         emit(rows, fmt=fmt, columns=columns, kind="jira.issue", empty="No issues match the query.")
 
 
-@issue_app.command(name="assigned")
+@issues_app.command(name="assigned")
 def issue_assigned_command(
     *,
     jql: Annotated[
@@ -171,7 +210,7 @@ def issue_assigned_command(
             sprint=sprint,
         )
         with open_client() as (client, ui), ui.progress("Querying assigned issues…"):
-            rows = [issue.model_dump() for issue in SearchIssues(client)(filters, limit=limit)]
+            rows = SearchIssues(client)(filters, limit=limit)
         emit(rows, fmt=fmt, columns=columns, kind="jira.issue", empty="No issues assigned to you.")
 
 
@@ -180,11 +219,29 @@ def _nonblank_jql(jql: str | None) -> str | None:
         return None
     stripped = jql.strip()
     if not stripped:
-        raise ConfigError("--jql must not be blank")
+        raise UsageError("--jql must not be blank")
     return stripped
 
 
-@issue_app.command(name="create")
+def _show_request(method: str, path: str, body: object) -> None:
+    """Print the REST request a write would send (stderr; stdout stays data)."""
+    echo(f"{method} {path}", err=True)
+    echo(json.dumps(body, indent=2, ensure_ascii=False, sort_keys=True), err=True)
+
+
+def _confirm_request(
+    ui: UiContext, *, verb: str, method: str, path: str, body: object, yes: bool
+) -> None:
+    """Show the request and ask before sending it; ``--yes`` skips both."""
+    if yes:
+        return
+    with ui.terminal(refusal=f"{verb} requires --yes when not interactive"):
+        _show_request(method, path, body)
+        if not ui.confirm("Send this request to Jira?"):
+            raise OperationCancelledError
+
+
+@issues_app.command(name="create")
 def issue_create_command(
     *,
     template: Annotated[
@@ -206,8 +263,10 @@ def issue_create_command(
     description: Annotated[
         str | None, Parameter(name="--description", help="Issue description text.")
     ] = None,
-    field: FieldOption = None,
-    json_field: JsonFieldOption = None,
+    set_fields: SetOption = None,
+    set_json: SetJsonOption = None,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -216,87 +275,132 @@ def issue_create_command(
     from untaped.capabilities.jira.application import CreateIssue  # noqa: PLC0415
 
     with report_errors():
+        settings = current_jira_settings()
         base = read_structured_file(template) if template is not None else {}
         payload = build_issue_payload(
             base=base,
-            project=project or current_jira_settings().default_project,
+            project=project or settings.default_project,
             issue_type=issue_type,
             summary=summary,
             description=description,
-            fields=parse_kv_pairs(field, flag="--field"),
-            json_fields=parse_json_pairs(json_field, flag="--json-field"),
+            fields=parse_kv_pairs(set_fields, flag="--set"),
+            json_fields=parse_json_pairs(set_json, flag="--set-json"),
         )
-        with open_client() as (client, ui), ui.progress("Creating issue…"):
-            row = CreateIssue(client)(payload).model_dump()
-        emit(row, fmt=fmt, columns=columns, kind="jira.issue")
+        path = f"{settings.api_prefix}/issue"
+        if dry_run:
+            _show_request("POST", path, payload)
+            emit(IssueOutcome(action="planned"), fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+            return
+        with open_client() as (client, ui):
+            _confirm_request(ui, verb="create", method="POST", path=path, body=payload, yes=yes)
+            with ui.progress("Creating issue…"):
+                row = CreateIssue(client, base_url=settings.base_url)(payload)
+        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
 
 
-@issue_app.command(name="edit")
-def issue_edit_command(
-    key: Annotated[str, Parameter(help="Issue key or id.")],
+@issues_app.command(name="patch")
+def issue_patch_command(
+    key: IssueKeyArgument,
     /,
     *,
     body_file: Annotated[
         Path | None,
-        Parameter(name="--body-file", validator=existing_file),
+        Parameter(
+            name="--body-file",
+            validator=existing_file,
+            help="Jira-shaped YAML/JSON payload file (fields/update); flags override it.",
+        ),
     ] = None,
-    summary: Annotated[str | None, Parameter(name="--summary")] = None,
-    description: Annotated[str | None, Parameter(name="--description")] = None,
-    field: FieldOption = None,
-    json_field: JsonFieldOption = None,
+    summary: Annotated[str | None, Parameter(name="--summary", help="New issue summary.")] = None,
+    description: Annotated[
+        str | None, Parameter(name="--description", help="New issue description text.")
+    ] = None,
+    set_fields: SetOption = None,
+    set_json: SetJsonOption = None,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Edit one issue from flags and an optional Jira-shaped body file."""
+    """Update fields of one issue from flags and an optional Jira-shaped body file."""
 
-    from untaped.capabilities.jira.application import EditIssue  # noqa: PLC0415
+    from untaped.capabilities.jira.application import PatchIssue  # noqa: PLC0415
 
     with report_errors():
+        settings = current_jira_settings()
         base = read_structured_file(body_file) if body_file is not None else {}
         payload = build_issue_payload(
             base=base,
             summary=summary,
             description=description,
-            fields=parse_kv_pairs(field, flag="--field"),
-            json_fields=parse_json_pairs(json_field, flag="--json-field"),
+            fields=parse_kv_pairs(set_fields, flag="--set"),
+            json_fields=parse_json_pairs(set_json, flag="--set-json"),
         )
         if not payload.get("fields") and not payload.get("update"):
             raise_usage(
-                "nothing to update: pass --summary, --description, --field, --json-field, "
+                "nothing to update: pass --summary, --description, --set, --set-json, "
                 "or a --body-file with fields/update"
             )
-        with open_client() as (client, ui), ui.progress("Updating issue…"):
-            row = EditIssue(client)(key, payload).model_dump()
-        emit(row, fmt=fmt, columns=columns, kind="jira.issue")
+        path = f"{settings.api_prefix}/issue/{key}"
+        if dry_run:
+            _show_request("PUT", path, payload)
+            planned = IssueOutcome(
+                action="planned", key=key, url=browse_url(settings.base_url, key)
+            )
+            emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+            return
+        with open_client() as (client, ui):
+            _confirm_request(ui, verb="patch", method="PUT", path=path, body=payload, yes=yes)
+            with ui.progress("Updating issue…"):
+                row = PatchIssue(client, base_url=settings.base_url)(key, payload)
+        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
 
 
-@issue_app.command(name="comment")
+@issues_app.command(name="comment")
 def issue_comment_command(
-    key: Annotated[str, Parameter(help="Issue key or id.")],
+    key: IssueKeyArgument,
     /,
     *,
     body: Annotated[str | None, Parameter(name="--body", help="Comment body.")] = None,
     body_file: Annotated[
         Path | None,
-        Parameter(name="--body-file", validator=existing_file),
+        Parameter(
+            name="--body-file",
+            validator=existing_file,
+            help="Read the comment body from a file.",
+        ),
     ] = None,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Add a comment to one issue."""
+    """Add a comment to one issue (the body may also be piped on stdin)."""
 
     from untaped.capabilities.jira.application import AddComment  # noqa: PLC0415
 
     with report_errors():
+        settings = current_jira_settings()
         resolved_body = resolve_text_input(value=body, file=body_file, what="body")
-        with open_client() as (client, ui), ui.progress("Adding comment…"):
-            row = AddComment(client)(key, resolved_body).model_dump()
-        emit(row, fmt=fmt, columns=columns, kind="jira.comment")
+        path = f"{settings.api_prefix}/issue/{key}/comment"
+        request = {"body": resolved_body}
+        if dry_run:
+            _show_request("POST", path, request)
+            planned = IssueOutcome(
+                action="planned", key=key, url=browse_url(settings.base_url, key)
+            )
+            emit(planned, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+            return
+        with open_client() as (client, ui):
+            _confirm_request(ui, verb="comment", method="POST", path=path, body=request, yes=yes)
+            with ui.progress("Adding comment…"):
+                row = AddComment(client, base_url=settings.base_url)(key, resolved_body)
+        emit(row, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
 
 
-@issue_app.command(name="transitions")
+@issues_app.command(name="transitions")
 def issue_transitions_command(
-    key: Annotated[str, Parameter(help="Issue key or id.")],
+    key: IssueKeyArgument,
     /,
     *,
     fmt: FormatOption = "table",
@@ -308,7 +412,7 @@ def issue_transitions_command(
 
     with report_errors():
         with open_client() as (client, ui), ui.progress("Fetching available transitions…"):
-            rows = [transition.model_dump() for transition in ListTransitions(client)(key)]
+            rows = ListTransitions(client)(key)
         emit(
             rows,
             fmt=fmt,
@@ -318,31 +422,85 @@ def issue_transitions_command(
         )
 
 
-@issue_app.command(name="transition")
+@issues_app.command(name="transition")
 def issue_transition_command(
-    key: Annotated[str, Parameter(help="Issue key or id.")],
+    keys: IssueKeysArgument = None,
     /,
     *,
     to: Annotated[str | None, Parameter(name="--to", help="Transition name.")] = None,
     transition_id: Annotated[str | None, Parameter(name="--id", help="Transition id.")] = None,
+    stdin: StdinOption = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Apply one workflow transition by name or id."""
+    """Apply one workflow transition, by name or id, to one or more issues."""
 
     from untaped.capabilities.jira.application import TransitionIssue  # noqa: PLC0415
 
     with report_errors():
-        with open_client() as (client, ui), ui.progress("Applying transition…"):
-            row = TransitionIssue(client)(
-                key,
-                transition_id=transition_id,
-                transition_name=to,
-            ).model_dump()
-        emit(row, fmt=fmt, columns=columns, kind="jira.issue")
+        TransitionIssue.check_selector(transition_id, to)
+        resolved = read_identifiers(
+            list(keys or []), stdin=stdin, id_field="key", accept_kinds=ISSUE_KINDS
+        )
+        settings = current_jira_settings()
+        single = not stdin and len(resolved) == 1
+        with open_client() as (client, ui):
+            transition = TransitionIssue(client, base_url=settings.base_url)
+            with ui.progress("Resolving transitions…"):
+                plans, resolve_failed = resolve_each(
+                    resolved,
+                    lambda key: (
+                        key,
+                        transition.resolve(key, transition_id=transition_id, transition_name=to),
+                    ),
+                )
+
+            def preview(rows: Sequence[dict[str, object]]) -> None:
+                for row in rows:
+                    _show_request(
+                        "POST",
+                        f"{settings.api_prefix}/issue/{row['key']}/transitions",
+                        {"transition": {"id": row["transition_id"]}},
+                    )
+
+            outcome = batch_apply(
+                plans,
+                lambda plan: transition(*plan),
+                verb="transition",
+                noun="issue",
+                label=lambda plan: plan[0],
+                describe=lambda plan: {"key": plan[0], "transition_id": plan[1]},
+                ui=ui,
+                destructive=True,
+                assume_yes=yes,
+                preview_only=dry_run,
+                preview=preview,
+            )
+        if outcome.cancelled:
+            finish(outcome)
+        if dry_run:
+            preview(outcome.planned_rows)
+            rows: list[Any] = [
+                IssueOutcome(
+                    action="planned",
+                    key=key,
+                    url=browse_url(settings.base_url, key),
+                    transition_id=resolved_id,
+                )
+                for key, resolved_id in plans
+            ]
+        else:
+            rows = [result for _, result in outcome.results]
+        if single and rows:
+            emit(rows[0], fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        else:
+            emit(rows, fmt=fmt, columns=columns, kind=OUTCOME_KIND)
+        finish(resolve_failed or outcome.any_failed)
 
 
-@project_app.command(name="list")
+@projects_app.command(name="list")
 def project_list_command(
     *,
     fmt: FormatOption = "table",
@@ -354,7 +512,7 @@ def project_list_command(
 
     with report_errors():
         with open_client() as (client, ui), ui.progress("Listing projects…"):
-            rows = [project.model_dump() for project in ListProjects(client)()]
+            rows = ListProjects(client)()
         emit(
             rows,
             fmt=fmt,
@@ -364,7 +522,7 @@ def project_list_command(
         )
 
 
-@project_app.command(name="get")
+@projects_app.command(name="get")
 def project_get_command(
     key: Annotated[str, Parameter(help="Project key or id.")],
     /,
@@ -378,11 +536,11 @@ def project_get_command(
 
     with report_errors():
         with open_client() as (client, ui), ui.progress("Fetching project…"):
-            row = GetProject(client)(key).model_dump()
+            row = GetProject(client)(key)
         emit(row, fmt=fmt, columns=columns, kind="jira.project")
 
 
-@board_app.command(name="list")
+@boards_app.command(name="list")
 def board_list_command(
     *,
     project: Annotated[
@@ -390,7 +548,10 @@ def board_list_command(
         Parameter(name="--project", help="Filter by project key or id."),
     ] = None,
     name: Annotated[str | None, Parameter(name="--name", help="Filter by board name.")] = None,
-    board_type: Annotated[Literal["scrum", "kanban"] | None, Parameter(name="--type")] = None,
+    board_type: Annotated[
+        Literal["scrum", "kanban"] | None,
+        Parameter(name="--type", help="Filter by board type."),
+    ] = None,
     limit: LimitOption = 50,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -401,19 +562,16 @@ def board_list_command(
 
     with report_errors():
         with open_client() as (client, ui), ui.progress("Listing boards…"):
-            rows = [
-                board.model_dump()
-                for board in ListBoards(client)(
-                    project_key_or_id=project,
-                    name=name,
-                    board_type=board_type,
-                    limit=limit,
-                )
-            ]
+            rows = ListBoards(client)(
+                project_key_or_id=project,
+                name=name,
+                board_type=board_type,
+                limit=limit,
+            )
         emit(rows, fmt=fmt, columns=columns, kind="jira.board", empty="No boards match the filter.")
 
 
-@sprint_app.command(name="list")
+@sprints_app.command(name="list")
 def sprint_list_command(
     *,
     board_id: Annotated[int | None, Parameter(name="--board-id", help="Board id.")] = None,
@@ -432,14 +590,11 @@ def sprint_list_command(
     with report_errors():
         settings = current_jira_settings()
         with open_client() as (client, ui), ui.progress("Listing sprints…"):
-            rows = [
-                sprint.model_dump()
-                for sprint in ListSprints(client, default_board_id=settings.default_board_id)(
-                    board_id=board_id,
-                    state=state,
-                    limit=limit,
-                )
-            ]
+            rows = ListSprints(client, default_board_id=settings.default_board_id)(
+                board_id=board_id,
+                state=state,
+                limit=limit,
+            )
         emit(
             rows,
             fmt=fmt,
@@ -449,7 +604,18 @@ def sprint_list_command(
         )
 
 
-app.command(issue_app, name="issue")
-app.command(project_app, name="project")
-app.command(board_app, name="board")
-app.command(sprint_app, name="sprint")
+app.command(issues_app, name="issues")
+app.command(projects_app, name="projects")
+app.command(boards_app, name="boards")
+app.command(sprints_app, name="sprints")
+
+# Old spellings stay as hidden, warning aliases until 7.0.
+deprecated_alias(app, "me", "whoami")
+deprecated_alias(app, "issue", "issues")
+deprecated_alias(app, "project", "projects")
+deprecated_alias(app, "board", "boards")
+deprecated_alias(app, "sprint", "sprints")
+deprecated_alias(issues_app, "edit", "patch")
+for _command in ("create", "patch"):
+    deprecated_alias(issues_app[_command], "--field", "--set")
+    deprecated_alias(issues_app[_command], "--json-field", "--set-json")
