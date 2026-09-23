@@ -72,12 +72,16 @@ def _add_membership_verb(
 ) -> None:
     preposition = "to" if action == "associate" else "from"
     verb_doc = "Associate" if action == "associate" else "Disassociate"
-    help_text = f"{verb_doc} {ref.kind}(s) {preposition} a {spec.kind}."
+    article = "an" if spec.kind[:1].lower() in "aeiou" else "a"
+    help_text = f"{verb_doc} {ref.kind}(s) {preposition} {article} {spec.kind}."
 
+    # Positional-only: a keyword spelling of ``parent`` would claim ``--parent``,
+    # which belongs to the ``ParentOption`` scope filter below.
     @sub.command(name=verb, help=help_text)
     def cmd(
         parent: str,
         members: list[str] | None = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,

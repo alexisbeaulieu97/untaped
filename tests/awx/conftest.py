@@ -49,6 +49,9 @@ class FakeAap:
         # set these before each call.
         self.next_action_status: str = "successful"
         self.next_action_stdout: str | None = None
+        # One-shot ``ignored_fields`` added to the next launch response (on top
+        # of the fields the template's ``ask_*_on_launch`` flags ignore).
+        self.next_action_ignored_fields: dict[str, Any] = {}
         self.ignored_write_fields: set[str] = set()
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
@@ -93,6 +96,8 @@ class FakeAap:
                 return self._list(parts[0], params)
             if len(parts) == 2 and parts[1].isdigit():
                 return self._get(parts[0], int(parts[1]))
+            if len(parts) == 3 and parts[1].isdigit() and parts[2] == "launch":
+                return self._launch_info(parts[0], int(parts[1]))
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
                 return self._stdout(parts[0], int(parts[1]), params)
             if len(parts) == 3 and parts[1].isdigit():
@@ -241,6 +246,17 @@ class FakeAap:
             "name": name,
             "status": status,
         }
+        if action == "launch":
+            # Real AWX accepts unprompted fields and reports them as ignored.
+            ignored = {
+                field: value
+                for field, value in body.items()
+                if field in _LAUNCH_PROMPTS and not self._prompts_for(record, field)
+            }
+            ignored.update(self.next_action_ignored_fields)
+            self.next_action_ignored_fields = {}
+            if ignored:
+                result["ignored_fields"] = ignored
         # Always materialise a record so subsequent ``GET <store_path>/<id>/``
         # round trips (e.g. ``WatchJob`` / ``PollingJobMonitor``) succeed.
         # ``stdout`` is optional — only seeded when the test asks for it.
@@ -249,6 +265,24 @@ class FakeAap:
             seed_fields["stdout"] = stdout
         self.seed(store_path, **seed_fields)
         return httpx.Response(200, json=result)
+
+    def _launch_info(self, api_path: str, id_: int) -> httpx.Response:
+        """``GET <template>/launch/``: prompt flags default to AWX's ``False``."""
+        record = self.store.get(api_path, {}).get(id_)
+        if record is None:
+            return _err(404, f"{api_path}/{id_}/launch/ not found")
+        info: dict[str, Any] = {
+            ask: bool(record.get(ask, False)) for ask in _LAUNCH_PROMPTS.values()
+        }
+        info["survey_enabled"] = bool(record.get("survey_enabled", False))
+        info["variables_needed_to_start"] = list(record.get("variables_needed_to_start", []))
+        return httpx.Response(200, json=info)
+
+    @staticmethod
+    def _prompts_for(record: dict[str, Any], field: str) -> bool:
+        if field == "extra_vars" and record.get("survey_enabled"):
+            return True
+        return bool(record.get(_LAUNCH_PROMPTS[field], False))
 
     def _sub_list(
         self,
@@ -315,6 +349,19 @@ class FakeAap:
         if body.get("disassociate"):
             self.memberships[key].discard(member_id)
         else:
+            if sub_path == "credentials":
+                # AWX allows at most one credential per credential type.
+                credentials = self.store["credentials"]
+                new_type = credentials.get(member_id, {}).get("credential_type")
+                clash = [
+                    other
+                    for other in self.memberships[key]
+                    if other != member_id
+                    and new_type is not None
+                    and credentials.get(other, {}).get("credential_type") == new_type
+                ]
+                if clash:
+                    return _err(400, "Cannot assign multiple credentials of the same type.")
             self.memberships[key].add(member_id)
         return httpx.Response(204)
 
@@ -368,6 +415,21 @@ class FakeAap:
             return {}
         except TypeError:
             return {}
+
+
+# Launch payload field → the template flag that makes AWX honour it.
+_LAUNCH_PROMPTS: dict[str, str] = {
+    "extra_vars": "ask_variables_on_launch",
+    "limit": "ask_limit_on_launch",
+    "inventory": "ask_inventory_on_launch",
+    "credentials": "ask_credential_on_launch",
+    "scm_branch": "ask_scm_branch_on_launch",
+    "job_tags": "ask_tags_on_launch",
+    "skip_tags": "ask_skip_tags_on_launch",
+    "verbosity": "ask_verbosity_on_launch",
+    "diff_mode": "ask_diff_mode_on_launch",
+    "job_type": "ask_job_type_on_launch",
+}
 
 
 # Strict execution routes mirror Controller URLs; arbitrary subcollections must
@@ -666,6 +728,7 @@ def seeded_job_template_with_credentials(
         name="alpha",
         organization=1,
         organization_name="Default",
+        **{ask: True for ask in _LAUNCH_PROMPTS.values()},
     )
     return fake_aap, {"inventory": 20, "ssh": 30, "vault": 31}
 

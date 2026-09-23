@@ -66,6 +66,15 @@ class RunAction:
                 execution_id=execution_id,
                 execution_kind=None,
             )
+        ignored = result.get("ignored_fields")
+        if ignored:
+            # AWX launched anyway but without these overrides: not what was asked.
+            names = ", ".join(sorted(map(str, ignored))) if isinstance(ignored, dict) else ignored
+            raise ActionResponseError(
+                f"{spec.kind}.{action}: AWX ignored launch fields: {names}",
+                execution_id=execution_id,
+                execution_kind=kind,
+            )
         try:
             if execution_id is None:
                 raise ValueError("missing positive integer execution ID")

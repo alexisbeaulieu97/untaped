@@ -41,6 +41,21 @@ def test_delete_by_id_removes_record(seeded_default_org: Any) -> None:
     assert result.stdout.strip() == "10"
 
 
+def test_delete_reads_each_target_once_after_confirmation(seeded_default_org: Any) -> None:
+    """Selection plus one post-confirmation re-read, then the DELETE."""
+    _seed_jt(seeded_default_org, id_=10, name="alpha")
+
+    result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    detail_gets = [
+        call
+        for call in seeded_default_org.router.calls
+        if call.request.method == "GET" and call.request.url.path.endswith("/job_templates/10/")
+    ]
+    assert len(detail_gets) == 2
+
+
 def test_delete_by_id_yes_validates_existence(
     seeded_default_org: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

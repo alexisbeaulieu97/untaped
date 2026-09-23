@@ -475,6 +475,61 @@ def test_failed_creation_skips_only_its_dependents_when_continuing() -> None:
     assert [row.action for row in result.outcomes] == ["failed", "skipped", "created"]
 
 
+def _item_engine(client: _Client) -> BatchMutationEngine:
+    spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
+    return BatchMutationEngine(
+        cast(RawHttpResourceClient, client),
+        cast(Catalog, _Catalog(spec)),
+        cast(FkResolver, _Fk({})),
+        cast(StrategyResolver, _Strategies()),
+    )
+
+
+def _items(*names: str) -> list[Resource]:
+    return [Resource(kind="Item", metadata=Metadata(name=name), spec={}) for name in names]
+
+
+def test_unexpected_worker_exception_becomes_a_failed_row() -> None:
+    """A non-API exception must not abort execute and drop completed rows."""
+
+    class Exploding(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            if payload.name == "bad":
+                raise KeyError("strategy bug")
+            return super().create(spec, payload)
+
+    result = _item_engine(Exploding([])).run(
+        _items("first", "bad", "last"), write=True, continue_on_error=True
+    )
+    assert [row.action for row in result.outcomes] == ["created", "failed", "created"]
+    assert "strategy bug" in (result.outcomes[1].detail or "")
+
+
+def test_auth_failure_aborts_remaining_items_but_keeps_completed_rows() -> None:
+    from untaped.api import ConfigError
+
+    class Unauthorized(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            if payload.name == "second":
+                raise ConfigError("AWX rejected the token (HTTP 401)")
+            return super().create(spec, payload)
+
+    result = _item_engine(Unauthorized([])).run(
+        _items("first", "second", "third"), write=True, continue_on_error=True
+    )
+    assert [row.action for row in result.outcomes] == ["created", "failed", "skipped"]
+    assert "401" in (result.outcomes[1].detail or "")
+
+
+def test_keyboard_interrupt_is_not_swallowed() -> None:
+    class Interrupted(_Client):
+        def create(self, spec: ResourceSpec, payload: Any) -> ServerRecord:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        _item_engine(Interrupted([])).run(_items("only"), write=True)
+
+
 def test_parallel_execution_never_exceeds_http_cap() -> None:
     import threading
 

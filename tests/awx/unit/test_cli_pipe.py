@@ -19,6 +19,11 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 
+def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
+    """``ping`` also authenticates through ``/me/``."""
+    mock.get(path).mock(return_value=httpx.Response(200, json={"results": [{"username": "admin"}]}))
+
+
 def _config(tmp_path: Path) -> Path:
     cfg = tmp_path / "config.yml"
     cfg.write_text(
@@ -77,6 +82,7 @@ def test_ping_pipe_tags_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("UNTAPED_CONFIG", str(_config(tmp_path)))
     get_settings.cache_clear()
     with respx.mock(base_url="https://aap.example.com") as mock:
+        _mock_me(mock)
         mock.get("/api/v2/ping/").mock(
             return_value=httpx.Response(200, json={"version": "4.5.0", "active_node": "n1"})
         )

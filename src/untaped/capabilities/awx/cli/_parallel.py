@@ -7,6 +7,7 @@ loop for track; ``WatchJob`` lambda for wait).
 """
 
 import queue
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
@@ -26,6 +27,7 @@ def _drain_parallel_with_worker(
     worker_fn: Callable[[str, Job], Job],
     *,
     while_running: Callable[[], None] | None = None,
+    stop: threading.Event | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Run ``worker_fn(name, job)`` concurrently and collect outcomes in
     launch order.
@@ -39,6 +41,11 @@ def _drain_parallel_with_worker(
     interleave foreground work with the still-pending pool, before
     ``future.result()`` would block. It runs inside the same ``with``
     block, so a raise still triggers ``shutdown(wait=True)``.
+
+    On ``KeyboardInterrupt`` the ``stop`` event is set (workers poll via a
+    stop-aware sleep and return promptly) and not-yet-started futures are
+    cancelled before the executor joins, so Ctrl-C does not block until
+    every execution reaches a terminal state.
     """
 
     def _wrap(name: str, job: Job) -> Job:
@@ -54,15 +61,22 @@ def _drain_parallel_with_worker(
 
     with ThreadPoolExecutor(max_workers=min(10, len(jobs))) as pool:
         futures = [(name, pool.submit(_wrap, name, job)) for name, job in jobs]
-        if while_running is not None:
-            while_running()
         results: list[Job] = []
         errors: list[tuple[str, UntapedError]] = []
-        for name, future in futures:
-            try:
-                results.append(future.result())
-            except UntapedError as exc:
-                errors.append((name, exc))
+        try:
+            if while_running is not None:
+                while_running()
+            for name, future in futures:
+                try:
+                    results.append(future.result())
+                except UntapedError as exc:
+                    errors.append((name, exc))
+        except KeyboardInterrupt:
+            if stop is not None:
+                stop.set()
+            for _name, future in futures:
+                future.cancel()
+            raise
     return results, errors
 
 
@@ -70,6 +84,8 @@ def _drain_parallel(
     monitor: JobMonitor,
     jobs: list[tuple[str, Job]],
     console: Console,
+    *,
+    stop: threading.Event | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Drain ``--track`` events from multiple jobs concurrently.
 
@@ -82,10 +98,8 @@ def _drain_parallel(
     by :func:`_drain_parallel_with_worker` so the caller's per-job
     error stderr rows + ``any_failed`` exit-code semantics stay stable.
 
-    Note: ``Ctrl-C`` may take up to one polling interval to abort
-    because workers don't cooperatively cancel — the executor's
-    ``shutdown(wait=True)`` blocks until each polling loop next
-    iterates and the job goes terminal.
+    ``Ctrl-C`` sets ``stop``; a monitor built with a stop-aware sleep
+    (the CLI context's) then ends its polling loop immediately.
     """
     q: queue.Queue[tuple[str, JobEvent | Job | None]] = queue.Queue()
 
@@ -121,12 +135,15 @@ def _drain_parallel(
             else:
                 console.print(render_event_text(ev, prefix=name))
 
-    return _drain_parallel_with_worker(jobs, _worker, while_running=_drain_queue)
+    return _drain_parallel_with_worker(jobs, _worker, while_running=_drain_queue, stop=stop)
 
 
 def _wait_parallel(
     client: RawHttpResourceClient,
     jobs: list[tuple[str, Job]],
+    *,
+    sleep: Callable[[float], None] | None = None,
+    stop: threading.Event | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Block-wait on multiple jobs concurrently — no streaming.
 
@@ -136,5 +153,5 @@ def _wait_parallel(
     executor / collection / error-wrap scaffolding lives in
     :func:`_drain_parallel_with_worker`.
     """
-    watch = WatchJob(client)
-    return _drain_parallel_with_worker(jobs, lambda _name, job: watch(job))
+    watch = WatchJob(client, sleep=sleep) if sleep is not None else WatchJob(client)
+    return _drain_parallel_with_worker(jobs, lambda _name, job: watch(job), stop=stop)

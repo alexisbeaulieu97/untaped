@@ -1022,3 +1022,21 @@ def test_list_reports_progress_on_stderr(fake_aap: Any) -> None:
     assert result.stdout.strip() == "deploy"
     assert "Loading" in result.stderr
     assert "Loading" not in result.stdout
+
+
+def test_list_limit_stops_paging_early(fake_aap: Any) -> None:
+    """``--limit`` reaches the paginator instead of slicing a complete walk."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    for index in range(450):
+        fake_aap.seed("projects", id=100 + index, name=f"p{index}", organization=1)
+    result = CliInvoker().invoke(
+        app, ["projects", "list", "--limit", "2", "--format", "raw", "--columns", "name"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.split() == ["p0", "p1"]
+    pages = [
+        call
+        for call in fake_aap.router.calls
+        if call.request.method == "GET" and call.request.url.path.endswith("/projects/")
+    ]
+    assert len(pages) == 1
