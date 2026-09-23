@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
-import os
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
-from typing import Any
-from urllib.parse import urlparse
 
+from untaped.api import GitCommandError, GitResult, run_git, safe_cache_path
 from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
 
 DEFAULT_TIMEOUT = 60.0
@@ -30,7 +24,6 @@ class GitRepositoryCache:
         slow_timeout: float = DEFAULT_SLOW_TIMEOUT,
     ) -> None:
         self._git = git
-        self._git_path = shutil.which(git)
         self._timeout = timeout
         self._slow_timeout = slow_timeout
 
@@ -161,17 +154,8 @@ class GitRepositoryCache:
         timeout: float | None = None,
         auth_header: str | None = None,
     ) -> str:
-        result = self._exec(
-            args,
-            cwd=cwd,
-            timeout=timeout,
-            auth_header=auth_header,
-            stdin_data=None,
-        )
-        if check and result.returncode != 0:
-            raise _command_error(args, result.stderr, auth_header)
-        stdout = result.stdout
-        return stdout if capture and isinstance(stdout, str) else ""
+        result = self._exec(args, cwd=cwd, timeout=timeout, auth_header=auth_header, check=check)
+        return result.text if capture else ""
 
     def _run_bytes(
         self,
@@ -182,20 +166,9 @@ class GitRepositoryCache:
         auth_header: str | None,
         timeout: float | None = None,
     ) -> bytes:
-        result = self._exec(
-            args,
-            cwd=cwd,
-            timeout=timeout,
-            auth_header=auth_header,
-            stdin_data=stdin_data,
-        )
-        stderr = result.stderr
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode("utf-8", errors="replace")
-        if result.returncode != 0:
-            raise _command_error(args, stderr, auth_header)
-        stdout = result.stdout
-        return stdout if isinstance(stdout, bytes) else stdout.encode()
+        return self._exec(
+            args, cwd=cwd, timeout=timeout, auth_header=auth_header, stdin_data=stdin_data
+        ).stdout
 
     def _exec(
         self,
@@ -204,45 +177,22 @@ class GitRepositoryCache:
         cwd: Path | None,
         timeout: float | None,
         auth_header: str | None,
-        stdin_data: bytes | None,
-    ) -> subprocess.CompletedProcess[Any]:
-        if self._git_path is None:
-            raise GitCacheError(f"`{self._git}` not found on PATH")
-        effective_timeout = self._timeout if timeout is None else timeout
-        cmd = [self._git_path, *args]
-        auth_config_path: Path | None = None
-        if auth_header is not None:
-            env, auth_config_path = _auth_config_env(auth_header)
-        else:
-            env = _git_env()
+        stdin_data: bytes | None = None,
+        check: bool = True,
+    ) -> GitResult:
         try:
-            if stdin_data is None:
-                return subprocess.run(
-                    cmd,
-                    cwd=cwd,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                    timeout=effective_timeout,
-                )
-            return subprocess.run(
-                cmd,
+            return run_git(
+                args,
                 cwd=cwd,
-                env=env,
-                input=stdin_data,
-                capture_output=True,
-                check=False,
-                timeout=effective_timeout,
+                git=self._git,
+                timeout=self._timeout if timeout is None else timeout,
+                capture=True,
+                stdin=stdin_data,
+                check=check,
+                auth_header=auth_header,
             )
-        except subprocess.TimeoutExpired as exc:
-            raise GitCacheError(
-                f"git {' '.join(args)} timed out after {effective_timeout:g}s"
-            ) from exc
-        finally:
-            if auth_config_path is not None:
-                auth_config_path.unlink(missing_ok=True)
+        except GitCommandError as exc:
+            raise GitCacheError(str(exc)) from exc
 
 
 def local_remote_url(
@@ -255,131 +205,33 @@ def local_remote_url(
     ``None`` unless ``path`` is the top level of a checkout with a remote: a
     subdirectory (say ``roles/web`` in a monorepo) is not the enclosing repo,
     whose indexed edges its local overlay would otherwise replace. Inherited
-    ``GIT_DIR``/``GIT_WORK_TREE``/``GIT_INDEX_FILE`` are dropped so the
-    lookup always targets ``path``.
+    ``GIT_DIR``/``GIT_WORK_TREE``/``GIT_INDEX_FILE`` are dropped (by
+    ``run_git``) so the lookup always targets ``path``.
     """
-    git_path = shutil.which(git)
-    if git_path is None:
-        return None
     cwd = path if path.is_dir() else path.parent
-    env = _git_env()
-    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
-        env.pop(name, None)
-    try:
-        toplevel = subprocess.run(
-            [git_path, "-C", str(cwd), "rev-parse", "--show-toplevel"],
-            env=env,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-        )
-    except OSError, subprocess.TimeoutExpired:
-        return None
-    top = toplevel.stdout.strip() if toplevel.returncode == 0 else ""
+
+    def lookup(*args: str) -> str:
+        try:
+            result = run_git(args, cwd=cwd, git=git, timeout=timeout, capture=True, check=False)
+        except GitCommandError:
+            return ""
+        return result.text.strip() if result.returncode == 0 else ""
+
+    top = lookup("rev-parse", "--show-toplevel")
     if not top or Path(top).resolve() != cwd.resolve():
         return None
-    lookups = (
-        ["config", "--get", "remote.origin.url"],
-        ["config", "--get-regexp", r"^remote\..*\.url$"],
-    )
-    for args in lookups:
-        try:
-            result = subprocess.run(
-                [git_path, "-C", str(cwd), *args],
-                env=env,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=timeout,
-            )
-        except OSError, subprocess.TimeoutExpired:
-            return None
-        lines = result.stdout.strip().splitlines() if result.returncode == 0 else []
-        if lines:
-            value = lines[0] if args[1] == "--get" else lines[0].split(maxsplit=1)[-1]
-            return value.strip() or None
+    lines = lookup("config", "--get", "remote.origin.url").splitlines()
+    if lines:
+        return lines[0].strip() or None
+    lines = lookup("config", "--get-regexp", r"^remote\..*\.url$").splitlines()
+    if lines:
+        return lines[0].split(maxsplit=1)[-1].strip() or None
     return None
 
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:
     """Return the deterministic bare-cache path for a remote URL."""
-    parsed = urlparse(url)
-    if parsed.scheme and parsed.path:
-        base_name = Path(parsed.path.rstrip("/")).name
-        host = parsed.netloc or "local"
-    elif ":" in url and "@" in url.split(":", maxsplit=1)[0]:
-        host_part, _, path_part = url.partition(":")
-        host = host_part.rsplit("@", maxsplit=1)[-1]
-        base_name = Path(path_part.rstrip("/")).name
-    else:
-        host = "local"
-        base_name = Path(url.rstrip("/")).name
-    if not base_name:
-        base_name = "repository"
-    if not base_name.endswith(".git"):
-        base_name = f"{base_name}.git"
-    digest = hashlib.sha256(url.encode()).hexdigest()[:16]
-    safe_host = _safe_path_part(host)
-    safe_name = _safe_path_part(base_name.removesuffix(".git"))
-    return cache_dir.expanduser() / safe_host / f"{safe_name}-{digest}.git"
-
-
-def _safe_path_part(value: str) -> str:
-    return "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
-
-
-def _git_env(base: dict[str, str] | None = None) -> dict[str, str]:
-    """Environment for every Git subprocess: C locale, never prompt."""
-    env = dict(os.environ if base is None else base)
-    env["LC_ALL"] = "C"
-    env["LANGUAGE"] = "C"
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env["GCM_INTERACTIVE"] = "never"
-    return env
-
-
-def _auth_config_env(auth_header: str) -> tuple[dict[str, str], Path]:
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        prefix="untaped-git-auth-",
-        suffix=".config",
-        delete=False,
-    ) as auth_config:
-        auth_config.write("[http]\n")
-        auth_config.write(f"\textraheader = {auth_header}\n")
-        path = Path(auth_config.name)
-    env = _git_env()
-    count = _git_config_count(env)
-    env[f"GIT_CONFIG_KEY_{count}"] = "include.path"
-    env[f"GIT_CONFIG_VALUE_{count}"] = str(path)
-    env["GIT_CONFIG_COUNT"] = str(count + 1)
-    return env, path
-
-
-def _git_config_count(env: dict[str, str]) -> int:
-    raw = env.get("GIT_CONFIG_COUNT")
-    if raw is None:
-        return 0
-    try:
-        count = int(raw)
-    except ValueError:
-        return 0
-    return max(count, 0)
-
-
-def _redact(value: str, secret: str | None) -> str:
-    if secret is None:
-        return value
-    return value.replace(secret, "<redacted>")
-
-
-def _command_error(args: list[str], stderr: str | None, auth_header: str | None) -> GitCacheError:
-    message = _redact((stderr or "").strip(), auth_header)
-    return GitCacheError(f"git {' '.join(args)} failed: {message or 'no stderr'}")
+    return safe_cache_path(url, root=cache_dir)
 
 
 def _parse_cat_file_batch(output: bytes, blob_ids: list[str]) -> dict[str, str]:

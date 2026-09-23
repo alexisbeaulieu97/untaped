@@ -295,3 +295,32 @@ def test_read_files_timeout_scales_with_number_of_files(monkeypatch, tmp_path: P
     assert isinstance(many[0], float | int)
     assert few[0] >= 60
     assert many[0] > few[0]
+
+
+def test_authenticated_git_calls_scrub_trace_env(monkeypatch, tmp_path: Path) -> None:
+    """Git/curl tracing would log the injected Authorization header."""
+    envs: list[dict[str, str]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        envs.append(env)
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("GIT_TRACE", "1")
+    monkeypatch.setenv("GIT_TRACE_CURL", "1")
+    monkeypatch.setenv("GIT_CURL_VERBOSE", "1")
+
+    GitRepositoryCache().fetch_refs(
+        tmp_path,
+        refspecs=["+refs/heads/main:refs/heads/main"],
+        depth=1,
+        blob_filter=True,
+        auth_header="AUTHORIZATION: bearer secret-token",
+    )
+
+    (env,) = envs
+    assert not any(key.startswith("GIT_TRACE") for key in env)
+    assert "GIT_CURL_VERBOSE" not in env
