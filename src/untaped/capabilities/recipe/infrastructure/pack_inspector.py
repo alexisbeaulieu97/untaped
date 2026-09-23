@@ -1,4 +1,4 @@
-"""Filesystem-backed hook-project checks for the ``check`` use case."""
+"""Filesystem-backed hook-project checks for the ``validate`` use case."""
 
 from __future__ import annotations
 

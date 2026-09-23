@@ -1,24 +1,4 @@
 # Known violations of the structure convention check for 'recipe'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-src/untaped/capabilities/recipe/errors.py::errors-module
-tests/recipe/unit/test_apply_recipe.py::private-test-import::untaped.capabilities.recipe._worker.hook_worker:_worker
-tests/recipe/unit/test_hook_helpers.py::private-test-import::untaped.capabilities.recipe._worker.helpers:_worker
-tests/recipe/unit/test_hook_helpers.py::private-test-import::untaped.capabilities.recipe._worker:_worker
-tests/recipe/unit/test_infrastructure.py::private-test-import::untaped.capabilities.recipe._worker.helpers
-tests/recipe/unit/test_infrastructure.py::private-test-import::untaped.capabilities.recipe._worker.helpers:_worker
-untaped.capabilities.recipe.application.apply_recipe._TargetSkipped::exception-base
-untaped.capabilities.recipe.application.apply_recipe._TargetSkipped::exception-name
-untaped.capabilities.recipe.application.harness.FixtureDecodeError::exception-base
-untaped.capabilities.recipe.application.inputs.NoPromptAvailable::exception-name
-untaped.capabilities.recipe.application.inputs.PromptFunc::protocol-location
-untaped.capabilities.recipe.application.run_hook.AmbiguousHookVerbError::exception-base
-untaped.capabilities.recipe.domain.input_jinja.InputSourceError::exception-base
-untaped.capabilities.recipe.domain.input_jinja._JinjaEnvironment::protocol-location
-untaped.capabilities.recipe.domain.input_jinja._RenderableTemplate::protocol-location
 untaped.capabilities.recipe.hook_api.HookHelpers::protocol-location
-untaped.capabilities.recipe.infrastructure.hook_executor.HookExecutionError::exception-base
-untaped.capabilities.recipe.infrastructure.hook_worker_client.FatalHookWorkerError::exception-base
-untaped.capabilities.recipe.infrastructure.hook_worker_client.HookWorkerClient::protocol-location
-untaped.capabilities.recipe.infrastructure.pack_scaffold.ScaffoldLockError::exception-base
-untaped.capabilities.recipe.settings.RecipeSettings::settings-not-frozen::profile

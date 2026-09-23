@@ -13,6 +13,7 @@ from tomlkit import TOMLDocument
 
 from untaped.capabilities.recipe.domain.hook_project import HookKind, normalize_hook_name
 from untaped.capabilities.recipe.domain.paths import safe_library_name
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.hook_api import HOOK_API_VERSION
 from untaped.capabilities.recipe.infrastructure.pack_files import (
     installed_dev_requirement,
@@ -40,7 +41,7 @@ def hook_api_requirements(
 _HOOK_API_PROJECT_REQUIREMENT, _HOOK_API_DEV_REQUIREMENT = hook_api_requirements()
 
 
-class ScaffoldLockError(ValueError):
+class ScaffoldLockError(RecipeError, ValueError):
     """Raised when scaffold files were written but ``uv.lock`` could not refresh."""
 
 

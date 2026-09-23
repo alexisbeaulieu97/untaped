@@ -20,6 +20,7 @@ from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.domain.plan import FileChange, HookDebugResult, Verdict
 from untaped.capabilities.recipe.domain.testcase import CaseSpec, VerdictExpectation
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capability_api import ConfigError
 
 CaseStatus = Literal["pass", "fail", "error", "updated"]
@@ -27,7 +28,7 @@ CaseStatus = Literal["pass", "fail", "error", "updated"]
 _VERDICT_RANK = {"pass": 0, "skip": 1, "fail": 2}
 
 
-class FixtureDecodeError(ValueError):
+class FixtureDecodeError(RecipeError, ValueError):
     """A fixture file is not valid UTF-8 text (the harness compares text trees)."""
 
 

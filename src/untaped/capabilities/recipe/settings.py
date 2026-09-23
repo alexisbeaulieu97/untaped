@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RecipeSettings(BaseModel):
     """Profile settings for local recipe storage."""
+
+    model_config = ConfigDict(frozen=True)
 
     library_root: Path = Field(
         default_factory=lambda: Path("~/.untaped/untaped-recipes").expanduser()

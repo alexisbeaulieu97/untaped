@@ -370,7 +370,7 @@ def local_edits_message(installed_name: str) -> str:
     """Pinned guard message shared by the store and the CLI fail-fast."""
     return (
         f"pack '{installed_name}' has local edits in the library (via edit or "
-        "new recipe/hook); re-run with --discard-edits to overwrite them"
+        "init recipe/hook); re-run with --discard-edits to overwrite them"
     )
 
 
