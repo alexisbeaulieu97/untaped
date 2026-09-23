@@ -13,7 +13,7 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 - Settings live under `profiles.<name>.awx`: `base_url`, `token`, `api_prefix`, `default_organization`, and `page_size`.
 - AAP uses the default `awx.api_prefix` of `/api/controller/v2/`; upstream AWX users usually set `/api/v2/`.
 - Use `untaped config set awx.token --prompt` or `--stdin` for tokens.
-- Run `untaped awx ping` before a workflow when the profile or controller may be stale.
+- Run `untaped awx ping` before a workflow when the profile or controller may be stale; it also checks the token via `/me/` and reports the authenticated `user`.
 
 ## Resource and selection patterns
 
@@ -38,7 +38,7 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
     --set update_cache_timeout=3600
   ```
 
-- `--set` is repeatable and JSON-coerced; `--patch-file` accepts a YAML/JSON mapping, with `--set` taking precedence. Values replace top-level fields; omitted fields remain unchanged and nested maps are not merged. Foreign-key integers are IDs; strings are names in scope. To target a numeric-looking name, preserve the JSON string: `--set 'inventory="123"'`; unquoted `inventory=123` is ID 123.
+- `--set` is repeatable and JSON-coerced, except that a field the record holds as a string stays a string unless the value is a JSON object/array (`scm_branch=1.10` stays `"1.10"`). Unknown field names are rejected unless `--allow-unknown-fields`; `--patch-file` accepts a YAML/JSON mapping, with `--set` taking precedence. Values replace top-level fields; omitted fields remain unchanged and nested maps are not merged. Foreign-key integers are IDs; strings are names in scope. To target a numeric-looking name, preserve the JSON string: `--set 'inventory="123"'`; unquoted `inventory=123` is ID 123.
 - Inventory cache timeouts are seconds, and `0` is valid. Changing the timeout does not toggle `update_on_launch`. Maps replace exactly, lists preserve order, and known secrets are redacted.
 - Patch and edit cannot create, rename, reparent, retarget, or change identity. Use `apply` for create/update and `delete` for removal.
 - `edit` opens one YAML multi-document batch. `--field` limits editable fields; missing fields stay unchanged and removing a document deselects it. Set `VISUAL`/`EDITOR` to a waiting editor such as `code --wait`.

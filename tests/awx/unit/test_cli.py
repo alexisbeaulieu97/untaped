@@ -11,6 +11,11 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 
+def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
+    """``ping`` also authenticates through ``/me/``."""
+    mock.get(path).mock(return_value=httpx.Response(200, json={"results": [{"username": "admin"}]}))
+
+
 @pytest.fixture(autouse=True)
 def _reset_settings_cache() -> Iterator[None]:
     get_settings.cache_clear()
@@ -50,6 +55,7 @@ def test_ping_uses_configured_api_prefix(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
     with respx.mock(base_url="https://aap.example.com") as mock:
+        _mock_me(mock, expected_path.replace("ping/", "me/"))
         mock.get(expected_path).mock(
             return_value=httpx.Response(
                 200,
@@ -84,6 +90,7 @@ def test_ping_table_renders_detail_view(
     get_settings.cache_clear()
 
     with respx.mock(base_url="https://aap.example.com") as mock:
+        _mock_me(mock)
         mock.get("/api/v2/ping/").mock(
             return_value=httpx.Response(
                 200,
@@ -95,6 +102,7 @@ def test_ping_table_renders_detail_view(
     assert result.exit_code == 0, result.output
     assert "version: 4.5.0" in result.stdout
     assert "active_node: controller-1" in result.stdout
+    assert "user: admin" in result.stdout
     assert not any(ch in result.stdout for ch in "╭╮╰╯┌┐└┘│─")
 
 
@@ -118,6 +126,7 @@ def test_ping_json_emits_bare_object(
     get_settings.cache_clear()
 
     with respx.mock(base_url="https://aap.example.com") as mock:
+        _mock_me(mock)
         mock.get("/api/v2/ping/").mock(
             return_value=httpx.Response(200, json={"version": "4.5.0", "active_node": "c-1"})
         )
@@ -127,6 +136,27 @@ def test_ping_json_emits_bare_object(
     payload = json.loads(result.stdout)
     assert isinstance(payload, dict)
     assert payload["version"] == "4.5.0"
+
+
+def test_ping_fails_when_the_token_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/ping/`` is unauthenticated; ping must also prove the token works."""
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path, api_prefix="/api/v2/")))
+    get_settings.cache_clear()
+
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/ping/").mock(
+            return_value=httpx.Response(200, json={"version": "4.5.0", "active_node": "c-1"})
+        )
+        mock.get("/api/v2/me/").mock(
+            return_value=httpx.Response(401, json={"detail": "Invalid token."})
+        )
+        result = CliInvoker().invoke(app, ["ping"])
+
+    assert result.exit_code != 0
+    assert "401" in result.output + (result.stderr or "")
 
 
 def test_ping_rejects_command_local_profile_flag(
