@@ -267,7 +267,8 @@ def run_cyclopts_app(
 
     Also converts a broken downstream pipe — the consumer closed it early, e.g.
     ``untaped <capability> list | head`` or a consumer that exits before reading all of
-    its input — into a clean ``SystemExit(1)``. Without this the producer's
+    its input — into a quiet ``SystemExit(0)`` (the standard CLI behaviour:
+    the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
     """
@@ -305,14 +306,14 @@ def _flush_stdout() -> None:
 
 
 def _exit_broken_pipe() -> NoReturn:
-    """Silence the interpreter's final stdout flush, then exit 1.
+    """Silence the interpreter's final stdout flush, then exit 0 quietly.
 
     Redirecting the stdout fd to ``/dev/null`` stops Python re-raising the
     broken pipe when it flushes the standard streams on the way out. The guard
     covers streams with no real fd (a captured ``StringIO`` under tests)."""
     with suppress(OSError, ValueError):
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-    raise SystemExit(1) from None
+    raise SystemExit(0) from None
 
 
 def existing_directory(type_: object, value: Path | None) -> None:
