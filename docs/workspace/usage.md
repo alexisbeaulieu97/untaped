@@ -123,6 +123,10 @@ location is `<workspaces_dir>/<name>` (the `workspaces_dir` profile setting
 defaults to `~/.untaped/workspaces` and is profile-overridable).
 Pass `-p / --path` to override the location for a one-off workspace
 that lives elsewhere. Writes a starter `untaped.yml` in the directory.
+`init` and `import` refuse a name that is already registered before
+writing anything, and remove the manifest they just wrote if
+registration fails. If the directory already has an `untaped.yml`, use
+`untaped workspace adopt <dir>` to register it instead.
 
 ### `adopt`
 
