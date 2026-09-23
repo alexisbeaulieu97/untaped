@@ -5,13 +5,23 @@ the per-flag visibility / rejection / payload-translation triple), the
 launch command body; submission and monitoring use the shared action runner.
 """
 
+import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any
 
+import yaml
 from cyclopts import App, Parameter
 
-from untaped.api import ColumnsOption, FormatOption, raise_usage, report_errors
+from untaped.api import (
+    ColumnsOption,
+    FormatOption,
+    raise_usage,
+    read_structured_file,
+    report_errors,
+)
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.cli._action_runner import run_action_selection
 from untaped.capabilities.awx.cli._context import open_context, scope_for_command
@@ -61,7 +71,10 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             list[str] | None,
             Parameter(
                 name="--extra-vars",
-                help="KEY=VAL override (repeatable).",
+                help=(
+                    "KEY=VAL (JSON-decoded value), @FILE (YAML/JSON), or a JSON/YAML "
+                    "mapping; repeatable, merged left to right."
+                ),
                 consume_multiple=False,
             ),
         ] = None,
@@ -315,7 +328,7 @@ def _build_launch_payload(
     """
     payload: dict[str, Any] = {}
     if extra_vars and "extra_vars" in accepts:
-        payload["extra_vars"] = "\n".join(extra_vars)
+        payload["extra_vars"] = json.dumps(parse_extra_vars(extra_vars))
     if limit and "limit" in accepts:
         payload["limit"] = limit
     for f in LAUNCH_FLAGS:
@@ -328,4 +341,37 @@ def _build_launch_payload(
     return payload
 
 
-__all__ = ["LAUNCH_FLAGS", "LaunchFlag"]
+_KEY_VALUE = re.compile(r"^[A-Za-z_][\w.-]*=")
+
+
+def parse_extra_vars(values: list[str]) -> dict[str, Any]:
+    """Merge ``--extra-vars`` entries (left to right) into one mapping.
+
+    Each entry is ``@PATH`` (a YAML/JSON mapping file), ``KEY=VAL`` (the
+    value JSON-decoded when valid JSON, else kept as a string), or a raw
+    JSON/YAML mapping. AWX expects a mapping; anything else is a usage error.
+    """
+    merged: dict[str, Any] = {}
+    for entry in values:
+        if entry.startswith("@"):
+            merged.update(read_structured_file(Path(entry[1:]).expanduser()))
+        elif _KEY_VALUE.match(entry):
+            key, _, raw = entry.partition("=")
+            try:
+                merged[key] = json.loads(raw)
+            except json.JSONDecodeError:
+                merged[key] = raw
+        else:
+            try:
+                parsed = yaml.safe_load(entry)
+            except yaml.YAMLError:
+                parsed = None
+            if not isinstance(parsed, dict):
+                raise_usage(
+                    f"--extra-vars expects KEY=VAL, @FILE, or a JSON/YAML mapping (got {entry!r})"
+                )
+            merged.update(parsed)
+    return merged
+
+
+__all__ = ["LAUNCH_FLAGS", "LaunchFlag", "parse_extra_vars"]
