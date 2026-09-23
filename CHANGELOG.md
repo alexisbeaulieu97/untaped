@@ -77,7 +77,8 @@ Correctness and safety fixes from a whole-codebase review. Items marked
   - Versions such as `1.10` stay strings, repo names match
     case-insensitively, GitHub Enterprise URLs resolve, and unpinned
     dependents are included for the default branch. The first refresh after
-    upgrading rescans each source.
+    upgrading rescans each source: an outdated dependency index is rebuilt
+    automatically (with a warning) instead of asking you to delete it.
   - **Behavior change:** graph node ids fold the repo part to lowercase
     (`Acme/Base@v1` becomes `acme/base@v1` in json/yaml ids and edge
     endpoints); labels keep the display casing.
