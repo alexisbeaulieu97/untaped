@@ -317,6 +317,48 @@ def load_settings_section(name: str, settings_cls: type[Settings] | None = None)
         raise ConfigError(settings_error_message(exc)) from exc
 
 
+class _EnvOverInit(BaseSettings):
+    """Validate init data with ``UNTAPED_*`` env overrides layered on top."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="UNTAPED_",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (env_settings, init_settings)
+
+
+def check_settings_field(name: str, node: Any, *, model: type[BaseModel] | None = None) -> Any:
+    """Validate one top-level field from an effective YAML ``node`` plus env.
+
+    ``model`` validates a capability section; without it ``name`` must be a
+    core :class:`Settings` field (``log_level``/``http``/``ui``). ``node``
+    ``None`` means the YAML does not set the field. Diagnostic helper for
+    ``doctor``: raises :class:`ConfigError` via :func:`settings_error_message`
+    (naming the env var when an override is the culprit).
+    """
+    if model is not None:
+        definition: Any = (model, Field(default_factory=model))
+    else:
+        core = Settings.model_fields[name]
+        definition = (core.annotation, core)
+    checker = create_model("UntapedFieldCheck", __base__=_EnvOverInit, **{name: definition})
+    try:
+        return getattr(checker(**({} if node is None else {name: node})), name)
+    except ValidationError as exc:
+        raise ConfigError(settings_error_message(exc)) from exc
+
+
 def settings_error_message(exc: ValidationError) -> str:
     """Describe a settings ``ValidationError``, naming an env var culprit."""
     detail = first_validation_error(exc)
