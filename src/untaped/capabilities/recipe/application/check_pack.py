@@ -205,13 +205,24 @@ def _check_recipe(
 def _check_assets(recipe: Recipe, recipe_dir: Path) -> None:
     for step in recipe.steps:
         if isinstance(step, TemplateStep):
-            source = confined_path(recipe_dir, step.template, field="template")
-            if not source.is_file():
-                raise ValueError(f"template not found: {step.template}")
+            _check_asset(recipe_dir, step.template, field="template", noun="template")
         elif isinstance(step, CopyStep):
-            source = confined_path(recipe_dir, step.source, field="source")
-            if not source.is_file():
-                raise ValueError(f"copy source not found: {step.source}")
+            _check_asset(recipe_dir, step.source, field="source", noun="copy source")
+
+
+def _check_asset(recipe_dir: Path, relative: Path, *, field: str, noun: str) -> None:
+    """Check an asset path; ``{{ input }}``-bearing paths check only their literal prefix."""
+    parts = relative.parts
+    templated = next((index for index, part in enumerate(parts) if "{{" in part), None)
+    if templated is None:
+        if not confined_path(recipe_dir, relative, field=field).is_file():
+            raise ValueError(f"{noun} not found: {relative}")
+        return
+    if templated == 0:
+        return
+    prefix = Path(*parts[:templated])
+    if not confined_path(recipe_dir, prefix, field=field).is_dir():
+        raise ValueError(f"{noun} not found: {relative} (no directory {prefix})")
 
 
 def _check_local_hook_project(local_hook_project: Path | None, locks: _LockFreshness) -> None:
