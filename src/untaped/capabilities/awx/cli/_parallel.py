@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.text import Text
 
 from untaped.api import UntapedError
-from untaped.capabilities.awx.application import StreamJobEvents, WatchJob
+from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped.capabilities.awx.cli._event_render import render_event_text
 from untaped.capabilities.awx.domain import Job, JobEvent
@@ -124,7 +124,7 @@ def _drain_parallel(
                     final = status
                 return final
             else:
-                for ev in StreamJobEvents(monitor)(job, follow=True):
+                for ev in monitor.stream_events(job, follow=True):
                     q.put((name, ev))
         finally:
             q.put((name, None))

@@ -24,7 +24,7 @@ from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
 )
-from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
+from untaped.capabilities.awx.errors import BadRequestError
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
 
@@ -56,18 +56,6 @@ class SaveResource:
     def __init__(self, client: ResourceClient, fk: FkResolver) -> None:
         self._client = client
         self._fk = fk
-
-    def __call__(
-        self,
-        spec: ResourceSpec,
-        *,
-        name: str,
-        scope: dict[str, str] | None = None,
-    ) -> Resource:
-        record = self._client.find_by_identity(spec, name=name, scope=scope)
-        if record is None:
-            raise ResourceNotFoundError(spec.kind, {"name": name, **(scope or {})})
-        return self.snapshot_from_record(spec, record.model_dump()).resource
 
     def find_all(
         self,

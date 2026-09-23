@@ -1,6 +1,6 @@
 """Use case: issue DELETE for a resolved resource id.
 
-Resolution (id-or-name → record) lives in :class:`GetResource`; this
+Resolution (id-or-name → record) lives in selection; this
 use case is the destructive half so the CLI can preview targets
 (``--dry-run``) and gate on confirmation before invoking it.
 """

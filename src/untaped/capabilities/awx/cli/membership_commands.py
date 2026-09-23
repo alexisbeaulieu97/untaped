@@ -11,8 +11,7 @@ Pipeline shape::
         --columns name --format raw \\
       | untaped awx groups hosts add prod-web --stdin
 
-Members are resolved per identifier via
-:meth:`untaped.capabilities.awx.application.GetResource.by_identifier` (names by
+Members are resolved through the shared selection resolver (names by
 default, ids when ``--by-id`` is passed).
 AWX's associate/disassociate POSTs are idempotent (re-adding or
 re-removing returns 204), so ``add`` and ``remove`` are safe to run

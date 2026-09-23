@@ -25,13 +25,13 @@ CommandName = Literal[
     "get",
     "save",
     "apply",
-    "patch",
-    "edit",
-    "launch",
-    "sync",
     "delete",
 ]
-"""Commands the CLI factory may wire for a kind."""
+"""Commands the CLI factory may wire for a kind.
+
+``apply`` also wires ``patch`` and ``edit``; actions such as ``launch`` and
+``sync`` come from ``ResourceSpec.actions``.
+"""
 
 
 class FkRef(BaseModel):

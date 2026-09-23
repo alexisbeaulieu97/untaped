@@ -1,7 +1,8 @@
 """Concrete :class:`JobRecordRepository` implementation.
 
 Wraps a :class:`RawHttpResourceClient` and translates ``Job.kind`` into
-the matching AWX collection path via :data:`KIND_TO_API_PATH`. The
+the matching AWX collection path via :data:`KIND_TO_API_PATH`. Lists are
+newest-first unless the caller passes its own ``order_by``. The
 lookup keeps a ``<kind>`` fallback so callers passing an unknown kind
 hit the same path the prior CLI helper used (defensive, rarely fires).
 """
@@ -30,7 +31,7 @@ class JobRecordRepository:
     ) -> Iterator[dict[str, Any]]:
         return self._client.paginate_path(
             f"{KIND_TO_API_PATH.get(kind, kind)}/",
-            params=params,
+            params={"order_by": "-id", **(params or {})},
             limit=limit,
         )
 

@@ -1,6 +1,6 @@
-"""Pin wildcard secret-stripping behaviour in ApplyResource.
+"""Pin wildcard secret-stripping behaviour in the batch mutation engine.
 
-The only wildcard secret-path that fires through ``ApplyResource`` today
+The only wildcard secret-path that fires through engine today
 is JobTemplate / Workflow's
 ``survey_spec.spec.*.default``. ``$encrypted$`` placeholders inside a
 list element produce a preserved path containing a literal ``*``, which
@@ -16,7 +16,7 @@ refactored freely as long as the contract holds.
 
 ``CREDENTIAL_SPEC.secret_paths = ("inputs.*",)`` declares a terminal
 wildcard pattern but ``CREDENTIAL`` is ``fidelity="read_only"`` today,
-so ``ApplyResource`` refuses it. The ``inputs.*`` pattern is dormant
+so engine refuses it. The ``inputs.*`` pattern is dormant
 until credentials gain apply support; tests for it can land alongside
 that change.
 
@@ -32,7 +32,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.capabilities.awx.application import ApplyResource
+from awx.unit.support import SingleApply
 from untaped.capabilities.awx.application.ports import (
     Catalog,
     FkResolver,
@@ -158,8 +158,8 @@ def _make_apply(
     catalog_specs: dict[str, ResourceSpec],
     fk_names: dict[tuple[str, str], int],
     strategy: _StubStrategy,
-) -> ApplyResource:
-    return ApplyResource(
+) -> SingleApply:
+    return SingleApply(
         client=cast(RawHttpResourceClient, _StubClient()),
         catalog=cast(Catalog, _StubCatalog(catalog_specs)),
         fk=cast(FkResolver, _StubFk(fk_names)),
