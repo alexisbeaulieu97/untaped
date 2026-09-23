@@ -269,7 +269,7 @@ untaped awx jobs logs 101 --kind project_update
 
 `jobs list` shows the newest 20 executions by default; pass `--limit N` for a
 different count or `--limit 0` for every record. `<kind> list --limit N` stops
-paging once N records are read.
+paging once N records are read. `--limit 0` means no limit on every awx list.
 
 `--kind` accepts `job` (default), `workflow_job`, `project_update`,
 `inventory_update`, and `ad_hoc_command`. Typed records piped with `--stdin`
