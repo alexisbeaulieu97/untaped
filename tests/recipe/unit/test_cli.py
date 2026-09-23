@@ -1592,7 +1592,7 @@ def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
     assert rows[0]["status"] == "error"
-    assert rows[0]["error"] == "cannot coerce value to int"
+    assert rows[0]["error"] == "input 'token': cannot coerce value to int"
     assert rows[0]["inputs"] == {}
 
 
@@ -3986,3 +3986,45 @@ def test_recipe_check_rejects_missing_prefix_of_templated_asset_path(tmp_path: P
 
     assert result.exit_code == 1, result.output
     assert "template not found" in json.loads(result.stdout)[0]["error"]
+
+
+def test_apply_var_coercion_error_names_the_input(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\ninputs:\n  replicas: {type: int, required: true}\nsteps: []\n"
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(
+        app, ["apply", str(recipe), str(target), "--var", "replicas=x", "--yes"]
+    )
+
+    assert result.exit_code != 0
+    assert "input 'replicas': cannot coerce value to int" in result.stderr
+
+
+def test_check_rejects_uncoercible_input_default(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text("version: 1\ninputs:\n  replicas: {type: int, default: many}\nsteps: []\n")
+
+    result = CliInvoker().invoke(app, ["check", str(recipe), "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    error = json.loads(result.stdout)[0]["error"]
+    assert "inputs.replicas" in error
+    assert "cannot coerce value to int" in error
+
+
+def test_check_rejects_required_input_with_default(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\ninputs:\n  replicas: {type: int, required: true, default: 2}\nsteps: []\n"
+    )
+
+    result = CliInvoker().invoke(app, ["check", str(recipe), "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    error = json.loads(result.stdout)[0]["error"]
+    assert "inputs.replicas" in error
+    assert "required" in error and "default" in error

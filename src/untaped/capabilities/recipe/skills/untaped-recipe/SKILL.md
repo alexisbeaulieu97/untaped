@@ -63,6 +63,8 @@ no control flow in recipes, and no state or inventory.
   `--interactive` prompt → recipe default → `missing required input` error.
   Combining `--var`/`--vars` with `--input-from` for one input is a usage
   error. `scope: global` inputs reject `--input-from` but accept `--var`.
+  A `default:` must coerce to the input's `type` (checked at load, so `check`
+  reports it) and cannot be combined with `required: true`.
 - `--interactive` prompts for unresolved inputs (empty answer accepts the
   default; sensitive defaults are hidden but an empty answer still accepts).
   Structured (`list`/`dict`) inputs cannot be prompted — pass `--var`/`--vars`.
