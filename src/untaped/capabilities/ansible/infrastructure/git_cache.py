@@ -15,6 +15,8 @@ from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
 
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0
+# ``cat-file --batch`` reads many blobs in one process: allow extra time per blob.
+PER_FILE_READ_TIMEOUT = 1.0
 
 
 class GitRepositoryCache:
@@ -144,6 +146,7 @@ class GitRepositoryCache:
             cwd=bare_path,
             stdin_data="".join(f"{blob}\n" for blob in blob_ids).encode(),
             auth_header=auth_header,
+            timeout=self._timeout + PER_FILE_READ_TIMEOUT * len(blob_ids),
         )
         contents = _parse_cat_file_batch(output, blob_ids)
         return {path: contents[blob] for path, blob in blob_by_path.items()}
@@ -177,11 +180,12 @@ class GitRepositoryCache:
         cwd: Path,
         stdin_data: bytes,
         auth_header: str | None,
+        timeout: float | None = None,
     ) -> bytes:
         result = self._exec(
             args,
             cwd=cwd,
-            timeout=None,
+            timeout=timeout,
             auth_header=auth_header,
             stdin_data=stdin_data,
         )
@@ -391,6 +395,11 @@ def _parse_cat_file_batch(output: bytes, blob_ids: list[str]) -> dict[str, str]:
             raise GitCacheError(f"git cat-file --batch could not read {blob}: {' '.join(fields)}")
         size = int(fields[2])
         start = header_end + 1
-        contents[fields[0]] = output[start : start + size].decode("utf-8", errors="replace")
-        offset = start + size + 1
+        end = start + size
+        # Each object is ``<header>\n<size bytes>\n``; anything shorter is a
+        # cut-off stream, never a smaller file.
+        if end + 1 > len(output) or output[end : end + 1] != b"\n":
+            raise GitCacheError(f"git cat-file --batch returned truncated output for {blob}")
+        contents[fields[0]] = output[start:end].decode("utf-8", errors="replace")
+        offset = end + 1
     return contents
