@@ -132,7 +132,7 @@ def test_sync_prune_requires_yes_when_non_interactive(
 
     result = CliInvoker().invoke(app, ["sync", "--workspace", "smoke", "--prune"])
 
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 2, result.output
     assert "--yes" in result.output
     assert orphan.is_dir()
 

@@ -641,7 +641,7 @@ def test_unified_remove_destructive_gating_and_yes(
     source = tmp_path / "source"
     _write_pack(source, manifest_name="ansible", recipes={"playbook": "recipes/playbook.yml"})
     _install_pack(source)
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: False)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: False)
 
     refused = CliInvoker().invoke(app, ["remove", "ansible"])
     removed = CliInvoker().invoke(app, ["remove", "ansible", "--yes"])

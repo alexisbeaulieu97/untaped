@@ -896,10 +896,12 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         interactive=True,
         prompt_backend=backend,
     )
-    assert result.exit_code == 0, result.output
+    # Declining is a cancellation: exit 1, standard line, no mutation.
+    assert result.exit_code == 1, result.output
+    assert "cancelled; no changes made" in result.stderr
     assert backend.calls == [("confirm", "Continue?")]
     assert clone.is_dir()
-    assert fix["batch_confirm"]["decline"] == "exits cleanly, no mutation"
+    assert fix["batch_confirm"]["decline"] == "exits 1 (cancelled), no mutation"
 
     # sync --prune prompts only when there are safe orphans; none here (P34)
     result = _run(["workspace", "sync", "--workspace", "prod", "--prune"])

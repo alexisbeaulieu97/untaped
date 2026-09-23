@@ -36,6 +36,9 @@ class _DeclineUi:
     def progress(self, message: str) -> _DeclineUi:
         return self
 
+    def terminal(self, *, refusal: str = "") -> _DeclineUi:
+        return self
+
     def update(self, label: str, *, fraction: float | None = None) -> None:
         pass
 
@@ -114,7 +117,7 @@ def test_add_pack_prints_recipes_and_hooks_before_confirm(
     pack = tmp_path / "pack"
     _write_pack_project(pack)
 
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
         "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
@@ -224,7 +227,7 @@ def test_remove_warns_on_local_edits_before_confirm(
     assert result.exit_code == 0, result.output
     installed_recipe = library_root() / "packs" / "demo" / "recipes" / "demo" / "recipe.yml"
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
         "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
@@ -746,7 +749,7 @@ def test_apply_decline_renders_cancelled_summary_without_writing(
     target = tmp_path / "target"
     target.mkdir()
 
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
         "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
@@ -786,7 +789,7 @@ def test_apply_confirmation_reprints_summary_adjacent_to_prompt(
             print(f"PROMPT {message}", file=sys.stderr)
             return False
 
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
         "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _PromptUi()
     )
@@ -819,7 +822,7 @@ def test_confirm_accept_applies_changes(
         def confirm(self, message: str, *, default: bool = False) -> bool:
             return True
 
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
         "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _AcceptUi()
     )
@@ -3549,7 +3552,7 @@ def test_backup_restore_refuses_non_tty_without_yes_and_restores_with_yes(
         ],
     )
     config.write_text("after\n")
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: False)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: False)
     invoker = CliInvoker()
 
     refused = invoker.invoke(app, ["backup", "restore", bundle.id])
@@ -3970,13 +3973,15 @@ def test_backup_restore_decline_prints_no_success(
     )
     (target / "config.yml").write_text("after\n")
 
-    monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
+    monkeypatch.setattr("untaped.ui.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
         "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(app, ["backup", "restore", bundle.id])
 
-    assert result.exit_code == 0, result.output
+    # A declined confirmation exits 1 with the standard decline line.
+    assert result.exit_code == 1, result.output
+    assert "cancelled; no changes made" in result.stderr
     assert "restored" not in result.stderr
     assert (target / "config.yml").read_text() == "after\n"
 

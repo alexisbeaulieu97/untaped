@@ -126,7 +126,7 @@ def test_remove_prune_refuses_clean_local_commit(
     assert "upstream" in shown.stdout.splitlines()
 
 
-def test_remove_prune_decline_exits_zero_without_mutation(
+def test_remove_prune_decline_exits_one_without_mutation(
     tmp_path: Path,
     upstream: Path,
     isolated_cache: Path,
@@ -146,7 +146,8 @@ def test_remove_prune_decline_exits_zero_without_mutation(
         prompt_backend=backend,
     )
 
-    assert rm.exit_code == 0, rm.output
+    assert rm.exit_code == 1, rm.output
+    assert "cancelled; no changes made" in rm.stderr
     assert backend.calls == [("confirm", "Continue?")]
     assert "aborted" not in rm.output
     assert (target / "upstream").is_dir()
@@ -171,7 +172,7 @@ def test_remove_prune_requires_yes_when_non_interactive(
 
     rm = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke", "--prune"])
 
-    assert rm.exit_code == 1
+    assert rm.exit_code == 2
     assert "--yes" in rm.output
     assert (target / "upstream").is_dir()
 

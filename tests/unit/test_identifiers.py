@@ -6,7 +6,7 @@ import io
 
 import pytest
 
-from untaped.errors import ConfigError
+from untaped.errors import ConfigError, UsageError
 from untaped.stdin import read_identifiers
 
 
@@ -22,14 +22,14 @@ def test_returns_stdin_lines_when_flag_on(monkeypatch: pytest.MonkeyPatch) -> No
 def test_rejects_both_positional_and_stdin() -> None:
     """Mixing sources is almost always a user error — refuse so a typo
     can't silently act on a partial set of identifiers."""
-    with pytest.raises(ConfigError, match=r"both"):
+    with pytest.raises(UsageError, match=r"both"):
         read_identifiers(["a"], stdin=True)
 
 
 def test_rejects_empty_positional_when_stdin_off() -> None:
     """Without --stdin, at least one positional is required so the command
     doesn't no-op when given no work to do."""
-    with pytest.raises(ConfigError, match=r"at least one"):
+    with pytest.raises(UsageError, match=r"at least one"):
         read_identifiers([], stdin=False)
 
 
