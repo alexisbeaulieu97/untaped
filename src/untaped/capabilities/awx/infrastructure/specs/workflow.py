@@ -23,6 +23,8 @@ WORKFLOW_JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "inventory",
         "scm_branch",
         "limit",
+        "job_tags",
+        "skip_tags",
         "allow_simultaneous",
         "ask_variables_on_launch",
         "ask_inventory_on_launch",

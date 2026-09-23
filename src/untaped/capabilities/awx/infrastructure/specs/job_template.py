@@ -55,6 +55,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
         "webhook_credential",
         "webhook_key",
         "prevent_instance_group_fallback",
+        "execution_environment",
         "organization",
         "project",
         "inventory",
@@ -83,6 +84,7 @@ JOB_TEMPLATE_SPEC = AwxResourceSpec(
             kind="Credential",
             scope_field="organization",
         ),
+        FkRef(field="execution_environment", kind="ExecutionEnvironment"),
         FkRef(
             field="credentials",
             kind="Credential",
