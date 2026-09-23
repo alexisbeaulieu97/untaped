@@ -4,13 +4,16 @@ A terminal command (not a group): it runs the shell plus every composed
 capability's health checks OFFLINE — config-file reads plus in-process model
 validation only, never network I/O. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
-Quarantine records render as failed rows (nonzero exit).
+Quarantine records render as failed rows (nonzero exit). Capability state
+sections still at the top level of ``config.yml`` (the pre-``state.yml``
+layout) render as a ``warn`` row, which does not fail the run.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from cyclopts import App
@@ -43,11 +46,14 @@ from untaped.settings import (
     active_settings_layout,
     check_settings_field,
     resolve_config_path,
+    resolve_state_path,
+    state_section_source,
 )
 from untaped.theme import UiSettings, resolve_theme
 
 _PASS = "pass"
 _FAIL = "fail"
+_WARN = "warn"
 
 
 @dataclass(frozen=True)
@@ -134,6 +140,8 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row(shell)
     rows.append(config_row)
+    state, state_file_row = _state_file_row(shell)
+    rows.append(state_file_row)
     settings_error: str | None = None
     effective: Mapping[str, Any] | None = None
     if raw is None:
@@ -147,7 +155,8 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
     for field in Settings.model_fields:
         rows.append(_core_row(shell, field, effective, settings_error))
     contexts: list[tuple[_SectionScope, BaseModel | None]] = []
-    for scope in _scopes(shell, result):
+    scopes = _scopes(shell, result)
+    for scope in scopes:
         settings, error = _validate_section(scope, effective, settings_error)
         if error is not None:
             rows.append(_row("settings", scope.capability, _FAIL, "validate settings", error))
@@ -157,7 +166,9 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
             )
         contexts.append((scope, settings))
         if scope.state_model is not None and raw is not None:
-            rows.append(_state_row(scope, scope.state_model, raw))
+            rows.append(_state_row(scope, scope.state_model, raw, state))
+    if raw is not None and state is not None:
+        rows.append(_legacy_state_row(shell, scopes, raw, state))
     for scope, settings in contexts:
         for check_item in scope.checks:
             rows.append(_run_check(scope, check_item, settings))
@@ -173,6 +184,47 @@ def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str
     except ConfigError as exc:
         return None, _row("config", shell.name, _FAIL, "load config file", str(exc))
     return raw, _row("config", shell.name, _PASS, "load config file", str(path))
+
+
+def _state_file_row(
+    shell: ApplicationSpec,
+) -> tuple[tuple[dict[str, Any], Path] | None, dict[str, object]]:
+    """Load ``state.yml``; return ``((raw, path), row)`` or ``(None, failed row)``."""
+    title = "load state file"
+    try:
+        path = resolve_state_path()
+        raw = read_config_dict(path)
+    except ConfigError as exc:
+        return None, _row("config", shell.name, _FAIL, title, str(exc))
+    return (raw, path), _row("config", shell.name, _PASS, title, str(path))
+
+
+def _legacy_state_row(
+    shell: ApplicationSpec,
+    scopes: list[_SectionScope],
+    raw: Mapping[str, Any],
+    state: tuple[dict[str, Any], Path],
+) -> dict[str, object]:
+    """Report state sections left at the top level of ``config.yml``."""
+    title = "state migrated to state file"
+    state_raw, state_path = state
+    notes: list[str] = []
+    for scope in scopes:
+        if scope.state_model is None or scope.section not in raw:
+            continue
+        if scope.section in state_raw:
+            notes.append(
+                f"{scope.section!r} is ignored because {state_path} has it; "
+                f"delete it from {resolve_config_path()}"
+            )
+        else:
+            notes.append(
+                f"{scope.section!r} moves to {state_path} on its next state change "
+                f"(until then it is read from {resolve_config_path()})"
+            )
+    if not notes:
+        return _row("legacy-state", shell.name, _PASS, title, "no state in config file")
+    return _row("legacy-state", shell.name, _WARN, title, "; ".join(notes))
 
 
 def _profile_row(
@@ -208,20 +260,38 @@ def _core_row(
 
 
 def _state_row(
-    scope: _SectionScope, state_model: type[BaseModel], raw: Mapping[str, Any]
+    scope: _SectionScope,
+    state_model: type[BaseModel],
+    raw: Mapping[str, Any],
+    state: tuple[dict[str, Any], Path] | None,
 ) -> dict[str, object]:
-    """Validate a capability's top-level state section (profile-independent)."""
+    """Validate a capability's state section (profile-independent).
+
+    Reads ``state.yml``, falling back to a legacy top-level copy in
+    ``config.yml``; failures name the file the section came from.
+    """
     title = "validate state"
-    node = raw.get(scope.section)
-    if node is None:
+    if state is None:
+        return _row("state", scope.capability, _FAIL, title, "state file could not be read")
+    state_raw, state_path = state
+    found = state_section_source(
+        scope.section,
+        state_raw,
+        raw,
+        state_path=state_path,
+        config_path=resolve_config_path(),
+        warn=False,
+    )
+    if found is None or found[0] is None:
         return _row("state", scope.capability, _PASS, title, "no state")
+    node, source = found
     if not isinstance(node, dict):
-        detail = f"state section {scope.section!r} must be a mapping"
+        detail = f"state section {scope.section!r} in {source} must be a mapping"
         return _row("state", scope.capability, _FAIL, title, detail)
     try:
         state_model.model_validate(node)
     except ValidationError as exc:
-        detail = f"invalid {scope.section} state: {first_validation_error(exc)}"
+        detail = f"invalid {scope.section} state in {source}: {first_validation_error(exc)}"
         return _row("state", scope.capability, _FAIL, title, detail)
     return _row("state", scope.capability, _PASS, title, "state OK")
 

@@ -8,6 +8,7 @@ import subprocess
 from base64 import b64encode
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -29,6 +30,14 @@ from untaped.settings import get_settings
 from untaped.testing import CliInvoker
 
 
+def _read_state(cfg: Path) -> dict[str, Any]:
+    """The parsed ``state.yml`` next to ``cfg`` (``{}`` when not written)."""
+    state_file = cfg.parent / "state.yml"
+    if not state_file.exists():
+        return {}
+    return yaml.safe_load(state_file.read_text(encoding="utf-8")) or {}
+
+
 def _write_config(
     tmp_path: Path,
     *,
@@ -42,7 +51,7 @@ def _write_config(
     # SDK v2.0.0 profiles layout: user-tunable PROFILE sections (the ansible
     # profile fields, the cross-tool `github` section, `ui`) live under
     # `profiles.default.<section>`. The ansible STATE section (sources/aliases)
-    # stays top-level under the `ansible` key.
+    # lives in the sibling `state.yml` under the `ansible` key.
     ansible_profile_section: dict[str, object] = {
         "index_path": str(index_path or tmp_path / "index.sqlite3"),
         "stale_after": 86400,
@@ -56,8 +65,9 @@ def _write_config(
         default_profile["ui"] = top_level_ui
     data: dict[str, object] = {"profiles": {"default": default_profile}}
     if top_level_ansible is not None:
-        # State (sources/aliases) is a disjoint top-level `ansible` section.
-        data["ansible"] = dict(top_level_ansible)
+        # State (sources/aliases) is a disjoint `ansible` section in state.yml.
+        state = {"ansible": dict(top_level_ansible)}
+        (tmp_path / "state.yml").write_text(yaml.safe_dump(state, sort_keys=False))
     cfg.write_text(yaml.safe_dump(data, sort_keys=False))
     return cfg
 
@@ -385,7 +395,7 @@ def test_alias_add_list_remove_updates_config(
 
     result = runner.invoke(app, ["alias", "remove", "common"])
     assert result.exit_code == 0, result.output
-    assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("aliases") is None
+    assert _read_state(cfg).get("ansible", {}).get("aliases") is None
 
 
 def test_alias_add_rejects_non_owner_repo_target(tmp_path: Path, monkeypatch) -> None:
@@ -396,7 +406,7 @@ def test_alias_add_rejects_non_owner_repo_target(tmp_path: Path, monkeypatch) ->
 
     assert result.exit_code == 1
     assert "owner/name" in result.stderr
-    assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("aliases") is None
+    assert _read_state(cfg).get("ansible", {}).get("aliases") is None
 
 
 def test_alias_add_warns_that_saved_sources_need_refresh(tmp_path: Path, monkeypatch) -> None:
@@ -501,7 +511,7 @@ def test_source_save_show_remove_updates_config(tmp_path: Path, monkeypatch) -> 
 
     result = runner.invoke(app, ["source", "remove", "prod"])
     assert result.exit_code == 0, result.output
-    assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("sources") is None
+    assert _read_state(cfg).get("ansible", {}).get("sources") is None
 
 
 def test_source_list_table_honours_global_collection_view_list(
@@ -662,7 +672,7 @@ def test_source_edit_add_remove_and_clear_updates_config(
     assert "removed team acme/old-platform" in result.stderr
     assert "added team acme/platform" in result.stderr
     assert "cleared path" in result.stderr
-    assert yaml.safe_load(cfg.read_text())["ansible"]["sources"] == [
+    assert _read_state(cfg)["ansible"]["sources"] == [
         {
             "name": "prod",
             "orgs": ["acme"],
@@ -689,9 +699,7 @@ def test_source_edit_clear_boundary_requires_replacement(
 
     assert result.exit_code == 1
     assert "source requires --org, --team, or --repo" in result.output
-    assert yaml.safe_load(cfg.read_text())["ansible"]["sources"] == [
-        {"name": "prod", "teams": ["acme/platform"]}
-    ]
+    assert _read_state(cfg)["ansible"]["sources"] == [{"name": "prod", "teams": ["acme/platform"]}]
 
 
 def test_source_edit_bare_team_removal_uses_original_source_org(
@@ -728,7 +736,7 @@ def test_source_edit_bare_team_removal_uses_original_source_org(
     )
 
     assert result.exit_code == 0, result.output
-    assert yaml.safe_load(cfg.read_text())["ansible"]["sources"] == [
+    assert _read_state(cfg)["ansible"]["sources"] == [
         {
             "name": "prod",
             "orgs": [],
@@ -3558,7 +3566,7 @@ def test_source_save_expands_bare_team_slug_with_single_org(tmp_path: Path, monk
     )
 
     assert result.exit_code == 0, result.output
-    assert yaml.safe_load(cfg.read_text())["ansible"]["sources"][0]["teams"] == ["acme/platform"]
+    assert _read_state(cfg)["ansible"]["sources"][0]["teams"] == ["acme/platform"]
 
 
 def test_source_save_records_ref_scan_default(tmp_path: Path, monkeypatch) -> None:
@@ -3579,9 +3587,7 @@ def test_source_save_records_ref_scan_default(tmp_path: Path, monkeypatch) -> No
     )
 
     assert result.exit_code == 0, result.output
-    assert yaml.safe_load(cfg.read_text())["ansible"]["sources"][0]["ref_scan_default"] == (
-        "default_branch"
-    )
+    assert _read_state(cfg)["ansible"]["sources"][0]["ref_scan_default"] == ("default_branch")
 
 
 def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(

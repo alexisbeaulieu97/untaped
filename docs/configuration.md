@@ -30,31 +30,43 @@ and `untaped config list` still report every invalid section.
 ## File and layout
 
 The default file is `~/.untaped/config.yml`. Set `UNTAPED_CONFIG` to use a
-process-specific path:
+process-specific path. Capability-managed state (for example the workspace
+registry and ansible aliases) lives in a separate state file in the config
+file's directory, named after it: `config.yml` pairs with `state.yml`, and any
+other config file `<name>.<ext>` pairs with `<name>.state.yml` (so
+`UNTAPED_CONFIG=~/work.yml` keeps its state in `~/work.state.yml`, and sibling
+config files never share state). Set `UNTAPED_STATE` to put it elsewhere:
 
 ```text
-~/.untaped/config.yml             # default
+~/.untaped/config.yml             # settings and profiles (default)
 $UNTAPED_CONFIG                   # one-process override
+~/.untaped/state.yml              # capability state (default: derived from the config file)
+$UNTAPED_STATE                    # one-process override
 ```
+
+`config` and `profile` commands only ever write `config.yml`; capability
+state writes only write `state.yml` (apart from the one-time move described
+under [Capability state](#capability-state)). `UNTAPED_STATE` must not name the
+config file itself.
 
 The document root, `profiles`, and each profile must be mappings; anything
 else (or an unreadable file) is reported as a configuration error naming the
 file. An empty profile entry (`prod:` with nothing under it) is an empty
-profile. Writes take an advisory lock on `<config>.lock`; set
+profile. Writes take an advisory lock on `<config>.lock` (state writes on
+`<state>.lock`); set
 `UNTAPED_CONFIG_LOCK_TIMEOUT` (seconds, a non-negative number) to change the
-default 5-second wait. The file is rewritten atomically through a unique
+default 5-second wait. Both files are rewritten atomically through a unique
 temporary file that is created owner-only (`0600`), so secrets are never
 briefly world-readable.
 
-Writes (`config set/unset`, `profile` commands, and capability state updates)
-rewrite only the keys they change: your comments, key order, quoting, and
+Writes (`config set/unset`, `profile` commands, and capability state updates
+to `state.yml`) rewrite only the keys they change: your comments, key order, quoting, and
 indentation are kept. New keys are appended to their mapping, and new string
 values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
 `config edit` saves exactly what you wrote.
 
-The current layout keeps profile-scoped settings under `profiles.<name>` and
-keeps capability-managed state at the top level. `active` is optional; when it
-is absent, `default` is the fallback profile.
+`config.yml` keeps profile-scoped settings under `profiles.<name>`. `active`
+is optional; when it is absent, `default` is the fallback profile.
 
 ```yaml
 active: prod
@@ -86,8 +98,11 @@ profiles:
     awx:
       base_url: https://aap.prod.example.com
       token: <prod token>
+```
 
-# Capability-managed state is outside profiles.
+`state.yml` holds one section per capability, outside profiles:
+
+```yaml
 workspace:
   workspaces:
     - name: prod
@@ -97,13 +112,24 @@ workspace:
 Profile-scoped sections accidentally placed at the YAML top level are ignored
 by profile resolution and produce a warning. This applies to `log_level`,
 `http`, `ui`, and registered capability sections; move them under
-`profiles.default.<section>`. Capability-managed state, such as
-`workspace.workspaces`, remains top-level and is not treated as a misplaced
-profile setting.
+`profiles.default.<section>`.
 
 The profile model and state model for a capability must have disjoint field
 sets. State is written by the owning capability and is not writable through
 `untaped config set`.
+
+### Capability state
+
+Earlier releases kept capability state at the top level of `config.yml`. Such
+a section keeps working: when `state.yml` has no copy of a section, untaped
+reads it from `config.yml` and prints one deprecation warning per run. The
+next change to that section (for example `untaped workspace add`) moves it:
+untaped writes the section to `state.yml` first and then removes it from
+`config.yml`, holding both files' locks and keeping the rest of `config.yml`
+(comments included) as written. If `config.yml` cannot be rewritten (read-only
+directory, or a symlink untaped will not replace), the command still succeeds,
+warns, and `state.yml` takes precedence; delete the stale section by hand.
+`untaped doctor` lists every section still in `config.yml`.
 
 The environment override shape is unchanged:
 
@@ -226,13 +252,19 @@ untaped doctor
 `doctor` runs offline and reports one row per check, without allowing one
 broken section to hide the rest:
 
-- `config` — the config file loads (readable, valid YAML, mapping root);
+- `config` — the config file and the state file load (readable, valid YAML,
+  mapping root);
 - `profile` — the selected profile (`--profile`, `UNTAPED_PROFILE`, or
   `active:`) exists;
 - `settings` for the shell — one row each for `log_level`, `http` (including a
   readable `http.ca_bundle`), and `ui` (including a known `ui.theme`);
 - `settings` per capability — the capability's profile section;
-- `state` per capability with a state model — its top-level state section;
+- `state` per capability with a state model — its section in `state.yml` (or
+  the legacy copy in `config.yml`), naming the file on failure;
+- `legacy-state` — `warn` when capability state is still at the top level of
+  `config.yml`, saying whether the next state change moves it or it is
+  shadowed by `state.yml` and should be deleted; `warn` rows do not fail
+  `doctor`;
 - each capability-contributed health check, and any quarantined provider.
 
 Settings rows apply `UNTAPED_*` environment overrides on top of the file and

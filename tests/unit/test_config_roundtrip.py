@@ -111,7 +111,32 @@ def test_written_strings_read_back_as_strings(cfg: Path, value: str) -> None:
     assert "# rotate monthly" in text  # round-tripped, not re-dumped
 
 
-def test_tool_state_write_preserves_comments(cfg: Path) -> None:
+def test_tool_state_write_preserves_state_file_comments(cfg: Path) -> None:
+    state_file = cfg.parent / "state.yml"
+    state_file.write_text(
+        "# managed by untaped\nworkspace:\n  workspaces:\n    - name: alpha   # first\n"
+        "      path: /tmp/alpha\n",
+        encoding="utf-8",
+    )
+
+    def _add(state: dict[str, object]) -> None:
+        rows = state["workspaces"]
+        assert isinstance(rows, list)
+        rows.append({"name": "beta", "path": "/tmp/beta"})
+
+    mutate_tool_state("workspace", _add)
+
+    text = state_file.read_text(encoding="utf-8")
+    assert "    - name: alpha   # first\n" in text
+    assert text.startswith("# managed by untaped\n")
+    assert [row["name"] for row in read_config_dict(state_file)["workspace"]["workspaces"]] == [
+        "alpha",
+        "beta",
+    ]
+    assert cfg.read_text(encoding="utf-8") == COMMENTED  # config.yml untouched
+
+
+def test_tool_state_migration_keeps_config_comments(cfg: Path) -> None:
     def _add(state: dict[str, object]) -> None:
         rows = state["workspaces"]
         assert isinstance(rows, list)
@@ -120,13 +145,12 @@ def test_tool_state_write_preserves_comments(cfg: Path) -> None:
     mutate_tool_state("workspace", _add)
 
     text = cfg.read_text(encoding="utf-8")
-    assert "    - name: alpha   # first\n" in text
+    assert "workspace" not in read_config_dict(cfg)
     assert "# untaped config -- hand edited" in text
     assert "active: work   # the profile I use most" in text
-    assert [row["name"] for row in read_config_dict(cfg)["workspace"]["workspaces"]] == [
-        "alpha",
-        "beta",
-    ]
+    assert "      token: old-token  # rotate monthly\n" in text
+    state = read_config_dict(cfg.parent / "state.yml")
+    assert [row["name"] for row in state["workspace"]["workspaces"]] == ["alpha", "beta"]
 
 
 def test_profile_writes_preserve_comments(cfg: Path) -> None:

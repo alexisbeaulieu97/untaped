@@ -10,7 +10,7 @@ Use this skill when the user wants an agent to operate the `untaped ansible` CLI
 ## Setup
 
 - The command is `untaped ansible`. It ships with the unified `untaped` CLI (no separate install).
-- Settings live under `profiles.<name>.ansible` and top-level `ansible` state.
+- Settings live under `profiles.<name>.ansible`; aliases and sources are `ansible` state in `~/.untaped/state.yml`.
 - `untaped ansible` analyzes Ansible project roots and roles. Collections in requirements files are not traversed; `source refresh`, `graph --refresh`, and local graph targets print one warning line listing the ignored collections (live GitHub reads do not).
 - GitHub API access belongs to `untaped github`; do not duplicate GitHub client behavior inside Ansible workflows.
 

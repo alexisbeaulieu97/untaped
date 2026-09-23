@@ -1,8 +1,9 @@
-"""Typed CRUD over a tool's state section in ``~/.untaped/config.yml``.
+"""Typed CRUD over a tool's state section in ``~/.untaped/state.yml``.
 
-The shared config file is co-owned by every untaped tool, so all writes ride
+The shared state file is co-owned by every untaped tool, so all writes ride
 :func:`untaped.config_file.mutate_tool_state` (section-scoped, locked,
-atomic). ``StateCollection`` is a list of records keyed by an id field
+atomic; it also moves a legacy section out of ``config.yml``).
+``StateCollection`` is a list of records keyed by an id field
 (workspace registry shape); ``StateMap`` is a flat ``str → str`` map
 (ansible aliases shape). Both drop their key when emptied so the enclosing
 section can collapse.
@@ -62,7 +63,7 @@ class StateCollection:
     def mutate(
         self, fn: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
     ) -> list[dict[str, Any]]:
-        """Replace rows under the config-file lock and return the replacement."""
+        """Replace rows under the state-file lock and return the replacement."""
         replacement: list[dict[str, Any]] = []
 
         def _apply(state: dict[str, Any]) -> None:

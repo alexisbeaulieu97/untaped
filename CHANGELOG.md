@@ -6,6 +6,15 @@ Correctness and safety fixes from a whole-codebase review. Items marked
 **behavior change** alter output, exit codes, or defaults.
 
 - Core
+  - **Behavior change:** capability state (workspace registry, ansible
+    aliases and sources, third-party state) moves from the top level of
+    `config.yml` to a separate state file beside it: `state.yml` for
+    `config.yml`, `<name>.state.yml` for any other `UNTAPED_CONFIG` name
+    (override with `UNTAPED_STATE`). Existing state keeps working: it is read from
+    `config.yml` with a one-time deprecation warning and moved to `state.yml`
+    on its next change, keeping `config.yml`'s comments. `config`/`profile`
+    writes never touch `state.yml`. `doctor` checks the state file and adds a
+    non-failing `legacy-state` `warn` row for sections left in `config.yml`.
   - `config set` validates the raw value against the setting's type instead of
     parsing it as YAML: `#` no longer truncates secrets, and numeric strings
     such as `0123456` are accepted for string settings. **Behavior change:**

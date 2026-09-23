@@ -295,6 +295,62 @@ def test_invalid_state_section_fails_state_row(_isolated_config: Path) -> None:
     assert "cursor" in _failed(rows)["validate state"]
 
 
+def test_invalid_state_in_state_file_names_the_file(_isolated_config: Path) -> None:
+    state_file = _isolated_config.parent / "state.yml"
+    state_file.write_text("github:\n  cursor: [not, a, string]\n")
+    code, rows = _rows(
+        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
+    )
+    assert code == 1
+    assert str(state_file) in _failed(rows)["validate state"]
+
+
+def test_unreadable_state_file_fails_its_row(_isolated_config: Path) -> None:
+    state_file = _isolated_config.parent / "state.yml"
+    state_file.write_text("github: [unclosed\n")
+    code, rows = _rows(
+        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
+    )
+    assert code == 1
+    failed = _failed(rows)
+    assert str(state_file) in failed["load state file"]
+    assert failed["validate state"] == "state file could not be read"
+
+
+def test_legacy_state_in_config_warns_without_failing(
+    _isolated_config: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_config(_isolated_config, "github:\n  cursor: abc\n")
+    code, rows = _rows(
+        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
+    )
+    assert code == 0
+    (legacy,) = [row for row in rows if row["check"] == "legacy-state"]
+    assert legacy["status"] == "warn"
+    assert "'github' moves to" in legacy["detail"]
+    assert "state.yml on its next state change" in legacy["detail"]
+    assert "warning: capability state" not in capsys.readouterr().err
+
+
+def test_shadowed_legacy_state_is_reported(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "github:\n  cursor: old\n")
+    (_isolated_config.parent / "state.yml").write_text("github:\n  cursor: new\n")
+    code, rows = _rows(
+        _doctor_app(make_spec("github", profile_model=GithubProfile, state_model=GithubState))
+    )
+    assert code == 0
+    (legacy,) = [row for row in rows if row["check"] == "legacy-state"]
+    assert legacy["status"] == "warn"
+    assert "is ignored because" in legacy["detail"]
+
+
+def test_no_legacy_state_passes(_isolated_config: Path) -> None:
+    code, rows = _rows(_doctor_app())
+    assert code == 0
+    (legacy,) = [row for row in rows if row["check"] == "legacy-state"]
+    assert legacy["status"] == _PASS
+
+
 def test_missing_ca_bundle_fails_http_row(_isolated_config: Path, tmp_path: Path) -> None:
     missing = tmp_path / "nope.pem"
     write_config(
