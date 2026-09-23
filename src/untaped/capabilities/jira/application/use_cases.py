@@ -15,6 +15,7 @@ from untaped.capabilities.jira.application.ports import (
 from untaped.capabilities.jira.domain import (
     BoardResult,
     CommentResult,
+    IssueDetailResult,
     IssueMutationResult,
     IssueResult,
     JiraIssueSearchFilters,
@@ -41,8 +42,8 @@ class GetIssue:
     def __init__(self, client: JiraIssueReader) -> None:
         self._client = client
 
-    def __call__(self, issue_key: str) -> IssueResult:
-        return IssueResult.model_validate(self._client.get_issue(issue_key))
+    def __call__(self, issue_key: str) -> IssueDetailResult:
+        return IssueDetailResult.model_validate(self._client.get_issue(issue_key))
 
 
 class SearchIssues:

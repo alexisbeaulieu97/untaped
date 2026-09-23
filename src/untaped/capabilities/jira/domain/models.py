@@ -6,6 +6,20 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# Jira ``fields`` requested for list rows (search) and the richer single-issue
+# detail view (get); the client requests exactly what the models flatten.
+ISSUE_ROW_FIELDS: tuple[str, ...] = ("summary", "status", "assignee", "updated")
+ISSUE_DETAIL_FIELDS: tuple[str, ...] = (
+    *ISSUE_ROW_FIELDS,
+    "issuetype",
+    "priority",
+    "reporter",
+    "labels",
+    "created",
+    "resolution",
+    "description",
+)
+
 
 class JiraUser(BaseModel):
     """Authenticated Jira user returned by ``/myself``."""
@@ -48,6 +62,42 @@ class IssueResult(BaseModel):
             "url": _browser_url(data),
         }
         return {**data, **patch}
+
+
+class IssueDetailResult(IssueResult):
+    """One issue with the extra fields shown by ``issue get``."""
+
+    issuetype: str = ""
+    priority: str = ""
+    reporter: str = ""
+    labels: list[str] = Field(default_factory=list)
+    created: str = ""
+    resolution: str = ""
+    description: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _flatten_detail_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fields = data.get("fields") or {}
+        if not isinstance(fields, dict):
+            fields = {}
+        labels = fields.get("labels") or []
+        patch = {
+            "issuetype": _name(fields.get("issuetype")),
+            "priority": _name(fields.get("priority")),
+            "reporter": _display_name(fields.get("reporter")),
+            "labels": [str(label) for label in labels] if isinstance(labels, list) else [],
+            "created": fields.get("created") or "",
+            "resolution": _name(fields.get("resolution")),
+            "description": fields.get("description") or "",
+        }
+        return {**data, **patch}
+
+
+def _name(value: Any) -> str:
+    return str(value.get("name") or "") if isinstance(value, dict) else ""
 
 
 def _display_name(value: Any) -> str:
