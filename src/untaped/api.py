@@ -43,6 +43,14 @@ from untaped.fs import (
     atomic_write,
     read_structured_file,
 )
+from untaped.git import (
+    GitCommandError,
+    GitResult,
+    git_auth_header,
+    run_git,
+    safe_cache_path,
+    safe_path_segment,
+)
 from untaped.http import (
     HttpClient,
     RetryPolicy,
@@ -93,6 +101,8 @@ __all__ = [
     "FileChange",
     "FileWriteError",
     "FormatOption",
+    "GitCommandError",
+    "GitResult",
     "HttpClient",
     "HttpError",
     "HttpSettings",
@@ -128,6 +138,7 @@ __all__ = [
     "get_config_section",
     "get_core_settings",
     "get_settings",
+    "git_auth_header",
     "invalidate_settings_cache",
     "is_envelope_line",
     "missing_setting_error",
@@ -150,6 +161,9 @@ __all__ = [
     "resolve_each",
     "resolve_text_input",
     "resolve_verify",
+    "run_git",
+    "safe_cache_path",
+    "safe_path_segment",
     "ui_context",
     "unified_diff_text",
 ]

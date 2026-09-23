@@ -58,6 +58,12 @@ APPROVED_HELPERS = frozenset(
         "read_identifiers",
         "report_errors",
         "run_editor",
+        "GitCommandError",
+        "GitResult",
+        "git_auth_header",
+        "run_git",
+        "safe_cache_path",
+        "safe_path_segment",
     }
 )
 

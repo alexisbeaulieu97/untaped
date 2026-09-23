@@ -29,6 +29,14 @@ from untaped.cli import (
 )
 from untaped.editor import run_editor
 from untaped.errors import ConfigError, UntapedError, first_validation_error
+from untaped.git import (
+    GitCommandError,
+    GitResult,
+    git_auth_header,
+    run_git,
+    safe_cache_path,
+    safe_path_segment,
+)
 from untaped.pipe import PipeEnvelope, parse_envelope_line
 from untaped.settings import get_config_section
 from untaped.state import StateCollection
@@ -63,4 +71,10 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "read_identifiers",
     "report_errors",
     "run_editor",
+    "GitCommandError",
+    "GitResult",
+    "git_auth_header",
+    "run_git",
+    "safe_cache_path",
+    "safe_path_segment",
 ]
