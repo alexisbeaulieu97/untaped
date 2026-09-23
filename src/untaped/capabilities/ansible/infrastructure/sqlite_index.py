@@ -18,6 +18,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SourceIndexStatus,
     SourceRepoMetadata,
 )
+from untaped.capabilities.ansible.errors import DependencyIndexError
 from untaped.capabilities.ansible.infrastructure.sqlite_rows import (
     dump_dt,
     edge_from_row,
@@ -34,6 +35,7 @@ class SqliteDependencyIndex:
         self._path = path.expanduser()
         self._schema_lock = Lock()
         self._schema_ready = False
+        self._parent_ready = False
 
     def ref_scans(
         self,
@@ -86,11 +88,10 @@ class SqliteDependencyIndex:
         failed_repos: frozenset[str] = frozenset(),
     ) -> None:
         """Commit a refresh; ``scans`` must be unique per (source_key, source_repo,
-        ref_kind, source_ref) -- duplicates raise IntegrityError inside the
+        ref_kind, source_ref) -- duplicates fail (DependencyIndexError) inside the
         transaction instead of last-wins. Cached refs and repo metadata for
         ``failed_repos`` are preserved even though they are absent from
         ``keep``."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             _replace_ref_scans(db, scans)
             _touch_ref_scans(db, touches)
@@ -116,7 +117,6 @@ class SqliteDependencyIndex:
         """Commit processed repos without marking the whole source fresh."""
         if progress_statuses and source_fingerprint is None:
             raise ValueError("source_fingerprint is required when progress_statuses are provided")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             _replace_ref_scans(db, scans)
             _touch_ref_scans(db, touches)
@@ -134,7 +134,6 @@ class SqliteDependencyIndex:
         scanned_at: datetime,
     ) -> None:
         """Mark a source refresh complete and prune repos outside the expanded source."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             _prune_source_refs_to_repos(db, source_key, source_repos)
             _prune_source_repo_metadata_to_repos(db, source_key, source_repos)
@@ -148,7 +147,6 @@ class SqliteDependencyIndex:
         source_fingerprint: str,
     ) -> dict[str, str]:
         """Return processed repo statuses for the current refresh fingerprint."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             db.execute(
                 """
@@ -203,7 +201,7 @@ class SqliteDependencyIndex:
             source_key=source_key,
             join_sql="""
                 join source_ref_scans as scans
-                  on scans.source_repo = requested.repo
+                  on scans.source_repo = requested.repo collate nocase
                  and (requested.ref is null or scans.source_ref = requested.ref)
                 join snapshot_edges as edges
                   on edges.snapshot_id = scans.snapshot_id
@@ -216,15 +214,33 @@ class SqliteDependencyIndex:
         *,
         source_key: str | None,
     ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
+        # An unpinned declaration installs the dependency's default branch, so
+        # it matches a requested ref equal to that repo's cached default branch.
         return self._select_edges_batch(
             pairs,
             source_key=source_key,
             join_sql="""
                 join snapshot_edges as edges
-                  on edges.dependency_repo = requested.repo
-                 and (requested.ref is null or edges.dependency_version = requested.ref)
+                  on edges.dependency_repo = requested.repo collate nocase
+                 and (
+                     requested.ref is null
+                     or edges.dependency_version = requested.ref
+                     or edges.dependency_version is null
+                 )
                 join source_ref_scans as scans
                   on scans.snapshot_id = edges.snapshot_id
+                 and (
+                     requested.ref is null
+                     or edges.dependency_version is not null
+                     or exists (
+                         select 1
+                         from source_repo_metadata as dependency_metadata
+                         where dependency_metadata.source_key = scans.source_key
+                           and dependency_metadata.source_repo
+                               = edges.dependency_repo collate nocase
+                           and dependency_metadata.default_branch = requested.ref
+                     )
+                 )
             """,
         )
 
@@ -236,7 +252,7 @@ class SqliteDependencyIndex:
                 """
                 select source_ref
                 from source_ref_scans
-                where source_key = ? and source_repo = ? and source_ref != ''
+                where source_key = ? and source_repo = ? collate nocase and source_ref != ''
                 """,
                 (source_key, repo),
             ).fetchall()
@@ -267,12 +283,12 @@ class SqliteDependencyIndex:
                     with requested(repo) as (
                         values {placeholders}
                     )
-                    select scans.source_repo, scans.source_ref as name,
+                    select requested.repo as requested_repo, scans.source_ref as name,
                            nullif(scans.ref_kind, '') as kind,
                            metadata.default_branch
                     from requested
                     join source_ref_scans as scans
-                      on scans.source_repo = requested.repo
+                      on scans.source_repo = requested.repo collate nocase
                     left join source_repo_metadata as metadata
                       on metadata.source_key = scans.source_key
                      and metadata.source_repo = scans.source_repo
@@ -283,7 +299,7 @@ class SqliteDependencyIndex:
                 ).fetchall()
                 for row in rows:
                     key = (str(row["name"]), _optional_str(row["kind"]))
-                    grouped[str(row["source_repo"])].setdefault(
+                    grouped[str(row["requested_repo"])].setdefault(
                         key,
                         CachedRef(
                             name=key[0],
@@ -386,6 +402,14 @@ class SqliteDependencyIndex:
         return results
 
     def _connect(self) -> sqlite3.Connection:
+        if not self._parent_ready:
+            try:
+                self._path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise DependencyIndexError(
+                    f"cannot create index directory {self._path.parent}: {exc}"
+                ) from exc
+            self._parent_ready = True
         db = sqlite3.connect(self._path)
         db.row_factory = sqlite3.Row
         return db
@@ -400,11 +424,16 @@ class SqliteDependencyIndex:
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        db = self._connect()
+        try:
+            db = self._connect()
+        except sqlite3.Error as exc:
+            raise DependencyIndexError(f"cannot open index {self._path}: {exc}") from exc
         try:
             with db:
                 self._ensure_schema(db)
                 yield db
+        except sqlite3.Error as exc:
+            raise DependencyIndexError(f"index {self._path} failed: {exc}") from exc
         finally:
             db.close()
 

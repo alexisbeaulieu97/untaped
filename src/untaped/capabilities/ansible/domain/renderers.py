@@ -8,6 +8,7 @@ from functools import cmp_to_key
 from typing import Literal
 
 from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphNode
+from untaped.capabilities.ansible.domain.identity import repo_key
 from untaped.capabilities.ansible.domain.ref_display import (
     RefDisplay,
     compare_ref_displays,
@@ -65,10 +66,12 @@ def _render_tree(graph: DependencyGraph) -> str:
 
 def _render_mermaid(graph: DependencyGraph) -> str:
     lines = ["graph LR"]
+    # Index-based ids: sanitizing graph ids would collide (web-app vs web_app).
+    mermaid_ids = {node.id: f"n{index}" for index, node in enumerate(graph.nodes)}
     for node in graph.nodes:
-        lines.append(f'  {_mermaid_id(node.id)}["{_escape_mermaid(node.label)}"]')
+        lines.append(f'  {mermaid_ids[node.id]}["{_escape_mermaid(node.label)}"]')
     for edge in graph.edges:
-        lines.append(f"  {_mermaid_id(edge.source_id)} --> {_mermaid_id(edge.target_id)}")
+        lines.append(f"  {mermaid_ids[edge.source_id]} --> {mermaid_ids[edge.target_id]}")
     for cycle in graph.cycles:
         detail = " -> ".join(cycle.node_ids) if cycle.kind == "cycle" else ", ".join(cycle.node_ids)
         lines.append(f"  %% {cycle.kind} {cycle.relation}: {_escape_mermaid_comment(detail)}")
@@ -104,7 +107,8 @@ def _is_concrete_target_ref(node: GraphNode, target: GraphNode) -> bool:
     return (
         target.ref is None
         and target.repo is not None
-        and node.repo == target.repo
+        and node.repo is not None
+        and repo_key(node.repo) == repo_key(target.repo)
         and node.ref is not None
     )
 
@@ -118,9 +122,11 @@ def _append_tree_roots(
     prefix: str,
     target_id: str,
 ) -> None:
+    printed: set[str] = set()
     for root_id in root_ids:
         root = nodes[root_id]
         lines.append(f"{prefix}+-- {root.label}")
+        printed.add(root_id)
         _append_tree_children(
             lines,
             nodes=nodes,
@@ -128,6 +134,7 @@ def _append_tree_roots(
             parent_id=root_id,
             prefix=f"{prefix}    ",
             path={target_id, root_id},
+            printed=printed,
         )
 
 
@@ -139,7 +146,14 @@ def _append_tree_children(
     parent_id: str,
     prefix: str,
     path: set[str],
+    printed: set[str],
 ) -> None:
+    """Append a depth-first subtree, printing each shared subtree only once.
+
+    A node whose children were already printed elsewhere in this section is
+    shown as ``(see above)`` instead of repeating its subtree, which keeps
+    output linear in the number of edges for DAGs with shared dependencies.
+    """
     stack = [
         (
             prefix,
@@ -158,6 +172,10 @@ def _append_tree_children(
         if child_id in current_path:
             lines.append(f"{current_prefix}+-- {child.label} (cycle)")
             continue
+        if child_id in printed and adjacency.get(child_id):
+            lines.append(f"{current_prefix}+-- {child.label} (see above)")
+            continue
+        printed.add(child_id)
         lines.append(f"{current_prefix}+-- {child.label}")
         stack.append(
             (
@@ -198,15 +216,9 @@ def _ref_display(node: GraphNode) -> RefDisplay:
     )
 
 
-def _mermaid_id(value: str) -> str:
-    cleaned = "".join(char if char.isalnum() or char == "_" else "_" for char in value)
-    if cleaned and not cleaned[0].isdigit():
-        return cleaned
-    return f"n_{cleaned}"
-
-
 def _escape_mermaid(value: str) -> str:
-    return value.replace('"', '\\"')
+    """Escape a quoted Mermaid label; Mermaid uses entity codes, not backslashes."""
+    return value.replace('"', "#quot;")
 
 
 def _escape_mermaid_comment(value: str) -> str:

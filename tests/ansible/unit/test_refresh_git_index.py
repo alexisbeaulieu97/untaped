@@ -169,16 +169,21 @@ class FakeGitCache:
             raise GitCacheError(f"git fetch failed for {bare_path.name}")
         self.fetches.append((bare_path.name, tuple(refspecs), depth, blob_filter, auth_header))
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
-        self.reads.append((bare_path.name, sha, path, auth_header))
-        return self.files.get((bare_path.name, sha, path))
+    ) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for path in paths:
+            self.reads.append((bare_path.name, sha, path, auth_header))
+            content = self.files.get((bare_path.name, sha, path))
+            if content is not None:
+                found[path] = content
+        return found
 
 
 class SlowGitCache(FakeGitCache):

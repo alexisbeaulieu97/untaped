@@ -1,4 +1,11 @@
-"""Git ls-remote backed remote ref freshness probe."""
+"""Git ls-remote backed remote ref freshness probe.
+
+Runs ``git ls-remote --symref`` (Git 2.8+) once per repo with the normal Git
+timeout and ``ansible.probe_concurrency``, sharing the HTTPS auth-header
+redaction path used by fetches. ``^{}`` lines give fully peeled tag targets.
+The ``git`` backend still expands sources through GitHub REST inventory, so
+private sources still need credentials; it only replaces the probe transport.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +13,6 @@ from collections.abc import Callable, Sequence
 from typing import Literal, Protocol
 
 from untaped.api import bounded_map
-from untaped.capabilities.ansible.domain.errors import GitCacheError
 from untaped.capabilities.ansible.domain.payloads import (
     GitRef,
     ProbedRepo,
@@ -15,6 +21,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped.capabilities.ansible.domain.repo_targets import remote_url_for
+from untaped.capabilities.ansible.errors import GitCacheError
 
 GIT_REF_PROBE_FAILURE_PREFIX = "git ref probe failed: "
 
