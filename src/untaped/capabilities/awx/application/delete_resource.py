@@ -13,6 +13,7 @@ from typing import Any
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.domain.inventory import is_generated_source
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.errors import BadRequestError
 
@@ -48,5 +49,5 @@ class DeleteResource:
 
 
 def _check_policy(spec: ResourceSpec, record: Mapping[str, Any]) -> None:
-    if spec.kind == "InventorySource" and record.get("source") == "constructed":
+    if is_generated_source(spec.kind, record):
         raise BadRequestError("generated constructed sources cannot be deleted independently")

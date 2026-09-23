@@ -23,6 +23,8 @@ from untaped.capabilities.awx.domain import IdentityRef, Metadata, Resource, Res
 from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
+    is_constructed_inventory,
+    is_generated_source,
 )
 from untaped.capabilities.awx.domain.kinds import unified_template_kind
 from untaped.capabilities.awx.errors import BadRequestError
@@ -74,7 +76,7 @@ class SaveResource:
 
     def snapshot_from_record(self, spec: ResourceSpec, record: dict[str, Any]) -> ResourceSnapshot:
         """Capture display labels and their original IDs without a second member read."""
-        if spec.kind == "Inventory" and record.get("kind") == "constructed":
+        if is_constructed_inventory(spec.kind, record):
             record = self._client.get(spec, int(record["id"])).model_dump()
         fk_ids = {
             ref.field: copy.deepcopy(record[ref.field])
@@ -83,9 +85,9 @@ class SaveResource:
         }
         memberships: dict[str, tuple[dict[str, Any], ...]] = {}
         spec_data = self._build_spec_body(spec, record)
-        if spec.kind == "Inventory" and record.get("kind") == "constructed":
+        if is_constructed_inventory(spec.kind, record):
             spec_data.pop("host_filter", None)
-        if spec.kind == "InventorySource" and record.get("source") == "constructed":
+        if is_generated_source(spec.kind, record):
             spec_data = {
                 k: v for k, v in spec_data.items() if k in {"source", *CONSTRUCTED_SOURCE_FIELDS}
             }
