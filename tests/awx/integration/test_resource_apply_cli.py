@@ -390,6 +390,62 @@ def _two_orgs_with_project(fake: Any) -> None:
     )
 
 
+def _set_default_organization(aap_config: Path) -> None:
+    config = aap_config.read_text()
+    prefix = "api_prefix: /api/v2/"
+    indent = config.split(prefix)[0].rsplit("\n", 1)[1]
+    aap_config.write_text(
+        config.replace(prefix, f"{prefix}\n{indent}default_organization: Default")
+    )
+
+
+def test_apply_spec_organization_wins_over_default_organization(
+    fake_aap: Any, aap_config: Path, tmp_path: Path
+) -> None:
+    """``spec.organization`` names the identity; the default must not fill it."""
+    _set_default_organization(aap_config)
+    _two_orgs_with_project(fake_aap)
+    doc = tmp_path / "p.yml"
+    doc.write_text(
+        "kind: Project\nmetadata: { name: playbooks }\n"
+        "spec: { scm_type: git, description: mine, organization: Other }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["projects", "apply", str(doc), "--yes"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert [(p["id"], p["description"]) for p in fake_aap.list_records("projects")] == [
+        (10, "mine")
+    ]
+
+
+def test_save_apply_round_trip_keeps_org_less_workflow(
+    fake_aap: Any, aap_config: Path, tmp_path: Path
+) -> None:
+    """An org-less record saves an explicit null identity that apply honours."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed(
+        "workflow_job_templates", id=40, name="global-wf", organization=None, description="old"
+    )
+    out = tmp_path / "w.yml"
+    saved = CliInvoker().invoke(app, ["workflow-templates", "save", "global-wf", "--out", str(out)])
+    assert saved.exit_code == 0, saved.output + (saved.stderr or "")
+    assert "organization: null" in out.read_text()
+    fake_aap.seed(
+        "workflow_job_templates", id=41, name="global-wf", organization=1, description="scoped"
+    )
+    out.write_text(out.read_text().replace("description: old", "description: new"))
+    _set_default_organization(aap_config)
+
+    result = CliInvoker().invoke(app, ["workflow-templates", "apply", str(out), "--yes"])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    records = {r["id"]: r for r in fake_aap.list_records("workflow_job_templates")}
+    assert sorted(records) == [40, 41]
+    assert records[40]["description"] == "new"
+    assert records[41]["description"] == "scoped"
+
+
 def test_apply_without_org_uses_default_organization(
     fake_aap: Any, aap_config: Path, tmp_path: Path
 ) -> None:

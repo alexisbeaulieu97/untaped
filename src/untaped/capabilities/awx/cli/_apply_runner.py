@@ -29,13 +29,25 @@ def _with_default_organization(ctx: AwxContext, doc: Resource) -> Resource:
     Selection and ``awx test`` already scope this way; without it an apply
     would match a same-named resource in whichever organization held one.
     With no default, a name found in several organizations stays ambiguous.
+
+    An explicit ``metadata.organization`` (a name, or ``null`` for an
+    org-less record such as a global workflow template) is never filled, and
+    a ``spec.organization`` name is the identity when metadata omits one.
     """
-    default = ctx.default_organization
-    if default is None or doc.metadata.organization is not None:
-        return doc
     if "organization" not in ctx.catalog.get(doc.kind).identity_keys:
         return doc
-    metadata = doc.metadata.model_copy(update={"organization": default})
+    if "organization" in doc.metadata.model_fields_set:
+        return doc
+    if "organization" in doc.spec:
+        declared = doc.spec["organization"]
+        if declared is not None and not isinstance(declared, str):
+            return doc
+        organization: str | None = declared
+    elif ctx.default_organization is None:
+        return doc
+    else:
+        organization = ctx.default_organization
+    metadata = doc.metadata.model_copy(update={"organization": organization})
     return doc.model_copy(update={"metadata": metadata})
 
 

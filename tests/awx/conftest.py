@@ -527,6 +527,11 @@ def _matches_all(  # noqa: C901
             if str(record.get(flat, "")) != value:
                 return False
             continue
+        if key.endswith("__isnull"):
+            base = key[: -len("__isnull")]
+            if (record.get(base) is None) != (value == "true"):
+                return False
+            continue
         if key.endswith("__icontains"):
             base = key[: -len("__icontains")]
             if value.lower() not in str(record.get(base, "")).lower():
