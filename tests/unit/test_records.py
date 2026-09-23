@@ -60,3 +60,23 @@ def test_records_are_frozen_and_reject_unknown_fields() -> None:
         CheckRecord.model_validate({"status": "ok"})
     with pytest.raises(ValidationError):
         CheckRecord.model_validate({"status": "pass", "extra": 1})
+
+
+class _BranchOutcome(OutcomeRecord, TargetRecord):
+    repo: str
+    action: str
+    branch: str
+
+
+def test_own_fields_come_before_inherited_base_fields(tmp_path: Path) -> None:
+    row = _CloneOutcome(action="cloned", target_path=tmp_path, repo="a/b")
+
+    assert list(row.model_dump()) == ["repo", "action", "target_path"]
+    assert list(row.model_dump(mode="json")) == ["repo", "action", "target_path"]
+    assert row.model_dump_json().startswith('{"repo":')
+
+
+def test_redeclared_base_fields_keep_the_subclass_position(tmp_path: Path) -> None:
+    row = _BranchOutcome(repo="a/b", action="updated", branch="main", target_path=tmp_path)
+
+    assert list(row.model_dump(mode="json")) == ["repo", "action", "branch", "target_path"]

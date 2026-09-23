@@ -10,7 +10,6 @@ from untaped.capabilities.workspace.application import AddRepo, RemoveRepo, Sync
 from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
-    record_row,
     resolve_workspace,
     workspace_settings,
 )
@@ -141,7 +140,7 @@ def add_command(
             any_failed = any_failed or any_sync_failed(outcomes)
         elif added:
             emit(
-                [record_row(row) for row in added],
+                added,
                 fmt=fmt,
                 columns=columns,
                 kind="workspace.add_outcome",
@@ -242,7 +241,7 @@ def remove_command(
             rows = [row for _, row in outcome.results]
         if rows:
             emit(
-                [record_row(row) for row in rows],
+                rows,
                 fmt=fmt,
                 columns=columns,
                 kind="workspace.remove_outcome",

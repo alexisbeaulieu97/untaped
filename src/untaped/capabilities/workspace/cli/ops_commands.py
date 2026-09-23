@@ -19,7 +19,6 @@ from untaped.capabilities.workspace.cli.common import (
     WorkspacePathOption,
     parallel_cap,
     progress_ui,
-    record_row,
     resolve_workspace,
     target_workspaces,
     workspace_settings,
@@ -27,6 +26,7 @@ from untaped.capabilities.workspace.cli.common import (
 from untaped.capabilities.workspace.domain import (
     DEFAULT_FOREACH_TIMEOUT,
     ForeachOutcome,
+    StatusEntry,
     SyncAction,
     SyncOutcome,
 )
@@ -179,9 +179,8 @@ def print_sync_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows = [record_row(o) for o in outcomes]
     emit(
-        rows,
+        outcomes,
         fmt=fmt,
         columns=columns,
         kind="workspace.sync_outcome",
@@ -225,11 +224,11 @@ def status_command(
     with report_errors():
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
         use_case = WorkspaceStatus(YamlManifestRepository(), GitRunner(), fs=LocalFilesystem())
-        rows: list[dict[str, object]] = []
+        rows: list[StatusEntry] = []
         with progress_ui().progress("Gathering workspace status…"):
             for ws in targets:
                 for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
-                    rows.append(record_row(entry))
+                    rows.append(entry)
         emit(
             rows,
             fmt=fmt,
@@ -331,8 +330,7 @@ def foreach_command(
             if failed:
                 echo(f"failed in: {', '.join(failed)}", err=True)
         else:
-            rows = [record_row(o) for o in outcomes]
-            emit(rows, fmt=fmt, columns=columns, kind="workspace.foreach_outcome")
+            emit(outcomes, fmt=fmt, columns=columns, kind="workspace.foreach_outcome")
         finish(bool(failed) and not ignore_errors)
 
 

@@ -34,7 +34,7 @@ _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
     ids=[cls.__name__ for cls in PYDANTIC_ROW_SOURCES],
 )
 def test_pydantic_row_source_first_field(cls: type[BaseModel], expected_first_key: str) -> None:
-    # ``record_row`` emits a record's own annotations first (inherited
+    # Records dump their own annotations first (inherited
     # ``action``/``target_path`` base fields would otherwise lead).
     actual = next(iter(inspect.get_annotations(cls)))
     assert actual == expected_first_key, (

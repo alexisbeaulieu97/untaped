@@ -15,7 +15,7 @@ from untaped.capabilities.workspace.application import (
     SyncWorkspace,
     WorkspaceBootstrapper,
 )
-from untaped.capabilities.workspace.cli.common import record_row, workspace_settings
+from untaped.capabilities.workspace.cli.common import workspace_settings
 from untaped.capabilities.workspace.cli.ops_commands import (
     any_sync_failed,
     print_sync_outcomes,
@@ -84,7 +84,7 @@ def init_command(
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
         ui_context(strict=False).success(f"initialized workspace {q(ws.name)} at {ws.path}")
         row = WorkspaceOutcome(name=ws.name, action="created", target_path=ws.path)
-        emit([record_row(row)], fmt=fmt, columns=columns, kind="workspace.init_outcome")
+        emit([row], fmt=fmt, columns=columns, kind="workspace.init_outcome")
 
 
 def adopt_command(
@@ -194,7 +194,7 @@ def forget_command(
         )
         if outcome.results:
             emit(
-                [record_row(row) for _, row in outcome.results],
+                [row for _, row in outcome.results],
                 fmt=fmt,
                 columns=columns,
                 kind="workspace.forget_outcome",
