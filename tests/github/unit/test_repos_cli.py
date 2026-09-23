@@ -183,6 +183,41 @@ def test_repos_list_pipe_tags_github_repo_kind(
     assert envelope["record"]["ssh_url"] == "git@github.com:acme/play-api.git"
 
 
+def test_repos_list_limit_caps_the_sorted_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(
+                200, json=[_repo("acme/c"), _repo("acme/a"), _repo("acme/b")]
+            )
+        )
+        result = CliInvoker().invoke(
+            app,
+            ["repos", "list", "--org", "acme", "--limit", "2", "--format", "raw", "-c", "repo"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == ["acme/a", "acme/b"]
+
+
+def test_repos_list_records_carry_url_and_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=[_repo("acme/a")]))
+        result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert row["repo"] == row["full_name"] == "acme/a"
+    assert row["url"] == row["html_url"] == "https://github.com/acme/a"
+
+
 def test_repos_list_requires_org_or_team_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -190,7 +225,7 @@ def test_repos_list_requires_org_or_team_scope(
 
     result = CliInvoker().invoke(app, ["repos", "list", "play*"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "requires --org or --team" in result.output
     assert "user-owned" in result.output
 
@@ -202,7 +237,7 @@ def test_repos_list_rejects_regex_without_pattern(
 
     result = CliInvoker().invoke(app, ["repos", "list", "--org", "acme", "--regex"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--regex requires PATTERN" in result.output
 
 
@@ -213,7 +248,7 @@ def test_repos_list_rejects_malformed_team_scope(
 
     result = CliInvoker().invoke(app, ["repos", "list", "--team", "backend"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "ORG/SLUG" in result.output
 
 
@@ -227,7 +262,7 @@ def test_repos_list_rejects_bare_team_with_multiple_orgs(
         ["repos", "list", "--org", "acme", "--org", "platform", "--team", "backend"],
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "exactly one --org" in result.output
 
 
@@ -236,7 +271,7 @@ def test_repos_list_rejects_invalid_regex(tmp_path: Path, monkeypatch: pytest.Mo
 
     result = CliInvoker().invoke(app, ["repos", "list", "[", "--org", "acme", "--regex"])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "invalid regular expression" in result.output
 
 

@@ -10,10 +10,11 @@ import httpx
 import pytest
 import respx
 
+from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.settings import get_settings, register_profile_settings
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, invoke_cli
 
 
 @pytest.fixture(autouse=True)
@@ -535,7 +536,7 @@ def test_search_code_reads_repo_scopes_from_stdin(
         route = mock.get("/search/code").mock(return_value=httpx.Response(200, json={"items": []}))
         result = CliInvoker().invoke(
             app,
-            ["search", "code", "TODO", "--repo-stdin", "--format", "json"],
+            ["search", "code", "TODO", "--stdin", "--format", "json"],
             input="acme/api\nacme/web\n",
         )
 
@@ -558,7 +559,7 @@ def test_search_code_combines_explicit_and_stdin_repo_scopes(
                 "TODO",
                 "--repo",
                 "acme/api",
-                "--repo-stdin",
+                "--stdin",
                 "--format",
                 "json",
             ],
@@ -569,11 +570,11 @@ def test_search_code_combines_explicit_and_stdin_repo_scopes(
     assert route.calls[0].request.url.params["q"] == "TODO (repo:acme/api OR repo:acme/web)"
 
 
-def test_search_repos_pipe_feeds_code_repo_stdin_round_trip(
+def test_search_repos_pipe_feeds_code_stdin_round_trip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """End-to-end proof of the typed pipe: ``search repos --format pipe`` emits
-    self-describing ``github.repo`` envelopes, and ``search code --repo-stdin``
+    self-describing ``github.repo_hit`` envelopes, and ``search code --stdin``
     reads them back, mapping each record's ``full_name`` into the repo scope."""
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
 
@@ -598,12 +599,12 @@ def test_search_repos_pipe_feeds_code_repo_stdin_round_trip(
         for line in lines:
             envelope = json.loads(line)
             assert envelope["untaped"] == "1"
-            assert envelope["kind"] == "github.repo"
+            assert envelope["kind"] == "github.repo_hit"
             assert "full_name" in envelope["record"]
 
         consumed = CliInvoker().invoke(
             app,
-            ["search", "code", "TODO", "--repo-stdin", "--format", "json"],
+            ["search", "code", "TODO", "--stdin", "--format", "json"],
             input=produced.stdout,
         )
 
@@ -1145,3 +1146,67 @@ def test_search_with_invalid_theme_still_runs_and_reports_progress(
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["octocat/alpha"]
     assert "Searching repositories" in result.stderr
+
+
+def test_search_repo_stdin_is_a_deprecated_alias_of_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        route = mock.get("/search/code").mock(return_value=httpx.Response(200, json={"items": []}))
+        result = invoke_cli(
+            build_root_app(externals=[]),
+            ["github", "search", "code", "TODO", "--repo-stdin", "--format", "json"],
+            input="acme/api\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "`--repo-stdin` is deprecated" in result.stderr
+    assert route.calls[0].request.url.params["q"] == "TODO repo:acme/api"
+
+
+def test_search_stdin_rejects_records_of_another_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    envelope = json.dumps({"untaped": "1", "kind": "github.user", "record": {"login": "x"}})
+
+    result = CliInvoker().invoke(
+        app, ["search", "code", "TODO", "--stdin", "--format", "json"], input=f"{envelope}\n"
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "github.user" in result.stderr
+
+
+def test_search_malformed_team_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    result = CliInvoker().invoke(app, ["search", "repos", "--team", "backend"])
+
+    assert result.exit_code == 2, result.output
+
+
+def test_search_users_pipe_tags_user_hit_with_web_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    item = {
+        "id": 1,
+        "login": "octocat",
+        "type": "User",
+        "html_url": "https://github.com/octocat",
+        "url": "https://api.github.com/users/octocat",
+    }
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/search/users").mock(return_value=httpx.Response(200, json={"items": [item]}))
+        result = CliInvoker().invoke(app, ["search", "users", "octocat", "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    envelope = json.loads(result.stdout.splitlines()[0])
+    assert envelope["kind"] == "github.user_hit"
+    assert envelope["record"]["url"] == "https://github.com/octocat"

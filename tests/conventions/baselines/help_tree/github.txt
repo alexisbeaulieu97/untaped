@@ -1,67 +1,21 @@
 # Known violations of the help_tree convention check for 'github'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-github cache clean::empty-negative::--empty-org
 github cache clean::empty-negative::--empty-repo
 github cache clean::verb::clean
 github cache worktree::positional-or-keyword::--repo
 github cache worktree::verb::worktree
-github repos list::empty-negative::--empty-org
-github repos list::empty-negative::--empty-team
-github repos list::missing-help::--archived
-github repos list::missing-help::--fork
-github repos list::positional-or-keyword::--pattern
-github search code::empty-negative::--empty-org
-github search code::empty-negative::--empty-repo
-github search code::empty-negative::--empty-team
-github search code::missing-help::--extension
-github search code::missing-help::--filename
-github search code::missing-help::--language
-github search code::missing-help::--path
-github search code::missing-help::--user
-github search code::needless-negative::--no-repo-stdin
-github search code::positional-or-keyword::--query
 github search code::verb::code
-github search issues::empty-negative::--empty-label
-github search issues::empty-negative::--empty-org
-github search issues::empty-negative::--empty-repo
-github search issues::empty-negative::--empty-team
-github search issues::missing-help::--assignee
-github search issues::missing-help::--author
-github search issues::missing-help::--kind
-github search issues::missing-help::--mentions
-github search issues::missing-help::--sort
-github search issues::missing-help::--state
-github search issues::missing-help::--user
-github search issues::needless-negative::--no-repo-stdin
-github search issues::positional-or-keyword::--query
 github search issues::verb::issues
-github search repos::empty-negative::--empty-org
-github search repos::empty-negative::--empty-repo
-github search repos::empty-negative::--empty-team
-github search repos::missing-help::--archived
-github search repos::missing-help::--fork
-github search repos::missing-help::--language
-github search repos::missing-help::--sort
-github search repos::missing-help::--visibility
-github search repos::needless-negative::--no-repo-stdin
-github search repos::positional-or-keyword::--query
 github search repos::verb::repos
-github search users::missing-help::--kind
-github search users::missing-help::--language
-github search users::missing-help::--location
-github search users::missing-help::--sort
-github search users::positional-or-keyword::--query
 github search users::verb::users
 github sweep::empty-negative::--empty-grep
 github sweep::empty-negative::--empty-has-file
 github sweep::empty-negative::--empty-lacks-file
 github sweep::empty-negative::--empty-not-grep
-github sweep::empty-negative::--empty-org
 github sweep::empty-negative::--empty-path
 github sweep::empty-negative::--empty-ref
 github sweep::empty-negative::--empty-repo
-github sweep::empty-negative::--empty-team
 github sweep::missing-help::--any
 github sweep::missing-help::--archived
 github sweep::missing-help::--fail-on-match
