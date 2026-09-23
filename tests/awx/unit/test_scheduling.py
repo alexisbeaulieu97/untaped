@@ -103,6 +103,17 @@ def test_interrupt_reports_finished_items_and_releases_dependency_waits() -> Non
     assert caught.value.results == {0: 0}
 
 
+def test_items_run_off_the_main_thread_even_when_serial() -> None:
+    # A real Ctrl-C lands on the main thread. Even at parallel=1 items must run
+    # on a worker, so Ctrl-C interrupts the scheduler's wait and an in-flight
+    # request (say, a launch POST) finishes and is reported instead of being
+    # torn down mid-request.
+    threads = Schedule(parallel=1).run(
+        2, lambda _index: threading.current_thread(), skipped=lambda _index: None
+    )
+    assert threading.main_thread() not in threads.values()
+
+
 def test_parallel_must_be_positive() -> None:
     with pytest.raises(ValueError, match="parallel"):
         Schedule(parallel=0)
