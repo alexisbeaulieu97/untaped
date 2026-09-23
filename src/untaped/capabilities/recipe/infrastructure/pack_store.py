@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import os
 import shutil
-import subprocess
 import tomllib
 import uuid
 from collections.abc import Callable, Mapping
@@ -15,7 +13,7 @@ from pathlib import Path
 
 import tomlkit
 
-from untaped.api import atomic_write
+from untaped.api import GitCommandError, atomic_write, run_git
 from untaped.capabilities.recipe.domain.hook_exports import hook_exports
 from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
@@ -28,6 +26,7 @@ from untaped.capabilities.recipe.domain.paths import safe_library_name
 from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
+_GIT_CLONE_TIMEOUT = 600.0
 
 # Dev/build junk excluded from library installs; pack_content_hash prunes the
 # same names so the recorded install hash and the copied tree always agree.
@@ -415,7 +414,7 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
     if rev is not None and (not rev.strip() or rev.startswith("-")):
         raise ValueError(f"invalid --rev: {rev!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    clone_args = ["git", "clone", "--depth", "1"]
+    clone_args = ["clone", "--depth", "1"]
     if rev is not None:
         clone_args.extend(["--branch", rev])
     clone_args.extend(["--", url, str(dest)])
@@ -426,8 +425,8 @@ def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
             raise
         if dest.exists():
             shutil.rmtree(dest)
-        _run_git(["git", "clone", "--", url, str(dest)])
-        _run_git(["git", "checkout", "--detach", rev, "--"], cwd=dest)
+        _run_git(["clone", "--", url, str(dest)])
+        _run_git(["checkout", "--detach", rev, "--"], cwd=dest)
     return dest
 
 
@@ -437,31 +436,9 @@ def _is_missing_branch_error(message: str) -> bool:
     return "not found in upstream" in lowered or "could not find remote branch" in lowered
 
 
-def _git_env() -> dict[str, str]:
-    """Environment for non-interactive git with untranslated (C locale) messages.
-
-    :func:`_is_missing_branch_error` matches English git output, and a pack
-    fetch must never block on a credential prompt.
-    """
-    return {
-        **os.environ,
-        "LC_ALL": "C",
-        "LANGUAGE": "C",
-        "GIT_TERMINAL_PROMPT": "0",
-        "GCM_INTERACTIVE": "never",
-    }
-
-
 def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
-    result = subprocess.run(
-        args,
-        cwd=cwd,
-        env=_git_env(),
-        stdin=subprocess.DEVNULL,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        message = result.stderr.strip() or result.stdout.strip() or "git command failed"
-        raise ValueError(message)
+    """Run git non-interactively in the C locale (see :func:`_is_missing_branch_error`)."""
+    try:
+        run_git(args, cwd=cwd, timeout=_GIT_CLONE_TIMEOUT)
+    except GitCommandError as exc:
+        raise ValueError(str(exc)) from exc
