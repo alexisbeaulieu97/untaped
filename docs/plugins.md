@@ -12,9 +12,12 @@ state, optional doctor checks, and optional packaged skills. It runs as
 `untaped <capability> ...`. A provider distribution does not add another
 console script and does not own a second config or profile command group.
 
-The supported provider import surface is `untaped.capability_api`. Its closed
-composition set and helper exports are intentional; provider code must not
-import the internal registry or rely on other `untaped` modules as an API.
+`untaped.capability_api` is the single public SDK surface: built-in and
+external capabilities import untaped helpers from it and nothing else. Its
+closed composition set and helper exports are intentional; provider code must
+not import the internal registry or rely on other `untaped` modules as an API.
+The older `untaped.api` module is a deprecated re-export kept for one release,
+and the `untaped` package root re-exports nothing.
 
 ## 1. Provider package
 
@@ -72,7 +75,9 @@ The entry-point name must equal the `CapabilitySpec.name`. The resolved object
 must be callable, expose an `api_requires` tuple, and return one
 `CapabilitySpec` when called without arguments. Check the current
 `CAPABILITY_API_VERSION` in `src/untaped/capability_api.py` when choosing the
-compatible range.
+compatible range. New exports are additive and keep the major version; removing
+or breaking an export requires a major bump, so `(1.0, 2.0)` stays compatible
+across 1.x.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
@@ -202,6 +207,34 @@ records), `CAPABILITY_API_VERSION`, and the supported helpers including
 `report_errors`, `FormatOption`, and `ColumnsOption`. The canonical v1 wire
 parser and record type are also exported as `parse_envelope_line` and
 `PipeEnvelope`; capabilities retain their own kind and required-ID validation.
+
+The shared runtime helpers are exported from the same module:
+
+- Output and arguments: `echo`, `emit`, `render_rows`, `OutputFormat`,
+  `raise_usage`, `parse_kv_pairs`, `parse_json_pairs`, `existing_file`,
+  `resolve_each`, `clamp_parallel`.
+- Errors: `UntapedError`, `ConfigError`, `HttpError`, `HttpStatusError`,
+  `HttpTransportError`, `first_validation_error`.
+- Settings and context: `get_config_section`, `get_core_settings`,
+  `HttpSettings`, `app_context`, `AppContext`.
+- HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, and
+  the `paginate_link`, `paginate_offset`, and `paginate_pages` cursor loops.
+- Input and pipes: `read_identifiers`, `read_stdin`, `resolve_text_input`,
+  `is_envelope_line`, `parse_envelope_line`, `PipeEnvelope`.
+- Files and state: `atomic_write`, `read_structured_file`, `unified_diff_text`,
+  `StateCollection`, `StateMap`.
+- UI: `UiContext`, `ui_context`, `ProgressHandle`, `PromptChoice`.
+- Batches and concurrency: `batch_apply`, `BatchOutcome`, `finish`,
+  `bounded_map`.
+
+`bounded_map(fn, items, *, concurrency, on_each, on_abort=None,
+while_running=None)` applies `fn` to every item on at most `concurrency` worker
+threads (serially for one item or `concurrency=1`). `on_each(item, result)` runs
+on the calling thread, in completion order when parallel, and exceptions from
+`fn` propagate to the caller. On any escape, including Ctrl-C, queued work is
+cancelled and `on_abort` runs before in-flight calls are awaited so the caller
+can stop them. `while_running` runs on the calling thread after every item is
+submitted, for foreground work such as draining a queue the workers feed.
 
 `run_editor(path, *, argv=None, stdin=None, stdout=None, stderr=None)` opens an
 external editor and waits for it to exit. Without explicit argv it parses

@@ -49,9 +49,11 @@ Import direction inside a capability: `cli → application → domain` and
 
 ## Capability registry + capability_api
 
-- `capability_api.py` is the **only** module provider code imports from. Its
+- `capability_api.py` is the single public SDK surface and the **only**
+  untaped module capability code (built-in or external) imports from. Its
   exported types, helpers, and API version are the source of truth for
-  provider compatibility.
+  provider compatibility. `untaped.api` is a deprecated re-export shim; the
+  package root re-exports nothing.
 - `capabilities/registry.py` is the internal composition kernel: discovery /
   API pre-checks → provider resolution → declaration validation + app-factory
   staging → commit. Built-in violations raise `ConfigError` (fatal);
@@ -110,7 +112,7 @@ what it owns (re-export stubs exempt). Lazy imports on CLI startup paths
 (`ban-relative-imports = "all"`, tests included). Secrets are
 `pydantic.SecretStr`; HTTP clients resolve TLS via `resolve_verify`. Git
 subprocesses go through `untaped.git` (`run_git`, re-exported by
-`untaped.api`); never fork your own `subprocess` git plumbing.
+`untaped.capability_api`); never fork your own `subprocess` git plumbing.
 
 ## Planning and decisions
 

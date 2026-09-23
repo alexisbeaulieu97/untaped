@@ -152,6 +152,19 @@ Shared infrastructure consolidation (git, recipe, awx). Items marked
     ancestry fields the `patch`/`edit` commands already rejected (one
     `ResourceSpec.immutable_fields` set).
 
+One SDK surface.
+
+- `untaped.capability_api` is the single public SDK surface for built-in and
+  external capabilities. It now also exports the shared helpers built-ins
+  use (HTTP client and pagination, `bounded_map`, `batch_apply`, output and
+  argument helpers, `atomic_write`, `StateMap`, ...). The additions are
+  backwards compatible, so `CAPABILITY_API_VERSION` stays `1.0`.
+- `untaped.api` is deprecated: it still re-exports every name it published
+  (without a warning) and will be removed in a later release. Import from
+  `untaped.capability_api` instead.
+- **Behavior change:** the package root no longer re-exports the SDK;
+  `from untaped import X` must become `from untaped.capability_api import X`.
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP
