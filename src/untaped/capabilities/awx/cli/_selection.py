@@ -9,8 +9,8 @@ from untaped.capabilities.awx.application.selection import (
     SelectionRequest,
     SelectionResolver,
 )
-from untaped.capabilities.awx.cli._context import AwxContext, scope_for_command
-from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
+from untaped.capabilities.awx.cli.context import AwxContext, scope_for_command
+from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     PipeEnvelope,

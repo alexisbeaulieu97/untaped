@@ -10,8 +10,8 @@ from untaped.capabilities.awx.application.edit_resources import EditResources
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
-from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import emit_outcomes, preview_and_execute
+from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capability_api import (
     ConfigError,

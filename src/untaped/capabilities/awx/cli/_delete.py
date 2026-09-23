@@ -5,9 +5,9 @@ from cyclopts import App
 from untaped.capabilities.awx.application import DeleteResource
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.selected_actions import run_selected_actions
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch, validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.cli.options import (
     AllOption,

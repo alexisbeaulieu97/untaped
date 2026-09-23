@@ -10,7 +10,7 @@ import pytest
 from untaped.capabilities.awx.application.scheduling import (
     MAX_PARALLEL,
     Schedule,
-    ScheduleInterrupted,
+    ScheduleInterruptedError,
 )
 from untaped.capability_api import UsageError
 
@@ -99,7 +99,7 @@ def test_interrupt_reports_finished_items_and_releases_dependency_waits() -> Non
             raise KeyboardInterrupt
         return index
 
-    with pytest.raises(ScheduleInterrupted) as caught:
+    with pytest.raises(ScheduleInterruptedError) as caught:
         Schedule(parallel=1).run(3, work, skipped=lambda index: -1, dependencies=[(), (0,), (1,)])
     assert caught.value.results == {0: 0}
 

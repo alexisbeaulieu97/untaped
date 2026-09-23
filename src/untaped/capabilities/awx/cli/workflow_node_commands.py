@@ -12,9 +12,9 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application import ListWorkflowNodes
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for, pipe_kind_for_spec
+from untaped.capabilities.awx.cli.context import open_context, scope_for_command
 from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
+from untaped.capabilities.awx.cli.pipe import id_field_for, pipe_kind_for_spec
 from untaped.capabilities.awx.domain import WorkflowNode, WorkflowNodeType
 from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
 from untaped.capability_api import (

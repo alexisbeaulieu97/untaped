@@ -16,11 +16,11 @@ from untaped.capabilities.awx.cli._apply import _add_apply
 from untaped.capabilities.awx.cli._delete import _add_delete
 from untaped.capabilities.awx.cli._edit import _add_edit
 from untaped.capabilities.awx.cli._get import _add_get
-from untaped.capabilities.awx.cli._launch import _add_launch
 from untaped.capabilities.awx.cli._list import _add_list
 from untaped.capabilities.awx.cli._patch import _add_patch
 from untaped.capabilities.awx.cli._save import _add_save
 from untaped.capabilities.awx.cli._sync import _add_sync
+from untaped.capabilities.awx.cli.launch import _add_launch
 from untaped.capabilities.awx.cli.membership_commands import register_membership_subapp
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import create_app, deprecated_alias

@@ -24,7 +24,7 @@ MAX_PARALLEL = 10
 """Upper bound on concurrent AWX requests for any batch."""
 
 
-class ScheduleInterrupted(KeyboardInterrupt):
+class ScheduleInterruptedError(KeyboardInterrupt):
     """Ctrl-C during a schedule; ``results`` holds every item that finished."""
 
     def __init__(self, results: dict[int, object]) -> None:
@@ -63,7 +63,7 @@ class Schedule:
         ``blocked(index, dependency_results)`` may return a result that
         replaces running the item (e.g. "a dependency failed"). Items caught
         in a dependency cycle never start and are absent from the result.
-        On Ctrl-C, raises :class:`ScheduleInterrupted` once in-flight items
+        On Ctrl-C, raises :class:`ScheduleInterruptedError` once in-flight items
         have finished.
         """
         deps = [tuple(item) for item in dependencies] if dependencies else [()] * count
@@ -112,7 +112,7 @@ class Schedule:
                 while_running=_idle,
             )
         except KeyboardInterrupt:
-            raise ScheduleInterrupted(dict(results)) from None
+            raise ScheduleInterruptedError(dict(results)) from None
         return results
 
 
@@ -140,4 +140,4 @@ def _dependency_order(dependencies: Sequence[Sequence[int]]) -> list[int]:
     return order
 
 
-__all__ = ["MAX_PARALLEL", "Schedule", "ScheduleInterrupted"]
+__all__ = ["MAX_PARALLEL", "Schedule", "ScheduleInterruptedError"]

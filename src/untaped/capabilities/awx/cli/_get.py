@@ -11,10 +11,9 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
-from untaped.capabilities.awx.cli._context import open_context
-from untaped.capabilities.awx.cli._names import flatten_fks
-from untaped.capabilities.awx.cli._pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
+from untaped.capabilities.awx.cli.names import flatten_fks
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -27,6 +26,7 @@ from untaped.capabilities.awx.cli.options import (
     SearchOption,
     StdinOption,
 )
+from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,

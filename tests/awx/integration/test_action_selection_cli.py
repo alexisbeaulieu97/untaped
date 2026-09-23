@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from untaped.capabilities.awx.cli import app
+from untaped.capabilities.awx.cli import app, parallel
 from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 pytestmark = pytest.mark.integration
@@ -301,7 +301,7 @@ def test_monitoring_concurrency_is_bounded() -> None:
 
     from rich.console import Console
 
-    from untaped.capabilities.awx.cli._parallel import _drain_parallel
+    from untaped.capabilities.awx.cli.parallel import drain_parallel
     from untaped.capabilities.awx.domain import Job
 
     lock = threading.Lock()
@@ -323,7 +323,7 @@ def test_monitoring_concurrency_is_bounded() -> None:
             return []
 
     jobs = [(str(i), Job(id=i, kind="job", status="successful")) for i in range(1, 26)]
-    results, errors = _drain_parallel(Monitor(), jobs, Console())
+    results, errors = drain_parallel(Monitor(), jobs, Console().print)
     assert not errors
     assert len(results) == 25
     assert peak <= 10
@@ -482,8 +482,6 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
     import threading
     import time
 
-    from untaped.capabilities.awx.cli import _parallel
-
     seed(fake_aap)
     fake_aap.next_action_status = "running"
     # Safety net: if polling ignored the interrupt, the job ends after 3s
@@ -498,13 +496,13 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
         raise KeyboardInterrupt
 
     def interrupted_get(self: Any, *args: Any, **kwargs: Any) -> Any:
-        if sys._getframe(1).f_code.co_filename.endswith("_parallel.py"):
+        if sys._getframe(1).f_code.co_filename.endswith("parallel.py"):
             raise KeyboardInterrupt
         return real_get(self, *args, **kwargs)
 
     # Ctrl-C lands on the main thread while workers poll: in the idle wait
     # (``--wait``) or the event-queue drain (``--track``).
-    monkeypatch.setattr(_parallel, "_idle", interrupt)
+    monkeypatch.setattr(parallel, "_idle", interrupt)
     monkeypatch.setattr(queue.Queue, "get", interrupted_get)
     started = time.monotonic()
     try:
@@ -524,8 +522,6 @@ def test_ctrl_c_while_waiting_lists_only_executions_still_running(
 ) -> None:
     import threading
 
-    from untaped.capabilities.awx.cli import _parallel
-
     seed(fake_aap)
     fake_aap.seed("job_templates", id=51, name="other", organization=1)
     fake_aap.next_action_status = "running"  # first launch only; the second finishes
@@ -537,7 +533,7 @@ def test_ctrl_c_while_waiting_lists_only_executions_still_running(
     def interrupt() -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(_parallel, "_idle", interrupt)
+    monkeypatch.setattr(parallel, "_idle", interrupt)
     try:
         result = CliInvoker().invoke(
             app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait"]

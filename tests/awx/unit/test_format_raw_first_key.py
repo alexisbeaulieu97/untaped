@@ -43,7 +43,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from untaped.capabilities.awx.cli.suite_commands import _test_case_row, _test_suite_row
+from untaped.capabilities.awx.cli.suite_commands import case_row, suite_row
 from untaped.capabilities.awx.domain import Job, JobEvent, WorkflowNode
 from untaped.capabilities.awx.domain.suite import Case, CaseResult, Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
@@ -65,16 +65,16 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
 # CLI command in the corresponding row-source path calls.
 HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] = [
     (
-        "untaped.capabilities.awx.cli.suite_commands._test_case_row",
-        lambda: _test_case_row(
+        "untaped.capabilities.awx.cli.suite_commands.case_row",
+        lambda: case_row(
             Suite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
             "c1",
         ),
         "suite",
     ),
     (
-        "untaped.capabilities.awx.cli.suite_commands._test_suite_row",
-        lambda: _test_suite_row(
+        "untaped.capabilities.awx.cli.suite_commands.suite_row",
+        lambda: suite_row(
             Suite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
         ),
         "suite",
@@ -230,12 +230,12 @@ _LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
     (
         _REPO_ROOT / "src" / "untaped" / "capabilities" / "awx" / "cli" / "suite_commands.py",
         "list_command",
-        "_test_case_row",
+        "case_row",
     ),
     (
         _REPO_ROOT / "src" / "untaped" / "capabilities" / "awx" / "cli" / "suite_commands.py",
         "list_command",
-        "_test_suite_row",
+        "suite_row",
     ),
 ]
 

@@ -13,8 +13,16 @@ from typing import Any
 from untaped.capability_api import UntapedError
 
 
-class AwxApiError(UntapedError):
-    """Raised when the AWX API returns an error or behaves unexpectedly."""
+class AwxError(UntapedError):
+    """Base class for every AWX capability error."""
+
+
+class AwxApiError(AwxError):
+    """Raised when the AWX API returns an error or behaves unexpectedly.
+
+    ``status_code`` names the HTTP status like :class:`HttpError` does;
+    ``status`` is its older spelling, kept for one release.
+    """
 
     def __init__(
         self,
@@ -28,6 +36,11 @@ class AwxApiError(UntapedError):
         self.status = status
         self.body = body
         self.url = url
+
+    @property
+    def status_code(self) -> int | None:
+        """The HTTP status of the failed response, when there was one."""
+        return self.status
 
 
 class ActionResponseError(AwxApiError):

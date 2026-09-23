@@ -4,10 +4,10 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._edit_runner import run_edit
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,

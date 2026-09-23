@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from untaped.capabilities.awx.errors import (
     AwxApiError,
+    AwxError,
     BadRequestError,
     ConflictError,
     PermissionDeniedError,
@@ -16,6 +17,12 @@ def test_awx_api_error_is_untaped_error() -> None:
     assert isinstance(err, UntapedError)
     assert err.status == 500
     assert err.body == "server log"
+
+
+def test_awx_api_error_derives_from_awx_error_and_names_its_status_code() -> None:
+    err = AwxApiError("boom", status=503)
+    assert isinstance(err, AwxError)
+    assert err.status_code == 503
 
 
 def test_resource_not_found_message_includes_identity() -> None:

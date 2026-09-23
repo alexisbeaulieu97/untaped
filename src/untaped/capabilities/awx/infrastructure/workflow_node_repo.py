@@ -1,4 +1,4 @@
-"""Concrete :class:`WorkflowNodeRepository` over AWX's workflow-nodes endpoints.
+"""Concrete :class:`HttpWorkflowNodeRepository` over AWX's workflow-nodes endpoints.
 
 Wraps a :class:`RawHttpResourceClient`; the only AWX-specific pieces are
 the URL shapes ``workflow_job_templates/<id>/workflow_nodes/`` (the
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from untaped.capabilities.awx.application.ports import RawHttpResourceClient
 
 
-class WorkflowNodeRepository:
+class HttpWorkflowNodeRepository:
     def __init__(self, client: RawHttpResourceClient) -> None:
         self._client = client
 

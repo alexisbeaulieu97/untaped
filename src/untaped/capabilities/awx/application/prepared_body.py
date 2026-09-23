@@ -12,11 +12,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from untaped.capabilities.awx.application._secret_paths import strip_encrypted_in_place
 from untaped.capabilities.awx.application.apply_field_diff import PRESERVED_SECRET_NOTE, FieldDiff
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
+from untaped.capabilities.awx.application.secret_paths import strip_encrypted_in_place
 from untaped.capabilities.awx.domain import FieldChange, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 from untaped.capability_api import plural

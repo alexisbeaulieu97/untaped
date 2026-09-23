@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from untaped.capabilities.awx.application.scheduling import Schedule, ScheduleInterrupted
+from untaped.capabilities.awx.application.scheduling import Schedule, ScheduleInterruptedError
 from untaped.capabilities.awx.application.selection import SelectedResource
 
 
@@ -18,7 +18,7 @@ class SelectedActionOutcome[T]:
     """Typed evidence for the caller; never render the unsanitized exception."""
 
 
-class ActionsInterrupted(KeyboardInterrupt):
+class ActionsInterruptedError(KeyboardInterrupt):
     """Ctrl-C during submission; ``outcomes`` covers every action already submitted."""
 
     def __init__(self, outcomes: list[SelectedActionOutcome[Any]]) -> None:
@@ -37,7 +37,7 @@ def run_selected_actions[T](
     """Stop new submissions on failure; retain in-flight results in target order.
 
     Ctrl-C stops new submissions, lets in-flight submissions finish, and
-    raises :class:`ActionsInterrupted` with every outcome gathered so far.
+    raises :class:`ActionsInterruptedError` with every outcome gathered so far.
     """
     schedule = Schedule(parallel=parallel)
 
@@ -60,11 +60,11 @@ def run_selected_actions[T](
                 targets[index], "skipped", detail="skipped after a runtime failure"
             ),
         )
-    except ScheduleInterrupted as interrupted:
+    except ScheduleInterruptedError as interrupted:
         submitted = [
             outcome
             for _index, outcome in sorted(interrupted.results.items())
             if isinstance(outcome, SelectedActionOutcome) and outcome.action != "skipped"
         ]
-        raise ActionsInterrupted(submitted) from None
+        raise ActionsInterruptedError(submitted) from None
     return [outcomes[index] for index in range(len(targets))]
