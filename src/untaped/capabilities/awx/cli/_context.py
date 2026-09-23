@@ -142,7 +142,7 @@ def scope_for_spec(
         raise ConfigError(f"--inventory-organization is not supported for {spec.kind}")
     if organization is not None and "organization" not in spec.identity_keys:
         raise ConfigError(f"--organization is not supported for {spec.kind}")
-    if parent is not None and spec.apply_strategy not in {"inventory_child", "schedule"}:
+    if parent is not None and spec.parent_field is None:
         raise ConfigError(f"--parent is not supported for {spec.kind}")
     if parent is not None and inventory is not None:
         raise ConfigError("use --parent or --inventory, not both")

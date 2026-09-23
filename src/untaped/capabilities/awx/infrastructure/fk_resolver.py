@@ -28,6 +28,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain import IdentityRef
+from untaped.capabilities.awx.domain.kinds import unified_template_kind
 from untaped.capabilities.awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
@@ -129,13 +130,7 @@ class FkResolver:
                 canonical_fields=(),
             )
             record = self._repo.get(lookup, id_)
-            kinds = {
-                "job_template": "JobTemplate",
-                "workflow_job_template": "WorkflowJobTemplate",
-                "project": "Project",
-                "inventory_source": "InventorySource",
-            }
-            resolved_kind = kinds.get(str(record.get("type", "")))
+            resolved_kind = unified_template_kind(str(record.get("type", "")))
             if resolved_kind is None:
                 raise BadRequestError("unsupported schedule parent type")
             return self.id_to_identity(resolved_kind, id_)

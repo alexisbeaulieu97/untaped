@@ -172,3 +172,21 @@ def test_mutable_specs_declare_universal_read_only_fields() -> None:
         )
 
     assert not missing, f"mutable specs missing universal read-only fields: {missing}"
+
+
+def test_parent_owned_specs_declare_their_parent_field() -> None:
+    """Parent-owned write strategies read the parent ID from ``parent_field``."""
+    parents = {spec.kind: spec.parent_field for spec in ALL_SPECS}
+    assert parents["Host"] == parents["Group"] == parents["InventorySource"] == "inventory"
+    assert parents["Schedule"] == "unified_job_template"
+    for spec in ALL_SPECS:
+        if spec.apply_strategy not in {"inventory_child", "schedule"}:
+            assert spec.parent_field is None, spec.kind
+
+
+def test_immutable_fields_cover_identity_and_ancestry() -> None:
+    cat = AwxResourceCatalog()
+    host = cat.get("Host").immutable_fields
+    assert {"id", "kind", "type", "name", "organization", "parent", "inventory"} <= host
+    assert "inventory" not in cat.get("JobTemplate").immutable_fields
+    assert "description" not in host
