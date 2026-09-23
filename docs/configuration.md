@@ -46,6 +46,12 @@ default 5-second wait. The file is rewritten atomically through a unique
 temporary file that is created owner-only (`0600`), so secrets are never
 briefly world-readable.
 
+Writes (`config set/unset`, `profile` commands, and capability state updates)
+rewrite only the keys they change: your comments, key order, quoting, and
+indentation are kept. New keys are appended to their mapping, and new string
+values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
+`config edit` saves exactly what you wrote.
+
 The current layout keeps profile-scoped settings under `profiles.<name>` and
 keeps capability-managed state at the top level. `active` is optional; when it
 is absent, `default` is the fallback profile.

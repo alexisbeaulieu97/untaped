@@ -4,8 +4,9 @@ These are the lowest-level primitives behind the root ``untaped config
 set/unset`` commands. They never validate against the Settings schema —
 that's the caller's job.
 
-Note: round-tripping with PyYAML drops comments. Acceptable for v0; if we
-need comment preservation later, swap to ``ruamel.yaml``.
+Writes are round-trips (see :mod:`untaped.yaml_roundtrip`): only the keys a
+mutation changed are rewritten, so the user's comments, key order and
+formatting survive ``config set``, profile, and state writes.
 """
 
 from __future__ import annotations
@@ -19,12 +20,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import yaml
 from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped.errors import ConfigError
 from untaped.settings import get_settings, load_config_yaml, resolve_config_path
+from untaped.yaml_roundtrip import plain_dump, render_preserving
 
 _MISSING = object()
 # Typed as ``Any`` so ``value is MISSING`` at call sites doesn't
@@ -48,6 +49,8 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
 def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
     """Atomically write ``data`` back to the config file.
 
+    Only keys that differ from the file's current content are rewritten;
+    comments, key order and formatting of everything else are preserved.
     Creates parent directories if needed. The data is written to a unique
     temp file created with permissions ``0o600`` (so secrets are never
     world-readable, even briefly) and atomically renamed over the target;
@@ -55,7 +58,7 @@ def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
     """
     target = path or resolve_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    text = yaml.safe_dump(data, sort_keys=True, default_flow_style=False)
+    text = _render(data, target)
     # A unique temp file created 0600 from the start (O_EXCL, never
     # world-readable, even briefly) in the target's directory so the final
     # ``os.replace`` is atomic; removed again if anything fails.
@@ -68,6 +71,15 @@ def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
         with contextlib.suppress(OSError):
             os.unlink(tmp_name)
         raise
+
+
+def _render(data: dict[str, Any], target: Path) -> str:
+    try:
+        original = target.read_text(encoding="utf-8")
+        before = load_config_yaml(target)
+    except OSError, UnicodeDecodeError, ConfigError:
+        return plain_dump(data)
+    return render_preserving(original, before, data)
 
 
 def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None) -> None:
