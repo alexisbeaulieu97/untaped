@@ -16,6 +16,7 @@ context manager drives the start/finish lifecycle.
 
 from __future__ import annotations
 
+import shutil
 import threading
 import time
 from collections.abc import Iterator
@@ -57,6 +58,14 @@ class ProgressHandle(Protocol):
         """
         ...
 
+    def log(self, line: str) -> None:
+        """Print ``line`` (e.g. an ``error:`` line) on the progress stream.
+
+        A TTY spinner is cleared first and redrawn after, so the line is never
+        garbled by the in-place repaint. Prints even under ``--quiet``.
+        """
+        ...
+
 
 class _Backend(Protocol):
     def start(self) -> None: ...
@@ -65,11 +74,24 @@ class _Backend(Protocol):
         self, message: str, *, fraction: float | None = None, new_phase: bool = False
     ) -> None: ...
 
+    def log(self, line: str) -> None: ...
+
     def finish(self, *, failed: bool) -> None: ...
 
 
+def _write_line(stream: TextIO, line: str) -> None:
+    stream.write(f"{line}\n")
+    stream.flush()
+
+
 class _SilentHandle:
-    """No-op progress for ``--quiet``: emits nothing on any stream."""
+    """Progress for ``--quiet``: no progress output; logged lines still print."""
+
+    def __init__(self, *, stream: TextIO) -> None:
+        self._stream = stream
+
+    def log(self, line: str) -> None:
+        _write_line(self._stream, line)
 
     def start(self) -> None:
         return None
@@ -94,6 +116,9 @@ class _VerboseHandle:
         self._stream.write(f"{self._label}\n")
         self._stream.flush()
 
+    def log(self, line: str) -> None:
+        _write_line(self._stream, line)
+
     def update(
         self, message: str, *, fraction: float | None = None, new_phase: bool = False
     ) -> None:
@@ -115,6 +140,9 @@ class _ThrottledHandle:
 
     def start(self) -> None:
         self._emit(self._label)
+
+    def log(self, line: str) -> None:
+        _write_line(self._stream, line)
 
     def update(
         self, message: str, *, fraction: float | None = None, new_phase: bool = False
@@ -167,12 +195,22 @@ class _SpinnerHandle:
             self._label = message
             self._draw()
 
+    def log(self, line: str) -> None:
+        with self._lock:
+            self._clear()
+            self._stream.write(f"{line}\n")
+            self._draw()
+
     def finish(self, *, failed: bool) -> None:
         self._stop.set()
         self._thread.join()
         with self._lock:
-            self._stream.write("\r" + " " * self._line_width + "\r")
+            self._clear()
             self._stream.flush()
+
+    def _clear(self) -> None:
+        self._stream.write("\r" + " " * self._line_width + "\r")
+        self._line_width = 0
 
     def _run(self) -> None:
         while not self._stop.wait(_SPINNER_TICK):
@@ -183,17 +221,29 @@ class _SpinnerHandle:
         frame = self._frames[self._frame % len(self._frames)]
         self._frame += 1
         elapsed = int(time.monotonic() - self._started_at)
-        line = f"{frame} {self._label} ({elapsed}s)"
+        line = _fit(f"{frame} {self._label} ({elapsed}s)")
         self._stream.write("\r" + line.ljust(self._line_width))
         self._stream.flush()
         self._line_width = len(line)
+
+
+def _fit(line: str) -> str:
+    """Truncate a spinner line to the terminal width so ``\r`` repaints in place.
+
+    A line wider than the terminal wraps, and ``\r`` then only returns to the
+    start of the *last* row, leaving stale fragments behind.
+    """
+    width = shutil.get_terminal_size(fallback=(80, 24)).columns - 1
+    if width <= 1 or len(line) <= width:
+        return line
+    return line[: width - 1] + "…"
 
 
 def _make_handle(
     label: str, *, stream: TextIO, verbose: bool, quiet: bool, isatty: bool
 ) -> _Backend:
     if quiet:
-        return _SilentHandle()
+        return _SilentHandle(stream=stream)
     if verbose:
         return _VerboseHandle(label, stream=stream)
     if isatty:

@@ -46,7 +46,7 @@ def test_unset_when_no_yaml_no_default() -> None:
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     token = entries["demo.token"]
     assert token.source == Source(kind="unset")
-    assert token.value == "—"
+    assert token.value is None
 
 
 def test_default_when_no_yaml_no_env() -> None:
@@ -179,7 +179,7 @@ def test_http_setting_attributed_to_profile(
     entries = {e.key: e for e in ListSettings(SettingsFileRepository())()}
     http = entries["http.verify_ssl"]
     assert http.source == Source(kind="profile", profile="default")
-    assert http.value == "False"
+    assert http.value is False
 
 
 def test_source_label_renders_string() -> None:
@@ -275,6 +275,6 @@ class TestProfileLayoutListing:
         assert rows == {
             ("default", "log_level", "INFO"),
             ("prod", "log_level", "DEBUG"),
-            ("prod", "demo.page_size", "50"),
+            ("prod", "demo.page_size", 50),
         }
         assert all(e.source.kind == "profile" for e in entries)

@@ -10,8 +10,11 @@ need comment preservation later, swap to ``ruamel.yaml``.
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import math
 import os
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,7 +24,7 @@ from filelock import FileLock, Timeout
 from pydantic import SecretStr
 
 from untaped.errors import ConfigError
-from untaped.settings import get_settings, resolve_config_path
+from untaped.settings import get_settings, load_config_yaml, resolve_config_path
 
 _MISSING = object()
 # Typed as ``Any`` so ``value is MISSING`` at call sites doesn't
@@ -35,33 +38,36 @@ def read_config_dict(path: Path | None = None) -> dict[str, Any]:
     """Load the user's config file as a plain dict.
 
     Returns an empty dict if the file does not exist or is empty.
-    Translates ``yaml.YAMLError`` into :class:`ConfigError` so broken
-    YAML surfaces via ``report_errors`` instead of a PyYAML traceback.
+    Translates YAML syntax errors, read failures (e.g. permissions), and a
+    non-mapping document root into :class:`ConfigError` so they surface via
+    ``report_errors`` instead of a traceback.
     """
-    target = path or resolve_config_path()
-    if not target.is_file():
-        return {}
-    try:
-        with target.open() as f:
-            loaded = yaml.safe_load(f)
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"could not parse {target}: {exc}") from exc
-    return loaded if isinstance(loaded, dict) else {}
+    return load_config_yaml(path or resolve_config_path())
 
 
 def write_config_dict(data: dict[str, Any], path: Path | None = None) -> None:
     """Atomically write ``data`` back to the config file.
 
-    Creates parent directories if needed. The file is written with
-    permissions ``0o600`` so secrets aren't world-readable.
+    Creates parent directories if needed. The data is written to a unique
+    temp file created with permissions ``0o600`` (so secrets are never
+    world-readable, even briefly) and atomically renamed over the target;
+    a failed write leaves the original untouched and no temp file behind.
     """
     target = path or resolve_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    with tmp.open("w") as f:
-        yaml.safe_dump(data, f, sort_keys=True, default_flow_style=False)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, target)
+    text = yaml.safe_dump(data, sort_keys=True, default_flow_style=False)
+    # A unique temp file created 0600 from the start (O_EXCL, never
+    # world-readable, even briefly) in the target's directory so the final
+    # ``os.replace`` is atomic; removed again if anything fails.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp_name, target)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_name)
+        raise
 
 
 def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None) -> None:
@@ -82,11 +88,12 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
     the new values without callers needing to do it themselves.
 
     Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
-    (seconds, float). Default is 5 seconds.
+    (seconds, non-negative float; anything else raises ``ConfigError``).
+    Default is 5 seconds.
     """
     target = path or resolve_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    timeout = float(os.environ.get("UNTAPED_CONFIG_LOCK_TIMEOUT", _DEFAULT_LOCK_TIMEOUT))
+    timeout = _lock_timeout()
     lock = FileLock(str(target) + ".lock", timeout=timeout)
     try:
         lock.acquire()
@@ -104,6 +111,22 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
             get_settings.cache_clear()
     finally:
         lock.release()
+
+
+def _lock_timeout() -> float:
+    raw = os.environ.get("UNTAPED_CONFIG_LOCK_TIMEOUT", "").strip()
+    if not raw:
+        return _DEFAULT_LOCK_TIMEOUT
+    try:
+        timeout = float(raw)
+    except ValueError:
+        timeout = math.nan
+    if not math.isfinite(timeout) or timeout < 0:
+        raise ConfigError(
+            f"invalid UNTAPED_CONFIG_LOCK_TIMEOUT {raw!r}: expected a non-negative "
+            "number of seconds"
+        )
+    return timeout
 
 
 def ensure_config(path: Path | None = None) -> Path:

@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from untaped.cli import echo
+from untaped.cli import echo, format_error
 from untaped.errors import ConfigError, UntapedError
 from untaped.render import stream_is_tty
 from untaped.ui import UiContext
@@ -94,9 +94,11 @@ def batch_apply[T, R](
     and ``--yes`` skip straight to execution. ``preview_only`` (``--dry-run``)
     returns ``planned_rows`` without running ``action``.
 
-    Per-item :class:`UntapedError` is caught and counted; anything else
-    propagates. The helper never renders the summary or raises ``SystemExit`` —
-    the caller owns stdout and the exit code.
+    Per-item :class:`UntapedError` is caught, counted, and printed as
+    ``error: <label>: …`` on ``ui.stderr`` (formatted like ``report_errors``,
+    without garbling the progress spinner); anything else propagates. The
+    helper never renders the summary or raises ``SystemExit`` — the caller
+    owns stdout and the exit code.
     """
     planned_rows = [describe(item) for item in items]
     if not items or preview_only:
@@ -122,6 +124,6 @@ def batch_apply[T, R](
             try:
                 results.append((item, action(item)))
             except UntapedError as exc:
-                echo(f"error: {label(item)}: {exc}", err=True)
+                handle.log(f"error: {label(item)}: {format_error(exc)}")
                 failed += 1
     return BatchOutcome(results=results, failed=failed, planned_rows=planned_rows)

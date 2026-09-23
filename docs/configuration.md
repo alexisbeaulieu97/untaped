@@ -31,6 +31,15 @@ process-specific path:
 $UNTAPED_CONFIG                   # one-process override
 ```
 
+The document root, `profiles`, and each profile must be mappings; anything
+else (or an unreadable file) is reported as a configuration error naming the
+file. An empty profile entry (`prod:` with nothing under it) is an empty
+profile. Writes take an advisory lock on `<config>.lock`; set
+`UNTAPED_CONFIG_LOCK_TIMEOUT` (seconds, a non-negative number) to change the
+default 5-second wait. The file is rewritten atomically through a unique
+temporary file that is created owner-only (`0600`), so secrets are never
+briefly world-readable.
+
 The current layout keeps profile-scoped settings under `profiles.<name>` and
 keeps capability-managed state at the top level. `active` is optional; when it
 is absent, `default` is the fallback profile.
@@ -122,14 +131,15 @@ untaped --profile prod awx ping
 
 Active-profile selection follows this order: root `--profile`,
 `UNTAPED_PROFILE`, the persisted `active:` key, and the `default` profile
-fallback. The first three sources must name an existing profile. When a
+fallback. The first three sources must name an existing profile (even when no
+profiles are defined yet, only the conceptual `default` may be named). When a
 non-default profile is selected, its values overlay `profiles.default` per
 field; `default` is the shared base layer.
 
 `profile show` emits YAML by default and accepts `--format json`. Secrets are
 redacted unless `--show-secrets` is passed. `profile current` writes only the
-profile name to stdout; its source is reported on stderr, so it is safe in a
-prompt or pipeline:
+profile name to stdout; its source (`flag`, `env`, `config`, or `fallback`) is
+reported on stderr, so it is safe in a prompt or pipeline:
 
 ```bash
 echo "[$(untaped profile current 2>/dev/null)] $ "
@@ -162,15 +172,34 @@ untaped config set log_level DEBUG
 untaped config edit
 ```
 
+`config set` validates the value against the setting's type rather than
+parsing it as YAML. String and secret settings store the input verbatim, so
+`p4ss #word`, `0123456`, `no`, or `[abc` are kept exactly as typed (via
+`VALUE`, `--stdin`, or `--prompt`). Booleans accept `true`/`false`/`yes`/`no`/
+`1`/`0`, numbers and enumerated choices are checked, and paths are stored as
+strings; an invalid value is rejected before anything is written. To clear a
+value, use `config unset`.
+
+Reads and writes validate only the section a key belongs to, so one invalid
+value (for example a typo in `jira.page_size`) never blocks `config get`,
+`config set`, or `config unset` for other keys; you can repair the broken key
+through the CLI. `config list` still lists every key: an invalid section shows
+its raw values and prints a warning naming the problem.
+
 The configuration editor uses `VISUAL`, falling back to `EDITOR`, and waits for
 it to exit before validating the saved configuration. Arguments are parsed
 without a shell; quote executable paths containing spaces and include your GUI
 editor's wait option (for example, `EDITOR="code --wait"`).
 
-`--format raw --columns key --columns value` is useful when a script needs a
-stable two-column view. `config get` defaults to raw output and returns only the
-selected value. Structured output includes the key, value, source, profile, and
-default metadata as applicable.
+`--format raw --columns key,value` (or `--columns key --columns value`) is
+useful when a script needs a stable two-column view. `config get` defaults to
+raw output and returns only the selected value. Structured output (`json`,
+`yaml`, `pipe`) includes the key, value, source, profile, and default metadata
+as native values: an unset value or default is `null`, booleans and numbers
+keep their types, and secrets stay masked as `"***"` unless `--show-secrets`
+is passed. The `—` placeholder for unset values appears only in table and raw
+output. Likewise `profile list` reports `active` as a boolean in structured
+output and as `✓` in table/raw output.
 
 Capability state fields produce a “managed by untaped …” error when passed to
 `config set` or `config unset`. Use the owning capability's commands for state
@@ -180,9 +209,21 @@ mutations. Root config diagnostics are deliberately separate:
 untaped doctor
 ```
 
-`doctor` reports the config path, profile resolution, per-capability settings
-failures, provider quarantine records, and other health checks without allowing
-one broken capability to hide the rest.
+`doctor` runs offline and reports one row per check, without allowing one
+broken section to hide the rest:
+
+- `config` — the config file loads (readable, valid YAML, mapping root);
+- `profile` — the selected profile (`--profile`, `UNTAPED_PROFILE`, or
+  `active:`) exists;
+- `settings` for the shell — one row each for `log_level`, `http` (including a
+  readable `http.ca_bundle`), and `ui` (including a known `ui.theme`);
+- `settings` per capability — the capability's profile section;
+- `state` per capability with a state model — its top-level state section;
+- each capability-contributed health check, and any quarantined provider.
+
+Settings rows apply `UNTAPED_*` environment overrides on top of the file and
+name the variable when an override is the invalid value (for example
+`UNTAPED_HTTP__TIMEOUT=abc`). Any failed row makes `doctor` exit nonzero.
 
 ## TLS and shared UI settings
 
@@ -195,13 +236,17 @@ untaped config set http.ca_bundle /path/to/corp-ca.pem
 untaped config set http.verify_hostname false --target-profile work
 ```
 
+`http.ca_bundle` must point to an existing file; a missing file is reported as
+a configuration error naming the path (and fails `doctor`'s `http` row).
 `http.verify_hostname: false` keeps chain validation enabled while skipping the
 hostname check. `http.verify_ssl: false` disables certificate validation and
 should be reserved for a controlled network.
 
-Themes are selected through `ui.theme`; human table/detail rendering follows
-the theme, while JSON, YAML, raw, and pipe output remain machine-readable and
-stable.
+Themes are selected through `ui.theme` and must name a built-in theme
+(`default`, `plain`, `compact`, `high-contrast`, `quiet`, or `classic`):
+`config set ui.theme` rejects anything else and `doctor` reports an unknown
+theme already in the file. Human table/detail rendering follows the theme,
+while JSON, YAML, raw, and pipe output remain machine-readable and stable.
 
 ## Worked profile setup
 

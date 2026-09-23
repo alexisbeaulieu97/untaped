@@ -282,6 +282,29 @@ def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
     assert os.environ.get("UNTAPED_PROFILE") == env_before
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["-v", "-q", "ext", "who"],
+        ["--quiet", "ext", "who", "--verbose"],
+        ["ext", "who", "-q", "-v"],
+    ],
+)
+def test_verbose_and_quiet_together_is_a_usage_error(
+    _isolated_config: Path, argv: list[str]
+) -> None:
+    calls: list[str] = []
+    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external(calls)])
+
+    result = CliInvoker().invoke(root.meta, argv)
+
+    assert result.exit_code == 2
+    assert "--verbose and --quiet cannot be combined" in result.stderr
+    assert result.stdout == ""
+    assert not is_verbose()
+    assert not is_quiet()
+
+
 def test_identity_resets_after_nested_calls() -> None:
     seen: dict[str, object] = {}
     holder: dict[str, object] = {}

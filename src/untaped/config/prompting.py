@@ -59,12 +59,10 @@ def _prompt_value(full_key: str, repo: SettingsReader, *, target_profile: str | 
         return ui.secret(message)
     default = _prompt_default(full_key, descriptor, repo, target_profile=target_profile)
     if full_key == "ui.theme":
-        return _raw_prompt_scalar(
-            ui.select(message, _theme_choices(), default=default, search=True)
-        )
+        return ui.select(message, _theme_choices(), default=default, search=True)
     literal_values = _literal_values(descriptor)
     if literal_values:
-        return _raw_prompt_scalar(
+        return str(
             ui.select(
                 message,
                 [PromptChoice(value=item, label=str(item)) for item in literal_values],
@@ -89,7 +87,7 @@ def _prompt_default(
     target_profile: str | None,
 ) -> str | None:
     entry = GetSetting(repo)(full_key)
-    value = str(entry.value)
+    value = entry.value
     if target_profile is not None and entry.source.kind != "env":
         scoped = repo.profile_value_for(descriptor, target_profile)
         value = (
@@ -97,11 +95,11 @@ def _prompt_default(
             if scoped is None
             else display_value(descriptor, scoped, reveal_secrets=False)
         )
-    if value in {"", "—", "***"}:
+    if value is None or value in {"", "***"}:
         return None
-    if descriptor.annotation is bool:
-        return value.lower()
-    return value
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
 
 
 def _literal_values(descriptor: FieldDescriptor) -> list[object]:
@@ -118,15 +116,3 @@ def _default_choice(default: str | None, choices: Sequence[object]) -> object | 
     if default is None:
         return None
     return next((choice for choice in choices if str(choice) == default), None)
-
-
-def _raw_prompt_scalar(value: object) -> str:
-    if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if value is None:
-        return "null"
-    return str(value)

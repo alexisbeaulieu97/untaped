@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 from collections.abc import Sequence
+from enum import Enum
 from typing import Any, Literal, Protocol, TextIO
 
 import yaml
@@ -88,7 +89,7 @@ class RichTerminalRenderer:
         if fmt == "json":
             return json.dumps(selected, default=str)
         if fmt == "yaml":
-            return yaml.safe_dump(selected, sort_keys=False, default_flow_style=False).rstrip()
+            return _dump_yaml(selected)
         if fmt == "table":
             if theme.collection_view == "list":
                 return _format_records_as_lines(selected, theme=theme, colorize=colorize)
@@ -118,7 +119,7 @@ class RichTerminalRenderer:
         if fmt == "json":
             return json.dumps(selected, default=str)
         if fmt == "yaml":
-            return yaml.safe_dump(selected, sort_keys=False, default_flow_style=False).rstrip()
+            return _dump_yaml(selected)
         if fmt == "table":
             if theme.detail_view == "table":
                 rows = [{"field": key, "value": value} for key, value in selected.items()]
@@ -143,6 +144,23 @@ class RichTerminalRenderer:
         if style is None:
             return rendered
         return _render_text(Text(rendered, style=style), colorize=colorize)
+
+
+class _YamlDumper(yaml.SafeDumper):
+    """Safe YAML dumper that renders unknown types instead of raising."""
+
+
+def _represent_fallback(dumper: yaml.SafeDumper, value: object) -> yaml.Node:
+    if isinstance(value, Enum):
+        return dumper.represent_data(value.value)
+    return dumper.represent_str(str(value))
+
+
+_YamlDumper.add_representer(None, _represent_fallback)  # type: ignore[arg-type]
+
+
+def _dump_yaml(data: object) -> str:
+    return yaml.dump(data, Dumper=_YamlDumper, sort_keys=False, default_flow_style=False).rstrip()
 
 
 def _parse_columns(columns: list[str] | None) -> list[tuple[str, list[str]]] | None:
