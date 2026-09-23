@@ -9,6 +9,7 @@ from untaped.capabilities.awx.application.selected_actions import run_selected_a
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch, validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -81,9 +82,10 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                     }
                     for item in selected
                 ]
-                for row in rows:
+                for item in selected:
                     echo(
-                        f"Delete {row['kind']}/{row['name']} id={row['id']} scope={row['scope']}",
+                        f"Delete {item.kind}/{item.name} id={item.id} "
+                        f"scope={format_scope(item.scope)}",
                         err=True,
                     )
                 failed = False
