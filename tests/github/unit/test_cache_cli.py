@@ -120,7 +120,7 @@ def test_cache_prune_removes_departed_repos(
         )
         rejected = CliInvoker().invoke(
             app,
-            ["cache", "clean", "--prune", "--org", "acme", "--format", "json"],
+            ["cache", "prune", "--org", "acme", "--format", "json"],
         )
     listed_after_reject = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
@@ -130,7 +130,7 @@ def test_cache_prune_removes_departed_repos(
         )
         pruned = CliInvoker().invoke(
             app,
-            ["cache", "clean", "--prune", "--org", "acme", "--yes", "--format", "json"],
+            ["cache", "prune", "--org", "acme", "--yes", "--format", "json"],
         )
     listed_after_prune = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
@@ -144,14 +144,14 @@ def test_cache_prune_removes_departed_repos(
     assert [row["repo"] for row in json.loads(listed_after_prune.stdout)] == ["acme/api"]
 
 
-def test_cache_clean_has_no_team_option(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cache_prune_has_no_team_option(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
     source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
     _populate_cache(tmp_path, [_repo("acme/api", source)])
 
     result = CliInvoker().invoke(
         app,
-        ["cache", "clean", "--prune", "--team", "acme/backend", "--yes", "--format", "json"],
+        ["cache", "prune", "--team", "acme/backend", "--yes", "--format", "json"],
     )
     listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
@@ -160,7 +160,7 @@ def test_cache_clean_has_no_team_option(tmp_path: Path, monkeypatch: pytest.Monk
     assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
 
 
-def test_cache_clean_all_with_org_only_removes_that_org(
+def test_cache_delete_all_with_org_only_removes_that_org(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
@@ -170,7 +170,7 @@ def test_cache_clean_all_with_org_only_removes_that_org(
     _populate_cache(tmp_path, [_repo("other/tool", tool)], org="other")
 
     cleaned = CliInvoker().invoke(
-        app, ["cache", "clean", "--all", "--org", "ACME", "--yes", "--format", "json"]
+        app, ["cache", "delete", "--all", "--org", "ACME", "--yes", "--format", "json"]
     )
     listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
@@ -179,7 +179,7 @@ def test_cache_clean_all_with_org_only_removes_that_org(
     assert [row["repo"] for row in json.loads(listed.stdout)] == ["other/tool"]
 
 
-def test_cache_clean_repo_with_org_filters_selection(
+def test_cache_delete_repo_with_org_filters_selection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
@@ -188,7 +188,7 @@ def test_cache_clean_repo_with_org_filters_selection(
 
     cleaned = CliInvoker().invoke(
         app,
-        ["cache", "clean", "--repo", "acme/api", "--org", "other", "--yes", "--format", "json"],
+        ["cache", "delete", "acme/api", "--org", "other", "--yes", "--format", "json"],
     )
     listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
@@ -208,18 +208,68 @@ def test_cache_clean_requires_exactly_one_mode(
         ["cache", "clean", "--repo", "acme/api", "--all", "--yes", "--format", "json"],
     )
 
-    assert missing.exit_code != 0
+    assert missing.exit_code == 2
     assert "requires exactly one" in missing.output
-    assert combined.exit_code != 0
+    assert combined.exit_code == 2
     assert "requires exactly one" in combined.output
 
 
-def test_cache_clean_all_requires_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cache_clean_still_works_and_warns_it_is_deprecated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
     source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
     _populate_cache(tmp_path, [_repo("acme/api", source)])
 
-    result = CliInvoker().invoke(app, ["cache", "clean", "--all", "--format", "json"])
+    cleaned = CliInvoker().invoke(
+        app, ["cache", "clean", "--repo", "acme/api", "--yes", "--format", "json"]
+    )
+
+    assert cleaned.exit_code == 0, cleaned.output
+    assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
+    assert "warning: `cache clean` is deprecated" in cleaned.stderr
+
+
+def test_cache_delete_and_prune_selection_errors_exit_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+
+    missing = CliInvoker().invoke(app, ["cache", "delete"])
+    combined = CliInvoker().invoke(app, ["cache", "delete", "acme/api", "--all", "--yes"])
+    no_org = CliInvoker().invoke(app, ["cache", "prune", "--yes"])
+
+    assert missing.exit_code == 2
+    assert "cache delete requires REPO arguments or --all" in missing.stderr
+    assert combined.exit_code == 2
+    assert "not both" in combined.stderr
+    assert no_org.exit_code == 2
+    assert "cache prune requires --org" in no_org.stderr
+
+
+def test_cache_delete_dry_run_lists_without_deleting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    _populate_cache(tmp_path, [_repo("acme/api", source)])
+
+    planned = CliInvoker().invoke(
+        app, ["cache", "delete", "--all", "--dry-run", "--yes", "--format", "json"]
+    )
+    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
+
+    assert planned.exit_code == 0, planned.output
+    assert [row["repo"] for row in json.loads(planned.stdout)] == ["acme/api"]
+    assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
+
+
+def test_cache_delete_all_requires_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    _populate_cache(tmp_path, [_repo("acme/api", source)])
+
+    result = CliInvoker().invoke(app, ["cache", "delete", "--all", "--format", "json"])
     listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
     assert result.exit_code != 0
@@ -227,7 +277,7 @@ def test_cache_clean_all_requires_yes(tmp_path: Path, monkeypatch: pytest.Monkey
     assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
 
 
-def test_cache_clean_repo_conforms_to_destructive_contract(
+def test_cache_delete_repo_conforms_to_destructive_contract(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
@@ -241,12 +291,12 @@ def test_cache_clean_repo_conforms_to_destructive_contract(
 
     assert_destructive_contract(
         app,
-        ["cache", "clean", "--repo", "acme/api", "--format", "json"],
+        ["cache", "delete", "acme/api", "--format", "json"],
         assert_unchanged=_corpus_still_has_repo,
     )
 
 
-def test_cache_clean_all_yes_removes_every_cached_repo(
+def test_cache_delete_all_yes_removes_every_cached_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
@@ -254,7 +304,7 @@ def test_cache_clean_all_yes_removes_every_cached_repo(
     worker = _source_repo(tmp_path, "worker", {"README.md": "hello\n"})
     _populate_cache(tmp_path, [_repo("acme/api", api), _repo("acme/worker", worker)])
 
-    cleaned = CliInvoker().invoke(app, ["cache", "clean", "--all", "--yes", "--format", "json"])
+    cleaned = CliInvoker().invoke(app, ["cache", "delete", "--all", "--yes", "--format", "json"])
     listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
     assert cleaned.exit_code == 0, cleaned.output
@@ -277,16 +327,14 @@ def test_cache_worktree_materializes_cached_ref(
     assert (Path(row["path"]) / "README.md").is_file()
 
 
-def test_cache_clean_repo_matches_case_insensitively(
+def test_cache_delete_repo_matches_case_insensitively(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
     api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
     _populate_cache(tmp_path, [_repo("acme/api", api)])
 
-    cleaned = CliInvoker().invoke(
-        app, ["cache", "clean", "--repo", "ACME/Api", "--yes", "--format", "json"]
-    )
+    cleaned = CliInvoker().invoke(app, ["cache", "delete", "ACME/Api", "--yes", "--format", "json"])
 
     assert cleaned.exit_code == 0, cleaned.output
     assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
