@@ -7,7 +7,7 @@ from untaped.api import ConfigError, OutputFormat, UiContext, clamp_parallel, ec
 from untaped.capabilities.awx.application.mutation_engine import BatchMutationEngine
 from untaped.capabilities.awx.application.mutation_types import MutationPlan
 from untaped.capabilities.awx.cli._context import AwxContext
-from untaped.capabilities.awx.cli.format import outcome_rows
+from untaped.capabilities.awx.cli.format import format_scope, format_value, outcome_rows
 from untaped.capabilities.awx.domain import ApplyOutcome
 
 
@@ -89,12 +89,12 @@ def preview_and_execute(
     for outcome in previews:
         echo(
             f"{outcome.kind}/{outcome.name} id={outcome.id} "
-            f"scope={outcome.scope}: {outcome.action}",
+            f"scope={format_scope(outcome.scope)}: {outcome.action}",
             err=True,
         )
         for change in outcome.changes:
             echo(
-                f"  {change.field}: {change.before!r} → {change.after!r}"
+                f"  {change.field}: {format_value(change.before)} → {format_value(change.after)}"
                 + (f" ({change.note})" if change.note else ""),
                 err=True,
             )

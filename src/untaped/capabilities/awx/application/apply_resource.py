@@ -7,7 +7,7 @@ from typing import Any
 
 from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
 from untaped.capabilities.awx.application.apply_membership import MembershipReconciler
-from untaped.capabilities.awx.application.apply_planner import ApplyPlanner, unrecognized_warning
+from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.mutation_engine import BatchMutationEngine
@@ -55,13 +55,9 @@ class ApplyResource:
             verifier=verifier,
             allow_unverified=allow_unverified,
         )
-        self._catalog = catalog
-        self._warn = warn
 
     def __call__(self, resource: Resource, *, write: bool = False) -> ApplyOutcome:
-        message = unrecognized_warning(self._catalog.get(resource.kind), resource.spec.keys())
-        if message is not None:
-            self._warn(message)
+        # The engine's prepare emits the unrecognized-field warning.
         return self.engine.run([resource], write=write).outcomes[0]
 
     def apply_to_existing(

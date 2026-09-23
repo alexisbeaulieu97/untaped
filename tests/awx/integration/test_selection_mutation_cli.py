@@ -637,3 +637,82 @@ def test_membership_organization_scope_uses_numeric_parent_relation(fake_aap: An
     )
     assert result.exit_code != 0, result.output
     assert not any(call.request.method == "POST" for call in fake_aap.router.calls)
+
+
+def test_patch_set_keeps_string_fields_as_strings(fake_aap: Any) -> None:
+    """``scm_branch=1.10`` must not become the float 1.1 on a string field."""
+    seed(fake_aap, "job_templates")
+    fake_aap.store["job_templates"][10].update(scm_branch="main", verbosity=0)
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "patch",
+            "target",
+            "--set",
+            "scm_branch=1.10",
+            "--set",
+            "verbosity=2",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    record = fake_aap.get_record("job_templates", 10)
+    assert record["scm_branch"] == "1.10"
+    assert record["verbosity"] == 2
+
+
+def test_mutation_preview_renders_scope_and_values_readably(fake_aap: Any) -> None:
+    """Previews show ``org=Default`` and compact JSON, never Python reprs."""
+    seed(fake_aap, "job_templates")
+    fake_aap.store["job_templates"][10]["organization_name"] = "Default"
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "patch",
+            "target",
+            "--organization",
+            "Default",
+            "--set",
+            "description=new",
+            "--set",
+            'job_slice_count={"a": [1, true]}',
+            "--allow-unknown-fields",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "{'organization'" not in result.stderr
+    assert "org=Default" in result.stderr
+    assert 'description: "old" → "new"' in result.stderr
+    assert '{"a":[1,true]}' in result.stderr
+
+
+def test_patch_rejects_unknown_fields_by_default(fake_aap: Any) -> None:
+    seed(fake_aap, "job_templates")
+    result = CliInvoker().invoke(
+        app, ["job-templates", "patch", "target", "--set", "verbostiy=2", "--yes"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "verbostiy" in result.output
+    assert not any(call.request.method == "PATCH" for call in fake_aap.router.calls)
+
+
+def test_patch_allow_unknown_fields_warns_and_sends(fake_aap: Any) -> None:
+    seed(fake_aap, "job_templates")
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "patch",
+            "target",
+            "--set",
+            "future_field=2",
+            "--allow-unknown-fields",
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "future_field" in (result.stderr or "")
+    assert fake_aap.get_record("job_templates", 10)["future_field"] == 2

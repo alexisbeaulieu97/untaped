@@ -1,21 +1,32 @@
 """Submit fixed launch/sync targets and preserve execution IDs through monitoring failures."""
 
+import json
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
 
 from rich.console import Console
 
-from untaped.api import ColumnsOption, FormatOption, echo, emit, finish
+from untaped.api import (
+    ColumnsOption,
+    FormatOption,
+    UntapedError,
+    echo,
+    emit,
+    finish,
+    raise_usage,
+)
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
 from untaped.capabilities.awx.application.selected_actions import run_selected_actions
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
+from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
 from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
+from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.domain import Job, ResourceSpec
-from untaped.capabilities.awx.errors import ActionResponseError
+from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 
 
 def run_action_selection(
@@ -26,6 +37,8 @@ def run_action_selection(
     action: str,
     payload: dict[str, Any] | None = None,
     dry_run: bool = False,
+    yes: bool = False,
+    confirm: bool = False,
     parallel: int = 1,
     continue_on_error: bool = False,
     wait: bool = False,
@@ -33,8 +46,12 @@ def run_action_selection(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """One bounded POST phase, then monitor every known execution even after failures."""
-    spec, targets = prepare_action_targets(ctx.repo, ctx.catalog, spec, selected, action=action)
+    """One bounded POST phase, then monitor every known execution even after failures.
+
+    ``confirm`` (mass selections) previews the targets and asks once unless
+    ``yes``; a declined prompt submits nothing.
+    """
+    spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload)
     result_kinds = next(a.returns for a in spec.actions if a.name == action)
     result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
     rows: list[dict[str, Any]] = [
@@ -49,7 +66,7 @@ def run_action_selection(
         }
         for item in targets
     ]
-    if dry_run:
+    if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
         emit(rows, fmt=fmt, columns=columns, kind="awx.job")
         return
 
@@ -77,12 +94,7 @@ def run_action_selection(
             launched.append((label, outcome.result))
             row_by_label[label] = index
     if launched and (wait or track):
-        console = Console(stderr=True, highlight=False)
-        finals, errors = (
-            _drain_parallel(ctx.monitor, launched, console)
-            if track
-            else _wait_parallel(ctx.repo, launched)
-        )
+        finals, errors = _monitor(ctx, launched, track=track)
         row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
         for job in finals:
             row = rows[row_by_job[(job.kind, job.id)]]
@@ -99,6 +111,55 @@ def run_action_selection(
     finish(any(row["action"] != "completed" for row in rows))
 
 
+def _monitor(
+    ctx: AwxContext, launched: list[tuple[str, Job]], *, track: bool
+) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
+    """Wait on launched executions; Ctrl-C stops polling and names what still runs."""
+    try:
+        if track:
+            console = Console(stderr=True, highlight=False)
+            return _drain_parallel(ctx.monitor, launched, console, stop=ctx.stop)
+        return _wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop)
+    except KeyboardInterrupt:
+        by_kind: dict[str, list[str]] = {}
+        for label, job in launched:
+            echo(f"interrupted: {label}: {job.kind} {job.id} keeps running", err=True)
+            by_kind.setdefault(job.kind, []).append(str(job.id))
+        for kind, ids in by_kind.items():
+            echo(f"hint: untaped awx jobs wait {' '.join(ids)} --kind {kind}", err=True)
+        raise SystemExit(130) from None
+
+
+def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:
+    """Preview every target on stderr, then ask once with No as the default."""
+    for item in targets:
+        echo(
+            f"{action} {item.kind}/{item.name} id={item.id} scope={format_scope(item.scope)}",
+            err=True,
+        )
+    if confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False):
+        return True
+    echo(f"Cancelled; nothing to {action}.", err=True)
+    return False
+
+
+def _prepare(
+    ctx: AwxContext,
+    spec: ResourceSpec,
+    selected: Sequence[SelectedResource],
+    *,
+    action: str,
+    payload: dict[str, Any] | None,
+) -> tuple[ResourceSpec, tuple[SelectedResource, ...]]:
+    """Launch-prompt preflight failures are usage errors (exit 2), not API errors."""
+    try:
+        return prepare_action_targets(
+            ctx.repo, ctx.catalog, spec, selected, action=action, payload=payload
+        )
+    except LaunchPromptError as exc:
+        raise_usage(str(exc))
+
+
 def _action_error(
     exc: Exception,
     spec: ResourceSpec,
@@ -109,13 +170,26 @@ def _action_error(
     # complete submitted string and individual values in controller exceptions.
     secrets = dict(payload or {})
     if isinstance(secrets.get("extra_vars"), str):
-        secrets["extra_vars"] = [
-            part.partition("=")[2] for part in secrets["extra_vars"].splitlines()
-        ]
+        try:
+            decoded = json.loads(secrets["extra_vars"])
+        except json.JSONDecodeError:
+            decoded = None
+        secrets["extra_vars"] = [str(value) for value in _leaf_values(decoded)]
     secret_spec = spec.model_copy(
         update={"secret_paths": (*spec.secret_paths, "extra_vars", "extra_vars.*")}
     )
     return redact_error(exc, secret_spec, target.record, payload or {}, secrets)
+
+
+def _leaf_values(value: Any) -> list[Any]:
+    """Every scalar inside a decoded extra-vars document (bools/None excluded)."""
+    if isinstance(value, dict):
+        return [leaf for child in value.values() for leaf in _leaf_values(child)]
+    if isinstance(value, list):
+        return [leaf for child in value for leaf in _leaf_values(child)]
+    if value is None or isinstance(value, bool):
+        return []
+    return [value]
 
 
 def _monitor_labels(targets: Sequence[SelectedResource]) -> list[str]:

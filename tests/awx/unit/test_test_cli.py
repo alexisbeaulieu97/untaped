@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -40,7 +41,7 @@ def aap_config_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
 
 
 def _seed_jt(fake: FakeAap, *, name: str = "Deploy app") -> None:
-    fake.seed("job_templates", name=name)
+    fake.seed("job_templates", name=name, ask_variables_on_launch=True, ask_limit_on_launch=True)
 
 
 def _write(path: Path, body: str) -> Path:
@@ -117,6 +118,29 @@ def test_run_passes_when_job_succeeds(cli: CliInvoker, fake_aap: FakeAap, tmp_pa
     assert "pass" in result.stdout
     # FakeAap records the launch action
     assert any(action == "launch" for _, _, action, _ in fake_aap.actions_called)
+
+
+def test_run_errors_when_awx_ignores_launch_fields(
+    cli: CliInvoker, fake_aap: FakeAap, tmp_path: Path
+) -> None:
+    """A case whose limit AWX ignored ran against the whole inventory: not a pass."""
+    fake_aap.seed("job_templates", name="Deploy app")
+    test_file = _write(
+        tmp_path / "smoke.yml",
+        "kind: AwxTestSuite\nname: smoke\njobTemplate: Deploy app\n"
+        "cases:\n  one:\n    launch:\n      limit: web-*\n",
+    )
+
+    result = cli.invoke(
+        app, ["test", "run", str(test_file), "--non-interactive", "--format", "json"]
+    )
+
+    assert result.exit_code != 0
+    row = json.loads(result.stdout)[0]
+    assert row["result"] == "error"
+    assert "ignored" in row["failure_reason"]
+    assert "limit" in row["failure_reason"]
+    assert row["job_id"] is not None
 
 
 def test_run_with_disjoint_variables_across_files_succeeds(

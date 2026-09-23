@@ -13,12 +13,13 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
 from untaped.capabilities.awx.application.apply_membership import (
     MembershipReconciler,
     MembershipSnapshots,
 )
-from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
+from untaped.capabilities.awx.application.apply_planner import ApplyPlanner, unrecognized_warning
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.mutation_types import (
@@ -60,6 +61,14 @@ MutationMode = Literal["apply", "patch", "edit"]
 
 class MutationConflict(AwxApiError):
     """Raised for an invalid no-create target or an unusable prepared plan."""
+
+
+class _AbortBatch(Exception):
+    """Carries the failed row of a write that must stop the whole batch."""
+
+    def __init__(self, outcome: ApplyOutcome) -> None:
+        super().__init__(outcome.detail)
+        self.outcome = outcome
 
 
 @dataclass
@@ -215,12 +224,19 @@ class BatchMutationEngine:
         strategies: list[ApplyStrategy] = []
 
         parents: list[tuple[str, int | DeferredReference] | None] = [None] * len(docs)
+        warnings: list[str] = []
         for resource in docs:
             spec = self._catalog.get(resource.kind)
             if spec.fidelity == "read_only":
                 raise BadRequest(f"{spec.kind} does not support apply (fidelity={spec.fidelity!r})")
             specs.append(spec)
             strategies.append(self._strategies.get(spec.apply_strategy))
+            # One warning per distinct message: a mass patch shares its overlay.
+            message = unrecognized_warning(spec, resource.spec.keys())
+            if message is not None and message not in warnings:
+                warnings.append(message)
+        for message in warnings:
+            self._warn(message)
 
         parent_targets: set[tuple[str, str, int | str]] = set()
         pending = set(range(len(docs)))
@@ -474,13 +490,15 @@ class BatchMutationEngine:
                 detail="batch preflight failed; no writes were attempted",
             )
 
-        outcomes = self._execute_bodies(
+        outcomes, aborted = self._execute_bodies(
             plan,
             continue_on_error=continue_on_error,
             parallel=parallel,
             bindings=bindings,
         )
-        self._execute_memberships(plan, outcomes, bindings, continue_on_error=continue_on_error)
+        self._execute_memberships(
+            plan, outcomes, bindings, continue_on_error=continue_on_error and not aborted
+        )
         partial = any(
             outcome.action in {"failed", "partial"} or outcome.partial for outcome in outcomes
         )
@@ -596,11 +614,12 @@ class BatchMutationEngine:
         continue_on_error: bool,
         parallel: int,
         bindings: dict[str, int],
-    ) -> list[ApplyOutcome]:
+    ) -> tuple[list[ApplyOutcome], bool]:
+        """Run body writes; the flag reports an abort (auth/config failure)."""
         outcomes: list[ApplyOutcome | None] = [None] * len(plan.operations)
         pending = {operation.index for operation in plan.operations}
         in_flight: dict[Future[ApplyOutcome], int] = {}
-        stopped = False
+        stopped = aborted = False
         with ThreadPoolExecutor(max_workers=parallel) as pool:
             while pending or in_flight:
                 if not stopped:
@@ -644,9 +663,16 @@ class BatchMutationEngine:
                     index = in_flight.pop(future)
                     try:
                         outcome = future.result()
-                    except AwxApiError as exc:
+                    except _AbortBatch as abort:
+                        # Authentication/configuration failures doom every
+                        # remaining request; keep completed rows, stop the rest.
+                        outcome = abort.outcome
+                        stopped = aborted = True
+                    except Exception as exc:
                         operation = plan.operations[index]
-                        outcome = self._status_outcome(operation, action="failed", detail=str(exc))
+                        outcome = self._status_outcome(
+                            operation, action="failed", detail=_safe_error(exc, operation)
+                        )
                     outcomes[index] = outcome
                     if (
                         outcome.id is not None
@@ -665,7 +691,7 @@ class BatchMutationEngine:
                         detail="skipped after a runtime failure",
                     )
                 pending.clear()
-        return [cast(ApplyOutcome, outcome) for outcome in outcomes]
+        return [cast(ApplyOutcome, outcome) for outcome in outcomes], aborted
 
     def _execute_body(
         self, operation: PreparedMutation, bindings: Mapping[str, int]
@@ -713,8 +739,10 @@ class BatchMutationEngine:
                     "unverified": detail is not None,
                 }
             )
-        except AwxApiError as exc:
-            return base.model_copy(
+        except Exception as exc:
+            # Any per-item failure (API, strategy bug) is this row's outcome;
+            # BaseException (KeyboardInterrupt, SystemExit) still propagates.
+            outcome = base.model_copy(
                 update={
                     "action": "partial" if wrote else "failed",
                     "partial": wrote,
@@ -723,6 +751,9 @@ class BatchMutationEngine:
                     "detail": _safe_error(exc, operation),
                 }
             )
+            if isinstance(exc, ConfigError):
+                raise _AbortBatch(outcome) from exc
+            return outcome
 
     def _execute_memberships(
         self,
@@ -774,7 +805,7 @@ class BatchMutationEngine:
                     client=self._client,
                 )
                 self._membership.verify(operation.spec, target_id, plans, client=self._client)
-            except (AwxApiError, KeyError, TypeError, ValueError) as exc:
+            except Exception as exc:
                 outcomes[operation.index] = outcome.model_copy(
                     update={
                         "action": "partial",
@@ -786,7 +817,7 @@ class BatchMutationEngine:
                         ),
                     }
                 )
-                stopped = not continue_on_error
+                stopped = not continue_on_error or isinstance(exc, ConfigError)
                 continue
             if (
                 any(item.field_change is not None for item in plans)

@@ -95,6 +95,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                     inventory=inventory,
                     inventory_organization=inventory_organization,
                     parent=parent,
+                    limit=limit,
                 )
             records = [item.record for item in selected]
             if limit is not None:

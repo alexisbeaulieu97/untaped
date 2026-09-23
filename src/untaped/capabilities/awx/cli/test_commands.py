@@ -195,17 +195,26 @@ def run_command(
                 default_organization=ctx.default_organization,
             ),
             launcher=RunAction(ctx.repo),
-            watcher=WatchJob(ctx.repo),
+            watcher=WatchJob(ctx.repo, sleep=ctx.pause),
             spec=spec,
             fk_prefetcher=ctx.fk,
             jt_scope=_jt_scope(ctx, spec),
+            stop=ctx.stop,
         )
-        outcome = runner(
-            suites,
-            case_filter=case_filter,
-            parallel=parallel,
-            timeout=timeout,
-        )
+        try:
+            outcome = runner(
+                suites,
+                case_filter=case_filter,
+                parallel=parallel,
+                timeout=timeout,
+            )
+        except KeyboardInterrupt:
+            ids = [str(job.id) for job in runner.launched]
+            for job_id in ids:
+                echo(f"interrupted: job {job_id} keeps running", err=True)
+            if ids:
+                echo(f"hint: untaped awx jobs wait {' '.join(ids)}", err=True)
+            raise SystemExit(130) from None
 
         if show_logs:
             for result in outcome.results:

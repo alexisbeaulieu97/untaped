@@ -257,11 +257,12 @@ class MembershipReconciler:
                     (tuple(member for member in plan.desired_ids if member in associate), False),
                 )
             else:
-                # Set-like relationships retain the long-standing additive
-                # order used by the command surface and its pipe output.
+                # Replacement removes first: AWX rejects a second credential
+                # of the same type, so swapping one must free the slot before
+                # associating. Additive plans only ever carry one direction.
                 operations = (
-                    (plan.to_associate, False),
                     (plan.to_disassociate, True),
+                    (plan.to_associate, False),
                 )
             for member_ids, disassociate in operations:
                 self.post_members(
