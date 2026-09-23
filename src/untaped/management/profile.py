@@ -15,13 +15,15 @@ from cyclopts import App, Parameter
 from untaped.cli import (
     ColumnsOption,
     FormatOption,
+    YesOption,
     create_app,
     echo,
     emit,
     report_errors,
 )
 from untaped.config_schema import redact_secrets, secret_field_paths
-from untaped.errors import ConfigError
+from untaped.errors import OperationCancelledError
+from untaped.messages import q
 from untaped.profile.models import Profile, ProfileDeletePreview
 from untaped.profile.repository import ProfileFileRepository
 from untaped.profile.use_cases import (
@@ -33,7 +35,6 @@ from untaped.profile.use_cases import (
     ShowProfile,
     UseProfile,
 )
-from untaped.render import stream_is_tty
 from untaped.settings import get_profile_settings_model, resolve_config_path
 from untaped.ui import ui_context
 
@@ -75,7 +76,7 @@ def _make_list_command(empty_hint: str) -> Callable[..., None]:
                 rows,
                 fmt=fmt,
                 columns=columns,
-                kind="profile.profile",
+                kind="untaped.profile",
                 empty=empty_hint,
             )
 
@@ -159,9 +160,8 @@ def _use_command(
     """Persist ``active: <name>`` in the config file."""
     with report_errors():
         UseProfile(ProfileFileRepository())(name)
-        ui_context(strict=False).message(
-            "success", f"active profile: {name} (config: {resolve_config_path()})"
-        )
+        config_path = resolve_config_path()
+        ui_context(strict=False).success(f"active profile: {name} (config: {config_path})")
 
 
 def _current_command() -> None:
@@ -191,19 +191,14 @@ def _create_command(
     with report_errors():
         CreateProfile(ProfileFileRepository())(name, copy_from=copy_from)
         suffix = f" (copied from {copy_from})" if copy_from else ""
-        ui_context(strict=False).message("success", f"created profile: {name}{suffix}")
+        ui_context(strict=False).success(f"created profile: {name}{suffix}")
 
 
 def _delete_command(
     name: Annotated[str, Parameter(help="Profile to remove.")],
     /,
     *,
-    yes: Annotated[
-        bool,
-        Parameter(
-            name=["--yes", "-y"], negative="", help="Delete without interactive confirmation."
-        ),
-    ] = False,
+    yes: YesOption = False,
 ) -> None:
     """Delete a profile. Refuses to delete the active profile."""
     with report_errors():
@@ -213,7 +208,7 @@ def _delete_command(
         if not yes:
             _confirm_delete(preview)
         delete_profile(name)
-        ui_context(strict=False).message("success", f"deleted profile: {name}")
+        ui_context(strict=False).success(f"deleted profile: {name}")
 
 
 def _rename_command(
@@ -224,21 +219,18 @@ def _rename_command(
     """Rename a profile, updating ``active:`` if it pointed at the old name."""
     with report_errors():
         RenameProfile(ProfileFileRepository())(old_name, new_name)
-        ui_context(strict=False).message("success", f"renamed profile: {old_name} → {new_name}")
+        ui_context(strict=False).success(f"renamed profile: {old_name} → {new_name}")
 
 
 def _confirm_delete(preview: ProfileDeletePreview) -> None:
     ui = ui_context(strict=False)
-    if not stream_is_tty(ui.stdin):
-        raise ConfigError("profile delete requires --yes when stdin is not interactive")
-
-    top_level = ", ".join(preview.top_level_keys) or "(none)"
-    echo(f"config: {resolve_config_path()}", err=True)
-    echo(f"profile: {preview.name}", err=True)
-    echo(f"top-level keys: {top_level}", err=True)
-    if not ui.confirm(f"Delete profile {preview.name!r}?"):
-        echo("delete cancelled", err=True)
-        raise SystemExit(1)
+    with ui.terminal(refusal="profile delete requires --yes when not interactive"):
+        top_level = ", ".join(preview.top_level_keys) or "(none)"
+        echo(f"config: {resolve_config_path()}", err=True)
+        echo(f"profile: {preview.name}", err=True)
+        echo(f"top-level keys: {top_level}", err=True)
+        if not ui.confirm(f"Delete profile {q(preview.name)}?"):
+            raise OperationCancelledError
 
 
 def _profile_row(p: Profile, *, human: bool) -> dict[str, object]:

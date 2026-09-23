@@ -35,9 +35,10 @@ from untaped.cli import (
     report_errors,
 )
 from untaped.config_file import read_config_dict
-from untaped.errors import ConfigError, first_validation_error
+from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
+from untaped.messages import plural
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
 from untaped.settings import (
@@ -95,11 +96,11 @@ def _run(
     columns: list[str] | None,
 ) -> None:
     rows = _collect(shell, result)
-    emit_isolated(rows, fmt=fmt, columns=columns)
+    emit_isolated(rows, fmt=fmt, columns=columns, kind="untaped.doctor_check")
     failed = [row for row in rows if row["status"] == _FAIL]
     if failed:
-        echo(f"doctor: {len(failed)} of {len(rows)} checks failed", err=True)
-        raise SystemExit(1)
+        echo(f"doctor: {len(failed)} of {plural(len(rows), 'check')} failed", err=True)
+        raise SystemExit(ExitCode.FAILURE)
 
 
 def _row(check: str, capability: str, status: str, title: str, detail: str) -> dict[str, object]:

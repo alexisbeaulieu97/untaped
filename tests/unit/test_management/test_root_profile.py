@@ -16,7 +16,7 @@ from untaped.config_file import read_config_dict
 from untaped.management.profile import build_root_profile_app
 from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.settings import get_settings, register_profile_settings
-from untaped.testing import CliInvoker, TtyStringIO, invoke_cli
+from untaped.testing import CliInvoker, ScriptedPromptBackend, TtyStringIO, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -100,8 +100,19 @@ def test_delete_without_confirmation_does_not_mutate_noninteractive_input(
     _seed(_isolated_config)
     monkeypatch.setattr("sys.stdin", TtyStringIO())
     result = invoke_cli(app, ["delete", "stage"])
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "requires --yes" in f"{result.stderr}{result.exception or ''}"
+    assert "stage" in read_config_dict(_isolated_config)["profiles"]
+
+
+def test_delete_decline_is_cancelled_with_exit_one(app, _isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    backend = ScriptedPromptBackend(confirms=[False])
+    # stdin is a pipe, so the prompt goes to the controlling terminal.
+    result = invoke_cli(app, ["delete", "stage"], terminal=True, prompt_backend=backend)
+    assert result.exit_code == 1
+    assert backend.calls == [("confirm", "Delete profile 'stage'?")]
+    assert result.stderr.endswith("\ncancelled; no changes made\n")
     assert "stage" in read_config_dict(_isolated_config)["profiles"]
 
 
