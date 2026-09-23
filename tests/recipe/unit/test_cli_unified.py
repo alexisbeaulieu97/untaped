@@ -668,3 +668,54 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         found.update(re.findall(r'kind="(recipe\.[^"]+)"', path.read_text(encoding="utf-8")))
 
     assert found == allowed
+
+
+def _install_good_and_broken_packs(tmp_path: Path) -> None:
+    good = tmp_path / "good"
+    _write_pack(good, manifest_name="good", recipes={"playbook": "recipes/playbook.yml"})
+    _install_pack(good)
+    broken = tmp_path / "broken"
+    _write_pack(broken, manifest_name="broken", recipes={"other": "recipes/other.yml"})
+    _install_pack(broken)
+    installed = library_root() / "packs" / "broken" / "pyproject.toml"
+    installed.write_text("[project\nname = ", encoding="utf-8")
+
+
+def test_list_skips_unparsable_pack_with_warning(tmp_path: Path) -> None:
+    _install_good_and_broken_packs(tmp_path)
+
+    result = CliInvoker().invoke(app, ["list", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [row["ref"] for row in json.loads(result.stdout)] == ["good/playbook"]
+    assert "broken" in result.stderr
+    assert "warning" in result.stderr.lower()
+
+
+def test_check_reports_error_row_for_unparsable_pack(tmp_path: Path) -> None:
+    _install_good_and_broken_packs(tmp_path)
+
+    result = CliInvoker().invoke(app, ["check", "--format", "json"])
+
+    rows = {row["pack"]: row for row in json.loads(result.stdout)}
+    assert rows["good"]["status"] == "pass"
+    assert rows["broken"]["status"] == "error"
+    assert "pyproject" in rows["broken"]["error"]
+    # the TOML parse detail is included, not just the file path
+    assert "line" in rows["broken"]["error"]
+    assert result.exit_code != 0
+
+
+def test_resolution_ignores_unparsable_pack_unless_named(tmp_path: Path) -> None:
+    _install_good_and_broken_packs(tmp_path)
+
+    shown = CliInvoker().invoke(app, ["show", "playbook", "--format", "json"])
+    named = CliInvoker().invoke(app, ["show", "broken"])
+    qualified = CliInvoker().invoke(app, ["show", "broken/other"])
+
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.stdout)["ref"] == "good/playbook"
+    for result in (named, qualified):
+        assert result.exit_code != 0
+        assert "broken" in result.stderr
+        assert "line" in result.stderr

@@ -430,7 +430,10 @@ def list_command(
     with report_config_errors():
         if hooks and packs:
             raise ConfigError("choose one of --hooks or --packs")
-        installed = UnifiedPackLibrary(library_root=library_root()).packs()
+        library = UnifiedPackLibrary(library_root=library_root())
+        installed = library.packs()
+        for name, error in library.load_errors().items():
+            ui_context(strict=False).message("warning", f"skipping pack '{name}': {error}")
         if packs:
             rows = [_pack_row(pack) for pack in installed]
             kind = "recipe.pack"
