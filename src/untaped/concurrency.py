@@ -18,6 +18,7 @@ def bounded_map[ItemT, ResultT](
     concurrency: int,
     on_each: Callable[[ItemT, ResultT], None],
     on_abort: Callable[[], None] | None = None,
+    while_running: Callable[[], None] | None = None,
 ) -> None:
     """Apply ``fn`` to every item using at most ``concurrency`` worker threads.
 
@@ -31,10 +32,15 @@ def bounded_map[ItemT, ResultT](
     ``on_abort`` (optional) then runs on the calling thread *before* waiting
     for in-flight calls, so callers can stop them (e.g. kill child processes)
     instead of blocking until they finish on their own.
+
+    ``while_running`` (optional) runs on the calling thread once every item
+    is submitted and before any result is consumed, so the caller can do
+    foreground work (e.g. drain a queue the workers feed) while they run.
+    Supplying it always uses worker threads, even for a single item.
     """
     if concurrency < 1:
         raise ValueError("concurrency must be positive")
-    if len(items) <= 1 or concurrency == 1:
+    if while_running is None and (len(items) <= 1 or concurrency == 1):
         try:
             for item in items:
                 on_each(item, fn(item))
@@ -43,11 +49,13 @@ def bounded_map[ItemT, ResultT](
                 on_abort()
             raise
         return
-    with ThreadPoolExecutor(max_workers=min(concurrency, len(items))) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, min(concurrency, len(items)))) as executor:
         try:
             futures = {
                 executor.submit(contextvars.copy_context().run, fn, item): item for item in items
             }
+            if while_running is not None:
+                while_running()
             for future in as_completed(futures):
                 on_each(futures[future], future.result())
         except BaseException:

@@ -1,18 +1,15 @@
 """Unit tests for :mod:`untaped.capabilities.awx.cli._event_render`.
 
-Two surfaces:
-
-- :func:`render_event` — plain string, byte-stable.
-- :func:`render_event_text` — :class:`rich.text.Text` carrying status
-  styles. We assert the *style* attached to each runner verdict so the
-  colour mapping doesn't drift silently.
+Covers the plain text of :func:`render_event_text` (byte-stable) and
+the :class:`rich.text.Text` status styles. We assert the *style* attached to each runner verdict so
+the colour mapping doesn't drift silently.
 """
 
 from __future__ import annotations
 
 from rich.text import Text
 
-from untaped.capabilities.awx.cli._event_render import render_event, render_event_text
+from untaped.capabilities.awx.cli._event_render import render_event_text
 from untaped.capabilities.awx.domain import JobEvent
 
 
@@ -24,25 +21,27 @@ def _ev(event: str, **fields: object) -> JobEvent:
 
 
 def test_render_event_play_start() -> None:
-    assert render_event(_ev("playbook_on_play_start", play="Deploy")) == "PLAY [Deploy]"
+    assert render_event_text(_ev("playbook_on_play_start", play="Deploy")).plain == "PLAY [Deploy]"
 
 
 def test_render_event_task_start() -> None:
-    assert render_event(_ev("playbook_on_task_start", task="install")) == "TASK [install]"
+    assert (
+        render_event_text(_ev("playbook_on_task_start", task="install")).plain == "TASK [install]"
+    )
 
 
 def test_render_event_runner_ok_uses_host_name() -> None:
-    line = render_event(_ev("runner_on_ok", host=5, host_name="web-01"))
+    line = render_event_text(_ev("runner_on_ok", host=5, host_name="web-01")).plain
     assert line == "  ok: web-01"
 
 
 def test_render_event_runner_failed_falls_back_to_host_id_when_name_missing() -> None:
-    line = render_event(_ev("runner_on_failed", host=42))
+    line = render_event_text(_ev("runner_on_failed", host=42)).plain
     assert line == "  failed: 42"
 
 
 def test_render_event_runner_unknown_host_renders_question_mark() -> None:
-    line = render_event(_ev("runner_on_ok"))
+    line = render_event_text(_ev("runner_on_ok")).plain
     assert line == "  ok: ?"
 
 
@@ -123,8 +122,8 @@ def test_render_event_text_with_prefix_prepends_bracketed_name() -> None:
 
 
 def test_render_event_with_prefix_returns_plain_string() -> None:
-    """``render_event`` mirrors the prefix wiring so plain-text consumers
-    (tests, ``--format raw``) see the same disambiguation.
+    """The plain text carries the prefix so plain-text consumers see the same
+    disambiguation.
     """
-    line = render_event(_ev("runner_on_ok", host=5, host_name="web-01"), prefix="x")
+    line = render_event_text(_ev("runner_on_ok", host=5, host_name="web-01"), prefix="x").plain
     assert line == "[x] " + "  ok: web-01"

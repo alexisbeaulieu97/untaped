@@ -12,21 +12,21 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from untaped.capabilities.awx.application.test.ports import FkPrefetcher, Launcher, Watcher
-from untaped.capabilities.awx.application.test.resolver import ResolveCasePayload
+from untaped.api import ConfigError, bounded_map
+from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
-from untaped.capabilities.awx.domain.test_suite import (
+from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
     CaseStatus,
     RefSentinel,
-    TestRunOutcome,
-    TestSuite,
+    Suite,
+    SuiteRunOutcome,
 )
-from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
+from untaped.capabilities.awx.errors import ActionResponseError
 
 _LAUNCH_ACTION = "launch"
 
@@ -74,33 +74,27 @@ class RunTestSuite:
 
     def __call__(
         self,
-        suites: Iterable[TestSuite],
+        suites: Iterable[Suite],
         *,
         case_filter: set[str] | None = None,
         parallel: int = 1,
         timeout: float | None = None,
-    ) -> TestRunOutcome:
+    ) -> SuiteRunOutcome:
         plan = self._build_plan(list(suites), case_filter)
         self._fk.prefetch(self._prefetch_plan(plan))
         resolved = self._resolve_all(plan)
 
-        if parallel <= 1:
-            results = [self._launch_and_wait(item, timeout) for item in resolved]
-        else:
-            with ThreadPoolExecutor(max_workers=parallel) as pool:
-                futures = [pool.submit(self._launch_and_wait, item, timeout) for item in resolved]
-                try:
-                    # Collected in submission order, so the report follows
-                    # declaration order regardless of completion.
-                    results = [future.result() for future in futures]
-                except KeyboardInterrupt:
-                    # Stop polling workers and never launch queued cases.
-                    if self._stop is not None:
-                        self._stop.set()
-                    for future in futures:
-                        future.cancel()
-                    raise
-        return TestRunOutcome(results=results)
+        results: dict[int, CaseResult] = {}
+        bounded_map(
+            lambda index: self._launch_and_wait(resolved[index], timeout),
+            range(len(resolved)),
+            concurrency=max(1, parallel),
+            on_each=results.__setitem__,
+            # Ctrl-C stops polling workers; queued cases are never launched.
+            on_abort=self._stop.set if self._stop is not None else None,
+        )
+        # Indexed by declaration order, so the report ignores completion order.
+        return SuiteRunOutcome(results=[results[index] for index in range(len(resolved))])
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
@@ -108,10 +102,10 @@ class RunTestSuite:
 
     def _build_plan(
         self,
-        suites: Sequence[TestSuite],
+        suites: Sequence[Suite],
         case_filter: set[str] | None,
-    ) -> list[tuple[TestSuite, str, Case]]:
-        plan: list[tuple[TestSuite, str, Case]] = []
+    ) -> list[tuple[Suite, str, Case]]:
+        plan: list[tuple[Suite, str, Case]] = []
         for suite in suites:
             for case_name, case in suite.cases.items():
                 if case_filter is not None and case_name not in case_filter:
@@ -121,13 +115,13 @@ class RunTestSuite:
             matched = {case_name for _, case_name, _ in plan}
             unmatched = sorted(case_filter - matched)
             if unmatched:
-                raise AwxApiError(
+                raise ConfigError(
                     "no case matched --case " + ", ".join(repr(name) for name in unmatched)
                 )
         return plan
 
     def _prefetch_plan(
-        self, plan: Sequence[tuple[TestSuite, str, Case]]
+        self, plan: Sequence[tuple[Suite, str, Case]]
     ) -> dict[str, list[dict[str, str] | None]]:
         """Walk every case (defaults included) to learn which name lookups will fire.
 
@@ -153,7 +147,7 @@ class RunTestSuite:
                 _collect_ref_sentinels(value, by_kind, self._resolve.scope_for_ref)
         return by_kind
 
-    def _resolve_all(self, plan: Sequence[tuple[TestSuite, str, Case]]) -> list[_ResolvedCase]:
+    def _resolve_all(self, plan: Sequence[tuple[Suite, str, Case]]) -> list[_ResolvedCase]:
         out: list[_ResolvedCase] = []
         for suite, case_name, case in plan:
             payload = self._resolve(self._spec, case, defaults=suite.defaults)

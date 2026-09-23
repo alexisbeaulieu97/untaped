@@ -34,14 +34,7 @@ from untaped.api import (
     report_errors,
     resolve_each,
 )
-from untaped.capabilities.awx.application import (
-    GetJob,
-    ListJobs,
-    Ping,
-    StreamJobEvents,
-    TailJobLogs,
-    WatchJob,
-)
+from untaped.capabilities.awx.application import Ping, TailJobLogs, WatchJob
 from untaped.capabilities.awx.cli._apply_runner import run_apply
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._event_render import render_event_text
@@ -57,14 +50,15 @@ from untaped.capabilities.awx.cli.options import (
     UnverifiedOption,
     YesOption,
 )
-from untaped.capabilities.awx.cli.test_commands import app as test_app
+from untaped.capabilities.awx.cli.suite_commands import app as test_app
 from untaped.capabilities.awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped.capabilities.awx.cli.usage_commands import register_usage_command
 from untaped.capabilities.awx.cli.workflow_node_commands import register_nodes_command
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
-from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig
+from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
+from untaped.capabilities.awx.settings import AwxSettings
 
 app = create_app(
     name="awx",
@@ -83,7 +77,7 @@ def ping_command(
     """Check control-plane health."""
     with report_errors():
         settings = get_core_settings()
-        config = get_config_section("awx", AwxConfig)
+        config = get_config_section("awx", AwxSettings)
         with AwxClient(config, http=settings.http) as client:
             status = Ping(client)()
         emit(status, fmt=fmt, columns=columns, kind="awx.status")
@@ -326,7 +320,7 @@ def jobs_list(
     if status:
         filters["status"] = status
     with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading jobs…"):
-        records = list(ListJobs(ctx.jobs)(kind=kind, params=filters, limit=limit or None))
+        records = list(ctx.jobs.list(kind=kind, params=filters, limit=limit or None))
     cols = list(columns) if columns else ["id", "name", "status"]
     rendered = render_rows(
         records,
@@ -359,7 +353,7 @@ def jobs_get(
     with report_errors(), open_context() as ctx:
         ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
         records, any_failed = resolve_each(
-            ids, lambda n: GetJob(ctx.jobs)(kind=kinds.get(n, kind), job_id=_as_job_id(n))
+            ids, lambda n: ctx.jobs.get(kind=kinds.get(n, kind), job_id=_as_job_id(n))
         )
     if records:
         emit(records, fmt=fmt, columns=list(columns) if columns else [], kind="awx.job")
@@ -422,12 +416,12 @@ def jobs_events(
         def _events_for_id(n: str) -> None:
             job_id = _as_job_id(n)
             job_kind = kinds.get(n, kind)
-            record = GetJob(ctx.jobs)(kind=job_kind, job_id=job_id)
+            record = ctx.jobs.get(kind=job_kind, job_id=job_id)
             job = Job.model_validate({**record, "kind": job_kind})
             if show_breadcrumb:
                 echo(f"[{job_id}]", err=True)
-            events = StreamJobEvents(ctx.monitor)(
-                job, from_counter=from_counter, filters=filters, follow=follow
+            events = ctx.monitor.stream_events(
+                job, from_counter=from_counter, params=filters, follow=follow
             )
             _emit_events(events, fmt=fmt, cols=cols, follow=follow)
 
@@ -580,7 +574,7 @@ def jobs_logs(
         def _logs_for_id(n: str) -> None:
             job_id = _as_job_id(n)
             job_kind = kinds.get(n, kind)
-            record = GetJob(ctx.jobs)(kind=job_kind, job_id=job_id)
+            record = ctx.jobs.get(kind=job_kind, job_id=job_id)
             job = Job.model_validate({**record, "kind": job_kind})
             if show_breadcrumb:
                 echo(f"[{job_id}]", err=True)
@@ -628,7 +622,7 @@ def jobs_wait(
         def _wait_one(n: str) -> dict[str, object]:
             job_id = _as_job_id(n)
             job_kind = kinds.get(n, kind)
-            record = GetJob(ctx.jobs)(kind=job_kind, job_id=job_id)
+            record = ctx.jobs.get(kind=job_kind, job_id=job_id)
             job = Job.model_validate({**record, "kind": job_kind})
             final = WatchJob(ctx.repo)(job, timeout=timeout)
             if not final.is_terminal:

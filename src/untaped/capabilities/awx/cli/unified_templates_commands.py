@@ -39,7 +39,7 @@ from untaped.api import (
     render_rows,
     report_errors,
 )
-from untaped.capabilities.awx.application import BrowseUnifiedTemplates, GetUnifiedTemplate
+from untaped.capabilities.awx.application import GetUnifiedTemplate
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._get import default_get_columns
 
@@ -98,7 +98,7 @@ def list_command(
             )
         filters["type"] = type_
     with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading templates…"):
-        records = list(BrowseUnifiedTemplates(ctx.ujts)(params=filters, limit=limit))
+        records = list(ctx.ujts.list(params=filters, limit=limit))
     cols = list(columns) if columns else list(_DEFAULT_LIST_COLUMNS)
     rendered = render_rows(
         records,

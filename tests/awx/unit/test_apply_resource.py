@@ -1,4 +1,4 @@
-"""Unit tests for ApplyResource against stub Protocols."""
+"""Unit tests for the batch mutation engine against stub Protocols."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.capabilities.awx.application import ApplyResource
+from awx.unit.support import SingleApply
 from untaped.capabilities.awx.application.ports import (
     Catalog,
     FkResolver,
@@ -17,7 +17,7 @@ from untaped.capabilities.awx.application.ports import (
 from untaped.capabilities.awx.domain import Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.envelope import IdentityRef
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import AwxApiError, BadRequest
+from untaped.capabilities.awx.errors import AwxApiError, BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
     GROUP_SPEC,
@@ -75,7 +75,7 @@ class _StubClient:
 
     def get(self, spec: ResourceSpec, id_: int) -> Any:
         if self.existing is None:
-            raise BadRequest("missing record")
+            raise BadRequestError("missing record")
         return _ServerRecord(self.existing)
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> dict[str, Any] | None:
@@ -198,12 +198,12 @@ def _make_apply(
     client: RawHttpResourceClient | None = None,
     warn: list[str] | None = None,
     allow_unverified: bool = False,
-) -> ApplyResource:
+) -> SingleApply:
     warn_list = warn if warn is not None else []
     kwargs: dict[str, Any] = {}
     if allow_unverified:
         kwargs["allow_unverified"] = True
-    return ApplyResource(
+    return SingleApply(
         client=client
         if client is not None
         else cast(RawHttpResourceClient, _StubClient(existing=strategy.existing)),
@@ -726,7 +726,7 @@ def test_create_with_placeholder_secret_errors() -> None:
         metadata=Metadata(name="deploy", organization="Default"),
         spec={"playbook": "deploy.yml", "webhook_key": "$encrypted$"},
     )
-    with pytest.raises(BadRequest):
+    with pytest.raises(BadRequestError):
         apply(resource, write=True)
 
 
@@ -752,7 +752,7 @@ def test_fks_resolved_for_create() -> None:
 
 def test_apply_rejects_read_only_kind() -> None:
     """Read-only kinds (Credential, Inventory, Organization, CredentialType)
-    must not flow through ApplyResource — top-level ``apply <file>`` would
+    must not flow through the batch mutation engine — top-level ``apply <file>`` would
     otherwise issue create/update calls against deferred-CRUD endpoints.
     """
     strategy = _StubStrategy(existing=None)
@@ -766,7 +766,7 @@ def test_apply_rejects_read_only_kind() -> None:
         metadata=Metadata(name="scm-key", organization="Default"),
         spec={"credential_type": 1},
     )
-    with pytest.raises(BadRequest, match="does not support apply"):
+    with pytest.raises(BadRequestError, match="does not support apply"):
         apply(resource, write=True)
     assert strategy.created is None
     assert strategy.updated is None
@@ -847,7 +847,7 @@ def test_apply_sibling_change_alongside_nested_secret_raises() -> None:
             },
         },
     )
-    with pytest.raises(BadRequest, match="survey_spec"):
+    with pytest.raises(BadRequestError, match="survey_spec"):
         apply(resource, write=True)
     assert strategy.updated is None
 
@@ -917,7 +917,7 @@ def test_schedule_inventory_fk_uses_parent_organization() -> None:
             return value["kind"], 1
 
     strategy = _StubStrategy(existing=None)
-    apply = ApplyResource(
+    apply = SingleApply(
         client=cast(RawHttpResourceClient, _StubClient()),
         catalog=cast(Catalog, _StubCatalog({"Schedule": SCHEDULE_SPEC})),
         fk=cast(FkResolver, _RecordingFk()),
@@ -953,7 +953,7 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
         def update(self, spec, existing, payload, *, client, fk):  # type: ignore[no-untyped-def]
             raise NotImplementedError
 
-    apply = ApplyResource(
+    apply = SingleApply(
         client=cast(RawHttpResourceClient, _StubClient()),
         catalog=cast(Catalog, _StubCatalog({"Group": GROUP_SPEC})),
         fk=cast(FkResolver, _StubFk({("Host", "web-01"): 101})),
@@ -1046,7 +1046,7 @@ def test_apply_to_existing_rejects_read_only_kind() -> None:
         metadata=Metadata(name="scm-key"),
         spec={"description": "x"},
     )
-    with pytest.raises(BadRequest, match="does not support apply"):
+    with pytest.raises(BadRequestError, match="does not support apply"):
         apply.apply_to_existing(resource, {"id": 1, "name": "scm-key"}, write=True)
     assert strategy.updated is None
 
@@ -1129,7 +1129,7 @@ def test_batch_prepare_warns_once_per_unrecognized_field_set() -> None:
     )
     other_existing = {**existing, "id": 43, "name": "roles"}
     other = resource.model_copy(update={"metadata": Metadata(name="roles", organization="Default")})
-    apply.engine.prepare([resource, other], mode="patch", existing=[existing, other_existing])
+    apply.prepare([resource, other], mode="patch", existing=[existing, other_existing])
     assert len(warnings) == 1
     assert "future_field" in warnings[0]
 
@@ -1155,15 +1155,15 @@ def test_apply_does_not_warn_on_known_or_handled_fields() -> None:
     assert warnings == []
 
 
-# ── parallelism invariant: ApplyResource has no per-call attribute rebinds ──
+# ── parallelism invariant: the batch mutation engine has no per-call attribute rebinds ──
 
 
 def test_apply_resource_has_no_per_call_attribute_rebinds() -> None:
     """Structural pin: a ``__call__`` must not rebind any instance
     attribute the constructor set up.
 
-    Phase-1 parallelism in ``ApplyFile._apply_kind`` shares one
-    ``ApplyResource`` across workers; if any ``__call__`` rebinds an
+    Parallel execution shares one
+    engine across workers; if any ``__call__`` rebinds an
     attribute (e.g. ``self._cache = {}`` swapped for a fresh dict per
     call) the workers race on instance state. This test is a structural
     proxy for that contract — it doesn't pin behaviour under concurrency
@@ -1196,8 +1196,8 @@ def test_apply_resource_has_no_per_call_attribute_rebinds() -> None:
     assert before.keys() == after_first.keys() == after_second.keys()
     for key in before:
         assert before[key] is after_first[key], (
-            f"ApplyResource rebound attribute {key!r} during a call"
+            f"the batch mutation engine rebound attribute {key!r} during a call"
         )
         assert before[key] is after_second[key], (
-            f"ApplyResource rebound attribute {key!r} on the second call"
+            f"the batch mutation engine rebound attribute {key!r} on the second call"
         )

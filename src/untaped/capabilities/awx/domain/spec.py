@@ -25,13 +25,18 @@ CommandName = Literal[
     "get",
     "save",
     "apply",
-    "patch",
-    "edit",
-    "launch",
-    "sync",
     "delete",
 ]
-"""Commands the CLI factory may wire for a kind."""
+"""Commands the CLI factory may wire for a kind.
+
+``apply`` also wires ``patch`` and ``edit``; actions such as ``launch`` and
+``sync`` come from ``ResourceSpec.actions``.
+"""
+
+
+_IMMUTABLE_FIELDS = frozenset(
+    {"id", "kind", "type", "name", "organization", "parent", "unified_job_template"}
+)
 
 
 class FkRef(BaseModel):
@@ -94,6 +99,9 @@ class ActionSpec(BaseModel):
     path: str | None
     """Direct action endpoint; None requires fixed-target expansion first."""
 
+    expand_to: str | None = None
+    """With no ``path``: the child kind whose records run this action instead."""
+
     method: Literal["POST", "PATCH"] = "POST"
     returns: frozenset[Literal["job", "workflow_job", "project_update", "inventory_update"]] = (
         frozenset()
@@ -144,6 +152,14 @@ class ResourceSpec(BaseModel):
     """Prepared resource has one managed target per parent, regardless of its name."""
     parent_field_aliases: tuple[str, ...] = ()
     """Fields sharing physical storage with the same fields on this resource's parent."""
+    parent_field: str | None = None
+    """Record field holding the owning parent's ID for parent-owned kinds.
+
+    ``inventory`` for inventory children, ``unified_job_template`` for
+    schedules; ``None`` for kinds without a parent.
+    """
+    async_delete: bool = False
+    """AWX deletes this kind in the background, even when it answers 204."""
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.
     The string is opaque to the domain — :class:`StrategyResolver` (an
@@ -166,4 +182,17 @@ class ResourceSpec(BaseModel):
             | frozenset(self.identity_keys)
             | {ref.field for ref in self.fk_refs}
             | frozenset(self.read_only_fields)
+        )
+
+    @property
+    def immutable_fields(self) -> frozenset[str]:
+        """Fields patch and edit must never change: identity, kind, and ancestry.
+
+        Renaming, reparenting, or re-kinding a selected resource is not a
+        field update, so every mutation path rejects these keys.
+        """
+        return (
+            _IMMUTABLE_FIELDS
+            | frozenset(self.identity_keys)
+            | ({self.parent_field} if self.parent_field else frozenset())
         )

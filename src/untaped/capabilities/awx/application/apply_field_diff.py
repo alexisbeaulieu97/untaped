@@ -14,8 +14,8 @@ from untaped.capabilities.awx.domain import FieldChange
 
 PRESERVED_SECRET_NOTE = "preserved existing secret"
 """``FieldChange.note`` value emitted for top-level fields whose only
-in-payload changes were secret-strip removals. Consumers (CLI render,
-``ApplyResource._do_update``) read this exact string to filter out
+in-payload changes were secret-strip removals. Consumers (CLI render, body
+preparation) read this exact string to filter out
 preserved-secret rows from PATCH payloads and to pretty-print them in
 the preview. Lifted to a constant so the producer (this module) and
 the readers stay in sync without a copy-pasted literal."""

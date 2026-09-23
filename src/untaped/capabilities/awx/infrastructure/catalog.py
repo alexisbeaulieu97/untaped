@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 
@@ -24,7 +24,7 @@ class AwxResourceCatalog:
         try:
             return self._by_kind[kind]
         except KeyError as exc:
-            raise AwxApiError(
+            raise ConfigError(
                 f"unknown kind {kind!r} (available: {', '.join(sorted(self._by_kind))})"
             ) from exc
 
@@ -35,4 +35,4 @@ class AwxResourceCatalog:
         try:
             return self._by_cli_name[cli_name]
         except KeyError as exc:
-            raise AwxApiError(f"unknown CLI name {cli_name!r}") from exc
+            raise ConfigError(f"unknown CLI name {cli_name!r}") from exc

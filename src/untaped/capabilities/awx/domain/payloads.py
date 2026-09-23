@@ -15,7 +15,8 @@ declared in :mod:`untaped.capabilities.awx.application.ports`:
   separate type so signatures document intent.
 
 The wrappers are frozen — once constructed (by an adapter on read or by
-a use case on write) they are immutable.
+a use case on write) they are immutable. :func:`as_dict` lifts any of them
+(or a plain mapping) back to a ``dict`` where dict-shaped code needs one.
 """
 
 from __future__ import annotations
@@ -85,3 +86,10 @@ class ActionPayload(BaseModel):
     """The body of a custom-action POST (e.g. ``launch``, ``update``)."""
 
     model_config = ConfigDict(extra="allow", frozen=True)
+
+
+def as_dict(value: Any) -> dict[str, Any]:
+    """A plain ``dict`` copy of a Pydantic model (via ``model_dump``) or a mapping."""
+    if hasattr(value, "model_dump"):
+        return dict(value.model_dump())
+    return dict(value)

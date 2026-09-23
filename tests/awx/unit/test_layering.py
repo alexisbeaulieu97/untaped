@@ -1,6 +1,6 @@
 """Architectural-rule tests for the AWX tool.
 
-Two complementary rules (per ``AGENTS.md`` 4-layer DDD section):
+Two complementary rules:
 
 - ``application/`` modules must not import their package's
   ``infrastructure`` namespace at runtime.
@@ -209,7 +209,7 @@ def test_every_plugin_has_application_layer() -> None:
     )
 
 
-# AGENTS.md: "Only ``cli/`` modules read ``untaped.Settings``."
+# Only ``cli/`` modules read ``untaped.Settings``.
 # Infrastructure adapters consume settings narrowed at the composition
 # root by calling ``get_config_section`` and passing the package-local
 # model into the adapter. Either way, ``Settings`` / ``get_settings``
@@ -314,7 +314,7 @@ def _settings_violations_in_file(py_file: Path, src_dir: Path) -> list[str]:  # 
 def test_infrastructure_does_not_read_settings(import_root: str, infrastructure_dir: Path) -> None:
     """Infrastructure adapters must not import ``Settings`` / ``get_settings``.
 
-    AGENTS.md: only ``cli/`` modules read ``untaped.Settings``;
+    Only ``cli/`` modules read ``untaped.Settings``;
     everything downstream consumes a narrower package-local model.
     Adapters that read ``Settings`` itself couple
     to the global cache and can't be constructed in unit tests without
@@ -352,7 +352,7 @@ def test_infrastructure_does_not_import_application_at_runtime(
     """``infrastructure/`` modules must not import their package's
     ``application`` namespace at runtime.
 
-    AGENTS.md (root, "Architecture: 4-Layer DDD"): concrete adapters speak
+    Concrete adapters speak
     port shapes structurally — they don't import from ``application/``.
     Use cases declare port ``Protocol`` s in ``application/ports.py``;
     adapters in ``infrastructure/`` satisfy them by structural typing.
