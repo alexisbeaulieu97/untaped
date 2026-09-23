@@ -348,6 +348,7 @@ def graph_command(
                         aliases=aliases,
                         dependency_paths=settings.dependency_paths,
                         github_host=github_host,
+                        concurrency=settings.probe_concurrency,
                     )
                     graph = _graph_from_index(
                         live_index,
@@ -359,6 +360,7 @@ def graph_command(
                         stale_after=settings.stale_after,
                         refresh_hint=refresh_hint,
                     )
+                    parse_warnings.extend(live_index.errors)
                     parse_warnings.extend(_live_parse_warning_messages(live_index.warnings))
             else:
                 graph = _graph_from_index(
