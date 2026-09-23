@@ -84,7 +84,7 @@ def test_invalid_jinja2_syntax_raises_awx_api_error() -> None:
         "jobTemplate: y\n"
         "cases:\n  c:\n    launch:\n      limit: '{{ unclosed }'\n"
     )
-    with pytest.raises(ConfigError, match=r"syntax|Jinja"):
+    with pytest.raises(ConfigError, match=r"template error"):
         _load(text)
 
 

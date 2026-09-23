@@ -1,50 +1,8 @@
 # Known violations of the messages convention check for 'awx'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-src/untaped/capabilities/awx/application/apply_membership.py::error-case::{} {}: {} must be a list of names (got {}); wrap a single value in [ ...
-src/untaped/capabilities/awx/application/apply_planner.py::paren-s::: field(s) sent as-is (not in this tool's known schema):
-src/untaped/capabilities/awx/application/prepare_actions.py::error-case::InventorySource {} (id={}): no syncable source
-src/untaped/capabilities/awx/application/prepare_actions.py::error-case::No {} targets selected for {}
-src/untaped/capabilities/awx/application/prepare_actions.py::error-case::Project {} (id={}): manual project cannot sync
-src/untaped/capabilities/awx/application/prepare_actions.py::error-case::{} does not prompt for extra variables outside its survey (ask_variables
-src/untaped/capabilities/awx/application/prepare_actions.py::error-case::{} does not prompt for {} on launch ({} is false); AWX would ignore {}. 
-src/untaped/capabilities/awx/application/prepare_actions.py::error-case::{} requires survey variables {}; pass them with --extra-vars KEY=VAL.
-src/untaped/capabilities/awx/application/prepared_body.py::error-case::Cannot apply {} {}: {} contain a $encrypted$ placeholder alongside a sib
-src/untaped/capabilities/awx/application/prepared_body.py::paren-s::contain a $encrypted$ placeholder alongside a sibling change. PATCH woul
-src/untaped/capabilities/awx/application/prepared_body.py::paren-s::has placeholder secret(s) at
-src/untaped/capabilities/awx/application/prepared_body.py::paren-s::unverified field(s):
-src/untaped/capabilities/awx/application/scheduling.py::usage-phrase::parallel must be >= 1
-src/untaped/capabilities/awx/application/suites/loader.py::error-case::{}: non-empty 'assert:' block(s) at {} — assertions land in v2; remove o
-src/untaped/capabilities/awx/application/suites/loader.py::paren-s::: non-empty 'assert:' block(s) at
 src/untaped/capabilities/awx/cli/_action_runner.py::rich-console::Console()
-src/untaped/capabilities/awx/cli/_apply_runner.py::echo-warning::warning: {}
-src/untaped/capabilities/awx/cli/_context.py::echo-warning::warning: {}
-src/untaped/capabilities/awx/cli/_context.py::usage-phrase::use --parent or --inventory, not both
 src/untaped/capabilities/awx/cli/_parallel.py::print::print()
 src/untaped/capabilities/awx/cli/_parallel.py::print::print()
-src/untaped/capabilities/awx/cli/_patch.py::paren-s::has no field(s)
 src/untaped/capabilities/awx/cli/commands.py::print::print()
 src/untaped/capabilities/awx/cli/commands.py::rich-console::Console()
-src/untaped/capabilities/awx/cli/suite_commands.py::paren-s::case(s) validated
-src/untaped/capabilities/awx/cli/unified_templates_commands.py::echo-error::error: {}: not found
-src/untaped/capabilities/awx/cli/unified_templates_commands.py::error-case::unified-templates get is id-only ({} isn't a number); names are not uniq
-src/untaped/capabilities/awx/cli/usage_commands.py::echo-warning::warning: {}
-src/untaped/capabilities/awx/cli/usage_commands.py::echo-warning::warning: {}: {}
-src/untaped/capabilities/awx/cli/usage_commands.py::paren-s::Template name(s) — one or more, or omit and pass ``--stdin``. Pass ``--b
-src/untaped/capabilities/awx/cli/workflow_node_commands.py::echo-warning::warning: {}
-src/untaped/capabilities/awx/cli/workflow_node_commands.py::echo-warning::warning: {}: {}
-src/untaped/capabilities/awx/cli/workflow_node_commands.py::paren-s::Workflow name(s) — one or more, or omit and pass ``--stdin``. Pass ``--b
-src/untaped/capabilities/awx/domain/envelope.py::error-case::InventorySource reference requires Inventory parent ancestry
-src/untaped/capabilities/awx/domain/spec.py::error-case::FkRef.kind is required unless the FK is polymorphic
-src/untaped/capabilities/awx/domain/suite.py::error-case::AwxTestSuite must declare at least one case
-src/untaped/capabilities/awx/domain/suite.py::error-case::RefSentinel.kind must be a non-empty string
-src/untaped/capabilities/awx/domain/suite.py::error-case::RefSentinel.name must be a non-empty string
-src/untaped/capabilities/awx/infrastructure/spec.py::error-case::AwxResourceSpec required, got {}
-src/untaped/capabilities/awx/infrastructure/spec.py::error-case::AwxResourceSpec required, got {}
-src/untaped/capabilities/awx/infrastructure/strategies.py::error-case::Inventory child docs require metadata.parent (kind: Inventory) — see exa
-src/untaped/capabilities/awx/infrastructure/strategies.py::error-case::Inventory child docs require metadata.parent.kind == 'Inventory' (got {}
-src/untaped/capabilities/awx/infrastructure/suites/parser.py::error-case::Jinja2 template error: {}
-src/untaped/capabilities/awx/infrastructure/suites/parser.py::paren-s::duplicate YAML mapping key(s) at line
-src/untaped/capabilities/awx/infrastructure/suites/vars_resolver.py::error-case::required variable(s) not provided: {}. Set them with --var <name>=<value
-src/untaped/capabilities/awx/infrastructure/suites/vars_resolver.py::paren-s::required variable(s) not provided:
-src/untaped/capabilities/awx/infrastructure/suites/vars_resolver.py::paren-s::unknown variable(s) in

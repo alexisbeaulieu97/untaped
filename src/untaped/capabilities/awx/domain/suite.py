@@ -31,9 +31,9 @@ class RefSentinel:
 
     def __post_init__(self) -> None:
         if not self.kind:
-            raise ValueError("RefSentinel.kind must be a non-empty string")
+            raise ValueError("ref kind must be a non-empty string")
         if not self.name:
-            raise ValueError("RefSentinel.name must be a non-empty string")
+            raise ValueError("ref name must be a non-empty string")
 
 
 VariableType = Literal["string", "int", "bool", "choice", "list"]
@@ -102,7 +102,7 @@ class Suite(BaseModel):
     @classmethod
     def _at_least_one_case(cls, value: dict[str, Case]) -> dict[str, Case]:
         if not value:
-            raise ValueError("AwxTestSuite must declare at least one case")
+            raise ValueError("a test suite must declare at least one case")
         return value
 
 

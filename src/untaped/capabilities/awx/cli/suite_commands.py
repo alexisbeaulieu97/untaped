@@ -22,8 +22,10 @@ from untaped.capability_api import (
     emit,
     finish,
     parse_kv_pairs,
+    plural,
     raise_usage,
     report_errors,
+    ui_context,
 )
 
 app = create_app(
@@ -324,7 +326,8 @@ def validate_command(
                     any_errors = True
 
     finish(any_errors)
-    echo(f"OK — {sum(len(s.cases) for s in suites)} case(s) validated", err=True)
+    count = sum(len(s.cases) for s in suites)
+    ui_context(strict=False).success(f"{plural(count, 'case')} validated")
 
 
 def _test_case_row(suite: Suite, case_name: str) -> dict[str, Any]:

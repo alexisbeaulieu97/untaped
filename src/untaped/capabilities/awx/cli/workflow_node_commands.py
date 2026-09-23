@@ -22,7 +22,6 @@ from untaped.capability_api import (
     FormatOption,
     UntapedError,
     deprecated_alias,
-    echo,
     emit,
     finish,
     parse_kv_pairs,
@@ -42,7 +41,7 @@ def register_nodes_command(parent: App) -> None:
             list[str] | None,
             Parameter(
                 help=(
-                    "Workflow name(s) — one or more, or omit and pass "
+                    "Workflow names (one or more), or omit them and pass "
                     "``--stdin``. Pass ``--by-id`` to resolve AWX ids "
                     "instead. Multiple roots concatenate their node trees "
                     "in the order given."
@@ -130,7 +129,7 @@ def register_nodes_command(parent: App) -> None:
             use = ListWorkflowNodes(
                 ctx.workflow_nodes,
                 ctx.repo,
-                warn=lambda msg: echo(f"warning: {msg}", err=True),
+                warn=lambda msg: ctx.progress_ui().message("warning", msg),
             )
             # ``resolve_each`` doesn't fit: its ``Callable[[str], R]``
             # interface maps each id to a single record, but ``nodes``
@@ -148,7 +147,7 @@ def register_nodes_command(parent: App) -> None:
                         )
                     )
                 except UntapedError as exc:
-                    echo(f"warning: {root}: {exc}", err=True)
+                    ctx.progress_ui().message("warning", f"{root}: {exc}")
                     any_failed = True
         if type_ is not None:
             nodes = [n for n in nodes if n.type == type_]

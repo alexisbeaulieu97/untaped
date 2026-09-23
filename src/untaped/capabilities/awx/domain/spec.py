@@ -86,7 +86,7 @@ class FkRef(BaseModel):
         never reaching that assert) may omit ``kind``.
         """
         if self.kind is None and not self.polymorphic:
-            raise ValueError("FkRef.kind is required unless the FK is polymorphic")
+            raise ValueError("kind is required unless the foreign key is polymorphic")
         return self
 
 

@@ -18,7 +18,7 @@ import heapq
 import threading
 from collections.abc import Callable, Sequence
 
-from untaped.capability_api import bounded_map
+from untaped.capability_api import UsageError, bounded_map
 
 MAX_PARALLEL = 10
 """Upper bound on concurrent AWX requests for any batch."""
@@ -37,7 +37,7 @@ class Schedule:
 
     def __init__(self, *, parallel: int) -> None:
         if parallel < 1:
-            raise ValueError("parallel must be >= 1")
+            raise UsageError("--parallel must be at least 1")
         self._parallel = min(parallel, MAX_PARALLEL)
         self._stop = threading.Event()
 

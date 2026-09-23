@@ -21,7 +21,7 @@ import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
 from untaped.capabilities.awx.domain.suite import RefSentinel
-from untaped.capability_api import ConfigError
+from untaped.capability_api import ConfigError, plural
 
 __all__ = [
     "DefaultParser",
@@ -88,7 +88,8 @@ class _RefSafeLoader(yaml.SafeLoader):
         if duplicates:
             line = node.start_mark.line + 1
             raise ConfigError(
-                f"duplicate YAML mapping key(s) at line {line}: {', '.join(duplicates)}"
+                f"duplicate YAML mapping {plural(len(duplicates), 'key')} at line {line}: "
+                f"{', '.join(duplicates)}"
             )
         return super().construct_mapping(node, deep=deep)
 
@@ -197,4 +198,4 @@ class DefaultParser:
         except TemplateError as exc:
             # Covers ``TemplateSyntaxError`` (compile-time) and other Jinja2
             # errors raised during rendering (e.g. filter failures).
-            raise ConfigError(f"Jinja2 template error: {exc}") from exc
+            raise ConfigError(f"template error: {exc}") from exc
