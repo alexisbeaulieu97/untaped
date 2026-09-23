@@ -6,9 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.recipe.application.ports import HookDebugResult
 from untaped.capabilities.recipe.application.run_hook import RunHook, TransformHookRun, select_verb
-from untaped.capabilities.recipe.domain.plan import Verdict
+from untaped.capabilities.recipe.domain.plan import HookDebugResult, Verdict
 
 
 class _DebugExecutor:

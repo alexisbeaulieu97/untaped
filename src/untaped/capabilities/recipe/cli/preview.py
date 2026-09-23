@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import difflib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.api import echo, render_rows, ui_context, unified_diff_text
+from untaped.api import echo, render_rows, unified_diff_text
 from untaped.capabilities.recipe.application.inputs import has_sensitive_inputs
+from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 
@@ -22,7 +24,7 @@ def render_preview(
     preview_max_rows: int = 50,
 ) -> None:
     """Render the selected stderr preview for planned targets."""
-    ui_context(strict=False).message("info", preview_summary(plans))
+    recipe_ui().message("info", preview_summary(plans))
     if preview == "none":
         return
     if preview == "diff":
@@ -31,31 +33,50 @@ def render_preview(
     _render_table_preview(recipe, plans, preview_max_rows=preview_max_rows)
 
 
-def preview_summary(plans: list[TargetPlan]) -> str:
-    """Render the pre-run aggregate preview summary."""
-    non_terminal = {"error", "skipped"}
-    total = len(plans)
-    failed = sum(1 for plan in plans if plan.status == "error")
-    skipped = sum(1 for plan in plans if plan.status == "skipped")
-    changing = sum(1 for plan in plans if plan.status not in non_terminal and plan.changes)
-    unchanged = sum(1 for plan in plans if plan.status not in non_terminal and not plan.changes)
-    files_changed = sum(plan.files_changed for plan in plans if plan.status not in non_terminal)
-    skipped_note = f"{skipped} skipped, " if skipped else ""
-    return (
-        "Recipe preview: "
-        f"{_plural(total, 'target')}, "
-        f"{changing} changing, "
-        f"{unchanged} unchanged, "
-        f"{skipped_note}"
-        f"{failed} failed, "
-        f"{_plural(files_changed, 'file')} changed"
-    )
+@dataclass(frozen=True)
+class PlanCounts:
+    """Per-status target counts shared by the preview and result summaries."""
+
+    total: int
+    failed: int
+    skipped: int
+    changing: int
+    unchanged: int
+    files_changed: int
+
+    @classmethod
+    def of(cls, plans: list[TargetPlan]) -> PlanCounts:
+        """Count planned targets; errors and skips are neither changing nor unchanged."""
+        settled = [plan for plan in plans if plan.status not in {"error", "skipped"}]
+        return cls(
+            total=len(plans),
+            failed=sum(1 for plan in plans if plan.status == "error"),
+            skipped=sum(1 for plan in plans if plan.status == "skipped"),
+            changing=sum(1 for plan in settled if plan.changes),
+            unchanged=sum(1 for plan in settled if not plan.changes),
+            files_changed=sum(plan.files_changed for plan in settled),
+        )
 
 
-def _plural(count: int, noun: str) -> str:
+def plural(count: int, noun: str) -> str:
     """Render a simple English count."""
     suffix = "" if count == 1 else "s"
     return f"{count} {noun}{suffix}"
+
+
+def preview_summary(plans: list[TargetPlan]) -> str:
+    """Render the pre-run aggregate preview summary."""
+    counts = PlanCounts.of(plans)
+    skipped_note = f"{counts.skipped} skipped, " if counts.skipped else ""
+    return (
+        "Recipe preview: "
+        f"{plural(counts.total, 'target')}, "
+        f"{counts.changing} changing, "
+        f"{counts.unchanged} unchanged, "
+        f"{skipped_note}"
+        f"{counts.failed} failed, "
+        f"{plural(counts.files_changed, 'file')} changed"
+    )
 
 
 def _render_diff_preview(recipe: Recipe, plans: list[TargetPlan]) -> None:

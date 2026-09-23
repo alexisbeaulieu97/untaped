@@ -1,22 +1,17 @@
-"""Application-layer ports for filesystem and hook adapters."""
+"""Application-layer ports implemented by the infrastructure adapters."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from untaped.capabilities.recipe.domain.plan import Verdict
-
-
-@dataclass(frozen=True)
-class HookDebugResult[T]:
-    """Hook result plus diagnostics and accumulated warnings for one invocation."""
-
-    result: T
-    diagnostics: str
-    warnings: tuple[str, ...] = ()
+from untaped.capabilities.recipe.domain.pack import (
+    InstalledPack,
+    PackManifest,
+    PackRef,
+    RecipeEntry,
+)
+from untaped.capabilities.recipe.domain.plan import HookDebugResult, Verdict
 
 
 class HookExecutorPort(Protocol):
@@ -49,35 +44,40 @@ class HookExecutorPort(Protocol):
         """Run a validate hook and return its coerced verdict plus diagnostics."""
 
 
-class HookHelpersPort(Protocol):
-    """Helpers passed to trusted local hooks (one instance per invocation)."""
+class PackLibraryPort(Protocol):
+    """Installed pack library lookups, plus explicit-path packs."""
 
-    def pass_(self, message: str = "") -> Verdict:
-        """Return a passing validation verdict."""
+    @property
+    def packs_dir(self) -> Path:
+        """Directory containing installed pack copies."""
 
-    def fail(self, message: str) -> Verdict:
-        """Return a failing validation verdict."""
+    def packs(self) -> list[InstalledPack]:
+        """Installed packs that loaded cleanly."""
 
-    def skip(self, message: str = "") -> Verdict:
-        """Return a skip verdict marking the target not applicable."""
+    def load_errors(self) -> dict[str, str]:
+        """``{pack name: error}`` for installed packs that failed to load."""
 
-    def warn(self, message: str) -> None:
-        """Accumulate a non-fatal warning for the current target."""
+    def reconcile(self) -> list[str]:
+        """Index/directory consistency problems."""
 
-    def drain_warnings(self) -> tuple[str, ...]:
-        """Return and clear warnings accumulated during this invocation."""
+    def find_pack(self, name: str) -> InstalledPack | None:
+        """The installed pack named ``name``, if any."""
 
-    def render_template(
-        self,
-        template: str,
-        inputs: dict[str, object],
-        *,
-        unknown_tokens: str = "error",
-    ) -> str:
-        """Render simple recipe placeholders."""
+    def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
+        """Resolve a bare or qualified recipe reference."""
 
-    def load_yaml(self, content: str) -> object:
-        """Round-trip-load YAML content."""
+    def local_pack(self, path: Path) -> InstalledPack:
+        """Read an explicit-path pack that is not tracked by the library index."""
 
-    def dump_yaml(self, data: object, *, options: Mapping[str, object] | None = None) -> str:
-        """Round-trip-dump YAML data."""
+
+class PackInspectorPort(Protocol):
+    """File-backed hook-project checks used by ``check``."""
+
+    def read_hook_project(self, project_root: Path) -> PackManifest:
+        """Read a local hook project's manifest (absent tables are empty)."""
+
+    def check_hook_project(self, project_root: Path, manifest: PackManifest) -> None:
+        """Validate hook metadata, ``uv.lock`` presence and freshness, and module files."""
+
+    def hook_exports(self, hook: str, local_hook_project: Path | None) -> frozenset[str]:
+        """Resolve ``hook`` and return the entry points it exports."""

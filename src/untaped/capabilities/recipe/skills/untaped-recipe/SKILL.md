@@ -172,9 +172,9 @@ no control flow in recipes, and no state or inventory.
   `helpers.render_template()` themselves for templated string args. Use YAML
   anchors for structural reuse in recipes.
 - A hook module exports `transform()`, `validate()`, or both — the exported
-  name is the contract; manifest rows declare only `module`. Keep
-  `untaped>=6.0.0,<7` as a dev-only dependency; runtime hook dependencies go
-  in `[project].dependencies`.
+  name is the contract; manifest rows declare only `module`. Keep `untaped`
+  as a dev-only dependency (scaffolding pins `>=<installed>,<next major>`);
+  runtime hook dependencies go in `[project].dependencies`.
 - Hook refs in a pack's recipes: a bare name resolves to the pack's own hook,
   else a built-in — never to another installed pack. Reference another pack's
   hook as `pack/hook`. (Only recipes without a project, and `hook run` without

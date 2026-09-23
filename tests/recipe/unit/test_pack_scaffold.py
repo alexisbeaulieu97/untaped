@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
+from packaging.version import Version
 
 import untaped.capabilities.recipe.infrastructure.pack_scaffold as pack_scaffold
 from untaped.capabilities.recipe.cli import app
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
-from untaped.capabilities.recipe.domain.pack import PackManifest
+from untaped.capabilities.recipe.domain.pack import InstalledPack
+from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports, read_pack_manifest
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -49,7 +51,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(
 
     pack_scaffold.scaffold_pack(pack_dir, "ansible")
 
-    manifest = PackManifest.from_pyproject(pack_dir)
+    manifest = read_pack_manifest(pack_dir)
     pyproject = (pack_dir / "pyproject.toml").read_text(encoding="utf-8")
     assert manifest.name == "ansible"
     assert pyproject == (
@@ -60,7 +62,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(
         "dependencies = []\n"
         "\n"
         "[dependency-groups]\n"
-        'dev = ["untaped>=6.0.0,<7", "pytest"]\n'
+        f'dev = ["{_expected_dev_requirement()}", "pytest"]\n'
         "\n"
         "[tool.pytest.ini_options]\n"
         'pythonpath = ["src"]\n'
@@ -101,7 +103,7 @@ def test_scaffold_recipe_appends_manifest_row_and_rejects_duplicates(
 
     recipe_path = pack_scaffold.scaffold_recipe(tmp_path / "ansible", "playbook")
 
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert recipe_path == tmp_path / "ansible" / "recipes" / "playbook" / "recipe.yml"
     assert manifest.recipes["playbook"].path == "recipes/playbook/recipe.yml"
     assert "version: 1" in recipe_path.read_text(encoding="utf-8")
@@ -149,7 +151,7 @@ def test_scaffold_recipe_lock_failure_keeps_recipe_case_and_manifest_row(
     assert recipe_path.is_file()
     assert (tmp_path / "ansible" / "tests" / "playbook" / "basic" / "given").is_dir()
     assert (tmp_path / "ansible" / "tests" / "playbook" / "basic" / "case.yml").is_file()
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert manifest.recipes["playbook"].path == "recipes/playbook/recipe.yml"
 
 
@@ -174,7 +176,7 @@ def test_scaffold_hook_writes_exporting_stub_and_manifest_row(
 
     module_path = pack_scaffold.scaffold_hook(tmp_path / "ansible", "set_owner")
 
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert hook_exports(module_path) == frozenset({"transform"})
     assert module_path.read_text(encoding="utf-8") == (
         "from pathlib import Path\n"
@@ -296,7 +298,7 @@ def test_scaffold_hook_force_replaces_stub_and_paired_test(
     assert "import validate" in test_content
     assert "transform" not in test_content
     # The manifest still names the hook exactly once.
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert manifest.hooks["probe"].module == "ansible_pack.hooks.probe"
 
 
@@ -341,7 +343,6 @@ def test_scaffolded_hook_pack_passes_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from untaped.capabilities.recipe.application.harness import orphaned_test_dirs
-    from untaped.capabilities.recipe.infrastructure.pack_store import InstalledPack
 
     monkeypatch.setattr(pack_scaffold, "lock_project", lambda project_root: None)
     pack_dir = tmp_path / "ansible"
@@ -349,7 +350,7 @@ def test_scaffolded_hook_pack_passes_check(
     pack_scaffold.scaffold_hook(pack_dir, "set_owner")
     (pack_dir / "uv.lock").write_text("version = 1\n", encoding="utf-8")
 
-    manifest = PackManifest.from_pyproject(pack_dir)
+    manifest = read_pack_manifest(pack_dir)
     assert orphaned_test_dirs(InstalledPack.local(pack_dir, manifest)) == []
     result = CliInvoker().invoke(app, ["check", str(pack_dir), "--format", "json"])
     assert result.exit_code == 0, result.output
@@ -375,7 +376,7 @@ def test_scaffold_hook_lock_failure_keeps_module_and_manifest_row(
     )
     assert module_path.is_file()
     assert (tmp_path / "ansible" / "tests" / "test_hook_set_owner.py").is_file()
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert manifest.hooks["set_owner"].module == "ansible_pack.hooks.set_owner"
 
 
@@ -415,7 +416,7 @@ def test_new_recipe_no_lock_never_invokes_uv_and_writes_scaffold(
     assert "hooks need `uv lock` before running" in result.stderr
     assert recipe_path.is_file()
     assert (tmp_path / "ansible" / "tests" / "playbook" / "basic" / "case.yml").is_file()
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert manifest.recipes["playbook"].path == "recipes/playbook/recipe.yml"
 
 
@@ -436,7 +437,7 @@ def test_new_hook_no_lock_never_invokes_uv_and_writes_scaffold(
     assert "uv.lock was not created/refreshed" in result.stderr
     assert "hooks need `uv lock` before running" in result.stderr
     assert module_path.is_file()
-    manifest = PackManifest.from_pyproject(tmp_path / "ansible")
+    manifest = read_pack_manifest(tmp_path / "ansible")
     assert manifest.hooks["set_owner"].module == "ansible_pack.hooks.set_owner"
 
 
@@ -454,7 +455,7 @@ def test_new_hook_explicit_local_path_splits_on_last_segment(
     assert (
         tmp_path / "some-local-pack" / "src" / "some_local_pack_pack" / "hooks" / "probe.py"
     ).is_file()
-    manifest = PackManifest.from_pyproject(tmp_path / "some-local-pack")
+    manifest = read_pack_manifest(tmp_path / "some-local-pack")
     assert manifest.hooks["probe"].module == "some_local_pack_pack.hooks.probe"
 
 
@@ -526,3 +527,8 @@ def test_new_hook_pack_not_found_omits_hint_when_no_matching_directory(
     assert result.exit_code != 0
     assert "pack not found: missing" in result.output
     assert "directory named" not in result.output
+
+
+def _expected_dev_requirement() -> str:
+    installed = Version(version("untaped"))
+    return f"untaped>={installed.public},<{installed.major + 1}"

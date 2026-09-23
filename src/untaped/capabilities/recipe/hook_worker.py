@@ -1,5 +1,5 @@
-"""Stable import path for the worker's ``HookHelpers`` (used by scaffolded pack tests)."""
+"""Stable import path for ``HookHelpers`` (used by scaffolded pack tests)."""
 
-from untaped.capabilities.recipe._worker.hook_worker import HookHelpers
+from untaped.capabilities.recipe._worker.helpers import HookHelpers
 
 __all__ = ["HookHelpers"]
