@@ -3941,3 +3941,51 @@ def test_backup_prune_counts_failed_deletions_and_continues(
     assert "error: 20250101T000000000000Z-aaaaaaaa" in result.stderr
     assert first.exists()
     assert not second.exists()
+
+
+def test_recipe_check_accepts_input_templated_asset_paths(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    (recipe_dir / "templates").mkdir(parents=True)
+    (recipe_dir / "templates" / "web.txt").write_text("web\n")
+    (recipe_dir / "files").mkdir()
+    (recipe_dir / "files" / "web.cfg").write_text("cfg\n")
+    (recipe_dir / "recipe.yml").write_text(
+        "version: 1\n"
+        "inputs:\n"
+        "  kind: {type: str, default: web}\n"
+        "steps:\n"
+        "  - type: template\n"
+        "    template: 'templates/{{ kind }}.txt'\n"
+        "    dest: out.txt\n"
+        "  - type: copy\n"
+        "    source: 'files/{{ kind }}.cfg'\n"
+        "    dest: out.cfg\n"
+    )
+
+    result = CliInvoker().invoke(
+        app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["status"] == "pass"
+
+
+def test_recipe_check_rejects_missing_prefix_of_templated_asset_path(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "recipe.yml").write_text(
+        "version: 1\n"
+        "inputs:\n"
+        "  kind: {type: str, default: web}\n"
+        "steps:\n"
+        "  - type: template\n"
+        "    template: 'missing/{{ kind }}.txt'\n"
+        "    dest: out.txt\n"
+    )
+
+    result = CliInvoker().invoke(
+        app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "template not found" in json.loads(result.stdout)[0]["error"]
