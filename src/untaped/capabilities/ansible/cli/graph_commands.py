@@ -38,6 +38,7 @@ from untaped.capabilities.ansible.infrastructure import (
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
+from untaped.capabilities.github.ansible import github_settings as load_github_settings
 from untaped.capability_api import (
     HttpSettings,
     ParallelOption,
@@ -258,7 +259,7 @@ def graph_command(
         settings = get_config_section("ansible", AnsibleSettings)
         warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
         aliases = AliasRepository().entries()
-        github_settings = get_config_section("github", GithubSettings)
+        github_settings = load_github_settings()
         github_host = github_web_host(github_settings.base_url)
         target_repo_name = target_repo or _resolve_target_repo(
             target, aliases, github_host=github_host

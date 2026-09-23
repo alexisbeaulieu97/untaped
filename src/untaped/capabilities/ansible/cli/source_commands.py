@@ -28,7 +28,7 @@ from untaped.capabilities.ansible.settings import (
     SourceDefinition,
     normalize_team_refs,
 )
-from untaped.capabilities.github.ansible import GithubSettings
+from untaped.capabilities.github.ansible import github_settings
 from untaped.capability_api import (
     ColumnsOption,
     DryRunOption,
@@ -384,7 +384,7 @@ def source_refresh_command(
             index=SqliteDependencyIndex(settings.index_path),
             aliases=aliases,
             settings=settings,
-            github_settings=get_config_section("github", GithubSettings),
+            github_settings=github_settings(),
             http=ctx.http,
             concurrency=git_parallel,
             backend=backend,
