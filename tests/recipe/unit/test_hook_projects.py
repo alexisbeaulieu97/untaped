@@ -24,7 +24,6 @@ import untaped.capabilities.recipe.infrastructure.hook_worker_client as worker_c
 from untaped.capabilities.recipe.domain.hook_project import HookProjectMetadata, read_hook_metadata
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
-from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers
 from untaped.capabilities.recipe.infrastructure.hook_resolver import (
     BuiltinHookRef,
     HookResolver,
@@ -1216,7 +1215,6 @@ def test_hook_executor_dispatches_builtin_without_worker(tmp_path: Path) -> None
     executor = HookExecutor(
         HookResolver(),
         workers=ExplodingWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.transform(
@@ -1253,7 +1251,6 @@ def test_hook_executor_sends_external_transform_to_worker(tmp_path: Path) -> Non
     executor = HookExecutor(
         HookResolver(),
         workers=RecordingWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.transform(
@@ -1294,7 +1291,6 @@ def test_hook_executor_debug_returns_external_diagnostics(tmp_path: Path) -> Non
     executor = HookExecutor(
         HookResolver(),
         workers=RecordingWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.transform(
@@ -1402,10 +1398,7 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
         "CONTENT = 'bad_content'\n"
         "FILE = 'bad_file'\n"
     )
-    (fake_engine / "yaml_options.py").write_text(
-        "def apply_yaml_dump_options(yaml, options):\n"
-        "    raise RuntimeError('fake yaml_options imported')\n"
-    )
+    (fake_engine / "helpers.py").write_text("raise RuntimeError('fake helpers imported')\n")
     worker = (
         Path(__file__).parents[3]
         / "src"
@@ -1450,7 +1443,7 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
         "result": {"status": "pass", "message": "from real worker protocol"},
         "warnings": [],
     }
-    assert "fake yaml_options imported" not in stderr
+    assert "fake helpers imported" not in stderr
 
 
 def test_worker_script_rejects_invalid_validate_return_object(tmp_path: Path) -> None:
@@ -1529,7 +1522,6 @@ def test_hook_executor_rejects_unknown_warn_verdict(tmp_path: Path) -> None:
     executor = HookExecutor(
         HookResolver(),
         workers=WarningWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     with pytest.raises(ValueError, match="status"):
@@ -1568,7 +1560,6 @@ def test_hook_executor_collects_worker_warnings_alongside_verdict(tmp_path: Path
     executor = HookExecutor(
         HookResolver(),
         workers=WarningWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.validate(

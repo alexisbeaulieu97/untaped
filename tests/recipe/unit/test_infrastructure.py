@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+import untaped.capabilities.recipe._worker.helpers as helpers_module
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
-import untaped.capabilities.recipe.infrastructure.ruamel_io as ruamel_io_module
-from untaped.capabilities.recipe._worker.hook_worker import HookHelpers as WorkerHookHelpers
+from untaped.capabilities.recipe._worker.helpers import HookHelpers
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply
 from untaped.capabilities.recipe.application.targets import Target
@@ -18,10 +18,8 @@ from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
-from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
-from untaped.capabilities.recipe.infrastructure.ruamel_io import dump_yaml, load_yaml
 
 
 def test_check_lock_reports_stale_lockfile_with_uv_detail(
@@ -154,9 +152,9 @@ def test_dump_yaml_applies_core_formatting_options(
             del data
             out.write("dumped\n")
 
-    monkeypatch.setattr(ruamel_io_module, "YAML", FakeYaml)
+    monkeypatch.setattr("ruamel.yaml.YAML", FakeYaml)
 
-    result = ruamel_io_module.dump_yaml(
+    result = helpers_module.dump_yaml(
         {"items": [1]},
         options={
             "width": 120,
@@ -194,7 +192,7 @@ def test_dump_yaml_rejects_invalid_options(
     message: str,
 ) -> None:
     with pytest.raises(TypeError, match=message):
-        dump_yaml({"items": [1]}, options=options)
+        helpers_module.dump_yaml({"items": [1]}, options=options)
 
 
 def test_dump_yaml_defaults_preserve_existing_in_process_formatting(
@@ -216,9 +214,9 @@ def test_dump_yaml_defaults_preserve_existing_in_process_formatting(
             del data
             out.write("dumped\n")
 
-    monkeypatch.setattr(ruamel_io_module, "YAML", FakeYaml)
+    monkeypatch.setattr("ruamel.yaml.YAML", FakeYaml)
 
-    assert ruamel_io_module.dump_yaml({"items": [1]}) == "dumped\n"
+    assert helpers_module.dump_yaml({"items": [1]}) == "dumped\n"
 
     yaml = created[0]
     assert yaml.preserve_quotes is True
@@ -226,25 +224,14 @@ def test_dump_yaml_defaults_preserve_existing_in_process_formatting(
     assert yaml.indent_calls == []
 
 
-def test_worker_yaml_dump_matches_in_process_defaults_and_options() -> None:
-    data = {"items": ["x" * 100, "y" * 100]}
-
-    assert WorkerHookHelpers().dump_yaml(data) == HookHelpers().dump_yaml(data)
-    assert WorkerHookHelpers().dump_yaml(data, options={"width": 40}) == HookHelpers().dump_yaml(
-        data,
-        options={"width": 40},
-    )
-    assert WorkerHookHelpers().dump_yaml(data, options={"explicit_start": True}).startswith("---\n")
-
-
 def test_hook_helpers_and_builtin_yaml_edit_preserve_round_trip_yaml(tmp_path: Path) -> None:
     helpers = HookHelpers()
 
-    assert helpers.pass_("ok").status == "pass"
-    assert helpers.skip("n/a").skipped
-    assert helpers.fail("bad").failed
+    assert helpers.pass_("ok") == {"status": "pass", "message": "ok"}
+    assert helpers.skip("n/a") == {"status": "skip", "message": "n/a"}
+    assert helpers.fail("bad") == {"status": "fail", "message": "bad"}
     assert helpers.warn("check") is None
-    assert helpers.drain_warnings() == ("check",)
+    assert helpers.warnings == ["check"]
     assert helpers.render_template("{{ name }}", {"name": "api"}) == "api"
 
     result = yaml_edit.transform(
@@ -275,8 +262,8 @@ def test_hook_helpers_and_builtin_yaml_edit_preserve_round_trip_yaml(tmp_path: P
     assert "enabled: true" in result
     assert "name: web" not in result
 
-    loaded = load_yaml(result)
-    assert dump_yaml(loaded) == result
+    loaded = helpers_module.load_yaml(result)
+    assert helpers_module.dump_yaml(loaded) == result
 
     empty = yaml_edit.transform(
         "",
@@ -558,7 +545,6 @@ def test_apply_recipe_rejects_recipe_source_symlink_escape(tmp_path: Path) -> No
         HookExecutor(
             HookResolver(),
             workers=UvHookWorkerPool(),
-            helpers_factory=HookHelpers,
         )
     )
 
@@ -623,7 +609,6 @@ def test_parallel_bulk_plan_returns_ordered_errors_and_flushes_atomically(tmp_pa
             HookExecutor(
                 HookResolver(),
                 workers=UvHookWorkerPool(),
-                helpers_factory=HookHelpers,
             )
         )
     )
@@ -691,7 +676,6 @@ def test_bulk_plan_resolves_per_target_inputs_and_dedupes_repeated_targets(
             HookExecutor(
                 HookResolver(),
                 workers=UvHookWorkerPool(),
-                helpers_factory=HookHelpers,
             )
         )
     )
@@ -747,7 +731,6 @@ def test_bulk_plan_error_rows_preserve_resolved_input_display(
             HookExecutor(
                 HookResolver(),
                 workers=UvHookWorkerPool(),
-                helpers_factory=HookHelpers,
             )
         )
     )
@@ -781,7 +764,6 @@ def test_bulk_plan_input_resolution_errors_have_empty_inputs(tmp_path: Path) -> 
             HookExecutor(
                 HookResolver(),
                 workers=UvHookWorkerPool(),
-                helpers_factory=HookHelpers,
             )
         )
     )
