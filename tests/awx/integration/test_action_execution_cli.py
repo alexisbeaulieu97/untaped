@@ -36,7 +36,8 @@ def test_sliced_launch_wait_keeps_mixed_execution_kinds(
         _parallel, "WatchJob", lambda client: WatchJob(client, sleep=lambda _: None)
     )
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "sliced", "ordinary", "--wait", "--format", "json"]
+        app,
+        ["job-templates", "launch", "--yes", "sliced", "ordinary", "--wait", "--format", "json"],
     )
     assert result.exit_code == (0 if status == "successful" else 1), result.output
     rows = json.loads(result.stdout)
@@ -73,7 +74,7 @@ def test_invalid_response_keeps_execution_id_without_retry_or_monitoring(
         201, json=response
     )
     fake_aap.install(fake_aap.router)
-    args = ["job-templates", "launch", "sliced", "ordinary", "--track", "--format", "json"]
+    args = ["job-templates", "launch", "--yes", "sliced", "ordinary", "--track", "--format", "json"]
     if continue_:
         args.append("--continue-on-error")
     result = CliInvoker().invoke(app, args)

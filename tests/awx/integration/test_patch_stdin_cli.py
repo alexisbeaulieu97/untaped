@@ -278,7 +278,8 @@ def test_patch_stdin_project_default_environment_preview(seeded_default_org: Any
 def test_patch_stdin_warns_and_passes_through_unknown_field(seeded_default_org: Any) -> None:
     """With ``--allow-unknown-fields`` a field this tool doesn't recognize is
     sent to AWX as-is, with a soft warning (rejected by default). NOTE: the
-    fake server blindly stores the body, so this proves the CLI *sends* the field — not that a real AWX accepts it."""
+    fake server blindly stores the body, so this proves the CLI *sends* the
+    field — not that a real AWX accepts it."""
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
         app,

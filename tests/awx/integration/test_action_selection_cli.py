@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from untaped.capabilities.awx.cli import app
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 pytestmark = pytest.mark.integration
 
@@ -86,7 +86,9 @@ def test_launch_query_and_deduplicated_typed_id_pipe(fake_aap: Any) -> None:
     assert selected.exit_code == 0, selected.output
     fake_aap.store["job_templates"][50]["name"] = "renamed"
     launched = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--stdin", "--format", "json"], input=selected.stdout * 2
+        app,
+        ["job-templates", "launch", "--yes", "--stdin", "--format", "json"],
+        input=selected.stdout * 2,
     )
     assert launched.exit_code == 0, launched.output
     assert [i for _, i, _, _ in fake_aap.actions_called] == [50]
@@ -180,7 +182,7 @@ def test_launch_runtime_failure_retains_success_and_skips_without_retry(
         side_effect=httpx.ReadTimeout("ambiguous POST")
     )
     fake_aap.install(fake_aap.router)
-    args = ["job-templates", "launch", "deploy", "bad", "last", "--format", "json"]
+    args = ["job-templates", "launch", "--yes", "deploy", "bad", "last", "--format", "json"]
     if continue_:
         args.append("--continue-on-error")
     result = CliInvoker().invoke(app, args)
@@ -227,7 +229,18 @@ def test_parallel_launch_stops_new_submissions_but_retains_inflight(fake_aap: An
     fake_aap.install(fake_aap.router)
     result = CliInvoker().invoke(
         app,
-        ["job-templates", "launch", "deploy", "bad", "last", "--parallel", "2", "--format", "json"],
+        [
+            "job-templates",
+            "launch",
+            "--yes",
+            "deploy",
+            "bad",
+            "last",
+            "--parallel",
+            "2",
+            "--format",
+            "json",
+        ],
     )
     assert result.exit_code == 1, result.output
     assert sorted(calls) == [50, 51]
@@ -336,7 +349,7 @@ def test_sync_known_invalid_batch_never_starts_valid_target(fake_aap: Any, inval
             kind="smart" if invalid == "smart-inventory" else "",
         )
         command = "inventories"
-    result = CliInvoker().invoke(app, [command, "sync", "--all", "--continue-on-error"])
+    result = CliInvoker().invoke(app, [command, "sync", "--yes", "--all", "--continue-on-error"])
     assert result.exit_code != 0
     assert "invalid" in result.output
     assert fake_aap.actions_called == []
@@ -363,6 +376,7 @@ def test_scoped_source_query_selects_only_matching_inventory(fake_aap: Any) -> N
         [
             "inventory-sources",
             "sync",
+            "--yes",
             "--filter",
             "source=ec2",
             "--search",
@@ -393,9 +407,64 @@ def test_monitor_identity_does_not_collide_with_literal_resource_names(fake_aap:
     fake_aap.seed("job_templates", id=51, name="deploy", organization=1)
     fake_aap.seed("job_templates", id=52, name="deploy#50", organization=1)
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--all", "--wait", "--format", "json"]
+        app, ["job-templates", "launch", "--yes", "--all", "--wait", "--format", "json"]
     )
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
     assert [r["target_id"] for r in rows] == [50, 51, 52]
     assert all(r["action"] == "completed" for r in rows)
+
+
+@pytest.mark.parametrize(
+    "command,args",
+    [
+        ("job-templates", ["launch", "--all"]),
+        ("job-templates", ["launch", "--search", "deploy"]),
+        ("job-templates", ["launch", "--filter", "name=deploy"]),
+        ("projects", ["sync", "--all"]),
+    ],
+)
+@pytest.mark.parametrize("answer", [True, False])
+def test_mass_actions_preview_and_confirm(
+    fake_aap: Any, command: str, args: list[str], answer: bool
+) -> None:
+    seed(fake_aap)
+    backend = ScriptedPromptBackend(confirms=[answer])
+    result = CliInvoker().invoke(app, [command, *args], interactive=True, prompt_backend=backend)
+    assert result.exit_code == 0, result.output + result.stderr
+    assert len(backend.calls) == 1
+    assert bool(fake_aap.actions_called) is answer
+    assert "id=" in result.stderr  # preview lists the targets before asking
+
+
+def test_multi_name_launch_requires_confirmation_without_terminal(fake_aap: Any) -> None:
+    seed(fake_aap)
+    fake_aap.seed("job_templates", id=51, name="other", organization=1)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "other"])
+    assert result.exit_code != 0
+    assert "--yes or --dry-run" in result.stderr
+    assert fake_aap.actions_called == []
+
+
+def test_mass_launch_yes_skips_prompt(fake_aap: Any) -> None:
+    seed(fake_aap)
+    backend = ScriptedPromptBackend(confirms=[])
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "launch", "--all", "--yes"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+    assert result.exit_code == 0, result.output
+    assert backend.calls == []
+    assert len(fake_aap.actions_called) == 1
+
+
+def test_single_named_launch_does_not_prompt(fake_aap: Any) -> None:
+    seed(fake_aap)
+    backend = ScriptedPromptBackend(confirms=[])
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "deploy"], interactive=True, prompt_backend=backend
+    )
+    assert result.exit_code == 0, result.output
+    assert backend.calls == []

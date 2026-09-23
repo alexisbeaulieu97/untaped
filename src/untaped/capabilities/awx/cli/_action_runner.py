@@ -14,6 +14,7 @@ from untaped.capabilities.awx.application.prepare_actions import prepare_action_
 from untaped.capabilities.awx.application.selected_actions import run_selected_actions
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
+from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
 from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
@@ -27,6 +28,8 @@ def run_action_selection(
     action: str,
     payload: dict[str, Any] | None = None,
     dry_run: bool = False,
+    yes: bool = False,
+    confirm: bool = False,
     parallel: int = 1,
     continue_on_error: bool = False,
     wait: bool = False,
@@ -34,7 +37,11 @@ def run_action_selection(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """One bounded POST phase, then monitor every known execution even after failures."""
+    """One bounded POST phase, then monitor every known execution even after failures.
+
+    ``confirm`` (mass selections) previews the targets and asks once unless
+    ``yes``; a declined prompt submits nothing.
+    """
     spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload)
     result_kinds = next(a.returns for a in spec.actions if a.name == action)
     result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
@@ -50,7 +57,7 @@ def run_action_selection(
         }
         for item in targets
     ]
-    if dry_run:
+    if dry_run or (confirm and not yes and not _confirm_targets(ctx, targets, action=action)):
         emit(rows, fmt=fmt, columns=columns, kind="awx.job")
         return
 
@@ -98,6 +105,16 @@ def run_action_selection(
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
     emit(rows, fmt=fmt, columns=columns, kind="awx.job")
     finish(any(row["action"] != "completed" for row in rows))
+
+
+def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:
+    """Preview every target on stderr, then ask once with No as the default."""
+    for item in targets:
+        echo(f"{action} {item.kind}/{item.name} id={item.id} scope={item.scope}", err=True)
+    if confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False):
+        return True
+    echo(f"Cancelled; nothing to {action}.", err=True)
+    return False
 
 
 def _prepare(

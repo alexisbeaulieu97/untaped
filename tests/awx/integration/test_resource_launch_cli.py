@@ -29,7 +29,9 @@ def test_launch_reads_names_from_stdin(seeded_default_org: Any) -> None:
     seeded_default_org.seed(
         "job_templates", id=11, name="beta", organization=1, organization_name="Default"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "--stdin"], input="alpha\nbeta\n")
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "--yes", "--stdin"], input="alpha\nbeta\n"
+    )
     assert result.exit_code == 0, result.output
     launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
     launched_ids = {c[1] for c in launches}

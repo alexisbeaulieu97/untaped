@@ -501,7 +501,7 @@ def test_launch_track_parallel_drains_concurrently(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _BarrierStream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 0, result.output
 
@@ -518,7 +518,7 @@ def test_launch_track_output_lines_carry_template_prefix(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 0, result.output
     assert "[deploy-a]" in result.stderr
@@ -545,7 +545,7 @@ def test_launch_track_one_failed_exits_one_and_logs_both(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 1, result.output
     assert "[deploy-a]" in result.stderr
@@ -591,6 +591,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
         [
             "job-templates",
             "launch",
+            "--yes",
             "deploy-a",
             "deploy-b",
             "--wait",
@@ -640,7 +641,7 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _StubStreamWithDeployAFailure)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 1, result.output
     # Single-prefix error row, with the original exception class name
