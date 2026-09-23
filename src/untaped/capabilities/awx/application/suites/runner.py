@@ -15,16 +15,16 @@ from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from untaped.capabilities.awx.application.test.ports import FkPrefetcher, Launcher, Watcher
-from untaped.capabilities.awx.application.test.resolver import ResolveCasePayload
+from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
-from untaped.capabilities.awx.domain.test_suite import (
+from untaped.capabilities.awx.domain.suite import (
     Case,
     CaseResult,
     CaseStatus,
     RefSentinel,
-    TestRunOutcome,
-    TestSuite,
+    Suite,
+    SuiteRunOutcome,
 )
 from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
 
@@ -74,12 +74,12 @@ class RunTestSuite:
 
     def __call__(
         self,
-        suites: Iterable[TestSuite],
+        suites: Iterable[Suite],
         *,
         case_filter: set[str] | None = None,
         parallel: int = 1,
         timeout: float | None = None,
-    ) -> TestRunOutcome:
+    ) -> SuiteRunOutcome:
         plan = self._build_plan(list(suites), case_filter)
         self._fk.prefetch(self._prefetch_plan(plan))
         resolved = self._resolve_all(plan)
@@ -100,7 +100,7 @@ class RunTestSuite:
                     for future in futures:
                         future.cancel()
                     raise
-        return TestRunOutcome(results=results)
+        return SuiteRunOutcome(results=results)
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""
@@ -108,10 +108,10 @@ class RunTestSuite:
 
     def _build_plan(
         self,
-        suites: Sequence[TestSuite],
+        suites: Sequence[Suite],
         case_filter: set[str] | None,
-    ) -> list[tuple[TestSuite, str, Case]]:
-        plan: list[tuple[TestSuite, str, Case]] = []
+    ) -> list[tuple[Suite, str, Case]]:
+        plan: list[tuple[Suite, str, Case]] = []
         for suite in suites:
             for case_name, case in suite.cases.items():
                 if case_filter is not None and case_name not in case_filter:
@@ -127,7 +127,7 @@ class RunTestSuite:
         return plan
 
     def _prefetch_plan(
-        self, plan: Sequence[tuple[TestSuite, str, Case]]
+        self, plan: Sequence[tuple[Suite, str, Case]]
     ) -> dict[str, list[dict[str, str] | None]]:
         """Walk every case (defaults included) to learn which name lookups will fire.
 
@@ -153,7 +153,7 @@ class RunTestSuite:
                 _collect_ref_sentinels(value, by_kind, self._resolve.scope_for_ref)
         return by_kind
 
-    def _resolve_all(self, plan: Sequence[tuple[TestSuite, str, Case]]) -> list[_ResolvedCase]:
+    def _resolve_all(self, plan: Sequence[tuple[Suite, str, Case]]) -> list[_ResolvedCase]:
         out: list[_ResolvedCase] = []
         for suite, case_name, case in plan:
             payload = self._resolve(self._spec, case, defaults=suite.defaults)

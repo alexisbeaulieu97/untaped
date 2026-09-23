@@ -1,4 +1,4 @@
-"""LoadTestSuite: file path → validated :class:`TestSuite`.
+"""LoadTestSuite: file path → validated :class:`Suite`.
 
 The use case wires injected adapters end-to-end: read file → split
 frontmatter → resolve variable values → render Jinja2 body → parse YAML
@@ -13,13 +13,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.capabilities.awx.application.test.ports import (
+from untaped.capabilities.awx.application.suites.ports import (
     Filesystem,
     Parser,
     Prompt,
     VarsResolver,
 )
-from untaped.capabilities.awx.domain.test_suite import TestSuite, VariableSpec
+from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
 from untaped.capabilities.awx.errors import AwxApiError
 
 
@@ -44,7 +44,7 @@ class LoadTestSuite:
         cli_vars: Mapping[str, str] | None = None,
         vars_files: Iterable[Path] = (),
         extra_known_names: Iterable[str] = (),
-    ) -> TestSuite:
+    ) -> Suite:
         text = self._fs.read_text(path)
         meta_yaml, body = self._parser.split_frontmatter(text)
         var_specs = self._parse_variable_specs(meta_yaml)
@@ -68,7 +68,7 @@ class LoadTestSuite:
         # ``awx test list --format json``) can introspect required vars.
         data["variables"] = {name: spec for name, spec in var_specs.items()}
         try:
-            suite = TestSuite.model_validate(data)
+            suite = Suite.model_validate(data)
         except ValidationError as exc:
             raise AwxApiError(f"{path}: {exc}") from exc
         _reject_non_empty_assert(path, suite)
@@ -115,7 +115,7 @@ class LoadTestSuite:
         return specs
 
 
-def _reject_non_empty_assert(path: Path, suite: TestSuite) -> None:
+def _reject_non_empty_assert(path: Path, suite: Suite) -> None:
     locations: list[str] = []
     if suite.defaults is not None and suite.defaults.assert_:
         locations.append("defaults")

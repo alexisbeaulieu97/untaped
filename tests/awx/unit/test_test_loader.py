@@ -1,4 +1,4 @@
-"""LoadTestSuite use case: file → rendered → validated TestSuite."""
+"""LoadTestSuite use case: file → rendered → validated Suite."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from typing import cast
 
 import pytest
 
-from untaped.capabilities.awx.application.test.loader import LoadTestSuite
-from untaped.capabilities.awx.application.test.ports import Filesystem, Prompt
-from untaped.capabilities.awx.domain.test_suite import RefSentinel, VariableSpec
+from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
+from untaped.capabilities.awx.application.suites.ports import Filesystem, Prompt
+from untaped.capabilities.awx.domain.suite import RefSentinel, VariableSpec
 from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.test import DefaultParser, resolve_variables
+from untaped.capabilities.awx.infrastructure.suites import DefaultParser, resolve_variables
 
 
 class FakeFilesystem(Filesystem):

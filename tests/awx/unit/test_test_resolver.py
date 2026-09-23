@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 
-from untaped.capabilities.awx.application.test.resolver import (
+from untaped.capabilities.awx.application.suites.resolver import (
     KNOWN_LAUNCH_FIELDS,
     ResolveCasePayload,
     UnknownLaunchFieldWarning,
 )
-from untaped.capabilities.awx.domain.test_suite import Case, RefSentinel
+from untaped.capabilities.awx.domain.suite import Case, RefSentinel
 from untaped.capabilities.awx.errors import ResourceNotFound
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC

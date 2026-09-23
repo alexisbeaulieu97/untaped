@@ -6,9 +6,9 @@ import pytest
 import yaml
 from jinja2 import UndefinedError
 
-from untaped.capabilities.awx.domain.test_suite import RefSentinel
+from untaped.capabilities.awx.domain.suite import RefSentinel
 from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.test.parser import (
+from untaped.capabilities.awx.infrastructure.suites.parser import (
     build_jinja_env,
     load_yaml_with_refs,
     split_frontmatter,

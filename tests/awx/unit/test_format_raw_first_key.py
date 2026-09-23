@@ -44,9 +44,9 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from untaped.capabilities.awx.cli.test_commands import _test_case_row, _test_suite_row
+from untaped.capabilities.awx.cli.suite_commands import _test_case_row, _test_suite_row
 from untaped.capabilities.awx.domain import Job, JobEvent, WorkflowNode
-from untaped.capabilities.awx.domain.test_suite import Case, CaseResult, TestSuite
+from untaped.capabilities.awx.domain.suite import Case, CaseResult, Suite
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 
 _CONTRACT_REF = "see AGENTS.md '--format raw default-column contract'"
@@ -66,17 +66,17 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
 # CLI command in the corresponding row-source path calls.
 HAND_BUILT_ROW_SOURCES: list[tuple[str, Callable[[], dict[str, object]], str]] = [
     (
-        "untaped.capabilities.awx.cli.test_commands._test_case_row",
+        "untaped.capabilities.awx.cli.suite_commands._test_case_row",
         lambda: _test_case_row(
-            TestSuite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
+            Suite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
             "c1",
         ),
         "suite",
     ),
     (
-        "untaped.capabilities.awx.cli.test_commands._test_suite_row",
+        "untaped.capabilities.awx.cli.suite_commands._test_suite_row",
         lambda: _test_suite_row(
-            TestSuite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
+            Suite(name="suite-a", jobTemplate="jt", cases={"c1": Case(launch={})}),
         ),
         "suite",
     ),
@@ -101,10 +101,10 @@ _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
     "untaped.capabilities.awx.domain.workflow_node": frozenset(),
     # ``CaseResult`` is the row source (``awx test run`` emits
     # ``[r.model_dump() for r in outcome.results]``); the other four
-    # BaseModels are loaded-suite shapes (``TestSuite``/``Case``/
-    # ``VariableSpec``) or the aggregate (``TestRunOutcome``).
-    "untaped.capabilities.awx.domain.test_suite": frozenset(
-        {"Case", "TestRunOutcome", "TestSuite", "VariableSpec"}
+    # BaseModels are loaded-suite shapes (``Suite``/``Case``/
+    # ``VariableSpec``) or the aggregate (``SuiteRunOutcome``).
+    "untaped.capabilities.awx.domain.suite": frozenset(
+        {"Case", "SuiteRunOutcome", "Suite", "VariableSpec"}
     ),
 }
 
@@ -229,12 +229,12 @@ def test_every_basemodel_in_row_module_is_catalogued_or_exempt(module_path: str)
 # literal — closing the bypass window the helper extraction created.
 _LIST_COMMAND_CALLSITES: list[tuple[Path, str, str]] = [
     (
-        _REPO_ROOT / "src" / "untaped" / "capabilities" / "awx" / "cli" / "test_commands.py",
+        _REPO_ROOT / "src" / "untaped" / "capabilities" / "awx" / "cli" / "suite_commands.py",
         "list_command",
         "_test_case_row",
     ),
     (
-        _REPO_ROOT / "src" / "untaped" / "capabilities" / "awx" / "cli" / "test_commands.py",
+        _REPO_ROOT / "src" / "untaped" / "capabilities" / "awx" / "cli" / "suite_commands.py",
         "list_command",
         "_test_suite_row",
     ),

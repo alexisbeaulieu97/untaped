@@ -13,10 +13,10 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from untaped.capabilities.awx.application.ports import Catalog
-from untaped.capabilities.awx.application.test.ports import FkLookup
+from untaped.capabilities.awx.application.suites.ports import FkLookup
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.spec import FkRef
-from untaped.capabilities.awx.domain.test_suite import Case, RefSentinel
+from untaped.capabilities.awx.domain.suite import Case, RefSentinel
 from untaped.capabilities.awx.errors import AwxApiError
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set

@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.awx.application.test.ports import Prompt
-from untaped.capabilities.awx.domain.test_suite import VariableSpec
+from untaped.capabilities.awx.application.suites.ports import Prompt
+from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capabilities.awx.errors import AwxApiError
-from untaped.capabilities.awx.infrastructure.test.vars_resolver import resolve_variables
+from untaped.capabilities.awx.infrastructure.suites.vars_resolver import resolve_variables
 
 
 class StubPrompt(Prompt):

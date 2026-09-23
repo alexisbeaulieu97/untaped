@@ -57,7 +57,7 @@ from untaped.capabilities.awx.cli.options import (
     UnverifiedOption,
     YesOption,
 )
-from untaped.capabilities.awx.cli.test_commands import app as test_app
+from untaped.capabilities.awx.cli.suite_commands import app as test_app
 from untaped.capabilities.awx.cli.unified_templates_commands import app as unified_templates_app
 from untaped.capabilities.awx.cli.usage_commands import register_usage_command
 from untaped.capabilities.awx.cli.workflow_node_commands import register_nodes_command
