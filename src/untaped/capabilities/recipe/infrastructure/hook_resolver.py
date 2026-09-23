@@ -17,6 +17,7 @@ from untaped.capabilities.recipe.domain.hook_project import (
     validate_hook_project_contract,
 )
 from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
+from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 
 _ProjectContract = HookProjectMetadata | PackManifest
@@ -84,7 +85,7 @@ class HookResolver:
         raise ValueError(f"hook not found: {name}")
 
     def _resolve_qualified(self, name: str) -> HookRef:
-        if name.startswith(("/", "./", "../", "~")):
+        if is_path_ref(name):
             raise ValueError(f"hook must be a safe hook name: {name}")
         try:
             ref = parse_ref(name)
