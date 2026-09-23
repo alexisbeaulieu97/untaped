@@ -16,6 +16,7 @@ from untaped.api import (
     finish,
     render_rows,
     ui_context,
+    unified_diff_text,
 )
 from untaped.capabilities.recipe.application.harness import (
     CaseResult,
@@ -36,7 +37,6 @@ from untaped.capabilities.recipe.cli.common import (
 from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure import HookExecutor, HookResolver
-from untaped.capabilities.recipe.infrastructure.diff import unified_diff
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import InstalledPack, PackLibrary
 
@@ -189,7 +189,9 @@ def _render_diffs(results: list[CaseResult]) -> None:
             continue
         echo(f"# {result.pack}/{result.recipe}/{result.case}", err=True)
         for change in result.diffs:
-            diff = unified_diff(change)
+            diff = unified_diff_text(
+                change.before, change.after, path=change.relative_path.as_posix()
+            )
             if diff:
                 echo(diff, err=True, nl=False)
 

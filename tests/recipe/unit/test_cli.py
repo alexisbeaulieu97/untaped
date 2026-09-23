@@ -411,7 +411,7 @@ def test_apply_preview_diff_preserves_patch_headers(tmp_path: Path) -> None:
     recipe.write_text(
         "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
     )
-    (tmp_path / "template.txt").write_text("hello\n")
+    (tmp_path / "template.txt").write_text("hello")
     target = tmp_path / "target"
     target.mkdir()
 
@@ -423,8 +423,10 @@ def test_apply_preview_diff_preserves_patch_headers(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Recipe preview:" in result.stderr
     assert f"# {target}" in result.stderr
-    assert "--- a/out.txt" in result.stderr
-    assert "+++ b/out.txt" in result.stderr
+    # A created file diffs from /dev/null, and a missing final newline is
+    # marked so the output applies with `patch`/`git apply`.
+    assert "--- /dev/null\n+++ b/out.txt\n" in result.stderr
+    assert "+hello\n\\ No newline at end of file\n" in result.stderr
     assert str(target / "out.txt") not in result.stderr
 
 
@@ -449,7 +451,7 @@ def test_apply_diff_preview_renders_relative_target_context_as_absolute(
     assert result.exit_code == 0, result.output
     assert f"# {tmp_path / 'target'}" in result.stderr
     assert "# target" not in result.stderr
-    assert "--- a/out.txt" in result.stderr
+    assert "--- /dev/null" in result.stderr
     assert "+++ b/out.txt" in result.stderr
 
 
@@ -1046,7 +1048,7 @@ def test_apply_check_explicit_diff_preview_reports_drift_without_writing(
     assert not (target / "out.txt").exists()
     assert BackupStore(library_root() / "backups").list() == []
     assert f"# {tmp_path / 'target'}" in result.stderr
-    assert "--- a/out.txt" in result.stderr
+    assert "--- /dev/null" in result.stderr
     assert "+++ b/out.txt" in result.stderr
 
 
