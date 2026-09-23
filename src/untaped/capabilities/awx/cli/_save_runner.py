@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from untaped.api import OutputFormat, echo, emit
+from untaped.api import OutputFormat, atomic_write, echo, emit
 from untaped.capabilities.awx.application import SaveResource, SaveResources
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
@@ -28,7 +28,7 @@ def run_save_selection(
         echo(f"{spec.fidelity} save: {comment}", err=True)
     text = "---\n".join(dump_resource(resource, header_comment=comment) for resource in resources)
     if output:
-        output.expanduser().write_text(text)
+        atomic_write(output.expanduser(), text)
     elif fmt == "yaml":
         if text:
             echo(text)
@@ -70,7 +70,7 @@ def run_save_batch(
         target = out_dir / outcome.filename
         _assert_inside(out_dir, target)
         text = dump_resource(outcome.resource, header_comment=outcome.header_comment)
-        target.write_text(text)
+        atomic_write(target, text)
         if print_paths:
             echo(str(target))
         else:
