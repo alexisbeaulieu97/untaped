@@ -129,6 +129,8 @@ class _GraphBuilder:
                 expand=self._expand_impact,
                 prefetch=self._prefetch_impact_level,
             )
+            if self._request.ref is not None:
+                self._warn_unplaced_unpinned_dependents(self._request.repo, self._request.ref)
         warnings: list[str] = []
         if self._request.direction in {"impact", "both"} and self._index.is_stale(
             self._request.source_key,
@@ -222,6 +224,39 @@ class _GraphBuilder:
             entry.items.append(child)
             children.append(child)
         return children
+
+    def _warn_unplaced_unpinned_dependents(self, repo: str, ref: str) -> None:
+        """Warn when unpinned dependents cannot be matched to ``ref``.
+
+        Unpinned declarations install the dependency's default branch; the
+        index matches them when that branch is cached. When it is unknown
+        they are omitted from a ref-specific impact query, so say how many.
+        Checked for the requested target only, with one extra batch read.
+        """
+        source_key = self._request.source_key
+        if source_key is None:
+            return
+        if _first_default_branch(self._cached_ref_metadata_for(repo)) is not None:
+            return
+        included = {
+            (indexed.source_repo, indexed.source_ref) for indexed in self._dependents_for(repo, ref)
+        }
+        omitted = {
+            (indexed.source_repo, indexed.source_ref)
+            for indexed in self._index.dependents_batch([(repo, None)], source_key=source_key)[
+                (repo, None)
+            ]
+            if indexed.dependency_version is None
+        } - included
+        if not omitted:
+            return
+        count = len(omitted)
+        noun = "dependent" if count == 1 else "dependents"
+        self._add_warning(
+            f"{count} unpinned {noun} of {_label(repo, ref)} omitted: unpinned "
+            f"declarations install {repo}'s default branch, which is not in cached "
+            "source data. Add the repo to the source to place them."
+        )
 
     def _claim(self, node_id: str, remaining: int | None) -> bool:
         """Schedule ``node_id`` unless it was already scheduled with as much depth.
