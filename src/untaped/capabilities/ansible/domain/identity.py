@@ -62,12 +62,17 @@ def github_web_host(base_url: str) -> str | None:
 
     ``https://api.github.com`` -> ``github.com``; GitHub Enterprise Server
     ``https://ghe.example.com/api/v3`` -> ``ghe.example.com``; data-residency
-    ``https://api.acme.ghe.com`` -> ``acme.ghe.com``.
+    ``https://api.acme.ghe.com`` -> ``acme.ghe.com``. A ``/api/v3`` base is
+    served from the web host itself, so its host is kept even when it starts
+    with ``api.`` (``https://api.corp.example.com/api/v3``).
     """
-    host = (urlparse(base_url).hostname or "").lower()
+    parsed = urlparse(base_url)
+    host = (parsed.hostname or "").lower()
     if not host:
         return None
-    return host.removeprefix("api.") if host.startswith("api.") else host
+    if parsed.path.rstrip("/").lower().endswith("/api/v3"):
+        return host
+    return host.removeprefix("api.")
 
 
 def _url_patterns(host: str) -> tuple[re.Pattern[str], ...]:
