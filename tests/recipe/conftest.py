@@ -1,4 +1,4 @@
-"""Shared test fixtures for untaped-recipe."""
+"""Shared test fixtures for the recipe capability."""
 
 from __future__ import annotations
 
