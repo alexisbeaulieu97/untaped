@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import os
 import shutil
 import subprocess
 import tomllib
@@ -172,14 +173,22 @@ class PackLibrary:
                 dest.rename(retired)
                 try:
                     staging.rename(dest)
-                except OSError:
-                    retired.rename(dest)
+                except OSError as swap_error:
+                    try:
+                        retired.rename(dest)
+                    except OSError as rollback_error:
+                        # The retired copy is now the only copy: never delete it.
+                        raise OSError(
+                            f"could not install pack at {dest} ({swap_error}) nor restore "
+                            f"the previous pack ({rollback_error}); the previous pack is "
+                            f"preserved at {retired}"
+                        ) from swap_error
                     raise
+                shutil.rmtree(retired, ignore_errors=True)
             else:
                 staging.rename(dest)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-            shutil.rmtree(retired, ignore_errors=True)
         return content_hash
 
     def local_edits(self, name: str) -> bool:
@@ -428,10 +437,27 @@ def _is_missing_branch_error(message: str) -> bool:
     return "not found in upstream" in lowered or "could not find remote branch" in lowered
 
 
+def _git_env() -> dict[str, str]:
+    """Environment for non-interactive git with untranslated (C locale) messages.
+
+    :func:`_is_missing_branch_error` matches English git output, and a pack
+    fetch must never block on a credential prompt.
+    """
+    return {
+        **os.environ,
+        "LC_ALL": "C",
+        "LANGUAGE": "C",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "never",
+    }
+
+
 def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
     result = subprocess.run(
         args,
         cwd=cwd,
+        env=_git_env(),
+        stdin=subprocess.DEVNULL,
         text=True,
         capture_output=True,
         check=False,
