@@ -5,10 +5,35 @@ from __future__ import annotations
 from untaped.capabilities.jira.domain import JiraIssueSearchFilters
 
 
-def test_default_issue_search_targets_current_users_unresolved_work() -> None:
-    query = JiraIssueSearchFilters().to_jql()
+def test_default_jql_applies_only_without_other_filters() -> None:
+    default = "assignee = currentUser() AND resolution = Unresolved"
 
-    assert query == "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+    bare = JiraIssueSearchFilters(default_jql=default).to_jql()
+    filtered = JiraIssueSearchFilters(default_jql=default, project="ABC").to_jql()
+
+    assert bare == "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+    assert filtered == "project = ABC ORDER BY updated DESC"
+
+
+def test_scope_jql_is_anded_with_raw_jql_and_raw_order_by_wins() -> None:
+    query = JiraIssueSearchFilters(
+        scope_jql="assignee = currentUser() ORDER BY created DESC",
+        raw_jql="project = SEC ORDER BY priority DESC",
+        status="Open",
+    ).to_jql()
+
+    assert query == (
+        '(assignee = currentUser()) AND (project = SEC) AND status = "Open" ORDER BY priority DESC'
+    )
+
+
+def test_scope_jql_order_by_used_when_raw_jql_has_none() -> None:
+    query = JiraIssueSearchFilters(
+        scope_jql="assignee = currentUser() ORDER BY created DESC",
+        raw_jql="project = SEC",
+    ).to_jql()
+
+    assert query == "(assignee = currentUser()) AND (project = SEC) ORDER BY created DESC"
 
 
 def test_shortcut_filters_render_jql_with_default_order() -> None:

@@ -105,6 +105,7 @@ def issue_search_command(
 
     with report_errors():
         filters = JiraIssueSearchFilters(
+            default_jql=current_jira_settings().assigned_jql,
             raw_jql=jql,
             project=project,
             assignee=assignee,
@@ -120,7 +121,10 @@ def issue_search_command(
 @issue_app.command(name="assigned")
 def issue_assigned_command(
     *,
-    jql: Annotated[str | None, Parameter(name="--jql", help="Raw JQL base query.")] = None,
+    jql: Annotated[
+        str | None,
+        Parameter(name="--jql", help="Extra JQL ANDed with jira.assigned_jql."),
+    ] = None,
     project: Annotated[str | None, Parameter(name="--project")] = None,
     status: Annotated[str | None, Parameter(name="--status")] = None,
     text: Annotated[str | None, Parameter(name="--text")] = None,
@@ -136,7 +140,8 @@ def issue_assigned_command(
     with report_errors():
         settings = current_jira_settings()
         filters = JiraIssueSearchFilters(
-            raw_jql=_resolve_assigned_jql(jql=jql, configured=settings.assigned_jql),
+            scope_jql=settings.assigned_jql,
+            raw_jql=_nonblank_jql(jql),
             project=project,
             status=status,
             text=text,
@@ -147,9 +152,9 @@ def issue_assigned_command(
         emit(rows, fmt=fmt, columns=columns, kind="jira.issue", empty="No issues assigned to you.")
 
 
-def _resolve_assigned_jql(*, jql: str | None, configured: str) -> str:
+def _nonblank_jql(jql: str | None) -> str | None:
     if jql is None:
-        return configured
+        return None
     stripped = jql.strip()
     if not stripped:
         raise ConfigError("--jql must not be blank")
