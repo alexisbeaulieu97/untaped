@@ -16,9 +16,10 @@ no control flow in recipes, and no state or inventory.
 - `untaped recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
   backs up, then writes. The recipe argument is a bare name (unique across
   installed packs), a `pack/recipe` ref, an explicit path to a `recipe.yml`, or
-  a local pack path plus `--recipe <name>`. A value is a path only when it
-  starts with `./`, `../`, `/`, or `~`, or ends in `.yml`/`.yaml` — anything
-  else is a library ref, never probed on disk.
+  a local pack path plus `--recipe <name>`. A value is a path only when it is
+  `.` or `..`, starts with `./`, `../`, `/`, or `~`, or ends in
+  `.yml`/`.yaml` — anything else is a library ref, never probed on disk.
+  The same target directory given twice (in any spelling) is planned once.
 - Pass `--yes`/`-y` for non-interactive applies. Backups are on by default;
   use `--no-backup` only when the target tree is protected another way.
 - `--dry-run` plans and previews without writing or creating backups.
@@ -108,9 +109,9 @@ no control flow in recipes, and no state or inventory.
 ## Library and packs
 
 - `add <path|git-url>` installs a pack after previewing its recipes and hooks;
-  `--rev` picks a git revision (git URL sources only), `--name` overrides the installed key (the pack
-  identity everywhere), `--yes` skips confirmation. The pack must load and
-  contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
+  `--rev` picks a git revision (git URL sources only), `--name` overrides the
+  installed key (the pack identity everywhere), `--yes` skips confirmation.
+  The pack must load and contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
 - `list [--packs|--hooks]`, `show <ref>`, `edit <ref>`, `remove <pack>` operate
   on the unified library. `list --hooks` and `show` cover built-ins such as
@@ -122,7 +123,11 @@ no control flow in recipes, and no state or inventory.
   projects requires `uv.lock` and verifies freshness with `uv lock --check`
   (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
   row must include its `content_hash`; malformed or incomplete rows fail closed
-  before a library mutation.
+  before a library mutation. An installed pack whose `pyproject.toml` cannot be
+  parsed gets an error row in `check`, is skipped with a warning by `list`, and
+  is ignored by resolution unless named explicitly (then its error is shown).
+  Template/copy sources containing `{{ input }}` tokens are only checked up to
+  their literal directory prefix.
 - `test [pack|path|pack/recipe]` runs golden-fixture cases under
   `tests/<recipe>/<case>/`: `given/` is copied to a temp target, `expected/` is
   the full expected tree (omitted = asserts no changes), optional data-only
@@ -152,7 +157,8 @@ no control flow in recipes, and no state or inventory.
   exactly one of `file`, `files` (load-time fan-out to per-file steps), or
   `globs` (planning-time discovery; `exclude` skips matches; no implicit
   excludes, so repo sweeps usually add `exclude: [".git/**"]`; binary files
-  must be excluded). `optional: true` (transform with `file`/`files` only)
+  must be excluded; matches under symlinked directories are skipped with a
+  warning). `optional: true` (transform with `file`/`files` only)
   skips missing files with a warning. `template`/`copy` accept
   `if_absent: true` to create only when the destination does not exist.
 - Template bodies render `{{ name }}` tokens from inputs, strict by default;
