@@ -2,6 +2,9 @@
 
 Decision ID: `dec_01a0820ae00572d382078acce69af419`
 
+> Superseded by [capability state lives in state.yml](dec_01a0d05a563c7751139b4452ccadb3b7-v4-capability-state-lives-in-state-yml.md):
+> capability state moved from the top level of `config.yml` to `state.yml`.
+
 Untaped uses `~/.untaped/config.yml` with `active`, `profiles`, and
 capability-managed top-level state. `http` and `ui` are ordinary per-profile
 settings. `untaped config` addresses settings by fully qualified names such as

@@ -1,12 +1,16 @@
 """Registry-backed configuration loaded from ``~/.untaped/config.yml``.
 
 The unified composition root owns YAML/env loading and the in-process registry
-of typed capability settings sections over the profiles layout.
+of typed capability settings sections over the profiles layout. Capability
+state lives in a separate ``state.yml`` (:func:`resolve_state_path`); a state
+section still found at the top level of ``config.yml`` is read from there with
+a one-time deprecation warning until its next write migrates it.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -26,6 +30,8 @@ from untaped.settings_layout import ProfilesSettingsLayout
 from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
+STATE_FILE_NAME = "state.yml"
+STATE_PATH_ENV = "UNTAPED_STATE"
 
 
 class HttpSettings(BaseModel):
@@ -74,6 +80,7 @@ class _ConfigRegistry:
 
     def register_state_settings(self, section: str, model: type[BaseModel]) -> None:
         _reject_reserved_section(section)
+        check_state_section_name(section)
         existing = self.state_sections.get(section)
         if existing is not None and existing is not model:
             raise ConfigError(f"duplicate state settings section: {section}")
@@ -187,7 +194,9 @@ class LayoutSettingsSource(InitSettingsSource):
         # Only splice (and so only validate) the state sections this model
         # actually declares: a broken state section must not block loading
         # an unrelated one (see :func:`load_settings_section`).
-        splice_registered_state(raw, effective, sections=settings_cls.model_fields)
+        splice_registered_state(
+            raw, effective, sections=settings_cls.model_fields, config_path=yaml_file
+        )
         super().__init__(settings_cls, effective)
 
 
@@ -221,31 +230,115 @@ def splice_registered_state(
     effective: dict[str, Any],
     *,
     sections: Iterable[str] | None = None,
+    config_path: Path | None = None,
 ) -> None:
-    """Merge registered top-level state sections into an effective profile dict.
+    """Merge registered state sections into an effective profile dict.
 
-    ``sections`` limits the splice to the named sections (default: all).
+    ``raw`` is the parsed ``config.yml`` (the legacy location); state is read
+    from ``state.yml`` first (:func:`state_section_source`). ``sections``
+    limits the splice to the named sections (default: all); ``state.yml`` is
+    only read when at least one registered state section is wanted, so a
+    broken state file never blocks loading a settings-only section.
     """
     wanted = None if sections is None else set(sections)
-    for section, model in _CONFIG_REGISTRY.state_sections.items():
-        if wanted is not None and section not in wanted:
+    targets = [
+        (section, model)
+        for section, model in _CONFIG_REGISTRY.state_sections.items()
+        if wanted is None or section in wanted
+    ]
+    if not targets:
+        return
+    state_path = resolve_state_path()
+    state_raw = load_config_yaml(state_path)
+    legacy_path = config_path or resolve_config_path()
+    for section, model in targets:
+        found = state_section_source(
+            section, state_raw, raw, state_path=state_path, config_path=legacy_path
+        )
+        if found is None or not isinstance(found[0], dict):
             continue
-        state = raw.get(section)
-        if not isinstance(state, dict):
-            continue
+        state, source = found
         try:
             state_data = model.model_validate(state).model_dump(exclude_unset=True)
         except ValidationError as exc:
-            path = resolve_config_path()
             raise ConfigError(
-                f"invalid top-level config section {section!r} in {path}: "
-                f"{first_validation_error(exc)}"
+                f"invalid state section {section!r} in {source}: {first_validation_error(exc)}"
             ) from exc
         merged = effective.setdefault(section, {})
         if isinstance(merged, dict):
             merged.update(state_data)
         else:
             effective[section] = state_data
+
+
+#: Top-level ``config.yml`` keys that are never capability state: moving one
+#: into ``state.yml`` would drop the user's profiles or core settings.
+RESERVED_STATE_SECTIONS = frozenset({"active", "profiles"})
+
+
+def check_state_section_name(section: str) -> None:
+    """Reject a state section name that collides with ``config.yml``'s own keys."""
+    if not section or section in RESERVED_STATE_SECTIONS or section in Settings.model_fields:
+        raise ConfigError(f"reserved or invalid state section name: {section!r}")
+
+
+def state_section_source(
+    section: str,
+    state_raw: Mapping[str, Any],
+    config_raw: Mapping[str, Any],
+    *,
+    state_path: Path,
+    config_path: Path,
+    warn: bool = True,
+) -> tuple[Any, Path] | None:
+    """Return ``(node, file)`` for one state section, or ``None`` when unset.
+
+    ``state.yml`` wins whenever it has the section. Otherwise a legacy copy at
+    the top level of ``config.yml`` is used (with a once-per-process
+    deprecation warning unless ``warn`` is false) until the section's next
+    state write moves it.
+    """
+    if section in state_raw:
+        return state_raw[section], state_path
+    if section not in config_raw:
+        return None
+    if warn:
+        warn_legacy_state(config_path, state_path, section)
+    return config_raw[section], config_path
+
+
+_LEGACY_STATE_WARNED: set[Path] = set()
+
+
+def warn_legacy_state(config_path: Path, state_path: Path, section: str) -> None:
+    """Warn once per process (per config file) that state still lives in config.yml."""
+    if config_path in _LEGACY_STATE_WARNED:
+        return
+    _LEGACY_STATE_WARNED.add(config_path)
+    print(
+        f"warning: capability state section {section!r} is still in {config_path}; "
+        f"untaped now keeps state in {state_path}. It moves there automatically on "
+        "its next state change (see `untaped doctor`).",
+        file=sys.stderr,
+    )
+
+
+def resolve_state_path() -> Path:
+    """Return the active state file path.
+
+    ``UNTAPED_STATE`` wins; otherwise ``state.yml`` next to the resolved
+    config file (``~/.untaped/state.yml`` by default). The state file must
+    never be the config file itself.
+    """
+    config_path = resolve_config_path()
+    override = os.environ.get(STATE_PATH_ENV, "").strip()
+    path = Path(override).expanduser() if override else config_path.parent / STATE_FILE_NAME
+    if path.resolve() == config_path.resolve():
+        raise ConfigError(
+            f"the state file {path} must not be the config file; "
+            f"point {STATE_PATH_ENV} (or UNTAPED_CONFIG) elsewhere"
+        )
+    return path
 
 
 def resolve_config_path() -> Path:
