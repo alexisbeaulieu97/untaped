@@ -53,6 +53,9 @@ class FakeAap:
         # of the fields the template's ``ask_*_on_launch`` flags ignore).
         self.next_action_ignored_fields: dict[str, Any] = {}
         self.ignored_write_fields: set[str] = set()
+        # Member ids whose associate POST is refused with 403 (e.g. no
+        # permission on that credential); disassociation still works.
+        self.forbidden_associate_ids: set[int] = set()
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
 
@@ -367,6 +370,8 @@ class FakeAap:
         if body.get("disassociate"):
             self.memberships[key].discard(member_id)
         else:
+            if member_id in self.forbidden_associate_ids:
+                return _err(403, "You do not have permission to perform this action.")
             if sub_path == "credentials":
                 # AWX allows at most one credential per credential type.
                 credentials = self.store["credentials"]

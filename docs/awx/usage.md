@@ -169,6 +169,13 @@ the org-less record (for example a global workflow template); `save` writes
 that null for org-less records so a save/apply round trip never lands in the
 default organization.
 
+Relationship lists (`credentials`, group `hosts`/`children`, inventory
+`instance_groups`) are replaced by adding new members before removing old
+ones, so a refused add never leaves a template without its credentials. Only a
+credential that shares a type with an incoming one is removed first (AWX allows
+one per type); if the add then fails, the removed members are re-added and the
+row reports `partial`.
+
 `save` exports a fixed selection as portable YAML. Per-resource save accepts
 `--out FILE`; without it, YAML is written to stdout. Inventory and source
 exports preserve organization and parent identity:

@@ -174,7 +174,7 @@ class BatchMutationEngine:
         self._fk = fk
         self._strategies = strategies
         self._planner = planner or ApplyPlanner()
-        self._membership = membership or MembershipReconciler()
+        self._membership = membership or MembershipReconciler(catalog)
         self._secret_policy = secret_policy or SecretPreservationPolicy()
         self._warn = warn if warn is not None else _noop_warn
         self._allow_unverified = allow_unverified

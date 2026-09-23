@@ -269,6 +269,97 @@ def test_job_template_credential_replacement_with_same_type_succeeds(
     assert fake_aap.memberships[("job_templates", 30, "credentials")] == {41}
 
 
+def _jt_credentials_doc(tmp_path: Path, *names: str) -> Path:
+    f = tmp_path / "jt.yml"
+    f.write_text(
+        "kind: JobTemplate\n"
+        "metadata: { name: deploy, organization: Default }\n"
+        "spec:\n"
+        "  playbook: deploy.yml\n"
+        "  project: playbooks\n"
+        "  inventory: prod\n"
+        f"  credentials: [{', '.join(names)}]\n"
+    )
+    return f
+
+
+def test_credential_replacement_associates_before_removing_other_types(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    """A failed associate must not leave the template stripped of its credential."""
+    _seed_basic(fake_aap)
+    fake_aap.seed("credentials", id=40, name="ssh", organization=1, credential_type=1)
+    fake_aap.seed("credentials", id=41, name="vault", organization=1, credential_type=3)
+    fake_aap.memberships[("job_templates", 30, "credentials")] = {40}
+    fake_aap.forbidden_associate_ids.add(41)
+
+    result = CliInvoker().invoke(
+        app, ["job-templates", "apply", str(_jt_credentials_doc(tmp_path, "vault")), "--yes"]
+    )
+
+    assert result.exit_code != 0, result.output
+    assert fake_aap.memberships[("job_templates", 30, "credentials")] == {40}
+    assert not any(
+        json.loads(post.request.content or b"{}").get("disassociate") for post in _posts(fake_aap)
+    )
+
+
+def test_same_type_replacement_restores_the_old_credential_when_associate_fails(
+    fake_aap: Any, tmp_path: Path
+) -> None:
+    _seed_basic(fake_aap)
+    fake_aap.seed("credentials", id=40, name="ssh-old", organization=1, credential_type=1)
+    fake_aap.seed("credentials", id=41, name="ssh-new", organization=1, credential_type=1)
+    fake_aap.memberships[("job_templates", 30, "credentials")] = {40}
+    fake_aap.forbidden_associate_ids.add(41)
+
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "apply",
+            str(_jt_credentials_doc(tmp_path, "ssh-new")),
+            "--yes",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert result.exit_code != 0, result.output
+    assert fake_aap.memberships[("job_templates", 30, "credentials")] == {40}
+    rows = json.loads(result.stdout)
+    assert rows[0]["action"] == "partial"
+    assert "restored" in rows[0]["detail"]
+
+
+def test_group_host_replacement_associates_first(fake_aap: Any, tmp_path: Path) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("inventories", id=20, name="prod", organization=1, organization_name="Default")
+    fake_aap.seed("hosts", id=7, name="web-01", inventory=20)
+    fake_aap.seed("hosts", id=8, name="web-02", inventory=20)
+    fake_aap.seed(
+        "groups",
+        id=50,
+        name="web",
+        inventory=20,
+        summary_fields={"inventory": {"id": 20, "name": "prod", "organization_name": "Default"}},
+    )
+    fake_aap.memberships[("groups", 50, "hosts")] = {7}
+    fake_aap.forbidden_associate_ids.add(8)
+    f = tmp_path / "g.yml"
+    f.write_text(
+        "kind: Group\n"
+        "metadata:\n  name: web\n"
+        "  parent: { kind: Inventory, name: prod, organization: Default }\n"
+        "spec: { hosts: [web-02] }\n"
+    )
+
+    result = CliInvoker().invoke(app, ["groups", "apply", str(f), "--yes"])
+
+    assert result.exit_code != 0, result.output
+    assert fake_aap.memberships[("groups", 50, "hosts")] == {7}
+
+
 def test_job_templates_credentials_add_remove_command_scopes_members_by_org(
     fake_aap: Any,
 ) -> None:
