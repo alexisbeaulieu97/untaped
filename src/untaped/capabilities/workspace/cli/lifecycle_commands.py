@@ -17,7 +17,10 @@ from untaped.capabilities.workspace.application import (
     WorkspaceBootstrapper,
 )
 from untaped.capabilities.workspace.cli.common import workspace_settings
-from untaped.capabilities.workspace.cli.ops_commands import print_sync_outcomes
+from untaped.capabilities.workspace.cli.ops_commands import (
+    any_sync_failed,
+    print_sync_outcomes,
+)
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
@@ -186,3 +189,4 @@ def import_command(
                 cache_dir=workspace_settings().cache_dir,
             )(ws, only=result.repos)
             print_sync_outcomes(outcomes, fmt="table", columns=None)
+            finish(any_sync_failed(outcomes))

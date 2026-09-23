@@ -13,6 +13,7 @@ from untaped.api import (
     create_app,
     echo,
     emit,
+    finish,
     report_errors,
 )
 from untaped.capabilities.workspace.application import (
@@ -84,6 +85,7 @@ def branch_set_command(
                     fs=LocalFilesystem(),
                 )(ws, repo=change.repo)
             print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
+            finish(any(row.action == "failed" for row in outcomes))
 
 
 @app.command(name="unset")
@@ -131,6 +133,7 @@ def branch_apply_command(
                 fs=LocalFilesystem(),
             )(ws, repo=repo)
         print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
+    finish(any(row.action == "failed" for row in outcomes))
 
 
 def print_branch_apply_outcomes(

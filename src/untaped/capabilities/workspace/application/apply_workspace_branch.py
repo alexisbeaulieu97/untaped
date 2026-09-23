@@ -71,11 +71,11 @@ class ApplyWorkspaceBranch:
         if not self._fs.exists(local / ".git"):
             return _outcome(workspace, repo, target_branch, "skip", NOT_A_GIT_REPOSITORY)
         if (detail := self._try_fetch(local)) is not None:
-            return _outcome(workspace, repo, target_branch, "skip", detail)
+            return _outcome(workspace, repo, target_branch, "failed", detail)
         try:
             status = self._git.status(local)
         except GitError as exc:
-            return _outcome(workspace, repo, target_branch, "skip", f"status failed: {exc}")
+            return _outcome(workspace, repo, target_branch, "failed", f"status failed: {exc}")
         if status.dirty:
             return _outcome(workspace, repo, target_branch, "skip", "dirty working tree")
         if status.diverged:
@@ -91,7 +91,7 @@ class ApplyWorkspaceBranch:
         try:
             self._git.checkout_branch(local, branch=target_branch)
         except GitError as exc:
-            return _outcome(workspace, repo, target_branch, "skip", f"checkout failed: {exc}")
+            return _outcome(workspace, repo, target_branch, "failed", f"checkout failed: {exc}")
         return _outcome(
             workspace,
             repo,

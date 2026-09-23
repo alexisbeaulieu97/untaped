@@ -82,6 +82,36 @@ def test_sync_repo_filter_limits_cloned_repos(
     assert not (target / "ui").exists()
 
 
+def test_sync_failed_clone_is_failed_row_and_exit_one(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(
+        app,
+        [
+            "add",
+            f"file://{tmp_path / 'missing.git'}",
+            "--repo-name",
+            "gone",
+            "--workspace",
+            "smoke",
+        ],
+    )
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    rows = {row["repo"]: row for row in json.loads(result.stdout)}
+    assert rows["upstream"]["action"] == "clone"
+    assert rows["gone"]["action"] == "failed"
+    assert rows["gone"]["detail"].startswith("cache fetch failed: git clone failed: ")
+    assert str(isolated_cache) not in rows["gone"]["detail"]
+    assert "1 failed" in result.stderr
+
+
 def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:

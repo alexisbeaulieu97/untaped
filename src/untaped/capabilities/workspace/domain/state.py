@@ -50,12 +50,17 @@ SyncAction = Literal[
     "clone",
     "pull",
     "skip",
+    "failed",
     "remove",
     "up-to-date",
     "unmatched",
     "unavailable",
 ]
 """What ``sync`` did (or refused to do) for one repo.
+
+``skip`` is an intentional refusal (dirty tree, wrong branch, diverged,
+unsafe orphan). ``failed`` means a clone, fetch, status, or pull
+attempt errored; the CLI exits non-zero when any row failed.
 
 ``unmatched`` is the synthetic action emitted under ``sync --all --repo
 <identifier>`` when ``<identifier>`` is not in this workspace's

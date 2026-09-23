@@ -131,6 +131,7 @@ def sync_command(
             )
         ui.message("info", _sync_summary(outcomes))
         print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
+    finish(any_sync_failed(outcomes))
 
 
 def print_sync_outcomes(
@@ -149,6 +150,11 @@ def print_sync_outcomes(
     )
 
 
+def any_sync_failed(outcomes: list[SyncOutcome]) -> bool:
+    """Whether any sync row is a ``failed`` clone/fetch/status/pull."""
+    return any(o.action == "failed" for o in outcomes)
+
+
 def _sync_summary(outcomes: list[SyncOutcome]) -> str:
     total = len(outcomes)
     noun = "repo" if total == 1 else "repos"
@@ -160,6 +166,7 @@ def _sync_summary(outcomes: list[SyncOutcome]) -> str:
         ("pull", "pulled"),
         ("up-to-date", "up to date"),
         ("skip", "skipped"),
+        ("failed", "failed"),
         ("remove", "removed"),
         ("unmatched", "unmatched"),
     )
