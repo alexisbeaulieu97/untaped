@@ -434,6 +434,69 @@ def test_builtin_yaml_edit_ensure_noop_is_byte_identical(
     assert _ensure(content, edit) == content
 
 
+@pytest.mark.parametrize(
+    ("content", "edit"),
+    [
+        pytest.param(
+            "---\nimage:   nginx  # pinned\nreplicas: 2\n",
+            {"op": "set", "path": ["image"], "value": "nginx"},
+            id="set-same-scalar",
+        ),
+        pytest.param(
+            "spec:\n  replicas: 2\n",
+            {"op": "set", "path": ["spec", "replicas"], "value": 2},
+            id="set-same-nested-int",
+        ),
+        pytest.param(
+            "items:\n  - name: a\n    tag: v1\n",
+            {"op": "set", "path": ["items", {"where": {"name": "a"}}, "tag"], "value": "v1"},
+            id="set-same-in-list-item",
+        ),
+        pytest.param(
+            "settings:   {a: 1, b: two}\n",
+            {"op": "merge", "path": ["settings"], "value": {"b": "two"}},
+            id="merge-already-present",
+        ),
+    ],
+)
+def test_builtin_yaml_edit_set_and_merge_noop_is_byte_identical(
+    content: str,
+    edit: dict[str, object],
+) -> None:
+    assert _ensure(content, edit) == content
+
+
+@pytest.mark.parametrize(
+    ("content", "edit", "expected"),
+    [
+        pytest.param(
+            "enabled: 1\n",
+            {"op": "set", "path": ["enabled"], "value": True},
+            "enabled: true\n",
+            id="set-bool-over-int-is-a-change",
+        ),
+        pytest.param(
+            "top: 1\n",
+            {"op": "set", "path": ["spec", "replicas"], "value": 1},
+            "top: 1\nspec:\n  replicas: 1\n",
+            id="set-missing-path",
+        ),
+        pytest.param(
+            "settings:\n  a: 1\n",
+            {"op": "merge", "path": ["settings"], "value": {"a": 2}},
+            "settings:\n  a: 2\n",
+            id="merge-different-value",
+        ),
+    ],
+)
+def test_builtin_yaml_edit_set_and_merge_report_real_changes(
+    content: str,
+    edit: dict[str, object],
+    expected: str,
+) -> None:
+    assert _ensure(content, edit) == expected
+
+
 def test_builtin_yaml_edit_ensure_renders_value_tokens() -> None:
     result = _ensure(
         "collections: []\n",
