@@ -1024,6 +1024,17 @@ def test_list_reports_progress_on_stderr(fake_aap: Any) -> None:
     assert "Loading" not in result.stdout
 
 
+def test_list_limit_zero_means_no_limit(fake_aap: Any) -> None:
+    fake_aap.seed("organizations", id=1, name="Default")
+    for index in range(3):
+        fake_aap.seed("projects", id=100 + index, name=f"p{index}", organization=1)
+    result = CliInvoker().invoke(
+        app, ["projects", "list", "--limit", "0", "--format", "raw", "--columns", "name"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.split() == ["p0", "p1", "p2"]
+
+
 def test_list_limit_stops_paging_early(fake_aap: Any) -> None:
     """``--limit`` reaches the paginator instead of slicing a complete walk."""
     fake_aap.seed("organizations", id=1, name="Default")
