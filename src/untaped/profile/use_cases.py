@@ -157,7 +157,8 @@ class CurrentProfile:
 
     Powers ``profile current`` — a one-line answer to "which profile am I
     using right now?". When env or config explicitly names a profile, the
-    use case validates that the profile actually exists, so the documented
+    use case validates that the profile actually exists (the root
+    ``--profile`` flag included), so the documented
     pipe usage ``--profile $(… profile current)`` can't silently print a
     typo'd name that other commands then reject.
     """
@@ -167,7 +168,7 @@ class CurrentProfile:
 
     def __call__(self) -> CurrentProfileResult:
         name, source = self._repo.classify_active()
-        if source in ("env", "config"):
+        if source in ("flag", "env", "config"):
             assert name is not None  # invariant of classify_active
             if name not in self._repo.names():
                 known = ", ".join(sorted(self._repo.names())) or "(none)"
