@@ -13,11 +13,18 @@ from typing import Annotated, Literal
 from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli.scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capabilities.github.cli.scopes import (
+    REPO_KINDS,
+    OrgOption,
+    TeamOption,
+    parse_team_scopes,
+)
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
+    StdinOption,
     create_app,
+    deprecated_alias,
     emit,
     read_identifiers,
     report_errors,
@@ -40,15 +47,16 @@ SearchLimitOption = Annotated[
 FreeTextArgument = Annotated[str | None, Parameter(help="Free-text query (passed verbatim).")]
 UserOption = Annotated[
     str | None,
-    Parameter(name="--user", help="user:<login>. Defaults to @me when no other scope is set."),
+    Parameter(name="--user", help="user:LOGIN. Defaults to @me when no other scope is set."),
 ]
 RepoOption = Annotated[
     list[str] | None,
-    Parameter(name="--repo", help="repo:owner/name. Repeatable.", consume_multiple=False),
+    Parameter(
+        name="--repo", help="repo:OWNER/NAME. Repeatable.", consume_multiple=False, negative=""
+    ),
 ]
-RepoStdinOption = Annotated[
-    bool,
-    Parameter(name="--repo-stdin", help="Read repo scopes from stdin."),
+LanguageOption = Annotated[
+    str | None, Parameter(name="--language", help="Match the language (language:X).")
 ]
 
 app = create_app(
@@ -57,40 +65,50 @@ app = create_app(
 )
 
 
-def _repo_scopes(values: list[str] | None, *, repo_stdin: bool) -> tuple[str, ...]:
+def _repo_scopes(values: list[str] | None, *, stdin: bool) -> tuple[str, ...]:
     """Merge explicit ``--repo`` values with optional stdin repo scopes."""
     repos = list(values or ())
-    if repo_stdin:
-        repos.extend(read_identifiers([], stdin=True, id_field="full_name"))
+    if stdin:
+        repos.extend(
+            read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS)
+        )
     return tuple(repos)
 
 
 @app.command(name="repos")
 def repos_command(
     query: FreeTextArgument = None,
+    /,
     *,
     user: UserOption = None,
     org: OrgOption = None,
     team: TeamOption = None,
     repo: RepoOption = None,
-    repo_stdin: RepoStdinOption = False,
+    stdin: StdinOption = False,
     name: Annotated[
         str | None,
         Parameter(name="--name", help="Match against repo name (in:name)."),
     ] = None,
-    language: Annotated[str | None, Parameter(name="--language")] = None,
+    language: LanguageOption = None,
     archived: Annotated[
         bool | None,
-        Parameter(name="--archived", negative="--no-archived"),
+        Parameter(
+            name="--archived",
+            negative="--no-archived",
+            help="Only archived repos; --no-archived excludes them.",
+        ),
     ] = None,
-    fork: Annotated[bool | None, Parameter(name="--fork", negative="--no-fork")] = None,
+    fork: Annotated[
+        bool | None,
+        Parameter(name="--fork", negative="--no-fork", help="Only forks; --no-fork excludes them."),
+    ] = None,
     visibility: Annotated[
         Literal["public", "private"] | None,
-        Parameter(name="--visibility"),
+        Parameter(name="--visibility", help="Only public or only private repos."),
     ] = None,
     sort: Annotated[
         Literal["stars", "forks", "help-wanted-issues", "updated"] | None,
-        Parameter(name="--sort"),
+        Parameter(name="--sort", help="Sort order; best match when omitted."),
     ] = None,
     limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
@@ -106,7 +124,7 @@ def repos_command(
             raw_query=query,
             user=user,
             orgs=orgs,
-            repos=_repo_scopes(repo, repo_stdin=repo_stdin),
+            repos=_repo_scopes(repo, stdin=stdin),
             name=name,
             language=language,
             archived=archived,
@@ -124,7 +142,7 @@ def repos_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.repo",
+            kind="github.repo_hit",
             empty="No repositories found. Broaden your query or remove scope filters.",
         )
 
@@ -132,16 +150,23 @@ def repos_command(
 @app.command(name="code")
 def code_command(
     query: FreeTextArgument = None,
+    /,
     *,
-    user: Annotated[str | None, Parameter(name="--user")] = None,
+    user: UserOption = None,
     org: OrgOption = None,
     team: TeamOption = None,
     repo: RepoOption = None,
-    repo_stdin: RepoStdinOption = False,
-    language: Annotated[str | None, Parameter(name="--language")] = None,
-    filename: Annotated[str | None, Parameter(name="--filename")] = None,
-    path: Annotated[str | None, Parameter(name="--path")] = None,
-    extension: Annotated[str | None, Parameter(name="--extension")] = None,
+    stdin: StdinOption = False,
+    language: LanguageOption = None,
+    filename: Annotated[
+        str | None, Parameter(name="--filename", help="Match the file name (filename:X).")
+    ] = None,
+    path: Annotated[
+        str | None, Parameter(name="--path", help="Match the file path (path:X).")
+    ] = None,
+    extension: Annotated[
+        str | None, Parameter(name="--extension", help="Match the file extension (extension:X).")
+    ] = None,
     limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -164,7 +189,7 @@ def code_command(
             raw_query=query,
             user=user,
             orgs=orgs,
-            repos=_repo_scopes(repo, repo_stdin=repo_stdin),
+            repos=_repo_scopes(repo, stdin=stdin),
             language=language,
             filename=filename,
             path=path,
@@ -188,24 +213,39 @@ def code_command(
 @app.command(name="issues")
 def issues_command(
     query: FreeTextArgument = None,
+    /,
     *,
-    user: Annotated[str | None, Parameter(name="--user")] = None,
+    user: UserOption = None,
     org: OrgOption = None,
     team: TeamOption = None,
     repo: RepoOption = None,
-    repo_stdin: RepoStdinOption = False,
-    state: Annotated[Literal["open", "closed"] | None, Parameter(name="--state")] = None,
-    kind: Annotated[Literal["issue", "pr"] | None, Parameter(name="--kind")] = None,
-    author: Annotated[str | None, Parameter(name="--author")] = None,
-    assignee: Annotated[str | None, Parameter(name="--assignee")] = None,
+    stdin: StdinOption = False,
+    state: Annotated[
+        Literal["open", "closed"] | None,
+        Parameter(name="--state", help="Only open or only closed items."),
+    ] = None,
+    kind: Annotated[
+        Literal["issue", "pr"] | None,
+        Parameter(name="--kind", help="Only issues or only pull requests."),
+    ] = None,
+    author: Annotated[
+        str | None, Parameter(name="--author", help="Created by this login (author:X).")
+    ] = None,
+    assignee: Annotated[
+        str | None, Parameter(name="--assignee", help="Assigned to this login (assignee:X).")
+    ] = None,
     label: Annotated[
         list[str] | None,
-        Parameter(name="--label", help="Repeatable.", consume_multiple=False),
+        Parameter(
+            name="--label", help="Has this label. Repeatable.", consume_multiple=False, negative=""
+        ),
     ] = None,
-    mentions: Annotated[str | None, Parameter(name="--mentions")] = None,
+    mentions: Annotated[
+        str | None, Parameter(name="--mentions", help="Mentions this login (mentions:X).")
+    ] = None,
     sort: Annotated[
         Literal["comments", "reactions", "interactions", "created", "updated"] | None,
-        Parameter(name="--sort"),
+        Parameter(name="--sort", help="Sort order; best match when omitted."),
     ] = None,
     limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
@@ -221,7 +261,7 @@ def issues_command(
             raw_query=query,
             user=user,
             orgs=orgs,
-            repos=_repo_scopes(repo, repo_stdin=repo_stdin),
+            repos=_repo_scopes(repo, stdin=stdin),
             state=state,
             kind=kind,
             author=author,
@@ -249,13 +289,19 @@ def issues_command(
 @app.command(name="users")
 def users_command(
     query: FreeTextArgument = None,
+    /,
     *,
-    kind: Annotated[Literal["user", "org"] | None, Parameter(name="--kind")] = None,
-    location: Annotated[str | None, Parameter(name="--location")] = None,
-    language: Annotated[str | None, Parameter(name="--language")] = None,
+    kind: Annotated[
+        Literal["user", "org"] | None,
+        Parameter(name="--kind", help="Only users or only organizations."),
+    ] = None,
+    location: Annotated[
+        str | None, Parameter(name="--location", help="Match the profile location (location:X).")
+    ] = None,
+    language: LanguageOption = None,
     sort: Annotated[
         Literal["followers", "repositories", "joined"] | None,
-        Parameter(name="--sort"),
+        Parameter(name="--sort", help="Sort order; best match when omitted."),
     ] = None,
     limit: SearchLimitOption = 30,
     fmt: FormatOption = "table",
@@ -280,6 +326,10 @@ def users_command(
             rows,
             fmt=fmt,
             columns=columns,
-            kind="github.user",
+            kind="github.user_hit",
             empty="No users or organizations found. Try different keywords or filters.",
         )
+
+
+for _command in ("repos", "code", "issues"):
+    deprecated_alias(app[_command], "--repo-stdin", "--stdin")
