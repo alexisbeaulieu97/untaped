@@ -16,6 +16,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -31,7 +32,8 @@ from untaped.capability_api import ColumnsOption, FormatOption, raise_usage, rep
 def _add_edit(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="edit")
     def edit_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -47,6 +49,7 @@ def _add_edit(app: App, spec: AwxResourceSpec) -> None:
             Parameter(
                 name="--field",
                 consume_multiple=False,
+                negative="",
                 help="Limit editable top-level fields (repeatable).",
             ),
         ] = None,

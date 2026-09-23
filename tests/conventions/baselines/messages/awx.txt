@@ -20,8 +20,6 @@ src/untaped/capabilities/awx/cli/_action_runner.py::rich-console::Console()
 src/untaped/capabilities/awx/cli/_apply_runner.py::echo-warning::warning: {}
 src/untaped/capabilities/awx/cli/_context.py::echo-warning::warning: {}
 src/untaped/capabilities/awx/cli/_context.py::usage-phrase::use --parent or --inventory, not both
-src/untaped/capabilities/awx/cli/_get.py::paren-s::name(s).
-src/untaped/capabilities/awx/cli/_launch.py::paren-s::name(s).
 src/untaped/capabilities/awx/cli/_mutation_runner.py::paren-s::resource(s)?
 src/untaped/capabilities/awx/cli/_mutation_runner.py::usage-phrase::--parallel must be >= 1
 src/untaped/capabilities/awx/cli/_mutation_runner.py::usage-phrase::--yes and --dry-run are mutually exclusive
@@ -30,22 +28,13 @@ src/untaped/capabilities/awx/cli/_parallel.py::print::print()
 src/untaped/capabilities/awx/cli/_patch.py::paren-s::has no field(s)
 src/untaped/capabilities/awx/cli/_selection.py::sys-stdin::sys.stdin
 src/untaped/capabilities/awx/cli/_selection.py::sys-stdin::sys.stdin
-src/untaped/capabilities/awx/cli/commands.py::paren-s::Job ID(s).
-src/untaped/capabilities/awx/cli/commands.py::paren-s::Job ID(s).
-src/untaped/capabilities/awx/cli/commands.py::paren-s::Job ID(s).
-src/untaped/capabilities/awx/cli/commands.py::paren-s::Job ID(s).
 src/untaped/capabilities/awx/cli/commands.py::print::print()
 src/untaped/capabilities/awx/cli/commands.py::rich-console::Console()
 src/untaped/capabilities/awx/cli/commands.py::sys-stdin::sys.stdin
 src/untaped/capabilities/awx/cli/commands.py::sys-stdin::sys.stdin
-src/untaped/capabilities/awx/cli/membership_commands.py::paren-s::(s)
-src/untaped/capabilities/awx/cli/suite_commands.py::paren-s::Per-case wait timeout (s).
-src/untaped/capabilities/awx/cli/suite_commands.py::paren-s::Run only the named case(s); repeat the flag.
-src/untaped/capabilities/awx/cli/suite_commands.py::paren-s::Test file(s) or director(y/ies).
 src/untaped/capabilities/awx/cli/suite_commands.py::paren-s::case(s) validated
 src/untaped/capabilities/awx/cli/unified_templates_commands.py::echo-error::error: {}: not found
 src/untaped/capabilities/awx/cli/unified_templates_commands.py::error-case::unified-templates get is id-only ({} isn't a number); names are not uniq
-src/untaped/capabilities/awx/cli/unified_templates_commands.py::paren-s::Numeric Unified Job Template id(s). Names are not unique across kinds — 
 src/untaped/capabilities/awx/cli/usage_commands.py::echo-warning::warning: {}
 src/untaped/capabilities/awx/cli/usage_commands.py::echo-warning::warning: {}: {}
 src/untaped/capabilities/awx/cli/usage_commands.py::paren-s::Template name(s) — one or more, or omit and pass ``--stdin``. Pass ``--b

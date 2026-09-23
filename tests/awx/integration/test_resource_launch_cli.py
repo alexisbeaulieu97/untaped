@@ -148,7 +148,7 @@ def test_launch_forwards_full_action_payload(
             "Default",
             "--extra-vars",
             "foo=1",
-            "--limit",
+            "--host-pattern",
             "web*",
             "--inventory",
             "prod",
@@ -341,7 +341,7 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         "--job-tag",
         "--skip-tag",
         "--extra-vars",
-        "--limit",
+        "--host-pattern",
         "--wait",
         "--track",
     ):
@@ -513,9 +513,11 @@ def test_launch_rejects_flags_the_template_does_not_prompt_for(seeded_default_or
         organization_name="Default",
         ask_limit_on_launch=False,
     )
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--limit", "web1"])
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--host-pattern", "web1"]
+    )
     assert result.exit_code == 2, result.output
-    assert "--limit" in result.output
+    assert "--host-pattern" in result.output
     assert "alpha" in result.output
     assert "ask_limit_on_launch" in result.output
     assert seeded_default_org.actions_called == []
@@ -551,7 +553,7 @@ def test_launch_ignored_fields_fail_the_row(seeded_default_org: Any) -> None:
     )
     seeded_default_org.next_action_ignored_fields = {"limit": "web1"}
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "alpha", "--limit", "web1", "--format", "json"]
+        app, ["job-templates", "launch", "alpha", "--host-pattern", "web1", "--format", "json"]
     )
     assert result.exit_code == 1, result.output
     rows = json.loads(result.stdout)
@@ -579,7 +581,7 @@ def _unprompted_alpha(fake: Any) -> None:
 @pytest.mark.parametrize(
     "args",
     [
-        ["--limit", "web"],
+        ["--host-pattern", "web"],
         ["--verbosity", "1"],
         ["--credential", "ssh"],
         ["--credential", "ssh", "--credential", "vault"],
@@ -599,7 +601,7 @@ def test_launch_allows_unprompted_values_equal_to_the_template(
 @pytest.mark.parametrize(
     ("args", "flag"),
     [
-        (["--limit", "db"], "--limit"),
+        (["--host-pattern", "db"], "--host-pattern"),
         (["--credential", "ssh", "--credential", "other"], "--credential"),
     ],
 )

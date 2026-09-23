@@ -28,6 +28,7 @@ from untaped.capabilities.awx.cli.options import (
     DryRunOption,
     FilterOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -39,6 +40,7 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
+    deprecated_alias,
     raise_usage,
     read_structured_file,
     report_errors,
@@ -56,7 +58,8 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
 
     @app.command(name="launch")
     def launch_command(
-        names: Annotated[list[str] | None, Parameter(help=f"{spec.kind} name(s).")] = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         search: SearchOption = None,
@@ -80,11 +83,12 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     "mapping; repeatable, merged left to right."
                 ),
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
-        limit: Annotated[
+        host_pattern: Annotated[
             str | None,
-            Parameter(name="--limit", help="Hosts pattern to limit to."),
+            Parameter(name="--host-pattern", help="Limit the run to hosts matching this pattern."),
         ] = None,
         inventory: Annotated[
             str | None,
@@ -101,6 +105,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 help="Override credential by name (repeatable; resolved to ids).",
                 show=not hidden_by_flag["--credential"],
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         scm_branch: Annotated[
@@ -118,6 +123,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 help="Run only tasks with these tags (repeatable).",
                 show=not hidden_by_flag["--job-tag"],
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         skip_tag: Annotated[
@@ -127,6 +133,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 help="Skip tasks with these tags (repeatable).",
                 show=not hidden_by_flag["--skip-tag"],
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         verbosity: Annotated[
@@ -208,7 +215,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                 payload = _build_launch_payload(
                     accepts=accepts,
                     extra_vars=extra_vars,
-                    limit=limit,
+                    limit=host_pattern,
                     supplied=supplied,
                     fk=ctx.fk,
                     org_scope=scope,
@@ -231,6 +238,8 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     fmt=fmt,
                     columns=columns,
                 )
+
+    deprecated_alias(app["launch"], "--limit", "--host-pattern")
 
 
 @dataclass(frozen=True)

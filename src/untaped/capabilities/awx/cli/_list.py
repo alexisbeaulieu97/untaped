@@ -15,6 +15,7 @@ from untaped.capabilities.awx.cli.options import (
     ByIdOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParentOption,
     StdinOption,
@@ -32,7 +33,8 @@ from untaped.capability_api import (
 def _add_list(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="list")
     def list_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         all_: AllOption = False,
         parent: ParentOption = None,
@@ -50,6 +52,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                     "organization__name=Default --filter name__icontains=deploy."
                 ),
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         limit: Annotated[

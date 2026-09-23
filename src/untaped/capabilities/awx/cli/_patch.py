@@ -21,6 +21,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -43,7 +44,8 @@ from untaped.capability_api import (
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="patch")
     def patch_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -59,6 +61,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
             Parameter(
                 name="--set",
                 consume_multiple=False,
+                negative="",
                 help=(
                     "Replace a top-level field KEY=VALUE (repeatable; JSON-coerced "
                     "unless the field is a string)."

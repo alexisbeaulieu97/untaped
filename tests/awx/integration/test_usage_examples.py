@@ -15,7 +15,7 @@ EXAMPLES = [
     for line in GUIDE.read_text().replace("\\\n", " ").splitlines()
     if line.startswith("untaped awx inventory")
     and "--inventory" in line
-    and shlex.split(line)[3] in {"list", "save", "get", "patch"}
+    and shlex.split(line)[3] in {"list", "export", "get", "patch"}
 ]
 
 
@@ -44,7 +44,7 @@ def test_inventory_scope_guide_examples_execute(
     )
     assert result.exit_code == 0, result.output + result.stderr
     assert fake_aap.router.calls
-    if args[1] == "save":
+    if args[1] == "export":
         output = Path(args[args.index("--out") + 1]).read_text()
         assert "kind: InventorySource" in output
         assert "organization: Default" in output

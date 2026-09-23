@@ -31,7 +31,6 @@ from untaped.capabilities.awx.cli._get import default_get_columns
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
-    OutputFormat,
     create_app,
     echo,
     emit,
@@ -77,6 +76,7 @@ def list_command(
             name="--filter",
             help="Server-side filter, KEY=VALUE (repeatable). Forwarded verbatim to AWX.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     limit: Annotated[
@@ -117,17 +117,18 @@ def get_command(
         list[str] | None,
         Parameter(
             help=(
-                "Numeric Unified Job Template id(s). Names are not unique across kinds — "
+                "Numeric Unified Job Template ids. Names are not unique across kinds, so "
                 "use the per-kind sub-app for name lookup."
             ),
         ),
     ] = None,
+    /,
     *,
     stdin: Annotated[
         bool,
         Parameter(name="--stdin", negative="", help="Read numeric ids from stdin (one per line)."),
     ] = False,
-    fmt: Annotated[OutputFormat, Parameter(name=["--format", "-f"])] = "yaml",
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Fetch one or more Unified Job Templates by numeric id."""

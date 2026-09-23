@@ -14,6 +14,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParentOption,
     SearchOption,
@@ -24,9 +25,10 @@ from untaped.capability_api import ColumnsOption, FormatOption, raise_usage, rep
 
 
 def _add_save(app: App, spec: AwxResourceSpec) -> None:
-    @app.command(name="save")
-    def save_command(
-        names: list[str] | None = None,
+    @app.command(name="export")
+    def export_command(
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
@@ -44,7 +46,7 @@ def _add_save(app: App, spec: AwxResourceSpec) -> None:
         fmt: FormatOption = "yaml",
         columns: ColumnsOption = None,
     ) -> None:
-        """Save a fixed selection into one portable YAML document batch."""
+        """Export a fixed selection as one portable YAML document batch."""
         if not names and not stdin and not filter_ and search is None and not all_:
             raise_usage("provide names, --stdin, filters/search, or --all")
         with report_errors(), open_context() as ctx:

@@ -17,7 +17,7 @@ from untaped.capability_api import ConfigError
 # Launch payload field → (template prompt flag, CLI flag that sets it).
 LAUNCH_PROMPTS: dict[str, tuple[str, str]] = {
     "extra_vars": ("ask_variables_on_launch", "--extra-vars"),
-    "limit": ("ask_limit_on_launch", "--limit"),
+    "limit": ("ask_limit_on_launch", "--host-pattern"),
     "inventory": ("ask_inventory_on_launch", "--inventory"),
     "credentials": ("ask_credential_on_launch", "--credential"),
     "scm_branch": ("ask_scm_branch_on_launch", "--scm-branch"),
