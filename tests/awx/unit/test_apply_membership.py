@@ -298,7 +298,7 @@ def test_plan_field_change_carries_sorted_before_after() -> None:
 # ---- execute ----
 
 
-def test_execute_issues_disassociate_then_associate_posts() -> None:
+def test_execute_issues_associate_then_disassociate_posts() -> None:
     rec = MembershipReconciler()
     client = _StubClient()
     plans = [
@@ -311,9 +311,9 @@ def test_execute_issues_disassociate_then_associate_posts() -> None:
     ]
     rec.execute(GROUP_SPEC, 42, plans, client=cast(ResourceClient, client))
     assert client.subendpoint_calls == [
-        (42, "hosts", "POST", {"id": 9, "disassociate": True}),
         (42, "hosts", "POST", {"id": 7}),
         (42, "hosts", "POST", {"id": 8}),
+        (42, "hosts", "POST", {"id": 9, "disassociate": True}),
     ]
 
 
