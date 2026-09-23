@@ -20,18 +20,11 @@ src/untaped/capabilities/awx/cli/_action_runner.py::rich-console::Console()
 src/untaped/capabilities/awx/cli/_apply_runner.py::echo-warning::warning: {}
 src/untaped/capabilities/awx/cli/_context.py::echo-warning::warning: {}
 src/untaped/capabilities/awx/cli/_context.py::usage-phrase::use --parent or --inventory, not both
-src/untaped/capabilities/awx/cli/_mutation_runner.py::paren-s::resource(s)?
-src/untaped/capabilities/awx/cli/_mutation_runner.py::usage-phrase::--parallel must be >= 1
-src/untaped/capabilities/awx/cli/_mutation_runner.py::usage-phrase::--yes and --dry-run are mutually exclusive
 src/untaped/capabilities/awx/cli/_parallel.py::print::print()
 src/untaped/capabilities/awx/cli/_parallel.py::print::print()
 src/untaped/capabilities/awx/cli/_patch.py::paren-s::has no field(s)
-src/untaped/capabilities/awx/cli/_selection.py::sys-stdin::sys.stdin
-src/untaped/capabilities/awx/cli/_selection.py::sys-stdin::sys.stdin
 src/untaped/capabilities/awx/cli/commands.py::print::print()
 src/untaped/capabilities/awx/cli/commands.py::rich-console::Console()
-src/untaped/capabilities/awx/cli/commands.py::sys-stdin::sys.stdin
-src/untaped/capabilities/awx/cli/commands.py::sys-stdin::sys.stdin
 src/untaped/capabilities/awx/cli/suite_commands.py::paren-s::case(s) validated
 src/untaped/capabilities/awx/cli/unified_templates_commands.py::echo-error::error: {}: not found
 src/untaped/capabilities/awx/cli/unified_templates_commands.py::error-case::unified-templates get is id-only ({} isn't a number); names are not uniq
@@ -52,7 +45,6 @@ src/untaped/capabilities/awx/infrastructure/strategies.py::error-case::Inventory
 src/untaped/capabilities/awx/infrastructure/strategies.py::error-case::Inventory child docs require metadata.parent.kind == 'Inventory' (got {}
 src/untaped/capabilities/awx/infrastructure/suites/parser.py::error-case::Jinja2 template error: {}
 src/untaped/capabilities/awx/infrastructure/suites/parser.py::paren-s::duplicate YAML mapping key(s) at line
-src/untaped/capabilities/awx/infrastructure/suites/prompt.py::sys-stdin::sys.stdin
 src/untaped/capabilities/awx/infrastructure/suites/vars_resolver.py::error-case::required variable(s) not provided: {}. Set them with --var <name>=<value
 src/untaped/capabilities/awx/infrastructure/suites/vars_resolver.py::paren-s::required variable(s) not provided:
 src/untaped/capabilities/awx/infrastructure/suites/vars_resolver.py::paren-s::unknown variable(s) in

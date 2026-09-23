@@ -431,7 +431,9 @@ def test_mass_actions_preview_and_confirm(
     seed(fake_aap)
     backend = ScriptedPromptBackend(confirms=[answer])
     result = CliInvoker().invoke(app, [command, *args], interactive=True, prompt_backend=backend)
-    assert result.exit_code == 0, result.output + result.stderr
+    assert result.exit_code == (0 if answer else 1), result.output + result.stderr
+    if not answer:
+        assert "cancelled; no changes made" in result.stderr
     assert len(backend.calls) == 1
     assert bool(fake_aap.actions_called) is answer
     assert "id=" in result.stderr  # preview lists the targets before asking

@@ -698,6 +698,16 @@ def test_jobs_wait_stdin_honours_execution_kind_from_pipe(fake_aap: Any) -> None
     assert [(row["id"], row["kind"]) for row in rows] == [(77, "workflow_job"), (42, "job")]
 
 
+@pytest.mark.parametrize("command", ["get", "events", "logs", "wait"])
+def test_jobs_stdin_rejects_records_of_another_kind(fake_aap: Any, command: str) -> None:
+    """Host ids piped into a jobs command never pass as job ids."""
+    envelope = json.dumps({"untaped": "1", "kind": "awx.host", "record": {"id": 42}})
+    result = CliInvoker().invoke(app, ["jobs", command, "--stdin"], input=envelope + "\n")
+    assert result.exit_code == 2, result.output
+    assert "record kind 'awx.host' is not accepted here" in result.stderr
+    assert not fake_aap.router.calls
+
+
 @pytest.mark.parametrize(("args", "expected"), [([], 20), (["--limit", "0"], 25)])
 def test_jobs_list_defaults_to_twenty_and_zero_means_all(
     fake_aap: Any, args: list[str], expected: int

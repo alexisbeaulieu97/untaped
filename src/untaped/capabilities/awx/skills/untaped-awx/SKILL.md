@@ -55,7 +55,7 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 
 ## Confirmations and removed interfaces
 
-- `patch`, `edit`, `apply`, and `delete` show one redacted preview and default-No confirmation. `--yes` skips it; `--dry-run` never writes and is mutually exclusive with `--yes`. Configuration writes without a controlling terminal require `--yes` or `--dry-run`. A single named `launch`/`sync` submits immediately; multiple targets or an `--all`/`--filter`/`--search`/`--stdin` selection lists the targets and asks once (`--yes` skips, `--dry-run` previews).
+- `patch`, `edit`, `apply`, and `delete` show one redacted preview and default-No confirmation. `--yes` skips it; `--dry-run` never writes and wins over `--yes`. Declining exits 1 (`cancelled; no changes made`). Configuration writes without a controlling terminal require `--yes` or `--dry-run` (exit 2). A piped record of another kind exits 2; empty `--stdin` is an error. A single named `launch`/`sync` submits immediately; multiple targets or an `--all`/`--filter`/`--search`/`--stdin` selection lists the targets and asks once (`--yes` skips, `--dry-run` previews).
 - The former stdin apply overlay, project update verb, and fail-fast flag are unavailable. Use `patch --stdin --set`, `projects sync`, and `--continue-on-error`.
 - Keep stdout data-only and prefer `--format json`, `yaml`, or `pipe` for automation. Never expose secrets; preserve `$encrypted$` placeholders.
 

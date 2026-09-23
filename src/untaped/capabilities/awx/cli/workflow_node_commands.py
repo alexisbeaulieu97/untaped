@@ -13,7 +13,7 @@ from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application import ListWorkflowNodes
 from untaped.capabilities.awx.cli._context import open_context, scope_for_command
-from untaped.capabilities.awx.cli._pipe import id_field_for
+from untaped.capabilities.awx.cli._pipe import id_field_for, pipe_kind_for_spec
 from untaped.capabilities.awx.cli.options import ByIdOption, OrganizationOption, resolve_max_depth
 from untaped.capabilities.awx.domain import WorkflowNode, WorkflowNodeType
 from untaped.capabilities.awx.infrastructure.specs.workflow import WORKFLOW_JOB_TEMPLATE_SPEC
@@ -123,6 +123,7 @@ def register_nodes_command(parent: App) -> None:
                 list(identifiers or []),
                 stdin=stdin,
                 id_field=id_field_for(WORKFLOW_JOB_TEMPLATE_SPEC, by_id=by_id),
+                accept_kinds={pipe_kind_for_spec(WORKFLOW_JOB_TEMPLATE_SPEC)},
             )
             filters = parse_kv_pairs(filter_, flag="--filter")
             scope = scope_for_command(ctx, organization, WORKFLOW_JOB_TEMPLATE_SPEC)

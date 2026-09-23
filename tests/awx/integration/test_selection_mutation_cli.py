@@ -56,9 +56,12 @@ def test_patch_confirms_once_default_no(fake_aap: Any, answer: bool) -> None:
         interactive=True,
         prompt_backend=backend,
     )
-    assert result.exit_code == 0, result.output + result.stderr
+    assert result.exit_code == (0 if answer else 1), result.output + result.stderr
     assert fake_aap.get_record("projects", 10)["description"] == ("new" if answer else "old")
     assert len(backend.calls) == 1
+    if not answer:
+        assert result.stderr.endswith("cancelled; no changes made\n")
+        assert result.stdout == ""
 
 
 def test_apply_wrong_kind_rejects_complete_batch(fake_aap: Any, tmp_path: Path) -> None:
@@ -90,15 +93,27 @@ def test_typed_pipe_selects_id_not_stale_name(fake_aap: Any, command: str) -> No
     assert "target" in result.stdout
 
 
+@pytest.mark.parametrize("command", ["get", "list", "patch", "delete", "export"])
+def test_pipe_of_another_kind_is_a_usage_error(fake_aap: Any, command: str) -> None:
+    seed(fake_aap, "projects")
+    extras = ["--set", "description=new", "--yes"] if command == "patch" else []
+    result = CliInvoker().invoke(
+        app, ["projects", command, "--stdin", *extras], input=pipe("awx.host", 10)
+    )
+    assert result.exit_code == 2, result.output
+    assert "record kind 'awx.host' is not accepted here; expected 'awx.project'" in result.stderr
+    assert fake_aap.get_record("projects", 10)["description"] == "old"
+
+
 @pytest.mark.parametrize("command", ["patch", "delete", "get", "list", "export"])
-def test_empty_pipe_is_clear_no_match(fake_aap: Any, command: str) -> None:
+def test_empty_pipe_is_a_clear_error(fake_aap: Any, command: str) -> None:
     seed(fake_aap, "projects")
     extras = ["--set", "description=new"] if command == "patch" else []
     result = CliInvoker().invoke(
         app, ["projects", command, "--stdin", *extras, "--format", "json"], input=""
     )
-    assert result.exit_code == 0, result.output
-    assert "No matching" in result.stderr
+    assert result.exit_code == 1, result.output
+    assert "error: no identifiers received on stdin" in result.stderr
     assert fake_aap.get_record("projects", 10)["description"] == "old"
 
 
@@ -188,7 +203,6 @@ def test_membership_noop_never_prompts_or_posts(fake_aap: Any) -> None:
 @pytest.mark.parametrize(
     "extra",
     [
-        ["--yes", "--dry-run"],
         ["--allow-unverified"],
         ["--fail-fast"],
         ["--inventory", "prod"],
@@ -368,36 +382,29 @@ def test_delete_runtime_failure_stops_scheduling(
     assert (11 in fake_aap.store["projects"]) is not continue_
 
 
-@pytest.mark.parametrize("tty_available", [True, False])
-def test_piped_confirmation_uses_controlling_terminal(
-    fake_aap: Any, monkeypatch: pytest.MonkeyPatch, tty_available: bool
-) -> None:
-    import builtins
-    import io
-
+def test_yes_with_dry_run_previews_without_writing(fake_aap: Any) -> None:
+    """``--dry-run`` wins over ``--yes``: the combination is not an error."""
     seed(fake_aap, "projects")
-    real_open = builtins.open
+    result = CliInvoker().invoke(
+        app, ["projects", "patch", "target", "--set", "description=new", "--yes", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_aap.get_record("projects", 10)["description"] == "old"
+    assert 'description: "old" → "new"' in result.stderr
 
-    class Terminal(io.StringIO):
-        def isatty(self) -> bool:
-            return True
 
-    def open_terminal(file: Any, *args: Any, **kwargs: Any) -> Any:
-        if file == "/dev/tty":
-            if tty_available:
-                return Terminal()
-            raise OSError("no controlling terminal")
-        return real_open(file, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "open", open_terminal)
+@pytest.mark.parametrize("tty_available", [True, False])
+def test_piped_confirmation_uses_controlling_terminal(fake_aap: Any, tty_available: bool) -> None:
+    seed(fake_aap, "projects")
     backend = ScriptedPromptBackend(confirms=[True])
     result = CliInvoker().invoke(
         app,
         ["projects", "patch", "--stdin", "--set", "description=new"],
         input="target\n",
         prompt_backend=backend,
+        terminal=tty_available,
     )
-    assert (result.exit_code == 0) is tty_available, result.output
+    assert result.exit_code == (0 if tty_available else 2), result.output
     assert fake_aap.get_record("projects", 10)["description"] == ("new" if tty_available else "old")
     assert len(backend.calls) == int(tty_available)
     if not tty_available:

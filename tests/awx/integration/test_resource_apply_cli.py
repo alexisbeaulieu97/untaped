@@ -181,7 +181,7 @@ def test_apply_allow_unverified_requires_yes(fake_aap: Any, tmp_path: Path) -> N
 
     result = CliInvoker().invoke(app, ["apply", str(f), "--allow-unverified"])
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--yes" in (result.output + (result.stderr or ""))
 
 

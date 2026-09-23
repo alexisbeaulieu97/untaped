@@ -11,13 +11,18 @@ from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
 from untaped.capabilities.awx.cli._context import AwxContext
-from untaped.capabilities.awx.cli._mutation_runner import (
-    emit_outcomes,
-    preview_and_execute,
-    prompt_ui,
-)
+from untaped.capabilities.awx.cli._mutation_runner import emit_outcomes, preview_and_execute
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capability_api import ConfigError, OutputFormat, UntapedError, echo, run_editor
+from untaped.capability_api import (
+    ConfigError,
+    OperationCancelledError,
+    OutputFormat,
+    UntapedError,
+    UsageError,
+    atomic_write,
+    echo,
+    run_editor,
+)
 
 
 def run_edit(
@@ -48,12 +53,12 @@ def run_edit(
             terminal_input = stack.enter_context(open("/dev/tty", encoding="utf-8"))
             terminal_output = stack.enter_context(open("/dev/tty", "w", encoding="utf-8"))
         except OSError as exc:
-            raise ConfigError("external editor requires a controlling terminal") from exc
+            raise UsageError("edit requires a terminal for the external editor") from exc
         directory = Path(tempfile.mkdtemp(prefix="untaped-awx-edit-"))
         path = directory / "resources.yml"
         clean = False
         try:
-            path.write_text(batch.render(), encoding="utf-8")
+            atomic_write(path, batch.render())
             path.chmod(0o600)
             engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
             while True:
@@ -81,20 +86,25 @@ def run_edit(
                         "Invalid edited batch; no changes written. Fix the YAML or field values.",
                         err=True,
                     )
-                    with prompt_ui(ctx) as ui:
+                    ui = ctx.progress_ui()
+                    with ui.terminal(refusal="edit requires a terminal to reopen the editor"):
                         reopen = ui.confirm("Reopen editor?", default=False)
                     if reopen:
                         continue
                     raise ConfigError("editor validation cancelled; no changes written") from None
-                outcomes = preview_and_execute(
-                    ctx,
-                    engine,
-                    plan,
-                    yes=yes,
-                    dry_run=dry_run,
-                    continue_on_error=continue_on_error,
-                    parallel=parallel,
-                )
+                try:
+                    outcomes = preview_and_execute(
+                        ctx,
+                        engine,
+                        plan,
+                        yes=yes,
+                        dry_run=dry_run,
+                        continue_on_error=continue_on_error,
+                        parallel=parallel,
+                    )
+                except OperationCancelledError:
+                    clean = True  # declined: nothing was written, so nothing to keep
+                    raise
                 clean = not any(
                     item.action in {"failed", "partial", "conflict", "skipped"} or item.unverified
                     for item in outcomes
