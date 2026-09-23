@@ -157,6 +157,43 @@ class GitRepositoryCache:
         return result.stdout if capture else ""
 
 
+def local_remote_url(
+    path: Path, *, git: str = "git", timeout: float = DEFAULT_TIMEOUT
+) -> str | None:
+    """Return the ``origin`` remote URL (else the first remote URL) for ``path``.
+
+    Delegates to ``git config`` so linked worktrees, subdirectories, config
+    includes, and repeated keys resolve exactly as Git itself resolves them.
+    Returns ``None`` when ``path`` is not inside a checkout with a remote.
+    """
+    git_path = shutil.which(git)
+    if git_path is None:
+        return None
+    cwd = path if path.is_dir() else path.parent
+    lookups = (
+        ["config", "--get", "remote.origin.url"],
+        ["config", "--get-regexp", r"^remote\..*\.url$"],
+    )
+    for args in lookups:
+        try:
+            result = subprocess.run(
+                [git_path, "-C", str(cwd), *args],
+                env=_git_env(),
+                stdin=subprocess.DEVNULL,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=timeout,
+            )
+        except OSError, subprocess.TimeoutExpired:
+            return None
+        lines = result.stdout.strip().splitlines() if result.returncode == 0 else []
+        if lines:
+            value = lines[0] if args[1] == "--get" else lines[0].split(maxsplit=1)[-1]
+            return value.strip() or None
+    return None
+
+
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:
     """Return the deterministic bare-cache path for a remote URL."""
     parsed = urlparse(url)
@@ -182,6 +219,16 @@ def cache_path_for(url: str, *, cache_dir: Path) -> Path:
 
 def _safe_path_part(value: str) -> str:
     return "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
+
+
+def _git_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for every Git subprocess: C locale, never prompt."""
+    env = dict(os.environ if base is None else base)
+    env["LC_ALL"] = "C"
+    env["LANGUAGE"] = "C"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "never"
+    return env
 
 
 def _auth_config_env(auth_header: str) -> tuple[dict[str, str], Path]:

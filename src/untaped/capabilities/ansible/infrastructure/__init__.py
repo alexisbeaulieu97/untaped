@@ -3,7 +3,11 @@ from untaped.capabilities.ansible.infrastructure.config_repo import (
     AliasRepository,
     SourceRepository,
 )
-from untaped.capabilities.ansible.infrastructure.git_cache import GitCacheError, GitRepositoryCache
+from untaped.capabilities.ansible.infrastructure.git_cache import (
+    GitCacheError,
+    GitRepositoryCache,
+    local_remote_url,
+)
 from untaped.capabilities.ansible.infrastructure.git_ref_probe import GitRemoteRefProbe
 from untaped.capabilities.ansible.infrastructure.github_index import GithubDependencyIndex
 from untaped.capabilities.ansible.infrastructure.github_ref_probe import GithubRefProbe
@@ -25,4 +29,5 @@ __all__ = [
     "OverlayDependencyIndex",
     "SourceRepository",
     "SqliteDependencyIndex",
+    "local_remote_url",
 ]

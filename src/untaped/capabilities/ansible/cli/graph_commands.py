@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from configparser import ConfigParser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
@@ -40,6 +39,7 @@ from untaped.capabilities.ansible.infrastructure import (
     OverlayDependencyIndex,
     SourceRepository,
     SqliteDependencyIndex,
+    local_remote_url,
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
@@ -247,7 +247,13 @@ def graph_command(
         aliases = AliasRepository().entries()
         target_repo_name = target_repo or _resolve_target_repo(target, aliases)
         if target_repo_name is None:
-            raise UntapedError(f"could not resolve target to a GitHub repo: {target!r}")
+            message = f"could not resolve target to a GitHub repo: {target!r}"
+            if Path(target).expanduser().exists():
+                message = (
+                    f"{message}; the local path has no Git remote pointing at GitHub. "
+                    "Pass --target-repo OWNER/NAME"
+                )
+            raise UntapedError(message)
 
         direction = _graph_direction(upstream=upstream, downstream=downstream, both=both)
         git_concurrency = concurrency or settings.git_fetch_concurrency
@@ -571,40 +577,11 @@ def _resolve_target_repo(target: str, aliases: dict[str, str]) -> str | None:
 
 
 def _repo_from_local_git(path: Path) -> str | None:
-    git_config = _git_config_path(path)
-    if not git_config.is_file():
+    origin_url = local_remote_url(path)
+    if origin_url is None:
         return None
-    parser = ConfigParser()
-    parser.read(git_config)
-    origin_url = parser.get('remote "origin"', "url", fallback=None)
-    if origin_url:
-        declaration = DependencyDeclaration(
-            name=origin_url,
-            src=origin_url,
-            source_path="<git-remote>",
-        )
-        return IdentityResolver().resolve(declaration).repo
-    for line in git_config.read_text().splitlines():
-        stripped = line.strip()
-        if stripped.startswith("url = "):
-            value = stripped.removeprefix("url = ").strip()
-            declaration = DependencyDeclaration(name=value, src=value, source_path="<git-remote>")
-            return IdentityResolver().resolve(declaration).repo
-    return None
-
-
-def _git_config_path(path: Path) -> Path:
-    dot_git = path / ".git"
-    if dot_git.is_dir():
-        return dot_git / "config"
-    if dot_git.is_file():
-        first_line = dot_git.read_text().splitlines()[0]
-        if first_line.startswith("gitdir: "):
-            gitdir = Path(first_line.removeprefix("gitdir: ").strip())
-            if not gitdir.is_absolute():
-                gitdir = path / gitdir
-            return gitdir / "config"
-    return dot_git / "config"
+    declaration = DependencyDeclaration(name=origin_url, src=origin_url, source_path="<git-remote>")
+    return IdentityResolver().resolve(declaration).repo
 
 
 def _local_dependencies(
