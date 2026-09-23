@@ -334,7 +334,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
         try:
             results.append(fn(id_))
         except UntapedError as exc:
-            echo(f"error: {id_}: {_format_error(exc)}", err=True)
+            echo(f"error: {id_}: {format_error(exc)}", err=True)
             any_failed = True
     return results, any_failed
 
@@ -378,11 +378,16 @@ def report_errors() -> Iterator[None]:
     try:
         yield
     except UntapedError as exc:
-        echo(f"error: {_format_error(exc)}", err=True)
+        echo(f"error: {format_error(exc)}", err=True)
         raise SystemExit(1) from exc
 
 
-def _format_error(exc: UntapedError) -> str:
+def format_error(exc: UntapedError) -> str:
+    """Render an :class:`UntapedError` the way ``report_errors`` prints it.
+
+    Adds the URL to bodiless HTTP errors and surfaces the API's own message
+    from a JSON error body (the raw body under ``--verbose``).
+    """
     message = str(exc)
     if isinstance(exc, HttpError) and not exc.body and exc.url and exc.url not in message:
         message = f"{message} for {exc.url}"
