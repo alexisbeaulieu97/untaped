@@ -50,7 +50,12 @@ from untaped.capabilities.workspace.domain.prune_safety import (
     DIRTY_WORKTREE_BLOCKER,
     UNREACHABLE_COMMITS_BLOCKER,
 )
-from untaped.capabilities.workspace.errors import GitError, ManifestError, RegistryError
+from untaped.capabilities.workspace.errors import (
+    GitError,
+    ManifestError,
+    RegistryError,
+    WorkspaceError,
+)
 
 # ``pytest_plugins`` is only honored in the root conftest; this package-level
 # conftest re-exports the shared CLI fixtures instead so they stay scoped to
@@ -257,6 +262,16 @@ class StubFilesystem:
         self._dirs = {p for p in self._dirs if p != path and path not in p.parents}
         self._symlinks.discard(path)
 
+    def unlink(self, path: Path) -> None:
+        self.events.append(("unlink", path))
+        self._symlinks.discard(path)
+
+    def rmdir(self, path: Path) -> None:
+        self.events.append(("rmdir", path))
+        if any(p.parent == path for p in self._dirs | self._symlinks):
+            raise WorkspaceError(f"could not remove {path}: directory not empty")
+        self._dirs.discard(path)
+
 
 class StubManifests:
     """In-memory ``ManifestRepository`` for stub-driven use-case tests.
@@ -281,6 +296,9 @@ class StubManifests:
 
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
         self._manifests[workspace_dir] = manifest
+
+    def delete(self, workspace_dir: Path) -> None:
+        self._manifests.pop(workspace_dir, None)
 
     def read_external(self, source: Path) -> ManifestSource:
         raise NotImplementedError("StubManifests.read_external is not used by current tests")

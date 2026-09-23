@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 
-from untaped.api import first_validation_error
+from untaped.api import atomic_write, first_validation_error
 from untaped.capabilities.workspace.domain import ManifestSource, WorkspaceManifest
 from untaped.capabilities.workspace.errors import ManifestError
 
@@ -49,11 +48,18 @@ class ManifestRepository:
         manifest workflow.
         """
         path = self.manifest_path(workspace_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(_dump(manifest))
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
+        try:
+            atomic_write(path, _dump(manifest), encoding="utf-8")
+        except OSError as exc:
+            raise ManifestError(f"could not write manifest at {path}: {exc}") from exc
+
+    def delete(self, workspace_dir: Path) -> None:
+        """Remove ``<workspace_dir>/untaped.yml`` if present."""
+        path = self.manifest_path(workspace_dir)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise ManifestError(f"could not remove manifest at {path}: {exc}") from exc
 
     def read_external(self, source: Path) -> ManifestSource:
         """Read a manifest at an arbitrary path (used by ``import``)."""
@@ -81,6 +87,6 @@ def _dump(manifest: WorkspaceManifest) -> str:
 
 def _read_manifest_text(path: Path) -> str:
     try:
-        return path.read_text()
-    except OSError as exc:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
         raise ManifestError(f"could not read manifest at {path}: {exc}") from exc
