@@ -8,10 +8,10 @@ and sends only prepared operations. It does not provide cross-request atomicity.
 from __future__ import annotations
 
 import copy
+import threading
 from collections.abc import Iterable, Mapping
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from untaped.api import ConfigError
 from untaped.capabilities.awx.application.apply_field_diff import FieldDiff
@@ -42,6 +42,7 @@ from untaped.capabilities.awx.application.ports import (
     StrategyResolver,
 )
 from untaped.capabilities.awx.application.prepared_body import BodyOperations
+from untaped.capabilities.awx.application.scheduling import Schedule
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import (
     ApplyOutcome,
@@ -597,7 +598,7 @@ class BatchMutationEngine:
                 )
         return conflicts
 
-    def _execute_bodies(  # noqa: C901
+    def _execute_bodies(
         self,
         plan: MutationPlan,
         *,
@@ -606,82 +607,63 @@ class BatchMutationEngine:
         bindings: dict[str, int],
     ) -> tuple[list[ApplyOutcome], bool]:
         """Run body writes; the flag reports an abort (auth/config failure)."""
-        outcomes: list[ApplyOutcome | None] = [None] * len(plan.operations)
-        pending = {operation.index for operation in plan.operations}
-        in_flight: dict[Future[ApplyOutcome], int] = {}
-        stopped = aborted = False
-        with ThreadPoolExecutor(max_workers=parallel) as pool:
-            while pending or in_flight:
-                if not stopped:
-                    for index in sorted(tuple(pending)):
-                        if len(in_flight) >= parallel:
-                            break
-                        operation = plan.operations[index]
-                        dependency_outcomes = [outcomes[dep] for dep in operation.dependencies]
-                        if any(
-                            outcome is not None
-                            and outcome.action in {"failed", "partial", "conflict", "skipped"}
-                            for outcome in dependency_outcomes
-                        ):
-                            outcomes[index] = self._status_outcome(
-                                operation,
-                                action="skipped",
-                                detail="skipped because a dependency failed",
-                            )
-                            pending.remove(index)
-                            continue
-                        if any(outcome is None for outcome in dependency_outcomes):
-                            continue
-                        future = pool.submit(self._execute_body, operation, bindings)
-                        in_flight[future] = index
-                        pending.remove(index)
-                if not in_flight:
-                    # A malformed dependency cycle cannot be executed safely.
-                    for index in sorted(pending):
-                        operation = plan.operations[index]
-                        outcomes[index] = self._status_outcome(
-                            operation,
-                            action="skipped",
-                            detail="skipped after a runtime failure"
-                            if stopped
-                            else "skipped because mutation dependencies form a cycle",
-                        )
-                    pending.clear()
-                    break
-                done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
-                for future in done:
-                    index = in_flight.pop(future)
-                    try:
-                        outcome = future.result()
-                    except _AbortBatch as abort:
-                        # Authentication/configuration failures doom every
-                        # remaining request; keep completed rows, stop the rest.
-                        outcome = abort.outcome
-                        stopped = aborted = True
-                    except Exception as exc:
-                        operation = plan.operations[index]
-                        outcome = self._status_outcome(
-                            operation, action="failed", detail=_safe_error(exc, operation)
-                        )
-                    outcomes[index] = outcome
-                    if (
-                        outcome.id is not None
-                        and plan.operations[index].create
-                        and outcome.action == "created"
-                    ):
-                        bindings[f"planned:{index}"] = outcome.id
-                    if outcome.action in {"failed", "partial"} and not continue_on_error:
-                        stopped = True
-            if stopped:
-                for index in sorted(pending):
-                    operation = plan.operations[index]
-                    outcomes[index] = self._status_outcome(
-                        operation,
-                        action="skipped",
-                        detail="skipped after a runtime failure",
-                    )
-                pending.clear()
-        return [cast(ApplyOutcome, outcome) for outcome in outcomes], aborted
+        operations = plan.operations
+        schedule = Schedule(parallel=parallel)
+        aborted = threading.Event()
+
+        def run(index: int) -> ApplyOutcome:
+            operation = operations[index]
+            try:
+                outcome = self._execute_body(operation, bindings)
+            except _AbortBatch as abort:
+                # Authentication/configuration failures doom every
+                # remaining request; keep completed rows, stop the rest.
+                aborted.set()
+                schedule.stop()
+                return abort.outcome
+            except Exception as exc:
+                outcome = self._status_outcome(
+                    operation, action="failed", detail=_safe_error(exc, operation)
+                )
+            if outcome.id is not None and operation.create and outcome.action == "created":
+                bindings[f"planned:{index}"] = outcome.id
+            if outcome.action in {"failed", "partial"} and not continue_on_error:
+                schedule.stop()
+            return outcome
+
+        def blocked(index: int, dependencies: list[ApplyOutcome]) -> ApplyOutcome | None:
+            if any(
+                outcome.action in {"failed", "partial", "conflict", "skipped"}
+                for outcome in dependencies
+            ):
+                return self._status_outcome(
+                    operations[index],
+                    action="skipped",
+                    detail="skipped because a dependency failed",
+                )
+            return None
+
+        results = schedule.run(
+            len(operations),
+            run,
+            skipped=lambda index: self._status_outcome(
+                operations[index], action="skipped", detail="skipped after a runtime failure"
+            ),
+            dependencies=[operation.dependencies for operation in operations],
+            blocked=blocked,
+        )
+        # A malformed dependency cycle cannot be executed safely.
+        cycle_detail = (
+            "skipped after a runtime failure"
+            if schedule.stopped
+            else "skipped because mutation dependencies form a cycle"
+        )
+        outcomes = [
+            results.get(index)
+            or self._status_outcome(operation, action="skipped", detail=cycle_detail)
+            for index, operation in enumerate(operations)
+        ]
+        return outcomes, aborted.is_set()
 
     def _execute_body(
         self, operation: PreparedMutation, bindings: Mapping[str, int]

@@ -12,10 +12,9 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from untaped.api import ConfigError
+from untaped.api import ConfigError, bounded_map
 from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
@@ -85,23 +84,17 @@ class RunTestSuite:
         self._fk.prefetch(self._prefetch_plan(plan))
         resolved = self._resolve_all(plan)
 
-        if parallel <= 1:
-            results = [self._launch_and_wait(item, timeout) for item in resolved]
-        else:
-            with ThreadPoolExecutor(max_workers=parallel) as pool:
-                futures = [pool.submit(self._launch_and_wait, item, timeout) for item in resolved]
-                try:
-                    # Collected in submission order, so the report follows
-                    # declaration order regardless of completion.
-                    results = [future.result() for future in futures]
-                except KeyboardInterrupt:
-                    # Stop polling workers and never launch queued cases.
-                    if self._stop is not None:
-                        self._stop.set()
-                    for future in futures:
-                        future.cancel()
-                    raise
-        return SuiteRunOutcome(results=results)
+        results: dict[int, CaseResult] = {}
+        bounded_map(
+            lambda index: self._launch_and_wait(resolved[index], timeout),
+            range(len(resolved)),
+            concurrency=max(1, parallel),
+            on_each=results.__setitem__,
+            # Ctrl-C stops polling workers; queued cases are never launched.
+            on_abort=self._stop.set if self._stop is not None else None,
+        )
+        # Indexed by declaration order, so the report ignores completion order.
+        return SuiteRunOutcome(results=[results[index] for index in range(len(resolved))])
 
     def known_executions(self) -> list[Job]:
         """Every submitted execution with its latest locally known status."""

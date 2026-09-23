@@ -113,3 +113,45 @@ def test_on_abort_not_called_on_success() -> None:
         on_abort=lambda: aborted.append(True),
     )
     assert aborted == []
+
+
+def test_while_running_overlaps_a_single_item_before_results_are_consumed() -> None:
+    """The hook sees the lone item in flight (a worker thread) and releases it."""
+    caller = threading.get_ident()
+    started = threading.Event()
+    release = threading.Event()
+    worker_threads: list[int] = []
+    order: list[str] = []
+
+    def work(x: int) -> int:
+        worker_threads.append(threading.get_ident())
+        started.set()
+        assert release.wait(2)
+        return x
+
+    def foreground() -> None:
+        assert started.wait(2)
+        order.append("while_running")
+        release.set()
+
+    bounded_map(
+        work,
+        [1],
+        concurrency=1,
+        on_each=lambda i, r: order.append("on_each"),
+        while_running=foreground,
+    )
+    assert order == ["while_running", "on_each"]
+    assert worker_threads and worker_threads[0] != caller
+
+
+def test_while_running_with_no_items_still_runs() -> None:
+    ran: list[bool] = []
+    bounded_map(
+        lambda x: x,
+        [],
+        concurrency=2,
+        on_each=lambda i, r: None,
+        while_running=lambda: ran.append(True),
+    )
+    assert ran == [True]
