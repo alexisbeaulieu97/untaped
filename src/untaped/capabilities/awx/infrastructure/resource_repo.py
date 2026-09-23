@@ -126,7 +126,7 @@ class ResourceRepository:
         with map_awx_errors():
             status = self._client.delete(f"{awx_api_path(spec)}/{id_}/")
         return DeleteReceipt(
-            action="deletion_requested" if status == 202 or spec.kind == "Inventory" else "deleted"
+            action="deletion_requested" if status == 202 or spec.async_delete else "deleted"
         )
 
     def action(

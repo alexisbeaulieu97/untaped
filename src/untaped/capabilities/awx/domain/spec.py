@@ -99,6 +99,9 @@ class ActionSpec(BaseModel):
     path: str | None
     """Direct action endpoint; None requires fixed-target expansion first."""
 
+    expand_to: str | None = None
+    """With no ``path``: the child kind whose records run this action instead."""
+
     method: Literal["POST", "PATCH"] = "POST"
     returns: frozenset[Literal["job", "workflow_job", "project_update", "inventory_update"]] = (
         frozenset()
@@ -155,6 +158,8 @@ class ResourceSpec(BaseModel):
     ``inventory`` for inventory children, ``unified_job_template`` for
     schedules; ``None`` for kinds without a parent.
     """
+    async_delete: bool = False
+    """AWX deletes this kind in the background, even when it answers 204."""
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.
     The string is opaque to the domain — :class:`StrategyResolver` (an

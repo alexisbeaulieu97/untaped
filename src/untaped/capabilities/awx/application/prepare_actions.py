@@ -143,16 +143,18 @@ def prepare_action_targets(
     if action != "sync":
         return spec, tuple(selected)
     targets = tuple(selected)
-    if spec.kind == "Inventory":
-        source_spec = catalog.get("InventorySource")
+    action_spec = next((item for item in spec.actions if item.name == action), None)
+    if action_spec is not None and action_spec.expand_to is not None:
+        source_spec = catalog.get(action_spec.expand_to)
+        parent_field = source_spec.parent_field or spec.kind.lower()
         expanded: dict[int, SelectedResource] = {}
         for item in selected:
-            label = f"Inventory {item.name!r} (id={item.id})"
+            label = f"{spec.kind} {item.name!r} (id={item.id})"
             if item.record.get("kind", "") not in ("", "constructed"):
                 raise ConfigError(f"{label}: sync is unsupported for {item.record.get('kind')}")
             sources = SelectionResolver(client, catalog).resolve(
                 source_spec,
-                SelectionRequest(filters={"inventory": str(item.id)}, require_explicit=True),
+                SelectionRequest(filters={parent_field: str(item.id)}, require_explicit=True),
             )
             if not sources:
                 raise ConfigError(f"{label}: no inventory sources to sync")

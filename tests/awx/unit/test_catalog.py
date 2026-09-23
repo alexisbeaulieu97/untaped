@@ -184,6 +184,25 @@ def test_parent_owned_specs_declare_their_parent_field() -> None:
             assert spec.parent_field is None, spec.kind
 
 
+def test_inventory_child_kinds_match_specs() -> None:
+    """Identity references scope children by inventory; keep that set in step."""
+    from untaped.capabilities.awx.domain.inventory import INVENTORY_CHILD_KINDS
+
+    children = {spec.kind for spec in ALL_SPECS if spec.parent_field == "inventory"}
+    assert children == INVENTORY_CHILD_KINDS
+
+
+def test_only_inventory_deletes_asynchronously_and_expands_sync() -> None:
+    assert {spec.kind for spec in ALL_SPECS if spec.async_delete} == {"Inventory"}
+    expanding = {
+        (spec.kind, action.name, action.expand_to)
+        for spec in ALL_SPECS
+        for action in spec.actions
+        if action.expand_to is not None
+    }
+    assert expanding == {("Inventory", "sync", "InventorySource")}
+
+
 def test_immutable_fields_cover_identity_and_ancestry() -> None:
     cat = AwxResourceCatalog()
     host = cat.get("Host").immutable_fields
