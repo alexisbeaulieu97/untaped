@@ -214,15 +214,33 @@ class SqliteDependencyIndex:
         *,
         source_key: str | None,
     ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
+        # An unpinned declaration installs the dependency's default branch, so
+        # it matches a requested ref equal to that repo's cached default branch.
         return self._select_edges_batch(
             pairs,
             source_key=source_key,
             join_sql="""
                 join snapshot_edges as edges
                   on edges.dependency_repo = requested.repo collate nocase
-                 and (requested.ref is null or edges.dependency_version = requested.ref)
+                 and (
+                     requested.ref is null
+                     or edges.dependency_version = requested.ref
+                     or edges.dependency_version is null
+                 )
                 join source_ref_scans as scans
                   on scans.snapshot_id = edges.snapshot_id
+                 and (
+                     requested.ref is null
+                     or edges.dependency_version is not null
+                     or exists (
+                         select 1
+                         from source_repo_metadata as dependency_metadata
+                         where dependency_metadata.source_key = scans.source_key
+                           and dependency_metadata.source_repo
+                               = edges.dependency_repo collate nocase
+                           and dependency_metadata.default_branch = requested.ref
+                     )
+                 )
             """,
         )
 

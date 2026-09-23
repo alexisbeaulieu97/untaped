@@ -2110,6 +2110,104 @@ def test_graph_local_target_resolves_configured_enterprise_host(
     assert "unresolved" not in result.stdout
 
 
+def _unpinned_consumer_index(tmp_path: Path, *, base_default: str | None) -> Path:
+    index_path = tmp_path / "index.sqlite3"
+    metadata = (
+        ()
+        if base_default is None
+        else (
+            SourceRepoMetadata(
+                source_key="source:prod", source_repo="acme/base", default_branch=base_default
+            ),
+        )
+    )
+    _seed_index(
+        SqliteDependencyIndex(index_path),
+        "source:prod",
+        (
+            IndexedDependency(
+                source_repo="acme/pinned",
+                source_ref="main",
+                dependency_repo="acme/base",
+                dependency_name="base",
+                dependency_version="main",
+                source_path="roles/requirements.yml",
+            ),
+            IndexedDependency(
+                source_repo="acme/unpinned",
+                source_ref="main",
+                dependency_repo="acme/base",
+                dependency_name="base",
+                dependency_version=None,
+                source_path="roles/requirements.yml",
+            ),
+            # acme/base is itself scanned whenever its default branch is known.
+            *(
+                ()
+                if base_default is None
+                else (
+                    IndexedDependency(
+                        source_repo="acme/base",
+                        source_ref=base_default,
+                        dependency_repo="acme/core",
+                        dependency_name="core",
+                        dependency_version="main",
+                        source_path="roles/requirements.yml",
+                    ),
+                )
+            ),
+        ),
+        repo_metadata=metadata,
+    )
+    return index_path
+
+
+@pytest.mark.parametrize(("ref", "included"), [("main", True), ("v1", False)])
+def test_graph_upstream_ref_treats_unpinned_dependents_as_default_branch(
+    tmp_path: Path,
+    monkeypatch,
+    ref: str,
+    included: bool,
+) -> None:
+    index_path = _unpinned_consumer_index(tmp_path, base_default="main")
+    cfg = _write_config(
+        tmp_path,
+        index_path=index_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "prod", "--upstream", "--ref", ref]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert ("acme/unpinned@main" in result.stdout) is included
+    assert "unpinned" not in result.stdout.replace("acme/unpinned", "")
+
+
+def test_graph_upstream_ref_warns_when_unpinned_dependents_cannot_be_placed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = _unpinned_consumer_index(tmp_path, base_default=None)
+    cfg = _write_config(
+        tmp_path,
+        index_path=index_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "prod", "--upstream", "--ref", "main"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/pinned@main" in result.stdout
+    assert "acme/unpinned@main" not in result.stdout
+    assert "1 unpinned dependent of acme/base@main omitted" in result.stdout
+
+
 def test_graph_upstream_matches_repo_ids_case_insensitively(
     tmp_path: Path,
     monkeypatch,
