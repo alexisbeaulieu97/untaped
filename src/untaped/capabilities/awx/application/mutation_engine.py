@@ -18,7 +18,7 @@ from untaped.capabilities.awx.application.apply_membership import (
     MembershipReconciler,
     MembershipSnapshots,
 )
-from untaped.capabilities.awx.application.apply_planner import ApplyPlanner
+from untaped.capabilities.awx.application.apply_planner import ApplyPlanner, unrecognized_warning
 from untaped.capabilities.awx.application.apply_secret_policy import SecretPreservationPolicy
 from untaped.capabilities.awx.application.apply_verifier import ApplyVerifier
 from untaped.capabilities.awx.application.mutation_types import (
@@ -215,12 +215,19 @@ class BatchMutationEngine:
         strategies: list[ApplyStrategy] = []
 
         parents: list[tuple[str, int | DeferredReference] | None] = [None] * len(docs)
+        warnings: list[str] = []
         for resource in docs:
             spec = self._catalog.get(resource.kind)
             if spec.fidelity == "read_only":
                 raise BadRequest(f"{spec.kind} does not support apply (fidelity={spec.fidelity!r})")
             specs.append(spec)
             strategies.append(self._strategies.get(spec.apply_strategy))
+            # One warning per distinct message: a mass patch shares its overlay.
+            message = unrecognized_warning(spec, resource.spec.keys())
+            if message is not None and message not in warnings:
+                warnings.append(message)
+        for message in warnings:
+            self._warn(message)
 
         parent_targets: set[tuple[str, str, int | str]] = set()
         pending = set(range(len(docs)))

@@ -66,8 +66,15 @@ stdout, while previews, prompts, progress, and warnings go to stderr.
 `patch` changes existing resources only. Repeat `--set KEY=VALUE` or provide a
 YAML/JSON mapping with `--patch-file`; `--set` wins when both specify a field.
 Values use JSON coercion when possible (`true`, `false`, numbers, arrays,
-objects, and `null`). A supplied value replaces that top-level field, and an
+objects, and `null`), except that a field the selected record holds as a string
+stays a string unless the value is a JSON object or array (`scm_branch=1.10`
+stays `"1.10"`). A supplied value replaces that top-level field, and an
 omitted field is unchanged. Nested objects are not implicitly merged.
+
+Field names this tool does not know are rejected as likely typos
+(`verbostiy=2` exits 2 before any request). Pass `--allow-unknown-fields` to
+send them anyway; `apply`, `patch`, and `edit` all warn on stderr when a
+document carries unknown fields.
 
 ```bash
 untaped awx inventory-sources patch \
