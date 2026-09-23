@@ -8,7 +8,7 @@ from untaped.capabilities.awx.application import ApplyFile, ApplyResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan
 from untaped.capabilities.awx.domain import Resource
-from untaped.capabilities.awx.infrastructure.yaml_io import read_resources
+from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files
 
 
 def build_apply_resource(ctx: AwxContext, *, allow_unverified: bool = False) -> ApplyResource:
@@ -66,12 +66,21 @@ def run_apply(
 ) -> None:
     """Prepare once, confirm once, execute the same complete batch."""
 
+    known = set(ctx.catalog.kinds())
+
     def reader(path: Path) -> Iterable[Resource]:
-        docs = list(read_resources(path))
-        wrong = sorted({doc.kind for doc in docs if kind_filter and doc.kind != kind_filter})
-        if wrong:
-            raise ConfigError(f"expected only {kind_filter} documents; found {', '.join(wrong)}")
-        return [_with_default_organization(ctx, doc) for doc in docs]
+        docs = list(read_resource_files(path))
+        for source, doc in docs:
+            # Name the file: a directory apply reads every *.yml and *.yaml.
+            if doc.kind not in known:
+                raise ConfigError(
+                    f"{source}: unknown kind {doc.kind!r} (available: {', '.join(sorted(known))})"
+                )
+            if kind_filter and doc.kind != kind_filter:
+                raise ConfigError(
+                    f"{source}: expected only {kind_filter} documents; found {doc.kind}"
+                )
+        return [_with_default_organization(ctx, doc) for _source, doc in docs]
 
     apply_one = build_apply_resource(ctx, allow_unverified=allow_unverified)
     plan = ApplyFile(apply_one, reader, ctx.catalog, ctx.fk).prepare(file)
