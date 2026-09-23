@@ -4,12 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.workspace.application import BareFetchTracker, SyncWorkspace
+from untaped.capabilities.workspace.application import (
+    BareFetchTracker,
+    RepoSyncEngine,
+    SyncWorkspace,
+    SyncWorkspaces,
+)
+from untaped.capabilities.workspace.application.ports import ManifestReader
 from untaped.capabilities.workspace.domain import (
     BareCacheEntry,
     ManifestDefaults,
     Repo,
     RepoStatus,
+    SyncOutcome,
     Workspace,
     WorkspaceManifest,
 )
@@ -25,6 +32,16 @@ def _seed_workspace(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
     ws_path.mkdir()
     ManifestRepository().write(ws_path, manifest)
     return Workspace(name="prod", path=ws_path)
+
+
+def _sync_and_prune(
+    reader: ManifestReader, git: StubGit, workspace: Workspace, cache_dir: Path
+) -> list[SyncOutcome]:
+    """Sync, then prune orphans the way confirmed ``sync --prune`` does."""
+    outcomes = SyncWorkspace(reader, git, fs=_FS, cache_dir=cache_dir)(workspace)
+    engine = RepoSyncEngine(git, fs=_FS, cache_dir=cache_dir)
+    skipped, candidates = SyncWorkspaces(reader, engine).plan_prune([workspace])
+    return [*outcomes, *skipped, *(engine.prune_candidate(c) for c in candidates)]
 
 
 def test_clones_missing_repo(tmp_path: Path) -> None:
@@ -307,9 +324,7 @@ def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
             "svc-old": RepoStatus(branch="main", upstream="origin/main"),
         },
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
     actions = {o.repo: o.action for o in outcomes}
     assert actions["svc-old"] == "remove"
     assert not orphan.exists()
@@ -328,9 +343,7 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
         on_disk=["svc-old"],
         statuses={"svc-old": RepoStatus(branch="main", upstream="origin/main", modified=1)},
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
     assert outcomes[0].action == "skip"
     assert outcomes[0].detail == "unsafe local state: dirty working tree"
     assert orphan.exists()
@@ -351,9 +364,7 @@ def test_prune_skips_clean_orphan_with_unpushed_commits(tmp_path: Path) -> None:
             "svc-old": ("local commits not reachable from any remote-tracking ref",),
         },
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
     assert outcomes[0].action == "skip"
     assert outcomes[0].detail == (
         "unsafe local state: local commits not reachable from any remote-tracking ref"
@@ -380,9 +391,7 @@ def test_prune_formats_multiple_blockers(tmp_path: Path) -> None:
             ),
         },
     )
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
     assert outcomes[0].action == "skip"
     assert outcomes[0].detail == "unsafe local state: dirty working tree; +2 more"
     assert orphan.exists()
@@ -400,9 +409,7 @@ def test_prune_skips_symlinked_orphan(tmp_path: Path) -> None:
     link.symlink_to(target, target_is_directory=True)
 
     git = StubGit(on_disk=["linked"])
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
 
     assert outcomes[0].action == "skip"
     assert outcomes[0].repo == "linked"
@@ -584,7 +591,7 @@ def test_prune_skipped_when_workspace_dir_missing(tmp_path: Path) -> None:
     missing = tmp_path / "missing"  # never created
     workspace = Workspace(name="prod", path=missing)
     git = StubGit()
-    outcomes = SyncWorkspace(_ReaderStub(), git, fs=_FS, cache_dir=tmp_path)(workspace, prune=True)
+    outcomes = _sync_and_prune(_ReaderStub(), git, workspace, tmp_path)
     assert outcomes == []
 
 
@@ -597,9 +604,7 @@ def test_prune_skips_non_git_subdir(tmp_path: Path) -> None:
     not_a_clone = workspace.path / "not-a-clone"
     not_a_clone.mkdir()  # no .git inside
     git = StubGit()
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
     assert outcomes == []
     assert not_a_clone.exists()  # untouched
 
@@ -614,9 +619,7 @@ def test_prune_inspection_failure_yields_not_usable_skip(tmp_path: Path) -> None
     orphan.mkdir()
     (orphan / ".git").mkdir()
     git = StubGit(on_disk=["svc-old"], prune_fail={"svc-old"})
-    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
-        workspace, prune=True
-    )
+    outcomes = _sync_and_prune(ManifestRepository(), git, workspace, tmp_path)
     assert outcomes[0].action == "skip"
     assert "not a usable git repo" in outcomes[0].detail
     assert orphan.exists()  # not removed

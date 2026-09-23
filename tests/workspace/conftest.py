@@ -222,7 +222,7 @@ class StubFilesystem:
       ``iterdir`` only yields entries that *literally exist* under
       ``p`` on disk — if a test seeds ``Path("/ws/a")`` without seeding
       ``Path("/ws")``, ``iterdir(Path("/ws"))`` still yields ``a``.
-      Fine for the current callers (`SyncWorkspace._prune_orphans` only
+      Fine for the current callers (`RepoSyncEngine.plan_prune` only
       iterdirs a path it has already established exists), worth a
       thought before adding new callers.
     - ``rmtree(p)`` removes ``p`` and every seeded descendant; matches
