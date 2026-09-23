@@ -11,8 +11,7 @@ import yaml
 
 from untaped.api import ConfigError
 from untaped.capabilities.recipe.application.targets import Target
-from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
-from untaped.capabilities.recipe.infrastructure.input_jinja import (
+from untaped.capabilities.recipe.domain.input_jinja import (
     UNRESOLVED,
     CompiledInputSource,
     InputSourceError,
@@ -20,6 +19,7 @@ from untaped.capabilities.recipe.infrastructure.input_jinja import (
     derive_input_value,
     ensure_derived_value_within_bound,
 )
+from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
 
 REDACTED = "***"
 _UNSET = object()

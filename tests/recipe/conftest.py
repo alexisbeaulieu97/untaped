@@ -16,10 +16,10 @@ def stub_lock_freshness(monkeypatch: pytest.MonkeyPatch) -> None:
 
     The suite's packs write placeholder uv.lock files (existence-only
     convention); a real probe would need uv resolution per check. Tests that
-    exercise the probe re-patch `check_pack.check_lock` explicitly.
+    exercise the probe re-patch `pack_files.check_lock` explicitly.
     """
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.application.check_pack.check_lock",
+        "untaped.capabilities.recipe.infrastructure.pack_files.check_lock",
         lambda project_root: None,
     )
 

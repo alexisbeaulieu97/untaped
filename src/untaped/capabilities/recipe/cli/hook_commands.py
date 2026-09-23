@@ -36,7 +36,7 @@ from untaped.capabilities.recipe.cli.common import (
     report_config_errors,
     settings,
 )
-from untaped.capabilities.recipe.domain.hook_project import HookKind, read_hook_metadata
+from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import (
@@ -45,6 +45,7 @@ from untaped.capabilities.recipe.infrastructure.hook_executor import (
 )
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
 
 app = create_app(name="hook", help="Run installed recipe hooks.")
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]
@@ -269,7 +270,7 @@ def _local_hook_project(project: Path | None) -> Path | None:
             raise ConfigError(f"hook project not found: {project}")
         if not (resolved / "pyproject.toml").is_file():
             raise ConfigError(f"hook project has no pyproject.toml: {project}")
-        metadata = read_hook_metadata(resolved)
+        metadata = read_hook_project(resolved)
         if not metadata.hooks:
             raise ConfigError(f"hook project has no hook metadata: {project}")
         return resolved

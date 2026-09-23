@@ -9,9 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.recipe.domain.pack import parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
 from untaped.capabilities.recipe.infrastructure.pack_store import (
-    InstalledPack,
     PackLibrary,
     fetch_pack_source,
     is_git_url,

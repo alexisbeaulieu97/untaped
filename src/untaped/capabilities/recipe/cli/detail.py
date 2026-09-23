@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.capabilities.recipe.domain.hook_exports import hook_exports
+from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.domain.hook_project import hook_module_file
 from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest
 from untaped.capabilities.recipe.domain.recipe import (
@@ -15,7 +15,7 @@ from untaped.capabilities.recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
-from untaped.capabilities.recipe.infrastructure.recipe_loader import load_recipe_file
+from untaped.capabilities.recipe.infrastructure.pack_files import hook_exports
 
 
 def recipe_detail(ref: str, recipe: Recipe, path: Path) -> dict[str, object]:
@@ -66,7 +66,7 @@ def pack_detail(installed_name: str, manifest: PackManifest, root: Path) -> dict
         "recipes": [
             {
                 "name": name,
-                "description": _first_line(load_recipe_file(root / entry.path).description),
+                "description": _first_line(read_recipe_file(root / entry.path).description),
             }
             for name, entry in sorted(manifest.recipes.items())
         ],

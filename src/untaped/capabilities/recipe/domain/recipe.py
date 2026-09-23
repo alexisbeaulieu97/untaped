@@ -6,7 +6,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+import yaml
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from untaped.capabilities.recipe.domain.paths import safe_relative_path
 
@@ -330,3 +338,27 @@ def _validate_non_empty_strings(value: object, *, field: str) -> None:
         raise ValueError(f"{field} must not be empty")
     if any(not isinstance(entry, str) or not entry for entry in value):
         raise ValueError(f"{field} entries must be non-empty strings")
+
+
+def parse_recipe(text: str, *, source: Path) -> Recipe:
+    """Parse and validate recipe YAML read from ``source`` (used in error messages)."""
+    try:
+        raw = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{source}: invalid recipe YAML: {exc}") from exc
+    try:
+        return Recipe.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(f"{source}: {_validation_message(exc)}") from exc
+
+
+def _validation_message(exc: ValidationError) -> str:
+    """Render schema violations in the recipe's own vocabulary, not pydantic's."""
+    parts: list[str] = []
+    for error in exc.errors(include_url=False):
+        location = ".".join(str(part) for part in error["loc"])
+        if error["type"] == "extra_forbidden":
+            parts.append(f"{location or 'recipe'} is not allowed here")
+        else:
+            parts.append(f"{location or 'recipe'}: {error['msg']}")
+    return "invalid recipe: " + "; ".join(parts)

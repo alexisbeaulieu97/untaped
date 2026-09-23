@@ -12,14 +12,9 @@ from types import ModuleType
 
 from untaped.capabilities.recipe._worker import worker_protocol as protocol
 from untaped.capabilities.recipe._worker.helpers import HookHelpers
-from untaped.capabilities.recipe.application.ports import HookDebugResult
-from untaped.capabilities.recipe.domain.hook_project import HookKind
-from untaped.capabilities.recipe.domain.plan import Verdict
-from untaped.capabilities.recipe.infrastructure.hook_resolver import (
-    HookResolver,
-    UvHookRef,
-    ensure_hook_supports,
-)
+from untaped.capabilities.recipe.domain.hook_project import HookKind, ensure_hook_supports
+from untaped.capabilities.recipe.domain.plan import HookDebugResult, Verdict
+from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver, UvHookRef
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     APPLY_DIAGNOSTIC_LIMIT,
     DEBUG_DIAGNOSTIC_LIMIT,
@@ -128,7 +123,7 @@ class HookExecutor:
         capture_diagnostics: bool,
     ) -> HookDebugResult[object]:
         ref = self._resolver.resolve(hook, local_hook_project)
-        ensure_hook_supports(ref, hook, verb=call.verb)
+        ensure_hook_supports(ref.exports, hook, verb=call.verb)
         if isinstance(ref, UvHookRef):
             return _request_external(
                 self._workers,

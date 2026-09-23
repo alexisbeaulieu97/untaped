@@ -21,14 +21,14 @@ from pydantic import ValidationError
 
 import untaped.capabilities.recipe.infrastructure.hook_resolver as hook_resolver_module
 import untaped.capabilities.recipe.infrastructure.hook_worker_client as worker_client
-from untaped.capabilities.recipe.domain.hook_project import HookProjectMetadata, read_hook_metadata
+from untaped.capabilities.recipe.domain.hook_project import ensure_hook_supports
+from untaped.capabilities.recipe.domain.pack import PackManifest
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_resolver import (
     BuiltinHookRef,
     HookResolver,
     UvHookRef,
-    ensure_hook_supports,
 )
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     HookWorkerCallResult,
@@ -36,6 +36,7 @@ from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     UvHookWorker,
     UvHookWorkerPool,
 )
+from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
 
 
 def _write_hook_project(
@@ -84,6 +85,10 @@ def _write_hook_project(
         (root / "uv.lock").write_text("version = 1\n")
 
 
+def _hook_project(data: dict[str, object]) -> PackManifest:
+    return PackManifest.from_pyproject(data, source=Path("pyproject.toml"), require_pack=False)
+
+
 def _hook_source(exports: tuple[Literal["transform", "validate"], ...]) -> str:
     parts: list[str] = []
     if "transform" in exports:
@@ -98,7 +103,7 @@ def _hook_source(exports: tuple[Literal["transform", "validate"], ...]) -> str:
 
 
 def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
-    metadata = HookProjectMetadata.from_pyproject(
+    metadata = _hook_project(
         {
             "tool": {
                 "untaped_recipe": {
@@ -117,15 +122,13 @@ def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
     )
 
     with pytest.raises(ValueError, match="invalid hook name"):
-        HookProjectMetadata.from_pyproject(
-            {"tool": {"untaped_recipe": {"hooks": {"bad-name": {"module": "pkg.hook"}}}}}
-        )
+        _hook_project({"tool": {"untaped_recipe": {"hooks": {"bad-name": {"module": "pkg.hook"}}}}})
 
     with pytest.raises(ValueError, match="module is required"):
-        HookProjectMetadata.from_pyproject({"tool": {"untaped_recipe": {"hooks": {"check": {}}}}})
+        _hook_project({"tool": {"untaped_recipe": {"hooks": {"check": {}}}}})
 
     with pytest.raises(ValueError, match="extra_forbidden"):
-        HookProjectMetadata.from_pyproject(
+        _hook_project(
             {
                 "tool": {
                     "untaped_recipe": {
@@ -145,7 +148,7 @@ def test_manifest_hook_metadata_rejects_unknown_fields(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="extra_forbidden"):
-        HookProjectMetadata.from_pyproject(
+        _hook_project(
             {
                 "tool": {
                     "untaped_recipe": {
@@ -160,7 +163,7 @@ def test_manifest_hook_metadata_rejects_unknown_fields(tmp_path: Path) -> None:
             }
         )
     with pytest.raises(ValueError, match="extra_forbidden"):
-        read_hook_metadata(project_root)
+        read_hook_project(project_root)
 
 
 def test_hook_resolver_uses_recipe_local_then_builtin(tmp_path: Path) -> None:
@@ -207,7 +210,7 @@ def test_ensure_hook_supports_rejects_missing_verb(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match=r"does not export a validate\(\) function"):
-        ensure_hook_supports(ref, "sample", verb="validate")
+        ensure_hook_supports(ref.exports, "sample", verb="validate")
 
 
 def test_hook_resolver_rejects_missing_lockfile(tmp_path: Path) -> None:
@@ -271,7 +274,7 @@ def test_hook_resolver_rejects_pep508_runtime_cli_dependencies(
 
 def test_hook_project_metadata_rejects_invalid_dependency_declarations() -> None:
     with pytest.raises(ValueError, match=r"\[project\]\.dependencies entry"):
-        HookProjectMetadata.from_pyproject(
+        _hook_project(
             {
                 "project": {"dependencies": ["not a valid @@@ requirement"]},
                 "tool": {
@@ -349,11 +352,11 @@ def test_hook_resolver_validates_project_contract_once_per_metadata_cache(
     _write_hook_project(recipe_dir, hooks={"check": "project_hooks.hooks.check"})
     calls: list[Path] = []
 
-    def validate(project_root: Path, metadata: HookProjectMetadata) -> None:
-        del metadata
+    def validate(project_root: Path, manifest: PackManifest) -> None:
+        del manifest
         calls.append(project_root)
 
-    monkeypatch.setattr(hook_resolver_module, "validate_hook_project_contract", validate)
+    monkeypatch.setattr(hook_resolver_module, "check_hook_project", validate)
     resolver = HookResolver()
 
     resolver.resolve("check", recipe_dir)
