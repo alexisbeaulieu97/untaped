@@ -139,7 +139,12 @@ def test_list_shows_raw_values_and_warns_for_invalid_section(_isolated_config: P
     write_config(_isolated_config, _BROKEN_JIRA)
     result = _invoke(["list", "--format", "json"])
     assert result.exit_code == 0, result.output
-    assert "warning: section 'jira' is invalid" in result.stderr
+    warnings = [line for line in result.stderr.splitlines() if line.startswith("warning:")]
+    assert len(warnings) == 1
+    # One sentence naming the section once (no "section 'jira' is invalid: invalid …").
+    assert warnings[0].startswith("warning: invalid config section 'jira' in ")
+    assert warnings[0].count("'jira'") == 1
+    assert warnings[0].endswith("(its keys show unvalidated values)")
     assert "http.timeout" in result.stdout
     assert '"lots"' in result.stdout
 
@@ -203,6 +208,23 @@ def test_get_json_keeps_secrets_masked(_isolated_config: Path) -> None:
     write_config(_isolated_config, "profiles:\n  default:\n    github:\n      token: t0k\n")
     row = json.loads(_invoke(["get", "github.token", "--format", "json"]).stdout)
     assert row["value"] == "***"
+
+
+_PROXY_WITH_PASSWORD = (
+    "profiles:\n  default:\n    http:\n      proxy: http://bob:hunter2@proxy:8080\n"
+)
+
+
+def test_proxy_password_is_masked_unless_revealed(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _PROXY_WITH_PASSWORD)
+
+    masked = _invoke(["get", "http.proxy"])
+    listed = _invoke(["list", "--format", "json"])
+    revealed = _invoke(["get", "http.proxy", "--show-secrets"])
+
+    assert masked.stdout.strip() == "http://bob:***@proxy:8080"
+    assert "hunter2" not in listed.stdout
+    assert revealed.stdout.strip() == "http://bob:hunter2@proxy:8080"
 
 
 def test_list_json_emits_native_values(_isolated_config: Path) -> None:

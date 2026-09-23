@@ -219,10 +219,11 @@ def _list(
         else:
             list_settings = ListSettings(repo)
             entries = list_settings(reveal_secrets=show_secrets)
-            for section, error in list_settings.errors.items():
-                echo(f"warning: section {section!r} is invalid: {error}", err=True)
+            for error in list_settings.errors.values():
+                # The error already names the section (or env var) and file.
+                echo(f"warning: {error} (its keys show unvalidated values)", err=True)
         rows = [setting_entry_row(e, human=fmt in ("table", "raw")) for e in entries]
-        emit(rows, fmt=fmt, columns=columns)
+        emit(rows, fmt=fmt, columns=columns, kind="untaped.setting")
 
 
 def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: bool) -> None:
@@ -230,7 +231,12 @@ def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: b
         resolved = ctx.resolve_key(key)
         entry = GetSetting(SettingsFileRepository())(resolved, reveal_secrets=show_secrets)
         columns = ["value"] if fmt == "raw" else None
-        emit(setting_entry_row(entry, human=fmt in ("table", "raw")), fmt=fmt, columns=columns)
+        emit(
+            setting_entry_row(entry, human=fmt in ("table", "raw")),
+            fmt=fmt,
+            columns=columns,
+            kind="untaped.setting",
+        )
 
 
 def _set(

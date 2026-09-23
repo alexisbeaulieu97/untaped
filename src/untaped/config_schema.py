@@ -8,6 +8,7 @@ collection types are skipped — they are managed by domain-specific commands.
 from __future__ import annotations
 
 import copy
+import re
 import types
 import typing
 from collections.abc import Iterable, Mapping
@@ -97,6 +98,19 @@ def secret_field_paths(model_cls: type[BaseModel]) -> list[tuple[str, ...]]:
     return [d.path for d in walk_settings(model_cls) if d.is_secret]
 
 
+_URL_PASSWORD = re.compile(r"^(?P<prefix>[A-Za-z][A-Za-z0-9+.\-]*://[^/@:\s]*):[^/@\s]*@")
+
+
+def redact_url_password(value: str, *, placeholder: str = "***") -> str:
+    """Mask the password in a ``scheme://user:password@host`` URL.
+
+    Settings such as ``http.proxy`` are plain strings that may still carry
+    credentials; the user name stays visible so the value remains
+    recognizable. Anything that is not such a URL is returned unchanged.
+    """
+    return _URL_PASSWORD.sub(rf"\g<prefix>:{placeholder}@", value, count=1)
+
+
 def redact_secrets(
     data: Mapping[str, Any],
     paths: Iterable[tuple[str, ...]],
@@ -108,11 +122,23 @@ def redact_secrets(
     Paths that aren't present in ``data`` are silently skipped — profiles can
     omit any subset of the schema. ``None`` leaves are also left alone, so a
     user who has not set a secret still sees ``None`` rather than ``***``.
+    Passwords embedded in URL strings anywhere in ``data`` are masked too
+    (see :func:`redact_url_password`).
     """
-    out: dict[str, Any] = copy.deepcopy(dict(data))
+    out: dict[str, Any] = _redact_url_passwords(copy.deepcopy(dict(data)), placeholder)
     for path in paths:
         _redact_path(out, path, placeholder)
     return out
+
+
+def _redact_url_passwords(value: Any, placeholder: str) -> Any:
+    if isinstance(value, str):
+        return redact_url_password(value, placeholder=placeholder)
+    if isinstance(value, dict):
+        return {key: _redact_url_passwords(item, placeholder) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_url_passwords(item, placeholder) for item in value]
+    return value
 
 
 def _redact_path(data: dict[str, Any], path: tuple[str, ...], placeholder: str) -> None:

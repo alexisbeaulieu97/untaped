@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, SecretStr
 from untaped.config_schema import (
     find_descriptor,
     redact_secrets,
+    redact_url_password,
     secret_field_paths,
     walk_settings,
 )
@@ -131,3 +132,22 @@ def test_secret_field_paths_matches_known_settings_secrets() -> None:
     paths = secret_field_paths(get_settings_model())
     assert ("demo", "token") in paths
     assert len(paths) == 1  # Update when adding a new SecretStr to Settings.
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("http://bob:hunter2@proxy:8080", "http://bob:***@proxy:8080"),
+        ("https://:tok@host/path", "https://:***@host/path"),
+        ("http://bob@proxy:8080", "http://bob@proxy:8080"),
+        ("http://proxy:8080", "http://proxy:8080"),
+        ("not a url: a@b", "not a url: a@b"),
+    ],
+)
+def test_redact_url_password_masks_only_the_password(value: str, expected: str) -> None:
+    assert redact_url_password(value) == expected
+
+
+def test_redact_secrets_masks_url_passwords_in_any_string_leaf() -> None:
+    out = redact_secrets({"http": {"proxy": "http://u:p@h"}, "tags": ["https://u:p@h"]}, [])
+    assert out == {"http": {"proxy": "http://u:***@h"}, "tags": ["https://u:***@h"]}
