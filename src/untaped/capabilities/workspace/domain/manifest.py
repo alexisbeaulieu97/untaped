@@ -77,6 +77,14 @@ class Repo(BaseModel):
             raise ValueError("repo url cannot be empty")
         return v
 
+    @field_validator("name")
+    @classmethod
+    def _safe_name(cls, v: str) -> str:
+        # The name becomes ``<workspace-dir>/<name>`` for clone, status,
+        # remove --prune, foreach, and branch apply, so it must never
+        # leave the workspace directory.
+        return check_path_segment(v, kind="repo name")
+
 
 class ManifestDefaults(BaseModel):
     """Workspace-wide defaults applied to repos that don't override them."""
@@ -110,15 +118,18 @@ class WorkspaceManifest(BaseModel):
         # rather than ``DuplicateRepoName`` — the derived name *also*
         # collides in that case, but the user's correct mental model is
         # "this repo is already here," not "your name conflicts."
+        #
+        # Names compare case-insensitively: on case-insensitive filesystems
+        # (macOS, Windows) ``api`` and ``API`` are the same directory.
         seen_names: dict[str, Repo] = {}
         seen_urls: dict[str, Repo] = {}
         for repo in repos:
             if (incumbent := seen_urls.get(repo.url)) is not None:
                 return DuplicateRepoUrl(incumbent)
-            if (incumbent := seen_names.get(repo.name)) is not None:
+            if (incumbent := seen_names.get(repo.name.casefold())) is not None:
                 return DuplicateRepoName(incumbent)
             seen_urls[repo.url] = repo
-            seen_names[repo.name] = repo
+            seen_names[repo.name.casefold()] = repo
         return None
 
     @model_validator(mode="after")
@@ -210,14 +221,47 @@ class WorkspaceManifest(BaseModel):
 
 
 _NAME_RE = re.compile(r"([^/]+?)(?:\.git)?/*$")
+_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+_RESERVED_SEGMENTS = frozenset({"untaped.yml"})
+_FORBIDDEN_CHARS = ("/", "\\", ":", "\0")
+
+
+def check_path_segment(value: str, *, kind: str) -> str:
+    """Return ``value`` if it is one safe path segment, else raise ``ValueError``.
+
+    Repo and workspace names are joined onto directories, so they must
+    be a single component that cannot climb out (``.``/``..``), switch
+    roots (``/``, ``\\``, drive ``:``), truncate (NUL), or shadow the
+    workspace manifest.
+    """
+    if not value:
+        raise ValueError(f"{kind} cannot be empty")
+    if value in {".", ".."}:
+        raise ValueError(f"{kind} {value!r} is not allowed")
+    if any(char in value for char in _FORBIDDEN_CHARS):
+        raise ValueError(f"{kind} {value!r} must not contain '/', '\\', ':' or NUL")
+    if value.casefold() in _RESERVED_SEGMENTS:
+        raise ValueError(f"{kind} {value!r} is reserved")
+    return value
 
 
 def derive_repo_name(url: str) -> str:
     """Derive a default local directory name from a git URL.
 
     Handles both SSH-style (``git@host:org/repo.git``) and URL-style
-    (``https://host/org/repo.git``). Falls back to the last path segment.
+    (``https://host/org/repo.git``), plus Windows paths (``C:\\x\\repo``,
+    UNC shares). Falls back to the last path segment.
     """
+    if _DRIVE_RE.match(url) or "\\" in url:
+        # Windows drive paths / backslash separators: treat as a local
+        # path and take the last segment.
+        local = url.replace("\\", "/")
+        if _DRIVE_RE.match(url):
+            local = local[2:]
+        elif ":" in local and "://" not in local:
+            local = local.split(":", 1)[1]
+        match = _NAME_RE.search(local)
+        return match.group(1) if match else url
     # SSH form: git@host:org/repo.git → take "org/repo.git"
     if ":" in url and "://" not in url:
         ssh_path = url.split(":", 1)[1]

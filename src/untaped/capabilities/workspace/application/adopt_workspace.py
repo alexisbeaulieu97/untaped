@@ -6,6 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from untaped.api import first_validation_error
 from untaped.capabilities.workspace.application.ports import (
     Filesystem,
     RepoDiscoverer,
@@ -79,8 +82,21 @@ class AdoptWorkspace:
         result = self._discoverer.discover(canonical)
         for reason in result.skipped:
             self._warn(reason)
-        repos = [Repo(url=d.url, name=d.name, branch=d.branch) for d in result.repos]
+        repos: list[Repo] = []
+        adopted: list[DiscoveredRepo] = []
+        for d in result.repos:
+            try:
+                repos.append(Repo(url=d.url, name=d.name, branch=d.branch))
+            except ValidationError as exc:
+                self._warn(f"{d.name}: {first_validation_error(exc)} — skipping")
+                continue
+            adopted.append(d)
 
-        manifest = WorkspaceManifest(name=ws_name, defaults=ManifestDefaults(), repos=repos)
+        try:
+            manifest = WorkspaceManifest(name=ws_name, defaults=ManifestDefaults(), repos=repos)
+        except ValidationError as exc:
+            raise WorkspaceError(
+                f"cannot adopt {canonical}: {first_validation_error(exc)}"
+            ) from exc
         workspace = self._bootstrap.bootstrap(canonical, ws_name, manifest)
-        return AdoptResult(workspace=workspace, repos=list(result.repos))
+        return AdoptResult(workspace=workspace, repos=adopted)
