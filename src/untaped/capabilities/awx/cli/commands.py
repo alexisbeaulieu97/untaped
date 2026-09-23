@@ -308,7 +308,10 @@ def jobs_list(
             consume_multiple=False,
         ),
     ] = None,
-    limit: Annotated[int | None, Parameter(name="--limit", help="Cap result count.")] = None,
+    limit: Annotated[
+        int,
+        Parameter(name="--limit", help="Newest N jobs (default 20; 0 lists every job)."),
+    ] = 20,
     kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
     fmt: Annotated[
         OutputFormat,
@@ -317,11 +320,13 @@ def jobs_list(
     columns: ColumnsOption = None,
 ) -> None:
     """List recent AWX jobs (newest first)."""
+    if limit < 0:
+        raise_usage("--limit must be non-negative")
     filters = parse_kv_pairs(filter_, flag="--filter")
     if status:
         filters["status"] = status
     with report_errors(), open_context() as ctx, ctx.progress_ui().progress("Loading jobs…"):
-        records = list(ListJobs(ctx.jobs)(kind=kind, params=filters, limit=limit))
+        records = list(ListJobs(ctx.jobs)(kind=kind, params=filters, limit=limit or None))
     cols = list(columns) if columns else ["id", "name", "status"]
     rendered = render_rows(
         records,
