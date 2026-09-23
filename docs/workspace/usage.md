@@ -382,8 +382,9 @@ Known limitations:
 
 - `-j` is a global cap, not host-aware. Pick values that fit your git
   remotes' SSH/HTTP limits.
-- Ctrl-C can still wait for in-flight git subprocesses until their
-  timeout expires.
+- Ctrl-C cancels queued repo jobs instead of draining them; the command
+  then waits only for in-flight git calls, which receive the same
+  terminal interrupt.
 - `git clone --reference` keeps working clones dependent on objects in
   the bare cache unless you later dissociate them. Deleting or
   corrupting the cache can damage referenced clones.
@@ -439,8 +440,9 @@ untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
 ```
 
 Run a shell command in every repo of a workspace. Default
-`--format table` replays each repo's captured stdout / stderr with a
-`[<repo>]` prefix once that repo finishes — output is buffered per
+`--format table` streams each repo's captured stdout / stderr with a
+`[<repo>]` prefix as soon as that repo finishes (in completion order
+under `--parallel`) — output is buffered per
 repo, so chatty commands won't interleave but you also won't see
 anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 `ForeachOutcome` row per repo (with `command` and `duration_s`) for
@@ -479,6 +481,11 @@ stderr whenever any repo failed — regardless of mode, so failures are
 never silent. The summary is suppressed in `json|yaml|raw` since each
 row's `returncode` carries the same information. In-flight commands
 always run to completion; only queued work is cancelled on fail-fast.
+
+Ctrl-C stops the sweep: the running command's process group (it runs
+in its own session, so the terminal's interrupt does not reach it) gets
+SIGTERM, then SIGKILL after a short grace period, and queued repos are
+cancelled rather than started.
 
 ### `path`
 

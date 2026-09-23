@@ -421,3 +421,31 @@ def test_empty_workspace_list_is_a_noop(tmp_path: Path) -> None:
     assert outcomes == []
     assert engine.calls == []
     assert notify.messages == []
+
+
+def test_parallel_interrupt_cancels_queued_repo_jobs(tmp_path: Path) -> None:
+    """Ctrl-C while waiting on results must not drain the whole queue."""
+
+    class _SlowEngine(_Engine):
+        def sync_repo(self, *args: Any, **kwargs: Any) -> SyncOutcome:
+            time.sleep(0.05)
+            return super().sync_repo(*args, **kwargs)
+
+    class _InterruptingNotify(_Notify):
+        def __call__(
+            self, message: str, *, fraction: float | None = None, new_phase: bool = False
+        ) -> None:
+            super().__call__(message, fraction=fraction, new_phase=new_phase)
+            if "complete" in message:
+                raise KeyboardInterrupt
+
+    names = [f"r{i}" for i in range(12)]
+    engine = _SlowEngine()
+    use_case, workspaces = _scheduler(
+        tmp_path, {"prod": _manifest(*names)}, engine, notify=_InterruptingNotify()
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        use_case(workspaces, parallel=2)
+
+    assert len(engine.calls) < len(names)
