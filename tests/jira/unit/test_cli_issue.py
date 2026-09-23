@@ -109,6 +109,70 @@ def test_issue_get_renders_key_first(jira_config: Path) -> None:
     assert result.stdout.strip() == "ABC-1"
 
 
+def test_issue_get_shows_detail_fields(jira_config: Path) -> None:
+    payload = {
+        "key": "ABC-1",
+        "self": "https://jira.example.com/rest/api/2/issue/10001",
+        "fields": {
+            "summary": "Fix deploy",
+            "status": {"name": "In Progress"},
+            "assignee": {"displayName": "Alexis"},
+            "updated": "2026-06-05T10:00:00.000-0400",
+            "description": "Deploy fails on step 3.",
+            "issuetype": {"name": "Bug"},
+            "priority": {"name": "High"},
+            "reporter": {"displayName": "Sam"},
+            "labels": ["deploy", "urgent"],
+            "created": "2026-06-01T09:00:00.000-0400",
+            "resolution": None,
+        },
+    }
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.get("/rest/api/2/issue/ABC-1").mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        result = CliInvoker().invoke(app, ["issue", "get", "ABC-1", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)
+    assert row["key"] == "ABC-1"
+    assert row["status"] == "In Progress"
+    assert row["description"] == "Deploy fails on step 3."
+    assert row["issuetype"] == "Bug"
+    assert row["priority"] == "High"
+    assert row["reporter"] == "Sam"
+    assert row["labels"] == ["deploy", "urgent"]
+    assert row["created"] == "2026-06-01T09:00:00.000-0400"
+    assert row["resolution"] == ""
+    requested = set(route.calls[0].request.url.params["fields"].split(","))
+    assert {"description", "issuetype", "priority", "reporter", "labels", "created"} <= requested
+    assert "resolution" in requested
+
+
+def test_issue_search_rows_stay_lean(jira_config: Path) -> None:
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.post("/rest/api/2/search").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "startAt": 0,
+                    "maxResults": 50,
+                    "total": 1,
+                    "issues": [{"key": "ABC-1", "fields": {"summary": "x"}}],
+                },
+            )
+        )
+        result = CliInvoker().invoke(
+            app, ["issue", "search", "--project", "ABC", "--format", "json"]
+        )
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert set(row) == {"key", "summary", "status", "assignee", "updated", "url"}
+    body = json.loads(route.calls[0].request.content)
+    assert body["fields"] == ["summary", "status", "assignee", "updated"]
+
+
 def test_issue_commands_missing_key_is_usage_error() -> None:
     runner = CliInvoker()
 
