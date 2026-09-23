@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from untaped.api import GitResult
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -20,8 +21,6 @@ from untaped.capabilities.github.domain import (
 from untaped.capabilities.github.domain.errors import GitCorpusError
 from untaped.capabilities.github.infrastructure.git_corpus import (
     GitCorpusCache,
-    _auth_config_env,
-    _redact,
     cache_path_for,
 )
 
@@ -232,22 +231,20 @@ def _record_fetches(
     *,
     fail: dict[int, str] | None = None,
 ) -> list[list[str]]:
-    """Record ``git fetch`` calls; ``fail`` maps a fetch index to injected stderr."""
+    """Record ``git fetch`` subprocesses; ``fail`` maps a fetch index to injected stderr."""
+    del cache
     fetches: list[list[str]] = []
-    real_run = cache._run
+    real_run = subprocess.run
 
     def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        if args and args[0] == "fetch":
-            fetches.append(args)
+        if args[1:2] == ["fetch"]:
+            fetches.append(args[1:])
             stderr = (fail or {}).get(len(fetches))
             if stderr is not None:
-                failed = subprocess.CompletedProcess(args, 128, stdout="", stderr=stderr)
-                if kwargs.get("check", True):
-                    raise GitCorpusError(f"git {' '.join(args)} failed: {stderr.strip()}")
-                return failed
+                return subprocess.CompletedProcess(args, 128, stdout=b"", stderr=stderr.encode())
         return real_run(args, **kwargs)
 
-    monkeypatch.setattr(cache, "_run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     return fetches
 
 
@@ -721,18 +718,8 @@ def test_grep_malformed_output_is_git_corpus_error(
         lambda _url, *, cache_dir: bare,
     )
 
-    def fake_run(
-        _args: list[str],
-        *,
-        cwd: Path | None = None,
-        capture_text: bool = False,
-        capture_bytes: bool = False,
-        check: bool = True,
-        timeout: float | None = None,
-        auth_header: str | None = None,
-        auth_url: str | None = None,
-    ) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.CompletedProcess(_args, 0, stdout=b"Binary file main:asset.bin matches\n")
+    def fake_run(_args: list[str], **_kwargs: Any) -> GitResult:
+        return GitResult(returncode=0, stdout=b"Binary file main:asset.bin matches\n", stderr="")
 
     monkeypatch.setattr(cache, "_run", fake_run)
 
@@ -852,18 +839,27 @@ def test_list_skips_corrupt_metadata_with_warning(
     assert "warning: could not read corpus metadata" in capsys.readouterr().err
 
 
-def test_auth_config_is_scoped_to_https_origin() -> None:
-    env, path = _auth_config_env(
-        "AUTHORIZATION: basic secret",
+def test_authenticated_fetch_scopes_auth_config_to_https_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs: list[str] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        env = kwargs["env"]
+        configs.append(Path(env["GIT_CONFIG_VALUE_0"]).read_text())
+        return subprocess.CompletedProcess(args, 0, stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    GitCorpusCache()._run(
+        ["fetch", "origin"],
+        auth_header="AUTHORIZATION: basic secret",
         auth_url="https://github.example.com/acme/api.git",
     )
-    try:
-        assert env["GIT_CONFIG_VALUE_0"] == str(path)
-        assert path.read_text() == (
-            '[http "https://github.example.com/"]\n\textraheader = AUTHORIZATION: basic secret\n'
-        )
-    finally:
-        path.unlink(missing_ok=True)
+
+    assert configs == [
+        '[http "https://github.example.com/"]\n\textraheader = AUTHORIZATION: basic secret\n'
+    ]
 
 
 def test_authenticated_run_failure_captures_and_redacts_stderr(
@@ -948,19 +944,13 @@ def test_unauthenticated_run_discards_stdout_and_pipes_stderr(
     assert captured["stderr"] is subprocess.PIPE
 
 
-def test_auth_config_rejects_non_https_remote() -> None:
+def test_authenticated_run_rejects_non_https_remote() -> None:
     with pytest.raises(GitCorpusError, match="HTTPS clone_url"):
-        _auth_config_env("AUTHORIZATION: basic secret", auth_url="git@github.com:acme/api.git")
-
-
-def test_redact_removes_auth_header() -> None:
-    assert (
-        _redact(
-            "fatal: AUTHORIZATION: basic secret rejected",
-            "AUTHORIZATION: basic secret",
+        GitCorpusCache()._run(
+            ["fetch", "origin"],
+            auth_header="AUTHORIZATION: basic secret",
+            auth_url="git@github.com:acme/api.git",
         )
-        == "fatal: <redacted> rejected"
-    )
 
 
 def test_first_sync_emits_no_git_chatter(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
@@ -1070,9 +1060,9 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
     cache = GitCorpusCache()
     seen: list[tuple[str, str | None]] = []
 
-    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def fake_run(args: list[str], **kwargs: Any) -> GitResult:
         seen.append((" ".join(args[:2]), kwargs.get("auth_header")))
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        return GitResult(returncode=0, stdout=b"", stderr="")
 
     monkeypatch.setattr(cache, "_run", fake_run)
 

@@ -16,6 +16,7 @@ from untaped.api import (
     echo,
     emit,
     finish,
+    git_auth_header,
     read_identifiers,
     report_errors,
 )
@@ -125,9 +126,6 @@ def sweep_command(
     )
     from untaped.capabilities.github.domain import RefSelector, SweepQuery  # noqa: PLC0415
     from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
-    from untaped.capabilities.github.infrastructure.git_corpus import (  # noqa: PLC0415
-        git_auth_header,
-    )
 
     with report_errors():
         ctx = app_context()
