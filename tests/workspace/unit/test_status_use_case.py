@@ -37,8 +37,8 @@ def test_reports_status_for_cloned_repos(tmp_path: Path) -> None:
         tmp_path,
         WorkspaceManifest(repos=[Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]),
     )
-    (workspace.path / "a").mkdir()
-    (workspace.path / "b").mkdir()
+    (workspace.path / "a" / ".git").mkdir(parents=True)
+    (workspace.path / "b" / ".git").mkdir(parents=True)
     git = StubGit(
         statuses={
             "a": RepoStatus(branch="main", behind=2),
@@ -52,12 +52,23 @@ def test_reports_status_for_cloned_repos(tmp_path: Path) -> None:
     assert by_repo["b"].untracked == 2
 
 
-def test_git_error_marks_not_cloned(tmp_path: Path) -> None:
+def test_git_error_keeps_cloned_and_reports_detail(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
-    (workspace.path / "a").mkdir()
+    (workspace.path / "a" / ".git").mkdir(parents=True)
     git = StubGit(status_fail={"a"})
     entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
+    assert entries[0].cloned is True
+    assert entries[0].detail == "status failed: status failed"
+
+
+def test_dir_without_git_metadata_is_not_inspected(tmp_path: Path) -> None:
+    workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
+    (workspace.path / "a").mkdir()
+    git = StubGit()
+    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False
+    assert entries[0].detail == "not a git repository"
+    assert git.events == []
 
 
 def test_filters_by_repo_name(tmp_path: Path) -> None:

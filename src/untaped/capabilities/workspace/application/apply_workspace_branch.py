@@ -11,6 +11,7 @@ from untaped.capabilities.workspace.application.ports import (
     ManifestReader,
 )
 from untaped.capabilities.workspace.application.repo_selector import select_repos
+from untaped.capabilities.workspace.application.sync_workspace import NOT_A_GIT_REPOSITORY
 from untaped.capabilities.workspace.domain import (
     BranchApplyAction,
     BranchApplyOutcome,
@@ -67,6 +68,8 @@ class ApplyWorkspaceBranch:
             return _outcome(workspace, repo, target_branch, "skip", "no target branch")
         if not self._fs.exists(local):
             return _outcome(workspace, repo, target_branch, "skip", "not cloned")
+        if not self._fs.exists(local / ".git"):
+            return _outcome(workspace, repo, target_branch, "skip", NOT_A_GIT_REPOSITORY)
         if (detail := self._try_fetch(local)) is not None:
             return _outcome(workspace, repo, target_branch, "skip", detail)
         try:

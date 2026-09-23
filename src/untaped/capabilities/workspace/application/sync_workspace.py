@@ -24,6 +24,8 @@ from untaped.capabilities.workspace.domain import (
 )
 from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
 
+NOT_A_GIT_REPOSITORY = "not a git repository"
+
 
 class _Skip(Exception):
     """Module-private control-flow signal carrying a pre-formatted
@@ -122,6 +124,10 @@ class RepoSyncEngine:
                 return _outcome(
                     workspace, repo, "clone", f"branch {target_branch}" if target_branch else ""
                 )
+            if not self._fs.exists(local / ".git"):
+                # Without its own ``.git`` git would resolve an enclosing
+                # repository and fetch/pull *that* instead.
+                return _outcome(workspace, repo, "skip", NOT_A_GIT_REPOSITORY)
 
             # Refresh the working clone's remote refs so behind/ahead numbers
             # are current. The bare cache already got ``bare_fetch``, but each
