@@ -474,3 +474,26 @@ def test_content_modifiers_reach_validation_and_corpus(
     assert FakeCorpus.instance is not None
     assert FakeCorpus.instance.validated == [("needle", ("README.md",), True)]
     assert FakeCorpus.instance.grep_flags == [(True, True, True)]
+
+
+def test_missing_explicit_repo_is_unscanned_and_strict_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "needle\n"})
+    args = ["sweep", "--repo", "acme/gone", "--repo", "acme/api", "--grep", "needle"]
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/repos/acme/gone").mock(
+            return_value=httpx.Response(404, json={"message": "Not Found"})
+        )
+        mock.get("/repos/acme/api").mock(
+            return_value=httpx.Response(200, json=_repo("acme/api", source))
+        )
+        lenient = CliInvoker().invoke(app, [*args, "--format", "json"])
+        strict = CliInvoker().invoke(app, [*args, "--strict", "--format", "json"])
+
+    assert lenient.exit_code == 0, lenient.output
+    assert [row["full_name"] for row in json.loads(lenient.stdout)] == ["acme/api"]
+    assert "warning: unscanned acme/gone" in lenient.stderr
+    assert strict.exit_code == 1, strict.output
