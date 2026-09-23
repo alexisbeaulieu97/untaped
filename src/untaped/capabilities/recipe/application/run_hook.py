@@ -11,6 +11,7 @@ from untaped.capabilities.recipe.application.ports import HookExecutorPort
 from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import confined_path
 from untaped.capabilities.recipe.domain.plan import Verdict
+from untaped.capabilities.recipe.errors import RecipeError
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,7 @@ class ValidateHookRun:
 HookRun = TransformHookRun | ValidateHookRun
 
 
-class AmbiguousHookVerbError(ValueError):
+class AmbiguousHookVerbError(RecipeError, ValueError):
     """Raised when hook exports need an explicit debug-run verb."""
 
 

@@ -9,21 +9,25 @@ from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from untaped.capabilities.recipe._worker import worker_protocol as protocol
 from untaped.capabilities.recipe._worker.helpers import HookHelpers
 from untaped.capabilities.recipe.domain.hook_project import HookKind, ensure_hook_supports
 from untaped.capabilities.recipe.domain.plan import HookDebugResult, Verdict
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver, UvHookRef
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     APPLY_DIAGNOSTIC_LIMIT,
     DEBUG_DIAGNOSTIC_LIMIT,
     DEBUG_DIAGNOSTIC_SETTLE_SECONDS,
-    HookWorkerClient,
 )
 
+if TYPE_CHECKING:
+    from untaped.capabilities.recipe.application.ports import HookWorkerPort
 
-class HookExecutionError(RuntimeError):
+
+class HookExecutionError(RecipeError):
     """Raised when a debug hook invocation fails inside hook code."""
 
 
@@ -69,7 +73,7 @@ class _HookCall:
 class HookExecutor:
     """Dispatch hook calls through the correct runtime."""
 
-    def __init__(self, resolver: HookResolver, *, workers: HookWorkerClient) -> None:
+    def __init__(self, resolver: HookResolver, *, workers: HookWorkerPort) -> None:
         self._resolver = resolver
         self._workers = workers
 
@@ -163,7 +167,7 @@ def _call_builtin_with_capture(
 
 
 def _request_external(
-    workers: HookWorkerClient,
+    workers: HookWorkerPort,
     ref: UvHookRef,
     payload: dict[str, object],
     *,

@@ -13,7 +13,7 @@ from cyclopts import Parameter
 from untaped.capabilities.recipe.application import RunBulkApply
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.files import read_recipe_file
-from untaped.capabilities.recipe.application.inputs import PromptFunc
+from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.resolution import resolve_apply_recipe
 from untaped.capabilities.recipe.application.targets import Target, resolve_target_lines
 from untaped.capabilities.recipe.cli._context import recipe_ui
