@@ -429,6 +429,68 @@ def test_launch_extra_vars_accepts_files_and_raw_mappings(
     }
 
 
+def test_launch_extra_vars_key_values_keep_non_integer_scalars_as_strings(
+    seeded_default_org: Any,
+) -> None:
+    """Only true/false/null, integers and JSON objects/arrays are decoded."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    args = [
+        "version=1.10",
+        "exp=1e3",
+        "nan=NaN",
+        "inf=Infinity",
+        "ratio=1.5",
+        "on=true",
+        "none=null",
+        "n=-7",
+        'obj={"a": 1}',
+    ]
+    body = _launch_body(seeded_default_org, *[x for a in args for x in ("--extra-vars", a)])
+    assert json.loads(body["extra_vars"]) == {
+        "version": "1.10",
+        "exp": "1e3",
+        "nan": "NaN",
+        "inf": "Infinity",
+        "ratio": "1.5",
+        "on": True,
+        "none": None,
+        "n": -7,
+        "obj": {"a": 1},
+    }
+
+
+def test_launch_extra_vars_yaml_dates_become_iso_strings(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    yml = tmp_path / "vars.yml"
+    yml.write_text("release_date: 2024-01-01\nwhen:\n  - 2024-01-02 03:04:05\n")
+    body = _launch_body(
+        seeded_default_org, "--extra-vars", f"@{yml}", "--extra-vars", "d: 2024-02-03"
+    )
+    assert json.loads(body["extra_vars"]) == {
+        "release_date": "2024-01-01",
+        "when": ["2024-01-02T03:04:05"],
+        "d": "2024-02-03",
+    }
+
+
+@pytest.mark.parametrize("entry", ["x: .nan", "x: !!binary aGk="])
+def test_launch_extra_vars_rejects_unencodable_values(seeded_default_org: Any, entry: str) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--extra-vars", entry])
+    assert result.exit_code == 2, result.output
+    assert "--extra-vars" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert seeded_default_org.actions_called == []
+
+
 def test_launch_extra_vars_rejects_non_mapping_values(seeded_default_org: Any) -> None:
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
