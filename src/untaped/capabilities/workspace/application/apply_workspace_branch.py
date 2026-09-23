@@ -39,10 +39,17 @@ class ApplyWorkspaceBranch:
         workspace: Workspace,
         *,
         repo: Sequence[str] | str | None = None,
+        create: bool = False,
     ) -> list[BranchApplyOutcome]:
+        """Checkout selected repos to their manifest target branch.
+
+        A target that exists neither locally nor as ``origin/<branch>``
+        is skipped unless ``create`` is set, so a typo in the manifest
+        (``mian``) cannot silently create a branch in every repo.
+        """
         manifest = self._manifests.read(workspace.path)
         repos = self._select_repos(manifest, repo=repo)
-        return [self._apply_repo(workspace, manifest, target) for target in repos]
+        return [self._apply_repo(workspace, manifest, target, create=create) for target in repos]
 
     def _select_repos(
         self,
@@ -61,6 +68,8 @@ class ApplyWorkspaceBranch:
         workspace: Workspace,
         manifest: WorkspaceManifest,
         repo: Repo,
+        *,
+        create: bool,
     ) -> BranchApplyOutcome:
         target_branch = manifest.target_branch_for(repo)
         local = workspace.path / repo.name
@@ -87,6 +96,14 @@ class ApplyWorkspaceBranch:
                 target_branch,
                 "up-to-date",
                 f"already on {target_branch}",
+            )
+        if not create and not self._git.has_branch(local, branch=target_branch):
+            return _outcome(
+                workspace,
+                repo,
+                target_branch,
+                "skip",
+                "branch not found locally or on origin",
             )
         try:
             self._git.checkout_branch(local, branch=target_branch)

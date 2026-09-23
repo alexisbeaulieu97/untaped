@@ -89,6 +89,7 @@ class StubGit:
         prune_blockers: dict[str, tuple[str, ...]] | None = None,
         pull_fail: Set[str] = frozenset(),
         checkout_fail: Set[str] = frozenset(),
+        missing_branches: Set[str] = frozenset(),
     ) -> None:
         self.events: list[tuple[Any, ...]] = []
         self._on_disk = set(on_disk)
@@ -101,6 +102,7 @@ class StubGit:
         self._prune_blockers = prune_blockers or {}
         self._pull_fail = pull_fail
         self._checkout_fail = checkout_fail
+        self._missing_branches = missing_branches
 
     def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path:
         return Path(f"/tmp/cache/{url.split('/')[-1]}")
@@ -151,6 +153,10 @@ class StubGit:
         self.events.append(("pull", repo_path.name, branch))
         if repo_path.name in self._pull_fail:
             raise GitError("non-fast-forward pull")
+
+    def has_branch(self, repo_path: Path, *, branch: str) -> bool:
+        self.events.append(("has_branch", repo_path.name, branch))
+        return branch not in self._missing_branches
 
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
         self.events.append(("checkout", repo_path.name, branch))

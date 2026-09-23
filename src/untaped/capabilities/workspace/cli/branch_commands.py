@@ -35,6 +35,18 @@ from untaped.capabilities.workspace.infrastructure import (
     ManifestRepository,
 )
 
+CreateOption = Annotated[
+    bool,
+    Parameter(
+        name="--create",
+        negative="",
+        help=(
+            "Create the target branch from the current clean HEAD when it exists "
+            "neither locally nor on origin (otherwise such repos are skipped)."
+        ),
+    ),
+]
+
 app = create_app(
     name="branch",
     help="Manage workspace branch metadata.",
@@ -61,6 +73,7 @@ def branch_set_command(
             help="After writing the manifest, checkout matching existing clones to the new branch.",
         ),
     ] = False,
+    create: CreateOption = False,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
@@ -83,7 +96,7 @@ def branch_set_command(
                     ManifestRepository(),
                     GitRunner(),
                     fs=LocalFilesystem(),
-                )(ws, repo=change.repo)
+                )(ws, repo=change.repo, create=create)
             print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
             finish(any(row.action == "failed" for row in outcomes))
 
@@ -118,6 +131,7 @@ def branch_unset_command(
 def branch_apply_command(
     *,
     repo: RepoSelectorOption = None,
+    create: CreateOption = False,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
     fmt: FormatOption = "table",
@@ -131,7 +145,7 @@ def branch_apply_command(
                 ManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
-            )(ws, repo=repo)
+            )(ws, repo=repo, create=create)
         print_branch_apply_outcomes(outcomes, fmt=fmt, columns=columns)
     finish(any(row.action == "failed" for row in outcomes))
 
