@@ -71,26 +71,65 @@ def test_forget_unknown_workspace_raises(tmp_path: Path) -> None:
         )("ghost")
 
 
-def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
+def test_forget_with_prune_deletes_managed_workspace_dir(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    (ws_path / "marker.txt").write_text("hi")
-    _seed_manifest(ws_path)
+    clone = ws_path / "svc-a"
+    (clone / ".git").mkdir(parents=True)
+    (clone / "src.py").write_text("x")
+    orphan = ws_path / "old"
+    (orphan / ".git").mkdir(parents=True)
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
     reg = StubRegistry([Workspace(name="prod", path=ws_path)])
+    warnings: list[str] = []
 
-    ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety())(
-        "prod", prune=True
-    )
+    ForgetWorkspace(
+        reg,
+        ManifestRepository(),
+        fs=LocalFilesystem(),
+        prune_safety=_PruneSafety(),
+        warn=warnings.append,
+    )("prod", prune=True)
 
     assert not ws_path.exists()
     assert reg.registered == []
+    assert warnings == []
+
+
+def test_forget_prune_keeps_unmanaged_files_and_warns(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    (ws_path / "notes.txt").write_text("mine")
+    (ws_path / "scratch-dir").mkdir()
+    clone = ws_path / "svc-a"
+    (clone / ".git").mkdir(parents=True)
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
+    warnings: list[str] = []
+
+    ForgetWorkspace(
+        reg,
+        ManifestRepository(),
+        fs=LocalFilesystem(),
+        prune_safety=_PruneSafety(),
+        warn=warnings.append,
+    )("prod", prune=True)
+
+    assert (ws_path / "notes.txt").read_text() == "mine"
+    assert (ws_path / "scratch-dir").is_dir()
+    assert not clone.exists()
+    assert not (ws_path / "untaped.yml").exists()
+    assert reg.registered == []
+    assert len(warnings) == 1
+    assert str(ws_path) in warnings[0]
+    assert "notes.txt" in warnings[0] and "scratch-dir" in warnings[0]
 
 
 def test_forget_prune_refuses_dirty_repo(tmp_path: Path) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     repo_dir = ws_path / "svc-a"
-    repo_dir.mkdir()
+    (repo_dir / ".git").mkdir(parents=True)
     _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
     reg = StubRegistry([Workspace(name="prod", path=ws_path)])
     status = _PruneSafety(blockers={repo_dir: ("dirty working tree",)})
@@ -154,14 +193,36 @@ def test_forget_prune_refuses_when_manifest_missing(tmp_path: Path) -> None:
     assert reg.registered  # registry untouched
 
 
-def test_forget_prune_refuses_when_declared_repo_is_not_a_clone(tmp_path: Path) -> None:
-    """If a manifest declares a directory that exists but isn't a git
-    clone, ``prune_blockers`` raises ``GitError``. Refuse with a clear message
-    rather than letting the raw subprocess error escape.
-    """
+def test_forget_prune_leaves_declared_dir_that_is_not_a_clone(tmp_path: Path) -> None:
+    """A declared directory without ``.git`` is never inspected with git
+    (that would fall through to an enclosing repo) nor deleted: it is
+    left in place and reported."""
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
     (ws_path / "svc-a").mkdir()  # exists but no .git
+    (ws_path / "svc-a" / "work.txt").write_text("keep")
+    _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
+    reg = StubRegistry([Workspace(name="prod", path=ws_path)])
+    status = _PruneSafety()
+    warnings: list[str] = []
+
+    ForgetWorkspace(
+        reg,
+        ManifestRepository(),
+        fs=LocalFilesystem(),
+        prune_safety=status,
+        warn=warnings.append,
+    )("prod", prune=True)
+
+    assert (ws_path / "svc-a" / "work.txt").read_text() == "keep"
+    assert status.calls == []
+    assert "svc-a" in warnings[0]
+
+
+def test_forget_prune_refuses_when_clone_cannot_be_inspected(tmp_path: Path) -> None:
+    ws_path = tmp_path / "prod"
+    ws_path.mkdir()
+    (ws_path / "svc-a" / ".git").mkdir(parents=True)
     _seed_manifest(ws_path, repos=[("svc-a", "https://x/svc-a.git")])
     reg = StubRegistry([Workspace(name="prod", path=ws_path)])
 
@@ -173,7 +234,7 @@ def test_forget_prune_refuses_when_declared_repo_is_not_a_clone(tmp_path: Path) 
             prune_safety=_PruneSafety(failures={ws_path / "svc-a"}),
         )("prod", prune=True)
 
-    assert ws_path.is_dir()  # untouched
+    assert (ws_path / "svc-a").is_dir()  # untouched
     assert reg.registered  # registry untouched
 
 

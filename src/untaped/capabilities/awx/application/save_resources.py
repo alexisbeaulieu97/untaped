@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Iterator
 
@@ -36,6 +38,9 @@ class SaveResources:
         filters: dict[str, str],
         organization: str | None,
     ) -> Iterator[SaveOutcome]:
+        # Sanitizing can map distinct identities onto one file (``a/b`` and
+        # ``a_b``; case-only variants on case-insensitive filesystems).
+        used: set[str] = set()
         for spec in specs:
             if spec.fidelity == "read_only":
                 yield SaveOutcome(
@@ -68,7 +73,7 @@ class SaveResources:
                         name=resource.metadata.name,
                         action="saved",
                         resource=resource,
-                        filename=resource_filename(spec.kind, resource.metadata),
+                        filename=_unique_filename(spec.kind, resource.metadata, used),
                         header_comment=(spec.fidelity_note if spec.fidelity != "full" else None),
                     )
                 )
@@ -136,6 +141,19 @@ def _safe_filename_segment(name: str) -> str:
         return "unnamed"
     cleaned = _UNSAFE_FILENAME_CHARS.sub("_", name).strip(". ")
     return cleaned or "unnamed"
+
+
+def _unique_filename(kind: str, metadata: Metadata, used: set[str]) -> str:
+    """Keep the readable name; suffix a digest of the exact identity on collision."""
+    filename = resource_filename(kind, metadata)
+    if filename.casefold() in used:
+        identity = json.dumps(
+            [kind, metadata.model_dump(mode="json", exclude_none=True)], sort_keys=True
+        )
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:10]
+        filename = f"{filename.removesuffix('.yml')}--{digest}.yml"
+    used.add(filename.casefold())
+    return filename
 
 
 def resource_filename(kind: str, metadata: Metadata) -> str:

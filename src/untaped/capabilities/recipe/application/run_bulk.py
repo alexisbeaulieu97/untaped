@@ -16,7 +16,7 @@ from untaped.capabilities.recipe.application.inputs import (
     resolve_global_values,
     resolve_target_inputs,
 )
-from untaped.capabilities.recipe.application.targets import Target
+from untaped.capabilities.recipe.application.targets import Target, dedupe_targets
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.infrastructure.file_writer import (
@@ -61,6 +61,7 @@ class RunBulkApply:
             prompt=prompt,
         )
         global_values = resolve_global_values(recipe, config)
+        targets = dedupe_targets(targets)
         if interactive:
             parallel = 1
         if parallel <= 1 or len(targets) <= 1:

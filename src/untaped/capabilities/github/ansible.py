@@ -16,7 +16,11 @@ from untaped.capabilities.github.application.inventory import (
     ResolveRepositoryInventory,
 )
 from untaped.capabilities.github.application.scopes import TeamScope, normalize_team_scopes
-from untaped.capabilities.github.domain.errors import GithubGraphqlError, GithubGraphqlErrorKind
+from untaped.capabilities.github.domain.errors import (
+    GithubGraphqlError,
+    GithubGraphqlErrorKind,
+    is_global_github_failure,
+)
 from untaped.capabilities.github.domain.models import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,
@@ -39,5 +43,6 @@ __all__ = [
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "TeamScope",
+    "is_global_github_failure",
     "normalize_team_scopes",
 ]

@@ -22,6 +22,7 @@ from untaped.capabilities.awx.cli.options import (
     ParentOption,
     SearchOption,
     StdinOption,
+    YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -41,6 +42,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
         inventory_organization: InventoryOrganizationOption = None,
         parent: ParentOption = None,
         dry_run: DryRunOption = False,
+        yes: YesOption = False,
         continue_on_error: ContinueOption = False,
         parallel: ParallelOption = 1,
         wait: Annotated[
@@ -59,7 +61,7 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
     ) -> None:
         """Sync a fixed selection; inventories expand to their current source IDs."""
         with report_errors():
-            parallel = validate_controls(yes=False, dry_run=dry_run, parallel=parallel)
+            parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
                 selected = select_resources(
                     ctx,
@@ -82,6 +84,10 @@ def _add_sync(app: App, spec: AwxResourceSpec) -> None:
                     selected,
                     action="sync",
                     dry_run=dry_run,
+                    yes=yes,
+                    # Mass or multi-target selections preview and confirm first.
+                    confirm=len(selected) > 1
+                    or bool(stdin or all_ or filter_ or search is not None),
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,

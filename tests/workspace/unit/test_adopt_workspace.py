@@ -210,3 +210,24 @@ def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
         "b: no 'origin' remote — skipping",
         "c: symlink — skipping",
     ]
+
+
+def test_adopt_skips_clones_with_unsafe_directory_names(tmp_path: Path) -> None:
+    ws_path = tmp_path / "lab"
+    ws_path.mkdir()
+    warnings: list[str] = []
+    discoverer = _StubDiscoverer(
+        [
+            DiscoveredRepo(name="ok", url="https://x/ok.git", branch="main"),
+            DiscoveredRepo(name="bad:name", url="https://x/bad.git", branch="main"),
+        ]
+    )
+
+    result = _adopt(ManifestRepository(), StubRegistry(), discoverer, warn=warnings.append)(
+        ws_path, name="lab"
+    )
+
+    assert [r.name for r in result.repos] == ["ok"]
+    assert [r.name for r in ManifestRepository().read(ws_path).repos] == ["ok"]
+    assert len(warnings) == 1
+    assert warnings[0].startswith("bad:name: ")

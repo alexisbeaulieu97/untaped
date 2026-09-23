@@ -16,9 +16,10 @@ no control flow in recipes, and no state or inventory.
 - `untaped recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
   backs up, then writes. The recipe argument is a bare name (unique across
   installed packs), a `pack/recipe` ref, an explicit path to a `recipe.yml`, or
-  a local pack path plus `--recipe <name>`. A value is a path only when it
-  starts with `./`, `../`, `/`, or `~`, or ends in `.yml`/`.yaml` — anything
-  else is a library ref, never probed on disk.
+  a local pack path plus `--recipe <name>`. A value is a path only when it is
+  `.` or `..`, starts with `./`, `../`, `/`, or `~`, or ends in
+  `.yml`/`.yaml` — anything else is a library ref, never probed on disk.
+  The same target directory given twice (in any spelling) is planned once.
 - Pass `--yes`/`-y` for non-interactive applies. Backups are on by default;
   use `--no-backup` only when the target tree is protected another way.
 - `--dry-run` plans and previews without writing or creating backups.
@@ -63,6 +64,8 @@ no control flow in recipes, and no state or inventory.
   `--interactive` prompt → recipe default → `missing required input` error.
   Combining `--var`/`--vars` with `--input-from` for one input is a usage
   error. `scope: global` inputs reject `--input-from` but accept `--var`.
+  A `default:` must coerce to the input's `type` (checked at load, so `check`
+  reports it) and cannot be combined with `required: true`.
 - `--interactive` prompts for unresolved inputs (empty answer accepts the
   default; sensitive defaults are hidden but an empty answer still accepts).
   Structured (`list`/`dict`) inputs cannot be prompted — pass `--var`/`--vars`.
@@ -106,9 +109,9 @@ no control flow in recipes, and no state or inventory.
 ## Library and packs
 
 - `add <path|git-url>` installs a pack after previewing its recipes and hooks;
-  `--rev` picks a git revision, `--name` overrides the installed key (the pack
-  identity everywhere), `--yes` skips confirmation. The pack must load and
-  contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
+  `--rev` picks a git revision (git URL sources only), `--name` overrides the
+  installed key (the pack identity everywhere), `--yes` skips confirmation.
+  The pack must load and contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
 - `list [--packs|--hooks]`, `show <ref>`, `edit <ref>`, `remove <pack>` operate
   on the unified library. `list --hooks` and `show` cover built-ins such as
@@ -120,7 +123,11 @@ no control flow in recipes, and no state or inventory.
   projects requires `uv.lock` and verifies freshness with `uv lock --check`
   (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
   row must include its `content_hash`; malformed or incomplete rows fail closed
-  before a library mutation.
+  before a library mutation. An installed pack whose `pyproject.toml` cannot be
+  parsed gets an error row in `check`, is skipped with a warning by `list`, and
+  is ignored by resolution unless named explicitly (then its error is shown).
+  Template/copy sources containing `{{ input }}` tokens are only checked up to
+  their literal directory prefix.
 - `test [pack|path|pack/recipe]` runs golden-fixture cases under
   `tests/<recipe>/<case>/`: `given/` is copied to a temp target, `expected/` is
   the full expected tree (omitted = asserts no changes), optional data-only
@@ -150,7 +157,8 @@ no control flow in recipes, and no state or inventory.
   exactly one of `file`, `files` (load-time fan-out to per-file steps), or
   `globs` (planning-time discovery; `exclude` skips matches; no implicit
   excludes, so repo sweeps usually add `exclude: [".git/**"]`; binary files
-  must be excluded). `optional: true` (transform with `file`/`files` only)
+  must be excluded; matches under symlinked directories are skipped with a
+  warning). `optional: true` (transform with `file`/`files` only)
   skips missing files with a warning. `template`/`copy` accept
   `if_absent: true` to create only when the destination does not exist.
 - Template bodies render `{{ name }}` tokens from inputs, strict by default;
@@ -167,6 +175,10 @@ no control flow in recipes, and no state or inventory.
   name is the contract; manifest rows declare only `module`. Keep
   `untaped>=6.0.0,<7` as a dev-only dependency; runtime hook dependencies go
   in `[project].dependencies`.
+- Hook refs in a pack's recipes: a bare name resolves to the pack's own hook,
+  else a built-in — never to another installed pack. Reference another pack's
+  hook as `pack/hook`. (Only recipes without a project, and `hook run` without
+  `--project`, look bare names up across installed packs.)
   Hooks must stay pure at planning time: read only the target tree and their
   own pack, never write or reach the network.
 - Validate verdicts are `helpers.pass_()`, `helpers.fail(msg)`, and
@@ -181,7 +193,10 @@ no control flow in recipes, and no state or inventory.
   emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit non-zero only
   on `fail`. The ref accepts the `./pack/hook` path form (resolves as
   `--project ./pack` + hook name; combining with explicit `--project` is a usage
-  error). `--content`/`--content-file` supply fixture content; `--inputs`/
+  error). A local hook project is used only when named with `--project PATH`
+  or a `./path` ref — never adopted implicitly from the current directory, so
+  running inside a cloned repo does not execute its hooks.
+  `--content`/`--content-file` supply fixture content; `--inputs`/
   `--args` load YAML fixture files and repeated `--input`/`--arg` KEY=VALUE
   overrides are YAML-parsed. Context echo (including fixture values) and
   accumulated warnings go to stderr — use `--quiet` in shared terminals when
@@ -191,7 +206,8 @@ no control flow in recipes, and no state or inventory.
   first-match `{where: {...}}` selectors; string values render `{{ input }}`
   tokens and honor args-level `unknown_tokens: keep`. `ensure` idempotently adds
   a value if absent (list membership by `match` keys / equality, or mapping
-  set-if-absent) and is byte-identical when nothing changes.
+  set-if-absent). Every op leaves the file byte-identical when nothing
+  changes (`set`/`merge` to the value already present are no-ops).
 
 ## Backups and safety
 

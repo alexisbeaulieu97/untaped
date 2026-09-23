@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,7 +29,9 @@ def test_launch_reads_names_from_stdin(seeded_default_org: Any) -> None:
     seeded_default_org.seed(
         "job_templates", id=11, name="beta", organization=1, organization_name="Default"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "--stdin"], input="alpha\nbeta\n")
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "--yes", "--stdin"], input="alpha\nbeta\n"
+    )
     assert result.exit_code == 0, result.output
     launches = [c for c in seeded_default_org.actions_called if c[2] == "launch"]
     launched_ids = {c[1] for c in launches}
@@ -172,7 +176,7 @@ def test_launch_forwards_full_action_payload(
     launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
     assert len(launches) == 1
     body = launches[0][3]
-    assert body["extra_vars"] == "foo=1"
+    assert json.loads(body["extra_vars"]) == {"foo": 1}
     assert body["limit"] == "web*"
     assert body["inventory"] == ids["inventory"]
     assert body["credentials"] == [ids["ssh"], ids["vault"]]
@@ -194,7 +198,13 @@ def test_launch_round_trips_falsy_but_meaningful_flag_values(
     case; a future "simplify" pass that switched to truthy filtering
     would silently drop both values."""
     seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        ask_verbosity_on_launch=True,
+        ask_diff_mode_on_launch=True,
     )
     result = CliInvoker().invoke(
         app,
@@ -356,3 +366,289 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         assert _flag_in_help(narrowable_flag, jt_help.output), (
             f"{narrowable_flag} missing from JT launch --help"
         )
+
+
+def _launch_body(fake: Any, *args: str) -> dict[str, Any]:
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
+    assert result.exit_code == 0, result.output
+    launches = [c for c in fake.actions_called if c[2] == "launch"]
+    assert len(launches) == 1
+    return launches[0][3]  # type: ignore[no-any-return]
+
+
+def test_launch_extra_vars_key_values_become_a_json_mapping(seeded_default_org: Any) -> None:
+    """Repeated KEY=VAL entries merge into one mapping; JSON values are decoded."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    body = _launch_body(
+        seeded_default_org,
+        "--extra-vars",
+        "count=2",
+        "--extra-vars",
+        "region=us-east",
+        "--extra-vars",
+        'tags=["a", "b"]',
+        "--extra-vars",
+        "version=1.10.0",
+    )
+    assert json.loads(body["extra_vars"]) == {
+        "count": 2,
+        "region": "us-east",
+        "tags": ["a", "b"],
+        "version": "1.10.0",
+    }
+
+
+def test_launch_extra_vars_accepts_files_and_raw_mappings(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    yml = tmp_path / "vars.yml"
+    yml.write_text("region: eu\nnested:\n  enabled: true\n")
+    js = tmp_path / "more.json"
+    js.write_text('{"count": 3}')
+    body = _launch_body(
+        seeded_default_org,
+        "--extra-vars",
+        f"@{yml}",
+        "--extra-vars",
+        f"@{js}",
+        "--extra-vars",
+        '{"region": "us"}',
+        "--extra-vars",
+        "flag: yes",
+    )
+    assert json.loads(body["extra_vars"]) == {
+        "region": "us",
+        "nested": {"enabled": True},
+        "count": 3,
+        "flag": True,
+    }
+
+
+def test_launch_extra_vars_key_values_keep_non_integer_scalars_as_strings(
+    seeded_default_org: Any,
+) -> None:
+    """Only true/false/null, integers and JSON objects/arrays are decoded."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    args = [
+        "version=1.10",
+        "exp=1e3",
+        "nan=NaN",
+        "inf=Infinity",
+        "ratio=1.5",
+        "on=true",
+        "none=null",
+        "n=-7",
+        'obj={"a": 1}',
+    ]
+    body = _launch_body(seeded_default_org, *[x for a in args for x in ("--extra-vars", a)])
+    assert json.loads(body["extra_vars"]) == {
+        "version": "1.10",
+        "exp": "1e3",
+        "nan": "NaN",
+        "inf": "Infinity",
+        "ratio": "1.5",
+        "on": True,
+        "none": None,
+        "n": -7,
+        "obj": {"a": 1},
+    }
+
+
+def test_launch_extra_vars_yaml_dates_become_iso_strings(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    yml = tmp_path / "vars.yml"
+    yml.write_text("release_date: 2024-01-01\nwhen:\n  - 2024-01-02 03:04:05\n")
+    body = _launch_body(
+        seeded_default_org, "--extra-vars", f"@{yml}", "--extra-vars", "d: 2024-02-03"
+    )
+    assert json.loads(body["extra_vars"]) == {
+        "release_date": "2024-01-01",
+        "when": ["2024-01-02T03:04:05"],
+        "d": "2024-02-03",
+    }
+
+
+@pytest.mark.parametrize("entry", ["x: .nan", "x: !!binary aGk="])
+def test_launch_extra_vars_rejects_unencodable_values(seeded_default_org: Any, entry: str) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
+    )
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--extra-vars", entry])
+    assert result.exit_code == 2, result.output
+    assert "--extra-vars" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_extra_vars_rejects_non_mapping_values(seeded_default_org: Any) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "[1, 2]"]
+    )
+    assert result.exit_code != 0
+    assert "--extra-vars" in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_rejects_flags_the_template_does_not_prompt_for(seeded_default_org: Any) -> None:
+    """AWX silently drops unprompted fields; refuse before any POST instead."""
+    seeded_default_org.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        ask_limit_on_launch=False,
+    )
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--limit", "web1"])
+    assert result.exit_code == 2, result.output
+    assert "--limit" in result.output
+    assert "alpha" in result.output
+    assert "ask_limit_on_launch" in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_reports_missing_required_survey_variables(seeded_default_org: Any) -> None:
+    seeded_default_org.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        survey_enabled=True,
+        variables_needed_to_start=["region", "size"],
+    )
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "region=eu"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "size" in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_ignored_fields_fail_the_row(seeded_default_org: Any) -> None:
+    """A launch whose response lists ignored_fields did not run as requested."""
+    seeded_default_org.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        ask_limit_on_launch=True,
+    )
+    seeded_default_org.next_action_ignored_fields = {"limit": "web1"}
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--limit", "web1", "--format", "json"]
+    )
+    assert result.exit_code == 1, result.output
+    rows = json.loads(result.stdout)
+    assert rows[0]["action"] == "failed"
+    assert "limit" in rows[0]["detail"]
+    assert rows[0]["id"] is not None
+
+
+def _unprompted_alpha(fake: Any) -> None:
+    fake.seed("credentials", id=30, name="ssh", organization=1, organization_name="Default")
+    fake.seed("credentials", id=31, name="vault", organization=1, organization_name="Default")
+    fake.seed("credentials", id=32, name="other", organization=1, organization_name="Default")
+    fake.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        limit="web",
+        verbosity=1,
+        summary_fields={"credentials": [{"id": 30, "name": "ssh"}, {"id": 31, "name": "vault"}]},
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--limit", "web"],
+        ["--verbosity", "1"],
+        ["--credential", "ssh"],
+        ["--credential", "ssh", "--credential", "vault"],
+        ["--extra-vars", "{}"],
+    ],
+)
+def test_launch_allows_unprompted_values_equal_to_the_template(
+    seeded_default_org: Any, args: list[str]
+) -> None:
+    """AWX treats a value equal to the template's own as a no-op, not ignored."""
+    _unprompted_alpha(seeded_default_org)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
+    assert result.exit_code == 0, result.output
+    assert len(seeded_default_org.actions_called) == 1
+
+
+@pytest.mark.parametrize(
+    ("args", "flag"),
+    [
+        (["--limit", "db"], "--limit"),
+        (["--credential", "ssh", "--credential", "other"], "--credential"),
+    ],
+)
+def test_launch_rejects_unprompted_values_that_differ(
+    seeded_default_org: Any, args: list[str], flag: str
+) -> None:
+    _unprompted_alpha(seeded_default_org)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
+    assert result.exit_code == 2, result.output
+    assert flag in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def _survey_alpha(fake: Any) -> None:
+    fake.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        survey_enabled=True,
+        survey_spec={"name": "", "description": "", "spec": [{"variable": "region"}]},
+    )
+
+
+def test_launch_survey_accepts_survey_variables(seeded_default_org: Any) -> None:
+    _survey_alpha(seeded_default_org)
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "region=eu"]
+    )
+    assert result.exit_code == 0, result.output
+    assert len(seeded_default_org.actions_called) == 1
+
+
+def test_launch_survey_rejects_variables_outside_the_survey(seeded_default_org: Any) -> None:
+    """Without ask_variables_on_launch AWX drops extra vars the survey lacks."""
+    _survey_alpha(seeded_default_org)
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "alpha",
+            "--extra-vars",
+            "region=eu",
+            "--extra-vars",
+            "debug=1",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert "debug" in result.output
+    assert seeded_default_org.actions_called == []

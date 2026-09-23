@@ -45,6 +45,14 @@ class ActionResponseError(AwxApiError):
         self.execution_kind = execution_kind
 
 
+class LaunchPromptError(AwxApiError):
+    """A launch supplies a field the template ignores, or omits a required survey var."""
+
+
+class WaitCancelled(AwxApiError):
+    """A monitor's poll wait was interrupted (Ctrl-C); the execution keeps running."""
+
+
 class BadRequest(AwxApiError):
     """4xx response indicating malformed input (typically 400)."""
 

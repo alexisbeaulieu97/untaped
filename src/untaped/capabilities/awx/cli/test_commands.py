@@ -175,6 +175,7 @@ def run_command(
         ResolveCasePayload,
     )
     from untaped.capabilities.awx.application.test.runner import RunTestSuite  # noqa: PLC0415
+    from untaped.capabilities.awx.cli._action_runner import report_interrupted  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
     files = _expand_paths(paths)
@@ -195,17 +196,21 @@ def run_command(
                 default_organization=ctx.default_organization,
             ),
             launcher=RunAction(ctx.repo),
-            watcher=WatchJob(ctx.repo),
+            watcher=WatchJob(ctx.repo, sleep=ctx.pause),
             spec=spec,
             fk_prefetcher=ctx.fk,
             jt_scope=_jt_scope(ctx, spec),
+            stop=ctx.stop,
         )
-        outcome = runner(
-            suites,
-            case_filter=case_filter,
-            parallel=parallel,
-            timeout=timeout,
-        )
+        try:
+            outcome = runner(
+                suites,
+                case_filter=case_filter,
+                parallel=parallel,
+                timeout=timeout,
+            )
+        except KeyboardInterrupt:
+            report_interrupted([(None, job) for job in runner.known_executions()])
 
         if show_logs:
             for result in outcome.results:

@@ -17,8 +17,8 @@ from typing import Protocol, TextIO
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
 
-from untaped.capabilities.recipe import hook_worker
-from untaped.capabilities.recipe import worker_protocol as protocol
+from untaped.capabilities.recipe._worker import hook_worker
+from untaped.capabilities.recipe._worker import worker_protocol as protocol
 from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
@@ -518,6 +518,9 @@ class UvHookWorker:
                     "--locked",
                     "--no-dev",
                     "python",
+                    # -P: do not prepend the script's directory to sys.path,
+                    # so no engine file can shadow a pack's top-level modules.
+                    "-P",
                     str(worker_path),
                 ],
                 cwd=self._project_root,

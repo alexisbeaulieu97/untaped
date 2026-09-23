@@ -285,3 +285,158 @@ def test_fetch_pack_source_clones_local_file_url(tmp_path: Path) -> None:
     assert checkout == tmp_path / "checkout"
     assert (checkout / "pyproject.toml").is_file()
     assert (checkout / "recipes" / "playbook" / "recipe.yml").is_file()
+
+
+def _git_pack_repo(tmp_path: Path) -> tuple[Path, str]:
+    repo = tmp_path / "repo"
+    _write_pack(repo, manifest_name="ansible", recipes={"playbook": "recipes/playbook/recipe.yml"})
+    shutil.rmtree(repo / ".git")
+    git = ["git", "-c", "user.email=test@example.invalid", "-c", "user.name=Test User"]
+    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [*git, "commit", "--no-gpg-sign", "-m", "first"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    first = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (repo / "later.txt").write_text("later\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        [*git, "commit", "--no-gpg-sign", "-m", "second"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
+    )
+    return repo, first
+
+
+def test_fetch_pack_source_checks_out_commit_rev(tmp_path: Path) -> None:
+    repo, first = _git_pack_repo(tmp_path)
+
+    checkout = fetch_pack_source(repo.as_uri(), rev=first, dest=tmp_path / "checkout")
+
+    assert (checkout / "pyproject.toml").is_file()
+    assert not (checkout / "later.txt").exists()
+
+
+def test_fetch_pack_source_rejects_option_like_rev(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: calls.append(args))
+
+    with pytest.raises(ValueError, match="rev"):
+        fetch_pack_source(
+            "https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d"
+        )
+    assert calls == []
+
+
+def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args, 128, stdout="", stderr="fatal: Authentication failed for 'https://x/'"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="Authentication failed"):
+        fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
+    assert len(calls) == 1
+
+
+def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    replacement = tmp_path / "replacement"
+    _write_pack(source, manifest_name="ansible", version="0.1.0")
+    _write_pack(replacement, manifest_name="ansible", version="0.2.0")
+    library_root = tmp_path / "library"
+    library = PackLibrary(library_root=library_root)
+    library.add(source, source=str(source), rev=None, name=None, force=False)
+    index_before = (library_root / "packs.toml").read_text()
+
+    def failing_copytree(src: Path, dst: Path, **kwargs: object) -> Path:
+        Path(dst).mkdir(parents=True)
+        (Path(dst) / "partial.txt").write_text("partial")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "copytree", failing_copytree)
+
+    with pytest.raises(OSError, match="disk full"):
+        library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
+
+    fresh = PackLibrary(library_root=library_root)
+    assert fresh.packs()[0].installed_version == "0.1.0"
+    assert (library_root / "packs.toml").read_text() == index_before
+    assert sorted(path.name for path in library_root.iterdir()) == ["packs", "packs.toml"]
+    assert [path.name for path in (library_root / "packs").iterdir()] == ["ansible"]
+
+
+def test_fetch_pack_source_runs_git_non_interactive_in_c_locale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
+    monkeypatch.setenv("LANGUAGE", "fr")
+    seen: list[dict[str, object]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.append(kwargs)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
+
+    assert len(seen) == 1
+    env = seen[0]["env"]
+    assert isinstance(env, dict)
+    assert env["LC_ALL"] == "C"
+    assert env["LANGUAGE"] == "C"
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert env["GCM_INTERACTIVE"] == "never"
+    assert seen[0]["stdin"] is subprocess.DEVNULL
+
+
+def test_pack_library_force_replace_keeps_retired_pack_when_swap_and_rollback_fail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    replacement = tmp_path / "replacement"
+    _write_pack(source, manifest_name="ansible", version="0.1.0")
+    _write_pack(replacement, manifest_name="ansible", version="0.2.0")
+    library_root = tmp_path / "library"
+    library = PackLibrary(library_root=library_root)
+    library.add(source, source=str(source), rev=None, name=None, force=False)
+    real_rename = Path.rename
+
+    def flaky_rename(self: Path, target: str | Path) -> Path:
+        if self.name.startswith(".pack-"):
+            raise OSError(f"cannot rename {self.name}")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+
+    with pytest.raises(OSError) as excinfo:
+        library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
+
+    retired = [path for path in library_root.iterdir() if path.name.startswith(".pack-retired-")]
+    assert len(retired) == 1
+    assert str(retired[0]) in str(excinfo.value)
+    manifest = (retired[0] / "pyproject.toml").read_text()
+    assert 'version = "0.1.0"' in manifest

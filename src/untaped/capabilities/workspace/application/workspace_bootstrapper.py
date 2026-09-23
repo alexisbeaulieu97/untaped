@@ -20,6 +20,7 @@ invocation. See ``AGENTS.md``'s "`init` vs. `adopt` vs. `import` vs.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -43,9 +44,19 @@ class WorkspaceBootstrapper:
         if not ws_name:
             raise WorkspaceError(f"unable to derive workspace name from {path}")
         if self._manifests.exists(canonical):
-            raise WorkspaceError(f"workspace already initialised at {canonical}")
+            raise WorkspaceError(
+                f"workspace already initialised at {canonical}; "
+                f"run `untaped workspace adopt {canonical}` to register it"
+            )
         if self._registry.find_by_path(canonical) is not None:
             raise WorkspaceError(f"path already registered: {canonical}")
+        # Checked before anything is written so a taken name cannot leave
+        # an orphan manifest behind.
+        for existing in self._registry.entries():
+            if existing.name == ws_name:
+                raise WorkspaceError(
+                    f"workspace name already registered: {ws_name!r} → {existing.path}"
+                )
         return canonical, ws_name
 
     def verify(self, path: Path, *, name: str | None = None) -> tuple[Path, str]:
@@ -105,8 +116,17 @@ class WorkspaceBootstrapper:
         :meth:`verify` call. See ``verify`` for the consequence of
         skipping it.
         """
+        existed = self._manifests.exists(canonical)
         self._manifests.write(canonical, manifest)
-        return self._registry.register(name=ws_name, path=canonical)
+        try:
+            return self._registry.register(name=ws_name, path=canonical)
+        except Exception:
+            # Don't leave a manifest for a workspace that never got
+            # registered (it would block a retry as "already initialised").
+            if not existed:
+                with contextlib.suppress(WorkspaceError):
+                    self._manifests.delete(canonical)
+            raise
 
     def __call__(
         self,

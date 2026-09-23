@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -442,38 +444,51 @@ def test_fresh_index_stamps_current_schema_version(tmp_path) -> None:
         db.close()
 
 
-def _assert_outdated_schema_error(db_path: Path) -> None:
+def _assert_outdated_schema_is_rebuilt(db_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     index = SqliteDependencyIndex(db_path)
-    with pytest.raises(UntapedError) as excinfo:
-        index.status("source:prod")
-    message = str(excinfo.value)
-    assert str(db_path) in message
-    assert "untaped ansible source refresh" in message
+
+    assert index.status("source:prod") is None
+    db = sqlite3.connect(db_path)
+    try:
+        assert db.execute("pragma user_version").fetchone()[0] == SCHEMA_VERSION
+        stale = db.execute(
+            "select count(*) from sqlite_master where name = 'stale_table'"
+        ).fetchone()[0]
+        assert stale == 0
+    finally:
+        db.close()
+    err = capsys.readouterr().err
+    assert "rebuilt" in err
+    assert "untaped ansible source refresh" in err
 
 
-def test_outdated_schema_version_raises_actionable_error(tmp_path) -> None:
+def test_outdated_schema_version_is_rebuilt_as_empty_cache(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
     db_path = tmp_path / "index.sqlite3"
     db = sqlite3.connect(db_path)
     try:
         db.execute("pragma user_version = 1")
-        db.execute("create table source_runs (source_key text primary key)")
+        db.execute("create table stale_table (source_key text primary key)")
         db.commit()
     finally:
         db.close()
 
-    _assert_outdated_schema_error(db_path)
+    _assert_outdated_schema_is_rebuilt(db_path, capsys)
 
 
-def test_versionless_db_with_tables_raises_actionable_error(tmp_path) -> None:
+def test_versionless_db_with_tables_is_rebuilt_as_empty_cache(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
     db_path = tmp_path / "index.sqlite3"
     db = sqlite3.connect(db_path)
     try:
-        db.execute("create table source_runs (source_key text primary key)")
+        db.execute("create table stale_table (source_key text primary key)")
         db.commit()
     finally:
         db.close()
 
-    _assert_outdated_schema_error(db_path)
+    _assert_outdated_schema_is_rebuilt(db_path, capsys)
 
 
 def test_recommitting_unchanged_scan_reuses_snapshot_and_edges(tmp_path) -> None:
@@ -567,14 +582,14 @@ def test_schema_creates_graph_read_indexes(tmp_path) -> None:
     assert "last_error" not in source_ref_scan_columns
     assert indexes["idx_snapshot_edges_dependency_ref"] == "snapshot_edges"
     assert indexed_columns["idx_snapshot_edges_dependency_ref"] == (
-        "dependency_repo",
+        "dependency_repo_key",
         "dependency_version",
         "snapshot_id",
     )
     assert indexes["idx_source_ref_scans_source_ref"] == "source_ref_scans"
     assert indexed_columns["idx_source_ref_scans_source_ref"] == (
         "source_key",
-        "source_repo",
+        "source_repo_key",
         "source_ref",
     )
     assert indexes["idx_source_ref_scans_source_snapshot"] == "source_ref_scans"
@@ -702,3 +717,119 @@ def test_cached_ref_metadata_batch_includes_missing_repos(tmp_path) -> None:
     }
     assert batch["acme/missing"] == ()
     assert index.cached_ref_metadata_batch(["acme/site"], source_key=None) == {"acme/site": ()}
+
+
+def test_index_creates_missing_parent_directories(tmp_path) -> None:
+    db_path = tmp_path / "missing" / "nested" / "index.sqlite3"
+
+    assert SqliteDependencyIndex(db_path).status("source:prod") is None
+    assert db_path.is_file()
+
+
+def test_unopenable_index_raises_untaped_error(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    db_path.mkdir()
+
+    with pytest.raises(UntapedError, match=str(db_path)):
+        SqliteDependencyIndex(db_path).status("source:prod")
+
+
+def test_newer_schema_version_is_not_reported_as_outdated(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    db = sqlite3.connect(db_path)
+    try:
+        db.execute(f"pragma user_version = {SCHEMA_VERSION + 1}")
+        db.execute("create table source_runs (source_key text primary key)")
+        db.commit()
+    finally:
+        db.close()
+
+    with pytest.raises(UntapedError) as excinfo:
+        SqliteDependencyIndex(db_path).status("source:prod")
+
+    message = str(excinfo.value)
+    assert "outdated" not in message
+    assert "newer" in message
+    assert str(db_path) in message
+
+
+def test_repo_lookups_are_case_insensitive_and_keep_display_casing(tmp_path) -> None:
+    index = SqliteDependencyIndex(tmp_path / "index.sqlite3")
+    scan = _scan(
+        source_repo="Acme/Site",
+        dependencies=(_edge(source_repo="Acme/Site", dependency_repo="Acme/Base"),),
+    )
+    _commit(
+        index,
+        scans=(scan,),
+        repo_metadata=(
+            SourceRepoMetadata(
+                source_key="source:prod", source_repo="Acme/Base", default_branch="v1"
+            ),
+        ),
+    )
+
+    deps = index.dependencies("acme/site", "main", source_key="source:prod")
+    assert [(edge.source_repo, edge.dependency_repo) for edge in deps] == [
+        ("Acme/Site", "Acme/Base")
+    ]
+    dependents = index.dependents_batch([("ACME/BASE", "v1"), ("acme/base", None)], source_key=None)
+    assert [edge.source_repo for edge in dependents[("ACME/BASE", "v1")]] == ["Acme/Site"]
+    assert [edge.source_repo for edge in dependents[("acme/base", None)]] == ["Acme/Site"]
+    assert index.cached_refs("ACME/site", source_key="source:prod") == {"main"}
+    assert index.cached_ref_metadata_batch(["acme/SITE"], source_key="source:prod") == {
+        "acme/SITE": (CachedRef(name="main", kind="heads"),)
+    }
+
+
+def _captured_plans(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch, run: Callable[[], object]
+) -> list[str]:
+    statements: list[str] = []
+    real_connect = sqlite3.connect
+
+    def tracing_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        db = real_connect(*args, **kwargs)
+        db.set_trace_callback(statements.append)
+        return db
+
+    monkeypatch.setattr(sqlite3, "connect", tracing_connect)
+    run()
+    monkeypatch.setattr(sqlite3, "connect", real_connect)
+    selects = [sql for sql in statements if "with requested" in sql]
+    assert selects
+    db = sqlite3.connect(db_path)
+    try:
+        return [
+            str(row[3])
+            for sql in selects
+            for row in db.execute(f"explain query plan {sql}").fetchall()
+        ]
+    finally:
+        db.close()
+
+
+def test_repo_joins_search_the_repo_key_indexes(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    index = SqliteDependencyIndex(db_path)
+    _commit(index, scans=(_scan(),))
+
+    dependents = _captured_plans(
+        db_path,
+        monkeypatch,
+        lambda: index.dependents_batch([("acme/base", "v1")], source_key="source:prod"),
+    )
+    dependencies = _captured_plans(
+        db_path,
+        monkeypatch,
+        lambda: index.dependencies_batch([("acme/site", "main")], source_key="source:prod"),
+    )
+
+    assert any(
+        detail.startswith("SEARCH edges USING") and "dependency_repo_key=?" in detail
+        for detail in dependents
+    ), dependents
+    assert any(
+        detail.startswith("SEARCH scans USING") and "source_repo_key=?" in detail
+        for detail in dependencies
+    ), dependencies

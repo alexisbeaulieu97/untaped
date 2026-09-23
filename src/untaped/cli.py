@@ -31,7 +31,7 @@ ColumnsOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--columns", "-c"],
-        help="Columns to include (repeatable).",
+        help="Columns to include (repeatable or comma-separated).",
         consume_multiple=False,
     ),
 ]
@@ -101,8 +101,47 @@ def render_rows(
     if columns == ["?"]:
         _print_available_columns(list(rows[0]) if rows else [])
         return ""
+    columns = _checked_columns(columns, rows, fmt=fmt)
     ui = ui_context() if fmt == "table" else UiContext()
     return ui.collection(rows, fmt=fmt, columns=columns, empty=empty, kind=kind)
+
+
+def _checked_columns(
+    columns: list[str] | None,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    fmt: OutputFormat,
+    schema: Sequence[str] | None = None,
+) -> list[str] | None:
+    """Split comma-separated ``--columns`` values and check the names.
+
+    ``-c a,b`` and ``-c a -c b`` are equivalent. With a known ``schema``
+    (pydantic records) a name whose first dotted segment is not a field is a
+    usage error (exit 2) listing the valid columns. Plain mapping rows can be
+    sparse (an API may omit a field on some records), so a name absent from
+    every row only warns. ``pipe`` ignores columns and is never checked.
+    """
+    if columns is None:
+        return None
+    names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
+    if fmt == "pipe" or (schema is None and not rows):
+        return names or None
+    known = (
+        list(schema)
+        if schema is not None
+        else list(dict.fromkeys(key for row in rows for key in row))
+    )
+    unknown = [name for name in names if name not in known and name.split(".", 1)[0] not in known]
+    if unknown:
+        plural = "s" if len(unknown) > 1 else ""
+        message = (
+            f"unknown column{plural} {', '.join(repr(name) for name in unknown)}; "
+            f"valid columns: {', '.join(known)}"
+        )
+        if schema is not None:
+            raise_usage(message)
+        echo(f"warning: {message}", err=True)
+    return names or None
 
 
 def _print_available_columns(keys: Iterable[str]) -> None:
@@ -138,9 +177,15 @@ def emit(
     if columns == ["?"]:
         _print_available_columns(_candidate_columns(records))
         return
+    schema = _model_schema(records)
+    if schema is not None:
+        columns = _checked_columns(columns, [], fmt=fmt, schema=schema)
     if isinstance(records, BaseModel | Mapping):
+        row = _as_row(records)
+        if schema is None:
+            columns = _checked_columns(columns, [row], fmt=fmt)
         ui = ui_context() if fmt == "table" else UiContext()
-        rendered = ui.detail(_as_row(records), fmt=fmt, columns=columns, kind=kind)
+        rendered = ui.detail(row, fmt=fmt, columns=columns, kind=kind)
     else:
         # The collection path is exactly render_rows; reuse it (it returns the
         # string and emits any empty-state hint to stderr itself).
@@ -155,10 +200,29 @@ def emit(
         echo(rendered)
 
 
+def _model_schema(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+) -> list[str] | None:
+    """Field names when every record is a pydantic model (a known schema)."""
+    items = [records] if isinstance(records, BaseModel | Mapping) else list(records)
+    if not items or not all(isinstance(item, BaseModel) for item in items):
+        return None
+    names: dict[str, None] = {}
+    for item in items:
+        model = type(item)
+        assert issubclass(model, BaseModel)
+        names.update(dict.fromkeys([*model.model_fields, *model.model_computed_fields]))
+    return list(names)
+
+
 def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
-    """Normalize a model or mapping into a plain row dict."""
+    """Normalize a model or mapping into a plain row dict.
+
+    Models dump in JSON mode so paths, enums, dates, etc. become plain
+    JSON-compatible values every output format can encode.
+    """
     if isinstance(record, BaseModel):
-        return record.model_dump()
+        return record.model_dump(mode="json")
     return dict(record)
 
 
@@ -203,7 +267,8 @@ def run_cyclopts_app(
 
     Also converts a broken downstream pipe — the consumer closed it early, e.g.
     ``untaped <capability> list | head`` or a consumer that exits before reading all of
-    its input — into a clean ``SystemExit(1)``. Without this the producer's
+    its input — into a quiet ``SystemExit(0)`` (the standard CLI behaviour:
+    the consumer chose to stop reading, which is not a failure). Without this the producer's
     buffered stdout flush fails at interpreter shutdown and Python prints a
     noisy ``Exception ignored while flushing sys.stdout: BrokenPipeError``.
     """
@@ -241,14 +306,14 @@ def _flush_stdout() -> None:
 
 
 def _exit_broken_pipe() -> NoReturn:
-    """Silence the interpreter's final stdout flush, then exit 1.
+    """Silence the interpreter's final stdout flush, then exit 0 quietly.
 
     Redirecting the stdout fd to ``/dev/null`` stops Python re-raising the
     broken pipe when it flushes the standard streams on the way out. The guard
     covers streams with no real fd (a captured ``StringIO`` under tests)."""
     with suppress(OSError, ValueError):
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-    raise SystemExit(1) from None
+    raise SystemExit(0) from None
 
 
 def existing_directory(type_: object, value: Path | None) -> None:
@@ -330,7 +395,7 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
         try:
             results.append(fn(id_))
         except UntapedError as exc:
-            echo(f"error: {id_}: {_format_error(exc)}", err=True)
+            echo(f"error: {id_}: {format_error(exc)}", err=True)
             any_failed = True
     return results, any_failed
 
@@ -374,11 +439,16 @@ def report_errors() -> Iterator[None]:
     try:
         yield
     except UntapedError as exc:
-        echo(f"error: {_format_error(exc)}", err=True)
+        echo(f"error: {format_error(exc)}", err=True)
         raise SystemExit(1) from exc
 
 
-def _format_error(exc: UntapedError) -> str:
+def format_error(exc: UntapedError) -> str:
+    """Render an :class:`UntapedError` the way ``report_errors`` prints it.
+
+    Adds the URL to bodiless HTTP errors and surfaces the API's own message
+    from a JSON error body (the raw body under ``--verbose``).
+    """
     message = str(exc)
     if isinstance(exc, HttpError) and not exc.body and exc.url and exc.url not in message:
         message = f"{message} for {exc.url}"

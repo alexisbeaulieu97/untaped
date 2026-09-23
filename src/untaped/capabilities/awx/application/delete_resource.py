@@ -7,6 +7,9 @@ use case is the destructive half so the CLI can preview targets
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.domain import ResourceSpec
@@ -30,13 +33,20 @@ class DeleteResource:
 
     def validate(self, spec: ResourceSpec, record_id: int) -> None:
         """Prove existence and the lifecycle deletion policy without writing."""
-        record = self._client.get(spec, record_id)
-        if spec.kind == "InventorySource" and record.get("source") == "constructed":
-            raise BadRequest("generated constructed sources cannot be deleted independently")
+        _check_policy(spec, self._client.get(spec, record_id).model_dump())
 
     def validate_selection(
         self, spec: ResourceSpec, selected: tuple[SelectedResource, ...]
     ) -> None:
-        """Preflight every target before any independently scheduled delete."""
+        """Preflight every target before any independently scheduled delete.
+
+        Selection already proved existence and fetched each record, so this
+        checks the kind-specific policy against those records without a GET.
+        """
         for target in selected:
-            self.validate(spec, target.id)
+            _check_policy(spec, target.record)
+
+
+def _check_policy(spec: ResourceSpec, record: Mapping[str, Any]) -> None:
+    if spec.kind == "InventorySource" and record.get("source") == "constructed":
+        raise BadRequest("generated constructed sources cannot be deleted independently")

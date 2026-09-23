@@ -81,8 +81,12 @@ class BranchChange(BaseModel):
     branch: str | None
 
 
-BranchApplyAction = Literal["checkout", "up-to-date", "skip", "unmatched"]
-"""What ``workspace branch apply`` did or refused to do for one repo."""
+BranchApplyAction = Literal["checkout", "up-to-date", "skip", "failed", "unmatched"]
+"""What ``workspace branch apply`` did or refused to do for one repo.
+
+``skip`` is an intentional refusal; ``failed`` means a fetch, status, or
+checkout attempt errored.
+"""
 
 
 class BranchApplyOutcome(BaseModel):

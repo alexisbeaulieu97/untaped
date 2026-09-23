@@ -120,3 +120,48 @@ def test_bare_git_cache_peels_annotated_tags_for_file_reads(tmp_path: Path) -> N
     assert "version: v1" in (
         cache.read_file(bare, peeled_sha, "roles/requirements.yml", auth_header=None) or ""
     )
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+@pytest.mark.parametrize("blob_filter", [False, True])
+def test_read_files_returns_only_existing_blobs_under_any_locale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    blob_filter: bool,
+) -> None:
+    monkeypatch.setenv("LANG", "fr_FR.UTF-8")
+    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
+    monkeypatch.setenv("LANGUAGE", "fr")
+    upstream = tmp_path / "upstream"
+    _git(tmp_path, "init", str(upstream))
+    _git(upstream, "config", "user.email", "tests@example.com")
+    _git(upstream, "config", "user.name", "Tests")
+    _git(upstream, "config", "commit.gpgsign", "false")
+    _git(upstream, "config", "uploadpack.allowFilter", "true")
+    (upstream / "meta" / "main.yml").mkdir(parents=True)
+    (upstream / "meta" / "main.yml" / "nested").write_text("not a file\n")
+    _commit(upstream, "requirements.yml", "- src: acme/one\n", "one")
+    sha = _commit(upstream, "roles/requirements.yml", "- src: acme/two\n", "two")
+
+    cache = GitRepositoryCache()
+    bare = cache.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache", auth_header=None)
+    cache.fetch_refs(
+        bare,
+        refspecs=["+refs/heads/*:refs/heads/*"],
+        depth=1,
+        blob_filter=blob_filter,
+        auth_header=None,
+    )
+
+    files = cache.read_files(
+        bare,
+        sha,
+        ["roles/requirements.yml", "requirements.yml", "meta/main.yml", "missing.yml"],
+        auth_header=None,
+    )
+
+    assert files == {
+        "roles/requirements.yml": "- src: acme/two\n",
+        "requirements.yml": "- src: acme/one\n",
+    }
+    assert cache.read_file(bare, sha, "missing.yml", auth_header=None) is None

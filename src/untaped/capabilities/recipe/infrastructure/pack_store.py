@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import os
 import shutil
 import subprocess
 import tomllib
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import tomlkit
 
+from untaped.api import atomic_write
 from untaped.capabilities.recipe.domain.hook_exports import hook_exports
 from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
@@ -103,6 +106,7 @@ class PackLibrary:
     def __init__(self, *, library_root: Path) -> None:
         self._library_root = library_root
         self._packs_cache: list[InstalledPack] | None = None
+        self._load_errors: dict[str, str] = {}
 
     @property
     def packs_dir(self) -> Path:
@@ -140,18 +144,52 @@ class PackLibrary:
             raise ValueError(local_edits_message(installed_name))
 
         self.packs_dir.mkdir(parents=True, exist_ok=True)
-        if force and dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(source_dir, dest, ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE))
+        content_hash = self._install_tree(source_dir, dest)
         index[installed_name] = _IndexEntry(
             source=source,
             rev=rev or "",
             version=manifest.version,
-            content_hash=pack_content_hash(dest),
+            content_hash=content_hash,
         )
         self._write_index(index)
         self._packs_cache = None
+        self._load_errors = {}
         return manifest
+
+    def _install_tree(self, source_dir: Path, dest: Path) -> str:
+        """Copy ``source_dir`` into place at ``dest`` without a window of loss.
+
+        The copy lands in a staging directory beside ``packs/`` first; only a
+        complete copy is renamed over the destination, and a replaced pack is
+        moved aside (not deleted) until the swap succeeds.
+        """
+        token = uuid.uuid4().hex
+        staging = self._library_root / f".pack-staging-{token}"
+        retired = self._library_root / f".pack-retired-{token}"
+        try:
+            shutil.copytree(source_dir, staging, ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE))
+            content_hash = pack_content_hash(staging)
+            if dest.exists():
+                dest.rename(retired)
+                try:
+                    staging.rename(dest)
+                except OSError as swap_error:
+                    try:
+                        retired.rename(dest)
+                    except OSError as rollback_error:
+                        # The retired copy is now the only copy: never delete it.
+                        raise OSError(
+                            f"could not install pack at {dest} ({swap_error}) nor restore "
+                            f"the previous pack ({rollback_error}); the previous pack is "
+                            f"preserved at {retired}"
+                        ) from swap_error
+                    raise
+                shutil.rmtree(retired, ignore_errors=True)
+            else:
+                staging.rename(dest)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        return content_hash
 
     def local_edits(self, name: str) -> bool:
         """Return true when the installed copy diverged from its install hash.
@@ -179,12 +217,15 @@ class PackLibrary:
         index.pop(installed_name, None)
         self._write_index(index)
         self._packs_cache = None
+        self._load_errors = {}
 
     def packs(self) -> list[InstalledPack]:
         """Return installed packs keyed by their library identity.
 
         The parsed list is cached for the library's lifetime (one CLI command);
-        ``add``/``remove`` invalidate it.
+        ``add``/``remove`` invalidate it. Packs whose manifest cannot be parsed
+        are left out so one broken pack never hides the rest; their errors are
+        available from :meth:`load_errors`.
         """
         if self._packs_cache is not None:
             return self._packs_cache
@@ -192,10 +233,15 @@ class PackLibrary:
             return []
         index = self._read_index()
         installed: list[InstalledPack] = []
+        load_errors: dict[str, str] = {}
         for root in sorted(self.packs_dir.iterdir(), key=lambda path: path.name):
             if not root.is_dir() or not (root / "pyproject.toml").is_file():
                 continue
-            manifest = PackManifest.from_pyproject(root)
+            try:
+                manifest = PackManifest.from_pyproject(root)
+            except (ValueError, OSError) as exc:
+                load_errors[root.name] = str(exc)
+                continue
             index_entry = index.get(root.name, _IndexEntry(version=manifest.version))
             installed.append(
                 InstalledPack(
@@ -208,7 +254,18 @@ class PackLibrary:
                 )
             )
         self._packs_cache = installed
+        self._load_errors = load_errors
         return installed
+
+    def load_errors(self) -> dict[str, str]:
+        """Return ``{pack name: error}`` for installed packs that failed to load."""
+        self.packs()
+        return dict(self._load_errors)
+
+    def _raise_if_broken(self, installed_name: str) -> None:
+        error = self.load_errors().get(installed_name)
+        if error is not None:
+            raise ValueError(f"pack '{installed_name}' cannot be loaded: {error}")
 
     def reconcile(self) -> list[str]:
         """Return index/directory consistency problems for the pack library."""
@@ -228,10 +285,16 @@ class PackLibrary:
         """Return the installed pack whose library identity is ``name``, if any."""
         if "/" in name:
             return None
-        installed_name = safe_library_name(name, field="pack")
+        try:
+            installed_name = safe_library_name(name, field="pack")
+        except ValueError:
+            # A name no pack could be installed under simply isn't a pack;
+            # callers fall through to recipe/hook resolution and its error.
+            return None
         for pack in self.packs():
             if pack.name == installed_name:
                 return pack
+        self._raise_if_broken(installed_name)
         return None
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
@@ -266,6 +329,7 @@ class PackLibrary:
         if pack is None:
             return installed
         installed_name = safe_library_name(pack, field="pack")
+        self._raise_if_broken(installed_name)
         return [candidate for candidate in installed if candidate.name == installed_name]
 
     def _read_index(self) -> dict[str, _IndexEntry]:
@@ -297,7 +361,7 @@ class PackLibrary:
             table.add("version", entry.version)
             table.add("content_hash", entry.content_hash)
             doc.add(name, table)
-        self.index_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        atomic_write(self.index_path, tomlkit.dumps(doc))
 
 
 def validate_pack(source_dir: Path, manifest: PackManifest) -> None:
@@ -341,28 +405,59 @@ def is_git_url(value: str) -> bool:
 
 
 def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
-    """Clone a pack source URL into ``dest`` and return the checkout path."""
+    """Clone a pack source URL into ``dest`` and return the checkout path.
+
+    A ``rev`` is tried as a branch/tag with a shallow clone first; only when
+    git reports that no such branch exists (e.g. a commit sha) does it fall
+    back to a full clone plus ``checkout``. Other failures (auth, network)
+    surface immediately.
+    """
+    if rev is not None and (not rev.strip() or rev.startswith("-")):
+        raise ValueError(f"invalid --rev: {rev!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
     clone_args = ["git", "clone", "--depth", "1"]
     if rev is not None:
         clone_args.extend(["--branch", rev])
-    clone_args.extend([url, str(dest)])
+    clone_args.extend(["--", url, str(dest)])
     try:
         _run_git(clone_args)
-    except ValueError:
-        if rev is None:
+    except ValueError as exc:
+        if rev is None or not _is_missing_branch_error(str(exc)):
             raise
         if dest.exists():
             shutil.rmtree(dest)
-        _run_git(["git", "clone", url, str(dest)])
-        _run_git(["git", "checkout", rev], cwd=dest)
+        _run_git(["git", "clone", "--", url, str(dest)])
+        _run_git(["git", "checkout", "--detach", rev, "--"], cwd=dest)
     return dest
+
+
+def _is_missing_branch_error(message: str) -> bool:
+    """Whether ``git clone --branch`` failed only because the ref is not a branch/tag."""
+    lowered = message.lower()
+    return "not found in upstream" in lowered or "could not find remote branch" in lowered
+
+
+def _git_env() -> dict[str, str]:
+    """Environment for non-interactive git with untranslated (C locale) messages.
+
+    :func:`_is_missing_branch_error` matches English git output, and a pack
+    fetch must never block on a credential prompt.
+    """
+    return {
+        **os.environ,
+        "LC_ALL": "C",
+        "LANGUAGE": "C",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "never",
+    }
 
 
 def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
     result = subprocess.run(
         args,
         cwd=cwd,
+        env=_git_env(),
+        stdin=subprocess.DEVNULL,
         text=True,
         capture_output=True,
         check=False,

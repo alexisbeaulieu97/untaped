@@ -1,4 +1,13 @@
-"""GraphQL-backed remote ref freshness probe satisfying the RefProbe port."""
+"""GraphQL-backed remote ref freshness probe satisfying the RefProbe port.
+
+All-ref scans use ``batch_repo_refs`` in 50-repo GraphQL chunks; default-branch
+scans with no explicit ref filters use ``batch_default_branch_refs`` in
+100-repo chunks. Annotated tags are peeled up to two levels, matching the SHA
+the Git probe records for branches, lightweight tags, annotated tags, and
+tags-of-tags; 3+ level tag chains can churn if a refresh switches backend.
+Known limitation: an all-repo per-alias ``FORBIDDEN`` inside a ``200 OK``
+response is still reported as per-repo missing/inaccessible.
+"""
 
 from __future__ import annotations
 

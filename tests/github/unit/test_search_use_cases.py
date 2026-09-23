@@ -575,7 +575,7 @@ def test_search_repos_422_error_preserves_http_error_metadata() -> None:
     assert "Validation Failed" in exc_info.value.body
 
 
-def test_search_code_truncates_oversized_team_with_warning() -> None:
+def test_search_code_batches_oversized_team_without_truncating() -> None:
     big = [{"full_name": f"acme/repo{i}"} for i in range(MAX_TEAM_REPO_QUALIFIERS + 5)]
     teams = _StubTeams(big)
     search = _StubSearch([])
@@ -589,13 +589,70 @@ def test_search_code_truncates_oversized_team_with_warning() -> None:
         )
     )
 
-    assert any("truncating" in w for w in warnings)
-    q = search.calls[0][1]
-    assert q.count("repo:") == MAX_TEAM_REPO_QUALIFIERS
-    assert q.count(" OR ") == MAX_TEAM_REPO_QUALIFIERS - 1
+    assert warnings == []
+    queries = [call[1] for call in search.calls]
+    assert len(queries) == 2
+    assert sum(q.count("repo:") for q in queries) == len(big)
+    assert all(q.count(" OR ") <= 5 for q in queries)
+    assert all(q.startswith("TODO ") for q in queries)
 
 
-def test_search_issues_truncates_oversized_team_with_warning() -> None:
+def test_search_code_two_teams_stay_under_boolean_operator_limit() -> None:
+    teams = _StubTeams(
+        repos_by_team={
+            ("acme", "a"): [{"full_name": f"acme/a{i}"} for i in range(6)],
+            ("acme", "b"): [{"full_name": f"acme/b{i}"} for i in range(6)],
+        }
+    )
+    search = _StubSearch([])
+    use_case = SearchCode(_stub(search), _teams(teams))
+
+    list(
+        use_case(
+            CodeSearchFilters(raw_query="foo OR bar"),
+            team_scopes=(TeamScope("acme", "a"), TeamScope("acme", "b")),
+        )
+    )
+
+    queries = [call[1] for call in search.calls]
+    assert sum(q.count("repo:") for q in queries) == 12
+    assert all(q.count(" OR ") <= 5 for q in queries)
+
+
+def test_search_code_merges_batches_deduped_by_html_url_and_limited() -> None:
+    def code_row(repo: str, path: str) -> dict[str, Any]:
+        return {
+            "name": path,
+            "path": path,
+            "sha": "s",
+            "html_url": f"https://github.com/{repo}/blob/main/{path}",
+            "repository": {"full_name": repo},
+        }
+
+    search = _QueuedSearch(
+        [
+            [code_row("acme/r0", "a.py"), code_row("acme/r0", "b.py")],
+            [code_row("acme/r0", "a.py"), code_row("acme/r7", "c.py"), code_row("acme/r8", "d")],
+        ]
+    )
+    use_case = SearchCode(
+        _stub(search),
+        _teams(_StubTeams()),
+    )
+
+    rows = list(
+        use_case(
+            CodeSearchFilters(
+                raw_query="TODO", repos=tuple(f"acme/r{i}" for i in range(9)), limit=3
+            )
+        )
+    )
+
+    assert [row.path for row in rows] == ["a.py", "b.py", "c.py"]
+    assert len(search.calls) == 2
+
+
+def test_search_issues_batches_oversized_team_without_truncating() -> None:
     big = [{"full_name": f"acme/repo{i}"} for i in range(MAX_TEAM_REPO_QUALIFIERS + 5)]
     teams = _StubTeams(big)
     search = _StubSearch([])
@@ -609,10 +666,52 @@ def test_search_issues_truncates_oversized_team_with_warning() -> None:
         )
     )
 
-    assert any("truncating" in w for w in warnings)
-    q = search.calls[0][1]
-    assert q.count("repo:") == MAX_TEAM_REPO_QUALIFIERS
-    assert q.count(" OR ") == MAX_TEAM_REPO_QUALIFIERS - 1
+    assert warnings == []
+    queries = [call[1] for call in search.calls]
+    assert len(queries) == 2
+    assert sum(q.count("repo:") for q in queries) == len(big)
+    assert all(q.count(" OR ") <= 5 for q in queries)
+    assert all("is:open" in q for q in queries)
+
+
+def test_search_issues_sorted_batches_merge_globally_and_dedupe_by_id() -> None:
+    def issue_row(id_: int, updated_at: str) -> dict[str, Any]:
+        return {
+            "id": id_,
+            "number": id_,
+            "title": "t",
+            "state": "open",
+            "html_url": f"https://github.com/acme/r/issues/{id_}",
+            "repository_url": "https://api.github.com/repos/acme/r",
+            "updated_at": updated_at,
+        }
+
+    search = _QueuedSearch(
+        [
+            [issue_row(1, "2026-01-03"), issue_row(2, "2026-01-01")],
+            [issue_row(3, "2026-01-04"), issue_row(1, "2026-01-03")],
+        ]
+    )
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    rows = list(
+        use_case(
+            IssueSearchFilters(sort="updated", repos=tuple(f"acme/r{i}" for i in range(7)), limit=2)
+        )
+    )
+
+    assert [row.id for row in rows] == [3, 1]
+    assert len(search.calls) == 2
+
+
+def test_search_issues_rejects_raw_query_with_too_many_boolean_operators() -> None:
+    search = _StubSearch([])
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    with pytest.raises(UntapedError, match="boolean operators"):
+        list(use_case(IssueSearchFilters(raw_query="a OR b OR c OR d OR e OR f OR g")))
+
+    assert search.calls == []
 
 
 def test_search_repos_validates_results_into_domain_model() -> None:
@@ -717,3 +816,198 @@ def test_user_filters_reject_scope_fields() -> None:
 
     with pytest.raises(pydantic.ValidationError):
         UserSearchFilters(user="@me")  # type: ignore[call-arg]
+
+
+# --- Search request budgets and rate limits -----------------------------
+
+
+def _code_row(repo: str, path: str) -> dict[str, Any]:
+    return {
+        "name": path,
+        "path": path,
+        "sha": "s",
+        "html_url": f"https://github.com/{repo}/blob/main/{path}",
+        "repository": {"full_name": repo},
+    }
+
+
+def _issue_row(id_: int, updated_at: str) -> dict[str, Any]:
+    return {
+        "id": id_,
+        "number": id_,
+        "title": "t",
+        "state": "open",
+        "html_url": f"https://github.com/acme/r/issues/{id_}",
+        "repository_url": "https://api.github.com/repos/acme/r",
+        "updated_at": updated_at,
+    }
+
+
+class _RateLimitedSearch(_StubSearch):
+    """Returns one row per call, then fails once ``fail_at`` calls were made."""
+
+    def __init__(self, fail_at: int, *, status: int = 403, row: str = "code") -> None:
+        super().__init__([])
+        self.fail_at = fail_at
+        self.status = status
+        self.row = row
+
+    def _record(
+        self, endpoint: str, q: str, *, sort: str | None, limit: int | None
+    ) -> Iterator[dict[str, Any]]:
+        self.calls.append((endpoint, q, sort, limit))
+        index = len(self.calls)
+        if index >= self.fail_at:
+            raise HttpStatusError(
+                f"HTTP {self.status}",
+                status_code=self.status,
+                body='{"message": "You have exceeded a secondary rate limit."}',
+            )
+        if self.row == "code":
+            return iter([_code_row(f"acme/r{index}", f"f{index}.py")])
+        return iter([_issue_row(index, f"2026-01-0{index}")])
+
+
+def test_search_code_caps_batches_for_large_team_and_warns() -> None:
+    big = [{"full_name": f"acme/repo{i}"} for i in range(100)]
+    search = _StubSearch([])
+    warnings: list[str] = []
+    use_case = SearchCode(_stub(search), _teams(_StubTeams(big)), warn=warnings.append)
+
+    list(use_case(CodeSearchFilters(raw_query="TODO"), team_scopes=(TeamScope("acme", "t"),)))
+
+    assert len(search.calls) == 9
+    searched = 9 * MAX_TEAM_REPO_QUALIFIERS
+    assert sum(call[1].count("repo:") for call in search.calls) == searched
+    assert len(warnings) == 1
+    assert f"first {searched} of 100 repositories" in warnings[0]
+    assert "narrow" in warnings[0]
+
+
+def test_search_issues_caps_batches_for_large_team_and_warns() -> None:
+    big = [{"full_name": f"acme/repo{i}"} for i in range(200)]
+    search = _StubSearch([])
+    warnings: list[str] = []
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams(big)), warn=warnings.append)
+
+    list(use_case(IssueSearchFilters(), team_scopes=(TeamScope("acme", "t"),)))
+
+    assert len(search.calls) == 25
+    assert len(warnings) == 1
+    assert f"first {25 * MAX_TEAM_REPO_QUALIFIERS} of 200 repositories" in warnings[0]
+
+
+def test_search_code_team_over_sixty_repos_within_cap_does_not_warn() -> None:
+    big = [{"full_name": f"acme/repo{i}"} for i in range(9 * MAX_TEAM_REPO_QUALIFIERS)]
+    search = _StubSearch([])
+    warnings: list[str] = []
+    use_case = SearchCode(_stub(search), _teams(_StubTeams(big)), warn=warnings.append)
+
+    list(use_case(CodeSearchFilters(raw_query="TODO"), team_scopes=(TeamScope("acme", "t"),)))
+
+    assert len(search.calls) == 9
+    assert warnings == []
+
+
+@pytest.mark.parametrize("status", [403, 429])
+def test_search_code_rate_limit_mid_way_returns_partial_results(status: int) -> None:
+    big = [{"full_name": f"acme/repo{i}"} for i in range(4 * MAX_TEAM_REPO_QUALIFIERS)]
+    search = _RateLimitedSearch(fail_at=3, status=status)
+    warnings: list[str] = []
+    use_case = SearchCode(_stub(search), _teams(_StubTeams(big)), warn=warnings.append)
+
+    rows = list(
+        use_case(CodeSearchFilters(raw_query="TODO"), team_scopes=(TeamScope("acme", "t"),))
+    )
+
+    assert [row.path for row in rows] == ["f1.py", "f2.py"]
+    assert len(search.calls) == 3
+    assert len(warnings) == 1
+    assert "rate limit" in warnings[0]
+    assert "partial" in warnings[0]
+
+
+def test_search_issues_rate_limit_on_first_batch_still_fails() -> None:
+    search = _RateLimitedSearch(fail_at=1, row="issue")
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    with pytest.raises(HttpStatusError):
+        list(use_case(IssueSearchFilters(repos=tuple(f"acme/r{i}" for i in range(12)))))
+
+
+def test_search_issues_permission_403_mid_way_still_fails() -> None:
+    class _Forbidden(_RateLimitedSearch):
+        def _record(
+            self, endpoint: str, q: str, *, sort: str | None, limit: int | None
+        ) -> Iterator[dict[str, Any]]:
+            self.calls.append((endpoint, q, sort, limit))
+            if len(self.calls) >= 2:
+                raise HttpStatusError("HTTP 403", status_code=403, body='{"message": "nope"}')
+            return iter([_issue_row(1, "2026-01-01")])
+
+    search = _Forbidden(fail_at=2, row="issue")
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    with pytest.raises(HttpStatusError):
+        list(use_case(IssueSearchFilters(repos=tuple(f"acme/r{i}" for i in range(12)))))
+
+
+def test_search_issues_raw_sort_qualifier_orders_merged_batches() -> None:
+    search = _QueuedSearch(
+        [
+            [_issue_row(1, "2026-01-03"), _issue_row(2, "2026-01-01")],
+            [_issue_row(3, "2026-01-04"), _issue_row(4, "2026-01-02")],
+        ]
+    )
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    rows = list(
+        use_case(
+            IssueSearchFilters(
+                raw_query="bug sort:updated-asc",
+                repos=tuple(f"acme/r{i}" for i in range(7)),
+                limit=3,
+            )
+        )
+    )
+
+    assert [row.id for row in rows] == [2, 4, 1]
+
+
+def test_search_issues_raw_sort_qualifier_desc_orders_merged_batches() -> None:
+    search = _QueuedSearch(
+        [
+            [_issue_row(1, "2026-01-03"), _issue_row(2, "2026-01-01")],
+            [_issue_row(3, "2026-01-04"), _issue_row(4, "2026-01-02")],
+        ]
+    )
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    rows = list(
+        use_case(
+            IssueSearchFilters(
+                raw_query="sort:updated", repos=tuple(f"acme/r{i}" for i in range(7))
+            )
+        )
+    )
+
+    assert [row.id for row in rows] == [3, 1, 4, 2]
+
+
+def test_search_issues_unknown_raw_sort_qualifier_warns_batch_order() -> None:
+    search = _QueuedSearch([[_issue_row(1, "2026-01-01")], [_issue_row(2, "2026-01-02")]])
+    warnings: list[str] = []
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()), warn=warnings.append)
+
+    rows = list(
+        use_case(
+            IssueSearchFilters(
+                raw_query="sort:reactions-+1-desc",
+                repos=tuple(f"acme/r{i}" for i in range(7)),
+            )
+        )
+    )
+
+    assert [row.id for row in rows] == [1, 2]
+    assert len(warnings) == 1
+    assert "batch order" in warnings[0]

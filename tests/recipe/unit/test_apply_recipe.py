@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
+from untaped.capabilities.recipe._worker.hook_worker import handle_request
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.ports import HookDebugResult
 from untaped.capabilities.recipe.application.run_bulk import RunBulkApply
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe.hook_worker import handle_request
 from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers
@@ -1361,3 +1361,91 @@ def test_remove_files_removes_multiple_files_and_skips_missing_files(tmp_path: P
         "old.cfg",
     ]
     assert all(change.after is None for change in plan.changes)
+
+
+def test_apply_recipe_globs_work_when_target_is_a_symlink(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    real = tmp_path / "real"
+    (real / "sub").mkdir(parents=True)
+    (real / "sub" / "a.bak").write_text("a\n")
+    (real / "b.bak").write_text("b\n")
+    target = tmp_path / "link"
+    target.symlink_to(real, target_is_directory=True)
+    recipe = Recipe.model_validate(
+        {"version": 1, "steps": [{"type": "remove", "globs": ["**/*.bak"]}]}
+    )
+
+    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
+
+    assert plan.status == "planned"
+    assert [change.relative_path.as_posix() for change in plan.changes] == [
+        "b.bak",
+        "sub/a.bak",
+    ]
+
+
+def test_apply_recipe_glob_skips_matches_under_symlinked_dirs_with_warning(
+    tmp_path: Path,
+) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "keep.bak").write_text("keep\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "x.bak").write_text("x\n")
+    (target / "linked").symlink_to(outside, target_is_directory=True)
+    recipe = Recipe.model_validate(
+        {"version": 1, "steps": [{"type": "remove", "globs": ["*.bak", "*/*.bak"]}]}
+    )
+
+    plan = _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs={})
+
+    assert plan.status == "planned"
+    assert [change.relative_path.as_posix() for change in plan.changes] == ["keep.bak"]
+    assert any("linked/x.bak" in warning and "symlink" in warning for warning in plan.warnings)
+    assert (outside / "x.bak").exists()
+
+
+def test_run_bulk_apply_dedupes_targets_by_resolved_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "out.txt").write_text("hello\n")
+    first = tmp_path / "a"
+    second = tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+    (tmp_path / "link").symlink_to(first, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    recipe = Recipe.model_validate(
+        {"version": 1, "steps": [{"type": "copy", "source": "out.txt", "dest": "out.txt"}]}
+    )
+    runner = RunBulkApply(
+        ApplyRecipe(
+            HookExecutor(HookResolver(), workers=InlineWorkers(), helpers_factory=HookHelpers)
+        )
+    )
+
+    plans = runner.plan(
+        recipe=recipe,
+        recipe_dir=recipe_dir,
+        local_hook_project=None,
+        targets=[
+            Target(path=Path("a")),
+            Target(path=second),
+            Target(path=first),
+            Target(path=Path("./a/")),
+            Target(path=tmp_path / "link"),
+        ],
+        inputs={},
+    )
+
+    assert [plan.target for plan in plans] == [tmp_path / "a", second]
+    for plan in plans:
+        flush_changes(plan.changes)
+    assert (first / "out.txt").read_text() == "hello\n"

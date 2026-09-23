@@ -100,8 +100,6 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
-    "--cov",
-    "--cov-report=term-missing",
     "--import-mode=importlib",
 ]
 markers = [
@@ -114,7 +112,7 @@ source = ["src"]
 omit = ["**/tests/**", "**/__main__.py"]
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = 89
 show_missing = true
 skip_covered = false
 exclude_also = [

@@ -17,6 +17,7 @@ def bounded_map[ItemT, ResultT](
     *,
     concurrency: int,
     on_each: Callable[[ItemT, ResultT], None],
+    on_abort: Callable[[], None] | None = None,
 ) -> None:
     """Apply ``fn`` to every item using at most ``concurrency`` worker threads.
 
@@ -27,12 +28,20 @@ def bounded_map[ItemT, ResultT](
     including ``KeyboardInterrupt`` — queued-but-unstarted work is cancelled
     instead of drained, so Ctrl-C stops large runs promptly rather than
     hanging while the executor's default shutdown runs every queued task.
+    ``on_abort`` (optional) then runs on the calling thread *before* waiting
+    for in-flight calls, so callers can stop them (e.g. kill child processes)
+    instead of blocking until they finish on their own.
     """
     if concurrency < 1:
         raise ValueError("concurrency must be positive")
     if len(items) <= 1 or concurrency == 1:
-        for item in items:
-            on_each(item, fn(item))
+        try:
+            for item in items:
+                on_each(item, fn(item))
+        except BaseException:
+            if on_abort is not None:
+                on_abort()
+            raise
         return
     with ThreadPoolExecutor(max_workers=min(concurrency, len(items))) as executor:
         try:
@@ -42,5 +51,8 @@ def bounded_map[ItemT, ResultT](
             for future in as_completed(futures):
                 on_each(futures[future], future.result())
         except BaseException:
-            executor.shutdown(cancel_futures=True)
+            executor.shutdown(wait=False, cancel_futures=True)
+            if on_abort is not None:
+                on_abort()
+            executor.shutdown(wait=True)
             raise

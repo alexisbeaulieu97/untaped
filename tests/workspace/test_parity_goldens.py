@@ -888,7 +888,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     # batch confirm: prompts once, decline exits cleanly without mutation (P34)
     assert fix["batch_confirm"]["skip"] == "--yes / -y"
-    assert fix["sync_prune_prompt"] is False
+    assert fix["sync_prune_prompt"] is True
     backend = ScriptedPromptBackend(confirms=[False])
     result = CliInvoker().invoke(
         _root().meta,  # type: ignore[union-attr]
@@ -901,7 +901,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert clone.is_dir()
     assert fix["batch_confirm"]["decline"] == "exits cleanly, no mutation"
 
-    # sync --prune never prompts (P34)
+    # sync --prune prompts only when there are safe orphans; none here (P34)
     result = _run(["workspace", "sync", "--workspace", "prod", "--prune"])
     assert result.exit_code == 0, result.output
 
@@ -988,13 +988,13 @@ def test_f13_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bare = cache_path_for(f"file://{upstream}", cache_dir=cache.expanduser().resolve())
     assert bare.is_dir()
     alternates = target / "upstream" / ".git" / "objects" / "info" / "alternates"
-    assert alternates.is_file()
-    assert "objects" in alternates.read_text()
+    # --dissociate: the cache only accelerates the clone, never backs it.
+    assert not alternates.exists()
     shutil.rmtree(bare)
     result = _run(["workspace", "sync", "--workspace", "prod"])
     assert result.exit_code == 0, result.output
     assert "1 repo (1 up to date)" in result.stderr
-    assert fix["clone"].startswith("git clone --reference <bare>")
+    assert fix["clone"].startswith("git clone --reference <bare> --dissociate")
 
     # sync skip details (P36)
     (target / "upstream" / "dirty.txt").write_text("dirty")

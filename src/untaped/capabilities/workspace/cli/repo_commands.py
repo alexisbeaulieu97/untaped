@@ -23,7 +23,10 @@ from untaped.capabilities.workspace.cli.common import (
     resolve_workspace,
     workspace_settings,
 )
-from untaped.capabilities.workspace.cli.ops_commands import print_sync_outcomes
+from untaped.capabilities.workspace.cli.ops_commands import (
+    any_sync_failed,
+    print_sync_outcomes,
+)
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
@@ -101,6 +104,7 @@ def add_command(
                 cache_dir=workspace_settings().cache_dir,
             )(ws, only=added)
             print_sync_outcomes(outcomes, fmt="table", columns=None)
+            any_failed = any_failed or any_sync_failed(outcomes)
     finish(any_failed)
 
 

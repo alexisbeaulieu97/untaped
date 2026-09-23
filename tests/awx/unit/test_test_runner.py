@@ -108,6 +108,42 @@ def _make_runner(
     )
 
 
+def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
+    """Ctrl-C sets the stop event, skips queued launches, and keeps launched jobs."""
+    import os
+    import signal
+
+    from untaped.capabilities.awx.errors import WaitCancelled
+
+    stop = threading.Event()
+
+    class BlockingWatcher:
+        def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+            if stop.wait(5):
+                raise WaitCancelled("wait interrupted")
+            return job
+
+    fk = StubFk()
+    launcher = StubLauncher({"__default__": {"job": _job(id_=7, status="running")}})
+    runner = RunTestSuite(
+        resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog()),
+        launcher=cast(Launcher, launcher),
+        watcher=cast(Watcher, BlockingWatcher()),
+        spec=JOB_TEMPLATE_SPEC,
+        fk_prefetcher=cast(FkPrefetcher, fk),
+        stop=stop,
+    )
+    suite = _suite("s", {f"c{i}": {"extra_vars": {"case_name": f"c{i}"}} for i in range(6)})
+    threading.Timer(0.2, os.kill, (os.getpid(), signal.SIGINT)).start()
+    started = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        runner([suite], parallel=2)
+    assert time.monotonic() - started < 2
+    assert stop.is_set()
+    assert len(launcher.calls) == 2
+    assert [job.id for job in runner.launched] == [7, 7]
+
+
 # ---- sequential runner --------------------------------------------------
 
 
@@ -391,3 +427,38 @@ def test_runner_returns_an_outcome_per_case(parallel: int) -> None:
 
     assert len(outcome.results) == 5
     assert {r.suite for r in outcome.results} == {"s"}
+
+
+def test_interrupt_reports_ignored_field_executions_and_final_statuses() -> None:
+    """Jobs created despite ignored_fields are launched too; finished ones are known."""
+    from untaped.capabilities.awx.errors import ActionResponseError
+
+    class InterruptingWatcher:
+        def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+            if job.id == 8:
+                raise KeyboardInterrupt
+            return _job(id_=job.id, status="successful")
+
+    fk = StubFk()
+    launcher = StubLauncher(
+        {
+            "done": {"job": _job(id_=7, status="pending")},
+            "ignored": {
+                "raises": ActionResponseError(
+                    "AWX ignored launch fields: limit", execution_id=9, execution_kind="job"
+                )
+            },
+            "stuck": {"job": _job(id_=8, status="pending")},
+        }
+    )
+    runner = _make_runner(fk=fk, launcher=launcher, watcher=cast(Any, InterruptingWatcher()))
+    suite = _suite(
+        "s", {name: {"extra_vars": {"case_name": name}} for name in ("done", "ignored", "stuck")}
+    )
+    with pytest.raises(KeyboardInterrupt):
+        runner([suite])
+    assert {(job.id, job.is_terminal) for job in runner.known_executions()} == {
+        (7, True),
+        (9, False),
+        (8, False),
+    }

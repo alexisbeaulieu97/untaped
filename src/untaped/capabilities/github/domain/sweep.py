@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -89,6 +90,28 @@ def ref_matches(query: SweepQuery, evaluation: RefEvaluation) -> bool:
         return True
     positive_hits = [evaluation.hits.get(label, 0) > 0 for label in positive_labels]
     return any(positive_hits) if query.any_mode else all(positive_hits)
+
+
+def ref_display_names(refs: Iterable[str]) -> dict[str, str]:
+    """Map full refnames to short display names.
+
+    ``refs/heads/x`` shows as ``x`` and ``refs/tags/v1`` as ``v1``; when a
+    branch and a tag share a short name, both keep their namespace
+    (``heads/x``, ``tags/x``) so neither display name is ambiguous.
+    """
+    shorts = {ref: _short_ref(ref) for ref in refs}
+    counts = Counter(shorts.values())
+    return {
+        ref: ref.removeprefix("refs/") if counts[short] > 1 else short
+        for ref, short in shorts.items()
+    }
+
+
+def _short_ref(ref: str) -> str:
+    for prefix in ("refs/heads/", "refs/tags/"):
+        if ref.startswith(prefix):
+            return ref.removeprefix(prefix)
+    return ref
 
 
 def profile_join(stored: RefProfile, requested: RefProfile) -> RefProfile:

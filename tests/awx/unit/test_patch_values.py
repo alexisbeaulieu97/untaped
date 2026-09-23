@@ -29,6 +29,27 @@ def test_parse_set_pairs_json_coerces_values() -> None:
     }
 
 
+def test_parse_set_pairs_follows_existing_field_types() -> None:
+    record = {"scm_branch": "main", "verbosity": 0, "extra_vars": "", "limit": None}
+    result = parse_set_pairs(
+        [
+            "scm_branch=1.10",
+            "verbosity=2",
+            'extra_vars={"a": 1}',
+            "limit=null",
+            "unset_field=3",
+        ],
+        record=record,
+    )
+    assert result == {
+        "scm_branch": "1.10",
+        "verbosity": 2,
+        "extra_vars": {"a": 1},
+        "limit": None,
+        "unset_field": 3,
+    }
+
+
 def test_parse_set_pairs_splits_on_first_equals() -> None:
     assert parse_set_pairs(["limit=a=b"]) == {"limit": "a=b"}
 

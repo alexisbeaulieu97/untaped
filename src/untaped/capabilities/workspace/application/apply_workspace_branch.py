@@ -11,6 +11,7 @@ from untaped.capabilities.workspace.application.ports import (
     ManifestReader,
 )
 from untaped.capabilities.workspace.application.repo_selector import select_repos
+from untaped.capabilities.workspace.application.sync_workspace import NOT_A_GIT_REPOSITORY
 from untaped.capabilities.workspace.domain import (
     BranchApplyAction,
     BranchApplyOutcome,
@@ -38,10 +39,17 @@ class ApplyWorkspaceBranch:
         workspace: Workspace,
         *,
         repo: Sequence[str] | str | None = None,
+        create: bool = False,
     ) -> list[BranchApplyOutcome]:
+        """Checkout selected repos to their manifest target branch.
+
+        A target that exists neither locally nor as ``origin/<branch>``
+        is skipped unless ``create`` is set, so a typo in the manifest
+        (``mian``) cannot silently create a branch in every repo.
+        """
         manifest = self._manifests.read(workspace.path)
         repos = self._select_repos(manifest, repo=repo)
-        return [self._apply_repo(workspace, manifest, target) for target in repos]
+        return [self._apply_repo(workspace, manifest, target, create=create) for target in repos]
 
     def _select_repos(
         self,
@@ -60,6 +68,8 @@ class ApplyWorkspaceBranch:
         workspace: Workspace,
         manifest: WorkspaceManifest,
         repo: Repo,
+        *,
+        create: bool,
     ) -> BranchApplyOutcome:
         target_branch = manifest.target_branch_for(repo)
         local = workspace.path / repo.name
@@ -67,12 +77,14 @@ class ApplyWorkspaceBranch:
             return _outcome(workspace, repo, target_branch, "skip", "no target branch")
         if not self._fs.exists(local):
             return _outcome(workspace, repo, target_branch, "skip", "not cloned")
+        if not self._fs.exists(local / ".git"):
+            return _outcome(workspace, repo, target_branch, "skip", NOT_A_GIT_REPOSITORY)
         if (detail := self._try_fetch(local)) is not None:
-            return _outcome(workspace, repo, target_branch, "skip", detail)
+            return _outcome(workspace, repo, target_branch, "failed", detail)
         try:
             status = self._git.status(local)
         except GitError as exc:
-            return _outcome(workspace, repo, target_branch, "skip", f"status failed: {exc}")
+            return _outcome(workspace, repo, target_branch, "failed", f"status failed: {exc}")
         if status.dirty:
             return _outcome(workspace, repo, target_branch, "skip", "dirty working tree")
         if status.diverged:
@@ -85,10 +97,18 @@ class ApplyWorkspaceBranch:
                 "up-to-date",
                 f"already on {target_branch}",
             )
+        if not create and not self._git.has_branch(local, branch=target_branch):
+            return _outcome(
+                workspace,
+                repo,
+                target_branch,
+                "skip",
+                "branch not found locally or on origin",
+            )
         try:
             self._git.checkout_branch(local, branch=target_branch)
         except GitError as exc:
-            return _outcome(workspace, repo, target_branch, "skip", f"checkout failed: {exc}")
+            return _outcome(workspace, repo, target_branch, "failed", f"checkout failed: {exc}")
         return _outcome(
             workspace,
             repo,

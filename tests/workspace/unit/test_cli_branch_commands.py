@@ -338,7 +338,22 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     runner.invoke(app, ["branch", "set", "ticket-123", "--workspace", "smoke"])
     repo = target / "upstream"
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
+    refused = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
+
+    assert refused.exit_code == 0, refused.output
+    assert json.loads(refused.stdout) == [
+        {
+            "repo": "upstream",
+            "workspace": "smoke",
+            "target_branch": "ticket-123",
+            "action": "skip",
+            "detail": "branch not found locally or on origin",
+        }
+    ]
+
+    result = runner.invoke(
+        app, ["branch", "apply", "--create", "--workspace", "smoke", "--format", "json"]
+    )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -364,6 +379,31 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     )
     assert head == "ticket-123"
     assert tracking_remote.returncode != 0
+
+
+def test_branch_apply_fetch_failure_is_failed_row_and_exit_one(
+    tmp_path: Path, upstream: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
+    runner.invoke(app, ["add", f"file://{upstream}", "--repo-name", "api", "--workspace", "prod"])
+    subprocess.run(
+        ["git", "clone", "--quiet", str(upstream), str(target / "api")],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(target / "api"), "remote", "set-url", "origin", str(tmp_path / "gone")],
+        check=True,
+    )
+
+    result = runner.invoke(app, ["branch", "apply", "--workspace", "prod", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    (row,) = json.loads(result.stdout)
+    assert row["action"] == "failed"
+    assert row["detail"].startswith("fetch failed: git fetch failed: ")
 
 
 def test_branch_apply_empty_guides_with_stderr_hint(tmp_path: Path) -> None:

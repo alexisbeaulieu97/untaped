@@ -7,10 +7,10 @@ terminal rendering (or interactive prompt) stack into every import path.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from untaped.errors import ConfigError
 
@@ -38,8 +38,19 @@ class ThemeSpec(BaseModel):
     color_roles: dict[str, str] = Field(default_factory=dict)
 
 
+#: Pydantic validation context enabling write-time checks (``config set``):
+#: ``validate_settings_section`` passes it so values that only fail at use
+#: time (e.g. an unknown ``ui.theme``) are rejected before landing on disk.
+CONFIG_WRITE_CONTEXT = "untaped_config_write"
+
+
 class UiSettings(BaseModel):
-    """Per-profile UI presentation preferences (the ``ui`` section of a profile)."""
+    """Per-profile UI presentation preferences (the ``ui`` section of a profile).
+
+    ``theme`` must name a built-in theme. The check runs when the value is
+    written (``config set``) and in ``doctor``; loading stays lenient so a
+    stale theme only affects themed table output, not structured formats.
+    """
 
     theme: str = "default"
     border: BorderStyle | None = None
@@ -48,6 +59,18 @@ class UiSettings(BaseModel):
     detail_view: DetailView | None = None
     symbols: dict[str, str] = Field(default_factory=dict)
     color_roles: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("theme")
+    @classmethod
+    def _known_theme_on_write(cls, value: str, info: ValidationInfo) -> str:
+        context = info.context
+        if (
+            isinstance(context, dict)
+            and context.get(CONFIG_WRITE_CONTEXT)
+            and value not in BUILTIN_THEMES
+        ):
+            raise ValueError(f"unknown UI theme {value!r}; valid themes: {_valid_themes()}")
+        return value
 
     def apply_to(self, theme: ThemeSpec) -> ThemeSpec:
         """Apply user overrides to a registered or built-in theme."""
@@ -113,19 +136,21 @@ BUILTIN_THEMES: dict[str, ThemeSpec] = {
 }
 
 
-def resolve_theme(
-    settings: UiSettings | None = None,
-    *,
-    themes: Mapping[str, ThemeSpec] | None = None,
-) -> ThemeSpec:
-    """Resolve the active theme plus user overrides."""
+def resolve_theme(settings: UiSettings | None = None) -> ThemeSpec:
+    """Resolve the active built-in theme plus user overrides."""
     ui_settings = settings or UiSettings()
-    available = {**BUILTIN_THEMES, **dict(themes or {})}
-    theme = available.get(ui_settings.theme)
+    return ui_settings.apply_to(_theme_named(ui_settings.theme))
+
+
+def _theme_named(name: str) -> ThemeSpec:
+    theme = BUILTIN_THEMES.get(name)
     if theme is None:
-        valid = ", ".join(sorted(available))
-        raise ConfigError(f"unknown UI theme: {ui_settings.theme!r}. Valid themes: {valid}")
-    return ui_settings.apply_to(theme)
+        raise ConfigError(f"unknown UI theme: {name!r}. Valid themes: {_valid_themes()}")
+    return theme
+
+
+def _valid_themes() -> str:
+    return ", ".join(sorted(BUILTIN_THEMES))
 
 
 def resolve_theme_or_default(

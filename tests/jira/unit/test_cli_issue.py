@@ -109,6 +109,70 @@ def test_issue_get_renders_key_first(jira_config: Path) -> None:
     assert result.stdout.strip() == "ABC-1"
 
 
+def test_issue_get_shows_detail_fields(jira_config: Path) -> None:
+    payload = {
+        "key": "ABC-1",
+        "self": "https://jira.example.com/rest/api/2/issue/10001",
+        "fields": {
+            "summary": "Fix deploy",
+            "status": {"name": "In Progress"},
+            "assignee": {"displayName": "Alexis"},
+            "updated": "2026-06-05T10:00:00.000-0400",
+            "description": "Deploy fails on step 3.",
+            "issuetype": {"name": "Bug"},
+            "priority": {"name": "High"},
+            "reporter": {"displayName": "Sam"},
+            "labels": ["deploy", "urgent"],
+            "created": "2026-06-01T09:00:00.000-0400",
+            "resolution": None,
+        },
+    }
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.get("/rest/api/2/issue/ABC-1").mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        result = CliInvoker().invoke(app, ["issue", "get", "ABC-1", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)
+    assert row["key"] == "ABC-1"
+    assert row["status"] == "In Progress"
+    assert row["description"] == "Deploy fails on step 3."
+    assert row["issuetype"] == "Bug"
+    assert row["priority"] == "High"
+    assert row["reporter"] == "Sam"
+    assert row["labels"] == ["deploy", "urgent"]
+    assert row["created"] == "2026-06-01T09:00:00.000-0400"
+    assert row["resolution"] == ""
+    requested = set(route.calls[0].request.url.params["fields"].split(","))
+    assert {"description", "issuetype", "priority", "reporter", "labels", "created"} <= requested
+    assert "resolution" in requested
+
+
+def test_issue_search_rows_stay_lean(jira_config: Path) -> None:
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.post("/rest/api/2/search").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "startAt": 0,
+                    "maxResults": 50,
+                    "total": 1,
+                    "issues": [{"key": "ABC-1", "fields": {"summary": "x"}}],
+                },
+            )
+        )
+        result = CliInvoker().invoke(
+            app, ["issue", "search", "--project", "ABC", "--format", "json"]
+        )
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(result.stdout)
+    assert set(row) == {"key", "summary", "status", "assignee", "updated", "url"}
+    body = json.loads(route.calls[0].request.content)
+    assert body["fields"] == ["summary", "status", "assignee", "updated"]
+
+
 def test_issue_commands_missing_key_is_usage_error() -> None:
     runner = CliInvoker()
 
@@ -221,7 +285,7 @@ def test_issue_assigned_uses_configured_assigned_jql(jira_config: Path) -> None:
     )
 
 
-def test_issue_assigned_jql_option_overrides_configured_assigned_jql(
+def test_issue_assigned_jql_option_narrows_configured_assigned_jql(
     jira_config: Path,
 ) -> None:
     jira_config.write_text(
@@ -250,7 +314,7 @@ def test_issue_assigned_jql_option_overrides_configured_assigned_jql(
                 "issue",
                 "assigned",
                 "--jql",
-                "assignee = currentUser() AND project = SEC",
+                "project = SEC ORDER BY priority DESC",
                 "--status",
                 "In Progress",
                 "--format",
@@ -264,9 +328,31 @@ def test_issue_assigned_jql_option_overrides_configured_assigned_jql(
     assert result.stdout.strip() == "SEC-3"
     request_json = json.loads(route.calls[0].request.content)
     assert request_json["jql"] == (
-        '(assignee = currentUser() AND project = SEC) AND status = "In Progress" '
-        "ORDER BY updated DESC"
+        "(assignee = currentUser() AND project = OPS) AND (project = SEC) "
+        'AND status = "In Progress" ORDER BY priority DESC'
     )
+
+
+def test_issue_search_without_filters_uses_configured_assigned_jql(jira_config: Path) -> None:
+    jira_config.write_text(
+        "profiles:\n"
+        "  default:\n"
+        "    jira:\n"
+        "      base_url: https://jira.example.com\n"
+        "      token: jira_pat\n"
+        "      assigned_jql: assignee = currentUser() AND project = OPS\n"
+    )
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.post("/rest/api/2/search").mock(
+            return_value=httpx.Response(
+                200, json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []}
+            )
+        )
+        result = CliInvoker().invoke(app, ["issue", "search", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    request_json = json.loads(route.calls[0].request.content)
+    assert request_json["jql"] == "assignee = currentUser() AND project = OPS ORDER BY updated DESC"
 
 
 def test_issue_assigned_rejects_blank_jql_override(jira_config: Path) -> None:
@@ -400,6 +486,33 @@ def test_issue_edit_sends_body_file_and_overlays_flags(jira_config: Path, tmp_pa
         "summary": "new",
         "customfield_10000": "value",
     }
+
+
+def test_issue_edit_without_changes_is_usage_error(jira_config: Path, tmp_path: Path) -> None:
+    empty_body = tmp_path / "empty.yml"
+    empty_body.write_text("fields: {}\n")
+    with respx.mock(base_url="https://jira.example.com", assert_all_called=False) as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        bare = CliInvoker().invoke(app, ["issue", "edit", "ABC-1"])
+        empty = CliInvoker().invoke(app, ["issue", "edit", "ABC-1", "--body-file", str(empty_body)])
+
+    for result in (bare, empty):
+        assert result.exit_code == 2, result.output
+        assert "nothing to update" in result.stderr
+    assert len(route.calls) == 0
+
+
+def test_issue_edit_with_only_update_operations_is_sent(jira_config: Path, tmp_path: Path) -> None:
+    body_file = tmp_path / "labels.yml"
+    body_file.write_text("update:\n  labels:\n    - add: urgent\n")
+    with respx.mock(base_url="https://jira.example.com") as mock:
+        route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        result = CliInvoker().invoke(
+            app, ["issue", "edit", "ABC-1", "--body-file", str(body_file), "--format", "json"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(route.calls[0].request.content)["update"] == {"labels": [{"add": "urgent"}]}
 
 
 def test_issue_comment_reads_body_from_stdin(jira_config: Path) -> None:
@@ -607,3 +720,23 @@ def test_issue_transitions_empty_guides_with_stderr_hint(jira_config: Path) -> N
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert "No transitions available for this issue" in result.stderr
+
+
+def test_help_documents_search_shortcuts_and_create_flags() -> None:
+    runner = CliInvoker()
+
+    root = runner.invoke(app, ["--help"])
+    search = runner.invoke(app, ["issue", "search", "--help"])
+    assigned = runner.invoke(app, ["issue", "assigned", "--help"])
+    create = runner.invoke(app, ["issue", "create", "--help"])
+
+    assert "Jira Data Center issues" in root.stdout
+    assert "ticket" not in root.stdout
+    for result in (search, assigned):
+        assert "Project key" in result.stdout
+        assert "Status name" in result.stdout
+        assert "Full-text search" in result.stdout
+        assert "openSprints()" in result.stdout
+    assert "Assignee username" in search.stdout
+    for text in ("Jira-shaped", "Project key", "Issue type name", "Issue summary", "description"):
+        assert text in create.stdout

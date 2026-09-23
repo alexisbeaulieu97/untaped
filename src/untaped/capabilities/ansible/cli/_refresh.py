@@ -5,12 +5,13 @@ from __future__ import annotations
 import time
 from base64 import b64encode
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Literal
 
 from untaped.api import HttpSettings, ProgressHandle, UiContext, echo
 from untaped.capabilities.ansible.application.refresh_git_index import RefreshGitSourceIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.domain.identity import github_web_host
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
     GRAPHQL_TRANSIENT_FALLBACK,
@@ -70,6 +71,7 @@ def run_source_refresh(
     )
     warn_low_rate_limit(result, threshold=settings.source_refresh_rate_limit_floor)
     warn_skipped_files(result)
+    warn_ignored_collections(result.ignored_collections)
     warn_probe_fallbacks(result)
     return result
 
@@ -121,6 +123,7 @@ def refresh_source(
             repo_batch_size=settings.source_refresh_repo_batch_size,
             rate_limit_floor=settings.source_refresh_rate_limit_floor,
             on_progress=on_progress,
+            github_host=github_web_host(github_settings.base_url),
         )(source, source_key=source_key)
     return result
 
@@ -194,6 +197,41 @@ def warn_probe_fallbacks(result: RefreshResult) -> None:
             "warning: "
             f"{pluralize(unknown, 'repo')} fell back to git ls-remote for "
             f"unrecognized fallback reason(s): {reasons}",
+            err=True,
+        )
+
+
+def warn_ignored_collections(names: Iterable[str]) -> None:
+    """Warn once that requirements-file collections are not graphed."""
+    message = ignored_collections_warning(names)
+    if message is not None:
+        echo(f"warning: {message}", err=True)
+
+
+def ignored_collections_warning(names: Iterable[str]) -> str | None:
+    """One-line summary of collections skipped because only roles are graphed."""
+    unique = sorted(set(names))
+    if not unique:
+        return None
+    shown = ", ".join(unique[:_MAX_LISTED_COLLECTIONS])
+    extra = len(unique) - _MAX_LISTED_COLLECTIONS
+    more = f", and {extra} more" if extra > 0 else ""
+    verb = "was" if len(unique) == 1 else "were"
+    return (
+        f"{pluralize(len(unique), 'collection')} in requirements files {verb} ignored "
+        f"(only roles are graphed): {shown}{more}"
+    )
+
+
+_MAX_LISTED_COLLECTIONS = 10
+
+
+def warn_deprecated_settings(settings: AnsibleSettings) -> None:
+    """Warn about profile keys kept only for config compatibility."""
+    if settings.freshness_ttl is not None:
+        echo(
+            "warning: ansible.freshness_ttl is deprecated and ignored; pass --refresh or run "
+            "`untaped ansible source refresh NAME` to check remote data",
             err=True,
         )
 

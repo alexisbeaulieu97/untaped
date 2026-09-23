@@ -17,6 +17,7 @@ from untaped.capabilities.recipe.domain.hook_project import (
     validate_hook_project_contract,
 )
 from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
+from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 
 _ProjectContract = HookProjectMetadata | PackManifest
@@ -72,19 +73,23 @@ class HookResolver:
         if not is_valid_dotted_name(name):
             raise ValueError(f"hook must be a safe hook name: {name}")
         if local_hook_project is not None:
+            # Inside a pack/project a bare name means "this project's hook, else
+            # a built-in"; it never falls through to some other installed pack
+            # (cross-pack references must be written pack/hook).
             local = self._resolve_project(local_hook_project, name)
             if local is not None:
                 return local
-        library_ref = self._resolve_library(name)
-        if library_ref is not None:
-            return library_ref
+        else:
+            library_ref = self._resolve_library(name)
+            if library_ref is not None:
+                return library_ref
         builtin = self._builtins.get(name)
         if builtin is not None:
             return BuiltinHookRef(name=name, exports=builtin.exports, module=builtin.module)
         raise ValueError(f"hook not found: {name}")
 
     def _resolve_qualified(self, name: str) -> HookRef:
-        if name.startswith(("/", "./", "../", "~")):
+        if is_path_ref(name):
             raise ValueError(f"hook must be a safe hook name: {name}")
         try:
             ref = parse_ref(name)

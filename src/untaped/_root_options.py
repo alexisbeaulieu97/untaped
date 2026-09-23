@@ -243,7 +243,16 @@ def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tupl
     return tokens[index + 1], tokens[:index] + tokens[index + 2 :]
 
 
+#: Root flags that contradict each other; combining them is a usage error.
+_CONFLICTING_OPTIONS = frozenset({"--verbose", "--quiet"})
+
+
 def _apply_root_option(
     spec: _RootOption, value: str, applied_tokens: list[tuple[_RootOption, object]]
 ) -> None:
+    if spec.name in _CONFLICTING_OPTIONS and any(
+        applied.name in _CONFLICTING_OPTIONS and applied.name != spec.name
+        for applied, _ in applied_tokens
+    ):
+        raise_usage("--verbose and --quiet cannot be combined")
     applied_tokens.append((spec, spec.handler(value)))

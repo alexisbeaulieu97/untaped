@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from untaped.capabilities.workspace.domain import DiscoveredRepo, DiscoveryResult
+from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure.git_runner import GitRunner
 
 
@@ -25,7 +26,11 @@ class LocalRepoDiscoverer:
     def discover(self, path: Path) -> DiscoveryResult:
         repos: list[DiscoveredRepo] = []
         skipped: list[str] = []
-        for entry in sorted(path.iterdir(), key=lambda p: p.name):
+        try:
+            entries = sorted(path.iterdir(), key=lambda p: p.name)
+        except OSError as exc:
+            raise WorkspaceError(f"could not scan {path}: {exc}") from exc
+        for entry in entries:
             if entry.is_symlink():
                 # Following symlinks would silently widen the workspace's
                 # blast radius (sync --prune, foreach, etc.) to wherever

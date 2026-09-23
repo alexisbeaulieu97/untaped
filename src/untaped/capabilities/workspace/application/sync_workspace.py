@@ -24,10 +24,12 @@ from untaped.capabilities.workspace.domain import (
 )
 from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
 
+NOT_A_GIT_REPOSITORY = "not a git repository"
 
-class _Skip(Exception):
+
+class _Failed(Exception):
     """Module-private control-flow signal carrying a pre-formatted
-    ``"<step>: <git err>"`` detail string."""
+    ``"<step>: <git err>"`` detail string for a ``failed`` row."""
 
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
@@ -37,12 +39,12 @@ class _Skip(Exception):
 @contextmanager
 def _step(prefix: str) -> Iterator[None]:
     """Catch :class:`GitError` inside the body and re-raise as
-    :class:`_Skip` with ``prefix`` joined to the error message via
+    :class:`_Failed` with ``prefix`` joined to the error message via
     ``": "``. Keeps step-chained callers' decision trees linear."""
     try:
         yield
     except GitError as exc:
-        raise _Skip(f"{prefix}: {exc}") from exc
+        raise _Failed(f"{prefix}: {exc}") from exc
 
 
 @dataclass
@@ -73,6 +75,14 @@ class BareFetchTracker:
     def lock_for(self, bare_path: Path) -> threading.Lock:
         with self._bare_locks_guard:
             return self._bare_locks.setdefault(bare_path, threading.Lock())
+
+
+@dataclass(frozen=True)
+class PruneCandidate:
+    """An orphan clone that passed the prune safety check at plan time."""
+
+    workspace: Workspace
+    path: Path
 
 
 class RepoSyncEngine:
@@ -122,6 +132,10 @@ class RepoSyncEngine:
                 return _outcome(
                     workspace, repo, "clone", f"branch {target_branch}" if target_branch else ""
                 )
+            if not self._fs.exists(local / ".git"):
+                # Without its own ``.git`` git would resolve an enclosing
+                # repository and fetch/pull *that* instead.
+                return _outcome(workspace, repo, "skip", NOT_A_GIT_REPOSITORY)
 
             # Refresh the working clone's remote refs so behind/ahead numbers
             # are current. The bare cache already got ``bare_fetch``, but each
@@ -140,6 +154,10 @@ class RepoSyncEngine:
                     "skip",
                     f"on {status.branch or 'detached'}, expected {target_branch}",
                 )
+            if status.branch is not None and status.upstream is None:
+                # Without an upstream there is nothing to compare against;
+                # reporting "already up to date" would be a lie.
+                return _outcome(workspace, repo, "skip", "no upstream")
             if status.diverged:
                 return _outcome(workspace, repo, "skip", "diverged from origin")
             if status.behind == 0:
@@ -152,14 +170,22 @@ class RepoSyncEngine:
             with _step("ff-only pull failed"):
                 self._git.ff_only_pull(local, branch=target)
             return _outcome(workspace, repo, "pull", f"{status.behind} commits")
-        except _Skip as exc:
-            return _outcome(workspace, repo, "skip", exc.detail)
+        except _Failed as exc:
+            return _outcome(workspace, repo, "failed", exc.detail)
 
-    def prune_orphans(self, workspace: Workspace, manifest: WorkspaceManifest) -> list[SyncOutcome]:
+    def plan_prune(
+        self, workspace: Workspace, manifest: WorkspaceManifest
+    ) -> tuple[list[SyncOutcome], list[PruneCandidate]]:
+        """Split orphan clones into ``skip`` rows and safe deletion candidates.
+
+        Nothing is deleted here, so callers can confirm the candidates
+        before calling :meth:`prune_candidate` for each one.
+        """
         if not self._fs.is_dir(workspace.path):
-            return []
+            return [], []
         declared = {r.name for r in manifest.repos}
         outcomes: list[SyncOutcome] = []
+        candidates: list[PruneCandidate] = []
         for entry in self._fs.iterdir(workspace.path):
             if entry.name in declared:
                 continue
@@ -178,10 +204,26 @@ class RepoSyncEngine:
                 continue
             if not self._fs.exists(entry / ".git"):
                 continue
-            outcomes.append(self._prune_orphan(workspace, entry))
-        return outcomes
+            if (refusal := self._prune_refusal(workspace, entry)) is not None:
+                outcomes.append(refusal)
+            else:
+                candidates.append(PruneCandidate(workspace=workspace, path=entry))
+        return outcomes, candidates
 
-    def _prune_orphan(self, workspace: Workspace, entry: Path) -> SyncOutcome:
+    def prune_candidate(self, candidate: PruneCandidate) -> SyncOutcome:
+        """Re-check safety (state may have changed since planning), then delete."""
+        workspace, entry = candidate.workspace, candidate.path
+        if (refusal := self._prune_refusal(workspace, entry)) is not None:
+            return refusal
+        self._fs.rmtree(entry)
+        return SyncOutcome(
+            workspace=workspace.name,
+            repo=entry.name,
+            action="remove",
+            detail="no longer declared",
+        )
+
+    def _prune_refusal(self, workspace: Workspace, entry: Path) -> SyncOutcome | None:
         try:
             blockers = self._git.prune_blockers(entry)
         except GitError:
@@ -198,13 +240,7 @@ class RepoSyncEngine:
                 action="skip",
                 detail=format_prune_blockers(blockers),
             )
-        self._fs.rmtree(entry)
-        return SyncOutcome(
-            workspace=workspace.name,
-            repo=entry.name,
-            action="remove",
-            detail="no longer declared",
-        )
+        return None
 
 
 class SyncWorkspace:
@@ -224,7 +260,6 @@ class SyncWorkspace:
         workspace: Workspace,
         *,
         only: Sequence[str] | None = None,
-        prune: bool = False,
         strict_only: bool = True,
         bare_tracker: BareFetchTracker | None = None,
     ) -> list[SyncOutcome]:
@@ -252,8 +287,6 @@ class SyncWorkspace:
         outcomes.extend(
             self._engine.sync_repo(workspace, manifest, repo, tracker) for repo in repos
         )
-        if prune:
-            outcomes.extend(self._engine.prune_orphans(workspace, manifest))
         return outcomes
 
 
