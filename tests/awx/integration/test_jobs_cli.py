@@ -715,6 +715,17 @@ def test_jobs_wait_stdin_honours_execution_kind_from_pipe(fake_aap: Any) -> None
     assert [(row["id"], row["kind"]) for row in rows] == [(77, "workflow_job"), (42, "job")]
 
 
+@pytest.mark.parametrize(("args", "expected"), [([], 20), (["--limit", "0"], 25)])
+def test_jobs_list_defaults_to_twenty_and_zero_means_all(
+    fake_aap: Any, args: list[str], expected: int
+) -> None:
+    for index in range(25):
+        fake_aap.seed("jobs", id=100 + index, name=f"run{index}", status="successful")
+    result = CliInvoker().invoke(app, ["jobs", "list", *args, "--format", "raw", "--columns", "id"])
+    assert result.exit_code == 0, result.output
+    assert len(result.stdout.split()) == expected
+
+
 def test_jobs_kind_rejects_unknown_values(fake_aap: Any) -> None:
     result = CliInvoker().invoke(app, ["jobs", "get", "42", "--kind", "workflow"])
     assert result.exit_code == 2, result.output

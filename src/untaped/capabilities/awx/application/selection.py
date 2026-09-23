@@ -40,6 +40,8 @@ class SelectionRequest:
     all: bool = False
     by_id: bool = False
     mutation: bool = False
+    limit: int | None = None
+    """Cap for query selections, pushed to the paginator (reads only)."""
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,7 @@ class SelectionResolver:
                 filters=dict(request.filters),
                 search=request.search,
                 scope=effective_scope,
+                limit=request.limit,
             )
         return ()
 
@@ -182,6 +185,7 @@ class SelectionResolver:
         filters: dict[str, str],
         search: str | None,
         scope: dict[str, str],
+        limit: int | None = None,
     ) -> tuple[SelectedResource, ...]:
         params = dict(filters)
         if search is not None:
@@ -192,7 +196,7 @@ class SelectionResolver:
                 raise ConfigError(f"selection scope conflicts with filter {key!r}")
             params[scoped_key] = value
         selected: list[SelectedResource] = []
-        for record in self._client.list(spec, params=params or None):
+        for record in self._client.list(spec, params=params or None, limit=limit):
             values = _record_dict(record)
             self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))

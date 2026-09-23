@@ -38,6 +38,7 @@ def select_resources(
     inventory_organization: str | None = None,
     parent: str | None = None,
     scope: Mapping[str, str] | None = None,
+    limit: int | None = None,
 ) -> tuple[SelectedResource, ...]:
     """Resolve one source completely; typed stdin always selects validated IDs."""
     selected_scope = (
@@ -89,6 +90,7 @@ def select_resources(
         scope=selected_scope,
         all=all_ or (default_all and sources == 0),
         mutation=mutation,
+        limit=limit,
     )
     selected = SelectionResolver(ctx.repo, ctx.catalog).resolve(spec, request)
     if not selected:
