@@ -83,21 +83,14 @@ class _EdgeBatchRead(Protocol):
 
 
 class _Walk:
-    """One frontier entry: a node to expand carrying its own traversal path stack."""
+    """One frontier entry: a node to expand and the emissions it recorded."""
 
-    __slots__ = ("items", "ref", "remaining", "repo", "stack")
+    __slots__ = ("items", "ref", "remaining", "repo")
 
-    def __init__(
-        self,
-        repo: str,
-        ref: str | None,
-        remaining: int | None,
-        stack: set[str],
-    ) -> None:
+    def __init__(self, repo: str, ref: str | None, remaining: int | None) -> None:
         self.repo = repo
         self.ref = ref
         self.remaining = remaining
-        self.stack = stack
         self.items: list[_ReplayItem | _Walk] = []
 
 
@@ -114,6 +107,10 @@ class _GraphBuilder:
         self._dependents: dict[tuple[str, str | None, str | None], list[IndexedDependency]] = {}
         self._cached_refs: dict[tuple[str, str | None], set[str]] = {}
         self._cached_ref_metadata: dict[tuple[str, str | None], tuple[CachedRef, ...]] = {}
+        # Best remaining depth each node id was scheduled with in the current
+        # walk; a node is expanded again only when reached with more depth
+        # left, so shared dependencies cost one expansion, not one per path.
+        self._scheduled: dict[str, int | None] = {}
 
     def build(self) -> DependencyGraph:
         target_id = _node_id(self._request.repo, self._request.ref)
@@ -121,13 +118,13 @@ class _GraphBuilder:
         depth = self._request.depth
         if self._request.direction in {"deps", "both"}:
             self._walk(
-                _Walk(self._request.repo, self._request.ref, depth, {target_id}),
+                _Walk(self._request.repo, self._request.ref, depth),
                 expand=self._expand_deps,
                 prefetch=self._prefetch_deps_level,
             )
         if self._request.direction in {"impact", "both"}:
             self._walk(
-                _Walk(self._request.repo, self._request.ref, depth, {target_id}),
+                _Walk(self._request.repo, self._request.ref, depth),
                 expand=self._expand_impact,
                 prefetch=self._prefetch_impact_level,
             )
@@ -167,6 +164,7 @@ class _GraphBuilder:
         depth-first afterwards, keeping node/edge/warning ordering identical
         to the previous recursive depth-first traversal.
         """
+        self._scheduled = {_node_id(root.repo, root.ref): root.remaining}
         level = [root]
         while level:
             prefetch(level)
@@ -186,20 +184,17 @@ class _GraphBuilder:
             source_ref = entry.ref if entry.ref is not None else indexed.source_ref
             source_id = _node_id(entry.repo, source_ref)
             entry.items.append(_AddNodeItem(entry.repo, source_ref, indexed.source_ref_kind))
-            source_stack = {*entry.stack, source_id}
+            if entry.ref is None:
+                # A ref-less read expands every concrete ref of the repo.
+                self._claim(source_id, entry.remaining)
             target_id = _dependency_target_id(indexed)
             entry.items.append(_AddTargetItem(indexed))
             entry.items.append(_AddEdgeItem(source_id, target_id, "requires", indexed))
-            if target_id in source_stack:
-                continue
             if indexed.dependency_repo is None:
                 continue
-            child = _Walk(
-                indexed.dependency_repo,
-                indexed.dependency_version,
-                next_remaining,
-                {*source_stack, target_id},
-            )
+            if not self._claim(target_id, next_remaining):
+                continue
+            child = _Walk(indexed.dependency_repo, indexed.dependency_version, next_remaining)
             entry.items.append(child)
             children.append(child)
         return children
@@ -213,23 +208,31 @@ class _GraphBuilder:
             target_ref = entry.ref if entry.ref is not None else indexed.dependency_version
             target_id = _node_id(entry.repo, target_ref)
             entry.items.append(_AddNodeItem(entry.repo, target_ref, None))
-            target_stack = {*entry.stack, target_id}
+            if entry.ref is None:
+                self._claim(target_id, entry.remaining)
             source_id = _node_id(indexed.source_repo, indexed.source_ref)
             entry.items.append(
                 _AddNodeItem(indexed.source_repo, indexed.source_ref, indexed.source_ref_kind)
             )
             entry.items.append(_AddEdgeItem(source_id, target_id, "impacts", indexed))
-            if source_id in target_stack:
+            if not self._claim(source_id, next_remaining):
                 continue
-            child = _Walk(
-                indexed.source_repo,
-                indexed.source_ref,
-                next_remaining,
-                {*target_stack, source_id},
-            )
+            child = _Walk(indexed.source_repo, indexed.source_ref, next_remaining)
             entry.items.append(child)
             children.append(child)
         return children
+
+    def _claim(self, node_id: str, remaining: int | None) -> bool:
+        """Schedule ``node_id`` unless it was already scheduled with as much depth.
+
+        Ancestors (including the target) are always scheduled with more depth
+        than their descendants, so back-edges never re-expand: cycles are
+        still emitted as edges and labelled by cycle detection.
+        """
+        if node_id in self._scheduled and not _deeper(remaining, self._scheduled[node_id]):
+            return False
+        self._scheduled[node_id] = remaining
+        return True
 
     def _replay(self, entry: _Walk) -> None:
         stack = [iter(entry.items)]
@@ -499,6 +502,13 @@ class _NodeMetadata(BaseModel):
 
     ref_kind: str | None
     default_branch: str | None
+
+
+def _deeper(remaining: int | None, best: int | None) -> bool:
+    """Whether ``remaining`` depth (``None`` = unlimited) exceeds ``best``."""
+    if best is None:
+        return False
+    return remaining is None or remaining > best
 
 
 def _node_id(repo: str, ref: str | None) -> str:

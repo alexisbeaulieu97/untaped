@@ -118,9 +118,11 @@ def _append_tree_roots(
     prefix: str,
     target_id: str,
 ) -> None:
+    printed: set[str] = set()
     for root_id in root_ids:
         root = nodes[root_id]
         lines.append(f"{prefix}+-- {root.label}")
+        printed.add(root_id)
         _append_tree_children(
             lines,
             nodes=nodes,
@@ -128,6 +130,7 @@ def _append_tree_roots(
             parent_id=root_id,
             prefix=f"{prefix}    ",
             path={target_id, root_id},
+            printed=printed,
         )
 
 
@@ -139,7 +142,14 @@ def _append_tree_children(
     parent_id: str,
     prefix: str,
     path: set[str],
+    printed: set[str],
 ) -> None:
+    """Append a depth-first subtree, printing each shared subtree only once.
+
+    A node whose children were already printed elsewhere in this section is
+    shown as ``(see above)`` instead of repeating its subtree, which keeps
+    output linear in the number of edges for DAGs with shared dependencies.
+    """
     stack = [
         (
             prefix,
@@ -158,6 +168,10 @@ def _append_tree_children(
         if child_id in current_path:
             lines.append(f"{current_prefix}+-- {child.label} (cycle)")
             continue
+        if child_id in printed and adjacency.get(child_id):
+            lines.append(f"{current_prefix}+-- {child.label} (see above)")
+            continue
+        printed.add(child_id)
         lines.append(f"{current_prefix}+-- {child.label}")
         stack.append(
             (
