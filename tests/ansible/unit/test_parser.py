@@ -173,3 +173,33 @@ def test_parse_wrong_shaped_nested_dependency_sections_warn() -> None:
     assert [
         (warning.source_path, warning.reason) for warning in invalid_collections_report.warnings
     ] == [("requirements.yml", "expected list at collections")]
+
+
+def test_numeric_looking_versions_keep_their_original_text() -> None:
+    report = parse_dependency_file(
+        "requirements.yml",
+        "roles:\n  - src: acme/base\n    version: 1.10\n  - src: acme/users\n    version: 2\n",
+    )
+
+    assert [dep.version for dep in report.dependencies] == ["1.10", "2"]
+
+
+def test_meta_main_yaml_extension_is_supported() -> None:
+    report = parse_dependency_file("meta/main.yaml", "dependencies:\n  - src: acme/base\n")
+
+    assert [dep.src for dep in report.dependencies] == ["acme/base"]
+    assert report.warnings == ()
+
+
+def test_unsupported_dependency_file_name_warns() -> None:
+    report = parse_dependency_file("deps/custom.yml", "- src: acme/base\n")
+
+    assert report.dependencies == ()
+    assert [warning.reason for warning in report.warnings] == ["unsupported dependency file"]
+
+
+def test_null_sections_stay_warning_free_with_string_scalars() -> None:
+    report = parse_dependency_file("meta/main.yml", "dependencies: null\n")
+
+    assert report.dependencies == ()
+    assert report.warnings == ()

@@ -201,7 +201,7 @@ class SqliteDependencyIndex:
             source_key=source_key,
             join_sql="""
                 join source_ref_scans as scans
-                  on scans.source_repo = requested.repo
+                  on scans.source_repo = requested.repo collate nocase
                  and (requested.ref is null or scans.source_ref = requested.ref)
                 join snapshot_edges as edges
                   on edges.snapshot_id = scans.snapshot_id
@@ -219,7 +219,7 @@ class SqliteDependencyIndex:
             source_key=source_key,
             join_sql="""
                 join snapshot_edges as edges
-                  on edges.dependency_repo = requested.repo
+                  on edges.dependency_repo = requested.repo collate nocase
                  and (requested.ref is null or edges.dependency_version = requested.ref)
                 join source_ref_scans as scans
                   on scans.snapshot_id = edges.snapshot_id
@@ -234,7 +234,7 @@ class SqliteDependencyIndex:
                 """
                 select source_ref
                 from source_ref_scans
-                where source_key = ? and source_repo = ? and source_ref != ''
+                where source_key = ? and source_repo = ? collate nocase and source_ref != ''
                 """,
                 (source_key, repo),
             ).fetchall()
@@ -265,12 +265,12 @@ class SqliteDependencyIndex:
                     with requested(repo) as (
                         values {placeholders}
                     )
-                    select scans.source_repo, scans.source_ref as name,
+                    select requested.repo as requested_repo, scans.source_ref as name,
                            nullif(scans.ref_kind, '') as kind,
                            metadata.default_branch
                     from requested
                     join source_ref_scans as scans
-                      on scans.source_repo = requested.repo
+                      on scans.source_repo = requested.repo collate nocase
                     left join source_repo_metadata as metadata
                       on metadata.source_key = scans.source_key
                      and metadata.source_repo = scans.source_repo
@@ -281,7 +281,7 @@ class SqliteDependencyIndex:
                 ).fetchall()
                 for row in rows:
                     key = (str(row["name"]), _optional_str(row["kind"]))
-                    grouped[str(row["source_repo"])].setdefault(
+                    grouped[str(row["requested_repo"])].setdefault(
                         key,
                         CachedRef(
                             name=key[0],

@@ -8,6 +8,7 @@ from functools import cmp_to_key
 from typing import Literal
 
 from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphNode
+from untaped.capabilities.ansible.domain.identity import repo_key
 from untaped.capabilities.ansible.domain.ref_display import (
     RefDisplay,
     compare_ref_displays,
@@ -104,7 +105,8 @@ def _is_concrete_target_ref(node: GraphNode, target: GraphNode) -> bool:
     return (
         target.ref is None
         and target.repo is not None
-        and node.repo == target.repo
+        and node.repo is not None
+        and repo_key(node.repo) == repo_key(target.repo)
         and node.ref is not None
     )
 

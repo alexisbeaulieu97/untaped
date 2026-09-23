@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.ansible.domain.identity import repo_key
 from untaped.capabilities.ansible.domain.payloads import CachedRef, IndexedDependency
 
 if TYPE_CHECKING:
@@ -25,6 +26,9 @@ class OverlayDependencyIndex:
         self._wrapped = wrapped
         self._local_edges = local_edges
         self._authoritative_sources = authoritative_sources or set()
+        self._authoritative_keys = {
+            (repo_key(repo), ref) for repo, ref in self._authoritative_sources
+        }
 
     def dependencies(
         self,
@@ -34,7 +38,7 @@ class OverlayDependencyIndex:
         source_key: str | None,
     ) -> list[IndexedDependency]:
         local = self._local_dependencies(repo, ref)
-        if (repo, ref) in self._authoritative_sources:
+        if (repo_key(repo), ref) in self._authoritative_keys:
             return local
         return local or self._wrapped.dependencies(repo, ref, source_key=source_key)
 
@@ -57,7 +61,7 @@ class OverlayDependencyIndex:
         delegated: list[tuple[str, str | None]] = []
         for repo, ref in dict.fromkeys(pairs):
             local = self._local_dependencies(repo, ref)
-            if local or (repo, ref) in self._authoritative_sources:
+            if local or (repo_key(repo), ref) in self._authoritative_keys:
                 results[(repo, ref)] = local
             else:
                 delegated.append((repo, ref))
@@ -78,7 +82,7 @@ class OverlayDependencyIndex:
         refs.update(
             ref
             for source_repo, ref in self._authoritative_sources
-            if source_repo == repo and ref is not None
+            if repo_key(source_repo) == repo_key(repo) and ref is not None
         )
         return refs
 
@@ -106,7 +110,7 @@ class OverlayDependencyIndex:
         return [
             edge
             for edge in self._local_edges
-            if edge.source_repo == repo and edge.source_ref == ref
+            if repo_key(edge.source_repo) == repo_key(repo) and edge.source_ref == ref
         ]
 
     def _overlay_ref_metadata(
@@ -117,7 +121,7 @@ class OverlayDependencyIndex:
         metadata = list(wrapped)
         known = {(cached_ref.name, cached_ref.kind) for cached_ref in metadata}
         for source_repo, ref in self._authoritative_sources:
-            if source_repo != repo or ref is None or (ref, None) in known:
+            if repo_key(source_repo) != repo_key(repo) or ref is None or (ref, None) in known:
                 continue
             metadata.append(CachedRef(name=ref))
         return tuple(metadata)

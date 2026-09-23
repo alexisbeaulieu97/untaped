@@ -2085,6 +2085,66 @@ def test_graph_local_repo_without_remote_hints_target_repo(
 
 
 @requires_git
+def test_graph_local_target_resolves_configured_enterprise_host(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "role"
+    _init_git_repo(target, origin="git@ghe.example.com:acme/ghe-role.git")
+    (target / "roles").mkdir()
+    (target / "roles" / "requirements.yml").write_text(
+        "- src: https://ghe.example.com/acme/users.git\n"
+    )
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        extra_profile={"github": {"base_url": "https://ghe.example.com/api/v3"}},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/ghe-role\n")
+    assert "+-- acme/users" in result.stdout
+    assert "unresolved" not in result.stdout
+
+
+def test_graph_upstream_matches_repo_ids_case_insensitively(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "index.sqlite3"
+    _seed_index(
+        SqliteDependencyIndex(index_path),
+        "source:prod",
+        (
+            IndexedDependency(
+                source_repo="Acme/Site",
+                source_ref="main",
+                dependency_repo="acme/base",
+                dependency_name="base",
+                dependency_version="main",
+                source_path="roles/requirements.yml",
+            ),
+        ),
+    )
+    cfg = _write_config(
+        tmp_path,
+        index_path=index_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "Acme/Base", "--source", "prod", "--upstream", "--ref", "main"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Acme/Site@main" in result.stdout
+
+
+@requires_git
 def test_graph_local_target_prefers_origin_remote_for_identity(
     tmp_path: Path,
     monkeypatch,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from untaped.capabilities.ansible.domain.identity import IdentityResolver
+from untaped.capabilities.ansible.domain.identity import IdentityResolver, repo_key
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import (
     CachedRef,
@@ -31,8 +31,10 @@ class GithubDependencyIndex:
         wrapped: DependencyIndex,
         aliases: dict[str, str],
         dependency_paths: list[str],
+        github_host: str | None = None,
     ) -> None:
         self._github = github
+        self._github_host = github_host
         self._wrapped = wrapped
         self._aliases = aliases
         self._dependency_paths = dependency_paths
@@ -51,7 +53,7 @@ class GithubDependencyIndex:
         *,
         source_key: str | None,
     ) -> list[IndexedDependency]:
-        key = (repo, ref)
+        key = (repo_key(repo), ref)
         if key not in self._cache:
             self._cache[key] = self._live_dependencies(repo, ref)
         return self._cache[key]
@@ -90,7 +92,7 @@ class GithubDependencyIndex:
         refs.update(
             cached_ref
             for cached_repo, cached_ref in self._cache
-            if cached_repo == repo and cached_ref is not None
+            if cached_repo == repo_key(repo) and cached_ref is not None
         )
         return refs
 
@@ -120,7 +122,7 @@ class GithubDependencyIndex:
         metadata = list(wrapped)
         known = {(cached_ref.name, cached_ref.kind) for cached_ref in metadata}
         for cached_repo, cached_ref in self._cache:
-            if cached_repo != repo or cached_ref is None or (cached_ref, None) in known:
+            if cached_repo != repo_key(repo) or cached_ref is None or (cached_ref, None) in known:
                 continue
             metadata.append(CachedRef(name=cached_ref))
         return tuple(metadata)
@@ -130,7 +132,7 @@ class GithubDependencyIndex:
         read_ref = self._read_ref(owner, name, ref)
         source_ref = ref or read_ref
         paths = self._tree_paths(owner, name, read_ref)
-        resolver = IdentityResolver(self._aliases)
+        resolver = IdentityResolver(self._aliases, github_host=self._github_host)
         edges: list[IndexedDependency] = []
         for path in self._dependency_paths:
             if path not in paths:

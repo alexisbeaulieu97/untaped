@@ -27,7 +27,7 @@ from untaped.capabilities.ansible.cli._refresh import (
     run_source_refresh,
 )
 from untaped.capabilities.ansible.domain.graph import DependencyGraph
-from untaped.capabilities.ansible.domain.identity import IdentityResolver
+from untaped.capabilities.ansible.domain.identity import IdentityResolver, github_web_host
 from untaped.capabilities.ansible.domain.models import DependencyDeclaration, ParseWarning
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import IndexedDependency, SkippedDependencyFile
@@ -245,7 +245,11 @@ def graph_command(
         ctx = app_context()
         settings = get_config_section("ansible", AnsibleSettings)
         aliases = AliasRepository().entries()
-        target_repo_name = target_repo or _resolve_target_repo(target, aliases)
+        github_settings = get_config_section("github", GithubSettings)
+        github_host = github_web_host(github_settings.base_url)
+        target_repo_name = target_repo or _resolve_target_repo(
+            target, aliases, github_host=github_host
+        )
         if target_repo_name is None:
             message = f"could not resolve target to a GitHub repo: {target!r}"
             if Path(target).expanduser().exists():
@@ -272,7 +276,6 @@ def graph_command(
         should_refresh_source = refresh
         refresh_warnings: list[str] = []
         if should_refresh_source:
-            github_settings = get_config_section("github", GithubSettings)
             for selection in graph_source.selections:
                 result = run_source_refresh(
                     selection.definition,
@@ -314,6 +317,7 @@ def graph_command(
                 ref=ref,
                 aliases=aliases,
                 dependency_paths=settings.dependency_paths,
+                github_host=github_host,
             )
             parse_warnings.extend(local_dependencies.warnings)
             index = OverlayDependencyIndex(
@@ -337,13 +341,13 @@ def graph_command(
                 source_key=graph_source.key,
                 live=live,
             ):
-                github_settings = get_config_section("github", GithubSettings)
                 with GithubClient(github_settings, http=ctx.http) as github:
                     live_index = GithubDependencyIndex(
                         github=github,
                         wrapped=index,
                         aliases=aliases,
                         dependency_paths=settings.dependency_paths,
+                        github_host=github_host,
                     )
                     graph = _graph_from_index(
                         live_index,
@@ -568,20 +572,25 @@ def _missing_source_index_message(
     )
 
 
-def _resolve_target_repo(target: str, aliases: dict[str, str]) -> str | None:
+def _resolve_target_repo(
+    target: str,
+    aliases: dict[str, str],
+    *,
+    github_host: str | None,
+) -> str | None:
     path = Path(target).expanduser()
     if path.exists():
-        return _repo_from_local_git(path)
+        return _repo_from_local_git(path, github_host=github_host)
     declaration = DependencyDeclaration(name=target, src=target, source_path="<target>")
-    return IdentityResolver(aliases).resolve(declaration).repo
+    return IdentityResolver(aliases, github_host=github_host).resolve(declaration).repo
 
 
-def _repo_from_local_git(path: Path) -> str | None:
+def _repo_from_local_git(path: Path, *, github_host: str | None) -> str | None:
     origin_url = local_remote_url(path)
     if origin_url is None:
         return None
     declaration = DependencyDeclaration(name=origin_url, src=origin_url, source_path="<git-remote>")
-    return IdentityResolver().resolve(declaration).repo
+    return IdentityResolver(github_host=github_host).resolve(declaration).repo
 
 
 def _local_dependencies(
@@ -591,10 +600,11 @@ def _local_dependencies(
     ref: str | None,
     aliases: dict[str, str],
     dependency_paths: list[str],
+    github_host: str | None,
 ) -> _LocalDependencies:
     edges: list[IndexedDependency] = []
     warnings: list[str] = []
-    resolver = IdentityResolver(aliases)
+    resolver = IdentityResolver(aliases, github_host=github_host)
     for relative in dependency_paths:
         dep_path = path / relative
         if not dep_path.is_file():
