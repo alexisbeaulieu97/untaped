@@ -154,6 +154,12 @@ untaped awx apply ./awx-specs --dry-run
 untaped awx inventories apply ./inventory.yml --yes
 ```
 
+A directory contributes every `*.yml` and `*.yaml` file. A document of an
+organization-scoped kind without `metadata.organization` is scoped by
+`awx.default_organization`, as selection and `awx test` are. With no default
+configured, a name that exists in more than one organization is an ambiguity
+error rather than a guess.
+
 `save` exports a fixed selection as portable YAML. Per-resource save accepts
 `--out FILE`; without it, YAML is written to stdout. Inventory and source
 exports preserve organization and parent identity:
