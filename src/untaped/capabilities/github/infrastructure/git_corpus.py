@@ -9,7 +9,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from collections.abc import Callable
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse
 
+from untaped.api import echo
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -59,6 +59,10 @@ TRANSIENT_FETCH_MARKERS = (
     "returned error: 504",
 )
 METADATA_FILE = "untaped-corpus.json"
+# Bare repos live at <root>/<host>/<name>-<digest>.git (see cache_path_for);
+# a fixed-depth glob avoids walking objects/ and managed worktrees.
+METADATA_GLOB = f"*/*.git/{METADATA_FILE}"
+NON_INTERACTIVE_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 
 class GitCorpusCache:
@@ -73,6 +77,7 @@ class GitCorpusCache:
         fetch_attempts: int = DEFAULT_FETCH_ATTEMPTS,
         fetch_batch_size: int = DEFAULT_FETCH_BATCH_SIZE,
         sleep: Callable[[float], None] = time.sleep,
+        warn: Callable[[str], None] | None = None,
     ) -> None:
         if fetch_attempts < 1:
             raise ValueError("fetch_attempts must be positive")
@@ -85,6 +90,7 @@ class GitCorpusCache:
         self._fetch_attempts = fetch_attempts
         self._fetch_batch_size = fetch_batch_size
         self._sleep = sleep
+        self._warn = warn or _echo_warning
 
     def sync_repo(
         self,
@@ -103,7 +109,7 @@ class GitCorpusCache:
         if not (bare / "HEAD").is_file():
             bare.parent.mkdir(parents=True, exist_ok=True)
             self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
-        self._ensure_origin(bare, url, auth_header=scoped_auth_header)
+        self._ensure_origin(bare, url)
 
         stored = self.repo_freshness(repo, root=root)
         profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
@@ -183,7 +189,10 @@ class GitCorpusCache:
         root: Path,
         selector: RefSelector,
     ) -> tuple[str, ...]:
-        """Return cached refs selected for a sweep, with default branch first."""
+        """Return full refnames selected for a sweep, with the default branch first.
+
+        Full names keep a branch and a tag that share a short name distinct.
+        """
         branch = _default_branch(repo)
         bare = cache_path_for(_remote_url(repo), cache_dir=root)
         if not (bare / "HEAD").is_file():
@@ -197,11 +206,11 @@ class GitCorpusCache:
             ),
         )
         refs = (
-            _short_ref(ref)
+            ref
             for ref in (result.stdout or "").splitlines()
             if _selector_covers_ref(selector, ref, default_branch=branch)
         )
-        return _order_refs(tuple(dict.fromkeys(refs)), default_branch=branch)
+        return _order_refs(tuple(dict.fromkeys(refs)), default_branch=f"refs/heads/{branch}")
 
     def grep_ref(
         self,
@@ -220,8 +229,8 @@ class GitCorpusCache:
         args = ["grep", "-n", "--column", "-z", "-I"]
         if ignore_case:
             args.append("--ignore-case")
-        if fixed_strings:
-            args.append("--fixed-strings")
+        # Pin the pattern syntax so a user's grep.patternType cannot change results.
+        args.append("--fixed-strings" if fixed_strings else "--extended-regexp")
         if word_regexp:
             args.append("--word-regexp")
         args.extend(["-e", pattern, ref, "--"])
@@ -289,9 +298,7 @@ class GitCorpusCache:
         with tempfile.TemporaryDirectory(prefix=".validate-", dir=managed_root) as scratch:
             scratch_path = Path(scratch)
             self._run(["init", "-q"], cwd=scratch_path)
-            args = ["grep", "-n"]
-            if fixed_strings:
-                args.append("--fixed-strings")
+            args = ["grep", "-n", "--fixed-strings" if fixed_strings else "--extended-regexp"]
             args.extend(["-e", pattern, "--"])
             args.extend(paths)
             result = cast(
@@ -308,13 +315,8 @@ class GitCorpusCache:
         if not managed_root.exists():
             return ()
         rows: list[CorpusRepoResult] = []
-        for metadata_path in sorted(managed_root.rglob(METADATA_FILE)):
+        for metadata_path, data in self._metadata_entries(managed_root):
             bare = metadata_path.parent
-            try:
-                data = _read_metadata(metadata_path)
-            except GitCorpusError as exc:
-                print(f"warning: {exc}", file=sys.stderr)
-                continue
             rows.append(
                 CorpusRepoResult(
                     repo=str(data.get("repo") or ""),
@@ -335,8 +337,7 @@ class GitCorpusCache:
         managed_root = root.expanduser()
         if not managed_root.exists():
             return None
-        for metadata_path in sorted(managed_root.rglob(METADATA_FILE)):
-            data = _read_metadata(metadata_path)
+        for _metadata_path, data in self._metadata_entries(managed_root):
             if data.get("repo") != repo:
                 continue
             return CorpusRepoTarget(
@@ -346,6 +347,16 @@ class GitCorpusCache:
                 archived=_metadata_archived(data),
             )
         return None
+
+    def _metadata_entries(self, managed_root: Path) -> list[tuple[Path, dict[str, object]]]:
+        """Read every managed bare repo's metadata, warning on and skipping corrupt files."""
+        entries: list[tuple[Path, dict[str, object]]] = []
+        for metadata_path in sorted(managed_root.glob(METADATA_GLOB)):
+            try:
+                entries.append((metadata_path, _read_metadata(metadata_path)))
+            except GitCorpusError as exc:
+                self._warn(str(exc))
+        return entries
 
     def clean_repo(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
         """Remove one cached repository from the managed corpus root."""
@@ -388,27 +399,19 @@ class GitCorpusCache:
             )
         return WorktreeResult(repo=repo.full_name, ref=selected_ref, path=str(worktree))
 
-    def _ensure_origin(self, bare: Path, url: str, *, auth_header: str | None) -> None:
+    def _ensure_origin(self, bare: Path, url: str) -> None:
+        # Purely local config commands: never hand them the auth header.
         current = self._run(
             ["remote", "get-url", "origin"],
             cwd=bare,
             capture_text=True,
             check=False,
-            auth_header=auth_header,
-            auth_url=url,
         )
         current_url = (current.stdout or "").strip()
         if not current_url:
-            self._run(
-                ["remote", "add", "origin", url], cwd=bare, auth_header=auth_header, auth_url=url
-            )
+            self._run(["remote", "add", "origin", url], cwd=bare)
         elif current_url != url:
-            self._run(
-                ["remote", "set-url", "origin", url],
-                cwd=bare,
-                auth_header=auth_header,
-                auth_url=url,
-            )
+            self._run(["remote", "set-url", "origin", url], cwd=bare)
 
     def _sync_selected_refs(
         self,
@@ -614,10 +617,14 @@ class GitCorpusCache:
         if self._git_path is None:
             raise GitCorpusError(f"`{self._git}` not found on PATH")
         effective_timeout = self._timeout if timeout is None else timeout
-        env = None
         auth_config_path: Path | None = None
         if auth_header is not None:
             env, auth_config_path = _auth_config_env(auth_header, auth_url=auth_url)
+        else:
+            env = os.environ.copy()
+        # A sweep runs unattended across many repos: fail fast instead of
+        # letting git or a credential manager block on an interactive prompt.
+        env.update(NON_INTERACTIVE_GIT_ENV)
         # Never inherit the CLI's stdio: stray git chatter would corrupt piped
         # output, and piping stderr keeps failure text available for errors.
         capture_stdout = subprocess.PIPE if capture_text or capture_bytes else subprocess.DEVNULL
@@ -628,6 +635,8 @@ class GitCorpusCache:
                 cwd=cwd,
                 env=env,
                 text=capture_text,
+                # With no payload, close stdin so git never reads the terminal.
+                stdin=subprocess.DEVNULL if stdin is None else None,
                 stdout=capture_stdout,
                 stderr=capture_stderr,
                 input=_stdin_payload(stdin, text=capture_text),
@@ -647,6 +656,10 @@ class GitCorpusCache:
                 f"git {' '.join(args)} failed: {_redact(stderr, auth_header) or 'no stderr'}"
             )
         return result
+
+
+def _echo_warning(message: str) -> None:
+    echo(f"warning: {message}", err=True)
 
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:
@@ -707,14 +720,6 @@ def _selector_covers_ref(selector: RefSelector, ref: str, *, default_branch: str
     else:
         return False
     return any(fnmatch.fnmatchcase(name, glob) for glob in selector.globs)
-
-
-def _short_ref(ref: str) -> str:
-    if ref.startswith("refs/heads/"):
-        return ref.removeprefix("refs/heads/")
-    if ref.startswith("refs/tags/"):
-        return ref.removeprefix("refs/tags/")
-    return ref
 
 
 def _order_refs(refs: tuple[str, ...], *, default_branch: str) -> tuple[str, ...]:

@@ -575,7 +575,7 @@ def test_search_repos_422_error_preserves_http_error_metadata() -> None:
     assert "Validation Failed" in exc_info.value.body
 
 
-def test_search_code_truncates_oversized_team_with_warning() -> None:
+def test_search_code_batches_oversized_team_without_truncating() -> None:
     big = [{"full_name": f"acme/repo{i}"} for i in range(MAX_TEAM_REPO_QUALIFIERS + 5)]
     teams = _StubTeams(big)
     search = _StubSearch([])
@@ -589,13 +589,70 @@ def test_search_code_truncates_oversized_team_with_warning() -> None:
         )
     )
 
-    assert any("truncating" in w for w in warnings)
-    q = search.calls[0][1]
-    assert q.count("repo:") == MAX_TEAM_REPO_QUALIFIERS
-    assert q.count(" OR ") == MAX_TEAM_REPO_QUALIFIERS - 1
+    assert warnings == []
+    queries = [call[1] for call in search.calls]
+    assert len(queries) == 2
+    assert sum(q.count("repo:") for q in queries) == len(big)
+    assert all(q.count(" OR ") <= 5 for q in queries)
+    assert all(q.startswith("TODO ") for q in queries)
 
 
-def test_search_issues_truncates_oversized_team_with_warning() -> None:
+def test_search_code_two_teams_stay_under_boolean_operator_limit() -> None:
+    teams = _StubTeams(
+        repos_by_team={
+            ("acme", "a"): [{"full_name": f"acme/a{i}"} for i in range(6)],
+            ("acme", "b"): [{"full_name": f"acme/b{i}"} for i in range(6)],
+        }
+    )
+    search = _StubSearch([])
+    use_case = SearchCode(_stub(search), _teams(teams))
+
+    list(
+        use_case(
+            CodeSearchFilters(raw_query="foo OR bar"),
+            team_scopes=(TeamScope("acme", "a"), TeamScope("acme", "b")),
+        )
+    )
+
+    queries = [call[1] for call in search.calls]
+    assert sum(q.count("repo:") for q in queries) == 12
+    assert all(q.count(" OR ") <= 5 for q in queries)
+
+
+def test_search_code_merges_batches_deduped_by_html_url_and_limited() -> None:
+    def code_row(repo: str, path: str) -> dict[str, Any]:
+        return {
+            "name": path,
+            "path": path,
+            "sha": "s",
+            "html_url": f"https://github.com/{repo}/blob/main/{path}",
+            "repository": {"full_name": repo},
+        }
+
+    search = _QueuedSearch(
+        [
+            [code_row("acme/r0", "a.py"), code_row("acme/r0", "b.py")],
+            [code_row("acme/r0", "a.py"), code_row("acme/r7", "c.py"), code_row("acme/r8", "d")],
+        ]
+    )
+    use_case = SearchCode(
+        _stub(search),
+        _teams(_StubTeams()),
+    )
+
+    rows = list(
+        use_case(
+            CodeSearchFilters(
+                raw_query="TODO", repos=tuple(f"acme/r{i}" for i in range(9)), limit=3
+            )
+        )
+    )
+
+    assert [row.path for row in rows] == ["a.py", "b.py", "c.py"]
+    assert len(search.calls) == 2
+
+
+def test_search_issues_batches_oversized_team_without_truncating() -> None:
     big = [{"full_name": f"acme/repo{i}"} for i in range(MAX_TEAM_REPO_QUALIFIERS + 5)]
     teams = _StubTeams(big)
     search = _StubSearch([])
@@ -609,10 +666,52 @@ def test_search_issues_truncates_oversized_team_with_warning() -> None:
         )
     )
 
-    assert any("truncating" in w for w in warnings)
-    q = search.calls[0][1]
-    assert q.count("repo:") == MAX_TEAM_REPO_QUALIFIERS
-    assert q.count(" OR ") == MAX_TEAM_REPO_QUALIFIERS - 1
+    assert warnings == []
+    queries = [call[1] for call in search.calls]
+    assert len(queries) == 2
+    assert sum(q.count("repo:") for q in queries) == len(big)
+    assert all(q.count(" OR ") <= 5 for q in queries)
+    assert all("is:open" in q for q in queries)
+
+
+def test_search_issues_sorted_batches_merge_globally_and_dedupe_by_id() -> None:
+    def issue_row(id_: int, updated_at: str) -> dict[str, Any]:
+        return {
+            "id": id_,
+            "number": id_,
+            "title": "t",
+            "state": "open",
+            "html_url": f"https://github.com/acme/r/issues/{id_}",
+            "repository_url": "https://api.github.com/repos/acme/r",
+            "updated_at": updated_at,
+        }
+
+    search = _QueuedSearch(
+        [
+            [issue_row(1, "2026-01-03"), issue_row(2, "2026-01-01")],
+            [issue_row(3, "2026-01-04"), issue_row(1, "2026-01-03")],
+        ]
+    )
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    rows = list(
+        use_case(
+            IssueSearchFilters(sort="updated", repos=tuple(f"acme/r{i}" for i in range(7)), limit=2)
+        )
+    )
+
+    assert [row.id for row in rows] == [3, 1]
+    assert len(search.calls) == 2
+
+
+def test_search_issues_rejects_raw_query_with_too_many_boolean_operators() -> None:
+    search = _StubSearch([])
+    use_case = SearchIssues(_stub(search), _teams(_StubTeams()))
+
+    with pytest.raises(UntapedError, match="boolean operators"):
+        list(use_case(IssueSearchFilters(raw_query="a OR b OR c OR d OR e OR f OR g")))
+
+    assert search.calls == []
 
 
 def test_search_repos_validates_results_into_domain_model() -> None:

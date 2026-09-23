@@ -5,10 +5,35 @@ from __future__ import annotations
 from untaped.capabilities.jira.domain import JiraIssueSearchFilters
 
 
-def test_default_issue_search_targets_current_users_unresolved_work() -> None:
-    query = JiraIssueSearchFilters().to_jql()
+def test_default_jql_applies_only_without_other_filters() -> None:
+    default = "assignee = currentUser() AND resolution = Unresolved"
 
-    assert query == "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+    bare = JiraIssueSearchFilters(default_jql=default).to_jql()
+    filtered = JiraIssueSearchFilters(default_jql=default, project="ABC").to_jql()
+
+    assert bare == "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+    assert filtered == "project = ABC ORDER BY updated DESC"
+
+
+def test_scope_jql_is_anded_with_raw_jql_and_raw_order_by_wins() -> None:
+    query = JiraIssueSearchFilters(
+        scope_jql="assignee = currentUser() ORDER BY created DESC",
+        raw_jql="project = SEC ORDER BY priority DESC",
+        status="Open",
+    ).to_jql()
+
+    assert query == (
+        '(assignee = currentUser()) AND (project = SEC) AND status = "Open" ORDER BY priority DESC'
+    )
+
+
+def test_scope_jql_order_by_used_when_raw_jql_has_none() -> None:
+    query = JiraIssueSearchFilters(
+        scope_jql="assignee = currentUser() ORDER BY created DESC",
+        raw_jql="project = SEC",
+    ).to_jql()
+
+    assert query == "(assignee = currentUser()) AND (project = SEC) ORDER BY created DESC"
 
 
 def test_shortcut_filters_render_jql_with_default_order() -> None:
@@ -43,3 +68,26 @@ def test_raw_jql_order_by_inside_quoted_text_is_not_split() -> None:
     ).to_jql()
 
     assert query == '(text ~ "foo order by bar") AND project = ABC ORDER BY updated DESC'
+
+
+def test_raw_jql_that_is_only_order_by_is_not_wrapped() -> None:
+    query = JiraIssueSearchFilters(raw_jql="ORDER BY created DESC", project="ABC").to_jql()
+    bare = JiraIssueSearchFilters(raw_jql="  order by created DESC").to_jql()
+
+    assert query == "project = ABC ORDER BY created DESC"
+    assert bare == "order by created DESC"
+
+
+def test_sprint_function_values_render_with_in_operator() -> None:
+    for value, rendered in (
+        ("openSprints()", "sprint in openSprints()"),
+        ("futureSprints()", "sprint in futureSprints()"),
+        ("closedsprints()", "sprint in closedSprints()"),
+    ):
+        assert JiraIssueSearchFilters(sprint=value).to_jql() == f"{rendered} ORDER BY updated DESC"
+
+
+def test_sprint_name_is_still_quoted() -> None:
+    query = JiraIssueSearchFilters(sprint="Sprint 12").to_jql()
+
+    assert query == 'sprint = "Sprint 12" ORDER BY updated DESC'
