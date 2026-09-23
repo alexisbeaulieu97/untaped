@@ -58,5 +58,5 @@ INVENTORY_SPEC = AwxResourceSpec(
     ),
     actions=(ActionSpec(name="sync", path=None, returns=frozenset({"inventory_update"})),),
     list_columns=("id", "name", "organization", "total_hosts"),
-    commands=("list", "get", "save", "apply", "patch", "edit", "delete"),
+    commands=("list", "get", "save", "apply", "delete"),
 )

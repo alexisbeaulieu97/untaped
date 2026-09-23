@@ -80,14 +80,5 @@ class MutationPlan:
     operations: tuple[PreparedMutation, ...]
     mode: str = "apply"
 
-    @property
-    def empty(self) -> bool:
-        return not self.operations
 
-
-def copy_identity(identity: dict[str, Any]) -> dict[str, Any]:
-    """Copy an identity without retaining mutable Pydantic internals."""
-    return copy.deepcopy(identity)
-
-
-__all__ = ["DeferredReference", "MutationPlan", "PreparedMutation", "copy_identity"]
+__all__ = ["DeferredReference", "MutationPlan", "PreparedMutation"]

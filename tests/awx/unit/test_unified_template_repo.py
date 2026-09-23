@@ -1,6 +1,6 @@
 """Unit tests for :class:`UnifiedTemplateRepository`.
 
-The adapter is two methods of pure delegation — list pagination through
+The adapter is two methods — alphabetical list pagination through
 ``unified_job_templates/`` and a bulk ``?id__in=…`` lookup. Tests stub
 the underlying client and assert path/params forwarding.
 """
@@ -89,7 +89,8 @@ def test_list_passes_none_params_through() -> None:
     repo = UnifiedTemplateRepository(cast(RawHttpResourceClient, client))
     list(repo.list())
     _, params, limit = client.paginate_calls[0]
-    assert params == {}
+    # Alphabetical by default: ``-id`` would interleave four kinds' timelines.
+    assert params == {"order_by": "name"}
     assert limit is None
 
 

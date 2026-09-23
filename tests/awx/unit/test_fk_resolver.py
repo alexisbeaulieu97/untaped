@@ -282,7 +282,7 @@ def test_prefetch_no_warn_on_programming_error() -> None:
 def test_prefetch_propagates_warn_raise() -> None:
     # Warns are expected to be infallible (loggers, stderr writes). A warn
     # that raises is a caller bug, so let it propagate rather than wrap it
-    # in a try/except that masks the bug. Matches how `ApplyResource` calls
+    # in a try/except that masks the bug. Matches how the mutation engine calls
     # its own `self._warn(...)` — unguarded.
     repo = _BoomRepo({"Organization": [{"id": 7, "name": "Default"}]})
 

@@ -40,7 +40,7 @@ def unrecognized_warning(spec: ResourceSpec, names: Iterable[str]) -> str | None
     """The shared "field(s) sent as-is" warning body, or ``None`` if all known.
 
     One source of truth for the message that both the file-mode
-    (:meth:`ApplyResource._warn_unrecognized`, per doc) and ``--stdin``
+    (once per distinct message in a batch) and ``--stdin``
     (the shared mutation planner, once per document) paths emit. Callers add their own
     ``warning:`` prefix / routing.
     """

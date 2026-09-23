@@ -46,28 +46,5 @@ def format_value(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False, default=str)
 
 
-def diff_lines(outcome: ApplyOutcome) -> list[str]:
-    """Pretty per-resource diff for stderr (used in preview mode)."""
-    if not outcome.changes:
-        return [f"{outcome.kind}/{outcome.name}: no changes"]
-    out = [f"{outcome.kind}/{outcome.name}:"]
-    for change in outcome.changes:
-        out.append(f"  {_format_change(change)}")
-    return out
-
-
 def _changed_fields(changes: list[FieldChange]) -> list[str]:
     return [c.field for c in changes if c.note != PRESERVED_SECRET_NOTE]
-
-
-def _format_change(c: FieldChange) -> str:
-    if c.note == PRESERVED_SECRET_NOTE:
-        return f"{c.field}: ({PRESERVED_SECRET_NOTE})"
-    return f"{c.field}: {_short(c.before)} → {_short(c.after)}"
-
-
-def _short(value: Any, max_len: int = 60) -> str:
-    text = repr(value) if value is not None else "—"
-    if len(text) > max_len:
-        return text[: max_len - 1] + "…"
-    return text

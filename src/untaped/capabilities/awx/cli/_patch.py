@@ -9,7 +9,7 @@ from cyclopts import App, Parameter
 from untaped.api import ColumnsOption, ConfigError, FormatOption, raise_usage, report_errors
 from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.apply_planner import unrecognized_fields
-from untaped.capabilities.awx.cli._apply_runner import build_apply_resource
+from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan, validate_controls
 from untaped.capabilities.awx.cli._patch_values import build_patch, parse_set_pairs
@@ -136,7 +136,7 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                     )
                     for item in selected
                 ]
-                engine = build_apply_resource(ctx, allow_unverified=allow_unverified).engine
+                engine = build_mutation_engine(ctx, allow_unverified=allow_unverified)
                 plan = engine.prepare(resources, mode="patch", existing=selected)
                 run_mutation_plan(
                     ctx,

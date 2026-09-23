@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord, WritePayload
+from untaped.capabilities.awx.application import BatchMutationEngine
+from untaped.capabilities.awx.domain import (
+    ApplyOutcome,
+    Resource,
+    ResourceSpec,
+    ServerRecord,
+    WritePayload,
+)
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
 from untaped.capabilities.awx.infrastructure.specs import PROJECT_SPEC
 from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
@@ -232,3 +239,18 @@ class _MembershipClient(_Client):
 
 def _payload(values: dict[str, Any]) -> WritePayload:
     return WritePayload(**values)
+
+
+class SingleApply(BatchMutationEngine):
+    """Run one document through the batch engine (create-or-update or patch)."""
+
+    def __call__(self, resource: Resource, *, write: bool = False) -> ApplyOutcome:
+        return self.run([resource], write=write).outcomes[0]
+
+    def apply_to_existing(
+        self, resource: Resource, existing: dict[str, Any], *, write: bool = False
+    ) -> ApplyOutcome:
+        plan = self.prepare([resource], mode="patch", existing=[existing])
+        if not write:
+            return plan.operations[0].preview
+        return self.execute(plan).outcomes[0]
