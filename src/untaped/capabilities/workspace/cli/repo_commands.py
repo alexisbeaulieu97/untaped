@@ -42,7 +42,9 @@ from untaped.capability_api import (
     ui_context,
 )
 
-ADD_STDIN_KINDS = frozenset({"github.repo", "workspace.repo"})
+ADD_STDIN_KINDS = frozenset(
+    {"github.repo", "github.repo_hit", "github.sweep_repo", "workspace.repo"}
+)
 """Pipe kinds ``add --stdin`` reads URLs from (``clone_url`` or ``url``)."""
 
 REMOVE_STDIN_KINDS = frozenset({"workspace.repo", "workspace.sync_outcome"})
@@ -66,7 +68,8 @@ def add_command(
         Parameter(
             help=(
                 "Read repo URLs from stdin: one per line, or a --format pipe stream "
-                "of github.repo (clone_url) or workspace.repo (url) records."
+                "of github.repo, github.repo_hit, github.sweep_repo (clone_url or url) "
+                "or workspace.repo (url) records."
             ),
         ),
     ] = False,
@@ -149,7 +152,7 @@ def add_command(
 
 
 def _read_add_urls(urls: list[str], *, stdin: bool) -> list[str]:
-    """Positional URLs, or stdin lines / ``github.repo``/``workspace.repo`` records."""
+    """Positional URLs, or stdin lines / :data:`ADD_STDIN_KINDS` records."""
     if not stdin:
         return read_identifiers(urls, stdin=False)
     if urls:

@@ -239,8 +239,10 @@ the command then prints the `workspace.sync_outcome` rows instead of
 the add rows.
 
 `--stdin` reads one URL per line, or a `--format pipe` stream of
-`github.repo` records (their `clone_url`) or `workspace.repo` records
-(their `url`). A pipe record of any other kind exits `2`.
+`github.repo`, `github.repo_hit` or `github.sweep_repo` records (their
+`clone_url`, else `url`) or `workspace.repo` records (their `url`), so
+`untaped github search repos --org acme --format pipe | untaped workspace
+add --stdin` works. A pipe record of any other kind exits `2`.
 
 ### `remove`
 

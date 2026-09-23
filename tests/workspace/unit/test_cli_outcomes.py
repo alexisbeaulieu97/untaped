@@ -86,6 +86,29 @@ def test_add_stdin_reads_github_repo_clone_urls(tmp_path: Path) -> None:
     assert result.stdout.splitlines() == ["https://x/api.git"]
 
 
+@pytest.mark.parametrize(
+    ("kind", "record"),
+    [
+        ("github.repo_hit", {"full_name": "acme/api", "url": "https://x/api"}),
+        ("github.sweep_repo", {"full_name": "acme/api", "clone_url": "https://x/api.git"}),
+    ],
+)
+def test_add_stdin_reads_github_search_and_sweep_records(
+    tmp_path: Path, kind: str, record: dict[str, object]
+) -> None:
+    runner = CliInvoker()
+    _init(runner, tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["add", "--stdin", "-w", "prod", "--format", "raw", "--columns", "url"],
+        input=_pipe(kind, **record),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [record.get("clone_url") or record["url"]]
+
+
 def test_add_stdin_rejects_foreign_kind(tmp_path: Path) -> None:
     runner = CliInvoker()
     _init(runner, tmp_path)
