@@ -16,7 +16,6 @@ from untaped.capabilities.workspace.application import (
 from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
-    record_row,
     resolve_workspace,
 )
 from untaped.capabilities.workspace.domain import Workspace, WorkspaceSummaryRow
@@ -87,7 +86,7 @@ def get_command(
             if any(isinstance(row, WorkspaceSummaryRow) for row in details)
             else "workspace.repo"
         )
-        emit([record_row(row) for row in details], fmt=fmt, columns=columns, kind=kind)
+        emit(details, fmt=fmt, columns=columns, kind=kind)
 
 
 def path_command(

@@ -16,7 +16,6 @@ from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
     progress_ui,
-    record_row,
     resolve_workspace,
 )
 from untaped.capabilities.workspace.domain import BranchApplyOutcome
@@ -128,7 +127,7 @@ def branch_unset_command(
         else:
             ui.success(f"unset branch for repo {q(change.repo)} in {q(change.workspace)}")
         emit(
-            [record_row(change)],
+            [change],
             fmt=fmt,
             columns=columns,
             kind="workspace.branch_unset_outcome",
@@ -164,9 +163,8 @@ def print_branch_apply_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows = [record_row(row) for row in outcomes]
     emit(
-        rows,
+        outcomes,
         fmt=fmt,
         columns=columns,
         kind="workspace.branch_outcome",

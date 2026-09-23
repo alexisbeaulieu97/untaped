@@ -12,16 +12,27 @@ for the fields the pipe contract fixes (``docs/conventions.md``):
 - :data:`UtcTimestamp` — a ``datetime`` normalized to UTC that serializes as
   RFC 3339 with a ``Z`` suffix (``2026-01-02T03:04:05Z``).
 
-Records are frozen pydantic models; subclasses add their own fields.
+Records are frozen pydantic models; subclasses add their own fields, which
+serialize before the base fields they inherit (the identifying field stays
+first for ``--format raw`` and the first table column).
 """
 
 from __future__ import annotations
 
+import annotationlib
 from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
-from typing import Annotated, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, PlainSerializer
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    PlainSerializer,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 
 def _to_utc(value: datetime) -> datetime:
@@ -82,10 +93,35 @@ CheckStatus = Literal["pass", "warn", "fail", "error"]
 """The check vocabulary for ``status``."""
 
 
+@cache
+def _field_order(model: type[BaseModel]) -> tuple[str, ...]:
+    """Field names by declaring class, most derived first.
+
+    Pydantic lists inherited fields first; records want their own fields
+    (including re-declared base fields) ahead of the base-class ones.
+    """
+    order: dict[str, None] = {}
+    for klass in model.__mro__:
+        own = annotationlib.get_annotations(klass, format=annotationlib.Format.FORWARDREF)
+        order.update(dict.fromkeys(name for name in own if name in model.model_fields))
+    return tuple(order)
+
+
 class Record(BaseModel):
-    """Base for emitted records: frozen, with unknown fields rejected."""
+    """Base for emitted records: frozen, with unknown fields rejected.
+
+    Dumps list the record's own fields before inherited base fields.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+    @model_serializer(mode="wrap")
+    def _own_fields_first(self, handler: SerializerFunctionWrapHandler) -> Any:
+        data = handler(self)
+        if not isinstance(data, dict):
+            return data
+        ordered = {name: data[name] for name in _field_order(type(self)) if name in data}
+        return ordered | data
 
 
 class OutcomeRecord(Record):
