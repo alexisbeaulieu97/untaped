@@ -86,9 +86,20 @@ def _prompt_default(
     *,
     target_profile: str | None,
 ) -> str | None:
-    entry = GetSetting(repo)(full_key)
-    value = entry.value
-    if target_profile is not None and entry.source.kind != "env":
+    value: object
+    try:
+        entry = GetSetting(repo)(full_key)
+    except ConfigError:
+        # The key's section is invalid (the very thing being repaired): offer
+        # the raw stored value, if it is a scalar, instead of failing.
+        value = repo.raw_setting_value(descriptor)
+        from_env = repo.env_value_for(descriptor) is not None
+    else:
+        value = entry.value
+        from_env = entry.source.kind == "env"
+    if isinstance(value, dict | list):
+        value = None
+    if target_profile is not None and not from_env:
         scoped = repo.profile_value_for(descriptor, target_profile)
         value = (
             display_default(descriptor)

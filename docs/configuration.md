@@ -177,13 +177,15 @@ parsing it as YAML. String and secret settings store the input verbatim, so
 `p4ss #word`, `0123456`, `no`, or `[abc` are kept exactly as typed (via
 `VALUE`, `--stdin`, or `--prompt`). Booleans accept `true`/`false`/`yes`/`no`/
 `1`/`0`, numbers and enumerated choices are checked, and paths are stored as
-strings; an invalid value is rejected before anything is written. To clear a
-value, use `config unset`.
+strings; an invalid value is rejected before anything is written. For an
+optional non-string setting, the literal `null` stores an explicit null; a
+string setting stores `null` as text. To clear a value, use `config unset`.
 
 Reads and writes validate only the section a key belongs to, so one invalid
 value (for example a typo in `jira.page_size`) never blocks `config get`,
 `config set`, or `config unset` for other keys; you can repair the broken key
-through the CLI. `config list` still lists every key: an invalid section shows
+through the CLI (`config set KEY --prompt` offers the raw stored value as the
+default). `config list` still lists every key: an invalid section shows
 its raw values and prints a warning naming the problem.
 
 The configuration editor uses `VISUAL`, falling back to `EDITOR`, and waits for

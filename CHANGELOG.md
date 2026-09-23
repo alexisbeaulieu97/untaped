@@ -8,9 +8,12 @@ Correctness and safety fixes from a whole-codebase review. Items marked
 - Core
   - `config set` validates the raw value against the setting's type instead of
     parsing it as YAML: `#` no longer truncates secrets, and numeric strings
-    such as `0123456` are accepted for string settings.
+    such as `0123456` are accepted for string settings. **Behavior change:**
+    for string settings `null` is now stored literally; it still clears
+    optional non-string settings. Use `config unset KEY` to clear a setting.
   - `config` and `profile` commands validate only the section they touch, so a
-    broken section can be repaired from the CLI. Non-mapping config shapes are
+    broken section can be repaired from the CLI (including with
+    `config set KEY --prompt`). Non-mapping config shapes are
     reported as config errors instead of tracebacks.
   - `doctor` reports one row per core, capability, and state section,
     including `UNTAPED_*` overrides and the selected profile.
