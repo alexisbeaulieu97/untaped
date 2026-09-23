@@ -50,6 +50,31 @@ def test_hook_resolver_uses_recipe_local_then_installed_pack(tmp_path: Path) -> 
     assert installed_ref.module == "pack_hooks.hooks.pick"
 
 
+def test_hook_resolver_bare_name_in_pack_does_not_fall_through_to_other_packs(
+    tmp_path: Path,
+) -> None:
+    own_pack = tmp_path / "own"
+    own_pack.mkdir()
+    library_root = tmp_path / "library"
+    other_source = tmp_path / "other-source"
+    _write_hook_project(other_source, hook_name="pick", package="other_hooks")
+    PackLibrary(library_root=library_root).add(
+        other_source,
+        source=str(other_source),
+        rev=None,
+        name="other",
+        force=False,
+    )
+    resolver = HookResolver(library_root=library_root)
+
+    with pytest.raises(ValueError, match="hook not found: pick"):
+        resolver.resolve("pick", own_pack)
+    qualified = resolver.resolve("other/pick", own_pack)
+
+    assert isinstance(qualified, UvHookRef)
+    assert qualified.project_root == library_root / "packs" / "other"
+
+
 def test_hook_resolver_falls_back_to_builtins(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipe"
     recipe_dir.mkdir()

@@ -58,7 +58,10 @@ def run_command(
     target: Annotated[Path, Parameter(name="--target", help="Target directory.")],
     project: Annotated[
         Path | None,
-        Parameter(name="--project", help="Hook project to search before installed packs."),
+        Parameter(
+            name="--project",
+            help="Local hook project to run from (never adopted implicitly from the cwd).",
+        ),
     ] = None,
     kind: Annotated[
         Literal["transform", "validate"] | None,
@@ -273,13 +276,9 @@ def _local_hook_project(project: Path | None) -> Path | None:
         if not metadata.hooks:
             raise ConfigError(f"hook project has no hook metadata: {project}")
         return resolved
-    cwd = Path.cwd()
-    if not (cwd / "pyproject.toml").is_file():
-        return None
-    metadata = read_hook_metadata(cwd)
-    if not metadata.hooks:
-        return None
-    return cwd
+    # Never adopt the cwd's hook project implicitly: running code from
+    # whatever repository happens to be checked out requires --project/./path.
+    return None
 
 
 def _fixture_mapping(

@@ -169,6 +169,10 @@ no control flow in recipes, and no state or inventory.
   name is the contract; manifest rows declare only `module`. Keep
   `untaped>=6.0.0,<7` as a dev-only dependency; runtime hook dependencies go
   in `[project].dependencies`.
+- Hook refs in a pack's recipes: a bare name resolves to the pack's own hook,
+  else a built-in — never to another installed pack. Reference another pack's
+  hook as `pack/hook`. (Only recipes without a project, and `hook run` without
+  `--project`, look bare names up across installed packs.)
   Hooks must stay pure at planning time: read only the target tree and their
   own pack, never write or reach the network.
 - Validate verdicts are `helpers.pass_()`, `helpers.fail(msg)`, and
@@ -183,7 +187,10 @@ no control flow in recipes, and no state or inventory.
   emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit non-zero only
   on `fail`. The ref accepts the `./pack/hook` path form (resolves as
   `--project ./pack` + hook name; combining with explicit `--project` is a usage
-  error). `--content`/`--content-file` supply fixture content; `--inputs`/
+  error). A local hook project is used only when named with `--project PATH`
+  or a `./path` ref — never adopted implicitly from the current directory, so
+  running inside a cloned repo does not execute its hooks.
+  `--content`/`--content-file` supply fixture content; `--inputs`/
   `--args` load YAML fixture files and repeated `--input`/`--arg` KEY=VALUE
   overrides are YAML-parsed. Context echo (including fixture values) and
   accumulated warnings go to stderr — use `--quiet` in shared terminals when

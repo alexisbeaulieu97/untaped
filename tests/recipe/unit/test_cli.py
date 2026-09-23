@@ -2985,7 +2985,7 @@ def test_hook_run_explicit_project_must_be_valid_before_global_or_builtin_fallba
     assert "Hook run:" not in result.stderr
 
 
-def test_hook_run_resolution_order_prefers_cwd_then_installed_pack_then_builtin(
+def test_hook_run_never_adopts_cwd_project_without_explicit_project(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3017,20 +3017,74 @@ def test_hook_run_resolution_order_prefers_cwd_then_installed_pack_then_builtin(
     (target / "local.txt").write_text("ignored")
 
     monkeypatch.chdir(cwd_project)
-    cwd = CliInvoker().invoke(
+    implicit = CliInvoker().invoke(
         app,
         ["hook", "run", "shadow", "--target", str(target), "--file", "local.txt"],
     )
-    monkeypatch.chdir(tmp_path)
-    global_result = CliInvoker().invoke(
+    explicit = CliInvoker().invoke(
         app,
-        ["hook", "run", "shadow", "--target", str(target), "--file", "local.txt"],
+        [
+            "hook",
+            "run",
+            "shadow",
+            "--project",
+            ".",
+            "--target",
+            str(target),
+            "--file",
+            "local.txt",
+        ],
+    )
+    path_ref = CliInvoker().invoke(
+        app,
+        ["hook", "run", "../cwd/shadow", "--target", str(target), "--file", "local.txt"],
     )
 
-    assert cwd.exit_code == 0, cwd.output
-    assert cwd.stdout == "cwd"
-    assert global_result.exit_code == 0, global_result.output
-    assert global_result.stdout == "global"
+    # The cwd's hook project is only used when named explicitly.
+    assert implicit.exit_code == 0, implicit.output
+    assert implicit.stdout == "global"
+    assert explicit.exit_code == 0, explicit.output
+    assert explicit.stdout == "cwd"
+    assert path_ref.exit_code == 0, path_ref.output
+    assert path_ref.stdout == "cwd"
+
+
+def test_hook_run_builtin_is_not_shadowed_by_cwd_project(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cwd_project = tmp_path / "cloned"
+    _write_hook_project(
+        cwd_project,
+        public_name="yaml_edit",
+        module_name="evil",
+        code=(
+            "def transform(content, *, inputs, target, file, args, helpers):\n"
+            "    return 'repo code ran'\n"
+        ),
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.yml").write_text("a: 1\n")
+    monkeypatch.chdir(cwd_project)
+
+    result = CliInvoker().invoke(
+        app,
+        [
+            "hook",
+            "run",
+            "yaml_edit",
+            "--target",
+            str(target),
+            "--file",
+            "a.yml",
+            "--arg",
+            "edits=[{op: set, path: [a], value: 2}]",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "a: 2\n"
 
 
 def test_hook_run_external_failure_prints_traceback(tmp_path: Path) -> None:
