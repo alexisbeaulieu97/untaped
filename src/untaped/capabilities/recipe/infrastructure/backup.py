@@ -59,6 +59,8 @@ class BackupDraft:
     recipe_name: str
     inputs: dict[str, object]
     entries: list[dict[str, Any]] = field(default_factory=list)
+    # Stamped once when the bundle is started; commits never move it.
+    created_at: str = field(default_factory=lambda: datetime.now(tz=UTC).isoformat())
     _next_file_index: int = 0
 
     @property
@@ -101,7 +103,7 @@ class BackupDraft:
         """Write the current metadata snapshot."""
         metadata = {
             "id": self.id,
-            "created_at": datetime.now(tz=UTC).isoformat(),
+            "created_at": self.created_at,
             "recipe": self.recipe_name,
             "inputs": self.inputs,
             "files": self.entries,
@@ -177,10 +179,9 @@ class BackupStore:
     ) -> builtins.list[_PlannedRestore]:
         bundle = self._resolve(backup_id)
         bundle_dir = bundle.path
-        metadata_path = bundle_dir / "metadata.json"
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata = _read_metadata(bundle)
         planned: builtins.list[_PlannedRestore] = []
-        for entry in metadata["files"]:
+        for entry in _metadata_entries(metadata, bundle.id):
             target = Path(entry["target"])
             relative_path = Path(entry["relative_path"])
             path = confined_path(target, relative_path, field="relative_path")
@@ -221,11 +222,7 @@ class BackupStore:
 
     def metadata(self, backup_id: str) -> dict[str, object]:
         """Read raw metadata for a backup bundle."""
-        bundle = self._resolve(backup_id)
-        metadata = json.loads((bundle.path / "metadata.json").read_text(encoding="utf-8"))
-        if not isinstance(metadata, dict):
-            raise ValueError(f"invalid backup metadata: {backup_id}")
-        return cast(dict[str, object], metadata)
+        return _read_metadata(self._resolve(backup_id))
 
     def _resolve(self, backup_id: str) -> BackupBundle:
         bundles = self.list()
@@ -282,6 +279,35 @@ def prune_selection(
             if created is not None and created < cutoff:
                 pruned.add(bundle.id)
     return [bundle for bundle in sorted(bundles, key=lambda b: b.id) if bundle.id in pruned]
+
+
+def _read_metadata(bundle: BackupBundle) -> dict[str, object]:
+    try:
+        metadata = json.loads((bundle.path / "metadata.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid backup metadata: {bundle.id}: {exc}") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError(f"invalid backup metadata: {bundle.id}")
+    return cast(dict[str, object], metadata)
+
+
+def _metadata_entries(metadata: Mapping[str, object], backup_id: str) -> builtins.list[Any]:
+    """Return the bundle's file entries, rejecting any malformed row up front."""
+    files = metadata.get("files")
+    if not isinstance(files, builtins.list):
+        raise ValueError(f"invalid backup metadata: {backup_id}: files must be a list")
+    for index, entry in enumerate(files):
+        if not (
+            isinstance(entry, Mapping)
+            and isinstance(entry.get("target"), str)
+            and isinstance(entry.get("relative_path"), str)
+            and "backup_file" in entry
+            and isinstance(entry["backup_file"], str | None)
+            and "after_hash" in entry
+            and isinstance(entry["after_hash"], str | None)
+        ):
+            raise ValueError(f"invalid backup metadata: {backup_id}: malformed files[{index}]")
+    return files
 
 
 def _hash_text(content: str | None) -> str | None:
