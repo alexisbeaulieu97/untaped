@@ -1,4 +1,4 @@
-"""End-to-end CLI tests for `untaped jira issue`."""
+"""End-to-end CLI tests for `untaped jira issues`."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def test_me_reads_authenticated_jira_user(jira_config: Path) -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
         )
-        result = CliInvoker().invoke(app, ["me", "--format", "raw", "--columns", "name"])
+        result = CliInvoker().invoke(app, ["whoami", "--format", "raw", "--columns", "name"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "alexis"
@@ -60,11 +60,11 @@ def test_me_table_renders_detail_view(jira_config: Path) -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
         )
-        result = CliInvoker().invoke(app, ["me"])
+        result = CliInvoker().invoke(app, ["whoami"])
 
     assert result.exit_code == 0, result.output
     assert "name: alexis" in result.stdout
-    assert "displayName: Alexis" in result.stdout
+    assert "display_name: Alexis" in result.stdout
     assert "╭" not in result.stdout
 
 
@@ -82,7 +82,7 @@ def test_me_raw_ignores_unknown_global_ui_theme(jira_config: Path) -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
         )
-        result = CliInvoker().invoke(app, ["me", "--format", "raw", "--columns", "name"])
+        result = CliInvoker().invoke(app, ["whoami", "--format", "raw", "--columns", "name"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "alexis"
@@ -102,7 +102,7 @@ def test_issue_get_renders_key_first(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.get("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(200, json=payload))
         result = CliInvoker().invoke(
-            app, ["issue", "get", "ABC-1", "--format", "raw", "--columns", "key"]
+            app, ["issues", "get", "ABC-1", "--format", "raw", "--columns", "key"]
         )
 
     assert result.exit_code == 0, result.output
@@ -131,18 +131,21 @@ def test_issue_get_shows_detail_fields(jira_config: Path) -> None:
         route = mock.get("/rest/api/2/issue/ABC-1").mock(
             return_value=httpx.Response(200, json=payload)
         )
-        result = CliInvoker().invoke(app, ["issue", "get", "ABC-1", "--format", "json"])
+        result = CliInvoker().invoke(app, ["issues", "get", "ABC-1", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     row = json.loads(result.stdout)
     assert row["key"] == "ABC-1"
     assert row["status"] == "In Progress"
     assert row["description"] == "Deploy fails on step 3."
-    assert row["issuetype"] == "Bug"
+    assert row["issue_type"] == "Bug"
     assert row["priority"] == "High"
     assert row["reporter"] == "Sam"
     assert row["labels"] == ["deploy", "urgent"]
-    assert row["created"] == "2026-06-01T09:00:00.000-0400"
+    assert row["created_at"] == "2026-06-01T13:00:00Z"
+    assert row["updated_at"] == "2026-06-05T14:00:00Z"
+    assert row["url"] == "https://jira.example.com/browse/ABC-1"
+    assert row["api_url"] == "https://jira.example.com/rest/api/2/issue/10001"
     assert row["resolution"] == ""
     requested = set(route.calls[0].request.url.params["fields"].split(","))
     assert {"description", "issuetype", "priority", "reporter", "labels", "created"} <= requested
@@ -163,12 +166,12 @@ def test_issue_search_rows_stay_lean(jira_config: Path) -> None:
             )
         )
         result = CliInvoker().invoke(
-            app, ["issue", "search", "--project", "ABC", "--format", "json"]
+            app, ["issues", "search", "--project", "ABC", "--format", "json"]
         )
 
     assert result.exit_code == 0, result.output
     [row] = json.loads(result.stdout)
-    assert set(row) == {"key", "summary", "status", "assignee", "updated", "url"}
+    assert set(row) == {"key", "summary", "status", "assignee", "updated_at", "url", "api_url"}
     body = json.loads(route.calls[0].request.content)
     assert body["fields"] == ["summary", "status", "assignee", "updated"]
 
@@ -177,17 +180,23 @@ def test_issue_commands_missing_key_is_usage_error() -> None:
     runner = CliInvoker()
 
     for args in (
-        ["issue", "get"],
-        ["issue", "edit"],
-        ["issue", "comment"],
-        ["issue", "transitions"],
-        ["issue", "transition"],
+        ["issues", "patch"],
+        ["issues", "comment"],
+        ["issues", "transitions"],
     ):
         result = runner.invoke(app, args)
 
         assert result.exit_code == 2, result.output
         assert result.stdout == ""
         assert "requires an argument" in result.stderr
+
+    # get and transition take several keys (or --stdin).
+    for args in (["issues", "get"], ["issues", "transition", "--id", "31"]):
+        result = runner.invoke(app, args)
+
+        assert result.exit_code == 2, result.output
+        assert result.stdout == ""
+        assert "at least one identifier is required" in result.stderr
 
 
 def test_issue_search_sends_jql_and_renders_issue_keys(jira_config: Path) -> None:
@@ -206,7 +215,7 @@ def test_issue_search_sends_jql_and_renders_issue_keys(jira_config: Path) -> Non
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "search",
                 "--project",
                 "ABC",
@@ -240,7 +249,7 @@ def test_issue_assigned_uses_default_assigned_jql(jira_config: Path) -> None:
         )
         result = CliInvoker().invoke(
             app,
-            ["issue", "assigned", "--format", "raw", "--columns", "key"],
+            ["issues", "assigned", "--format", "raw", "--columns", "key"],
         )
 
     assert result.exit_code == 0, result.output
@@ -274,7 +283,7 @@ def test_issue_assigned_uses_configured_assigned_jql(jira_config: Path) -> None:
         )
         result = CliInvoker().invoke(
             app,
-            ["issue", "assigned", "--format", "raw", "--columns", "key"],
+            ["issues", "assigned", "--format", "raw", "--columns", "key"],
         )
 
     assert result.exit_code == 0, result.output
@@ -311,7 +320,7 @@ def test_issue_assigned_jql_option_narrows_configured_assigned_jql(
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "assigned",
                 "--jql",
                 "project = SEC ORDER BY priority DESC",
@@ -348,7 +357,7 @@ def test_issue_search_without_filters_uses_configured_assigned_jql(jira_config: 
                 200, json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []}
             )
         )
-        result = CliInvoker().invoke(app, ["issue", "search", "--format", "json"])
+        result = CliInvoker().invoke(app, ["issues", "search", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     request_json = json.loads(route.calls[0].request.content)
@@ -363,9 +372,9 @@ def test_issue_assigned_rejects_blank_jql_override(jira_config: Path) -> None:
                 json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []},
             )
         )
-        result = CliInvoker().invoke(app, ["issue", "assigned", "--jql", ""])
+        result = CliInvoker().invoke(app, ["issues", "assigned", "--jql", ""])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--jql must not be blank" in result.output
     assert len(route.calls) == 0
 
@@ -378,9 +387,9 @@ def test_issue_assigned_rejects_whitespace_jql_override(jira_config: Path) -> No
                 json={"startAt": 0, "maxResults": 50, "total": 0, "issues": []},
             )
         )
-        result = CliInvoker().invoke(app, ["issue", "assigned", "--jql", "   "])
+        result = CliInvoker().invoke(app, ["issues", "assigned", "--jql", "   "])
 
-    assert result.exit_code != 0
+    assert result.exit_code == 2
     assert "--jql must not be blank" in result.output
     assert len(route.calls) == 0
 
@@ -398,8 +407,9 @@ def test_issue_create_merges_template_and_flags(jira_config: Path, tmp_path: Pat
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "create",
+                "--yes",
                 "--template",
                 str(template),
                 "--project",
@@ -408,9 +418,9 @@ def test_issue_create_merges_template_and_flags(jira_config: Path, tmp_path: Pat
                 "Bug",
                 "--summary",
                 "Fix deploy",
-                "--field",
+                "--set",
                 "customfield_10000=new",
-                "--json-field",
+                "--set-json",
                 'customfield_10001={"value":"prod"}',
                 "--format",
                 "raw",
@@ -439,19 +449,20 @@ def test_issue_create_invalid_json_field_is_usage_error(jira_config: Path) -> No
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "create",
+                "--yes",
                 "--project",
                 "ABC",
                 "--summary",
                 "Fix deploy",
-                "--json-field",
+                "--set-json",
                 "customfield_10000={broken",
             ],
         )
 
     assert result.exit_code == 2, result.output
-    assert "--json-field customfield_10000 contains invalid JSON" in result.stderr
+    assert "--set-json customfield_10000 contains invalid JSON" in result.stderr
     assert len(route.calls) == 0
 
 
@@ -463,14 +474,15 @@ def test_issue_edit_sends_body_file_and_overlays_flags(jira_config: Path, tmp_pa
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
-                "edit",
+                "issues",
+                "patch",
                 "ABC-1",
+                "--yes",
                 "--body-file",
                 str(body_file),
                 "--summary",
                 "new",
-                "--field",
+                "--set",
                 "customfield_10000=value",
                 "--format",
                 "raw",
@@ -493,8 +505,10 @@ def test_issue_edit_without_changes_is_usage_error(jira_config: Path, tmp_path: 
     empty_body.write_text("fields: {}\n")
     with respx.mock(base_url="https://jira.example.com", assert_all_called=False) as mock:
         route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
-        bare = CliInvoker().invoke(app, ["issue", "edit", "ABC-1"])
-        empty = CliInvoker().invoke(app, ["issue", "edit", "ABC-1", "--body-file", str(empty_body)])
+        bare = CliInvoker().invoke(app, ["issues", "patch", "ABC-1"])
+        empty = CliInvoker().invoke(
+            app, ["issues", "patch", "ABC-1", "--body-file", str(empty_body)]
+        )
 
     for result in (bare, empty):
         assert result.exit_code == 2, result.output
@@ -508,7 +522,17 @@ def test_issue_edit_with_only_update_operations_is_sent(jira_config: Path, tmp_p
     with respx.mock(base_url="https://jira.example.com") as mock:
         route = mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
         result = CliInvoker().invoke(
-            app, ["issue", "edit", "ABC-1", "--body-file", str(body_file), "--format", "json"]
+            app,
+            [
+                "issues",
+                "patch",
+                "ABC-1",
+                "--yes",
+                "--body-file",
+                str(body_file),
+                "--format",
+                "json",
+            ],
         )
 
     assert result.exit_code == 0, result.output
@@ -522,7 +546,7 @@ def test_issue_comment_reads_body_from_stdin(jira_config: Path) -> None:
         )
         result = CliInvoker().invoke(
             app,
-            ["issue", "comment", "ABC-1", "--format", "raw", "--columns", "id"],
+            ["issues", "comment", "ABC-1", "--yes", "--format", "raw", "--columns", "comment_id"],
             input="hello from stdin\n",
         )
 
@@ -536,7 +560,7 @@ def test_issue_comment_missing_body_uses_sdk_error(jira_config: Path) -> None:
         route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
             return_value=httpx.Response(201, json={"id": "700"})
         )
-        result = CliInvoker().invoke(app, ["issue", "comment", "ABC-1"])
+        result = CliInvoker().invoke(app, ["issues", "comment", "ABC-1", "--yes"])
 
     assert result.exit_code != 0
     assert "no body provided (use --body, --body-file, or pipe it on stdin)" in result.output
@@ -557,7 +581,9 @@ def test_issue_comment_table_render_fails_when_theme_is_unknown(jira_config: Pat
         route = mock.post("/rest/api/2/issue/ABC-1/comment").mock(
             return_value=httpx.Response(201, json={"id": "700"})
         )
-        result = CliInvoker().invoke(app, ["issue", "comment", "ABC-1", "--body", "hello"])
+        result = CliInvoker().invoke(
+            app, ["issues", "comment", "ABC-1", "--yes", "--body", "hello"]
+        )
 
     assert result.exit_code != 0
     assert "unknown UI theme" in result.output
@@ -571,7 +597,7 @@ def test_issue_comment_preserves_formatted_stdin_body(jira_config: Path) -> None
         )
         result = CliInvoker().invoke(
             app,
-            ["issue", "comment", "ABC-1", "--format", "raw", "--columns", "id"],
+            ["issues", "comment", "ABC-1", "--yes", "--format", "raw", "--columns", "comment_id"],
             input="line1\n\n    code\nline3\n",
         )
 
@@ -593,15 +619,16 @@ def test_issue_comment_preserves_formatted_body_file(
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "comment",
                 "ABC-1",
+                "--yes",
                 "--body-file",
                 str(body_file),
                 "--format",
                 "raw",
                 "--columns",
-                "id",
+                "comment_id",
             ],
         )
 
@@ -618,7 +645,9 @@ def test_issue_transition_by_name_rejects_ambiguous_match(jira_config: Path) -> 
                 json={"transitions": [{"id": "1", "name": "Done"}, {"id": "2", "name": "done"}]},
             )
         )
-        result = CliInvoker().invoke(app, ["issue", "transition", "ABC-1", "--to", "done"])
+        result = CliInvoker().invoke(
+            app, ["issues", "transition", "ABC-1", "--yes", "--to", "done"]
+        )
 
     assert result.exit_code != 0
     assert "multiple transitions" in result.output or "multiple transitions" in str(
@@ -634,9 +663,10 @@ def test_issue_transition_by_id_posts_transition(jira_config: Path) -> None:
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "transition",
                 "ABC-1",
+                "--yes",
                 "--id",
                 "31",
                 "--format",
@@ -658,7 +688,7 @@ def _empty_search() -> httpx.Response:
 def test_issue_search_empty_guides_with_stderr_hint(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/search").mock(return_value=_empty_search())
-        result = CliInvoker().invoke(app, ["issue", "search", "--project", "ABC"])
+        result = CliInvoker().invoke(app, ["issues", "search", "--project", "ABC"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -669,7 +699,7 @@ def test_issue_search_empty_json_stays_pipe_clean(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/search").mock(return_value=_empty_search())
         result = CliInvoker().invoke(
-            app, ["issue", "search", "--project", "ABC", "--format", "json"]
+            app, ["issues", "search", "--project", "ABC", "--format", "json"]
         )
 
     assert result.exit_code == 0, result.output
@@ -691,7 +721,7 @@ def test_issue_search_reports_progress_on_stderr(jira_config: Path) -> None:
             )
         )
         result = CliInvoker().invoke(
-            app, ["issue", "search", "--project", "ABC", "--format", "raw", "--columns", "key"]
+            app, ["issues", "search", "--project", "ABC", "--format", "raw", "--columns", "key"]
         )
 
     assert result.exit_code == 0, result.output
@@ -703,7 +733,7 @@ def test_issue_search_reports_progress_on_stderr(jira_config: Path) -> None:
 def test_issue_assigned_empty_guides_with_stderr_hint(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/search").mock(return_value=_empty_search())
-        result = CliInvoker().invoke(app, ["issue", "assigned"])
+        result = CliInvoker().invoke(app, ["issues", "assigned"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -715,7 +745,7 @@ def test_issue_transitions_empty_guides_with_stderr_hint(jira_config: Path) -> N
         mock.get("/rest/api/2/issue/ABC-1/transitions").mock(
             return_value=httpx.Response(200, json={"transitions": []})
         )
-        result = CliInvoker().invoke(app, ["issue", "transitions", "ABC-1"])
+        result = CliInvoker().invoke(app, ["issues", "transitions", "ABC-1"])
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -726,9 +756,9 @@ def test_help_documents_search_shortcuts_and_create_flags() -> None:
     runner = CliInvoker()
 
     root = runner.invoke(app, ["--help"])
-    search = runner.invoke(app, ["issue", "search", "--help"])
-    assigned = runner.invoke(app, ["issue", "assigned", "--help"])
-    create = runner.invoke(app, ["issue", "create", "--help"])
+    search = runner.invoke(app, ["issues", "search", "--help"])
+    assigned = runner.invoke(app, ["issues", "assigned", "--help"])
+    create = runner.invoke(app, ["issues", "create", "--help"])
 
     assert "Jira Data Center issues" in root.stdout
     assert "ticket" not in root.stdout

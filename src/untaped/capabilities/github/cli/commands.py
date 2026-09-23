@@ -11,6 +11,7 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     create_app,
+    deprecated_alias,
     emit,
     report_errors,
 )
@@ -40,3 +41,5 @@ app.command(repos_app, name="repos")
 app.command(cache_app, name="cache")
 app.command(search_app, name="search")
 app.command(sweep_command, name="sweep")
+for _old, _new in (("-w", "--word-regexp"), ("--sync", "--refresh"), ("--no-sync", "--cached")):
+    deprecated_alias(app["sweep"], _old, _new)

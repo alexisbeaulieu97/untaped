@@ -1,42 +1,28 @@
-"""Domain errors for GitHub API access."""
+"""GitHub failure classification.
+
+The error classes live in :mod:`untaped.capabilities.github.errors`; they are
+re-exported here for existing importers.
+"""
 
 from __future__ import annotations
 
-from typing import Literal
+from untaped.capabilities.github.errors import (
+    GitCorpusError,
+    GithubError,
+    GithubGraphqlError,
+    GithubGraphqlErrorKind,
+)
+from untaped.capability_api import HttpError
 
-from untaped.capability_api import HttpError, UntapedError
-
-GithubGraphqlErrorKind = Literal[
-    "rate_limited",
-    "secondary_rate_limited",
-    "auth",
-    "forbidden",
-    "unknown",
+__all__ = [
+    "GitCorpusError",
+    "GithubError",
+    "GithubGraphqlError",
+    "GithubGraphqlErrorKind",
+    "is_auth_failure",
+    "is_global_github_failure",
+    "is_rate_limited",
 ]
-
-
-class GithubGraphqlError(UntapedError):
-    """Global GitHub GraphQL failure that should abort batched operations."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        kind: GithubGraphqlErrorKind,
-        status_code: int | None = None,
-        url: str | None = None,
-        body: str | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.kind = kind
-        self.status_code = status_code
-        self.url = url
-        self.body = body
-
-
-class GitCorpusError(UntapedError):
-    """Local Git corpus operation failure."""
-
 
 _GLOBAL_GRAPHQL_KINDS = frozenset({"rate_limited", "secondary_rate_limited", "auth"})
 _RATE_LIMIT_MARKERS = ("rate limit", "abuse detection", "x-ratelimit-remaining: 0")
@@ -55,6 +41,26 @@ def is_rate_limited(status_code: int | None, body: str | None) -> bool:
     )
 
 
+def _chain(exc: BaseException) -> list[BaseException]:
+    seen: set[int] = set()
+    chain: list[BaseException] = []
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__
+    return chain
+
+
+def is_auth_failure(exc: BaseException) -> bool:
+    """Return whether ``exc`` (or a wrapped cause) is GitHub rejecting the token."""
+    return any(
+        (isinstance(current, GithubGraphqlError) and current.kind == "auth")
+        or (isinstance(current, HttpError) and current.status_code == 401)
+        for current in _chain(exc)
+    )
+
+
 def is_global_github_failure(exc: BaseException) -> bool:
     """Return whether ``exc`` (or a wrapped cause) fails every GitHub request alike.
 
@@ -62,15 +68,11 @@ def is_global_github_failure(exc: BaseException) -> bool:
     callers isolating per-repo failures must re-raise these instead of turning
     each repository into an individual failure row.
     """
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
+    for current in _chain(exc):
         if isinstance(current, GithubGraphqlError) and current.kind in _GLOBAL_GRAPHQL_KINDS:
             return True
         if isinstance(current, HttpError) and (
             current.status_code == 401 or is_rate_limited(current.status_code, current.body)
         ):
             return True
-        current = current.__cause__
     return False

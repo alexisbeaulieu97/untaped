@@ -50,7 +50,7 @@ def test_me_pipe_tags_user(jira_config: Path) -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
         )
-        result = CliInvoker().invoke(app, ["me", "--format", "pipe"])
+        result = CliInvoker().invoke(app, ["whoami", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -73,7 +73,7 @@ def test_issue_search_pipe_tags_issue(jira_config: Path) -> None:
             )
         )
         result = CliInvoker().invoke(
-            app, ["issue", "search", "--project", "ABC", "--format", "pipe"]
+            app, ["issues", "search", "--project", "ABC", "--format", "pipe"]
         )
 
     assert result.exit_code == 0, result.output
@@ -83,18 +83,27 @@ def test_issue_search_pipe_tags_issue(jira_config: Path) -> None:
     assert envelope["record"]["key"] == "ABC-1"
 
 
-def test_issue_comment_pipe_tags_comment(jira_config: Path) -> None:
+def test_issue_comment_pipe_tags_issue_outcome(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/issue/ABC-1/comment").mock(
             return_value=httpx.Response(201, json={"id": "700"})
         )
         result = CliInvoker().invoke(
-            app, ["issue", "comment", "ABC-1", "--format", "pipe"], input="hi\n"
+            app, ["issues", "comment", "ABC-1", "--yes", "--format", "pipe"], input="hi\n"
         )
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
-    assert envelope["kind"] == "jira.comment"
+    assert envelope["kind"] == "jira.issue_outcome"
+    assert envelope["record"] == {
+        "action": "commented",
+        "key": "ABC-1",
+        "id": None,
+        "url": "https://jira.example.com/browse/ABC-1",
+        "api_url": None,
+        "transition_id": None,
+        "comment_id": "700",
+    }
 
 
 def test_issue_transitions_pipe_tags_transition(jira_config: Path) -> None:
@@ -102,7 +111,7 @@ def test_issue_transitions_pipe_tags_transition(jira_config: Path) -> None:
         mock.get("/rest/api/2/issue/ABC-1/transitions").mock(
             return_value=httpx.Response(200, json={"transitions": [{"id": "1", "name": "Done"}]})
         )
-        result = CliInvoker().invoke(app, ["issue", "transitions", "ABC-1", "--format", "pipe"])
+        result = CliInvoker().invoke(app, ["issues", "transitions", "ABC-1", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -114,7 +123,7 @@ def test_project_list_pipe_tags_project(jira_config: Path) -> None:
         mock.get("/rest/api/2/project").mock(
             return_value=httpx.Response(200, json=[{"id": "10000", "key": "ABC", "name": "App"}])
         )
-        result = CliInvoker().invoke(app, ["project", "list", "--format", "pipe"])
+        result = CliInvoker().invoke(app, ["projects", "list", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -135,7 +144,7 @@ def test_board_list_pipe_tags_board(jira_config: Path) -> None:
                 },
             )
         )
-        result = CliInvoker().invoke(app, ["board", "list", "--format", "pipe"])
+        result = CliInvoker().invoke(app, ["boards", "list", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -155,40 +164,58 @@ def test_sprint_list_pipe_tags_sprint(jira_config: Path) -> None:
                 },
             )
         )
-        result = CliInvoker().invoke(app, ["sprint", "list", "--board-id", "7", "--format", "pipe"])
+        result = CliInvoker().invoke(
+            app, ["sprints", "list", "--board-id", "7", "--format", "pipe"]
+        )
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
     assert envelope["kind"] == "jira.sprint"
 
 
-def test_issue_create_pipe_tags_issue(jira_config: Path) -> None:
-    """A mutation result is tagged as the entity it affects (jira.issue), not an outcome."""
+def test_issue_create_pipe_tags_issue_outcome(jira_config: Path) -> None:
+    """A mutation result is a ``jira.issue_outcome``, not the ``jira.issue`` entity."""
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/issue").mock(
             return_value=httpx.Response(
-                201, json={"id": "10001", "key": "ABC-1", "self": "https://jira.example.com/ABC-1"}
+                201,
+                json={
+                    "id": "10001",
+                    "key": "ABC-1",
+                    "self": "https://jira.example.com/rest/api/2/issue/10001",
+                },
             )
         )
         result = CliInvoker().invoke(
-            app, ["issue", "create", "--project", "ABC", "--summary", "x", "--format", "pipe"]
+            app,
+            ["issues", "create", "--yes", "--project", "ABC", "--summary", "x", "--format", "pipe"],
         )
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
-    assert envelope["kind"] == "jira.issue"
-    assert envelope["record"]["key"] == "ABC-1"
+    assert envelope["kind"] == "jira.issue_outcome"
+    assert envelope["record"] == {
+        "action": "created",
+        "key": "ABC-1",
+        "id": "10001",
+        "url": "https://jira.example.com/browse/ABC-1",
+        "api_url": "https://jira.example.com/rest/api/2/issue/10001",
+        "transition_id": None,
+        "comment_id": None,
+    }
 
 
-def test_issue_transition_pipe_tags_issue(jira_config: Path) -> None:
-    """`issue transition` (mutation) also tags jira.issue, while `issue
-    transitions` (the list) tags jira.transition — the singular/plural split."""
+def test_issue_transition_pipe_tags_issue_outcome(jira_config: Path) -> None:
+    """`issues transition` (mutation) tags jira.issue_outcome, while `issues
+    transitions` (the list) tags jira.transition."""
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/issue/ABC-1/transitions").mock(return_value=httpx.Response(204))
         result = CliInvoker().invoke(
-            app, ["issue", "transition", "ABC-1", "--id", "31", "--format", "pipe"]
+            app, ["issues", "transition", "ABC-1", "--yes", "--id", "31", "--format", "pipe"]
         )
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
-    assert envelope["kind"] == "jira.issue"
+    assert envelope["kind"] == "jira.issue_outcome"
+    assert envelope["record"]["action"] == "transitioned"
+    assert envelope["record"]["transition_id"] == "31"

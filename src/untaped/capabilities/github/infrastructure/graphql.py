@@ -30,7 +30,6 @@ from datetime import datetime
 from itertools import batched
 from typing import Any, NamedTuple, cast
 
-from untaped.capabilities.github.domain.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped.capabilities.github.domain.models import (
     BatchRepoRefsFailure,
     BatchRepoRefsFailureKind,
@@ -39,6 +38,7 @@ from untaped.capabilities.github.domain.models import (
     RepoRef,
     RepoRefs,
 )
+from untaped.capabilities.github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped.capability_api import HttpClient, HttpError, HttpTransportError, UntapedError
 
 _REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}
@@ -98,7 +98,7 @@ def fetch_repo_refs(
     """Probe refs for ``repos`` in batches of ``chunk_size`` per POST."""
     ref_kinds = _validate_kinds(kinds)
     if chunk_size < 1:
-        raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     targets = [_parse_repo_target(repo) for repo in repos]
     collected: list[RepoRefs] = []
     missing: list[str] = []
@@ -138,7 +138,7 @@ def fetch_default_branch_refs(
 ) -> BatchRepoRefsResult:
     """Probe only default-branch heads for ``repos`` without ref connections."""
     if chunk_size < 1:
-        raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     targets = [_parse_repo_target(repo) for repo in repos]
     collected: list[RepoRefs] = []
     missing: list[str] = []
