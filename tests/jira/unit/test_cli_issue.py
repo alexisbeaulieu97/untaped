@@ -720,3 +720,23 @@ def test_issue_transitions_empty_guides_with_stderr_hint(jira_config: Path) -> N
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert "No transitions available for this issue" in result.stderr
+
+
+def test_help_documents_search_shortcuts_and_create_flags() -> None:
+    runner = CliInvoker()
+
+    root = runner.invoke(app, ["--help"])
+    search = runner.invoke(app, ["issue", "search", "--help"])
+    assigned = runner.invoke(app, ["issue", "assigned", "--help"])
+    create = runner.invoke(app, ["issue", "create", "--help"])
+
+    assert "Jira Data Center issues" in root.stdout
+    assert "ticket" not in root.stdout
+    for result in (search, assigned):
+        assert "Project key" in result.stdout
+        assert "Status name" in result.stdout
+        assert "Full-text search" in result.stdout
+        assert "openSprints()" in result.stdout
+    assert "Assignee username" in search.stdout
+    for text in ("Jira-shaped", "Project key", "Issue type name", "Issue summary", "description"):
+        assert text in create.stdout
