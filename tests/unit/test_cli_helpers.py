@@ -613,6 +613,71 @@ def test_render_rows_columns_question_mark_lists_keys(
     assert "value" in err
 
 
+@pytest.mark.parametrize("fmt", ["table", "json", "raw", "yaml"])
+def test_emit_unknown_model_column_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str], fmt: str
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        emit([_Widget(name="a", value=1)], fmt=fmt, columns=["name", "nmae"])  # type: ignore[arg-type]
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "unknown column 'nmae'" in captured.err
+    assert "name, value" in captured.err
+
+
+def test_emit_unknown_mapping_column_warns_but_renders(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mapping rows can be sparse (APIs omit fields), so an absent name only warns."""
+    emit([{"name": "a", "value": 1}], fmt="raw", columns=["name", "nmae"])
+    captured = capsys.readouterr()
+    assert captured.out == "a\t\n"
+    assert "warning: unknown column 'nmae'; valid columns: name, value" in captured.err
+
+
+def test_emit_column_names_containing_dots_match_whole_keys(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([{"has-file:release.txt": True}], fmt="raw", columns=["has-file:release.txt"])
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_emit_unknown_column_on_single_record_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        emit(_Widget(name="a", value=1), fmt="json", columns=["bogus"])
+    assert excinfo.value.code == 2
+
+
+def test_emit_accepts_comma_separated_columns(capsys: pytest.CaptureFixture[str]) -> None:
+    emit([{"name": "a", "value": 1, "extra": 2}], fmt="raw", columns=["name,value"])
+    assert capsys.readouterr().out == "a\t1\n"
+
+
+def test_emit_mixes_comma_lists_and_repeats(capsys: pytest.CaptureFixture[str]) -> None:
+    emit([{"name": "a", "value": 1, "extra": 2}], fmt="json", columns=["name, value", "extra"])
+    assert json.loads(capsys.readouterr().out) == [{"name": "a", "value": 1, "extra": 2}]
+
+
+def test_emit_dotted_columns_validate_their_first_segment(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([{"meta": {"id": 7}}], fmt="raw", columns=["meta.id"])
+    assert capsys.readouterr() == ("7\n", "")
+    emit([{"meta": {"id": 7}}], fmt="raw", columns=["mta.id"])
+    assert "unknown column 'mta.id'" in capsys.readouterr().err
+
+
+def test_emit_unknown_column_on_empty_result_is_not_an_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([], fmt="json", columns=["anything"])
+    assert capsys.readouterr().out == "[]\n"
+
+
 def test_emit_columns_question_mark_lists_model_fields(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

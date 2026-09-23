@@ -31,7 +31,7 @@ ColumnsOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--columns", "-c"],
-        help="Columns to include (repeatable).",
+        help="Columns to include (repeatable or comma-separated).",
         consume_multiple=False,
     ),
 ]
@@ -101,8 +101,47 @@ def render_rows(
     if columns == ["?"]:
         _print_available_columns(list(rows[0]) if rows else [])
         return ""
+    columns = _checked_columns(columns, rows, fmt=fmt)
     ui = ui_context() if fmt == "table" else UiContext()
     return ui.collection(rows, fmt=fmt, columns=columns, empty=empty, kind=kind)
+
+
+def _checked_columns(
+    columns: list[str] | None,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    fmt: OutputFormat,
+    schema: Sequence[str] | None = None,
+) -> list[str] | None:
+    """Split comma-separated ``--columns`` values and check the names.
+
+    ``-c a,b`` and ``-c a -c b`` are equivalent. With a known ``schema``
+    (pydantic records) a name whose first dotted segment is not a field is a
+    usage error (exit 2) listing the valid columns. Plain mapping rows can be
+    sparse (an API may omit a field on some records), so a name absent from
+    every row only warns. ``pipe`` ignores columns and is never checked.
+    """
+    if columns is None:
+        return None
+    names = [part.strip() for entry in columns for part in entry.split(",") if part.strip()]
+    if fmt == "pipe" or (schema is None and not rows):
+        return names or None
+    known = (
+        list(schema)
+        if schema is not None
+        else list(dict.fromkeys(key for row in rows for key in row))
+    )
+    unknown = [name for name in names if name not in known and name.split(".", 1)[0] not in known]
+    if unknown:
+        plural = "s" if len(unknown) > 1 else ""
+        message = (
+            f"unknown column{plural} {', '.join(repr(name) for name in unknown)}; "
+            f"valid columns: {', '.join(known)}"
+        )
+        if schema is not None:
+            raise_usage(message)
+        echo(f"warning: {message}", err=True)
+    return names or None
 
 
 def _print_available_columns(keys: Iterable[str]) -> None:
@@ -138,9 +177,15 @@ def emit(
     if columns == ["?"]:
         _print_available_columns(_candidate_columns(records))
         return
+    schema = _model_schema(records)
+    if schema is not None:
+        columns = _checked_columns(columns, [], fmt=fmt, schema=schema)
     if isinstance(records, BaseModel | Mapping):
+        row = _as_row(records)
+        if schema is None:
+            columns = _checked_columns(columns, [row], fmt=fmt)
         ui = ui_context() if fmt == "table" else UiContext()
-        rendered = ui.detail(_as_row(records), fmt=fmt, columns=columns, kind=kind)
+        rendered = ui.detail(row, fmt=fmt, columns=columns, kind=kind)
     else:
         # The collection path is exactly render_rows; reuse it (it returns the
         # string and emits any empty-state hint to stderr itself).
@@ -153,6 +198,21 @@ def emit(
         )
     if rendered:
         echo(rendered)
+
+
+def _model_schema(
+    records: BaseModel | Mapping[str, object] | Sequence[BaseModel | Mapping[str, object]],
+) -> list[str] | None:
+    """Field names when every record is a pydantic model (a known schema)."""
+    items = [records] if isinstance(records, BaseModel | Mapping) else list(records)
+    if not items or not all(isinstance(item, BaseModel) for item in items):
+        return None
+    names: dict[str, None] = {}
+    for item in items:
+        model = type(item)
+        assert issubclass(model, BaseModel)
+        names.update(dict.fromkeys([*model.model_fields, *model.model_computed_fields]))
+    return list(names)
 
 
 def _as_row(record: BaseModel | Mapping[str, object]) -> dict[str, object]:
