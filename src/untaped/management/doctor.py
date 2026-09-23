@@ -33,10 +33,12 @@ from untaped.cli import (
 )
 from untaped.config_file import read_config_dict
 from untaped.errors import ConfigError, first_validation_error
+from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
 from untaped.profile_resolver import classify_active_profile
 from untaped.render import OutputFormat
 from untaped.settings import (
+    HttpSettings,
     Settings,
     active_settings_layout,
     check_settings_field,
@@ -198,6 +200,8 @@ def _core_row(
         value = check_settings_field(field, effective.get(field))
         if isinstance(value, UiSettings):
             resolve_theme(value)
+        if isinstance(value, HttpSettings):
+            resolve_verify(value)
     except ConfigError as exc:
         return _row("settings", shell.name, _FAIL, title, str(exc))
     return _row("settings", shell.name, _PASS, title, "settings OK")
