@@ -716,3 +716,47 @@ def test_patch_allow_unknown_fields_warns_and_sends(fake_aap: Any) -> None:
     assert result.exit_code == 0, result.output
     assert "future_field" in (result.stderr or "")
     assert fake_aap.get_record("job_templates", 10)["future_field"] == 2
+
+
+def test_patch_rejection_suggests_the_close_known_field(fake_aap: Any) -> None:
+    seed(fake_aap, "job_templates")
+    result = CliInvoker().invoke(
+        app, ["job-templates", "patch", "target", "--set", "verbostiy=2", "--yes"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "did you mean verbosity" in result.output
+
+
+def test_patch_unknown_field_without_close_match_warns_and_sends(fake_aap: Any) -> None:
+    seed(fake_aap, "job_templates")
+    result = CliInvoker().invoke(
+        app, ["job-templates", "patch", "target", "--set", "future_field=2", "--yes"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "future_field" in (result.stderr or "")
+    assert fake_aap.get_record("job_templates", 10)["future_field"] == 2
+
+
+@pytest.mark.parametrize(
+    ("cli", "path", "field", "value", "expected"),
+    [
+        ("job-templates", "job_templates", "execution_environment", "7", 7),
+        ("projects", "projects", "signature_validation_credential", "8", 8),
+        ("workflow-templates", "workflow_job_templates", "job_tags", "deploy", "deploy"),
+        ("workflow-templates", "workflow_job_templates", "skip_tags", "slow", "slow"),
+        ("schedules", "schedules", "execution_environment", "7", 7),
+        ("schedules", "schedules", "job_type", "check", "check"),
+    ],
+)
+def test_patch_accepts_real_awx_fields(
+    fake_aap: Any, cli: str, path: str, field: str, value: str, expected: Any
+) -> None:
+    seed(fake_aap, path)
+    fake_aap.seed("execution_environments", id=7, name="ee")
+    fake_aap.seed("credentials", id=8, name="gpg", organization=1)
+    result = CliInvoker().invoke(
+        app, [cli, "patch", "target", "--set", f"{field}={value}", "--yes"]
+    )
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    assert "not in this tool's known schema" not in (result.stderr or "")
+    assert fake_aap.get_record(path, 10)[field] == expected

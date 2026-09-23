@@ -177,8 +177,11 @@ class SaveResource:
 
 def _default_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolver) -> Metadata:
     name = str(record["name"])
-    if "organization" in spec.identity_keys and record.get("organization") is not None:
-        org_name = fk.id_to_name("Organization", int(record["organization"]))
+    if "organization" in spec.identity_keys:
+        org = record.get("organization")
+        # An org-less record keeps an explicit ``organization: null`` so a
+        # later apply cannot scope it into ``awx.default_organization``.
+        org_name = fk.id_to_name("Organization", int(org)) if org is not None else None
         return Metadata(name=name, organization=org_name)
     return Metadata(name=name)
 

@@ -1,5 +1,6 @@
 """Patch existing selected resources through the authoritative mutation engine."""
 
+import difflib
 from pathlib import Path
 from typing import Annotated
 
@@ -103,10 +104,11 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                 raise ConfigError(
                     f"patch cannot change identity fields: {', '.join(sorted(forbidden))}"
                 )
-            if not allow_unknown_fields and (unknown := unrecognized_fields(spec, overlay)):
+            if not allow_unknown_fields and (typos := _likely_typos(spec, overlay)):
                 raise_usage(
-                    f"{spec.kind} has no field(s) {', '.join(unknown)}; "
-                    "check the spelling or pass --allow-unknown-fields"
+                    f"{spec.kind} has no field(s) "
+                    + ", ".join(f"{name} (did you mean {match}?)" for name, match in typos)
+                    + "; fix the spelling or pass --allow-unknown-fields"
                 )
             with open_context() as ctx:
                 selected = select_resources(
@@ -148,3 +150,19 @@ def _add_patch(app: App, spec: AwxResourceSpec) -> None:
                     fmt=fmt,
                     columns=columns,
                 )
+
+
+def _likely_typos(spec: AwxResourceSpec, overlay: dict[str, object]) -> list[tuple[str, str]]:
+    """Unknown field names that closely match a known field, with that match.
+
+    Only near-misses are rejected: a name unlike every known field is more
+    likely a real AWX field this tool has no metadata for, so it is sent
+    with the engine's "sent as-is" warning instead.
+    """
+    known = sorted(spec.known_fields)
+    typos: list[tuple[str, str]] = []
+    for name in unrecognized_fields(spec, overlay):
+        matches = difflib.get_close_matches(name, known, n=1, cutoff=0.8)
+        if matches:
+            typos.append((name, matches[0]))
+    return typos

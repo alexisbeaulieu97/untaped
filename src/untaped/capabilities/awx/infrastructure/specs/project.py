@@ -23,6 +23,7 @@ PROJECT_SPEC = AwxResourceSpec(
         "scm_update_cache_timeout",
         "allow_override",
         "credential",
+        "signature_validation_credential",
         "default_environment",
         "organization",
         "local_path",
@@ -48,6 +49,11 @@ PROJECT_SPEC = AwxResourceSpec(
     fk_refs=(
         FkRef(field="organization", kind="Organization"),
         FkRef(field="credential", kind="Credential", scope_field="organization"),
+        FkRef(
+            field="signature_validation_credential",
+            kind="Credential",
+            scope_field="organization",
+        ),
         # The project's default execution environment (global, no org scope).
         FkRef(field="default_environment", kind="ExecutionEnvironment"),
     ),

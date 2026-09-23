@@ -149,6 +149,23 @@ def test_list_limit_caps_results(fake_aap: Any) -> None:
     assert len(lines) == 2
 
 
+def test_list_limit_zero_means_no_limit(fake_aap: Any) -> None:
+    _seed_all_kinds(fake_aap)
+    capped = CliInvoker().invoke(
+        app, ["unified-templates", "list", "--format", "raw", "--columns", "id"]
+    )
+    result = CliInvoker().invoke(
+        app,
+        ["unified-templates", "list", "--limit", "0", "--format", "raw", "--columns", "id"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.split() == capped.stdout.split()
+    assert len(result.stdout.split()) > 2
+
+    negative = CliInvoker().invoke(app, ["unified-templates", "list", "--limit", "-1"])
+    assert negative.exit_code == 2
+
+
 def test_get_multi_id_returns_full_records(fake_aap: Any) -> None:
     _seed_all_kinds(fake_aap)
     result = CliInvoker().invoke(
