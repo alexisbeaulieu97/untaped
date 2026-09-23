@@ -798,15 +798,41 @@ def test_worktree_rejects_non_cached_ref(tmp_path: Path) -> None:
         cache.materialize_worktree(repo, root=root, ref="v1.0")
 
 
-def test_get_repo_errors_on_corrupt_metadata(tmp_path: Path) -> None:
+def test_get_repo_skips_corrupt_metadata_with_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
     cache = GitCorpusCache()
     root = tmp_path / "corpus"
-    metadata = root / "github.com" / "api-deadbeef.git" / "untaped-corpus.json"
+    _sync_default(cache, _item("acme/api", source), root=root)
+    metadata = root / "github.com" / "aaa-deadbeef.git" / "untaped-corpus.json"
     metadata.parent.mkdir(parents=True)
     metadata.write_text("{")
 
-    with pytest.raises(GitCorpusError, match="could not read corpus metadata"):
-        cache.get_repo(root=root, repo="acme/api")
+    found = cache.get_repo(root=root, repo="acme/api")
+    missing = cache.get_repo(root=root, repo="acme/other")
+
+    assert found is not None
+    assert found.full_name == "acme/api"
+    assert missing is None
+    assert "warning: could not read corpus metadata" in capsys.readouterr().err
+
+
+def test_corpus_listing_only_reads_managed_bare_repo_metadata(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    synced = _sync_default(cache, _item("acme/api", source), root=root)
+    stray = '{"repo": "acme/stray", "ref": "main", "clone_url": "x"}\n'
+    for rel in ("worktrees/acme_api-main-abc/untaped-corpus.json", "untaped-corpus.json"):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stray)
+    nested = Path(synced.path) / "objects" / "untaped-corpus.json"
+    nested.write_text(stray)
+
+    assert [row.repo for row in cache.list_repos(root=root)] == ["acme/api"]
+    assert cache.get_repo(root=root, repo="acme/stray") is None
 
 
 def test_list_skips_corrupt_metadata_with_warning(
