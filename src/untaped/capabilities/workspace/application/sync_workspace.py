@@ -77,6 +77,14 @@ class BareFetchTracker:
             return self._bare_locks.setdefault(bare_path, threading.Lock())
 
 
+@dataclass(frozen=True)
+class PruneCandidate:
+    """An orphan clone that passed the prune safety check at plan time."""
+
+    workspace: Workspace
+    path: Path
+
+
 class RepoSyncEngine:
     """Per-repo sync state machine shared by sync orchestration entry points."""
 
@@ -166,10 +174,24 @@ class RepoSyncEngine:
             return _outcome(workspace, repo, "failed", exc.detail)
 
     def prune_orphans(self, workspace: Workspace, manifest: WorkspaceManifest) -> list[SyncOutcome]:
+        """Plan and immediately delete safe orphans (no confirmation)."""
+        outcomes, candidates = self.plan_prune(workspace, manifest)
+        outcomes.extend(self.prune_candidate(candidate) for candidate in candidates)
+        return outcomes
+
+    def plan_prune(
+        self, workspace: Workspace, manifest: WorkspaceManifest
+    ) -> tuple[list[SyncOutcome], list[PruneCandidate]]:
+        """Split orphan clones into ``skip`` rows and safe deletion candidates.
+
+        Nothing is deleted here, so callers can confirm the candidates
+        before calling :meth:`prune_candidate` for each one.
+        """
         if not self._fs.is_dir(workspace.path):
-            return []
+            return [], []
         declared = {r.name for r in manifest.repos}
         outcomes: list[SyncOutcome] = []
+        candidates: list[PruneCandidate] = []
         for entry in self._fs.iterdir(workspace.path):
             if entry.name in declared:
                 continue
@@ -188,10 +210,26 @@ class RepoSyncEngine:
                 continue
             if not self._fs.exists(entry / ".git"):
                 continue
-            outcomes.append(self._prune_orphan(workspace, entry))
-        return outcomes
+            if (refusal := self._prune_refusal(workspace, entry)) is not None:
+                outcomes.append(refusal)
+            else:
+                candidates.append(PruneCandidate(workspace=workspace, path=entry))
+        return outcomes, candidates
 
-    def _prune_orphan(self, workspace: Workspace, entry: Path) -> SyncOutcome:
+    def prune_candidate(self, candidate: PruneCandidate) -> SyncOutcome:
+        """Re-check safety (state may have changed since planning), then delete."""
+        workspace, entry = candidate.workspace, candidate.path
+        if (refusal := self._prune_refusal(workspace, entry)) is not None:
+            return refusal
+        self._fs.rmtree(entry)
+        return SyncOutcome(
+            workspace=workspace.name,
+            repo=entry.name,
+            action="remove",
+            detail="no longer declared",
+        )
+
+    def _prune_refusal(self, workspace: Workspace, entry: Path) -> SyncOutcome | None:
         try:
             blockers = self._git.prune_blockers(entry)
         except GitError:
@@ -208,13 +246,7 @@ class RepoSyncEngine:
                 action="skip",
                 detail=format_prune_blockers(blockers),
             )
-        self._fs.rmtree(entry)
-        return SyncOutcome(
-            workspace=workspace.name,
-            repo=entry.name,
-            action="remove",
-            detail="no longer declared",
-        )
+        return None
 
 
 class SyncWorkspace:

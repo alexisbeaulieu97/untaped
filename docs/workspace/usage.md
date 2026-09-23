@@ -297,7 +297,7 @@ instead.
 
 ```bash
 untaped workspace sync [--workspace <ws> | --path <dir>]
-                       [--repo <repo>]... [--prune]
+                       [--repo <repo>]... [--prune [--yes]]
                        [--timeout <seconds>] [--parallel N] [--all]
 ```
 
@@ -367,11 +367,16 @@ orphans are not deleted; they emit a `skip` row whose detail begins with
 `unsafe local state:`. Multiple blockers render as
 `unsafe local state: <first>; +N more`. Uninspectable/corrupt orphans
 remain distinct as `not a usable git repo`; symlinked git candidates are
-also skipped instead of followed or deleted. Unlike `remove --prune` and
-`forget --prune`, `sync --prune` has no confirmation prompt and no
-`--yes`; it keeps the automation-friendly skip-and-continue model. The
-same local remote-tracking ref boundary applies here: `sync --prune`
-does not fetch during the prune phase.
+also skipped instead of followed or deleted. Like `remove --prune` and
+`forget --prune`, `sync --prune` previews the safe orphans it is about
+to delete (workspace, repo, absolute path) and asks once for
+confirmation; pass `--yes` / `-y` to skip the prompt. Without a TTY and
+without `--yes` it prints the sync rows and exits `1` with an error
+instead of deleting; declining keeps every orphan. There is nothing to
+confirm, and no `--yes` needed, when no safe orphans exist. Safety is
+re-checked right before each delete. The same local remote-tracking ref
+boundary applies here: `sync --prune` does not fetch during the prune
+phase.
 
 Known limitations:
 

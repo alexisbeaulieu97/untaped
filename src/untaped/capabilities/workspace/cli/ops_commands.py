@@ -9,8 +9,10 @@ from cyclopts import App, Parameter
 
 from untaped.api import (
     ColumnsOption,
+    ConfigError,
     FormatOption,
     OutputFormat,
+    batch_apply,
     clamp_parallel,
     echo,
     emit,
@@ -61,8 +63,15 @@ def sync_command(
         Parameter(
             name="--prune",
             negative="",
-            help="Remove safe local clones not in the manifest; skips unsafe orphans.",
+            help=(
+                "Remove safe local clones not in the manifest; skips unsafe orphans. "
+                "Confirms first unless --yes."
+            ),
         ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        Parameter(name=["--yes", "-y"], negative="", help="Skip the prune confirmation prompt."),
     ] = False,
     timeout: Annotated[
         float | None,
@@ -124,14 +133,41 @@ def sync_command(
             outcomes = sweep(
                 targets,
                 only=repo,
-                prune=prune,
                 strict_only=not all_workspaces,
                 skip_manifest_errors=all_workspaces,
                 parallel=workers,
             )
+        prune_failed = False
+        if prune:
+            # Prune after the sync phase (no racing in-flight clones) and
+            # outside the spinner, behind the same batch confirmation as
+            # `remove --prune` / `forget --prune`.
+            skipped, candidates = sweep.plan_prune(targets, skip_manifest_errors=all_workspaces)
+            outcomes.extend(skipped)
+            try:
+                pruned = batch_apply(
+                    candidates,
+                    engine.prune_candidate,
+                    verb="prune",
+                    noun="orphan clone",
+                    label=lambda c: f"{c.workspace.name}/{c.path.name}",
+                    describe=lambda c: {
+                        "workspace": c.workspace.name,
+                        "repo": c.path.name,
+                        "path": str(c.path),
+                    },
+                    ui=ui,
+                    destructive=True,
+                    assume_yes=yes,
+                )
+            except ConfigError:
+                print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
+                raise
+            outcomes.extend(row for _, row in pruned.results)
+            prune_failed = pruned.any_failed
         ui.message("info", _sync_summary(outcomes))
         print_sync_outcomes(outcomes, fmt=fmt, columns=columns)
-    finish(any_sync_failed(outcomes))
+    finish(any_sync_failed(outcomes) or prune_failed)
 
 
 def print_sync_outcomes(

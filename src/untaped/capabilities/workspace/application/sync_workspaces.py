@@ -11,6 +11,7 @@ from untaped.capabilities.workspace.application.ports import ManifestReader
 from untaped.capabilities.workspace.application.repo_selector import select_repos
 from untaped.capabilities.workspace.application.sync_workspace import (
     BareFetchTracker,
+    PruneCandidate,
     RepoSyncEngine,
 )
 from untaped.capabilities.workspace.domain import Repo, SyncOutcome, Workspace, WorkspaceManifest
@@ -101,6 +102,33 @@ class SyncWorkspaces:
             for target in plan.prune_targets:
                 outcomes.extend(self._engine.prune_orphans(target.workspace, target.manifest))
         return outcomes
+
+    def plan_prune(
+        self,
+        workspaces: Sequence[Workspace],
+        *,
+        skip_manifest_errors: bool = False,
+    ) -> tuple[list[SyncOutcome], list[PruneCandidate]]:
+        """Collect orphan ``skip`` rows and safe prune candidates, deleting nothing.
+
+        Lets the CLI confirm destructive deletes (``sync --prune``) the
+        same way ``remove --prune`` does. Workspaces whose manifest is
+        unreadable are skipped under ``skip_manifest_errors`` (the sync
+        phase already reported them as ``unavailable``).
+        """
+        rows: list[SyncOutcome] = []
+        candidates: list[PruneCandidate] = []
+        for workspace in workspaces:
+            try:
+                manifest = self._manifests.read(workspace.path)
+            except ManifestError:
+                if not skip_manifest_errors:
+                    raise
+                continue
+            ws_rows, ws_candidates = self._engine.plan_prune(workspace, manifest)
+            rows.extend(ws_rows)
+            candidates.extend(ws_candidates)
+        return rows, candidates
 
     def _build_plan(
         self,
