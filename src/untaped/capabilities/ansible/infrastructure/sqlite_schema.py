@@ -7,7 +7,11 @@ from pathlib import Path
 
 from untaped.capabilities.ansible.errors import DependencyIndexError
 
-SCHEMA_VERSION = 3
+# Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
+# case-insensitive, and repo joins compare these keys with BINARY collation so
+# they can use the indexes (``collate nocase`` joins forced full scans). The
+# ``*_repo`` columns keep the display casing.
+SCHEMA_VERSION = 4
 
 _SCHEMA_SQL = """
 create table if not exists source_runs (
@@ -31,6 +35,7 @@ create table if not exists snapshot_edges (
     id integer primary key autoincrement,
     snapshot_id integer not null references dependency_snapshots(id) on delete cascade,
     dependency_repo text,
+    dependency_repo_key text,
     dependency_name text not null,
     dependency_version text,
     source_path text not null,
@@ -41,6 +46,7 @@ create table if not exists source_ref_scans (
     id integer primary key autoincrement,
     source_key text not null,
     source_repo text not null,
+    source_repo_key text not null,
     ref_kind text not null,
     source_ref text not null,
     source_sha text not null,
@@ -57,6 +63,7 @@ create table if not exists source_ref_scans (
 create table if not exists source_repo_metadata (
     source_key text not null,
     source_repo text not null,
+    source_repo_key text not null,
     default_branch text not null,
     primary key (source_key, source_repo)
 );
@@ -77,17 +84,17 @@ create index if not exists idx_dependency_snapshots_identity
 create index if not exists idx_snapshot_edges_dependency
     on snapshot_edges(snapshot_id, dependency_repo, dependency_version);
 create index if not exists idx_snapshot_edges_dependency_ref
-    on snapshot_edges(dependency_repo, dependency_version, snapshot_id);
+    on snapshot_edges(dependency_repo_key, dependency_version, snapshot_id);
 create index if not exists idx_source_ref_scans_source
     on source_ref_scans(source_key, source_repo, ref_kind, source_ref);
 create index if not exists idx_source_ref_scans_source_ref
-    on source_ref_scans(source_key, source_repo, source_ref);
+    on source_ref_scans(source_key, source_repo_key, source_ref);
 create index if not exists idx_source_ref_scans_snapshot
     on source_ref_scans(snapshot_id);
 create index if not exists idx_source_ref_scans_source_snapshot
     on source_ref_scans(source_key, snapshot_id);
 create index if not exists idx_source_repo_metadata_source
-    on source_repo_metadata(source_key, source_repo);
+    on source_repo_metadata(source_key, source_repo_key);
 create index if not exists idx_source_refresh_progress_source
     on source_refresh_progress(source_key, source_fingerprint, source_repo);
 """
