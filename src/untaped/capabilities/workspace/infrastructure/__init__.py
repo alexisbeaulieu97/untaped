@@ -14,6 +14,7 @@ from untaped.capabilities.workspace.infrastructure.registry_repo import (
 from untaped.capabilities.workspace.infrastructure.repo_discoverer import LocalRepoDiscoverer
 from untaped.capabilities.workspace.infrastructure.system_adapters import (
     DEFAULT_FOREACH_TIMEOUT,
+    InterruptibleShellRunner,
     LocalFilesystem,
     editor_runner,
     resolve_editor_argv,
@@ -26,6 +27,7 @@ __all__ = [
     "DEFAULT_TIMEOUT",
     "MANIFEST_FILENAME",
     "GitRunner",
+    "InterruptibleShellRunner",
     "LocalFilesystem",
     "LocalRepoDiscoverer",
     "ManifestRepository",

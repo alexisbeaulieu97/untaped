@@ -484,10 +484,11 @@ never silent. The summary is suppressed in `json|yaml|raw` since each
 row's `returncode` carries the same information. In-flight commands
 always run to completion; only queued work is cancelled on fail-fast.
 
-Ctrl-C stops the sweep: the running command's process group (it runs
-in its own session, so the terminal's interrupt does not reach it) gets
-SIGTERM, then SIGKILL after a short grace period, and queued repos are
-cancelled rather than started.
+Ctrl-C stops the sweep promptly, including under `--parallel`: every
+running command's process group (each runs in its own session, so the
+terminal's interrupt does not reach it) gets SIGTERM, then SIGKILL after
+a short grace period, queued repos are cancelled rather than started,
+and the command exits with the interrupt status.
 
 ### `path`
 

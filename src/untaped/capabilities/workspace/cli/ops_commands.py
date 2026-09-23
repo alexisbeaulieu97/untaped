@@ -46,9 +46,9 @@ from untaped.capabilities.workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
     GitRunner,
+    InterruptibleShellRunner,
     LocalFilesystem,
     ManifestRepository,
-    shell_runner,
 )
 
 
@@ -325,7 +325,13 @@ def foreach_command(
         ws = resolve_workspace(workspace, path)
         workers = clamp_parallel(max(parallel, 1), cap=parallel_cap(), policy="2 * os.cpu_count()")
         keep_going = continue_on_error or ignore_errors
-        outcomes = Foreach(ManifestRepository(), runner=shell_runner, fs=LocalFilesystem())(
+        shell = InterruptibleShellRunner()
+        outcomes = Foreach(
+            ManifestRepository(),
+            runner=shell,
+            fs=LocalFilesystem(),
+            on_interrupt=shell.terminate_all,
+        )(
             ws,
             command=cmd,
             parallel=workers,
