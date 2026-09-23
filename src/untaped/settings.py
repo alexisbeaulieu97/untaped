@@ -365,7 +365,12 @@ def settings_error_message(exc: ValidationError) -> str:
     env_var = _env_culprit(exc)
     if env_var is not None:
         return f"invalid value in environment variable {env_var}: {detail}"
-    return f"invalid config in {resolve_config_path()}: {detail}"
+    path = resolve_config_path()
+    errors = exc.errors()
+    loc = errors[0].get("loc", ()) if errors else ()
+    if loc and isinstance(loc[0], str):
+        return f"invalid config section {loc[0]!r} in {path}: {detail}"
+    return f"invalid config in {path}: {detail}"
 
 
 def _env_culprit(exc: ValidationError) -> str | None:
@@ -388,27 +393,20 @@ def get_core_settings() -> Settings:
 
 
 def get_config_section[T: BaseModel](section: str, model_cls: type[T]) -> T:
-    """Return one typed settings section, registering a one-off model if needed."""
-    registered = _CONFIG_REGISTRY.profile_sections.get(section)
-    if registered is None:
-        temp_model = _build_settings_model({section: model_cls}, _CONFIG_REGISTRY.state_sections)
-        settings = _instantiate(temp_model)
-    else:
-        settings = get_settings()
-    value = getattr(settings, section)
+    """Return one typed settings section, building a one-off model if needed.
+
+    Only ``section`` (plus its own state section) is validated, so an invalid
+    sibling section never breaks an unrelated capability.
+    """
+    settings_cls: type[Settings] | None = None
+    if section not in _CONFIG_REGISTRY.profile_sections:
+        settings_cls = _build_settings_model({section: model_cls}, _CONFIG_REGISTRY.state_sections)
+    value = load_settings_section(section, settings_cls)
     if isinstance(value, model_cls):
         return value
     if isinstance(value, BaseModel):
         return model_cls.model_validate(value.model_dump())
     return model_cls.model_validate(value)
-
-
-def _instantiate(settings_cls: type[Settings]) -> Settings:
-    path = resolve_config_path()
-    try:
-        return settings_cls()
-    except ValidationError as exc:
-        raise ConfigError(f"invalid config in {path}: {first_validation_error(exc)}") from exc
 
 
 def _build_settings_model(

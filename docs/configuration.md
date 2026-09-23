@@ -21,6 +21,12 @@ Capability settings remain in their own sections. Existing section names and
 stored keys, such as `github.token` and `awx.base_url`, are part of the config
 contract.
 
+Each section is validated only when a command reads it, so an invalid value in
+one capability's section (say `awx.page_size: abc`) does not break unrelated
+commands such as `untaped github ...`. The error, raised by the commands that
+do read the section, names the section and the config file. `untaped doctor`
+and `untaped config list` still report every invalid section.
+
 ## File and layout
 
 The default file is `~/.untaped/config.yml`. Set `UNTAPED_CONFIG` to use a
@@ -39,6 +45,12 @@ profile. Writes take an advisory lock on `<config>.lock`; set
 default 5-second wait. The file is rewritten atomically through a unique
 temporary file that is created owner-only (`0600`), so secrets are never
 briefly world-readable.
+
+Writes (`config set/unset`, `profile` commands, and capability state updates)
+rewrite only the keys they change: your comments, key order, quoting, and
+indentation are kept. New keys are appended to their mapping, and new string
+values that YAML would read as another type (`no`, `0123`, `~`) are quoted.
+`config edit` saves exactly what you wrote.
 
 The current layout keeps profile-scoped settings under `profiles.<name>` and
 keeps capability-managed state at the top level. `active` is optional; when it
