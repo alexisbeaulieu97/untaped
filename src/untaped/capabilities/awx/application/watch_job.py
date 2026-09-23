@@ -8,11 +8,12 @@ the catalog. We hit the right ``<api_path>`` directly via the client's
 from __future__ import annotations
 
 import time
+from collections import deque
 from collections.abc import Callable
 
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
 from untaped.capabilities.awx.domain import Job
-from untaped.capabilities.awx.domain.job import KIND_TO_API_PATH
+from untaped.capabilities.awx.domain.job import KIND_TO_API_PATH, poll_until_terminal
 
 SleepFn = Callable[[float], None]
 
@@ -30,13 +31,14 @@ class WatchJob:
         self._interval = poll_interval
 
     def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
+        """Return the terminal state, or the latest one once ``timeout`` passed."""
         api_path = KIND_TO_API_PATH.get(job.kind, job.kind)
-        deadline = time.monotonic() + timeout if timeout is not None else None
-        current = job
-        while not current.is_terminal:
-            if deadline is not None and time.monotonic() >= deadline:
-                return current
-            self._sleep(self._interval)
+
+        def fetch(current: Job) -> Job:
             record = self._client.request("GET", f"{api_path}/{current.id}/")
-            current = Job.model_validate({**record, "kind": current.kind})
-        return current
+            return Job.model_validate({**record, "kind": current.kind})
+
+        states = poll_until_terminal(
+            job, fetch, sleep=self._sleep, interval=self._interval, timeout=timeout
+        )
+        return deque(states, maxlen=1)[0]

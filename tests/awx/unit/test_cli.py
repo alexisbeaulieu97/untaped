@@ -313,7 +313,7 @@ def test_list_filter_rejects_malformed_entry(
 def test_apply_help_advertises_parallel() -> None:
     """The top-level ``awx apply`` exposes ``--parallel / -j`` so users
     can speed up directory applies. Surface check only; behaviour is
-    covered by the ``ApplyFile`` unit tests."""
+    covered by the ``test_apply_file`` unit tests."""
     result = CliInvoker().invoke(app, ["apply", "--help"])
     assert result.exit_code == 0
     assert "--parallel" in result.output

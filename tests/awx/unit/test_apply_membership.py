@@ -20,7 +20,7 @@ from untaped.capabilities.awx.application.apply_membership import (
 from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Metadata, Resource, ResourceSpec
 from untaped.capabilities.awx.domain.envelope import IdentityRef
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import (
     GROUP_SPEC,
     JOB_TEMPLATE_SPEC,
@@ -241,7 +241,7 @@ def test_plan_rejects_non_list_field() -> None:
     """A bare string for ``hosts:`` would be silently coerced to ``[]``
     and disassociate every member — most destructive footgun. Reject."""
     rec = MembershipReconciler()
-    with pytest.raises(BadRequest, match="must be a list of names"):
+    with pytest.raises(BadRequestError, match="must be a list of names"):
         rec.plan(
             GROUP_SPEC,
             Resource(
@@ -473,7 +473,7 @@ def test_membership_validates_bound_ids_and_resolves_changed_names(label: str) -
 
 def test_supplied_membership_snapshot_cannot_refresh_missing_relationship() -> None:
     client = _StubClient(existing_members={"hosts": [{"id": 9, "name": "existing"}]})
-    with pytest.raises(BadRequest, match="missing initial editor membership snapshot"):
+    with pytest.raises(BadRequestError, match="missing initial editor membership snapshot"):
         MembershipReconciler().plan(
             GROUP_SPEC,
             _group("group", hosts=[]),

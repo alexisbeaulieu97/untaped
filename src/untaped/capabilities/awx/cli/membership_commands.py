@@ -11,8 +11,7 @@ Pipeline shape::
         --columns name --format raw \\
       | untaped awx groups hosts add prod-web --stdin
 
-Members are resolved per identifier via
-:meth:`untaped.capabilities.awx.application.GetResource.by_identifier` (names by
+Members are resolved through the shared selection resolver (names by
 default, ids when ``--by-id`` is passed).
 AWX's associate/disassociate POSTs are idempotent (re-adding or
 re-removing returns 204), so ``add`` and ``remove`` are safe to run
@@ -43,7 +42,7 @@ from untaped.capabilities.awx.cli.options import (
     YesOption,
 )
 from untaped.capabilities.awx.domain import FkRef
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
 
@@ -121,7 +120,7 @@ def _add_membership_verb(
                     filters=filter_,
                     search=search,
                     all_=all_,
-                    mutation=True,
+                    require_explicit=True,
                     scope=_member_scope(ctx, selected_parent.record, ref),
                 )
                 manager = ManageMembership(ctx.repo)
@@ -192,12 +191,12 @@ def _member_scope(ctx: AwxContext, parent_rec: dict[str, Any], ref: FkRef) -> di
         relation = summary.get(field) if isinstance(summary, dict) else None
         relation_id = relation.get("id") if isinstance(relation, dict) else None
     if isinstance(relation_id, bool) or not isinstance(relation_id, int) or relation_id <= 0:
-        raise BadRequest(f"cannot establish required {field} ancestry for membership")
+        raise BadRequestError(f"cannot establish required {field} ancestry for membership")
     if field == "organization":
         return {"organization": ctx.fk.id_to_name("Organization", relation_id)}
     if field != "inventory":
-        raise BadRequest(f"unsupported membership scope relationship {field!r}")
+        raise BadRequestError(f"unsupported membership scope relationship {field!r}")
     identity = ctx.fk.id_to_identity("Inventory", relation_id)
     if not identity.organization:
-        raise BadRequest(f"cannot establish organization ancestry for Inventory#{relation_id}")
+        raise BadRequestError(f"cannot establish organization ancestry for Inventory#{relation_id}")
     return {"inventory": identity.name, "inventory__organization": identity.organization}

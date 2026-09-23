@@ -20,6 +20,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from untaped.capabilities.awx.application._secret_paths import remove_at
+
 
 class SecretPreservationPolicy:
     """Two-pass-secrets handler — partition + strip helpers."""
@@ -75,30 +77,5 @@ class SecretPreservationPolicy:
         """
         result = copy.deepcopy(obj)
         for path in paths:
-            _remove_at_path(result, path.split("."))
+            remove_at(result, path)
         return result
-
-
-def _remove_at_path(obj: Any, parts: list[str]) -> None:
-    if not parts or obj is None:
-        return
-    head = parts[0]
-    rest = parts[1:]
-    if not rest:
-        if isinstance(obj, dict):
-            if head == "*":
-                obj.clear()
-            else:
-                obj.pop(head, None)
-        elif isinstance(obj, list) and head == "*":
-            obj.clear()
-        return
-    if isinstance(obj, dict):
-        if head == "*":
-            for key in list(obj.keys()):
-                _remove_at_path(obj[key], rest)
-        elif head in obj:
-            _remove_at_path(obj[head], rest)
-    elif isinstance(obj, list) and head == "*":
-        for item in obj:
-            _remove_at_path(item, rest)

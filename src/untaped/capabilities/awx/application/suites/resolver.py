@@ -12,12 +12,12 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import Catalog
-from untaped.capabilities.awx.application.test.ports import FkLookup
+from untaped.capabilities.awx.application.suites.ports import FkLookup
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.domain.spec import FkRef
-from untaped.capabilities.awx.domain.test_suite import Case, RefSentinel
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.capabilities.awx.domain.suite import Case, RefSentinel
 
 # v2.x AWX launch endpoint payload fields. Anything outside this set
 # (and not a declared FK) triggers an UnknownLaunchFieldWarning so users
@@ -182,7 +182,7 @@ class ResolveCasePayload:
         """
         try:
             spec = self._catalog.get(kind)
-        except AwxApiError:
+        except ConfigError:
             return False
         return "organization" in spec.identity_keys
 

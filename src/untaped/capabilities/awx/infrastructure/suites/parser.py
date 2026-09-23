@@ -20,8 +20,8 @@ from typing import Any
 import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
-from untaped.capabilities.awx.domain.test_suite import RefSentinel
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.api import ConfigError
+from untaped.capabilities.awx.domain.suite import RefSentinel
 
 __all__ = [
     "DefaultParser",
@@ -56,7 +56,7 @@ def split_frontmatter(text: str) -> tuple[str, str]:
             body = "".join(lines[index + 1 :])
             return metadata, body
 
-    raise AwxApiError(
+    raise ConfigError(
         "frontmatter is missing its closing '---' delimiter "
         "(expected: '---\\n<yaml>\\n---\\n<body>')"
     )
@@ -87,7 +87,7 @@ class _RefSafeLoader(yaml.SafeLoader):
                 pass
         if duplicates:
             line = node.start_mark.line + 1
-            raise AwxApiError(
+            raise ConfigError(
                 f"duplicate YAML mapping key(s) at line {line}: {', '.join(duplicates)}"
             )
         return super().construct_mapping(node, deep=deep)
@@ -95,16 +95,16 @@ class _RefSafeLoader(yaml.SafeLoader):
 
 def _construct_ref(loader: yaml.SafeLoader, node: yaml.Node) -> RefSentinel:
     if not isinstance(node, yaml.MappingNode):
-        raise AwxApiError(
+        raise ConfigError(
             f"!ref must be a mapping with 'kind' and 'name' (line {node.start_mark.line + 1})"
         )
     mapping = loader.construct_mapping(node, deep=True)
     kind = mapping.pop("kind", None)
     name = mapping.pop("name", None)
     if not isinstance(kind, str) or not kind:
-        raise AwxApiError(f"!ref requires a 'kind' string (got {kind!r})")
+        raise ConfigError(f"!ref requires a 'kind' string (got {kind!r})")
     if not isinstance(name, str) or not name:
-        raise AwxApiError(f"!ref requires a 'name' string (got {name!r})")
+        raise ConfigError(f"!ref requires a 'name' string (got {name!r})")
     scope = {str(k): str(v) for k, v in mapping.items()} or None
     return RefSentinel(kind=kind, name=name, scope=scope)
 
@@ -121,7 +121,7 @@ def load_yaml_with_refs(text: str) -> Any:
     try:
         return yaml.load(text, Loader=_RefSafeLoader)
     except yaml.YAMLError as exc:
-        raise AwxApiError(f"invalid YAML: {exc}") from exc
+        raise ConfigError(f"invalid YAML: {exc}") from exc
 
 
 # ---- Jinja2 env ---------------------------------------------------------
@@ -168,7 +168,7 @@ def build_jinja_env() -> Environment:
 
 
 class DefaultParser:
-    """Concrete :class:`untaped.capabilities.awx.application.test.ports.Parser`.
+    """Concrete :class:`untaped.capabilities.awx.application.suites.ports.Parser`.
 
     Wraps the module-level functions plus a single Jinja2 environment so
     callers don't pay rebuild cost per file. Stateless aside from the
@@ -193,8 +193,8 @@ class DefaultParser:
             template = self._env.from_string(body)
             return template.render(dict(values))
         except UndefinedError as exc:
-            raise AwxApiError(f"undefined Jinja2 variable: {exc}") from exc
+            raise ConfigError(f"undefined Jinja2 variable: {exc}") from exc
         except TemplateError as exc:
             # Covers ``TemplateSyntaxError`` (compile-time) and other Jinja2
             # errors raised during rendering (e.g. filter failures).
-            raise AwxApiError(f"Jinja2 template error: {exc}") from exc
+            raise ConfigError(f"Jinja2 template error: {exc}") from exc

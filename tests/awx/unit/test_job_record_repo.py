@@ -135,13 +135,20 @@ def test_list_unknown_kind_falls_through_unchanged() -> None:
     assert client.paginate_calls[0][0] == "custom_kind/"
 
 
-def test_list_passes_none_params_through() -> None:
+def test_list_defaults_to_newest_first() -> None:
     client = _FakeClient()
     repo = JobRecordRepository(cast(RawHttpResourceClient, client))
-    list(repo.list(kind="job"))
+    list(repo.list(kind="job", params={"status": "successful"}))
     _, params, limit = client.paginate_calls[0]
-    assert params == {}
+    assert params == {"order_by": "-id", "status": "successful"}
     assert limit is None
+
+
+def test_list_preserves_caller_order_by() -> None:
+    client = _FakeClient()
+    repo = JobRecordRepository(cast(RawHttpResourceClient, client))
+    list(repo.list(kind="job", params={"order_by": "started", "status": "running"}))
+    assert client.paginate_calls[0][1] == {"order_by": "started", "status": "running"}
 
 
 # ---- get ----

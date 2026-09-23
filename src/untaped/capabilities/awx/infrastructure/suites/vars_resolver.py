@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from untaped.capabilities.awx.domain.test_suite import VariableSpec
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.api import ConfigError
+from untaped.capabilities.awx.domain.suite import VariableSpec
 
 if TYPE_CHECKING:
-    from untaped.capabilities.awx.application.test.ports import Prompt
+    from untaped.capabilities.awx.application.suites.ports import Prompt
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})
@@ -70,7 +70,7 @@ def resolve_variables(
 
     if missing_in_non_interactive:
         joined = ", ".join(missing_in_non_interactive)
-        raise AwxApiError(
+        raise ConfigError(
             f"required variable(s) not provided: {joined}. "
             "Set them with --var <name>=<value> or run interactively."
         )
@@ -82,7 +82,7 @@ def _reject_unknown(names: Iterable[str], known: Iterable[str], origin: str) -> 
     unknown = sorted(set(names) - known_set)
     if unknown:
         joined = ", ".join(unknown)
-        raise AwxApiError(
+        raise ConfigError(
             f"unknown variable(s) in {origin}: {joined}. "
             f"Declared variables: {', '.join(sorted(known_set)) or '(none)'}"
         )
@@ -92,18 +92,18 @@ def _load_vars_file(path: Path) -> dict[str, Any]:
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise AwxApiError(f"failed to read vars-file {path}: {exc}") from exc
+        raise ConfigError(f"failed to read vars-file {path}: {exc}") from exc
     try:
         parsed = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
-        raise AwxApiError(f"vars-file {path} is not valid YAML: {exc}") from exc
+        raise ConfigError(f"vars-file {path} is not valid YAML: {exc}") from exc
     if parsed is None:
         return {}
     if not isinstance(parsed, dict):
-        raise AwxApiError(f"vars-file {path} must be a YAML mapping")
+        raise ConfigError(f"vars-file {path} must be a YAML mapping")
     non_string = sorted(repr(key) for key in parsed if not isinstance(key, str))
     if non_string:
-        raise AwxApiError(
+        raise ConfigError(
             f"vars-file {path}: variable names must be strings (got {', '.join(non_string)})"
         )
     return parsed
@@ -117,7 +117,7 @@ def _coerce(spec: VariableSpec, value: Any, *, source: str) -> Any:
         try:
             coerced = int(value)
         except (TypeError, ValueError) as exc:
-            raise AwxApiError(f"{source}: expected int, got {value!r}") from exc
+            raise ConfigError(f"{source}: expected int, got {value!r}") from exc
     elif spec.type == "bool":
         coerced = _coerce_bool(value, source=source)
     elif spec.type == "list":
@@ -126,9 +126,9 @@ def _coerce(spec: VariableSpec, value: Any, *, source: str) -> Any:
         coerced = str(value)
         if coerced not in spec.choices:
             choices = ", ".join(repr(c) for c in spec.choices)
-            raise AwxApiError(f"{source}: {value!r} is not one of [{choices}]")
+            raise ConfigError(f"{source}: {value!r} is not one of [{choices}]")
     else:  # pragma: no cover — exhausted by Literal
-        raise AwxApiError(f"unsupported variable type {spec.type!r}")
+        raise ConfigError(f"unsupported variable type {spec.type!r}")
     return coerced
 
 
@@ -140,7 +140,7 @@ def _coerce_bool(value: Any, *, source: str) -> bool:
         return True
     if text in _FALSE:
         return False
-    raise AwxApiError(f"{source}: expected bool, got {value!r}")
+    raise ConfigError(f"{source}: expected bool, got {value!r}")
 
 
 def _coerce_list(value: Any) -> list[Any]:

@@ -1,10 +1,10 @@
-"""Pin wildcard secret-stripping behaviour in ApplyResource.
+"""Pin wildcard secret-stripping behaviour in the batch mutation engine.
 
-The only wildcard secret-path that fires through ``ApplyResource`` today
+The only wildcard secret-path that fires through engine today
 is JobTemplate / Workflow's
 ``survey_spec.spec.*.default``. ``$encrypted$`` placeholders inside a
 list element produce a preserved path containing a literal ``*``, which
-exercises the intermediate-``*`` branches of ``_remove_at_path``
+exercises the intermediate-``*`` branches of ``_secret_paths.remove_at``
 (``application/apply_resource.py:409-411``) when comparing the user
 payload against the existing record's stripped subtree.
 
@@ -16,13 +16,13 @@ refactored freely as long as the contract holds.
 
 ``CREDENTIAL_SPEC.secret_paths = ("inputs.*",)`` declares a terminal
 wildcard pattern but ``CREDENTIAL`` is ``fidelity="read_only"`` today,
-so ``ApplyResource`` refuses it. The ``inputs.*`` pattern is dormant
+so engine refuses it. The ``inputs.*`` pattern is dormant
 until credentials gain apply support; tests for it can land alongside
 that change.
 
 The stub Protocols mirror ``test_apply_resource.py``; we copy them here
 because pytest's ``--import-mode=importlib`` disallows cross-test-file
-imports per the project's test layout (see AGENTS.md "Test layout").
+imports.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.capabilities.awx.application import ApplyResource
+from awx.unit.support import SingleApply
 from untaped.capabilities.awx.application.ports import (
     Catalog,
     FkResolver,
@@ -47,7 +47,7 @@ from untaped.capabilities.awx.domain import (
     ServerRecord,
 )
 from untaped.capabilities.awx.domain.outcomes import DeleteReceipt
-from untaped.capabilities.awx.errors import BadRequest
+from untaped.capabilities.awx.errors import BadRequestError
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 from untaped.capabilities.awx.infrastructure.strategies import DefaultApplyStrategy
 
@@ -158,8 +158,8 @@ def _make_apply(
     catalog_specs: dict[str, ResourceSpec],
     fk_names: dict[tuple[str, str], int],
     strategy: _StubStrategy,
-) -> ApplyResource:
-    return ApplyResource(
+) -> SingleApply:
+    return SingleApply(
         client=cast(RawHttpResourceClient, _StubClient()),
         catalog=cast(Catalog, _StubCatalog(catalog_specs)),
         fk=cast(FkResolver, _StubFk(fk_names)),
@@ -176,7 +176,7 @@ def wildcard_survey_sibling_change() -> tuple[ApplyOutcome, _StubStrategy]:
     """Apply a JT change where the user edits a sibling top-level field
     (``description``) while the survey carries ``$encrypted$``
     placeholders. Exercises the intermediate ``*`` branch of
-    ``apply_secret_policy._remove_at_path`` (walking list items):
+    ``_secret_paths.remove_at`` (walking list items):
     ``survey_spec.spec.*.default`` is a wildcard secret_path on
     ``JobTemplate``, so ``SecretPreservationPolicy.strip_paths`` walks
     the wildcard against the existing record, the equality check finds a
@@ -275,7 +275,7 @@ def test_wildcard_survey_patch_excludes_survey_and_keeps_sibling(
 def test_intermediate_list_wildcard_blocks_sibling_change_inside_survey() -> None:
     """If the user changes the survey's structure alongside a placeholder
     (e.g. renames ``question_name`` while keeping ``default: $encrypted$``),
-    the apply pipeline refuses with ``BadRequest``. PATCHing the new
+    the apply pipeline refuses with ``BadRequestError``. PATCHing the new
     structure would clobber AWX's stored encrypted value.
 
     Pins the conflict-detection behaviour for the wildcard path.
@@ -317,7 +317,7 @@ def test_intermediate_list_wildcard_blocks_sibling_change_inside_survey() -> Non
             },
         },
     )
-    with pytest.raises(BadRequest, match="survey_spec"):
+    with pytest.raises(BadRequestError, match="survey_spec"):
         apply(resource, write=True)
 
 

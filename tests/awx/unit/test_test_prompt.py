@@ -7,8 +7,8 @@ from collections.abc import Sequence
 import pytest
 
 from untaped.api import ConfigError, PromptChoice
-from untaped.capabilities.awx.domain.test_suite import VariableSpec
-from untaped.capabilities.awx.infrastructure.test.prompt import UiPrompt
+from untaped.capabilities.awx.domain.suite import VariableSpec
+from untaped.capabilities.awx.infrastructure.suites.prompt import UiPrompt
 
 
 def test_is_interactive_when_stdin_is_tty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,7 +45,7 @@ def test_visible_prompt_uses_core_text(monkeypatch: pytest.MonkeyPatch) -> None:
             return "answer"
 
     monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.test.prompt.ui_context",
+        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
         lambda **_: _PromptUi(),
     )
 
@@ -64,7 +64,7 @@ def test_secret_prompt_uses_core_secret(monkeypatch: pytest.MonkeyPatch) -> None
             return "s3cr3t"
 
     monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.test.prompt.ui_context",
+        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
         lambda **_: _PromptUi(),
     )
 
@@ -91,7 +91,7 @@ def test_choice_prompt_uses_core_select(monkeypatch: pytest.MonkeyPatch) -> None
             return "prod"
 
     monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.test.prompt.ui_context",
+        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
         lambda **_: _PromptUi(),
     )
 
@@ -118,7 +118,7 @@ def test_prompt_error_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
             raise ConfigError("prompt cancelled")
 
     monkeypatch.setattr(
-        "untaped.capabilities.awx.infrastructure.test.prompt.ui_context",
+        "untaped.capabilities.awx.infrastructure.suites.prompt.ui_context",
         lambda **_: _PromptUi(),
     )
 

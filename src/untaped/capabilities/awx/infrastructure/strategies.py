@@ -13,14 +13,16 @@ in-place strip / diff / preserve passes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain import Resource, ResourceSpec, WritePayload
 from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
 )
-from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequest
+from untaped.capabilities.awx.domain.kinds import UNIFIED_TEMPLATE_KINDS, snake_kind
+from untaped.capabilities.awx.domain.payloads import as_dict
+from untaped.capabilities.awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped.capabilities.awx.infrastructure.spec import awx_api_path
 
 if TYPE_CHECKING:
@@ -114,20 +116,13 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
     ``resource.metadata.parent``.
     """
 
-    _PARENT_PATHS: ClassVar[dict[str, str]] = {
-        "JobTemplate": "job_templates",
-        "WorkflowJobTemplate": "workflow_job_templates",
-        "Project": "projects",
-        "InventorySource": "inventory_sources",
-    }
-
     def prepare_parent(
         self, spec: ResourceSpec, identity: dict[str, Any], *, fk: FkResolver
     ) -> tuple[str, PlannedId] | None:
         parent = identity.get("parent")
         if parent is None:
-            raise BadRequest("schedule identity missing 'parent'")
-        result = fk.resolve_polymorphic(_as_dict(parent))
+            raise BadRequestError("schedule identity missing 'parent'")
+        result = fk.resolve_polymorphic(as_dict(parent))
         self._parent_path(result[0])
         return result
 
@@ -141,9 +136,9 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
     ) -> dict[str, Any] | None:
         parent = identity.get("parent")
         if parent is None:
-            raise BadRequest("schedule identity missing 'parent'")
+            raise BadRequestError("schedule identity missing 'parent'")
         parent_kind, parent_id = identity.get("_prepared_parent") or fk.resolve_polymorphic(
-            _as_dict(parent)
+            as_dict(parent)
         )
         path = self._parent_path(parent_kind)
         return _find_unique(
@@ -165,7 +160,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
     ) -> dict[str, Any]:
         parent = identity.get("parent")
         if parent is None:
-            raise BadRequest("schedule identity missing 'parent' for create")
+            raise BadRequestError("schedule identity missing 'parent' for create")
         parent_kind, parent_id = identity["_prepared_parent"]
         path = self._parent_path(parent_kind)
         return client.request(
@@ -174,15 +169,15 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
             json={"name": identity["name"], **payload},
         )
 
-    @classmethod
-    def _parent_path(cls, parent_kind: str) -> str:
-        try:
-            return cls._PARENT_PATHS[parent_kind]
-        except KeyError as exc:
-            raise BadRequest(
+    @staticmethod
+    def _parent_path(parent_kind: str) -> str:
+        """Parents are the unified templates; each lives at ``<snake_kind>s``."""
+        if parent_kind not in UNIFIED_TEMPLATE_KINDS:
+            raise BadRequestError(
                 f"schedule parent kind {parent_kind!r} not supported "
-                f"(use one of {sorted(cls._PARENT_PATHS)})"
-            ) from exc
+                f"(use one of {sorted(UNIFIED_TEMPLATE_KINDS)})"
+            )
+        return f"{snake_kind(parent_kind)}s"
 
 
 class InventoryChildApplyStrategy(DefaultApplyStrategy):
@@ -241,7 +236,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
             if inventory.get("kind") == "constructed":
                 invalid = set(payload) - {*CONSTRUCTED_SOURCE_FIELDS, "source", "name"}
                 if invalid or payload.get("source", "constructed") != "constructed":
-                    raise BadRequest(
+                    raise BadRequestError(
                         "cannot create an independent source on a constructed inventory"
                     )
                 generated = _generated_source(client, inventory_id)
@@ -270,23 +265,23 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         elif parent_resource is not None:
             inventory_kind = parent_resource.spec.get("kind", "")
         if inventory_kind == "smart" and existing is None:
-            raise BadRequest("smart inventories do not support inventory sources")
+            raise BadRequestError("smart inventories do not support inventory sources")
         generated = inventory_kind == "constructed" or (
             existing is not None and existing.get("source") == "constructed"
         )
         if not generated:
             if resource.spec.get("source") == "constructed":
-                raise BadRequest("constructed sources require a constructed inventory")
+                raise BadRequestError("constructed sources require a constructed inventory")
             return spec, existing
         if existing is None and parent is not None and isinstance(parent[1], int):
             existing = _generated_source(client, parent[1])
         invalid = set(resource.spec) - {*CONSTRUCTED_SOURCE_FIELDS, "source"}
         if invalid:
-            raise BadRequest(
+            raise BadRequestError(
                 "generated constructed source only permits " + ", ".join(CONSTRUCTED_SOURCE_FIELDS)
             )
         if resource.spec.get("source", "constructed") != "constructed":
-            raise BadRequest("generated constructed source type cannot change")
+            raise BadRequestError("generated constructed source type cannot change")
         spec = spec.model_copy(
             update={
                 "read_only_fields": (
@@ -334,23 +329,16 @@ def _find_unique(
 def _parent(identity: dict[str, Any]) -> Any:
     parent = identity.get("parent")
     if parent is None:
-        raise BadRequest(
+        raise BadRequestError(
             "Inventory child docs require metadata.parent (kind: Inventory) — "
             "see examples/inventory-prod.yml"
         )
     if hasattr(parent, "kind") and parent.kind != "Inventory":
-        raise BadRequest(
+        raise BadRequestError(
             "Inventory child docs require metadata.parent.kind == 'Inventory' "
             f"(got {parent.kind!r})"
         )
     return parent
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Lift a Pydantic IdentityRef (or dict) to a plain dict for resolution."""
-    if hasattr(value, "model_dump"):
-        return dict(value.model_dump())
-    return dict(value)
 
 
 class InventoryApplyStrategy(DefaultApplyStrategy):
@@ -363,7 +351,7 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
             return existing
         hydrated = client.get(spec, int(existing["id"])).model_dump()
         if hydrated.get("id") != existing["id"]:
-            raise BadRequest("constructed inventory hydration changed selected ID")
+            raise BadRequestError("constructed inventory hydration changed selected ID")
         return hydrated
 
     def prepare_state(
@@ -378,10 +366,10 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
         kind = existing.get("kind", "") if existing is not None else resource.spec.get("kind", "")
         if existing is not None and "kind" in resource.spec and resource.spec["kind"] != kind:
-            raise BadRequest("inventory kind cannot change on update")
+            raise BadRequestError("inventory kind cannot change on update")
         if kind == "constructed":
             if resource.spec.get("host_filter") not in (None, ""):
-                raise BadRequest("constructed inventories do not support host_filter")
+                raise BadRequestError("constructed inventories do not support host_filter")
             spec = spec.model_copy(
                 update={
                     "api_path": "constructed_inventories",
@@ -394,7 +382,7 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
         elif any(
             field in resource.spec for field in (*CONSTRUCTED_SOURCE_FIELDS, "input_inventories")
         ):
-            raise BadRequest("constructed inventory settings require kind=constructed")
+            raise BadRequestError("constructed inventory settings require kind=constructed")
         return spec, existing
 
 
@@ -404,5 +392,5 @@ def _generated_source(client: RawHttpResourceClient, inventory_id: int) -> dict[
         client.request("GET", f"inventories/{inventory_id}/inventory_sources/").get("results") or []
     )
     if len(sources) != 1 or sources[0].get("source") != "constructed":
-        raise BadRequest("constructed inventory has no unique generated source")
+        raise BadRequestError("constructed inventory has no unique generated source")
     return dict(sources[0])
