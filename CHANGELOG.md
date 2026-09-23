@@ -50,15 +50,33 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     priority, reporter, labels, created, and resolution.
 - awx
   - `--extra-vars` is sent as a mapping (`KEY=VAL`, `@file`, or JSON/YAML).
+    `KEY=VAL` decodes only `true`/`false`/`null`, integers, and JSON
+    objects/arrays (`version=1.10` stays a string); YAML dates become ISO
+    strings, and values JSON cannot carry are a usage error.
   - **Behavior change:** launch checks the template's ask-on-launch flags
-    first and fails rows whose fields AWX ignored. Launching or syncing more
-    than one target asks for confirmation (`--yes` to skip). `patch` rejects
-    unknown fields (`--allow-unknown-fields` to opt out). `jobs list`
-    defaults to 20 rows (`--limit 0` for all).
+    first and fails rows whose fields AWX ignored; a value equal to the
+    template's own is allowed, and extra vars outside a survey are rejected
+    when the template prompts only through its survey. Launching or syncing
+    more than one target asks for confirmation (`--yes` to skip). `patch`
+    rejects unknown fields that look like typos of a known field, with a
+    "did you mean" hint (`--allow-unknown-fields` to opt out); other unknown
+    fields are sent with a warning. `jobs list` defaults to 20 rows, and
+    `--limit 0` means no limit on every awx list.
+  - **Behavior change:** apply scopes documents without an organization by
+    `awx.default_organization`; `spec.organization` and an explicit
+    `metadata.organization: null` (now written by `save` for org-less
+    records) take precedence. Directory apply reads `*.yaml` as well as
+    `*.yml`, and read errors name the file.
+  - Relationship replacement adds members before removing old ones (same-type
+    credentials excepted) and restores removed members if an add fails.
+    `patch`/`apply` know more AWX fields (execution environments, project
+    signature credential, workflow tags, schedule job type).
   - Replacing a credential with one of the same type works. `patch --set`
-    keeps string fields as strings. Ctrl-C interrupts waits and prints the
-    running job IDs. `ping` validates the token. Fewer API requests for
-    scoped selection, `list --limit`, and `delete`.
+    keeps string fields as strings. Ctrl-C interrupts waits and submissions
+    and prints the executions not known to have finished. `save --out`
+    writes through symlinks, FIFOs and `-` (stdout). `ping` validates the
+    token. Fewer API requests for scoped selection, `list --limit`, and
+    `delete`.
 - recipe
   - Writes preserve file permissions. Glob steps work through symlinked
     targets. One broken installed pack no longer breaks every command.
