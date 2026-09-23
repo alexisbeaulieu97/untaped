@@ -7,6 +7,7 @@ from types import TracebackType
 from typing import Any
 
 from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
+from untaped.capabilities.jira.infrastructure.errors import map_jira_errors
 from untaped.capabilities.jira.settings import JiraSettings
 from untaped.capability_api import HttpSettings, RetryPolicy, connected_client, paginate_offset
 
@@ -43,62 +44,72 @@ class JiraClient:
         return f"{self._agile_prefix}/{path.lstrip('/')}"
 
     def me(self) -> dict[str, Any]:
-        return self._http.get_json_dict(self._api("myself"))
+        with map_jira_errors():
+            return self._http.get_json_dict(self._api("myself"))
 
     def get_issue(self, issue_key: str) -> dict[str, Any]:
-        return self._http.get_json_dict(
-            self._api(f"issue/{issue_key}"),
-            params={"fields": ",".join(ISSUE_DETAIL_FIELDS)},
-        )
+        with map_jira_errors(noun="issue", name=issue_key):
+            return self._http.get_json_dict(
+                self._api(f"issue/{issue_key}"),
+                params={"fields": ",".join(ISSUE_DETAIL_FIELDS)},
+            )
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
-        return paginate_offset(
-            self._http,
-            "POST",
-            self._api("search"),
-            item_key="issues",
-            body={"jql": jql, "fields": list(ISSUE_ROW_FIELDS)},
-            page_size=self._page_size,
-            limit=limit,
-            start_param="startAt",
-            size_param="maxResults",
-            retry=_SEARCH_RETRY,
-        )
+        with map_jira_errors():
+            yield from paginate_offset(
+                self._http,
+                "POST",
+                self._api("search"),
+                item_key="issues",
+                body={"jql": jql, "fields": list(ISSUE_ROW_FIELDS)},
+                page_size=self._page_size,
+                limit=limit,
+                start_param="startAt",
+                size_param="maxResults",
+                retry=_SEARCH_RETRY,
+            )
 
     def create_issue(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._http.post_json(self._api("issue"), json=payload)  # type: ignore[no-any-return]
+        with map_jira_errors():
+            return self._http.post_json(self._api("issue"), json=payload)  # type: ignore[no-any-return]
 
     def edit_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
-        self._http.request_json("PUT", self._api(f"issue/{issue_key}"), json=payload)
+        with map_jira_errors(noun="issue", name=issue_key):
+            self._http.request_json("PUT", self._api(f"issue/{issue_key}"), json=payload)
 
     def add_comment(self, issue_key: str, body: str) -> dict[str, Any]:
-        return self._http.post_json(  # type: ignore[no-any-return]
-            self._api(f"issue/{issue_key}/comment"),
-            json={"body": body},
-        )
+        with map_jira_errors(noun="issue", name=issue_key):
+            return self._http.post_json(  # type: ignore[no-any-return]
+                self._api(f"issue/{issue_key}/comment"),
+                json={"body": body},
+            )
 
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]:
-        payload = self._http.get_json_dict(self._api(f"issue/{issue_key}/transitions"))
+        with map_jira_errors(noun="issue", name=issue_key):
+            payload = self._http.get_json_dict(self._api(f"issue/{issue_key}/transitions"))
         transitions = payload.get("transitions")
         if not isinstance(transitions, list):
             return []
         return [transition for transition in transitions if isinstance(transition, dict)]
 
     def transition_issue(self, issue_key: str, transition_id: str) -> None:
-        self._http.request_json(
-            "POST",
-            self._api(f"issue/{issue_key}/transitions"),
-            json={"transition": {"id": transition_id}},
-        )
+        with map_jira_errors(noun="issue", name=issue_key):
+            self._http.request_json(
+                "POST",
+                self._api(f"issue/{issue_key}/transitions"),
+                json={"transition": {"id": transition_id}},
+            )
 
     def list_projects(self) -> Iterator[dict[str, Any]]:
-        rows = self._http.get_json_list(self._api("project"))
+        with map_jira_errors():
+            rows = self._http.get_json_list(self._api("project"))
         for row in rows:
             if isinstance(row, dict):
                 yield row
 
     def get_project(self, project_key: str) -> dict[str, Any]:
-        return self._http.get_json_dict(self._api(f"project/{project_key}"))
+        with map_jira_errors(noun="project", name=project_key):
+            return self._http.get_json_dict(self._api(f"project/{project_key}"))
 
     def list_boards(
         self,
@@ -115,18 +126,19 @@ class JiraClient:
             params["name"] = name
         if board_type:
             params["type"] = board_type
-        return paginate_offset(
-            self._http,
-            "GET",
-            self._agile("board"),
-            item_key="values",
-            params=params,
-            page_size=self._page_size,
-            limit=limit,
-            start_param="startAt",
-            size_param="maxResults",
-            last_flag="isLast",
-        )
+        with map_jira_errors():
+            yield from paginate_offset(
+                self._http,
+                "GET",
+                self._agile("board"),
+                item_key="values",
+                params=params,
+                page_size=self._page_size,
+                limit=limit,
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
 
     def list_sprints(
         self,
@@ -136,18 +148,19 @@ class JiraClient:
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         params = {"state": state} if state else None
-        return paginate_offset(
-            self._http,
-            "GET",
-            self._agile(f"board/{board_id}/sprint"),
-            item_key="values",
-            params=params,
-            page_size=self._page_size,
-            limit=limit,
-            start_param="startAt",
-            size_param="maxResults",
-            last_flag="isLast",
-        )
+        with map_jira_errors(noun="board", name=str(board_id)):
+            yield from paginate_offset(
+                self._http,
+                "GET",
+                self._agile(f"board/{board_id}/sprint"),
+                item_key="values",
+                params=params,
+                page_size=self._page_size,
+                limit=limit,
+                start_param="startAt",
+                size_param="maxResults",
+                last_flag="isLast",
+            )
 
     def close(self) -> None:
         self._http.close()
