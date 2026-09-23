@@ -263,8 +263,8 @@ def graph_command(
             message = f"could not resolve target to a GitHub repo: {target!r}"
             if Path(target).expanduser().exists():
                 message = (
-                    f"{message}; the local path has no Git remote pointing at GitHub. "
-                    "Pass --target-repo OWNER/NAME"
+                    f"{message}; the local path is not the top level of a Git checkout "
+                    "with a remote pointing at GitHub. Pass --target-repo OWNER/NAME"
                 )
             raise UntapedError(message)
 
