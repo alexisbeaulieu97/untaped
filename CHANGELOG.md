@@ -44,10 +44,12 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     cached copies are reported. `cache clean --all --org X` only removes X.
     Branches and tags with the same name are both scanned.
 - jira
-  - `issue assigned --jql` keeps the configured assignee filter, and bare
-    `issue search` uses `jira.assigned_jql`. JQL starting with `ORDER BY` and
-    sprint functions render correctly. `issue get` shows description, type,
-    priority, reporter, labels, created, and resolution.
+  - **Behavior change:** `issue assigned --jql` now ANDs the given JQL with
+    `jira.assigned_jql` instead of replacing it, so results stay limited to
+    your assigned issues. Use `issue search --jql` for an unrestricted query.
+  - Bare `issue search` uses `jira.assigned_jql`. JQL starting with
+    `ORDER BY` and sprint functions render correctly. `issue get` shows
+    description, type, priority, reporter, labels, created, and resolution.
 - awx
   - `--extra-vars` is sent as a mapping (`KEY=VAL`, `@file`, or JSON/YAML).
   - **Behavior change:** launch checks the template's ask-on-launch flags
@@ -76,6 +78,9 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     case-insensitively, GitHub Enterprise URLs resolve, and unpinned
     dependents are included for the default branch. The first refresh after
     upgrading rescans each source.
+  - **Behavior change:** graph node ids fold the repo part to lowercase
+    (`Acme/Base@v1` becomes `acme/base@v1` in json/yaml ids and edge
+    endpoints); labels keep the display casing.
 - Tests run hermetically: local runs no longer read the developer's config or
   depend on terminal width, and coverage is gated in CI at 89%.
 
