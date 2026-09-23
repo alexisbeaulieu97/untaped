@@ -27,6 +27,9 @@ from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinit
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
 from untaped.capability_api import HttpSettings, ProgressHandle, UiContext, git_auth_header, plural
 
+GIT_PARALLEL_CAP = 32
+"""Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_concurrency``)."""
+
 
 def run_source_refresh(
     source: SourceDefinition,
@@ -155,7 +158,7 @@ def refresh_summary(
         f"{plural(result.edges, 'edge')}, "
         f"{result.changed_refs} changed, {result.unchanged_refs} unchanged in {elapsed:.2f}s"
     )
-    return f"{message} (concurrency {concurrency})"
+    return f"{message} (parallel {concurrency})"
 
 
 def warn_low_rate_limit(result: RefreshResult, *, threshold: int, ui: UiContext) -> None:
