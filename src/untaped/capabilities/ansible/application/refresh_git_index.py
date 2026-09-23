@@ -79,14 +79,16 @@ class GitCache(Protocol):
         auth_header: str | None,
     ) -> None: ...
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None: ...
+    ) -> dict[str, str]:
+        """Return contents for the ``paths`` that exist at ``sha``; omit the rest."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -619,13 +621,9 @@ class RefreshGitSourceIndex:
         reports: list[tuple[str, ParseReport]] = []
         ignored_collections: set[str] = set()
         warnings: list[ParseWarning] = []
+        contents = self._git.read_files(bare, ref.sha, paths, auth_header=self._auth_header)
         for path in paths:
-            content = self._git.read_file(
-                bare,
-                ref.sha,
-                path,
-                auth_header=self._auth_header,
-            )
+            content = contents.get(path)
             if content is None:
                 continue
             report = parse_dependency_file(path, content)

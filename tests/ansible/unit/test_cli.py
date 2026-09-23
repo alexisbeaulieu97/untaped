@@ -203,31 +203,31 @@ class _SeedGitCache:
     ) -> None:
         return None
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
-        return None
+    ) -> dict[str, str]:
+        return {}
 
 
 class _InvalidDependencyGitCache(_SeedGitCache):
     """Git transport stub that returns a templated dependency file."""
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
-        if path == "roles/requirements.yml":
-            return "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
-        return None
+    ) -> dict[str, str]:
+        if "roles/requirements.yml" in paths:
+            return {"roles/requirements.yml": "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"}
+        return {}
 
 
 class _NoGitFetchCache:
@@ -247,14 +247,14 @@ class _NoGitFetchCache:
     ) -> None:
         raise AssertionError("unexpected git fetch")
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
+    ) -> dict[str, str]:
         raise AssertionError("unexpected dependency file read")
 
 
