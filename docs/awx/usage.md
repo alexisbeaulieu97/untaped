@@ -177,8 +177,10 @@ one per type); if the add then fails, the removed members are re-added and the
 row reports `partial`.
 
 `save` exports a fixed selection as portable YAML. Per-resource save accepts
-`--out FILE`; without it, YAML is written to stdout. Inventory and source
-exports preserve organization and parent identity:
+`--out FILE`; without it (or with `--out=-`), YAML is written to stdout. A
+symlinked FILE is written through the link, and FIFOs or `/dev/stdout` are
+written directly. Inventory and source exports preserve organization and
+parent identity:
 
 ```bash
 untaped awx inventories save Production --organization Default \
