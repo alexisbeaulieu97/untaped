@@ -186,6 +186,31 @@ constructed inventory and its generated source share `source_vars`,
 conflicting values for those fields through the two resources. Workflow
 template exports are partial: their node graph and edges are not round-tripped.
 
+## Launch templates
+
+`launch` submits job or workflow templates. `--extra-vars` is repeatable and
+merged left to right into one mapping sent as JSON:
+
+- `KEY=VAL`: the value is JSON-decoded when valid (`count=2`, `tags=["a"]`,
+  `enabled=true`), otherwise kept as a string (`region=us-east`,
+  `version=1.10.0`).
+- `@PATH`: a YAML or JSON mapping file (`.json` parses as JSON).
+- A raw JSON or YAML mapping: `'{"region": "eu"}'` or `'region: eu'`.
+
+```bash
+untaped awx job-templates launch Deploy --organization Default \
+  --extra-vars @vars.yml --extra-vars version=1.10.0 --limit web --wait
+```
+
+Before any POST, each target's `launch/` endpoint is read. A supplied flag
+whose template setting `ask_*_on_launch` is false (AWX would silently ignore
+it, for example running the whole inventory despite `--limit`) is a usage
+error naming the flag and template; `--extra-vars` is also accepted when the
+template has a survey. Missing required survey variables
+(`variables_needed_to_start`) are reported the same way. If AWX still lists
+`ignored_fields` in a launch response, that row fails with the ignored field
+names and keeps the execution ID; `awx test` reports such a case as an error.
+
 ## Sync and track executions
 
 Project, inventory-source, and inventory synchronization use `sync`:
@@ -207,7 +232,8 @@ submitting an action.
 error executions. Ctrl-C while waiting or tracking (including
 `awx test run --parallel`) stops polling promptly, exits 130, and prints the
 still-running execution IDs with an `untaped awx jobs wait ...` command to
-resume; the executions themselves keep running on the controller. `--track` shows progress on stderr while waiting. Ordinary
+resume; the executions themselves keep running on the controller. `--track`
+shows progress on stderr while waiting. Ordinary
 jobs expose `job_events`; project and inventory updates expose their `events`
 routes. Workflow jobs, including sliced launches that return a workflow job,
 have no own events or stdout route, so tracking emits status transitions from
@@ -274,10 +300,9 @@ The old `apply --stdin --set ...` overlay interface is removed; use
 
 ## Optional disposable live-AAP smoke
 
-No live AAP controller was available or exercised during development; the
-automated suite uses a strict HTTP fake. If you explicitly choose a disposable
-inventory and harmless source on a configured controller, run a smoke test
-like this and restore the saved files afterward:
+The automated suite uses a strict HTTP fake. If you explicitly choose a
+disposable inventory and harmless source on a configured controller, run a
+smoke test like this and restore the saved files afterward:
 
 ```bash
 untaped awx ping
@@ -306,5 +331,4 @@ untaped awx inventories apply disposable-inventory.yml --yes
 
 Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,
 the no-op editor made no write, and the sync reached the expected terminal
-state. These steps are opt-in live writes; they are instructions for a user's
-disposable controller, not a claim of live validation here.
+state. These steps are opt-in live writes against a disposable controller.
