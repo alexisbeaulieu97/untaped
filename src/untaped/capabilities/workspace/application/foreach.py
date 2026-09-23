@@ -25,10 +25,17 @@ class Foreach:
         *,
         runner: ShellRunner,
         fs: Filesystem,
+        on_interrupt: Callable[[], None] | None = None,
     ) -> None:
+        """``on_interrupt`` runs on the calling thread when anything
+        (typically ``KeyboardInterrupt``) escapes the run, before waiting
+        for in-flight repos; pass the runner's hook that kills running
+        commands so Ctrl-C under ``--parallel`` returns promptly.
+        """
         self._manifests = manifests
         self._runner = runner
         self._fs = fs
+        self._on_interrupt = on_interrupt
 
     def __call__(
         self,
@@ -48,7 +55,8 @@ class Foreach:
         stream output. Fail-fast (no ``continue_on_error``) stops queued
         repos from starting; in-flight commands finish and are reported.
         Anything escaping — including ``KeyboardInterrupt`` — cancels
-        queued work instead of draining it.
+        queued work instead of draining it and calls ``on_interrupt`` to
+        stop in-flight commands.
         """
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = select_repos(manifest, only)
@@ -72,7 +80,13 @@ class Foreach:
             if on_result is not None:
                 on_result(outcome)
 
-        bounded_map(_run, repos, concurrency=max(parallel, 1), on_each=_collect)
+        bounded_map(
+            _run,
+            repos,
+            concurrency=max(parallel, 1),
+            on_each=_collect,
+            on_abort=self._on_interrupt,
+        )
         order = {repo.name: i for i, repo in enumerate(repos)}
         outcomes.sort(key=lambda o: order.get(o.repo, len(order)))
         return outcomes

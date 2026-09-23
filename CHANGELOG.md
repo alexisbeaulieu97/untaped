@@ -21,7 +21,8 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     for typed records.
   - `profile current` honors `--profile`; a missing, unreadable, or invalid
     `http.ca_bundle`, an unknown `ui.theme`, and cross-origin pagination links
-    are reported clearly. Config writes create the temporary file with mode 0600.
+    are reported clearly. Config writes create the temporary file with mode
+    0600.
 - workspace
   - Repo and workspace names must be a single safe path segment; the bare
     cache path is sanitized.
@@ -34,8 +35,9 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     credentials, and fast-forwards from the branch's upstream. The bare cache
     now actually refreshes; new clones copy objects out of it
     (`--dissociate`) and it is never auto-gc'd, so pruned cache branches
-    cannot corrupt clones. Ctrl-C stops queued work and child processes;
-    `foreach` streams rows as repos finish.
+    cannot corrupt clones. Ctrl-C stops queued work and every running child
+    process, including under `foreach --parallel`; `foreach` streams rows as
+    repos finish.
 - github
   - `sweep --grep` always uses extended regular expressions, so `a|b` works
     and git config cannot change results.

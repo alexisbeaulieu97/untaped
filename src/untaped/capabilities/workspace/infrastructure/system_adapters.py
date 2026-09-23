@@ -17,6 +17,8 @@ import shutil
 import signal
 import stat
 import subprocess
+import threading
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
@@ -24,6 +26,7 @@ from untaped.capabilities.workspace.domain import DEFAULT_FOREACH_TIMEOUT
 from untaped.capabilities.workspace.errors import WorkspaceError
 
 _FOREACH_TIMEOUT_RETURN_CODE = 124
+_INTERRUPTED_RETURN_CODE = 130
 _FOREACH_TERMINATE_GRACE_SECONDS = 0.2
 _KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
@@ -39,7 +42,63 @@ def shell_runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.Completed
     sanitising / argv-quoting first; ``shell=True`` makes shell injection
     (CWE-78) trivial otherwise.
     """
-    process = subprocess.Popen(
+    return _communicate(_spawn(cmd, cwd), cmd, timeout)
+
+
+class InterruptibleShellRunner:
+    """A :data:`ShellRunner` that can stop every command it is running.
+
+    Commands run in their own session, so the terminal's SIGINT never
+    reaches them, and under ``foreach --parallel`` they run on worker
+    threads that never see ``KeyboardInterrupt``. The calling thread calls
+    :meth:`terminate_all` on interrupt: every live process group gets
+    SIGTERM, then SIGKILL after a short grace, and commands not yet started
+    are refused. Thread-safe; use one instance per run.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._live: set[subprocess.Popen[str]] = set()
+        self._closed = False
+
+    def __call__(self, cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
+        with self._lock:
+            if self._closed:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=_INTERRUPTED_RETURN_CODE, stdout="", stderr="interrupted"
+                )
+            process = _spawn(cmd, cwd)
+            self._live.add(process)
+        try:
+            return _communicate(process, cmd, timeout)
+        finally:
+            with self._lock:
+                self._live.discard(process)
+
+    def terminate_all(self) -> None:
+        """Refuse new commands and tear down every running process group."""
+        with self._lock:
+            self._closed = True
+            live = list(self._live)
+        for process in live:
+            _signal_process_group(process, signal.SIGTERM)
+        deadline = time.monotonic() + _FOREACH_TERMINATE_GRACE_SECONDS
+        while time.monotonic() < deadline and any(p.poll() is None for p in live):
+            time.sleep(0.01)
+        for process in live:
+            if os.name == "nt":
+                if process.poll() is None:
+                    process.kill()
+                continue
+            # The shell may exit on TERM while descendants ignore it; with
+            # ``start_new_session`` the group id is the leader's pid even
+            # after the leader has been reaped.
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, _KILL_SIGNAL)
+
+
+def _spawn(cmd: str, cwd: Path) -> subprocess.Popen[str]:
+    return subprocess.Popen(
         cmd,
         shell=True,
         cwd=cwd,
@@ -49,6 +108,11 @@ def shell_runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.Completed
         text=True,
         start_new_session=os.name != "nt",
     )
+
+
+def _communicate(
+    process: subprocess.Popen[str], cmd: str, timeout: float
+) -> subprocess.CompletedProcess[str]:
     try:
         try:
             stdout, stderr = process.communicate(timeout=timeout)
@@ -229,6 +293,7 @@ def _retry_writable(func: Callable[..., object], path: str, exc: BaseException) 
 
 __all__ = [
     "DEFAULT_FOREACH_TIMEOUT",
+    "InterruptibleShellRunner",
     "LocalFilesystem",
     "editor_runner",
     "resolve_editor_argv",
