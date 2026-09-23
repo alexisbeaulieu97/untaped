@@ -195,11 +195,14 @@ template exports are partial: their node graph and edges are not round-tripped.
 `launch` submits job or workflow templates. `--extra-vars` is repeatable and
 merged left to right into one mapping sent as JSON:
 
-- `KEY=VAL`: the value is JSON-decoded when valid (`count=2`, `tags=["a"]`,
-  `enabled=true`), otherwise kept as a string (`region=us-east`,
-  `version=1.10.0`).
+- `KEY=VAL`: only `true`/`false`/`null`, integers (`count=2`), and JSON
+  objects or arrays (`tags=["a"]`) are decoded; everything else is kept as the
+  typed string (`region=us-east`, `version=1.10`, `ratio=1.5`, `n=1e3`).
 - `@PATH`: a YAML or JSON mapping file (`.json` parses as JSON).
 - A raw JSON or YAML mapping: `'{"region": "eu"}'` or `'region: eu'`.
+
+YAML dates and timestamps are sent as ISO strings (`2024-01-01`). Values JSON
+cannot carry (`.nan`, `!!binary`) are a usage error.
 
 ```bash
 untaped awx job-templates launch Deploy --organization Default \
