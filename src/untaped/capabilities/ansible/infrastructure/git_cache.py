@@ -246,14 +246,36 @@ def local_remote_url(
 ) -> str | None:
     """Return the ``origin`` remote URL (else the first remote URL) for ``path``.
 
-    Delegates to ``git config`` so linked worktrees, subdirectories, config
-    includes, and repeated keys resolve exactly as Git itself resolves them.
-    Returns ``None`` when ``path`` is not inside a checkout with a remote.
+    Delegates to ``git config`` so linked worktrees, config includes, and
+    repeated keys resolve exactly as Git itself resolves them. Returns
+    ``None`` unless ``path`` is the top level of a checkout with a remote: a
+    subdirectory (say ``roles/web`` in a monorepo) is not the enclosing repo,
+    whose indexed edges its local overlay would otherwise replace. Inherited
+    ``GIT_DIR``/``GIT_WORK_TREE``/``GIT_INDEX_FILE`` are dropped so the
+    lookup always targets ``path``.
     """
     git_path = shutil.which(git)
     if git_path is None:
         return None
     cwd = path if path.is_dir() else path.parent
+    env = _git_env()
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        env.pop(name, None)
+    try:
+        toplevel = subprocess.run(
+            [git_path, "-C", str(cwd), "rev-parse", "--show-toplevel"],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+    top = toplevel.stdout.strip() if toplevel.returncode == 0 else ""
+    if not top or Path(top).resolve() != cwd.resolve():
+        return None
     lookups = (
         ["config", "--get", "remote.origin.url"],
         ["config", "--get-regexp", r"^remote\..*\.url$"],
@@ -262,7 +284,7 @@ def local_remote_url(
         try:
             result = subprocess.run(
                 [git_path, "-C", str(cwd), *args],
-                env=_git_env(),
+                env=env,
                 stdin=subprocess.DEVNULL,
                 text=True,
                 capture_output=True,

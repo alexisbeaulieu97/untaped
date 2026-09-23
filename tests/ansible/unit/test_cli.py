@@ -2123,10 +2123,12 @@ def test_graph_local_target_tolerates_duplicate_git_config_keys(
 
 
 @requires_git
-def test_graph_local_subdirectory_resolves_enclosing_repo(
+def test_graph_local_subdirectory_requires_target_repo(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    # Auto-resolving a subdirectory to the enclosing repo would let its local
+    # overlay replace the monorepo's real indexed edges.
     repo = tmp_path / "repo"
     _init_git_repo(repo, origin="https://github.com/acme/mono.git")
     target = repo / "roles" / "web"
@@ -2136,9 +2138,37 @@ def test_graph_local_subdirectory_resolves_enclosing_repo(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
 
     result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+    explicit = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/web-role", "--downstream"]
+    )
+
+    assert result.exit_code == 1
+    assert "could not resolve target" in result.stderr
+    assert "--target-repo" in result.stderr
+    assert explicit.exit_code == 0, explicit.output
+    assert explicit.stdout.startswith("acme/web-role\n")
+
+
+@requires_git
+def test_graph_local_target_ignores_inherited_git_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    other = tmp_path / "other"
+    _init_git_repo(other, origin="https://github.com/acme/other.git")
+    target = tmp_path / "role"
+    _init_git_repo(target, origin="https://github.com/acme/real-role.git")
+    (target / "roles").mkdir()
+    (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/mono\n")
+    assert result.stdout.startswith("acme/real-role\n")
 
 
 @requires_git
