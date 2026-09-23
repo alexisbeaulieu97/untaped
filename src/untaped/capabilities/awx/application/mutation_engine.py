@@ -51,6 +51,7 @@ from untaped.capabilities.awx.domain import (
     ResourceSpec,
 )
 from untaped.capabilities.awx.domain.kinds import type_matches_kind
+from untaped.capabilities.awx.domain.payloads import as_dict
 from untaped.capabilities.awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
@@ -291,7 +292,7 @@ class BatchMutationEngine:
                 )
                 specs[index] = spec
                 if found is not None:
-                    record = _record_dict(found)
+                    record = as_dict(found)
                     record_id = _record_id(record)
                     if record_id is None:
                         raise BadRequestError(f"{spec.kind} target returned no integer id")
@@ -553,7 +554,7 @@ class BatchMutationEngine:
             try:
                 if operation.existing is None:
                     continue
-                current_record = _record_dict(
+                current_record = as_dict(
                     self._client.get(operation.spec, int(operation.existing["id"]))
                 )
                 watched = _watched_fields(operation)
@@ -836,23 +837,11 @@ def _noop_warn(_message: str) -> None:
     return None
 
 
-def _record_dict(record: Any) -> dict[str, Any]:
-    if hasattr(record, "model_dump"):
-        return dict(record.model_dump())
-    return dict(record)
-
-
 def _record_id(record: Mapping[str, Any]) -> int | None:
     value = record.get("id")
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     return None
-
-
-def _as_mapping(value: Any) -> dict[str, Any]:
-    if hasattr(value, "model_dump"):
-        return dict(value.model_dump())
-    return dict(value)
 
 
 def _freeze(value: Any) -> Any:
@@ -883,7 +872,7 @@ def _identity_matches_scope(identity: Mapping[str, Any], scope: Mapping[str, str
     if not scope:
         return True
     parent = identity.get("parent")
-    parent_mapping = _as_mapping(parent) if parent is not None else {}
+    parent_mapping = as_dict(parent) if parent is not None else {}
     for key, expected in scope.items():
         if key == "organization":
             actual = identity.get("organization") or parent_mapping.get("organization")

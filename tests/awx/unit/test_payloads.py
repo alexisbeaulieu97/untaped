@@ -19,7 +19,12 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from untaped.capabilities.awx.domain.payloads import ActionPayload, ServerRecord, WritePayload
+from untaped.capabilities.awx.domain.payloads import (
+    ActionPayload,
+    ServerRecord,
+    WritePayload,
+    as_dict,
+)
 
 
 def _record(**fields: Any) -> ServerRecord:
@@ -104,3 +109,12 @@ def test_write_and_action_payload_accept_arbitrary_fields_and_are_frozen() -> No
         write.name = "y"  # type: ignore[misc, attr-defined]
     with pytest.raises(ValidationError):
         action.extra_vars = {}  # type: ignore[misc, attr-defined]
+
+
+def test_as_dict_lifts_models_and_copies_mappings() -> None:
+    record = ServerRecord(id=1, name="x", extra="kept")
+    assert as_dict(record) == {"id": 1, "name": "x", "extra": "kept"}
+    source = {"id": 2}
+    copied = as_dict(source)
+    assert copied == source
+    assert copied is not source
