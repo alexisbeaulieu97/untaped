@@ -1,7 +1,7 @@
-"""Read/write workspace entries in ``~/.untaped/config.yml``.
+"""Read/write workspace entries in ``~/.untaped/state.yml``.
 
 The registry is the tool-managed ``workspace`` *state* section: a small
-``name → path`` map under the top-level ``workspace.workspaces`` key. Repo
+``name → path`` map under the ``workspace.workspaces`` key. Repo
 lists live in the per-workspace manifest, not here.
 
 Writes go through the SDK's ``StateCollection`` helper, which keeps updates

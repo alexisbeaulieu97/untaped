@@ -122,6 +122,6 @@ def test_register_preserves_other_top_level_settings(_isolate_config: Path, tmp_
     import yaml as _yaml
 
     raw = _yaml.safe_load(_isolate_config.read_text())
-    assert raw["log_level"] == "DEBUG"
-    assert raw["awx"]["base_url"] == "https://x"
-    assert raw["workspace"]["workspaces"][0]["name"] == "prod"
+    assert raw == {"log_level": "DEBUG", "awx": {"base_url": "https://x"}}
+    state = _yaml.safe_load((_isolate_config.parent / "state.yml").read_text())
+    assert state["workspace"]["workspaces"][0]["name"] == "prod"

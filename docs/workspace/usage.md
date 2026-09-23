@@ -12,7 +12,7 @@ The two homes of workspace state:
   the workspace's name, its default branch, and its repos. This is the
   source of truth for what belongs in a workspace.
 - **Central registry** — a `workspace.workspaces` list in
-  `~/.untaped/config.yml` mapping `name → path`. Just enough state to
+  `~/.untaped/state.yml` mapping `name → path`. Just enough state to
   power `list`, `path <name>`, and `--workspace X` lookups.
 
 Manifests are checked into a shared directory or a git repo if you

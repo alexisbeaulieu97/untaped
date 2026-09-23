@@ -76,6 +76,17 @@ core logic with only root-specific resolution rules as private helpers. Read
 the current command names and options from `untaped --help`; config
 diagnostics live at root `doctor`.
 
+## Config & state model
+
+User settings live in `config.yml` (`UNTAPED_CONFIG`): `active` plus
+`profiles.<name>.<section>`. Capability-managed state lives in a separate
+`state.yml` next to it (`UNTAPED_STATE`), one section per capability, read and
+written only through `StateCollection`/`StateMap` (or
+`read_tool_state`/`mutate_tool_state`). Settings writes never touch
+`state.yml` and state writes never touch `config.yml`, except the one-time move
+of a legacy top-level state section out of `config.yml` (see
+[`docs/configuration.md`](docs/configuration.md#capability-state)).
+
 ## Per-capability ownership (Hard Rules)
 
 Non-negotiable. Every contribution must respect these plus the workflow

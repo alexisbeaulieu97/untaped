@@ -9,7 +9,7 @@ cover the workflows and contracts that are useful across commands.
 - [AWX/AAP usage](./awx/usage.md) — connection setup, selection, configuration
   changes, inventory sources, and execution tracking.
 - [Configuration](./configuration.md) — `~/.untaped/config.yml`,
-  profiles, secrets, TLS, env-var overrides. Start here.
+  `~/.untaped/state.yml`, profiles, secrets, TLS, env-var overrides. Start here.
 - [Building a capability provider](./plugins.md) — package an external
   capability for the unified CLI.
 - [Agent Skills](./skills.md) — list and install the skills shipped with the
