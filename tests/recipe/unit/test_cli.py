@@ -114,7 +114,7 @@ def test_add_pack_prints_recipes_and_hooks_before_confirm(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(app, ["add", str(pack)])
 
@@ -224,7 +224,7 @@ def test_remove_warns_on_local_edits_before_confirm(
     installed_recipe.write_text("version: 1\ndescription: 'edited'\nsteps: []\n")
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
 
     result = CliInvoker().invoke(app, ["remove", "demo"])
@@ -746,7 +746,7 @@ def test_apply_decline_renders_cancelled_summary_without_writing(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(
         app,
@@ -786,7 +786,7 @@ def test_apply_confirmation_reprints_summary_adjacent_to_prompt(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _PromptUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _PromptUi()
     )
 
     result = CliInvoker().invoke(app, ["apply", str(recipe), str(target), "--preview", "table"])
@@ -819,7 +819,7 @@ def test_confirm_accept_applies_changes(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.commands.ui_context", lambda **kwargs: _AcceptUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _AcceptUi()
     )
     result = CliInvoker().invoke(
         app,
@@ -3970,7 +3970,7 @@ def test_backup_restore_decline_prints_no_success(
 
     monkeypatch.setattr("untaped.batch.stream_is_tty", lambda stream: True)
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.cli.backup_commands.ui_context", lambda **kwargs: _DeclineUi()
+        "untaped.capabilities.recipe.cli._context.ui_context", lambda **kwargs: _DeclineUi()
     )
     result = CliInvoker().invoke(app, ["backup", "restore", bundle.id])
 
