@@ -48,6 +48,7 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 
 - `untaped awx apply FILE_OR_DIRECTORY` is the declarative complete-document create/update path. `save` exports a fixed selection as portable YAML; `$encrypted$` placeholders preserve controller secrets. Workflow template exports do not round-trip node graphs.
 - Inventory and source settings preserve organization and parent identity. Operation support is specific: inventory sync rejects smart/source-less inventories and invalid or manual sources during preflight, while apply accepts representable inventory documents and rejects only incompatible source/configuration combinations. Inventory settings changes do not rewrite source-managed hosts or groups.
+- `launch --extra-vars` is repeatable: `KEY=VAL` (JSON-decoded value when valid), `@FILE` (YAML/JSON mapping), or a raw JSON/YAML mapping; entries merge into one JSON mapping. Launch preflights `<template>/launch/`: a flag whose `ask_*_on_launch` is false, or a missing required survey variable, is a usage error before any POST; a response with `ignored_fields` fails that row. `jobs list` defaults to the newest 20 (`--limit 0` for all). Ctrl-C during `--wait`/`--track` exits 130 and prints a `jobs wait` hint.
 - Use `projects sync`, `inventory-sources sync`, and `inventories sync`. Inventory sync freezes source IDs before submitting updates. `--wait` fails on unsuccessful terminal states; `--track` writes progress to stderr. Known invalid sync selections produce zero POSTs.
 - Ordinary jobs expose `job_events`; project and inventory updates expose `events`. Workflow jobs, including sliced launch results, have no events or stdout route: `--track` polls status instead. Use `--kind project_update` or `--kind inventory_update` for non-default `jobs` commands; use `jobs wait` for workflow jobs, not workflow `events` or `logs`.
 - Writes are serial by default, `--parallel` is capped at ten, and runtime failure stops new scheduling unless `--continue-on-error` is supplied. Already-running requests finish; partial results retain IDs. There is no transaction or rollback. Async inventory deletion reports `deletion_requested`.
@@ -59,5 +60,4 @@ Use this skill when the user wants an agent to operate the `untaped awx` CLI for
 - Keep stdout data-only and prefer `--format json`, `yaml`, or `pipe` for automation. Never expose secrets; preserve `$encrypted$` placeholders.
 
 For the full user guide and an opt-in disposable live-AAP smoke procedure, see
-`docs/awx/usage.md` in the source repository. Development used strict HTTP
-fakes and did not validate against a live AAP controller.
+`docs/awx/usage.md` in the source repository.
