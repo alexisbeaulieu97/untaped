@@ -558,3 +558,97 @@ def test_launch_ignored_fields_fail_the_row(seeded_default_org: Any) -> None:
     assert rows[0]["action"] == "failed"
     assert "limit" in rows[0]["detail"]
     assert rows[0]["id"] is not None
+
+
+def _unprompted_alpha(fake: Any) -> None:
+    fake.seed("credentials", id=30, name="ssh", organization=1, organization_name="Default")
+    fake.seed("credentials", id=31, name="vault", organization=1, organization_name="Default")
+    fake.seed("credentials", id=32, name="other", organization=1, organization_name="Default")
+    fake.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        limit="web",
+        verbosity=1,
+        summary_fields={"credentials": [{"id": 30, "name": "ssh"}, {"id": 31, "name": "vault"}]},
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--limit", "web"],
+        ["--verbosity", "1"],
+        ["--credential", "ssh"],
+        ["--credential", "ssh", "--credential", "vault"],
+        ["--extra-vars", "{}"],
+    ],
+)
+def test_launch_allows_unprompted_values_equal_to_the_template(
+    seeded_default_org: Any, args: list[str]
+) -> None:
+    """AWX treats a value equal to the template's own as a no-op, not ignored."""
+    _unprompted_alpha(seeded_default_org)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
+    assert result.exit_code == 0, result.output
+    assert len(seeded_default_org.actions_called) == 1
+
+
+@pytest.mark.parametrize(
+    ("args", "flag"),
+    [
+        (["--limit", "db"], "--limit"),
+        (["--credential", "ssh", "--credential", "other"], "--credential"),
+    ],
+)
+def test_launch_rejects_unprompted_values_that_differ(
+    seeded_default_org: Any, args: list[str], flag: str
+) -> None:
+    _unprompted_alpha(seeded_default_org)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
+    assert result.exit_code == 2, result.output
+    assert flag in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def _survey_alpha(fake: Any) -> None:
+    fake.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        survey_enabled=True,
+        survey_spec={"name": "", "description": "", "spec": [{"variable": "region"}]},
+    )
+
+
+def test_launch_survey_accepts_survey_variables(seeded_default_org: Any) -> None:
+    _survey_alpha(seeded_default_org)
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "region=eu"]
+    )
+    assert result.exit_code == 0, result.output
+    assert len(seeded_default_org.actions_called) == 1
+
+
+def test_launch_survey_rejects_variables_outside_the_survey(seeded_default_org: Any) -> None:
+    """Without ask_variables_on_launch AWX drops extra vars the survey lacks."""
+    _survey_alpha(seeded_default_org)
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "launch",
+            "alpha",
+            "--extra-vars",
+            "region=eu",
+            "--extra-vars",
+            "debug=1",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert "debug" in result.output
+    assert seeded_default_org.actions_called == []
