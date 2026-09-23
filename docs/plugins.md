@@ -203,6 +203,12 @@ records), `CAPABILITY_API_VERSION`, and the supported helpers including
 parser and record type are also exported as `parse_envelope_line` and
 `PipeEnvelope`; capabilities retain their own kind and required-ID validation.
 
+`app_context().section(name, Model)`, `app_context().http`, and
+`get_config_section(name, Model)` validate only the requested section (plus its
+state section), once per context, so another capability's invalid settings
+never break your commands. `app_context().settings` still validates every
+section; prefer the section accessors.
+
 `run_editor(path, *, argv=None, stdin=None, stdout=None, stderr=None)` opens an
 external editor and waits for it to exit. Without explicit argv it parses
 `VISUAL`, falling back to `EDITOR`, as shell-free arguments. Configure a GUI

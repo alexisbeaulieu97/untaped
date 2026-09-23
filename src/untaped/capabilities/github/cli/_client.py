@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 def open_client() -> Iterator[tuple[GithubClient, UiContext]]:
     """Build a :class:`GithubClient` and themed UI from a one-shot context.
 
-    ``app_context()`` resolves settings exactly once (honoring the root
+    ``app_context()`` resolves each settings section at most once (honoring the root
     ``--profile`` selector applied by core) and hands back a frozen context;
     nothing leaks into ambient process state. The same context yields the
     themed :class:`UiContext` so commands can report progress without resolving
