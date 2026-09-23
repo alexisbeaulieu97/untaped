@@ -21,6 +21,7 @@ import pytest
 from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure.system_adapters import (
     DEFAULT_FOREACH_TIMEOUT,
+    InterruptibleShellRunner,
     resolve_editor_argv,
     shell_runner,
 )
@@ -134,6 +135,35 @@ def test_shell_runner_interrupt_kills_process_group_and_reraises(
     else:
         os.kill(child_pid, signal.SIGKILL)
         pytest.fail(f"interrupted child process {child_pid} was left running")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process group cleanup is POSIX-only")
+def test_interruptible_runner_terminate_all_kills_live_commands_and_refuses_new(
+    tmp_path: Path,
+) -> None:
+    import threading
+
+    runner = InterruptibleShellRunner()
+    pidfile = tmp_path / "pid"
+    command = f"echo $$ > {pidfile}; sleep 30"
+    results: list[int] = []
+    worker = threading.Thread(
+        target=lambda: results.append(runner(command, tmp_path, timeout=60).returncode)
+    )
+    worker.start()
+    deadline = time.monotonic() + 5.0
+    while not (pidfile.exists() and pidfile.read_text().strip()):
+        assert time.monotonic() < deadline, "command never started"
+        time.sleep(0.01)
+
+    start = time.monotonic()
+    runner.terminate_all()
+    worker.join(timeout=5)
+
+    assert not worker.is_alive()
+    assert time.monotonic() - start < 3
+    assert results and results[0] != 0
+    assert runner("echo late", tmp_path, timeout=60).returncode == 130
 
 
 def _is_zombie(pid: int) -> bool:

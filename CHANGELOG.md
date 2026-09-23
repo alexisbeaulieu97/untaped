@@ -8,9 +8,12 @@ Correctness and safety fixes from a whole-codebase review. Items marked
 - Core
   - `config set` validates the raw value against the setting's type instead of
     parsing it as YAML: `#` no longer truncates secrets, and numeric strings
-    such as `0123456` are accepted for string settings.
+    such as `0123456` are accepted for string settings. **Behavior change:**
+    for string settings `null` is now stored literally; it still clears
+    optional non-string settings. Use `config unset KEY` to clear a setting.
   - `config` and `profile` commands validate only the section they touch, so a
-    broken section can be repaired from the CLI. Non-mapping config shapes are
+    broken section can be repaired from the CLI (including with
+    `config set KEY --prompt`). Non-mapping config shapes are
     reported as config errors instead of tracebacks.
   - `doctor` reports one row per core, capability, and state section,
     including `UNTAPED_*` overrides and the selected profile.
@@ -19,9 +22,10 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     tables only. A closed output pipe exits 0. `--verbose` with `--quiet` is a
     usage error. `--columns` accepts comma lists and rejects unknown columns
     for typed records.
-  - `profile current` honors `--profile`; a missing `http.ca_bundle`, an
-    unknown `ui.theme`, and cross-origin pagination links are reported
-    clearly. Config writes create the temporary file with mode 0600.
+  - `profile current` honors `--profile`; a missing, unreadable, or invalid
+    `http.ca_bundle`, an unknown `ui.theme`, and cross-origin pagination links
+    are reported clearly. Config writes create the temporary file with mode
+    0600.
 - workspace
   - Repo and workspace names must be a single safe path segment; the bare
     cache path is sanitized.
@@ -30,10 +34,14 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     (`--yes` to skip). `sync` and `branch apply` report failures as `failed`
     and exit 1. `branch apply` no longer creates missing branches unless
     `--create` is passed.
-  - Git never runs in an enclosing repository, never prompts for
-    credentials, and fast-forwards from the branch's upstream. The bare cache
-    now actually refreshes. Ctrl-C stops queued work and child processes;
-    `foreach` streams rows as repos finish.
+  - Git never runs in an enclosing repository, does not wait for interactive
+    credential prompts (ssh runs in `BatchMode` unless `GIT_SSH_COMMAND` or
+    `GIT_SSH` is set), and fast-forwards from the branch's upstream. The bare cache
+    now actually refreshes; new clones copy objects out of it
+    (`--dissociate`) and it is never auto-gc'd, so pruned cache branches
+    cannot corrupt clones. Ctrl-C stops queued work and every running child
+    process, including under `foreach --parallel`; `foreach` streams rows as
+    repos finish.
 - github
   - `sweep --grep` always uses extended regular expressions, so `a|b` works
     and git config cannot change results.

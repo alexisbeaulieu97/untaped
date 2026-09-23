@@ -4,10 +4,12 @@ Domain layers depend on a ``GitRunner`` Protocol; this is the concrete
 adapter. Every call shells out to the system ``git`` binary; failures are
 mapped to :class:`GitError`.
 
-Every invocation is non-interactive (stdin closed, terminal and credential
-manager prompts disabled) so a missing credential fails fast instead of
-hanging a sweep, and per-repo calls set ``GIT_CEILING_DIRECTORIES`` so git
-never falls through to a repository enclosing the target directory.
+Invocations do not wait for interactive credential prompts (stdin closed,
+terminal and credential-manager prompts disabled, ssh in ``BatchMode``
+unless the user set ``GIT_SSH_COMMAND``/``GIT_SSH``) so a missing
+credential normally fails fast instead of hanging a sweep, and per-repo
+calls set ``GIT_CEILING_DIRECTORIES`` so git never falls through to a
+repository enclosing the target directory.
 """
 
 from __future__ import annotations
@@ -67,6 +69,7 @@ class GitRunner:
         # variant.
         bare.parent.mkdir(parents=True, exist_ok=True)
         self._clone(["clone", "--bare", url, str(bare)], dest=bare)
+        self._protect_cache_objects(bare)
         return BareCacheEntry(path=bare, created=True)
 
     def bare_fetch(self, bare_path: Path) -> None:
@@ -78,6 +81,18 @@ class GitRunner:
             cwd=bare_path,
             timeout=self._slow_timeout,
         )
+        self._protect_cache_objects(bare_path)
+
+    def _protect_cache_objects(self, bare_path: Path) -> None:
+        """Never auto-gc or prune the cache's objects.
+
+        Clones made before ``--dissociate`` was used still borrow objects
+        through ``objects/info/alternates``; pruning objects that became
+        unreachable in the cache (deleted or force-pushed branches) would
+        corrupt them.
+        """
+        self._run(["config", "gc.pruneExpire", "never"], cwd=bare_path)
+        self._run(["config", "gc.auto", "0"], cwd=bare_path)
 
     # workspace clone ----------------------------------------------------
 
@@ -90,7 +105,9 @@ class GitRunner:
         branch: str | None = None,
     ) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["clone", "--reference", str(bare)]
+        # ``--dissociate`` copies the borrowed objects into the clone, so the
+        # cache stays a pure accelerator: pruning it never breaks clones.
+        cmd = ["clone", "--reference", str(bare), "--dissociate"]
         if branch is not None:
             cmd += ["--branch", branch]
         cmd += [url, str(dest)]
@@ -260,6 +277,11 @@ _GIST_LIMIT = 300
 
 def _git_env(cwd: Path | None) -> dict[str, str]:
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    if "GIT_SSH_COMMAND" not in env and "GIT_SSH" not in env:
+        # Stop ssh from waiting on passphrase/host-key prompts. A user's own
+        # GIT_SSH_COMMAND/GIT_SSH wins (note: this env var does take
+        # precedence over a ``core.sshCommand`` setting).
+        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes"
     if cwd is not None:
         parent = str(Path(os.path.abspath(cwd)).parent)
         existing = env.get("GIT_CEILING_DIRECTORIES")

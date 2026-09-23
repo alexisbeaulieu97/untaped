@@ -23,7 +23,7 @@ from test_management.support import (
 from untaped import bootstrap
 from untaped.config_file import read_config_dict
 from untaped.management.config import build_root_config_app
-from untaped.testing import CliInvoker, CliResult
+from untaped.testing import CliInvoker, CliResult, ScriptedPromptBackend, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
 
@@ -221,3 +221,49 @@ def test_table_and_raw_keep_display_glyphs(_isolated_config: Path) -> None:
     table = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
     assert "http.ca_bundle\t—" in table.stdout
     assert "http.verify_ssl\tTrue" in table.stdout
+
+
+# ── `null` for optional typed settings ───────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("key", "current"), [("github.mode", "on"), ("http.ca_bundle", "/etc/ssl/ca.pem")]
+)
+def test_null_clears_optional_typed_setting(_isolated_config: Path, key: str, current: str) -> None:
+    section, leaf = key.split(".")
+    write_config(
+        _isolated_config, f"profiles:\n  default:\n    {section}:\n      {leaf}: {current}\n"
+    )
+    result = _invoke(["set", key, "null"])
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)[section] == {leaf: None}
+
+
+def test_null_for_required_typed_setting_is_rejected(_isolated_config: Path) -> None:
+    result = _invoke(["set", "http.timeout", "null"])
+    assert result.exit_code == 1
+    assert "invalid value for 'http.timeout'" in result.stderr
+
+
+def test_optional_string_setting_keeps_literal_null(_isolated_config: Path) -> None:
+    result = _invoke(["set", "http.proxy", "null"])
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)["http"] == {"proxy": "null"}
+
+
+# ── `--prompt` on an invalid section ─────────────────────────────────────────
+
+
+def test_prompt_repairs_key_in_invalid_section(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _BROKEN_JIRA)
+    github = make_spec("github", profile_model=GithubProfile, state_model=GithubState)
+    jira = make_spec("jira", profile_model=JiraProfile)
+    app = build_root_config_app(shell=bootstrap.SHELL_SPEC, result=compose(github, jira))
+    backend = ScriptedPromptBackend(texts=["12"])
+    result = invoke_cli(
+        app, ["set", "jira.timeout", "--prompt"], interactive=True, prompt_backend=backend
+    )
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)["jira"] == {"timeout": 12.0}
+    # The raw stored (invalid) value is offered as the default.
+    assert backend.calls == [("text", "Value for jira.timeout")]
