@@ -6,13 +6,15 @@ import hashlib
 import json
 from typing import Annotated, Literal
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
 from untaped.capabilities.ansible.cli.refresh import (
+    GIT_PARALLEL_CAP,
     run_source_refresh,
     warn_deprecated_settings,
 )
+from untaped.capabilities.ansible.domain.payloads import SourceOutcome
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
     SourceRepository,
@@ -29,27 +31,30 @@ from untaped.capabilities.ansible.settings import (
 from untaped.capabilities.github.ansible import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
+    DryRunOption,
     FormatOption,
+    OperationCancelledError,
+    ParallelOption,
     UntapedError,
+    UsageError,
+    YesOption,
     app_context,
+    clamp_parallel,
     create_app,
+    deprecated_alias,
     echo,
     emit,
     get_config_section,
+    not_found,
     plural,
+    q,
     report_errors,
 )
 
 _FINGERPRINT_HEX_CHARS = 16
+_OUTCOME_KIND = "ansible.source_outcome"
 
-ConcurrencyOption = Annotated[
-    int | None,
-    Parameter(
-        name="--concurrency",
-        validator=validators.Number(gte=1, lte=32),
-        help="Git-backed source refresh concurrency; defaults to ansible.git_fetch_concurrency.",
-    ),
-]
+NameArgument = Annotated[str, Parameter(help="Source name.")]
 RefScanDefaultOption = Annotated[
     Literal["all", "default_branch"] | None,
     Parameter(
@@ -65,58 +70,56 @@ BackendOption = Annotated[
     ),
 ]
 
+
+def _list_option(name: str, help: str) -> Parameter:
+    return Parameter(name=name, help=help, consume_multiple=False, negative="")
+
+
+def _clear_option(name: str, help: str) -> Parameter:
+    return Parameter(name=name, help=help, negative="")
+
+
 app = create_app(
     name="source",
     help="Manage reusable GitHub sources.",
 )
 
 
-@app.command(name="save")
-def source_save_command(
-    name: Annotated[str, Parameter(help="Source name.")],
+@app.command(name="set")
+def source_set_command(
+    name: NameArgument,
+    /,
     *,
-    orgs: Annotated[
-        list[str] | None,
-        Parameter(name="--org", help="GitHub org to scan.", consume_multiple=False),
-    ] = None,
+    orgs: Annotated[list[str] | None, _list_option("--org", "GitHub org to scan.")] = None,
     teams: Annotated[
         list[str] | None,
-        Parameter(
-            name="--team",
-            help=(
-                "GitHub team as ORG/SLUG; a bare SLUG is allowed when exactly one "
-                "--org is given and normalizes to ORG/SLUG."
-            ),
-            consume_multiple=False,
+        _list_option(
+            "--team",
+            "GitHub team as ORG/SLUG; a bare SLUG is allowed when exactly one "
+            "--org is given and normalizes to ORG/SLUG.",
         ),
     ] = None,
-    repos: Annotated[
-        list[str] | None,
-        Parameter(name="--repo", help="GitHub repo as owner/name.", consume_multiple=False),
-    ] = None,
-    paths: Annotated[
-        list[str] | None,
-        Parameter(name="--path", help="Dependency file path.", consume_multiple=False),
-    ] = None,
+    repos: Annotated[list[str] | None, _list_option("--repo", "GitHub repo as owner/name.")] = None,
+    paths: Annotated[list[str] | None, _list_option("--path", "Dependency file path.")] = None,
     ref_kinds: Annotated[
         list[str] | None,
-        Parameter(
-            name="--ref-kind",
-            help="Ref namespace to scan: heads or tags; omit to use ansible.ref_scan_default.",
-            consume_multiple=False,
+        _list_option(
+            "--ref-kind",
+            "Ref namespace to scan: heads or tags; omit to use ansible.ref_scan_default.",
         ),
     ] = None,
     ref_patterns: Annotated[
         list[str] | None,
-        Parameter(
-            name="--ref-pattern",
-            help="fnmatch pattern for branch/tag names; omit to use ansible.ref_scan_default.",
-            consume_multiple=False,
+        _list_option(
+            "--ref-pattern",
+            "fnmatch pattern for branch/tag names; omit to use ansible.ref_scan_default.",
         ),
     ] = None,
     ref_scan_default: RefScanDefaultOption = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
-    """Save a reusable GitHub source."""
+    """Create or replace a reusable GitHub source."""
     with report_errors():
         source = _source_definition(
             name=name,
@@ -130,83 +133,86 @@ def source_save_command(
         )
         source_repo = SourceRepository()
         previous = source_repo.get(name)
-        source_repo.upsert(source)
-        settings = get_config_section("ansible", AnsibleSettings)
-        if previous != source:
+        action = "created" if previous is None else "unchanged" if previous == source else "updated"
+        if action != "unchanged":
+            source_repo.upsert(source)
+            settings = get_config_section("ansible", AnsibleSettings)
             SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
-        echo(f"saved source {name!r}", err=True)
+        _emit_outcome(SourceOutcome(action=action, name=name), fmt=fmt, columns=columns)
 
 
-@app.command(name="edit")
-def source_edit_command(
-    name: Annotated[str, Parameter(help="Source name.")],
+@app.command(name="patch")
+def source_patch_command(
+    name: NameArgument,
+    /,
     *,
-    add_orgs: Annotated[
-        list[str] | None,
-        Parameter(name="--add-org", consume_multiple=False),
-    ] = None,
+    add_orgs: Annotated[list[str] | None, _list_option("--add-org", "GitHub org to add.")] = None,
     remove_orgs: Annotated[
-        list[str] | None,
-        Parameter(name="--remove-org", consume_multiple=False),
+        list[str] | None, _list_option("--remove-org", "GitHub org to remove.")
     ] = None,
-    clear_orgs: Annotated[bool, Parameter(name="--clear-org", negative="")] = False,
+    clear_orgs: Annotated[bool, _clear_option("--clear-org", "Remove every org.")] = False,
     add_teams: Annotated[
         list[str] | None,
-        Parameter(name="--add-team", consume_multiple=False),
+        _list_option("--add-team", "GitHub team to add as ORG/SLUG (or SLUG with one org)."),
     ] = None,
     remove_teams: Annotated[
         list[str] | None,
-        Parameter(name="--remove-team", consume_multiple=False),
+        _list_option("--remove-team", "GitHub team to remove as ORG/SLUG (or SLUG with one org)."),
     ] = None,
-    clear_teams: Annotated[bool, Parameter(name="--clear-team", negative="")] = False,
+    clear_teams: Annotated[bool, _clear_option("--clear-team", "Remove every team.")] = False,
     add_repos: Annotated[
-        list[str] | None,
-        Parameter(name="--add-repo", consume_multiple=False),
+        list[str] | None, _list_option("--add-repo", "GitHub repo to add as owner/name.")
     ] = None,
     remove_repos: Annotated[
-        list[str] | None,
-        Parameter(name="--remove-repo", consume_multiple=False),
+        list[str] | None, _list_option("--remove-repo", "GitHub repo to remove as owner/name.")
     ] = None,
-    clear_repos: Annotated[bool, Parameter(name="--clear-repo", negative="")] = False,
+    clear_repos: Annotated[bool, _clear_option("--clear-repo", "Remove every repo.")] = False,
     add_paths: Annotated[
-        list[str] | None,
-        Parameter(name="--add-path", consume_multiple=False),
+        list[str] | None, _list_option("--add-path", "Dependency file path to add.")
     ] = None,
     remove_paths: Annotated[
-        list[str] | None,
-        Parameter(name="--remove-path", consume_multiple=False),
+        list[str] | None, _list_option("--remove-path", "Dependency file path to remove.")
     ] = None,
-    clear_paths: Annotated[bool, Parameter(name="--clear-path")] = False,
+    clear_paths: Annotated[
+        bool, _clear_option("--clear-path", "Remove every dependency file path.")
+    ] = False,
     add_ref_kinds: Annotated[
-        list[str] | None,
-        Parameter(name="--add-ref-kind", consume_multiple=False),
+        list[str] | None, _list_option("--add-ref-kind", "Ref namespace to add: heads or tags.")
     ] = None,
     remove_ref_kinds: Annotated[
-        list[str] | None,
-        Parameter(name="--remove-ref-kind", consume_multiple=False),
+        list[str] | None, _list_option("--remove-ref-kind", "Ref namespace to remove.")
     ] = None,
-    clear_ref_kinds: Annotated[bool, Parameter(name="--clear-ref-kind")] = False,
+    clear_ref_kinds: Annotated[
+        bool, _clear_option("--clear-ref-kind", "Remove every ref namespace.")
+    ] = False,
     add_ref_patterns: Annotated[
         list[str] | None,
-        Parameter(name="--add-ref-pattern", consume_multiple=False),
+        _list_option("--add-ref-pattern", "fnmatch pattern for branch/tag names to add."),
     ] = None,
     remove_ref_patterns: Annotated[
         list[str] | None,
-        Parameter(name="--remove-ref-pattern", consume_multiple=False),
+        _list_option("--remove-ref-pattern", "fnmatch pattern for branch/tag names to remove."),
     ] = None,
-    clear_ref_patterns: Annotated[bool, Parameter(name="--clear-ref-pattern")] = False,
+    clear_ref_patterns: Annotated[
+        bool, _clear_option("--clear-ref-pattern", "Remove every ref pattern.")
+    ] = False,
     ref_scan_default: RefScanDefaultOption = None,
     clear_ref_scan_default: Annotated[
         bool,
-        Parameter(name="--clear-ref-scan-default"),
+        _clear_option(
+            "--clear-ref-scan-default",
+            "Drop the per-source scan strategy and fall back to ansible.ref_scan_default.",
+        ),
     ] = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Patch a saved GitHub source definition."""
     with report_errors():
         source_repo = SourceRepository()
         previous = source_repo.get(name)
         if previous is None:
-            raise UntapedError(f"unknown source: {name!r}")
+            raise UntapedError(_unknown_source(name, source_repo))
         edited, changes = _edit_source_definition(
             previous,
             add_orgs=add_orgs,
@@ -231,12 +237,14 @@ def source_edit_command(
             clear_ref_scan_default=clear_ref_scan_default,
         )
         if previous == edited:
-            echo(f"source {name!r} unchanged", err=True)
+            _emit_outcome(SourceOutcome(action="unchanged", name=name), fmt=fmt, columns=columns)
             return
         source_repo.upsert(edited)
         settings = get_config_section("ansible", AnsibleSettings)
         SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
-        echo(f"updated source {name!r}: {', '.join(changes)}", err=True)
+        _emit_outcome(
+            SourceOutcome(action="updated", name=name, changes=changes), fmt=fmt, columns=columns
+        )
 
 
 @app.command(name="list")
@@ -249,40 +257,68 @@ def source_list_command(*, fmt: FormatOption = "table", columns: ColumnsOption =
             fmt=fmt,
             columns=columns,
             kind="ansible.source",
-            empty="No sources configured. Add one with `untaped ansible source save <name>`.",
+            empty="No sources configured. Add one with `untaped ansible source set NAME`.",
         )
 
 
-@app.command(name="show")
-def source_show_command(
-    name: Annotated[str, Parameter(help="Source name.")],
+@app.command(name="get")
+def source_get_command(
+    name: NameArgument,
+    /,
     *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Show one saved source."""
     with report_errors():
-        source = SourceRepository().get(name)
+        source_repo = SourceRepository()
+        source = source_repo.get(name)
         if source is None:
-            raise UntapedError(f"unknown source: {name!r}")
+            raise UntapedError(_unknown_source(name, source_repo))
         emit(_source_row(source), fmt=fmt, columns=columns, kind="ansible.source")
 
 
 @app.command(name="remove")
-def source_remove_command(name: Annotated[str, Parameter(help="Source name.")]) -> None:
-    """Remove a saved source."""
+def source_remove_command(
+    name: NameArgument,
+    /,
+    *,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Remove a saved source and its cached source data."""
     with report_errors():
-        removed = SourceRepository().remove(name)
-        if not removed:
-            raise UntapedError(f"unknown source: {name!r}")
-        settings = get_config_section("ansible", AnsibleSettings)
-        SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
-        echo(f"removed source {name!r}", err=True)
+        source_repo = SourceRepository()
+        if source_repo.get(name) is None:
+            raise UntapedError(_unknown_source(name, source_repo))
+        if not dry_run:
+            confirmed = (
+                app_context()
+                .ui(strict=False)
+                .confirm_action(
+                    f"Remove source {q(name)} and its cached source data?",
+                    assume_yes=yes,
+                    refusal="source remove requires --yes when not interactive",
+                )
+            )
+            if not confirmed:
+                raise OperationCancelledError
+            source_repo.remove(name)
+            settings = get_config_section("ansible", AnsibleSettings)
+            SqliteDependencyIndex(settings.index_path).clear(_saved_source_key(name))
+        _emit_outcome(
+            SourceOutcome(action="planned" if dry_run else "deleted", name=name),
+            fmt=fmt,
+            columns=columns,
+        )
 
 
 @app.command(name="status")
 def source_status_command(
     name: Annotated[str | None, Parameter(help="Source to inspect.")] = None,
+    /,
     *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -294,7 +330,7 @@ def source_status_command(
         source_repo = SourceRepository()
         configured = {source.name: source for source in source_repo.entries()}
         if name is not None and name not in configured:
-            raise UntapedError(f"unknown source: {name!r}")
+            raise UntapedError(not_found("source", name, known=sorted(configured)))
         names = [name] if name is not None else sorted(configured)
         rows = [
             _source_status_row(
@@ -310,38 +346,47 @@ def source_status_command(
             fmt=fmt,
             columns=columns,
             kind="ansible.source_status",
-            empty="No sources scanned yet. Run `untaped ansible source refresh <name>`.",
+            empty="No sources scanned yet. Run `untaped ansible source refresh NAME`.",
         )
 
 
 @app.command(name="refresh")
 def source_refresh_command(
-    name: Annotated[str, Parameter(help="Source name.")],
+    name: NameArgument,
+    /,
     *,
-    concurrency: ConcurrencyOption = None,
+    parallel: ParallelOption | None = None,
     backend: BackendOption = None,
 ) -> None:
-    """Refresh a saved source from GitHub."""
+    """Refresh a saved source from GitHub.
+
+    --parallel defaults to ansible.git_fetch_concurrency and is capped at 32.
+    """
     with report_errors():
         ctx = app_context()
-        source = SourceRepository().get(name)
+        source_repo = SourceRepository()
+        source = source_repo.get(name)
         if source is None:
-            raise UntapedError(f"unknown source: {name!r}")
+            raise UntapedError(_unknown_source(name, source_repo))
         settings = get_config_section("ansible", AnsibleSettings)
         warn_deprecated_settings(settings, ui=ctx.ui(strict=False))
         aliases = AliasRepository().entries()
-        git_concurrency = concurrency or settings.git_fetch_concurrency
+        git_parallel = clamp_parallel(
+            parallel or settings.git_fetch_concurrency,
+            cap=GIT_PARALLEL_CAP,
+            policy="Git fetch limit",
+        )
         result = run_source_refresh(
             source,
             source_key=_saved_source_key(name),
             action="refreshed",
-            label=f"source {name!r}",
+            label=f"source {q(name)}",
             index=SqliteDependencyIndex(settings.index_path),
             aliases=aliases,
             settings=settings,
             github_settings=get_config_section("github", GithubSettings),
             http=ctx.http,
-            concurrency=git_concurrency,
+            concurrency=git_parallel,
             backend=backend,
             ui=ctx.ui(strict=False),
         )
@@ -354,6 +399,20 @@ def source_refresh_command(
             raise UntapedError(_refresh_pause_message(result, name))
         if result.failures:
             raise UntapedError(_refresh_failure_message(result))
+
+
+deprecated_alias(app, "save", "set")
+deprecated_alias(app, "edit", "patch")
+deprecated_alias(app, "show", "get")
+deprecated_alias(app["refresh"], "--concurrency", "--parallel")
+
+
+def _unknown_source(name: str, source_repo: SourceRepository) -> str:
+    return not_found("source", name, known=sorted(s.name for s in source_repo.entries()))
+
+
+def _emit_outcome(outcome: SourceOutcome, *, fmt: FormatOption, columns: list[str] | None) -> None:
+    emit(outcome.model_dump(mode="json"), fmt=fmt, columns=columns, kind=_OUTCOME_KIND)
 
 
 def _refresh_pause_message(result: RefreshResult, name: str) -> str:
@@ -402,7 +461,7 @@ def _source_definition(
             ref_scan_default=ref_scan_default,
         )
     except ValueError as exc:
-        raise UntapedError(str(exc)) from exc
+        raise UsageError(str(exc)) from exc
 
 
 def _edit_source_definition(
@@ -451,9 +510,9 @@ def _edit_source_definition(
         ref_scan_default,
         clear_ref_scan_default,
     ):
-        raise UntapedError("source edit requires at least one mutation flag")
+        raise UsageError("source patch requires at least one mutation flag")
     if ref_scan_default is not None and clear_ref_scan_default:
-        raise UntapedError("--ref-scan-default cannot be combined with --clear-ref-scan-default")
+        raise UsageError("--ref-scan-default cannot be combined with --clear-ref-scan-default")
 
     changes: list[str] = []
     orgs = _apply_source_list_edit(
@@ -608,7 +667,7 @@ def _source_status_row(
         return {
             "source": name,
             "source_key": key,
-            "state": "not-refreshed" if configured else "missing-source",
+            "state": "not_refreshed" if configured else "missing_source",
             "configured": configured,
             "scanned_at": None,
             "repos": 0,
@@ -619,7 +678,7 @@ def _source_status_row(
     stale = index.is_stale(key, max_age_seconds=stale_after)
     return {
         "source": name,
-        **status.model_dump(),
+        **status.model_dump(mode="json"),
         "state": "stale" if stale else "fresh",
         "configured": configured,
         "stale": stale,
