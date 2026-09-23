@@ -879,7 +879,6 @@ def test_unauthenticated_run_discards_stdout_and_pipes_stderr(
     result = cache._run(["status"])
 
     assert result.returncode == 0
-    assert captured["env"] is None
     assert captured["stdout"] is subprocess.DEVNULL
     assert captured["stderr"] is subprocess.PIPE
 
@@ -966,3 +965,60 @@ def test_validate_pattern_accepts_extended_regex(tmp_path: Path) -> None:
     assert cache.validate_pattern(
         root=tmp_path / "corpus", pattern="(", paths=(), fixed_strings=False
     )
+
+
+def test_run_never_lets_git_prompt_for_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(args, 0, stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cache = GitCorpusCache()
+
+    cache._run(["status"])
+    cache._run(
+        ["fetch", "origin"],
+        auth_header="AUTHORIZATION: basic secret",
+        auth_url="https://github.example.com/acme/api.git",
+    )
+    cache._run(["update-ref", "--stdin"], stdin="delete refs/heads/x\n")
+
+    plain, authed, fed = calls
+    for kwargs in (plain, authed):
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["input"] is None
+    assert fed["stdin"] is None
+    assert fed["input"] == b"delete refs/heads/x\n"
+    for kwargs in calls:
+        assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+        assert kwargs["env"]["GCM_INTERACTIVE"] == "never"
+
+
+def test_ensure_origin_does_not_send_auth_header_to_local_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = "https://github.example.com/acme/api.git"
+    root = tmp_path / "corpus"
+    cache_path_for(url, cache_dir=root).mkdir(parents=True)
+    cache = GitCorpusCache()
+    seen: list[tuple[str, str | None]] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.append((" ".join(args[:2]), kwargs.get("auth_header")))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(cache, "_run", fake_run)
+
+    cache.sync_repo(
+        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
+        root=root,
+        selector=RefSelector(),
+        depth=1,
+        auth_header="AUTHORIZATION: basic secret",
+    )
+
+    remote_calls = [auth for command, auth in seen if command.startswith("remote ")]
+    assert remote_calls == [None, None]
+    assert any(auth is not None for command, auth in seen if command.startswith("fetch"))
