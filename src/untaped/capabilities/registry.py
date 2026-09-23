@@ -31,7 +31,7 @@ from untaped.errors import ConfigError
 from untaped.settings import Settings, validate_disjoint_settings_sections
 
 #: SDK capability-API version providers build against (spec §2).
-CAPABILITY_API_VERSION: float = 1.0
+CAPABILITY_API_VERSION: float = 1.1
 
 #: Declared API range for built-in capabilities (spec §7.1).
 _BUILTIN_API_REQUIRES: tuple[float, float] = (1.0, 2.0)
@@ -589,18 +589,20 @@ def _check_factory(spec: CapabilitySpec) -> App:
     return staged
 
 
-def check_factory_result(spec: CapabilitySpec, app: object) -> App:
-    """Validate a deferred built-in factory's result at first dispatch.
+def build_deferred_app(spec: CapabilitySpec) -> App:
+    """Run and validate a deferred built-in factory at first dispatch.
 
-    Lazy built-ins skip :func:`_check_factory` during composition; a bad
-    factory is still an SDK bug and surfaces as a fatal ``ConfigError``.
+    Lazy built-ins skip :func:`_check_factory` during composition; a factory
+    that raises or returns a non-``App`` is still an SDK bug and surfaces as
+    the same fatal ``ConfigError`` composition would have raised.
     """
-    if not isinstance(app, App):
+    try:
+        return _check_factory(spec)
+    except _Quarantine as failed:
         raise ConfigError(
-            f"built-in capability {spec.name!r} failed validation [bad-app-factory]: "
-            f"app factory returned {type(app).__name__}, expected cyclopts App"
-        )
-    return app
+            f"built-in capability {spec.name!r} failed validation "
+            f"[{failed.reason}]: {failed.detail}"
+        ) from None
 
 
 def _commit(

@@ -39,8 +39,8 @@ from untaped.capabilities.registry import (
 from untaped.errors import ConfigError
 
 
-def test_api_version_is_one() -> None:
-    assert CAPABILITY_API_VERSION == 1.0
+def test_api_version_is_one_one() -> None:
+    assert CAPABILITY_API_VERSION == 1.1
 
 
 def test_closed_shape_rejects_unknown_fields() -> None:

@@ -6,6 +6,7 @@ import httpx
 import pytest
 import respx
 
+from untaped import bootstrap
 from untaped.capabilities.awx.cli import app
 from untaped.settings import get_settings
 from untaped.testing import CliInvoker
@@ -63,6 +64,44 @@ def test_ping_uses_configured_api_prefix(
             )
         )
         result = CliInvoker().invoke(app, ["ping", "--format", "raw", "--columns", "version"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "4.5.0"
+
+
+def test_ping_ignores_invalid_sibling_section(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only ``awx`` (plus ``http``) is validated: a broken sibling section
+    must not break ``awx ping`` (per-section lazy validation)."""
+    cfg = tmp_path / "config.yml"
+    cfg.write_text(
+        """
+        profiles:
+          default:
+            awx:
+              base_url: https://aap.example.com
+              token: secret
+              api_prefix: /api/v2/
+            github:
+              sweep:
+                max_age_seconds: not-a-number
+        """
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        _mock_me(mock)
+        mock.get("/api/v2/ping/").mock(
+            return_value=httpx.Response(
+                200, json={"version": "4.5.0", "active_node": "controller-1"}
+            )
+        )
+        root = bootstrap.build_root_app(externals=())
+        result = CliInvoker().invoke(
+            root.meta, ["awx", "ping", "--format", "raw", "--columns", "version"]
+        )
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "4.5.0"

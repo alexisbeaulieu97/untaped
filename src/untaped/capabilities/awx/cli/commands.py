@@ -37,9 +37,7 @@ from untaped.capabilities.awx.cli.usage_commands import register_usage_command
 from untaped.capabilities.awx.cli.workflow_node_commands import register_nodes_command
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
-from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
-from untaped.capabilities.awx.settings import AwxSettings
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
@@ -49,8 +47,6 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
-    get_config_section,
-    get_core_settings,
     parse_envelope_line,
     parse_kv_pairs,
     raise_usage,
@@ -76,10 +72,8 @@ def ping_command(
 ) -> None:
     """Check control-plane health."""
     with report_errors():
-        settings = get_core_settings()
-        config = get_config_section("awx", AwxSettings)
-        with AwxClient(config, http=settings.http) as client:
-            status = Ping(client)()
+        with open_context() as ctx:
+            status = Ping(ctx.client)()
         emit(status, fmt=fmt, columns=columns, kind="awx.status")
 
 

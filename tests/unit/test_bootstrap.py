@@ -572,6 +572,62 @@ def test_lazy_builtin_bad_factory_is_fatal_at_dispatch() -> None:
     assert "bad-app-factory" in str(result.exception)
 
 
+def test_lazy_builtin_raising_factory_is_fatal_at_dispatch() -> None:
+    def _boom() -> App:
+        raise RuntimeError("factory-boom")
+
+    spec = CapabilitySpec(
+        name="boom",
+        app_factory=_boom,
+        config_section="boom",
+        profile_model=_ExtProfile,
+        help="Boom capability.",
+    )
+    root = bootstrap.build_root_app(builtins=(spec,), externals=())
+
+    result = CliInvoker().invoke(root.meta, ["boom", "--help"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ConfigError)
+    assert "bad-app-factory" in str(result.exception)
+    assert "factory-boom" in str(result.exception)
+
+
+#: Private cyclopts internals ``_LazyCapabilityCommand`` relies on. Drift here
+#: (a cyclopts upgrade within ``>=4.16,<5``) must fail loudly, not render oddly.
+_CYCLOPTS_PRIVATE_INTERNALS = (
+    "cyclopts.core._apply_parent_defaults_to_app",
+    "cyclopts.core.App._commands",
+    "cyclopts.core.App._name_transform",
+    "cyclopts.command_spec.CommandSpec._resolved",
+)
+
+
+def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
+    import cyclopts.command_spec
+    import cyclopts.core
+
+    app = App(name="probe")
+    spec = cyclopts.command_spec.CommandSpec(import_path="probe:app", name="probe")
+    missing = [
+        path
+        for path, present in zip(
+            _CYCLOPTS_PRIVATE_INTERNALS,
+            (
+                callable(getattr(cyclopts.core, "_apply_parent_defaults_to_app", None)),
+                isinstance(getattr(app, "_commands", None), dict),
+                hasattr(app, "_name_transform"),
+                hasattr(spec, "_resolved"),
+            ),
+            strict=True,
+        )
+        if not present
+    ]
+    assert not missing, (
+        "cyclopts internal API drift: bootstrap._LazyCapabilityCommand relies on "
+        f"{', '.join(missing)}; update it (or pin cyclopts) before upgrading"
+    )
+
+
 def test_lazy_builtins_render_like_eager_mounts() -> None:
     from dataclasses import replace
 
@@ -586,7 +642,11 @@ def test_lazy_builtins_render_like_eager_mounts() -> None:
         eager = CliInvoker().invoke(
             bootstrap.build_root_app(builtins=eager_specs, externals=()).meta, argv
         )
-        assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), argv
+        assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), (
+            f"lazy mount of {argv} renders differently from an eager mount; cyclopts "
+            "internals used by bootstrap._LazyCapabilityCommand may have drifted: "
+            f"{', '.join(_CYCLOPTS_PRIVATE_INTERNALS)}"
+        )
 
 
 def test_builtin_help_matches_app_summary() -> None:

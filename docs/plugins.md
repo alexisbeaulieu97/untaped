@@ -16,8 +16,9 @@ console script and does not own a second config or profile command group.
 external capabilities import untaped helpers from it and nothing else. Its
 closed composition set and helper exports are intentional; provider code must
 not import the internal registry or rely on other `untaped` modules as an API.
-The older `untaped.api` module is a deprecated re-export kept for one release,
-and the `untaped` package root re-exports nothing.
+The older `untaped.api` module is a deprecated re-export kept for one release;
+the `untaped` package root only forwards those names lazily for
+`from untaped import X` (also deprecated).
 
 ## 1. Provider package
 
@@ -77,7 +78,9 @@ must be callable, expose an `api_requires` tuple, and return one
 `CAPABILITY_API_VERSION` in `src/untaped/capability_api.py` when choosing the
 compatible range. New exports are additive and keep the major version; removing
 or breaking an export requires a major bump, so `(1.0, 2.0)` stays compatible
-across 1.x.
+across 1.x. Version `1.1` added the runtime helpers folded in from `untaped.api`
+(HTTP client and pagination, batch, concurrency, file and state helpers, ...);
+a provider that uses one of them should declare `(1.1, 2.0)`.
 
 A built-in capability follows the same `SPEC` and `build_app()` shape but is
 constructed in the `untaped` source tree and listed in the root composition.
