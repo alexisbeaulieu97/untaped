@@ -152,6 +152,14 @@ Shared infrastructure consolidation (git, recipe, awx). Items marked
     ancestry fields the `patch`/`edit` commands already rejected (one
     `ResourceSpec.immutable_fields` set).
 
+CLI startup:
+
+- Built-in capability command trees load lazily: `untaped --help` and
+  `untaped <capability> ...` import only the selected capability's CLI
+  (roughly a third fewer modules and faster startup). `CapabilitySpec` gains an
+  optional one-line `help` for the root listing, and each app factory now runs
+  at most once per composition (external factories were called twice).
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP
