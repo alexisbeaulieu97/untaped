@@ -59,6 +59,7 @@ TRANSIENT_FETCH_MARKERS = (
     "returned error: 504",
 )
 METADATA_FILE = "untaped-corpus.json"
+NON_INTERACTIVE_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 
 class GitCorpusCache:
@@ -103,7 +104,7 @@ class GitCorpusCache:
         if not (bare / "HEAD").is_file():
             bare.parent.mkdir(parents=True, exist_ok=True)
             self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
-        self._ensure_origin(bare, url, auth_header=scoped_auth_header)
+        self._ensure_origin(bare, url)
 
         stored = self.repo_freshness(repo, root=root)
         profile = profile_join(stored.profile, selector.profile) if stored else selector.profile
@@ -386,27 +387,19 @@ class GitCorpusCache:
             )
         return WorktreeResult(repo=repo.full_name, ref=selected_ref, path=str(worktree))
 
-    def _ensure_origin(self, bare: Path, url: str, *, auth_header: str | None) -> None:
+    def _ensure_origin(self, bare: Path, url: str) -> None:
+        # Purely local config commands: never hand them the auth header.
         current = self._run(
             ["remote", "get-url", "origin"],
             cwd=bare,
             capture_text=True,
             check=False,
-            auth_header=auth_header,
-            auth_url=url,
         )
         current_url = (current.stdout or "").strip()
         if not current_url:
-            self._run(
-                ["remote", "add", "origin", url], cwd=bare, auth_header=auth_header, auth_url=url
-            )
+            self._run(["remote", "add", "origin", url], cwd=bare)
         elif current_url != url:
-            self._run(
-                ["remote", "set-url", "origin", url],
-                cwd=bare,
-                auth_header=auth_header,
-                auth_url=url,
-            )
+            self._run(["remote", "set-url", "origin", url], cwd=bare)
 
     def _sync_selected_refs(
         self,
@@ -612,10 +605,14 @@ class GitCorpusCache:
         if self._git_path is None:
             raise GitCorpusError(f"`{self._git}` not found on PATH")
         effective_timeout = self._timeout if timeout is None else timeout
-        env = None
         auth_config_path: Path | None = None
         if auth_header is not None:
             env, auth_config_path = _auth_config_env(auth_header, auth_url=auth_url)
+        else:
+            env = os.environ.copy()
+        # A sweep runs unattended across many repos: fail fast instead of
+        # letting git or a credential manager block on an interactive prompt.
+        env.update(NON_INTERACTIVE_GIT_ENV)
         # Never inherit the CLI's stdio: stray git chatter would corrupt piped
         # output, and piping stderr keeps failure text available for errors.
         capture_stdout = subprocess.PIPE if capture_text or capture_bytes else subprocess.DEVNULL
@@ -626,6 +623,8 @@ class GitCorpusCache:
                 cwd=cwd,
                 env=env,
                 text=capture_text,
+                # With no payload, close stdin so git never reads the terminal.
+                stdin=subprocess.DEVNULL if stdin is None else None,
                 stdout=capture_stdout,
                 stderr=capture_stderr,
                 input=_stdin_payload(stdin, text=capture_text),
