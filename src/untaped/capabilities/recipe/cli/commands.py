@@ -907,8 +907,9 @@ def _outcome_rows(
     rendered: list[dict[str, object]] = []
     for plan, row in zip(plans, rows, strict=True):
         plan_id = id(plan)
-        if plan.status == "skipped":
-            # Not applicable: keep the honest "skipped" status through execution.
+        if plan.status in {"skipped", "error"}:
+            # Not applicable / failed planning: keep the honest status through
+            # execution (a planning error is never "unchanged").
             rendered.append(row)
         elif plan_id in execution.failed:
             rendered.append({**row, "status": "error", "error": execution.failed[plan_id]})

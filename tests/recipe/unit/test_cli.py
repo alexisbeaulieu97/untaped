@@ -1287,10 +1287,11 @@ def test_apply_backup_bundle_records_only_successful_targets(tmp_path: Path) -> 
     target = tmp_path / "target"
     target.mkdir()
     (target / "config.txt").write_text("before\n")
+    missing = tmp_path / "missing"
 
     result = CliInvoker().invoke(
         app,
-        ["apply", str(recipe), str(target), str(target), "--yes", "--format", "json"],
+        ["apply", str(recipe), str(target), str(missing), "--yes", "--format", "json"],
     )
 
     assert result.exit_code != 0
