@@ -518,3 +518,65 @@ def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
     assert result.exit_code == 130, result.output
     job_id = next(iter(fake_aap.store["jobs"]))
     assert f"untaped awx jobs wait {job_id} --kind job" in result.stderr
+
+
+def test_ctrl_c_while_waiting_lists_only_executions_still_running(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+    import threading
+    from concurrent.futures import Future
+
+    seed(fake_aap)
+    fake_aap.seed("job_templates", id=51, name="other", organization=1)
+    fake_aap.next_action_status = "running"  # first launch only; the second finishes
+    timer = threading.Timer(
+        3.0, lambda: [job.update(status="successful") for job in fake_aap.list_records("jobs")]
+    )
+    timer.start()
+    real_result = Future.result
+
+    def interrupted_result(self: Future[Any], timeout: float | None = None) -> Any:
+        if sys._getframe(2).f_code.co_filename.endswith("_parallel.py"):
+            raise KeyboardInterrupt
+        return real_result(self, timeout)
+
+    monkeypatch.setattr(Future, "result", interrupted_result)
+    try:
+        result = CliInvoker().invoke(
+            app, ["job-templates", "launch", "deploy", "other", "--yes", "--wait"]
+        )
+    finally:
+        timer.cancel()
+
+    assert result.exit_code == 130, result.output
+    running, finished = (job["id"] for job in fake_aap.list_records("jobs"))
+    assert f"job {running} keeps running" in result.stderr
+    assert f"job {finished} " not in result.stderr
+    assert f"untaped awx jobs wait {running} --kind job" in result.stderr
+
+
+def test_ctrl_c_during_submission_names_executions_already_submitted(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.capabilities.awx.application import RunAction
+
+    seed(fake_aap)
+    fake_aap.seed("job_templates", id=51, name="other", organization=1)
+    fake_aap.next_action_status = "pending"
+    real_execute = RunAction.execute
+    calls: list[int] = []
+
+    def interrupt_second(self: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(RunAction, "execute", interrupt_second)
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "deploy", "other", "--yes"])
+
+    assert result.exit_code == 130, result.output
+    (job,) = fake_aap.list_records("jobs")
+    assert f"job {job['id']} keeps running" in result.stderr
+    assert f"untaped awx jobs wait {job['id']} --kind job" in result.stderr
