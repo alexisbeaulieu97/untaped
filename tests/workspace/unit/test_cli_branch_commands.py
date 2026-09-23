@@ -338,7 +338,22 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
     runner.invoke(app, ["branch", "set", "ticket-123", "--workspace", "smoke"])
     repo = target / "upstream"
 
-    result = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
+    refused = runner.invoke(app, ["branch", "apply", "--workspace", "smoke", "--format", "json"])
+
+    assert refused.exit_code == 0, refused.output
+    assert json.loads(refused.stdout) == [
+        {
+            "repo": "upstream",
+            "workspace": "smoke",
+            "target_branch": "ticket-123",
+            "action": "skip",
+            "detail": "branch not found locally or on origin",
+        }
+    ]
+
+    result = runner.invoke(
+        app, ["branch", "apply", "--create", "--workspace", "smoke", "--format", "json"]
+    )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [

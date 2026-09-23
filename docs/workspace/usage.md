@@ -68,8 +68,9 @@ uses explicit manifest branch targets (`repos[].branch` or
 `defaults.branch`) and skips repos with no target. It checks out an
 existing local branch when present, or creates a local tracking branch
 when `origin/<branch>` resolves to a commit. If the branch is missing
-locally and no usable `origin/<branch>` exists, it creates a local
-branch from the current clean HEAD.
+locally and no usable `origin/<branch>` exists, it skips the repo with
+`branch not found locally or on origin` unless `--create` is passed, in
+which case it creates a local branch from the current clean HEAD.
 Subsequent `sync`s will not check out a different branch for you — if the
 on-disk branch diverges from the manifest's target, `sync` skips that
 repo with a warning, so a stale `defaults.branch` can't kidnap a repo
@@ -240,9 +241,10 @@ untaped workspace status --workspace prod --format raw --columns repo \
 
 ```bash
 untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
-                                [--repo <repo>] [--apply]
+                                [--repo <repo>] [--apply [--create]]
 untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
 untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
+                               [--create]
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
@@ -270,8 +272,11 @@ one row per repo with `checkout`, `up-to-date`, `skip`, or `failed`
 clones and repos without a target branch are skipped. If the target
 branch resolves to a commit on `origin` but not locally, `branch apply`
 creates a local tracking branch. If the target branch is missing locally
-and no usable `origin` ref exists, it creates a local branch from the
-current clean HEAD.
+and no usable `origin` ref exists, the repo is skipped with `branch not
+found locally or on origin`, so a typo such as `branch set mian` cannot
+create a stray branch in every repo. Pass `--create` (to `branch apply`
+or `branch set --apply`) to create it from the current clean HEAD
+instead.
 
 ### `sync`
 

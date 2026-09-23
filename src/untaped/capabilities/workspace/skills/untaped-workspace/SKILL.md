@@ -23,7 +23,7 @@ Use this skill when the user wants an agent to operate `untaped workspace` for l
 - `untaped workspace sync --prune` removes safe orphan clones after sync jobs finish and skips unsafe, uninspectable, or symlinked orphans with row-level `skip` outcomes. It does not prompt and has no `--yes`.
 - `untaped workspace remove --prune` and `untaped workspace forget --prune` preview targets and prompt once before mutation unless `--yes` / `-y` is passed. Declining preserves manifest, registry, and files.
 - `untaped workspace foreach` runs a shell command across selected repos; use care with side effects. Child stdin is closed, and each repo command has a 600s default timeout unless `--timeout N` is passed.
-- Branch commands operate on workspace manifests and git refs; inspect `--help` for exact selector behavior.
+- Branch commands operate on workspace manifests and git refs; inspect `--help` for exact selector behavior. `branch apply` skips a target branch that exists neither locally nor on origin unless `--create` is passed.
 
 ## Agent Guidance
 

@@ -234,6 +234,32 @@ def test_apply_workspace_branch_skips_missing_local_clone(tmp_path: Path) -> Non
     assert git.events == []
 
 
+@pytest.mark.parametrize(("create", "action"), [(False, "skip"), (True, "checkout")])
+def test_apply_workspace_branch_only_creates_unknown_branch_when_asked(
+    tmp_path: Path, create: bool, action: str
+) -> None:
+    workspace = Workspace(name="prod", path=tmp_path / "prod")
+    local = workspace.path / "api"
+    manifests = StubManifests(
+        {
+            workspace.path: WorkspaceManifest(
+                defaults=ManifestDefaults(branch="mian"),
+                repos=[Repo(url="https://x/api.git", name="api")],
+            )
+        }
+    )
+    git = StubGit(missing_branches={"mian"})
+
+    outcomes = ApplyWorkspaceBranch(manifests, git, fs=StubFilesystem([local, local / ".git"]))(
+        workspace, create=create
+    )
+
+    assert outcomes[0].action == action
+    if not create:
+        assert outcomes[0].detail == "branch not found locally or on origin"
+        assert ("checkout", "api", "mian") not in git.events
+
+
 def test_apply_workspace_branch_skips_dir_without_git_metadata(tmp_path: Path) -> None:
     workspace = Workspace(name="prod", path=tmp_path / "prod")
     manifests = StubManifests(
