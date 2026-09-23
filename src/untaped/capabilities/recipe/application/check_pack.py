@@ -88,7 +88,12 @@ def check_library(root: Path) -> list[dict[str, object]]:
     library = PackLibrary(library_root=root)
     locks = _LockFreshness()
     rows = [_check_reconcile_problem(root, problem) for problem in library.reconcile()]
-    rows.extend(_check_pack(root, pack, locks) for pack in library.packs())
+    pack_rows = [_check_pack(root, pack, locks) for pack in library.packs()]
+    pack_rows.extend(
+        _pack_check_row(name, library.packs_dir / name, status="error", error=error)
+        for name, error in library.load_errors().items()
+    )
+    rows.extend(sorted(pack_rows, key=lambda row: str(row["pack"])))
     return rows
 
 

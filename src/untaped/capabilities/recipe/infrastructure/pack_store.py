@@ -103,6 +103,7 @@ class PackLibrary:
     def __init__(self, *, library_root: Path) -> None:
         self._library_root = library_root
         self._packs_cache: list[InstalledPack] | None = None
+        self._load_errors: dict[str, str] = {}
 
     @property
     def packs_dir(self) -> Path:
@@ -151,6 +152,7 @@ class PackLibrary:
         )
         self._write_index(index)
         self._packs_cache = None
+        self._load_errors = {}
         return manifest
 
     def local_edits(self, name: str) -> bool:
@@ -179,12 +181,15 @@ class PackLibrary:
         index.pop(installed_name, None)
         self._write_index(index)
         self._packs_cache = None
+        self._load_errors = {}
 
     def packs(self) -> list[InstalledPack]:
         """Return installed packs keyed by their library identity.
 
         The parsed list is cached for the library's lifetime (one CLI command);
-        ``add``/``remove`` invalidate it.
+        ``add``/``remove`` invalidate it. Packs whose manifest cannot be parsed
+        are left out so one broken pack never hides the rest; their errors are
+        available from :meth:`load_errors`.
         """
         if self._packs_cache is not None:
             return self._packs_cache
@@ -192,10 +197,15 @@ class PackLibrary:
             return []
         index = self._read_index()
         installed: list[InstalledPack] = []
+        load_errors: dict[str, str] = {}
         for root in sorted(self.packs_dir.iterdir(), key=lambda path: path.name):
             if not root.is_dir() or not (root / "pyproject.toml").is_file():
                 continue
-            manifest = PackManifest.from_pyproject(root)
+            try:
+                manifest = PackManifest.from_pyproject(root)
+            except (ValueError, OSError) as exc:
+                load_errors[root.name] = str(exc)
+                continue
             index_entry = index.get(root.name, _IndexEntry(version=manifest.version))
             installed.append(
                 InstalledPack(
@@ -208,7 +218,18 @@ class PackLibrary:
                 )
             )
         self._packs_cache = installed
+        self._load_errors = load_errors
         return installed
+
+    def load_errors(self) -> dict[str, str]:
+        """Return ``{pack name: error}`` for installed packs that failed to load."""
+        self.packs()
+        return dict(self._load_errors)
+
+    def _raise_if_broken(self, installed_name: str) -> None:
+        error = self.load_errors().get(installed_name)
+        if error is not None:
+            raise ValueError(f"pack '{installed_name}' cannot be loaded: {error}")
 
     def reconcile(self) -> list[str]:
         """Return index/directory consistency problems for the pack library."""
@@ -232,6 +253,7 @@ class PackLibrary:
         for pack in self.packs():
             if pack.name == installed_name:
                 return pack
+        self._raise_if_broken(installed_name)
         return None
 
     def find_recipe(self, ref: PackRef) -> tuple[InstalledPack, RecipeEntry]:
@@ -266,6 +288,7 @@ class PackLibrary:
         if pack is None:
             return installed
         installed_name = safe_library_name(pack, field="pack")
+        self._raise_if_broken(installed_name)
         return [candidate for candidate in installed if candidate.name == installed_name]
 
     def _read_index(self) -> dict[str, _IndexEntry]:
