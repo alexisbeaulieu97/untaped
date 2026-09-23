@@ -481,6 +481,37 @@ def _two_orgs_with_project(fake: Any) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("content", "command"),
+    [
+        (b"\xff\xfe not utf-8", ["apply"]),
+        (b"kind: [\n", ["apply"]),
+        (b"kind: Nope\nmetadata: { name: x }\n", ["apply"]),
+        (
+            b"kind: Project\nmetadata: { name: p, organization: Default }\n",
+            ["job-templates", "apply"],
+        ),
+    ],
+)
+def test_directory_apply_errors_name_the_offending_file(
+    fake_aap: Any, tmp_path: Path, content: bytes, command: list[str]
+) -> None:
+    _seed_basic(fake_aap)
+    specs = tmp_path / "specs"
+    specs.mkdir()
+    (specs / "good.yml").write_text(
+        "kind: JobTemplate\nmetadata: { name: deploy, organization: Default }\n"
+        "spec: { playbook: deploy.yml, project: playbooks, inventory: prod }\n"
+    )
+    (specs / "stray.yaml").write_bytes(content)
+
+    result = CliInvoker().invoke(app, [*command, str(specs), "--dry-run"])
+
+    assert result.exit_code != 0, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "stray.yaml" in result.stderr
+
+
 def _set_default_organization(aap_config: Path) -> None:
     config = aap_config.read_text()
     prefix = "api_prefix: /api/v2/"

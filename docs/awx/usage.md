@@ -159,7 +159,10 @@ untaped awx apply ./awx-specs --dry-run
 untaped awx inventories apply ./inventory.yml --yes
 ```
 
-A directory contributes every `*.yml` and `*.yaml` file. A document of an
+A directory contributes every `*.yml` and `*.yaml` file, so keep other YAML
+(for example CI or vars files) out of it; a file that cannot be read or parsed,
+or holds an unknown or unexpected kind, fails the apply with its path named.
+A document of an
 organization-scoped kind without `metadata.organization` is scoped by
 `awx.default_organization`, as selection and `awx test` are. With no default
 configured, a name that exists in more than one organization is an ambiguity
