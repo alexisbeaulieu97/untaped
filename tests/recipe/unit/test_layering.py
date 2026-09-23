@@ -1,13 +1,10 @@
-"""Architecture guard tests for the recipe capability's domain layer.
+"""Architecture guard tests for the recipe capability's layers.
 
-The recipe capability carries the standalone tool's architecture, in which
-``application/`` orchestrates ``infrastructure/`` adapters directly (ports
-live in ``application/ports.py`` and ``infrastructure/hook_executor.py``
-speaks them structurally). The one hard layering rule that survives the
-import unchanged — and that matches ``AGENTS.md`` ("``domain/`` imports
-nothing from the other layers") — is domain purity: files under
-``domain/`` must not import the capability's ``application/``,
-``infrastructure/``, or ``cli/`` namespaces at runtime.
+``AGENTS.md`` fixes the import direction inside a capability:
+``cli -> application -> domain`` and ``infrastructure -> domain``. These tests
+enforce it at runtime-import level: ``domain/`` imports no other layer,
+``application/`` reaches adapters only through ``application/ports.py``
+protocols, and ``infrastructure/`` never imports ``application/`` or ``cli/``.
 ``TYPE_CHECKING`` imports are allowed because they create no runtime edge.
 """
 
@@ -85,16 +82,24 @@ def _violations_in_file(
 
 
 @pytest.mark.parametrize(
-    "forbidden_subpackage",
-    ["application", "infrastructure", "cli"],
-    ids=["domain->application", "domain->infrastructure", "domain->cli"],
+    ("layer", "forbidden_subpackage"),
+    [
+        ("domain", "application"),
+        ("domain", "infrastructure"),
+        ("domain", "cli"),
+        ("application", "infrastructure"),
+        ("application", "cli"),
+        ("infrastructure", "application"),
+        ("infrastructure", "cli"),
+    ],
+    ids=lambda value: value,
 )
-def test_domain_does_not_import_outer_layers(forbidden_subpackage: str) -> None:
+def test_layer_does_not_import_forbidden_layer(layer: str, forbidden_subpackage: str) -> None:
     violations: list[str] = []
-    for py_file in sorted((SRC_ROOT / "domain").rglob("*.py")):
-        violations.extend(_violations_in_file(py_file, SRC_ROOT / "domain", forbidden_subpackage))
+    for py_file in sorted((SRC_ROOT / layer).rglob("*.py")):
+        violations.extend(_violations_in_file(py_file, SRC_ROOT / layer, forbidden_subpackage))
 
     assert not violations, (
-        f"domain must not import untaped.capabilities.recipe.{forbidden_subpackage} "
+        f"{layer} must not import untaped.capabilities.recipe.{forbidden_subpackage} "
         "at runtime (TYPE_CHECKING imports are fine):\n  " + "\n  ".join(violations)
     )

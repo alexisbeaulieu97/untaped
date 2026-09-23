@@ -316,7 +316,7 @@ def test_check_reports_stale_lockfile_for_hook_pack(
     def _stale(project_root: Path) -> None:
         raise ValueError(f"lockfile is stale — run 'uv lock' in {project_root}")
 
-    monkeypatch.setattr("untaped.capabilities.recipe.application.check_pack.check_lock", _stale)
+    monkeypatch.setattr("untaped.capabilities.recipe.infrastructure.pack_files.check_lock", _stale)
     result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
 
     assert result.exit_code == 1, result.output
@@ -343,7 +343,7 @@ def test_check_probes_lock_freshness_once_per_project(
     _install_pack(source)
     probed: list[Path] = []
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.application.check_pack.check_lock", probed.append
+        "untaped.capabilities.recipe.infrastructure.pack_files.check_lock", probed.append
     )
 
     result = CliInvoker().invoke(app, ["check", "ansible", "--format", "json"])
@@ -361,7 +361,7 @@ def test_check_skips_lock_probe_for_hookless_pack(
     _install_pack(source)
     probed: list[Path] = []
     monkeypatch.setattr(
-        "untaped.capabilities.recipe.application.check_pack.check_lock", probed.append
+        "untaped.capabilities.recipe.infrastructure.pack_files.check_lock", probed.append
     )
 
     result = CliInvoker().invoke(app, ["check", "plain", "--format", "json"])

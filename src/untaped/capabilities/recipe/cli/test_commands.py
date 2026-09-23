@@ -15,7 +15,6 @@ from untaped.api import (
     echo,
     finish,
     render_rows,
-    ui_context,
     unified_diff_text,
 )
 from untaped.capabilities.recipe.application.harness import (
@@ -27,6 +26,7 @@ from untaped.capabilities.recipe.application.harness import (
     update_case,
 )
 from untaped.capabilities.recipe.application.resolution import resolve_explicit_recipe
+from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
@@ -34,11 +34,11 @@ from untaped.capabilities.recipe.cli.common import (
     report_config_errors,
     settings,
 )
-from untaped.capabilities.recipe.domain.pack import PackManifest, parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure import HookExecutor, HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
-from untaped.capabilities.recipe.infrastructure.pack_store import InstalledPack, PackLibrary
+from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 
 MessageKind = Literal["success", "warning", "error", "info"]
 
@@ -102,11 +102,11 @@ def _select(root: Path, ref_text: str | None) -> _Selection:
         return selection
     if ref_text.endswith((".yml", ".yaml")):
         if is_path_ref(ref_text):
-            resolve_explicit_recipe(Path(ref_text).expanduser(), recipe_id=None)
+            resolve_explicit_recipe(library, Path(ref_text).expanduser(), recipe_id=None)
         raise ConfigError("test requires a pack directory or ref, not a recipe file")
     if is_path_ref(ref_text):
         path = Path(ref_text).expanduser()
-        pack = InstalledPack.local(path, PackManifest.from_pyproject(path))
+        pack = library.local_pack(path)
         return _explicit_selection(pack, recipe=None)
     pack_match = library.find_pack(ref_text)
     if pack_match is not None:
@@ -154,7 +154,7 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
     if not selection.cases:
         return results
     runner = update_case if update else run_case
-    ui = ui_context(strict=False)
+    ui = recipe_ui()
     with UvHookWorkerPool(
         max_workers_per_project=1,
         hook_timeout_seconds=hook_timeout_seconds(None),
@@ -197,7 +197,7 @@ def _render_diffs(results: list[CaseResult]) -> None:
 
 
 def _render_summary(selection: _Selection, results: list[CaseResult], *, update: bool) -> None:
-    ui = ui_context(strict=False)
+    ui = recipe_ui()
     errors = sum(1 for result in results if result.status == "error")
     if update:
         updated = sum(1 for result in results if result.status == "updated")

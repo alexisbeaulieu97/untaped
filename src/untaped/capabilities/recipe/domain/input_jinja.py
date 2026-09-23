@@ -83,31 +83,14 @@ def _compile_template(expression: str) -> _RenderableTemplate:
 @lru_cache(maxsize=1)
 def _jinja_env() -> _JinjaEnvironment:
     from jinja2 import StrictUndefined  # noqa: PLC0415
-    from jinja2.exceptions import TemplateRuntimeError  # noqa: PLC0415
     from jinja2.nativetypes import NativeCodeGenerator, native_concat  # noqa: PLC0415
-    from jinja2.runtime import Context  # noqa: PLC0415
     from jinja2.sandbox import SandboxedEnvironment  # noqa: PLC0415
 
+    # No operator or call reaches evaluation: the AST allowlist in
+    # _validate_template_ast admits only literals and field access.
     class _NativeSandboxedEnvironment(SandboxedEnvironment):
         code_generator_class = NativeCodeGenerator
         concat = staticmethod(native_concat)  # type: ignore[assignment]
-        intercepted_binops = frozenset({"*", "**"})
-
-        def call_binop(
-            self,
-            context: Context,
-            operator: str,
-            left: object,
-            right: object,
-        ) -> object:
-            # Belt-and-braces only: the AST allowlist rejects every operator
-            # before evaluation, so these bounds are unreachable today. They
-            # stay as defense in depth should the allowlist ever loosen.
-            if operator == "*":
-                _ensure_repetition_within_bound(left, right, TemplateRuntimeError)
-            if operator == "**":
-                _ensure_power_within_bound(left, right, TemplateRuntimeError)
-            return super().call_binop(context, operator, left, right)
 
     env = _NativeSandboxedEnvironment(autoescape=False, undefined=StrictUndefined)
     env.globals.clear()
@@ -150,49 +133,6 @@ def _walk_nodes(node: object) -> Iterator[object]:
         return
     for child in iter_child_nodes():
         yield from _walk_nodes(child)
-
-
-def _ensure_repetition_within_bound(
-    left: object,
-    right: object,
-    error_type: type[Exception],
-) -> None:
-    sequence: object
-    count: int
-    if isinstance(left, int) and isinstance(right, str | bytes | list | tuple):
-        count = left
-        sequence = right
-    elif isinstance(right, int) and isinstance(left, str | bytes | list | tuple):
-        count = right
-        sequence = left
-    else:
-        return
-    if max(count, 0) * len(sequence) > MAX_DERIVED_VALUE_LENGTH:
-        raise error_type(
-            f"derived input value exceeds maximum length of {MAX_DERIVED_VALUE_LENGTH}"
-        )
-
-
-def _ensure_power_within_bound(
-    left: object,
-    right: object,
-    error_type: type[Exception],
-) -> None:
-    if (
-        not isinstance(left, int)
-        or isinstance(left, bool)
-        or not isinstance(right, int)
-        or isinstance(right, bool)
-        or right <= 0
-    ):
-        return
-    base = abs(left)
-    if base <= 1:
-        return
-    if base.bit_length() * right > MAX_DERIVED_VALUE_LENGTH:
-        raise error_type(
-            f"derived input value exceeds maximum length of {MAX_DERIVED_VALUE_LENGTH}"
-        )
 
 
 def ensure_derived_value_within_bound(value: object, *, structured: bool = False) -> None:

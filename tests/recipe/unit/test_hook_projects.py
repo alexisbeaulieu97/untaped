@@ -11,25 +11,26 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
+from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
 from threading import Barrier, Event
 from typing import Literal
 
 import pytest
+from packaging.version import Version
 from pydantic import ValidationError
 
 import untaped.capabilities.recipe.infrastructure.hook_resolver as hook_resolver_module
 import untaped.capabilities.recipe.infrastructure.hook_worker_client as worker_client
-from untaped.capabilities.recipe.domain.hook_project import HookProjectMetadata, read_hook_metadata
+from untaped.capabilities.recipe.domain.hook_project import ensure_hook_supports
+from untaped.capabilities.recipe.domain.pack import PackManifest
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
-from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers
 from untaped.capabilities.recipe.infrastructure.hook_resolver import (
     BuiltinHookRef,
     HookResolver,
     UvHookRef,
-    ensure_hook_supports,
 )
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     HookWorkerCallResult,
@@ -37,6 +38,7 @@ from untaped.capabilities.recipe.infrastructure.hook_worker_client import (
     UvHookWorker,
     UvHookWorkerPool,
 )
+from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
 
 
 def _write_hook_project(
@@ -85,6 +87,10 @@ def _write_hook_project(
         (root / "uv.lock").write_text("version = 1\n")
 
 
+def _hook_project(data: dict[str, object]) -> PackManifest:
+    return PackManifest.from_pyproject(data, source=Path("pyproject.toml"), require_pack=False)
+
+
 def _hook_source(exports: tuple[Literal["transform", "validate"], ...]) -> str:
     parts: list[str] = []
     if "transform" in exports:
@@ -99,7 +105,7 @@ def _hook_source(exports: tuple[Literal["transform", "validate"], ...]) -> str:
 
 
 def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
-    metadata = HookProjectMetadata.from_pyproject(
+    metadata = _hook_project(
         {
             "tool": {
                 "untaped_recipe": {
@@ -118,15 +124,13 @@ def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
     )
 
     with pytest.raises(ValueError, match="invalid hook name"):
-        HookProjectMetadata.from_pyproject(
-            {"tool": {"untaped_recipe": {"hooks": {"bad-name": {"module": "pkg.hook"}}}}}
-        )
+        _hook_project({"tool": {"untaped_recipe": {"hooks": {"bad-name": {"module": "pkg.hook"}}}}})
 
     with pytest.raises(ValueError, match="module is required"):
-        HookProjectMetadata.from_pyproject({"tool": {"untaped_recipe": {"hooks": {"check": {}}}}})
+        _hook_project({"tool": {"untaped_recipe": {"hooks": {"check": {}}}}})
 
     with pytest.raises(ValueError, match="extra_forbidden"):
-        HookProjectMetadata.from_pyproject(
+        _hook_project(
             {
                 "tool": {
                     "untaped_recipe": {
@@ -146,7 +150,7 @@ def test_manifest_hook_metadata_rejects_unknown_fields(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="extra_forbidden"):
-        HookProjectMetadata.from_pyproject(
+        _hook_project(
             {
                 "tool": {
                     "untaped_recipe": {
@@ -161,7 +165,7 @@ def test_manifest_hook_metadata_rejects_unknown_fields(tmp_path: Path) -> None:
             }
         )
     with pytest.raises(ValueError, match="extra_forbidden"):
-        read_hook_metadata(project_root)
+        read_hook_project(project_root)
 
 
 def test_hook_resolver_uses_recipe_local_then_builtin(tmp_path: Path) -> None:
@@ -208,7 +212,7 @@ def test_ensure_hook_supports_rejects_missing_verb(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match=r"does not export a validate\(\) function"):
-        ensure_hook_supports(ref, "sample", verb="validate")
+        ensure_hook_supports(ref.exports, "sample", verb="validate")
 
 
 def test_hook_resolver_rejects_missing_lockfile(tmp_path: Path) -> None:
@@ -241,7 +245,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(
     ) as exc_info:
         HookResolver().resolve("check", recipe_dir)
     assert "dependency-groups.dev" in str(exc_info.value)
-    assert "untaped>=6.0.0,<7" in str(exc_info.value)
+    assert _expected_dev_requirement() in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
@@ -272,7 +276,7 @@ def test_hook_resolver_rejects_pep508_runtime_cli_dependencies(
 
 def test_hook_project_metadata_rejects_invalid_dependency_declarations() -> None:
     with pytest.raises(ValueError, match=r"\[project\]\.dependencies entry"):
-        HookProjectMetadata.from_pyproject(
+        _hook_project(
             {
                 "project": {"dependencies": ["not a valid @@@ requirement"]},
                 "tool": {
@@ -350,11 +354,11 @@ def test_hook_resolver_validates_project_contract_once_per_metadata_cache(
     _write_hook_project(recipe_dir, hooks={"check": "project_hooks.hooks.check"})
     calls: list[Path] = []
 
-    def validate(project_root: Path, metadata: HookProjectMetadata) -> None:
-        del metadata
+    def validate(project_root: Path, manifest: PackManifest) -> None:
+        del manifest
         calls.append(project_root)
 
-    monkeypatch.setattr(hook_resolver_module, "validate_hook_project_contract", validate)
+    monkeypatch.setattr(hook_resolver_module, "check_hook_project", validate)
     resolver = HookResolver()
 
     resolver.resolve("check", recipe_dir)
@@ -1216,7 +1220,6 @@ def test_hook_executor_dispatches_builtin_without_worker(tmp_path: Path) -> None
     executor = HookExecutor(
         HookResolver(),
         workers=ExplodingWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.transform(
@@ -1253,7 +1256,6 @@ def test_hook_executor_sends_external_transform_to_worker(tmp_path: Path) -> Non
     executor = HookExecutor(
         HookResolver(),
         workers=RecordingWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.transform(
@@ -1294,7 +1296,6 @@ def test_hook_executor_debug_returns_external_diagnostics(tmp_path: Path) -> Non
     executor = HookExecutor(
         HookResolver(),
         workers=RecordingWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.transform(
@@ -1402,10 +1403,7 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
         "CONTENT = 'bad_content'\n"
         "FILE = 'bad_file'\n"
     )
-    (fake_engine / "yaml_options.py").write_text(
-        "def apply_yaml_dump_options(yaml, options):\n"
-        "    raise RuntimeError('fake yaml_options imported')\n"
-    )
+    (fake_engine / "helpers.py").write_text("raise RuntimeError('fake helpers imported')\n")
     worker = (
         Path(__file__).parents[3]
         / "src"
@@ -1450,7 +1448,7 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
         "result": {"status": "pass", "message": "from real worker protocol"},
         "warnings": [],
     }
-    assert "fake yaml_options imported" not in stderr
+    assert "fake helpers imported" not in stderr
 
 
 def test_worker_script_rejects_invalid_validate_return_object(tmp_path: Path) -> None:
@@ -1529,7 +1527,6 @@ def test_hook_executor_rejects_unknown_warn_verdict(tmp_path: Path) -> None:
     executor = HookExecutor(
         HookResolver(),
         workers=WarningWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     with pytest.raises(ValueError, match="status"):
@@ -1568,7 +1565,6 @@ def test_hook_executor_collects_worker_warnings_alongside_verdict(tmp_path: Path
     executor = HookExecutor(
         HookResolver(),
         workers=WarningWorkers(),
-        helpers_factory=HookHelpers,
     )
 
     result = executor.validate(
@@ -1736,3 +1732,8 @@ def test_uv_hook_worker_launch_does_not_shadow_pack_top_level_modules(
     response = json.loads(lines[1])
     assert response["ok"] is True, response
     assert response["result"] == {"status": "pass", "message": "pack module"}
+
+
+def _expected_dev_requirement() -> str:
+    installed = Version(version("untaped"))
+    return f"untaped>={installed.public},<{installed.major + 1}"

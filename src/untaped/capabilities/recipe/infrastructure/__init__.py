@@ -1,4 +1,4 @@
-"""Infrastructure adapters for untaped-recipe."""
+"""Infrastructure adapters for the recipe capability."""
 
 from untaped.capabilities.recipe.infrastructure.backup import BackupStore
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor

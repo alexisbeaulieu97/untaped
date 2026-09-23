@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import importlib
 import json
-import re
 import sys
 import traceback
 from collections.abc import Mapping
 from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 
 def _load_sibling(name: str) -> Any:  # pragma: no cover - script mode only
@@ -35,107 +33,11 @@ def _load_sibling(name: str) -> Any:  # pragma: no cover - script mode only
 
 
 if __package__:
+    from untaped.capabilities.recipe._worker import helpers as hook_helpers
     from untaped.capabilities.recipe._worker import worker_protocol as protocol
-    from untaped.capabilities.recipe._worker.yaml_options import apply_yaml_dump_options
 else:  # pragma: no cover - used when executed as a script in a hook env.
     protocol = _load_sibling("worker_protocol")
-    apply_yaml_dump_options = _load_sibling("yaml_options").apply_yaml_dump_options
-
-_TOKEN_RE = re.compile(r"{{.*?}}")
-_BARE_TOKEN_RE = re.compile(r"{{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}")
-_UNKNOWN_TOKEN_MODES = {"error", "keep"}
-
-
-class HookHelpers:
-    """Minimal helpers available inside external hook workers.
-
-    A fresh instance is built per request so ``warn`` accumulates warnings
-    for exactly one hook invocation.
-    """
-
-    def __init__(self) -> None:
-        self._warnings: list[str] = []
-
-    def pass_(self, message: str = "") -> dict[str, str]:
-        """Return a passing validation verdict."""
-        return {"status": "pass", "message": message}
-
-    def fail(self, message: str) -> dict[str, str]:
-        """Return a failing validation verdict."""
-        return {"status": "fail", "message": message}
-
-    def skip(self, message: str = "") -> dict[str, str]:
-        """Return a skip verdict marking the target not applicable."""
-        return {"status": "skip", "message": message}
-
-    def warn(self, message: str) -> None:
-        """Accumulate a non-fatal warning for the current target."""
-        self._warnings.append(str(message))
-
-    @property
-    def warnings(self) -> list[str]:
-        """Warnings accumulated during this invocation."""
-        return list(self._warnings)
-
-    def render_template(
-        self,
-        template: str,
-        inputs: dict[str, object],
-        *,
-        unknown_tokens: str = "error",
-    ) -> str:
-        """Render simple `{{ input }}` placeholders."""
-        if unknown_tokens not in _UNKNOWN_TOKEN_MODES:
-            raise ValueError("unknown_tokens must be 'error' or 'keep'")
-
-        def replace(match: re.Match[str]) -> str:
-            token = match.group(0)
-            bare_token = _BARE_TOKEN_RE.fullmatch(token)
-            if bare_token is not None:
-                key = bare_token.group(1)
-                if key in inputs:
-                    value = inputs[key]
-                    if isinstance(value, Mapping | list | tuple):
-                        raise ValueError(
-                            f"structured input {key!r} cannot be rendered; "
-                            "hooks receive it natively"
-                        )
-                    return str(value)
-                if unknown_tokens == "keep":
-                    return token
-                raise ValueError(f"template input {key!r} is not defined")
-            if unknown_tokens == "keep":
-                return token
-            raise ValueError(
-                f"template token {token!r} is not a bare input name; "
-                "set unknown_tokens: keep to pass it through"
-            )
-
-        return _TOKEN_RE.sub(replace, template)
-
-    def load_yaml(self, content: str) -> object:
-        """Round-trip-load YAML content if ruamel.yaml is installed in the hook project."""
-        from ruamel.yaml import YAML  # noqa: PLC0415
-
-        yaml = YAML()
-        yaml.preserve_quotes = True
-        return yaml.load(content)
-
-    def dump_yaml(self, data: object, *, options: Mapping[str, object] | None = None) -> str:
-        """Round-trip-dump YAML content if ruamel.yaml is installed in the hook project."""
-        from ruamel.yaml import YAML  # noqa: PLC0415
-
-        yaml = YAML()
-        apply_yaml_dump_options(yaml, options)
-        out = StringIO()
-        yaml.dump(data, out)
-        return out.getvalue()
-
-
-if TYPE_CHECKING:
-    from untaped.capabilities.recipe.hook_api import HookHelpers as ExternalHookHelpers
-
-    _external_helper_contract: ExternalHookHelpers = HookHelpers()
+    hook_helpers = _load_sibling("helpers")
 
 
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
@@ -145,7 +47,7 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     module_name = _required_str(request, protocol.MODULE)
     with redirect_stdout(sys.stderr):
         module = importlib.import_module(module_name)
-    helpers = HookHelpers()
+    helpers = hook_helpers.HookHelpers()
     if kind == protocol.TRANSFORM:
         transform = getattr(module, "transform", None)
         if transform is None:

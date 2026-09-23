@@ -1,0 +1,543 @@
+"""``recipe apply``: plan a recipe across targets, preview, confirm, and write."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from contextlib import ExitStack
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Annotated, Literal
+
+from cyclopts import Parameter
+
+from untaped.api import (
+    BatchOutcome,
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    UntapedError,
+    batch_apply,
+    clamp_parallel,
+    echo,
+    finish,
+    parse_kv_pairs,
+    read_stdin,
+    render_rows,
+    ui_context,
+)
+from untaped.capabilities.recipe.application import RunBulkApply
+from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
+from untaped.capabilities.recipe.application.files import read_recipe_file
+from untaped.capabilities.recipe.application.inputs import PromptFunc
+from untaped.capabilities.recipe.application.resolution import resolve_apply_recipe
+from untaped.capabilities.recipe.application.targets import Target, resolve_target_lines
+from untaped.capabilities.recipe.cli._context import recipe_ui
+from untaped.capabilities.recipe.cli.common import (
+    hook_startup_notice,
+    hook_timeout_seconds,
+    library_root,
+    load_yaml_mapping_file,
+    report_config_errors,
+    settings,
+)
+from untaped.capabilities.recipe.cli.preview import (
+    PlanCounts,
+    PreviewMode,
+    plural,
+    preview_summary,
+    render_preview,
+)
+from untaped.capabilities.recipe.domain.plan import TargetPlan
+from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capabilities.recipe.infrastructure import BackupStore, HookExecutor, HookResolver
+from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
+from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
+from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+
+MessageKind = Literal["success", "warning", "error", "info"]
+
+
+@dataclass(frozen=True)
+class ApplyContext:
+    """Prepared apply state."""
+
+    root: Path
+    recipe: Recipe
+    recipe_ref: str
+    plans: list[TargetPlan]
+
+
+@dataclass(frozen=True)
+class ApplyExecution:
+    """Executed apply state used for stable row rendering."""
+
+    outcome: BatchOutcome[TargetPlan, TargetPlan]
+    applied: frozenset[int]
+    failed: dict[int, str]
+    backup_id: str | None = None
+    cancelled: bool = False
+
+
+@dataclass(frozen=True)
+class TargetInput:
+    """Resolved target records plus whether stdin supplied nonblank lines."""
+
+    targets: list[Target]
+    stdin_records: bool = False
+
+
+def apply_command(
+    recipe_ref: Annotated[str, Parameter(help="Recipe id, pack/recipe ref, or path.")],
+    dirs: Annotated[list[Path] | None, Parameter(help="Target directories.")] = None,
+    *,
+    recipe_id: Annotated[
+        str | None,
+        Parameter(name="--recipe", help="Recipe id when applying a local pack path."),
+    ] = None,
+    stdin: Annotated[
+        bool,
+        Parameter(
+            name="--stdin",
+            negative="",
+            help="Read target paths or pipe records from stdin.",
+        ),
+    ] = False,
+    var: Annotated[
+        list[str] | None,
+        Parameter(name="--var", help="Input override as key=value.", consume_multiple=False),
+    ] = None,
+    vars_file: Annotated[
+        Path | None,
+        Parameter(name="--vars", help="YAML file containing input overrides."),
+    ] = None,
+    input_from: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--input-from",
+            help="Derive one input from a per-target Jinja expression as key=template.",
+            consume_multiple=False,
+        ),
+    ] = None,
+    interactive: Annotated[
+        bool,
+        Parameter(name="--interactive", negative="", help="Prompt for unresolved inputs."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        Parameter(name="--dry-run", negative="", help="Preview without writing."),
+    ] = False,
+    check: Annotated[
+        bool,
+        Parameter(
+            name="--check",
+            negative="",
+            help="Preview and exit non-zero when changes would be made.",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
+    ] = False,
+    backup: Annotated[
+        bool,
+        Parameter(name="--backup", negative="--no-backup", help="Create backups before writing."),
+    ] = True,
+    parallel: Annotated[
+        int,
+        Parameter(name=["--parallel", "-j"], help="Target planning workers."),
+    ] = 1,
+    hook_timeout: Annotated[
+        float | None,
+        Parameter(name="--hook-timeout", help="Per-hook timeout in seconds; 0 disables."),
+    ] = None,
+    preview: Annotated[
+        PreviewMode | None,
+        Parameter(
+            name="--preview",
+            help=(
+                "Preview style: table, diff, or none. "
+                "Defaults to none with --check, table otherwise."
+            ),
+        ),
+    ] = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Apply a recipe to target directories."""
+    with report_config_errors():
+        if interactive and check:
+            raise ConfigError("--interactive cannot be used with --check")
+        if stdin and not yes and not dry_run and not check:
+            raise ConfigError(
+                "apply requires --yes with --stdin unless --dry-run or --check is used"
+            )
+        with ExitStack() as stack:
+            prompt = _interactive_prompt(stdin=stdin, interactive=interactive, stack=stack)
+            context = _apply_context(
+                recipe_ref,
+                dirs=list(dirs or []),
+                stdin=stdin,
+                raw_vars=var or [],
+                vars_file=vars_file,
+                raw_input_from=input_from or [],
+                interactive=interactive,
+                prompt=prompt,
+                parallel=parallel,
+                hook_timeout_seconds=hook_timeout_seconds(hook_timeout),
+                recipe_id=recipe_id,
+            )
+            effective_preview = _effective_preview(preview, check=check)
+            render_preview(
+                context.recipe,
+                context.plans,
+                preview=effective_preview,
+                preview_max_rows=settings().preview_max_rows,
+            )
+            outcome = _execute_plans(
+                context,
+                backup=backup and not check,
+                yes=yes or check,
+                dry_run=dry_run or check,
+            )
+        rows = _outcome_rows(
+            context.plans,
+            outcome,
+            recipe_ref=context.recipe_ref,
+            preview_status=_preview_status(dry_run, check),
+        )
+        if fmt == "table":
+            # Human view: key=value pairs instead of a dict repr. Structured
+            # formats keep the real mapping for pipe/json consumers.
+            rows = [{**row, "inputs": _inputs_cell(row["inputs"])} for row in rows]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.outcome")
+        if rendered:
+            echo(rendered)
+        _render_result_summary(context.plans, outcome, check=check, dry_run=dry_run)
+        has_errors = any(plan.status == "error" for plan in context.plans)
+        has_drift = check and any(plan.status != "error" and plan.changes for plan in context.plans)
+        finish(has_errors or outcome.outcome.any_failed or has_drift)
+
+
+def _apply_context(
+    recipe: str,
+    *,
+    dirs: list[Path],
+    stdin: bool,
+    raw_vars: list[str],
+    vars_file: Path | None,
+    raw_input_from: list[str],
+    interactive: bool,
+    prompt: PromptFunc | None,
+    parallel: int,
+    hook_timeout_seconds: float,
+    recipe_id: str | None = None,
+) -> ApplyContext:
+    root = library_root()
+    recipe_resolution = resolve_apply_recipe(
+        PackLibrary(library_root=root), recipe, recipe_id=recipe_id
+    )
+    recipe_path = recipe_resolution.path
+    loaded = read_recipe_file(recipe_path)
+    target_input = _targets(dirs, stdin=stdin)
+    targets = target_input.targets
+    if not targets:
+        if target_input.stdin_records:
+            return ApplyContext(
+                root=root,
+                recipe=loaded,
+                recipe_ref=recipe_resolution.ref,
+                plans=[],
+            )
+        raise ConfigError("at least one target directory is required (or use --stdin)")
+    inputs = _input_values(raw_vars, vars_file)
+    input_from = _input_sources(raw_input_from)
+    workers = clamp_parallel(max(parallel, 1), cap=32, policy="recipe planning cap")
+    ui = recipe_ui()
+    with UvHookWorkerPool(
+        max_workers_per_project=workers,
+        hook_timeout_seconds=hook_timeout_seconds,
+        startup_timeout_seconds=settings().hook_startup_timeout_seconds,
+        startup_notice=hook_startup_notice(ui),
+    ) as hook_workers:
+        runner = RunBulkApply(
+            ApplyRecipe(
+                HookExecutor(
+                    HookResolver(library_root=root),
+                    workers=hook_workers,
+                )
+            )
+        )
+        with ui.progress("Planning targets") as progress:
+            try:
+                plans = runner.plan(
+                    recipe=loaded,
+                    recipe_dir=recipe_path.parent,
+                    local_hook_project=recipe_resolution.local_hook_project,
+                    targets=targets,
+                    inputs=inputs,
+                    input_from=input_from,
+                    interactive=interactive,
+                    prompt=prompt,
+                    parallel=workers,
+                    on_progress=lambda done, total: progress.update(
+                        f"{done}/{total}",
+                        fraction=done / total if total else None,
+                    ),
+                )
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+    return ApplyContext(
+        root=root,
+        recipe=loaded,
+        recipe_ref=recipe_resolution.ref,
+        plans=plans,
+    )
+
+
+def _effective_preview(preview: PreviewMode | None, *, check: bool) -> PreviewMode:
+    if preview is not None:
+        return preview
+    if check:
+        return "none"
+    return "table"
+
+
+def _execute_plans(
+    context: ApplyContext,
+    *,
+    backup: bool,
+    yes: bool,
+    dry_run: bool,
+) -> ApplyExecution:
+    actionable = [plan for plan in context.plans if plan.status != "error" and plan.changes]
+    store = BackupStore(context.root / "backups")
+    draft: BackupDraft | None = None
+    applied: set[int] = set()
+    failed: dict[int, str] = {}
+
+    def _apply(plan: TargetPlan) -> TargetPlan:
+        nonlocal draft
+        reservation = None
+        try:
+            if backup:
+                if draft is None:
+                    draft = store.start(
+                        recipe_name=context.recipe_ref,
+                        inputs={},
+                    )
+                reservation = draft.stage(plan.changes, inputs=plan.display_inputs)
+            flush_changes(plan.changes)
+            if reservation is not None and draft is not None:
+                draft.commit(reservation)
+            applied.add(id(plan))
+            return plan
+        except UntapedError as exc:
+            if (
+                reservation is not None
+                and draft is not None
+                and isinstance(exc, ApplyWriteError)
+                and exc.rollback_incomplete
+            ):
+                draft.commit(reservation)
+            failed[id(plan)] = str(exc)
+            raise
+
+    def _confirm_preview(rows: Sequence[dict[str, object]]) -> None:
+        del rows
+        recipe_ui().message("info", preview_summary(context.plans))
+
+    outcome = batch_apply(
+        actionable,
+        _apply,
+        verb="apply",
+        noun="target",
+        label=lambda plan: str(plan.target),
+        describe=_row,
+        ui=recipe_ui(),
+        destructive=True,
+        assume_yes=yes,
+        preview_only=dry_run,
+        render_generic_preview=False,
+        preview=_confirm_preview,
+    )
+    backup_id = draft.id if draft is not None and draft.entries else None
+    if draft is not None:
+        draft.discard_if_empty()
+    cancelled = bool(actionable) and not dry_run and not outcome.results and not outcome.failed
+    return ApplyExecution(
+        outcome=outcome,
+        applied=frozenset(applied),
+        failed=failed,
+        backup_id=backup_id,
+        cancelled=cancelled,
+    )
+
+
+def _outcome_rows(
+    plans: list[TargetPlan],
+    execution: ApplyExecution,
+    *,
+    recipe_ref: str,
+    preview_status: str | None,
+) -> list[dict[str, object]]:
+    rows = [{**_row(plan), "recipe": recipe_ref} for plan in plans]
+    if preview_status is not None:
+        return [
+            {**row, "status": preview_status} if row["status"] == "planned" else row for row in rows
+        ]
+    if execution.cancelled:
+        # Declined confirmation: nothing ran, so rows honestly stay "planned".
+        # (An executed run where every target was already conformant is NOT
+        # cancelled and falls through to report "unchanged" per target.)
+        return rows
+    rendered: list[dict[str, object]] = []
+    for plan, row in zip(plans, rows, strict=True):
+        plan_id = id(plan)
+        if plan.status in {"skipped", "error"}:
+            # Not applicable / failed planning: keep the honest status through
+            # execution (a planning error is never "unchanged").
+            rendered.append(row)
+        elif plan_id in execution.failed:
+            rendered.append({**row, "status": "error", "error": execution.failed[plan_id]})
+        elif plan_id in execution.applied:
+            rendered.append({**row, "status": "applied"})
+        else:
+            # Nothing to write for this target — say "unchanged", matching the
+            # summary line's vocabulary, instead of leaking planner state.
+            rendered.append({**row, "status": "unchanged"})
+    return rendered
+
+
+def _targets(positional: list[Path], *, stdin: bool) -> TargetInput:
+    if stdin and positional:
+        raise ConfigError("provide targets as positional args or via --stdin, not both")
+    if not stdin:
+        return TargetInput([Target(path=path) for path in positional])
+    lines = read_stdin()
+    if not lines:
+        raise ConfigError("no targets received on stdin")
+    try:
+        return TargetInput(
+            resolve_target_lines(list(enumerate(lines, start=1))),
+            stdin_records=True,
+        )
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _input_values(raw_vars: list[str], vars_file: Path | None) -> dict[str, object]:
+    values: dict[str, object] = {}
+    if vars_file is not None:
+        values.update(load_yaml_mapping_file(vars_file, flag="--vars"))
+    values.update(parse_kv_pairs(raw_vars, flag="--var"))
+    return values
+
+
+def _input_sources(raw_sources: list[str]) -> dict[str, str]:
+    parsed = parse_kv_pairs(raw_sources, flag="--input-from")
+    return {name: str(template) for name, template in parsed.items()}
+
+
+def _interactive_prompt(
+    *,
+    stdin: bool,
+    interactive: bool,
+    stack: ExitStack,
+) -> PromptFunc | None:
+    if not interactive:
+        return None
+    if stdin:
+        try:
+            tty = stack.enter_context(
+                Path("/dev/tty").open("r+", encoding="utf-8")  # noqa: SIM115
+            )
+        except OSError as exc:
+            raise ConfigError("interactive input requires a terminal") from exc
+        ui = ui_context(stdin=tty, stderr=tty, strict=True)
+    else:
+        ui = ui_context(strict=True)
+
+    def ask(
+        message: str,
+        *,
+        sensitive: bool,
+        default: object | None = None,
+        required: bool = True,
+    ) -> object:
+        if sensitive:
+            return ui.secret(message, required=required)
+        text_default = None if default is None else str(default)
+        return ui.text(message, default=text_default, required=required)
+
+    return ask
+
+
+def _preview_status(dry_run: bool, check: bool) -> str | None:
+    if check:
+        return "check"
+    if dry_run:
+        return "dry-run"
+    return None
+
+
+def _render_result_summary(
+    plans: list[TargetPlan],
+    execution: ApplyExecution,
+    *,
+    check: bool,
+    dry_run: bool,
+) -> None:
+    counts = PlanCounts.of(plans)
+    failed = counts.failed + len(execution.failed)
+    changed, unchanged = counts.changing, counts.unchanged
+    skipped_note = f", {counts.skipped} skipped" if counts.skipped else ""
+    ui = recipe_ui()
+    if check:
+        kind: MessageKind = "warning" if failed or changed else "info"
+        ui.message(
+            kind,
+            f"Recipe check: {changed} would change, {unchanged} unchanged"
+            f"{skipped_note}, {failed} failed",
+        )
+        return
+    if dry_run:
+        kind = "warning" if failed else "info"
+        ui.message(
+            kind,
+            f"Recipe dry run: {changed} would change, {unchanged} unchanged"
+            f"{skipped_note}, {failed} failed",
+        )
+        return
+    if execution.cancelled:
+        ui.message(
+            "warning",
+            "Recipe apply cancelled: "
+            f"{plural(changed, 'changing target')} not applied, "
+            f"{unchanged} unchanged{skipped_note}, {failed} failed",
+        )
+        return
+    kind = "warning" if failed else "info"
+    backup = f", backup {execution.backup_id}" if execution.backup_id else ""
+    ui.message(
+        kind,
+        f"Recipe apply: {len(execution.applied)} applied, {unchanged} unchanged"
+        f"{skipped_note}, {failed} failed{backup}",
+    )
+
+
+def _inputs_cell(inputs: object) -> str:
+    if not isinstance(inputs, dict) or not inputs:
+        return ""
+    return ", ".join(f"{key}={value}" for key, value in inputs.items())
+
+
+def _row(plan: TargetPlan) -> dict[str, object]:
+    return {
+        "target": str(plan.target),
+        "status": plan.status,
+        "files_changed": plan.files_changed,
+        "warnings": "; ".join(plan.warnings),
+        "error": plan.error,
+        "inputs": plan.display_inputs,
+    }

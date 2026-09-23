@@ -19,12 +19,6 @@ from untaped.capabilities.recipe.application.inputs import (
 from untaped.capabilities.recipe.application.targets import Target, dedupe_targets
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe.infrastructure.file_writer import (
-    ApplyWriteError as ApplyWriteError,
-)
-from untaped.capabilities.recipe.infrastructure.file_writer import flush_changes as flush_changes
-
-__all__ = ["ApplyWriteError", "RunBulkApply", "flush_changes"]
 
 SENSITIVE_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with sensitive inputs"
 SENSITIVE_ERROR_SUPPRESSED = (

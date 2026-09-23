@@ -16,10 +16,9 @@ from untaped.capabilities.recipe.application.harness import (
     run_case,
     update_case,
 )
-from untaped.capabilities.recipe.application.ports import HookDebugResult
-from untaped.capabilities.recipe.domain.pack import PackManifest
-from untaped.capabilities.recipe.domain.plan import Verdict
-from untaped.capabilities.recipe.infrastructure.pack_store import InstalledPack
+from untaped.capabilities.recipe.domain.pack import InstalledPack
+from untaped.capabilities.recipe.domain.plan import HookDebugResult, Verdict
+from untaped.capabilities.recipe.infrastructure.pack_files import read_pack_manifest
 
 
 class _FakeExecutor:
@@ -92,7 +91,7 @@ def _write_pack(
         encoding="utf-8",
     )
     (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-    return InstalledPack.local(root, PackManifest.from_pyproject(root))
+    return InstalledPack.local(root, read_pack_manifest(root))
 
 
 def _write_case(pack_root: Path, recipe: str, case: str, *, case_yml: str | None = None) -> Path:

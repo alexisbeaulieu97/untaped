@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.capabilities.recipe.domain.project_toml import read_toml_document, toml_table
+from untaped.capabilities.recipe.infrastructure.project_toml import read_toml_document, toml_table
 
 
 def test_read_toml_document_reports_neutral_pyproject_errors(tmp_path: Path) -> None:

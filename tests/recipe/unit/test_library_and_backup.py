@@ -12,6 +12,7 @@ from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.infrastructure.backup import (
     BackupBundle,
+    BackupDraft,
     BackupStore,
     RestoreItem,
     prune_selection,
@@ -275,7 +276,8 @@ def test_backup_store_records_and_restores_touched_files(tmp_path: Path) -> None
     ]
     store = BackupStore(tmp_path / "backups")
 
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={"x": 1},
         changes=changes,
@@ -306,7 +308,8 @@ def test_backup_store_plans_restore_actions_and_hash_guard(tmp_path: Path) -> No
     existing.write_text("before\n")
     removed.write_text("old\n")
     store = BackupStore(tmp_path / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -374,7 +377,8 @@ def test_backup_restore_rejects_symlink_escape(tmp_path: Path) -> None:
     escaped = outside / "config.txt"
     escaped.write_text("after\n")
     store = BackupStore(tmp_path / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -404,7 +408,8 @@ def test_backup_restore_rolls_back_prior_files_on_write_failure(
     first.write_text("one-before\n")
     second.write_text("two-before\n")
     store = BackupStore(tmp_path / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -511,3 +516,15 @@ def test_backup_restore_reports_corrupt_metadata(tmp_path: Path, content: str) -
 
     with pytest.raises(ValueError, match="invalid backup metadata"):
         store.plan_restore(draft.id)
+
+
+def _create_backup(
+    store: BackupStore,
+    *,
+    recipe_name: str,
+    inputs: dict[str, object],
+    changes: list[FileChange],
+) -> BackupDraft:
+    draft = store.start(recipe_name=recipe_name, inputs=inputs)
+    draft.commit(draft.stage(changes, inputs=inputs))
+    return draft

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -77,3 +78,12 @@ class TargetPlan(BaseModel):
     def files_changed(self) -> int:
         """Count of files whose content or existence changes."""
         return len(self.changes)
+
+
+@dataclass(frozen=True)
+class HookDebugResult[T]:
+    """Hook result plus diagnostics and accumulated warnings for one invocation."""
+
+    result: T
+    diagnostics: str
+    warnings: tuple[str, ...] = ()

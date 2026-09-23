@@ -1,4 +1,4 @@
-"""Public hook authoring contract for ``untaped-recipe`` hook projects."""
+"""Public hook authoring contract for recipe pack hook projects."""
 
 from __future__ import annotations
 
