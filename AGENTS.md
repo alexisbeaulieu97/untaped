@@ -80,7 +80,8 @@ diagnostics live at root `doctor`.
 
 User settings live in `config.yml` (`UNTAPED_CONFIG`): `active` plus
 `profiles.<name>.<section>`. Capability-managed state lives in a separate
-`state.yml` next to it (`UNTAPED_STATE`), one section per capability, read and
+`state.yml` beside it (`<name>.state.yml` for any other config name;
+`UNTAPED_STATE` overrides), one section per capability, read and
 written only through `StateCollection`/`StateMap` (or
 `read_tool_state`/`mutate_tool_state`). Settings writes never touch
 `state.yml` and state writes never touch `config.yml`, except the one-time move

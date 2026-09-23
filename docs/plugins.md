@@ -347,7 +347,7 @@ _items = StateCollection("acme", "items", id_field="id")
 _items.upsert({"id": "one", "label": "Example"})
 ```
 
-State lives in `state.yml` (next to the config file, or `UNTAPED_STATE`),
+State lives in the state file (`state.yml` beside `config.yml`, or `UNTAPED_STATE`),
 outside profile overlays, and is never exposed as a user setting. The helpers
 preserve other capabilities' sections under the shared state-file lock and move
 a legacy copy of your section out of `config.yml` on its first write; never
