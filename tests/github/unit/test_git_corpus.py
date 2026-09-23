@@ -1087,3 +1087,20 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
     remote_calls = [auth for command, auth in seen if command.startswith("remote ")]
     assert remote_calls == [None, None]
     assert any(auth is not None for command, auth in seen if command.startswith("fetch"))
+
+
+def test_corrupt_metadata_warnings_go_through_injected_warn(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    warnings: list[str] = []
+    cache = GitCorpusCache(warn=warnings.append)
+    root = tmp_path / "corpus"
+    corrupt = root / "github.com" / "broken.git" / "untaped-corpus.json"
+    corrupt.parent.mkdir(parents=True)
+    corrupt.write_text("{")
+
+    assert cache.list_repos(root=root) == ()
+    assert cache.get_repo(root=root, repo="acme/api") is None
+    assert len(warnings) == 2
+    assert all("could not read corpus metadata" in warning for warning in warnings)
+    assert capfd.readouterr().err == ""
