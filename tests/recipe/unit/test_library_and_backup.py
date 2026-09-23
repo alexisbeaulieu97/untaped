@@ -484,3 +484,30 @@ def test_prune_selection_unparsable_ids_do_not_consume_keep_slots(tmp_path: Path
     )
 
     assert [bundle.id for bundle in pruned] == ["20200101T000000000000Z-cccccccc"]
+
+
+def test_backup_draft_keeps_created_at_across_commits(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.txt").write_text("a\n")
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    created_at = store.metadata(draft.id)["created_at"]
+
+    draft.commit(
+        draft.stage(
+            [FileChange(target=target, relative_path=Path("a.txt"), before="a\n", after="b\n")]
+        )
+    )
+
+    assert store.metadata(draft.id)["created_at"] == created_at
+
+
+@pytest.mark.parametrize("content", ["{}", "not json", "[]", '{"files": [{"target": 1}]}'])
+def test_backup_restore_reports_corrupt_metadata(tmp_path: Path, content: str) -> None:
+    store = BackupStore(tmp_path / "backups")
+    draft = store.start(recipe_name="demo", inputs={})
+    (draft.path / "metadata.json").write_text(content)
+
+    with pytest.raises(ValueError, match="invalid backup metadata"):
+        store.plan_restore(draft.id)
