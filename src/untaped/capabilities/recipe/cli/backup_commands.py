@@ -18,12 +18,16 @@ from untaped.capabilities.recipe.infrastructure.backup import (
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
+    DryRunOption,
     FormatOption,
+    UsageError,
+    YesOption,
     batch_apply,
     create_app,
     echo,
     emit,
     finish,
+    plural,
     render_rows,
 )
 
@@ -43,8 +47,8 @@ def list_command(*, fmt: FormatOption = "table", columns: ColumnsOption = None) 
             echo(rendered)
 
 
-@app.command(name="show")
-def show_command(
+@app.command(name="get")
+def get_command(
     backup_id: Annotated[str, Parameter(help="Backup id, prefix, or latest.")],
     /,
     *,
@@ -84,10 +88,8 @@ def restore_command(
         bool,
         Parameter(name="--force", negative="", help="Overwrite files changed after backup."),
     ] = False,
-    yes: Annotated[
-        bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
-    ] = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
 ) -> None:
     """Restore a backup bundle."""
     with report_config_errors():
@@ -98,7 +100,7 @@ def restore_command(
 
         def _preview(rows: object) -> None:
             del rows
-            echo(f"About to restore {len(file_rows)} file(s):", err=True)
+            echo(f"About to restore {plural(len(file_rows), 'file')}:", err=True)
             for row in file_rows:
                 echo("  - " + "\t".join(str(value) for value in row.values()), err=True)
 
@@ -118,8 +120,11 @@ def restore_command(
             ui=ui,
             destructive=True,
             assume_yes=yes,
+            preview_only=dry_run,
             preview=_preview,
         )
+        if dry_run:
+            _preview(outcome.planned_rows)
         if not outcome.any_failed and outcome.results:
             ui.message("success", f"restored {backup_id}")
         finish(outcome)
@@ -136,19 +141,17 @@ def prune_command(
         int | None,
         Parameter(name="--older-than", help="Prune bundles older than DAYS days."),
     ] = None,
-    yes: Annotated[
-        bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
-    ] = False,
+    yes: YesOption = False,
+    dry_run: DryRunOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Prune old backup bundles."""
     with report_config_errors():
         if keep is not None and keep < 1:
-            raise ConfigError("--keep must be at least 1")
+            raise UsageError("--keep must be at least 1")
         if older_than is not None and older_than < 1:
-            raise ConfigError("--older-than must be at least 1")
+            raise UsageError("--older-than must be at least 1")
         resolved_keep = settings().backup_keep if keep is None else keep
         resolved_age = settings().backup_max_age_days if older_than is None else older_than
         if resolved_keep is None and resolved_age is None:
@@ -185,7 +188,20 @@ def prune_command(
             ui=ui,
             destructive=True,
             assume_yes=yes,
+            preview_only=dry_run,
         )
+        if dry_run:
+            rendered = render_rows(
+                outcome.planned_rows, fmt=fmt, columns=columns, kind="recipe.backup"
+            )
+            if rendered:
+                echo(rendered)
+            ui.message(
+                "info",
+                f"would prune {len(pruned)} of {plural(len(bundles), 'backup')}, "
+                f"keep {len(bundles) - len(pruned)}",
+            )
+            return
         rows = [{"id": bundle.id, "size_bytes": sizes[bundle.id]} for bundle, _ in outcome.results]
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.backup")
         if rendered:
@@ -195,7 +211,7 @@ def prune_command(
             kept = len(bundles) - len(outcome.results)
             ui.message(
                 "success",
-                f"pruned {len(outcome.results)} of {len(bundles)} backup(s), "
+                f"pruned {len(outcome.results)} of {plural(len(bundles), 'backup')}, "
                 f"kept {kept}, reclaimed {reclaimed} bytes",
             )
         finish(outcome)

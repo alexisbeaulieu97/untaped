@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -29,16 +28,14 @@ from untaped.capabilities.recipe.cli.common import (
 from untaped.capabilities.recipe.domain.hook_project import HookKind
 from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.domain.plan import Verdict
-from untaped.capabilities.recipe.infrastructure.hook_executor import (
-    HookExecutionError,
-    HookExecutor,
-)
+from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
 from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
+    UsageError,
     create_app,
     echo,
     emit,
@@ -94,11 +91,21 @@ def run_command(
     ] = None,
     raw_inputs: Annotated[
         list[str] | None,
-        Parameter(name="--input", help="Input override as key=YAML.", consume_multiple=False),
+        Parameter(
+            name="--input",
+            negative="",
+            help="Input override as key=YAML.",
+            consume_multiple=False,
+        ),
     ] = None,
     raw_args: Annotated[
         list[str] | None,
-        Parameter(name="--arg", help="Arg override as key=YAML.", consume_multiple=False),
+        Parameter(
+            name="--arg",
+            negative="",
+            help="Arg override as key=YAML.",
+            consume_multiple=False,
+        ),
     ] = None,
     diff: Annotated[
         bool,
@@ -124,11 +131,11 @@ def run_command(
         try:
             verb = select_verb(ref.exports, file_given=file is not None, kind=kind)
         except AmbiguousHookVerbError as exc:
-            raise ConfigError(
+            raise UsageError(
                 f"hook {name!r} exports both transform() and validate(); pass --kind or --file"
             ) from exc
         if verb == "validate" and diff:
-            raise ConfigError("validate hooks do not accept --file or content options")
+            raise UsageError("validate hooks do not accept --file or content options")
         RunHook.validate_context(
             kind=verb,
             target=target,
@@ -153,21 +160,17 @@ def run_command(
                 resolver,
                 workers=workers,
             )
-            try:
-                execution = RunHook(executor).run(
-                    name,
-                    kind=verb,
-                    local_hook_project=local_hook_project,
-                    target=target,
-                    file=file,
-                    content=prepared_content,
-                    content_file=content_file,
-                    inputs=inputs,
-                    args=args,
-                )
-            except HookExecutionError as exc:
-                _print_hook_failure(str(exc))
-                raise SystemExit(1) from exc
+            execution = RunHook(executor).run(
+                name,
+                kind=verb,
+                local_hook_project=local_hook_project,
+                target=target,
+                file=file,
+                content=prepared_content,
+                content_file=content_file,
+                inputs=inputs,
+                args=args,
+            )
             if isinstance(execution, TransformHookRun):
                 _render_hook_run_context(
                     execution.hook,
@@ -247,7 +250,7 @@ def _run_validate(
 
 
 def _split_project_hook_ref(name: str, project: Path | None) -> tuple[Path | None, str]:
-    """Accept the ``./pack/hook`` form ``new hook`` accepts for ``hook run``.
+    """Accept the ``./pack/hook`` form ``init hook`` accepts for ``hook run``.
 
     A path-shaped ref resolves as ``--project <parent>`` plus the trailing hook
     name; an explicit ``--project`` keeps precedence and the two forms may not
@@ -256,10 +259,10 @@ def _split_project_hook_ref(name: str, project: Path | None) -> tuple[Path | Non
     if not is_path_ref(name):
         return project, name
     if project is not None:
-        raise ConfigError("pass the hook as a ./pack/hook path or with --project, not both")
+        raise UsageError("pass the hook as a ./pack/hook path or with --project, not both")
     path = Path(name)
     if not path.name or path.parent in (Path("."), Path("")):
-        raise ConfigError("path hook refs must use <project>/<hook>")
+        raise UsageError("path hook refs must use <project>/<hook>")
     return path.parent, path.name
 
 
@@ -295,7 +298,7 @@ def _fixture_mapping(
 
 def _content_value(content: str | None) -> str | None:
     if content == "-":
-        return sys.stdin.read()
+        return recipe_ui().stdin.read()
     return content
 
 
@@ -351,7 +354,3 @@ def _print_hook_warnings(warnings: tuple[str, ...]) -> None:
     ui = recipe_ui()
     for warning in warnings:
         ui.message("warning", warning)
-
-
-def _print_hook_failure(message: str) -> None:
-    echo(message.rstrip(), err=True)

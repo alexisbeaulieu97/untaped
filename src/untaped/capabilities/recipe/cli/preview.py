@@ -11,7 +11,7 @@ from untaped.capabilities.recipe.application.inputs import has_sensitive_inputs
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capability_api import echo, render_rows, unified_diff_text
+from untaped.capability_api import echo, plural, render_rows, unified_diff_text
 
 PreviewMode = Literal["table", "diff", "none"]
 
@@ -56,12 +56,6 @@ class PlanCounts:
             unchanged=sum(1 for plan in settled if not plan.changes),
             files_changed=sum(plan.files_changed for plan in settled),
         )
-
-
-def plural(count: int, noun: str) -> str:
-    """Render a simple English count."""
-    suffix = "" if count == 1 else "s"
-    return f"{count} {noun}{suffix}"
 
 
 def preview_summary(plans: list[TargetPlan]) -> str:

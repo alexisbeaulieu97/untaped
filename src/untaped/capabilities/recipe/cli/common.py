@@ -12,7 +12,13 @@ from pathlib import Path
 import yaml
 
 from untaped.capabilities.recipe.settings import RecipeSettings
-from untaped.capability_api import ConfigError, UiContext, get_config_section, report_errors
+from untaped.capability_api import (
+    ConfigError,
+    UiContext,
+    UsageError,
+    get_config_section,
+    report_errors,
+)
 
 
 def settings() -> RecipeSettings:
@@ -42,7 +48,7 @@ def hook_timeout_seconds(override: float | None) -> float:
     """Resolve the effective hook timeout from the CLI override or settings."""
     timeout = settings().hook_timeout_seconds if override is None else override
     if timeout < 0:
-        raise ConfigError("--hook-timeout must be greater than or equal to 0")
+        raise UsageError("--hook-timeout must be greater than or equal to 0")
     return timeout
 
 

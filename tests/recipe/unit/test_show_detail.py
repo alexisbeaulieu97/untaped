@@ -166,7 +166,7 @@ def test_show_recipe_cli_emits_structured_recipe_record(tmp_path: Path) -> None:
     (library / "packs").mkdir(parents=True)
     shutil.copytree(source, library / "packs" / "ansible")
 
-    result = CliInvoker().invoke(app, ["show", "ansible/playbook", "--format", "json"])
+    result = CliInvoker().invoke(app, ["get", "ansible/playbook", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     detail = json.loads(result.stdout)

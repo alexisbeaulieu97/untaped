@@ -24,8 +24,11 @@ no control flow in recipes, and no state or inventory.
   use `--no-backup` only when the target tree is protected another way.
 - `--dry-run` plans and previews without writing or creating backups.
 - `--check` is the CI/drift mode: writes nothing, creates no backups, prompts
-  for nothing, and exits non-zero when any target would change or fail. Rows
-  carry `status: check`. Do not combine with `--interactive`.
+  for nothing, exits 3 when any target would change, and exits 1 when any
+  target fails. Rows carry `action: planned` (or `unchanged`). Combining it
+  with `--interactive` is a usage error (exit 2).
+- Declining the confirmation exits 1 with `cancelled; no changes made`; rows
+  for the targets that would have changed carry `action: cancelled`.
 - Preview goes to stderr; stdout carries only data rows. Normal apply and
   `--dry-run` default to `--preview table` (changed files, absolute paths,
   change kind, line counts); `--check` defaults to summary-only. `--preview
@@ -48,11 +51,11 @@ no control flow in recipes, and no state or inventory.
 
 ## Inputs
 
-- Provide fixed values with repeated `--var KEY=VALUE` or a `--vars file.yml`
+- Provide fixed values with repeated `--var KEY=VALUE` or a `--vars-file file.yml`
   YAML mapping (`--var` wins on conflict). Unknown input names are rejected.
 - For inputs declared `list` or `dict`, `--var` parses the value as YAML first:
   `--var 'cols=[name, owner]'`, `--var 'labels={team: platform}'`. Scalar
-  inputs keep literal-string semantics. `--vars` files may hold native lists
+  inputs keep literal-string semantics. `--vars-file` files may hold native lists
   and mappings.
 - `--input-from NAME='<jinja>'` overrides a per-target derivation source. It
   uses the same sandbox as recipe `from` (literal text, constants, and field
@@ -62,13 +65,13 @@ no control flow in recipes, and no state or inventory.
   candidates which fall through silently.
 - Precedence per input: fixed value or source override → recipe `from` →
   `--interactive` prompt → recipe default → `missing required input` error.
-  Combining `--var`/`--vars` with `--input-from` for one input is a usage
+  Combining `--var`/`--vars-file` with `--input-from` for one input is a usage
   error. `scope: global` inputs reject `--input-from` but accept `--var`.
-  A `default:` must coerce to the input's `type` (checked at load, so `check`
+  A `default:` must coerce to the input's `type` (checked at load, so `validate`
   reports it) and cannot be combined with `required: true`.
 - `--interactive` prompts for unresolved inputs (empty answer accepts the
   default; sensitive defaults are hidden but an empty answer still accepts).
-  Structured (`list`/`dict`) inputs cannot be prompted — pass `--var`/`--vars`.
+  Structured (`list`/`dict`) inputs cannot be prompted — pass `--var`/`--vars-file`.
 - Sensitive inputs render as `***` in rows, warnings, errors, and backup
   metadata, and file-level preview detail and diffs are suppressed for targets
   that resolve a sensitive input (not overridable by `--preview diff`). Real
@@ -84,47 +87,52 @@ no control flow in recipes, and no state or inventory.
   `record.path`. Records whose `kind` ends in `.summary` are skipped as
   non-targets. Repo-grain records such as `workspace.repo` must provide
   `target_path`; records without it are rejected before planning.
-- Piped stdin requires `--yes` before planning unless `--dry-run` or `--check`
-  is used. `--stdin --interactive` reads targets from stdin and prompts via
-  the controlling terminal, failing clearly without one.
+- With `--stdin`, the confirmation and `--interactive` prompts read the
+  controlling terminal. Without one, apply refuses before planning (exit 2)
+  unless `--yes`, `--dry-run`, or `--check` is given.
 - Input `from` expressions can read the per-target pipe `record`, so upstream
   tool output can drive both target selection and input values.
 - Prefer `--format json` for machine-readable summaries and `--format pipe`
   (NDJSON envelope `{"untaped":"1","kind":...,"record":...}`) when chaining
   into other untaped tools. `--columns`/`-c` narrows row fields. `--format`
   and `--columns` affect stdout rows only, never the stderr preview.
-- Emit kinds: `apply` → `recipe.outcome` (one row per target); `check` →
-  `recipe.check`; `test` → `recipe.test`; `hook run` → `recipe.hook_run`;
-  `list`/`show` → `recipe.recipe`, `recipe.hook`, `recipe.pack`; `backup` →
-  `recipe.backup`.
-- `recipe.outcome` rows carry `recipe` (canonical `pack/recipe` ref), `target`,
-  `status`, `files_changed`, `warnings` (semicolon-joined; accumulated
-  `helpers.warn(...)` messages, skipped optional transforms, a skip reason),
-  `error`, and resolved `inputs`. Statuses: `applied`, `unchanged` (plan
-  produced no writes), `skipped` (validate hook returned `helpers.skip(...)`;
-  not applicable, never a failure), `error`, `check`, `dry-run`, and `planned`
-  (confirmation declined). Skips are success (all-skip runs exit 0, no backup);
-  a skip is not `--check` drift. Summary lines gain a `N skipped` count.
+- Emit kinds: `apply` → `recipe.apply_outcome` (one row per target);
+  `validate` → `recipe.check`; `test` → `recipe.test`; `hook run` →
+  `recipe.hook_run`; `list`/`get` → `recipe.recipe`, `recipe.hook`,
+  `recipe.pack`; `add` → `recipe.add_outcome`; `remove` →
+  `recipe.remove_outcome`; `backup` → `recipe.backup`.
+- `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
+  `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`
+  messages, skipped optional transforms, a skip reason), `error` (`null`
+  unless failed), resolved `inputs`, and `recipe` (canonical `pack/recipe`
+  ref). Actions: `planned` (`--dry-run`/`--check` would change), `applied`,
+  `unchanged` (plan produced no writes), `skipped` (validate hook returned
+  `helpers.skip(...)`; not applicable, never a failure), `cancelled`
+  (confirmation declined), and `failed`. Skips are success (all-skip runs
+  exit 0, no backup); a skip is not `--check` drift. Summary lines gain a
+  `N skipped` count.
 
 ## Library and packs
 
-- `add <path|git-url>` installs a pack after previewing its recipes and hooks;
-  `--rev` picks a git revision (git URL sources only), `--name` overrides the
-  installed key (the pack identity everywhere), `--yes` skips confirmation.
+- `add <path|git-url>` installs a pack and prints its recipes and hooks on
+  stderr; it never prompts. `--rev` picks a git revision (git URL sources
+  only), `--name` overrides the installed key (the pack identity everywhere).
+  The row's `action` is `created`, or `updated` for a `--force` reinstall.
   The pack must load and contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
-- `list [--packs|--hooks]`, `show <ref>`, `edit <ref>`, `remove <pack>` operate
-  on the unified library. `list --hooks` and `show` cover built-ins such as
+- `list [--packs|--hooks]`, `get <ref>`, `edit <ref>`, `remove <pack>` operate
+  on the unified library. `list --hooks` and `get` cover built-ins such as
   `yaml_edit` (marked `(builtin)`; not editable). `remove` is destructive,
-  requires confirmation or `--yes`, and warns when the copy has local edits.
-- `check [ref|path]` is static preflight: no ref validates the whole library
+  requires confirmation or `--yes` (`--dry-run` previews), exits 1 on a
+  declined prompt, and warns when the copy has local edits.
+- `validate [ref|path]` is static preflight: no ref validates the whole library
   and `packs.toml`; a ref validates one pack, recipe, path, or built-in. It
   AST-scans hook modules without importing them, and for hook-declaring
   projects requires `uv.lock` and verifies freshness with `uv lock --check`
   (hookless packs and recipe projects are exempt). Every persisted `packs.toml`
   row must include its `content_hash`; malformed or incomplete rows fail closed
   before a library mutation. An installed pack whose `pyproject.toml` cannot be
-  parsed gets an error row in `check`, is skipped with a warning by `list`, and
+  parsed gets an error row in `validate`, is skipped with a warning by `list`, and
   is ignored by resolution unless named explicitly (then its error is shown).
   Template/copy sources containing `{{ input }}` tokens are only checked up to
   their literal directory prefix.
@@ -138,12 +146,12 @@ no control flow in recipes, and no state or inventory.
 
 ## Authoring packs
 
-- `new pack <name>`, `new recipe <pack>/<recipe>`, `new hook <pack>/<hook>`
-  scaffold pack projects; explicit local paths like `new hook ./my-pack/probe`
-  target `./my-pack`. `new recipe` also scaffolds a starter golden case;
-  `new hook` writes a typed stub plus a direct-call pytest (naming the kind and
+- `init pack <name>`, `init recipe <pack>/<recipe>`, `init hook <pack>/<hook>`
+  scaffold pack projects; explicit local paths like `init hook ./my-pack/probe`
+  target `./my-pack`. `init recipe` also scaffolds a starter golden case;
+  `init hook` writes a typed stub plus a direct-call pytest (naming the kind and
   `--kind` on success), and packs ship `pytest` with `pythonpath = ["src"]` so
-  `uv run --project <pack> pytest` works immediately. `new hook --kind X --force`
+  `uv run --project <pack> pytest` works immediately. `init hook --kind X --force`
   replaces both the stub and the paired pytest (e.g. to fix a wrong `--kind`);
   without `--force` an existing hook is refused.
 - Scaffolding refreshes the pack `uv.lock` and needs package-index access (or a
@@ -190,8 +198,8 @@ no control flow in recipes, and no state or inventory.
   message; unknown verdict objects and status values are rejected.
 - `hook run <ref> --target DIR` debugs one hook without a recipe: transforms
   need `--file` (stdout is exact transformed content, or `--diff`); validates
-  emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit non-zero only
-  on `fail`. The ref accepts the `./pack/hook` path form (resolves as
+  emit a `recipe.hook_run` verdict (`pass`/`fail`/`skip`) and exit 1 only
+  on `fail`; a hook that raises prints its traceback as an `error:` and exits 1. The ref accepts the `./pack/hook` path form (resolves as
   `--project ./pack` + hook name; combining with explicit `--project` is a usage
   error). A local hook project is used only when named with `--project PATH`
   or a `./path` ref — never adopted implicitly from the current directory, so
@@ -211,9 +219,10 @@ no control flow in recipes, and no state or inventory.
 
 ## Backups and safety
 
-- Every apply creates one backup bundle by default. `backup list|show|restore
-  <id>|prune` manage bundles; `show`/`restore` accept full ids, unambiguous
-  prefixes, or `latest`. Restore previews and confirms like apply, applies the
+- Every apply creates one backup bundle by default. `backup list|get|restore
+  <id>|prune` manage bundles; `get`/`restore` accept full ids, unambiguous
+  prefixes, or `latest`. `restore` and `prune` take `--dry-run`. Restore
+  previews and confirms like apply, applies the
   whole bundle as one transaction, and refuses to overwrite files changed after
   the backup unless `--force` is passed. Backups store text content only; mode
   and mtime are not preserved. `prune [--keep N] [--older-than DAYS]` falls
@@ -222,7 +231,9 @@ no control flow in recipes, and no state or inventory.
   absolute paths, `..` segments, and symlink traversal are rejected before any
   engine-mediated read or write, again after path-field rendering.
 - Installing a pack is installing code (same trust model as `pip install`, no
-  sandbox). Evaluate before trusting: the `add` preview, `show`, `check`'s
+  sandbox). Evaluate before trusting: the `add` summary, `get`, `validate`'s
   no-import scan, and the golden test harness.
 - Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.
+- Old spellings (`check`, `show`, `new`, `backup show`, `apply --vars`) still
+  work with a deprecation warning until 7.0.
