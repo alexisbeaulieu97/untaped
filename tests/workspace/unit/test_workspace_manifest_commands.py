@@ -401,5 +401,5 @@ def test_apply_workspace_branch_checkout_failure_returns_skip(tmp_path: Path) ->
         workspace
     )
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "checkout failed: checkout failed"

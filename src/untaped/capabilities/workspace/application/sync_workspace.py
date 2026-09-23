@@ -27,9 +27,9 @@ from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
 NOT_A_GIT_REPOSITORY = "not a git repository"
 
 
-class _Skip(Exception):
+class _Failed(Exception):
     """Module-private control-flow signal carrying a pre-formatted
-    ``"<step>: <git err>"`` detail string."""
+    ``"<step>: <git err>"`` detail string for a ``failed`` row."""
 
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
@@ -39,12 +39,12 @@ class _Skip(Exception):
 @contextmanager
 def _step(prefix: str) -> Iterator[None]:
     """Catch :class:`GitError` inside the body and re-raise as
-    :class:`_Skip` with ``prefix`` joined to the error message via
+    :class:`_Failed` with ``prefix`` joined to the error message via
     ``": "``. Keeps step-chained callers' decision trees linear."""
     try:
         yield
     except GitError as exc:
-        raise _Skip(f"{prefix}: {exc}") from exc
+        raise _Failed(f"{prefix}: {exc}") from exc
 
 
 @dataclass
@@ -158,8 +158,8 @@ class RepoSyncEngine:
             with _step("ff-only pull failed"):
                 self._git.ff_only_pull(local, branch=target)
             return _outcome(workspace, repo, "pull", f"{status.behind} commits")
-        except _Skip as exc:
-            return _outcome(workspace, repo, "skip", exc.detail)
+        except _Failed as exc:
+            return _outcome(workspace, repo, "failed", exc.detail)
 
     def prune_orphans(self, workspace: Workspace, manifest: WorkspaceManifest) -> list[SyncOutcome]:
         if not self._fs.is_dir(workspace.path):

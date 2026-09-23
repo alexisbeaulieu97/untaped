@@ -265,7 +265,8 @@ untaped workspace branch set main --workspace prod --apply
 ```
 
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
-one row per repo with `checkout`, `up-to-date`, or `skip`. Missing
+one row per repo with `checkout`, `up-to-date`, `skip`, or `failed`
+(a fetch, status, or checkout error; the command then exits `1`). Missing
 clones and repos without a target branch are skipped. If the target
 branch resolves to a commit on `origin` but not locally, `branch apply`
 creates a local tracking branch. If the target branch is missing locally
@@ -287,10 +288,16 @@ Reconcile each repo on disk with the manifest:
 | `clone`      | Repo is in the manifest but missing on disk.              |
 | `pull`       | Repo exists; on the manifest's target branch; behind.     |
 | `up-to-date` | Repo exists; nothing to do.                               |
-| `skip`       | Repo exists but on a different branch (with a reason).    |
+| `skip`       | Deliberately left alone: dirty, diverged, on a different branch, not a git repository, or an unsafe orphan (with a reason). |
+| `failed`     | A clone, fetch, status, or pull errored; `detail` names the step and git's error. |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 | `unavailable` | `--all` hit a registered workspace whose manifest could not be read — `repo` is empty and `detail` explains the manifest failure. |
+
+`sync` exits `1` when any row is `failed` (after printing every row), so
+scripts and CI notice a clone or fetch that did not happen; `skip` rows
+alone keep exit `0`. `add --sync` and `import --sync` follow the same
+rule.
 
 `--repo <repo>` / `-r <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as

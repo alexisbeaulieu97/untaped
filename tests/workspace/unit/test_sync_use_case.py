@@ -398,7 +398,7 @@ def test_prune_skips_symlinked_orphan(tmp_path: Path) -> None:
     assert target.is_dir()
 
 
-def test_clone_failure_yields_skip(tmp_path: Path) -> None:
+def test_clone_failure_yields_failed(tmp_path: Path) -> None:
     """``clone_with_reference`` raising ``GitError`` surfaces as a
     ``"clone failed: <git err>"`` row. Pins the uniform ``<step>:
     <error>`` prefixing that the ``_step`` contextmanager guarantees."""
@@ -408,11 +408,11 @@ def test_clone_failure_yields_skip(tmp_path: Path) -> None:
     )
     git = StubGit(clone_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "clone failed: clone failed"
 
 
-def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
+def test_fetch_failure_yields_failed(tmp_path: Path) -> None:
     """Bare-cache ``bare_fetch`` raising ``GitError`` surfaces as a
     ``"cache fetch failed: <git err>"`` row."""
     workspace = _seed_workspace(
@@ -421,11 +421,11 @@ def test_fetch_failure_yields_skip(tmp_path: Path) -> None:
     )
     git = StubGit(fetch_fail=True)
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "cache fetch failed: network down"
 
 
-def test_ensure_bare_failure_yields_skip(tmp_path: Path) -> None:
+def test_ensure_bare_failure_yields_failed(tmp_path: Path) -> None:
     """``ensure_bare`` raising ``GitError`` inside ``_ensure_bare_fresh``
     surfaces under the same ``"cache fetch failed: <git err>"`` prefix
     as ``bare_fetch`` failure — both are bare-cache plumbing from
@@ -442,7 +442,7 @@ def test_ensure_bare_failure_yields_skip(tmp_path: Path) -> None:
     )
     git = _BareErrorStub()
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "cache fetch failed: permission denied"
 
 
@@ -494,7 +494,7 @@ def test_fresh_clone_does_not_call_local_fetch(tmp_path: Path) -> None:
     assert "fetch" not in op_names
 
 
-def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
+def test_local_fetch_failure_yields_failed(tmp_path: Path) -> None:
     """A network-flaky `git fetch` on an existing clone is a skip, not abort.
     Surfaces as ``"fetch failed: <git err>"`` — distinct from the
     bare-cache prefix above so log-greppers can tell the two apart."""
@@ -505,11 +505,11 @@ def test_local_fetch_failure_yields_skip(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(on_disk=["svc-a"], local_fetch_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "fetch failed: network down"
 
 
-def test_status_failure_yields_skip(tmp_path: Path) -> None:
+def test_status_failure_yields_failed(tmp_path: Path) -> None:
     """``status()`` raising during sync surfaces as a
     ``"status failed: <git err>"`` row."""
     workspace = _seed_workspace(
@@ -519,7 +519,7 @@ def test_status_failure_yields_skip(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(on_disk=["svc-a"], status_fail={"svc-a"})
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "status failed: status failed"
     assert ("status", "svc-a") in git.events  # the right skip path was taken
 
@@ -540,7 +540,7 @@ def test_detached_head_with_no_target_branch_yields_skip(tmp_path: Path) -> None
     assert "detached head" in outcomes[0].detail
 
 
-def test_pull_failure_yields_skip(tmp_path: Path) -> None:
+def test_pull_failure_yields_failed(tmp_path: Path) -> None:
     """``ff_only_pull`` raising (e.g. non-fast-forward) surfaces as a
     ``"ff-only pull failed: <git err>"`` row."""
     workspace = _seed_workspace(
@@ -554,7 +554,7 @@ def test_pull_failure_yields_skip(tmp_path: Path) -> None:
         pull_fail={"svc-a"},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "failed"
     assert outcomes[0].detail == "ff-only pull failed: non-fast-forward pull"
 
 
@@ -766,7 +766,7 @@ def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> No
     tracker = BareFetchTracker()
 
     first = use_case(Workspace(name="a", path=ws_a_path), bare_tracker=tracker)
-    assert first[0].action == "skip"
+    assert first[0].action == "failed"
     assert first[0].detail == "cache fetch failed: transient network failure"
 
     # Second call must retry — the URL is unclaimed after the failure.
