@@ -123,6 +123,33 @@ def test_missing_setting_error_placeholder_uses_last_field_word() -> None:
     assert "`untaped config set demo.base_url <url>`" in str(error)
 
 
+def test_missing_secret_setting_suggests_prompt_not_argv() -> None:
+    error = str(missing_setting_error("demo", "token", secret=("token",)))
+
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "<token>" not in error
+
+
+def test_missing_setting_error_names_every_missing_field() -> None:
+    error = str(missing_setting_error("demo", "base_url", "token", secret=("token",)))
+
+    assert "demo.base_url and demo.token are not configured" in error
+    assert "`untaped config set demo.base_url <url>`" in error
+    assert "`untaped config set demo.token --prompt`" in error
+    assert "UNTAPED_DEMO__BASE_URL" in error
+    assert "UNTAPED_DEMO__TOKEN" in error
+
+
+def test_connected_client_reports_all_missing_fields_and_prompts_for_secrets() -> None:
+    config = DemoSettings(base_url="", token=None)
+
+    with pytest.raises(ConfigError) as excinfo:
+        connected_client(config, section="demo")
+    message = str(excinfo.value)
+    assert "demo.base_url and demo.token are not configured" in message
+    assert "`untaped config set demo.token --prompt`" in message
+
+
 @respx.mock
 def test_connected_client_sends_bearer_token_and_extra_headers() -> None:
     route = respx.get("https://api.example.com/user").mock(

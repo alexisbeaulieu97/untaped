@@ -18,7 +18,7 @@ from __future__ import annotations
 import email.utils
 import ssl
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import TracebackType
@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, SecretStr
 
+from untaped.config_schema import walk_settings
 from untaped.errors import (
     ConfigError,
     HttpError,
@@ -370,13 +371,31 @@ def _decode_json_dict(response: httpx.Response) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def missing_setting_error(section: str, field: str) -> ConfigError:
-    """Return the standard root command for a missing capability setting."""
-    placeholder = field.rsplit("_", maxsplit=1)[-1]
+def missing_setting_error(
+    section: str, field: str, *more_fields: str, secret: Collection[str] = ()
+) -> ConfigError:
+    """Return the standard error for missing capability settings.
+
+    Names every missing field with the root command (and env var) that sets
+    it. Fields listed in ``secret`` suggest ``config set … --prompt`` so the
+    value never lands in shell history.
+    """
+    fields = (field, *more_fields)
+    keys = [f"{section}.{name}" for name in fields]
+    commands = [
+        f"`untaped config set {section}.{name} --prompt`"
+        if name in secret
+        else f"`untaped config set {section}.{name} <{name.rsplit('_', maxsplit=1)[-1]}>`"
+        for name in fields
+    ]
+    env_vars = [f"UNTAPED_{section.upper()}__{name.upper()}" for name in fields]
+    if len(fields) == 1:
+        return ConfigError(
+            f"{keys[0]} is not configured (set it via {commands[0]} or {env_vars[0]})"
+        )
     return ConfigError(
-        f"{section}.{field} is not configured (set it via "
-        f"`untaped config set {section}.{field} <{placeholder}>` or "
-        f"UNTAPED_{section.upper()}__{field.upper()})"
+        f"{', '.join(keys[:-1])} and {keys[-1]} are not configured (set them via "
+        f"{' and '.join(commands)}, or {' / '.join(env_vars)})"
     )
 
 
@@ -394,17 +413,18 @@ def connected_client(
     """Validate a tool's connection settings and build an :class:`HttpClient`.
 
     Each ``required`` field must be present and non-blank on ``config``
-    (:class:`SecretStr` values are unwrapped); a missing one raises the
-    standard :func:`missing_setting_error`. ``bearer_token_field`` (when set
-    and configured) becomes an ``Authorization: Bearer`` header unless the
-    caller supplied their own. ``http`` defaults to the active profile's
-    resolved :class:`HttpSettings` (proxy/ca/verify), so per-profile HTTP
-    config takes effect without each tool threading it explicitly. ``retry``
-    defaults to a safe :class:`RetryPolicy` (transport + idempotent-method
-    429/503 backoff); pass ``None`` to disable, or a custom policy to opt a
-    POST endpoint in.
+    (:class:`SecretStr` values are unwrapped); missing ones are reported
+    together via the standard :func:`missing_setting_error`.
+    ``bearer_token_field`` (when set and configured) becomes an
+    ``Authorization: Bearer`` header unless the caller supplied their own.
+    ``http`` defaults to the active profile's resolved :class:`HttpSettings`
+    (proxy/ca/verify), so per-profile HTTP config takes effect without each
+    tool threading it explicitly. ``retry`` defaults to a safe
+    :class:`RetryPolicy` (transport + idempotent-method 429/503 backoff);
+    pass ``None`` to disable, or a custom policy to opt a POST endpoint in.
     """
     values: dict[str, str] = {}
+    missing: list[str] = []
     # ``base_url_field`` and ``bearer_token_field`` are always walked — even
     # when not listed in ``required`` — so the client can be built and the
     # bearer header set; de-dup keeps a field named twice from being read twice.
@@ -415,8 +435,11 @@ def connected_client(
             raw = raw.get_secret_value()
         value = str(raw).strip() if raw is not None else ""
         if field in required and not value:
-            raise missing_setting_error(section, field)
+            missing.append(field)
         values[field] = value
+    if missing:
+        secret = [d.path[0] for d in walk_settings(type(config)) if d.is_secret]
+        raise missing_setting_error(section, *missing, secret=secret)
 
     request_headers = dict(headers or {})
     if bearer_token_field is not None:
