@@ -24,6 +24,12 @@ class ManifestReader(Protocol):
     def read(self, workspace_dir: Path) -> WorkspaceManifest: ...
 
 
+class ManifestRemover(ManifestReader, Protocol):
+    """Read plus delete, for ``forget --prune``."""
+
+    def delete(self, workspace_dir: Path) -> None: ...
+
+
 class ExternalManifestReader(Protocol):
     """Read a manifest from an arbitrary source path (not a workspace dir).
 
@@ -36,7 +42,7 @@ class ExternalManifestReader(Protocol):
     def read_external(self, source: Path) -> ManifestSource: ...
 
 
-class ManifestRepository(ManifestReader, ExternalManifestReader, Protocol):
+class ManifestRepository(ManifestRemover, ExternalManifestReader, Protocol):
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None: ...
 
 
@@ -68,6 +74,8 @@ class Filesystem(Protocol):
     def mkdir(self, path: Path, *, parents: bool, exist_ok: bool) -> None: ...
     def iterdir(self, path: Path) -> Iterable[Path]: ...
     def rmtree(self, path: Path) -> None: ...
+    def unlink(self, path: Path) -> None: ...
+    def rmdir(self, path: Path) -> None: ...
 
 
 class PruneSafetyInspector(Protocol):
@@ -83,6 +91,7 @@ class GitInspector(PruneSafetyInspector, Protocol):
 class BranchOperations(GitInspector, Protocol):
     def fetch(self, repo_path: Path) -> None: ...
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None: ...
+    def has_branch(self, repo_path: Path, *, branch: str) -> bool: ...
 
 
 class GitOperations(BranchOperations, Protocol):
@@ -137,6 +146,7 @@ __all__ = [
     "GitInspector",
     "GitOperations",
     "ManifestReader",
+    "ManifestRemover",
     "ManifestRepository",
     "PruneSafetyInspector",
     "RegistryReader",

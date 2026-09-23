@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
+from untaped.api import first_validation_error
 from untaped.capabilities.workspace.application.ports import ManifestRepository
 from untaped.capabilities.workspace.domain import (
     DuplicateRepoName,
@@ -25,7 +28,10 @@ class AddRepo:
         branch: str | None = None,
     ) -> Repo:
         manifest = self._manifests.read(workspace.path)
-        repo = Repo.model_validate({"url": url, "name": repo_name, "branch": branch})
+        try:
+            repo = Repo.model_validate({"url": url, "name": repo_name, "branch": branch})
+        except ValidationError as exc:
+            raise WorkspaceError(f"invalid repo {url!r}: {first_validation_error(exc)}") from exc
         try:
             new_manifest = manifest.add_repo(repo)
         except DuplicateRepoUrl as exc:

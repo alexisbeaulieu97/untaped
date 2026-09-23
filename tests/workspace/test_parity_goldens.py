@@ -888,7 +888,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     # batch confirm: prompts once, decline exits cleanly without mutation (P34)
     assert fix["batch_confirm"]["skip"] == "--yes / -y"
-    assert fix["sync_prune_prompt"] is False
+    assert fix["sync_prune_prompt"] is True
     backend = ScriptedPromptBackend(confirms=[False])
     result = CliInvoker().invoke(
         _root().meta,  # type: ignore[union-attr]
@@ -901,7 +901,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert clone.is_dir()
     assert fix["batch_confirm"]["decline"] == "exits cleanly, no mutation"
 
-    # sync --prune never prompts (P34)
+    # sync --prune prompts only when there are safe orphans; none here (P34)
     result = _run(["workspace", "sync", "--workspace", "prod", "--prune"])
     assert result.exit_code == 0, result.output
 

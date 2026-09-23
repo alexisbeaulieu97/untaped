@@ -68,8 +68,9 @@ uses explicit manifest branch targets (`repos[].branch` or
 `defaults.branch`) and skips repos with no target. It checks out an
 existing local branch when present, or creates a local tracking branch
 when `origin/<branch>` resolves to a commit. If the branch is missing
-locally and no usable `origin/<branch>` exists, it creates a local
-branch from the current clean HEAD.
+locally and no usable `origin/<branch>` exists, it skips the repo with
+`branch not found locally or on origin` unless `--create` is passed, in
+which case it creates a local branch from the current clean HEAD.
 Subsequent `sync`s will not check out a different branch for you — if the
 on-disk branch diverges from the manifest's target, `sync` skips that
 repo with a warning, so a stale `defaults.branch` can't kidnap a repo
@@ -77,7 +78,12 @@ you've moved to a feature branch.
 
 `repos[].name` is what shows up on disk under the workspace directory
 and what you pass to `--repo` / `remove`. Names and URLs must both be
-unique within a manifest.
+unique within a manifest; names are compared case-insensitively, since
+`api` and `API` are the same directory on macOS and Windows. A repo name
+(explicit, via `--repo-name`, or derived from the URL) must be a single
+path segment: not empty, not `.` or `..`, no `/`, `\`, `:`, or NUL, and
+not `untaped.yml`. The same rule applies to the name passed to
+`workspace init`. A manifest that breaks it is rejected when loaded.
 
 ## Commands
 
@@ -117,6 +123,10 @@ location is `<workspaces_dir>/<name>` (the `workspaces_dir` profile setting
 defaults to `~/.untaped/workspaces` and is profile-overridable).
 Pass `-p / --path` to override the location for a one-off workspace
 that lives elsewhere. Writes a starter `untaped.yml` in the directory.
+`init` and `import` refuse a name that is already registered before
+writing anything, and remove the manifest they just wrote if
+registration fails. If the directory already has an `untaped.yml`, use
+`untaped workspace adopt <dir>` to register it instead.
 
 ### `adopt`
 
@@ -158,22 +168,33 @@ untaped workspace forget <name> [--prune] [--yes]
 
 Remove a workspace from the central registry. The on-disk manifest and
 clones are preserved by default — `forget` is the inverse of `init` /
-`adopt`, not of `sync --prune`. Pass `--prune` to also `rmtree` the
-workspace directory; the command previews and confirms the destructive
+`adopt`, not of `sync --prune`. Pass `--prune` to also delete what
+untaped manages in the workspace directory; the command previews the
+workspace name and its absolute path and confirms the destructive
 operation unless `--yes` / `-y` is passed. A declined prompt exits
-cleanly without changing registry state or files. Pruning is refused (mirroring
-`remove --prune`) when any git clone that would be deleted has unsafe
-local state. Before deleting the workspace directory, `forget --prune`
-inspects every existing declared repo path and every immediate child
-directory containing `.git`, including undeclared/orphan clones. It
-refuses on dirty/untracked/staged work, stash entries, or commits not
-reachable from local remote-tracking refs, including commits reachable
-only from local tags. Symlinked child entries are not inspected because
-the workspace deletion only unlinks them, not their targets. Loose
-files, non-git child directories, workspace-root git repos, and nested
-repos below non-repo child directories are outside this safety contract.
-A missing manifest or missing directory is tolerated; the registry entry
-is removed regardless.
+cleanly without changing registry state or files.
+
+`forget --prune` deletes only:
+
+- declared repo clones and immediate child directories containing their
+  own `.git` (undeclared/orphan clones), after they pass the safety check;
+- symlinks standing in for a declared repo or pointing at a git clone
+  (the link only, never its target);
+- `untaped.yml`.
+
+Everything else — loose files, non-git child directories, and declared
+repo directories without their own `.git` — is left alone. The
+workspace directory is removed only if it is empty afterwards;
+otherwise the command prints a `warning: left <path> in place: …` line
+naming what was kept.
+
+Pruning is refused (mirroring `remove --prune`) when any clone that
+would be deleted has unsafe local state or cannot be inspected: dirty,
+untracked, or staged work, stash entries, or commits not reachable from
+local remote-tracking refs, including commits reachable only from local
+tags. With `--prune`, a missing manifest is refused (delete the
+directory manually); a missing directory is tolerated. The registry
+entry is removed regardless.
 
 ### `import`
 
@@ -235,9 +256,10 @@ untaped workspace status --workspace prod --format raw --columns repo \
 
 ```bash
 untaped workspace branch set <branch> [--workspace <ws> | --path <dir>]
-                                [--repo <repo>] [--apply]
+                                [--repo <repo>] [--apply [--create]]
 untaped workspace branch unset [--workspace <ws> | --path <dir>] [--repo <repo>]
 untaped workspace branch apply [--workspace <ws> | --path <dir>] [--repo <repo>]...
+                               [--create]
 ```
 
 Set or unset branch metadata in `untaped.yml`. Without `--repo`, the
@@ -260,18 +282,22 @@ untaped workspace branch set main --workspace prod --apply
 ```
 
 `branch apply` fetches first, refuses dirty or diverged repos, and emits
-one row per repo with `checkout`, `up-to-date`, or `skip`. Missing
+one row per repo with `checkout`, `up-to-date`, `skip`, or `failed`
+(a fetch, status, or checkout error; the command then exits `1`). Missing
 clones and repos without a target branch are skipped. If the target
 branch resolves to a commit on `origin` but not locally, `branch apply`
 creates a local tracking branch. If the target branch is missing locally
-and no usable `origin` ref exists, it creates a local branch from the
-current clean HEAD.
+and no usable `origin` ref exists, the repo is skipped with `branch not
+found locally or on origin`, so a typo such as `branch set mian` cannot
+create a stray branch in every repo. Pass `--create` (to `branch apply`
+or `branch set --apply`) to create it from the current clean HEAD
+instead.
 
 ### `sync`
 
 ```bash
 untaped workspace sync [--workspace <ws> | --path <dir>]
-                       [--repo <repo>]... [--prune]
+                       [--repo <repo>]... [--prune [--yes]]
                        [--timeout <seconds>] [--parallel N] [--all]
 ```
 
@@ -282,10 +308,21 @@ Reconcile each repo on disk with the manifest:
 | `clone`      | Repo is in the manifest but missing on disk.              |
 | `pull`       | Repo exists; on the manifest's target branch; behind.     |
 | `up-to-date` | Repo exists; nothing to do.                               |
-| `skip`       | Repo exists but on a different branch (with a reason).    |
+| `skip`       | Deliberately left alone: dirty, diverged, on a different branch, not a git repository, or an unsafe orphan (with a reason). |
+| `failed`     | A clone, fetch, status, or pull errored; `detail` names the step and git's error. |
 | `remove`     | Local clone is not in the manifest, and `--prune` is set. |
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 | `unavailable` | `--all` hit a registered workspace whose manifest could not be read — `repo` is empty and `detail` explains the manifest failure. |
+
+A `pull` fast-forwards the checked-out branch to its configured upstream
+(`@{upstream}`), which need not be `origin/<same name>`. A branch with
+no upstream is skipped with `no upstream` rather than reported as up to
+date.
+
+`sync` exits `1` when any row is `failed` (after printing every row), so
+scripts and CI notice a clone or fetch that did not happen; `skip` rows
+alone keep exit `0`. `add --sync` and `import --sync` follow the same
+rule.
 
 `--repo <repo>` / `-r <repo>` limits sync to specific repos (repeatable);
 `--all` runs sync against every workspace in the registry — handy as
@@ -300,7 +337,15 @@ registry is the index and is not repaired automatically.
 `--timeout <seconds>` caps every git invocation in this sync run, so a
 hung remote can't strand a `--all` sweep. Defaults are 60s for
 local-only git ops and 600s for clone/fetch; passing `--timeout 30` caps
-both at 30s (CI-friendly fail-fast).
+both at 30s (CI-friendly fail-fast). A clone that fails or times out
+removes the directory it created, so the next sync retries the clone
+instead of treating a partial directory as an existing repo.
+
+Git runs non-interactively: stdin is closed and terminal/credential
+manager prompts are disabled (`GIT_TERMINAL_PROMPT=0`,
+`GCM_INTERACTIVE=never`), so a remote that needs credentials fails that
+repo instead of hanging the sweep. Configure an SSH agent or a
+credential helper for private remotes.
 
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
 This works for a single workspace and for `--all`; the cap is global
@@ -322,18 +367,24 @@ orphans are not deleted; they emit a `skip` row whose detail begins with
 `unsafe local state:`. Multiple blockers render as
 `unsafe local state: <first>; +N more`. Uninspectable/corrupt orphans
 remain distinct as `not a usable git repo`; symlinked git candidates are
-also skipped instead of followed or deleted. Unlike `remove --prune` and
-`forget --prune`, `sync --prune` has no confirmation prompt and no
-`--yes`; it keeps the automation-friendly skip-and-continue model. The
-same local remote-tracking ref boundary applies here: `sync --prune`
-does not fetch during the prune phase.
+also skipped instead of followed or deleted. Like `remove --prune` and
+`forget --prune`, `sync --prune` previews the safe orphans it is about
+to delete (workspace, repo, absolute path) and asks once for
+confirmation; pass `--yes` / `-y` to skip the prompt. Without a TTY and
+without `--yes` it prints the sync rows and exits `1` with an error
+instead of deleting; declining keeps every orphan. There is nothing to
+confirm, and no `--yes` needed, when no safe orphans exist. Safety is
+re-checked right before each delete. The same local remote-tracking ref
+boundary applies here: `sync --prune` does not fetch during the prune
+phase.
 
 Known limitations:
 
 - `-j` is a global cap, not host-aware. Pick values that fit your git
   remotes' SSH/HTTP limits.
-- Ctrl-C can still wait for in-flight git subprocesses until their
-  timeout expires.
+- Ctrl-C cancels queued repo jobs instead of draining them; the command
+  then waits only for in-flight git calls, which receive the same
+  terminal interrupt.
 - `git clone --reference` keeps working clones dependent on objects in
   the bare cache unless you later dissociate them. Deleting or
   corrupting the cache can damage referenced clones.
@@ -362,6 +413,12 @@ Per-repo git snapshot: `branch`, `ahead`, `behind`, `modified`,
 Under `--all`, a registered workspace whose manifest cannot be read
 emits one `action="unavailable"` row with `repo=""`, `cloned=false`,
 and a `detail` message; single-workspace status remains strict.
+A declared directory without its own `.git` reports `cloned=false` with
+`detail="not a git repository"`; git is never run there, so it cannot
+fall through to a repository enclosing the workspace (`sync` and
+`branch apply` skip such directories with the same detail). A clone
+whose `git status` fails keeps `cloned=true` and carries the error in
+`detail`.
 Pipe-friendly:
 
 ```bash
@@ -383,8 +440,9 @@ untaped workspace foreach <cmd> [--workspace <ws> | --path <dir>]
 ```
 
 Run a shell command in every repo of a workspace. Default
-`--format table` replays each repo's captured stdout / stderr with a
-`[<repo>]` prefix once that repo finishes — output is buffered per
+`--format table` streams each repo's captured stdout / stderr with a
+`[<repo>]` prefix as soon as that repo finishes (in completion order
+under `--parallel`) — output is buffered per
 repo, so chatty commands won't interleave but you also won't see
 anything until each repo exits. `--format json|yaml|raw|pipe` emits one
 `ForeachOutcome` row per repo (with `command` and `duration_s`) for
@@ -423,6 +481,11 @@ stderr whenever any repo failed — regardless of mode, so failures are
 never silent. The summary is suppressed in `json|yaml|raw` since each
 row's `returncode` carries the same information. In-flight commands
 always run to completion; only queued work is cancelled on fail-fast.
+
+Ctrl-C stops the sweep: the running command's process group (it runs
+in its own session, so the terminal's interrupt does not reach it) gets
+SIGTERM, then SIGKILL after a short grace period, and queued repos are
+cancelled rather than started.
 
 ### `path`
 

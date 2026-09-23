@@ -15,7 +15,7 @@ import pytest
 from untaped import bootstrap
 from untaped.capabilities.workspace import SPEC
 from untaped.capabilities.workspace.cli import app
-from untaped.testing import CliInvoker
+from untaped.testing import CliInvoker, ScriptedPromptBackend
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
 
@@ -80,6 +80,100 @@ def test_sync_repo_filter_limits_cloned_repos(
     assert result.stdout.splitlines() == ["upstream\tclone"]
     assert (target / "upstream").is_dir()
     assert not (target / "ui").exists()
+
+
+def test_sync_failed_clone_is_failed_row_and_exit_one(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    runner.invoke(
+        app,
+        [
+            "add",
+            f"file://{tmp_path / 'missing.git'}",
+            "--repo-name",
+            "gone",
+            "--workspace",
+            "smoke",
+        ],
+    )
+
+    result = runner.invoke(app, ["sync", "--workspace", "smoke", "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    rows = {row["repo"]: row for row in json.loads(result.stdout)}
+    assert rows["upstream"]["action"] == "clone"
+    assert rows["gone"]["action"] == "failed"
+    assert rows["gone"]["detail"].startswith("cache fetch failed: git clone failed: ")
+    assert str(isolated_cache) not in rows["gone"]["detail"]
+    assert "1 failed" in result.stderr
+
+
+def _workspace_with_safe_orphan(tmp_path: Path, upstream: Path) -> Path:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "smoke", "--path", str(target)])
+    runner.invoke(app, ["add", f"file://{upstream}", "--workspace", "smoke"])
+    synced = runner.invoke(app, ["sync", "--workspace", "smoke"])
+    assert synced.exit_code == 0, synced.output
+    removed = runner.invoke(app, ["remove", "upstream", "--workspace", "smoke"])
+    assert removed.exit_code == 0, removed.output
+    return target / "upstream"
+
+
+def test_sync_prune_requires_yes_when_non_interactive(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    orphan = _workspace_with_safe_orphan(tmp_path, upstream)
+
+    result = CliInvoker().invoke(app, ["sync", "--workspace", "smoke", "--prune"])
+
+    assert result.exit_code == 1, result.output
+    assert "--yes" in result.output
+    assert orphan.is_dir()
+
+
+def test_sync_prune_with_yes_removes_safe_orphan(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    orphan = _workspace_with_safe_orphan(tmp_path, upstream)
+
+    result = CliInvoker().invoke(
+        app, ["sync", "--workspace", "smoke", "--prune", "--yes", "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == [
+        {
+            "workspace": "smoke",
+            "repo": "upstream",
+            "action": "remove",
+            "detail": "no longer declared",
+        }
+    ]
+    assert not orphan.exists()
+
+
+def test_sync_prune_decline_keeps_orphan(
+    tmp_path: Path, upstream: Path, isolated_cache: Path
+) -> None:
+    orphan = _workspace_with_safe_orphan(tmp_path, upstream)
+    backend = ScriptedPromptBackend(confirms=[False])
+
+    result = CliInvoker().invoke(
+        app,
+        ["sync", "--workspace", "smoke", "--prune"],
+        interactive=True,
+        prompt_backend=backend,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert backend.calls == [("confirm", "Continue?")]
+    assert str(orphan) in result.output
+    assert orphan.is_dir()
 
 
 def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(

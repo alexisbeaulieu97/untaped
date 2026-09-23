@@ -3,10 +3,16 @@
 Domain layers depend on a ``GitRunner`` Protocol; this is the concrete
 adapter. Every call shells out to the system ``git`` binary; failures are
 mapped to :class:`GitError`.
+
+Every invocation is non-interactive (stdin closed, terminal and credential
+manager prompts disabled) so a missing credential fails fast instead of
+hanging a sweep, and per-repo calls set ``GIT_CEILING_DIRECTORIES`` so git
+never falls through to a repository enclosing the target directory.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -60,11 +66,18 @@ class GitRunner:
         # makes it idempotent. Don't replace with a non-idempotent
         # variant.
         bare.parent.mkdir(parents=True, exist_ok=True)
-        self._run(["clone", "--bare", url, str(bare)], timeout=self._slow_timeout)
+        self._clone(["clone", "--bare", url, str(bare)], dest=bare)
         return BareCacheEntry(path=bare, created=True)
 
     def bare_fetch(self, bare_path: Path) -> None:
-        self._run(["fetch", "--all", "--prune"], cwd=bare_path, timeout=self._slow_timeout)
+        # ``clone --bare`` configures no fetch refspec, so a bare
+        # ``fetch --all`` would only update FETCH_HEAD. Mirror branches
+        # explicitly (also repairs caches created before this refspec).
+        self._run(
+            ["fetch", "--prune", "origin", "+refs/heads/*:refs/heads/*"],
+            cwd=bare_path,
+            timeout=self._slow_timeout,
+        )
 
     # workspace clone ----------------------------------------------------
 
@@ -81,7 +94,21 @@ class GitRunner:
         if branch is not None:
             cmd += ["--branch", branch]
         cmd += [url, str(dest)]
-        self._run(cmd, timeout=self._slow_timeout)
+        self._clone(cmd, dest=dest)
+
+    def _clone(self, cmd: list[str], *, dest: Path) -> None:
+        """Run a clone; remove ``dest`` on failure if this call created it.
+
+        A clone killed by the timeout leaves a partial directory that
+        later syncs would treat as an existing (dirty or broken) clone.
+        """
+        existed = dest.exists()
+        try:
+            self._run(cmd, timeout=self._slow_timeout)
+        except GitError:
+            if not existed:
+                shutil.rmtree(dest, ignore_errors=True)
+            raise
 
     # status -------------------------------------------------------------
 
@@ -119,7 +146,16 @@ class GitRunner:
         )
 
     def ff_only_pull(self, repo_path: Path, *, branch: str) -> None:
-        self._run(["merge", "--ff-only", f"origin/{branch}"], cwd=repo_path)
+        # Merge the branch's configured upstream, not ``origin/<local name>``:
+        # a local branch may track a differently named remote branch.
+        del branch
+        self._run(["merge", "--ff-only", "@{upstream}"], cwd=repo_path)
+
+    def has_branch(self, repo_path: Path, *, branch: str) -> bool:
+        """Return whether ``branch`` exists locally or as ``origin/<branch>``."""
+        return self._ref_exists(repo_path, f"refs/heads/{branch}") or self._ref_commit_exists(
+            repo_path, f"refs/remotes/origin/{branch}"
+        )
 
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
         if self._ref_exists(repo_path, f"refs/heads/{branch}"):
@@ -193,29 +229,62 @@ class GitRunner:
         if self._git_path is None:
             raise GitError(f"`{self._git}` not found on PATH")
         effective_timeout = self._timeout if timeout is None else timeout
+        # Name only the subcommand: full argv carries absolute paths and
+        # refspecs that drown the useful part of the message.
+        label = f"git {args[0]}" if args else "git"
         try:
             result = subprocess.run(
                 [self._git_path, *args],
                 cwd=cwd,
+                env=_git_env(cwd),
+                stdin=subprocess.DEVNULL,
                 text=True,
                 capture_output=True,
                 check=False,
                 timeout=effective_timeout,
             )
         except subprocess.TimeoutExpired as exc:
-            raise GitError(f"git {' '.join(args)} timed out after {effective_timeout:g}s") from exc
+            raise GitError(f"{label} timed out after {effective_timeout:g}s") from exc
+        except OSError as exc:
+            raise GitError(f"{label} could not run: {exc}") from exc
         if result.returncode != 0:
-            stderr = (result.stderr or "").strip()
             raise GitError(
-                f"git {' '.join(args)} failed: {stderr or 'no stderr'}",
+                f"{label} failed: {_stderr_gist(result.stderr or '')}",
                 returncode=result.returncode,
             )
         return result.stdout if capture else ""
 
 
+_GIST_LIMIT = 300
+
+
+def _git_env(cwd: Path | None) -> dict[str, str]:
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+    if cwd is not None:
+        parent = str(Path(os.path.abspath(cwd)).parent)
+        existing = env.get("GIT_CEILING_DIRECTORIES")
+        env["GIT_CEILING_DIRECTORIES"] = os.pathsep.join(
+            [parent, existing] if existing else [parent]
+        )
+    return env
+
+
+def _stderr_gist(stderr: str) -> str:
+    """Keep the ``fatal:``/``error:`` lines (or the last line), bounded."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if not lines:
+        return "no stderr"
+    important = [line for line in lines if line.lower().startswith(("fatal:", "error:"))]
+    gist = "; ".join(important or lines[-1:])
+    if len(gist) > _GIST_LIMIT:
+        gist = gist[: _GIST_LIMIT - 3] + "..."
+    return gist
+
+
 def _parse_status(out: str) -> RepoStatus:
     """Parse ``git status --porcelain=v2 --branch`` output."""
     branch: str | None = None
+    upstream: str | None = None
     ahead = 0
     behind = 0
     modified = 0
@@ -224,6 +293,8 @@ def _parse_status(out: str) -> RepoStatus:
         if line.startswith("# branch.head "):
             head = line[len("# branch.head ") :].strip()
             branch = None if head == "(detached)" else head
+        elif line.startswith("# branch.upstream "):
+            upstream = line[len("# branch.upstream ") :].strip() or None
         elif line.startswith("# branch.ab "):
             parts = line[len("# branch.ab ") :].split()
             for p in parts:
@@ -237,6 +308,7 @@ def _parse_status(out: str) -> RepoStatus:
             modified += 1
     return RepoStatus(
         branch=branch,
+        upstream=upstream,
         ahead=ahead,
         behind=behind,
         modified=modified,
