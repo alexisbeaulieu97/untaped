@@ -6,6 +6,7 @@ The profile surface is capability-agnostic (it operates on the shared
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -144,3 +145,21 @@ def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_conf
         reset_profile_override(token)
     assert result.exit_code == 1
     assert "'typo' (from flag) is not defined" in result.stderr
+
+
+def test_list_json_marks_active_with_booleans(_isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    app = build_root_profile_app(command="untaped")
+    result = CliInvoker().invoke(app, ["list", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    active = {row["name"]: row["active"] for row in json.loads(result.stdout)}
+    assert active == {"default": False, "prod": True, "stage": False}
+
+
+def test_list_table_keeps_the_check_mark(_isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    app = build_root_profile_app(command="untaped")
+    result = CliInvoker().invoke(
+        app, ["list", "--format", "raw", "--columns", "name", "--columns", "active"]
+    )
+    assert "prod\t✓" in result.stdout.splitlines()

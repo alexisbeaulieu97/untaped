@@ -221,7 +221,7 @@ def _list(
             entries = list_settings(reveal_secrets=show_secrets)
             for section, error in list_settings.errors.items():
                 echo(f"warning: section {section!r} is invalid: {error}", err=True)
-        rows = [setting_entry_row(e) for e in entries]
+        rows = [setting_entry_row(e, human=fmt in ("table", "raw")) for e in entries]
         emit(rows, fmt=fmt, columns=columns)
 
 
@@ -230,7 +230,7 @@ def _get(ctx: RootConfigContext, key: str, *, fmt: OutputFormat, show_secrets: b
         resolved = ctx.resolve_key(key)
         entry = GetSetting(SettingsFileRepository())(resolved, reveal_secrets=show_secrets)
         columns = ["value"] if fmt == "raw" else None
-        emit(setting_entry_row(entry), fmt=fmt, columns=columns)
+        emit(setting_entry_row(entry, human=fmt in ("table", "raw")), fmt=fmt, columns=columns)
 
 
 def _set(

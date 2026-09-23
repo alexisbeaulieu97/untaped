@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, SecretStr
@@ -37,47 +38,61 @@ class Source:
 class SettingEntry(BaseModel):
     """One row in the ``untaped config list`` table.
 
-    Secret values are pre-masked into ``value`` (``"***"``), so callers don't
-    need a separate ``is_secret`` flag.
+    ``value``/``default`` are native JSON-compatible values (``None`` when
+    unset). Secret values are pre-masked (``"***"``) unless revealed, so
+    callers don't need a separate ``is_secret`` flag.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     key: str
-    value: str
-    default: str
+    value: object
+    default: object
     source: Source
     profile: str | None = None
     """Set in ``--all-profiles`` mode to name the profile owning this row."""
 
 
-def setting_entry_row(entry: SettingEntry) -> dict[str, object]:
-    """Render a setting entry as the config list/get row contract."""
+UNSET_GLYPH = "—"
+"""Human-output placeholder for an unset value (table/raw only)."""
+
+
+def setting_entry_row(entry: SettingEntry, *, human: bool) -> dict[str, object]:
+    """Render a setting entry as the config list/get row contract.
+
+    ``human`` (table/raw output) renders display text — ``—`` for unset
+    values, ``""`` for no profile. Structured output keeps native values
+    (``null``, booleans, numbers).
+    """
     return {
         "key": entry.key,
-        "value": entry.value,
-        "default": entry.default,
+        "value": _human(entry.value) if human else entry.value,
+        "default": _human(entry.default) if human else entry.default,
         "source": entry.source.label,
-        "profile": entry.profile or "",
+        "profile": (entry.profile or "") if human else entry.profile,
     }
 
 
-def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> str:
-    """Format a setting value for table display."""
+def _human(value: object) -> str:
+    return UNSET_GLYPH if value is None else str(value)
+
+
+def display_value(descriptor: FieldDescriptor, value: Any, *, reveal_secrets: bool) -> object:
+    """Normalize a setting value for output: native, masked, JSON-compatible."""
     if value is None:
-        return "—"
+        return None
     if descriptor.is_secret and not reveal_secrets:
         return "***"
     if isinstance(value, SecretStr):
         return value.get_secret_value() if reveal_secrets else "***"
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, bool | int | float | str):
+        return value
     return str(value)
 
 
-def display_default(descriptor: FieldDescriptor, *, reveal_secrets: bool = False) -> str:
+def display_default(descriptor: FieldDescriptor, *, reveal_secrets: bool = False) -> object:
     if not descriptor.has_default or descriptor.default is None:
-        return "—"
-    if descriptor.is_secret and not reveal_secrets:
-        return "***"
-    if isinstance(descriptor.default, SecretStr):
-        return descriptor.default.get_secret_value() if reveal_secrets else "***"
-    return str(descriptor.default)
+        return None
+    return display_value(descriptor, descriptor.default, reveal_secrets=reveal_secrets)

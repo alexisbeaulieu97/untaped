@@ -87,7 +87,7 @@ def _prompt_default(
     target_profile: str | None,
 ) -> str | None:
     entry = GetSetting(repo)(full_key)
-    value = str(entry.value)
+    value = entry.value
     if target_profile is not None and entry.source.kind != "env":
         scoped = repo.profile_value_for(descriptor, target_profile)
         value = (
@@ -95,11 +95,11 @@ def _prompt_default(
             if scoped is None
             else display_value(descriptor, scoped, reveal_secrets=False)
         )
-    if value in {"", "—", "***"}:
+    if value is None or value in {"", "***"}:
         return None
-    if descriptor.annotation is bool:
-        return value.lower()
-    return value
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
 
 
 def _literal_values(descriptor: FieldDescriptor) -> list[object]:

@@ -7,6 +7,7 @@ blocks reading or repairing the rest of the config through the CLI.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -176,3 +177,47 @@ def test_set_accepts_builtin_ui_theme(_isolated_config: Path) -> None:
     result = _invoke(["set", "ui.theme", "high-contrast"])
     assert result.exit_code == 0, result.output
     assert _default_profile(_isolated_config)["ui"] == {"theme": "high-contrast"}
+
+
+# ── structured output carries native values ──────────────────────────────────
+
+
+def test_get_json_emits_native_values(_isolated_config: Path) -> None:
+    result = _invoke(["get", "http.verify_ssl", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)
+    assert row["value"] is True
+    assert row["default"] is True
+    assert row["source"] == "default"
+
+
+def test_get_json_emits_null_for_unset_values(_isolated_config: Path) -> None:
+    result = _invoke(["get", "github.token", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    row = json.loads(result.stdout)
+    assert row["value"] is None
+    assert row["default"] is None
+
+
+def test_get_json_keeps_secrets_masked(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "profiles:\n  default:\n    github:\n      token: t0k\n")
+    row = json.loads(_invoke(["get", "github.token", "--format", "json"]).stdout)
+    assert row["value"] == "***"
+
+
+def test_list_json_emits_native_values(_isolated_config: Path) -> None:
+    result = _invoke(["list", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    rows = {row["key"]: row for row in json.loads(result.stdout)}
+    assert rows["http.timeout"]["value"] == 30.0
+    assert rows["http.ca_bundle"]["value"] is None
+    assert rows["http.verify_ssl"]["value"] is True
+    assert "—" not in result.stdout
+
+
+def test_table_and_raw_keep_display_glyphs(_isolated_config: Path) -> None:
+    raw = _invoke(["get", "github.token"])
+    assert raw.stdout.strip() == "—"
+    table = _invoke(["list", "--format", "raw", "--columns", "key", "--columns", "value"])
+    assert "http.ca_bundle\t—" in table.stdout
+    assert "http.verify_ssl\tTrue" in table.stdout
