@@ -77,7 +77,12 @@ you've moved to a feature branch.
 
 `repos[].name` is what shows up on disk under the workspace directory
 and what you pass to `--repo` / `remove`. Names and URLs must both be
-unique within a manifest.
+unique within a manifest; names are compared case-insensitively, since
+`api` and `API` are the same directory on macOS and Windows. A repo name
+(explicit, via `--repo-name`, or derived from the URL) must be a single
+path segment: not empty, not `.` or `..`, no `/`, `\`, `:`, or NUL, and
+not `untaped.yml`. The same rule applies to the name passed to
+`workspace init`. A manifest that breaks it is rejected when loaded.
 
 ## Commands
 
