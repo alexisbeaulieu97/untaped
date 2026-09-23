@@ -78,11 +78,11 @@ SkillNamesArgument = Annotated[
 ]
 SkillStdinOption = Annotated[
     bool,
-    Parameter(name="--stdin", help="Read skill names from stdin."),
+    Parameter(name="--stdin", negative="", help="Read skill names from stdin."),
 ]
 AllSkillsOption = Annotated[
     bool,
-    Parameter(name="--all", help="Install every registered skill."),
+    Parameter(name="--all", negative="", help="Install every registered skill."),
 ]
 SkillTargetOption = Annotated[
     SkillInstallTarget,
@@ -93,7 +93,7 @@ SkillTargetOption = Annotated[
 ]
 SkillForceOption = Annotated[
     bool,
-    Parameter(name="--force", help="Replace existing target skill dirs."),
+    Parameter(name="--force", negative="", help="Replace existing target skill dirs."),
 ]
 SkillScopeOption = Annotated[
     SkillInstallScope,

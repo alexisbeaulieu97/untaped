@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -80,6 +81,38 @@ LimitOption = Annotated[
     ),
 ]
 """Shared ``--limit N`` (``>= 1``; ``None`` means no limit)."""
+
+
+# Keyed by ``id(app)``: cyclopts apps are unhashable. A finalizer drops the
+# entry with the app, so a recycled id never inherits stale aliases.
+_DEPRECATED_ALIASES: dict[int, dict[str, str]] = {}
+
+
+def deprecated_alias(app: App, old: str, new: str) -> None:
+    """Keep ``old`` working as a hidden, deprecated spelling of ``new`` on ``app``.
+
+    For a renamed command or group, ``app`` is its parent and the names are
+    command names (``deprecated_alias(jira_app, "me", "whoami")``). For a
+    renamed option or short flag, ``app`` is the command itself and the names
+    are flags (``deprecated_alias(logs_app, "-f", "--follow")``). The root
+    shell rewrites the old token to the new one before dispatch and prints
+    ``warning: `old` is deprecated; use `new``` on stderr, so the old spelling
+    never appears in ``--help``. Aliases apply to invocations through the
+    ``untaped`` root (test them with ``build_root_app``); they are removed in
+    the next major release.
+    """
+    if old.startswith("-") != new.startswith("-"):
+        raise ValueError(f"alias {old!r} -> {new!r} mixes a command and an option")
+    key = id(app)
+    if key not in _DEPRECATED_ALIASES:
+        _DEPRECATED_ALIASES[key] = {}
+        weakref.finalize(app, _DEPRECATED_ALIASES.pop, key, None)
+    _DEPRECATED_ALIASES[key][old] = new
+
+
+def deprecated_aliases(app: App) -> Mapping[str, str]:
+    """The ``{old: new}`` deprecated spellings registered on ``app``."""
+    return _DEPRECATED_ALIASES.get(id(app), {})
 
 
 def create_app(*, name: str, help: str = "") -> App:

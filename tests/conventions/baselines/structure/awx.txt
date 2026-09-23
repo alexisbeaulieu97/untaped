@@ -28,13 +28,3 @@ untaped.capabilities.awx.application.ports.UnifiedTemplateRepository::port-adapt
 untaped.capabilities.awx.application.ports.WorkflowNodeRepository::port-adapter-clash
 untaped.capabilities.awx.application.scheduling.ScheduleInterrupted::exception-name
 untaped.capabilities.awx.application.selected_actions.ActionsInterrupted::exception-name
-untaped.capabilities.awx.application.suites.ports.Filesystem::protocol-location
-untaped.capabilities.awx.application.suites.ports.FkLookup::protocol-location
-untaped.capabilities.awx.application.suites.ports.FkPrefetcher::protocol-location
-untaped.capabilities.awx.application.suites.ports.Launcher::protocol-location
-untaped.capabilities.awx.application.suites.ports.Parser::protocol-location
-untaped.capabilities.awx.application.suites.ports.Prompt::protocol-location
-untaped.capabilities.awx.application.suites.ports.VarsResolver::protocol-location
-untaped.capabilities.awx.application.suites.ports.Watcher::protocol-location
-untaped.capabilities.awx.application.suites.resolver.UnknownLaunchFieldWarning::exception-base
-untaped.capabilities.awx.application.suites.resolver.UnknownLaunchFieldWarning::exception-name

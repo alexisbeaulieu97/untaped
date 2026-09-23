@@ -92,11 +92,17 @@ def _show_command(
     *,
     raw: Annotated[
         bool,
-        Parameter(name="--raw", help="Show only the keys this profile sets (no `default` merge)."),
+        Parameter(
+            name="--raw",
+            negative="",
+            help="Show only the keys this profile sets (no `default` merge).",
+        ),
     ] = False,
     show_secrets: Annotated[
         bool,
-        Parameter(name="--show-secrets", help="Reveal secret values instead of `***`."),
+        Parameter(
+            name="--show-secrets", negative="", help="Reveal secret values instead of `***`."
+        ),
     ] = False,
     fmt: Annotated[
         ShowFormat,

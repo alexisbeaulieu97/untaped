@@ -47,6 +47,10 @@ ansible source edit::missing-help::--remove-ref-kind
 ansible source edit::missing-help::--remove-ref-pattern
 ansible source edit::missing-help::--remove-repo
 ansible source edit::missing-help::--remove-team
+ansible source edit::needless-negative::--no-clear-path
+ansible source edit::needless-negative::--no-clear-ref-kind
+ansible source edit::needless-negative::--no-clear-ref-pattern
+ansible source edit::needless-negative::--no-clear-ref-scan-default
 ansible source edit::positional-or-keyword::--name
 ansible source refresh::positional-or-keyword::--name
 ansible source remove::destructive-controls::--dry-run

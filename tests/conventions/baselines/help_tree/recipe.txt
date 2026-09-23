@@ -13,8 +13,11 @@ recipe backup show::verb::show
 recipe check::verb::check
 recipe hook run::empty-negative::--empty-arg
 recipe hook run::empty-negative::--empty-input
+recipe new hook::needless-negative::--no-lock
 recipe new hook::verb::hook
+recipe new pack::needless-negative::--no-lock
 recipe new pack::verb::pack
+recipe new recipe::needless-negative::--no-lock
 recipe new recipe::verb::recipe
 recipe remove::destructive-controls::--dry-run
 recipe remove::mutation-format::remove

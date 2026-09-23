@@ -109,6 +109,7 @@ APPROVED_HELPERS = frozenset(
         "UsageError",
         "UtcTimestamp",
         "YesOption",
+        "deprecated_alias",
         "hint",
         "not_found",
         "plural",

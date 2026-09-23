@@ -214,7 +214,9 @@ UX conventions: core helpers and enforcement (see `docs/conventions.md`).
   `OperationCancelledError`, `ExitCode`, `plural`, `q`, `not_found`, `hint`,
   `summary`, `YesOption`, `DryRunOption`, `StdinOption`, `ParallelOption`,
   `LimitOption`, `OutcomeRecord`, `TargetRecord`, `CheckRecord`,
-  `UtcTimestamp`, `read_stdin_input`, `StdinInput` and `read_records`.
+  `UtcTimestamp`, `read_stdin_input`, `StdinInput`, `read_records` and
+  `deprecated_alias`, which keeps a renamed command or flag working as a
+  hidden spelling that prints a deprecation warning.
   `read_identifiers`/`read_records` accept `accept_kinds` (a record of another
   kind exits 2). `UiContext` gains `success`, `confirm_action` and `terminal`.
   `finish()` takes `predicate_hit`, and `BatchOutcome` gains `cancelled`.
@@ -231,8 +233,10 @@ UX conventions: core helpers and enforcement (see `docs/conventions.md`).
   (`untaped.setting`, `untaped.profile` (was `profile.profile`),
   `untaped.capability`, `untaped.doctor_check`, `untaped.skill`). "Profile not
   found" errors read `profile not found: 'x'; known: …` with a `hint:` line.
-  The meaningless `--empty-columns` flag is gone. `skills install` takes
-  names positionally only (no `--skill-names`).
+  The meaningless `--empty-columns` flag is gone, and so are `--no-*`
+  flags for root options that default to off (`--no-show-secrets`,
+  `--no-stdin`, ...). `skills install` takes names positionally only (no
+  `--skill-names`).
 - `tests/conventions/` lints the help tree, messages, capability structure and
   layer imports against per-capability baselines that may only shrink.
 
