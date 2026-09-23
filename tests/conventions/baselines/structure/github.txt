@@ -1,0 +1,6 @@
+# Known violations of the structure convention check for 'github'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+src/untaped/capabilities/github/errors.py::errors-module
+tests/github/unit/test_cli_scopes.py::private-test-import::untaped.capabilities.github.cli._scopes:_scopes
+untaped.capabilities.github.settings.GithubSettings::settings-not-frozen::profile

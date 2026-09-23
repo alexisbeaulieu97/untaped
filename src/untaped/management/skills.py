@@ -67,6 +67,7 @@ def build_root_skills_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @app.command(name="install")
     def install_command(
         skill_names: SkillNamesArgument = None,
+        /,
         *,
         stdin: SkillStdinOption = False,
         all_skills: AllSkillsOption = False,

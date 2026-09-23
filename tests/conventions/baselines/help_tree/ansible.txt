@@ -1,0 +1,66 @@
+# Known violations of the help_tree convention check for 'ansible'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+ansible alias add::mutation-format::add
+ansible alias add::positional-or-keyword::--alias
+ansible alias add::positional-or-keyword::--repo
+ansible alias remove::destructive-controls::--dry-run
+ansible alias remove::destructive-controls::--yes
+ansible alias remove::mutation-format::remove
+ansible alias remove::positional-or-keyword::--alias
+ansible graph::empty-negative::--empty-org
+ansible graph::empty-negative::--empty-path
+ansible graph::empty-negative::--empty-ref-kind
+ansible graph::empty-negative::--empty-ref-pattern
+ansible graph::empty-negative::--empty-repo
+ansible graph::empty-negative::--empty-source
+ansible graph::empty-negative::--empty-team
+ansible graph::verb::graph
+ansible source edit::empty-negative::--empty-add-org
+ansible source edit::empty-negative::--empty-add-path
+ansible source edit::empty-negative::--empty-add-ref-kind
+ansible source edit::empty-negative::--empty-add-ref-pattern
+ansible source edit::empty-negative::--empty-add-repo
+ansible source edit::empty-negative::--empty-add-team
+ansible source edit::empty-negative::--empty-remove-org
+ansible source edit::empty-negative::--empty-remove-path
+ansible source edit::empty-negative::--empty-remove-ref-kind
+ansible source edit::empty-negative::--empty-remove-ref-pattern
+ansible source edit::empty-negative::--empty-remove-repo
+ansible source edit::empty-negative::--empty-remove-team
+ansible source edit::missing-help::--add-org
+ansible source edit::missing-help::--add-path
+ansible source edit::missing-help::--add-ref-kind
+ansible source edit::missing-help::--add-ref-pattern
+ansible source edit::missing-help::--add-repo
+ansible source edit::missing-help::--add-team
+ansible source edit::missing-help::--clear-org
+ansible source edit::missing-help::--clear-path
+ansible source edit::missing-help::--clear-ref-kind
+ansible source edit::missing-help::--clear-ref-pattern
+ansible source edit::missing-help::--clear-ref-scan-default
+ansible source edit::missing-help::--clear-repo
+ansible source edit::missing-help::--clear-team
+ansible source edit::missing-help::--remove-org
+ansible source edit::missing-help::--remove-path
+ansible source edit::missing-help::--remove-ref-kind
+ansible source edit::missing-help::--remove-ref-pattern
+ansible source edit::missing-help::--remove-repo
+ansible source edit::missing-help::--remove-team
+ansible source edit::positional-or-keyword::--name
+ansible source refresh::positional-or-keyword::--name
+ansible source remove::destructive-controls::--dry-run
+ansible source remove::destructive-controls::--yes
+ansible source remove::mutation-format::remove
+ansible source remove::positional-or-keyword::--name
+ansible source save::empty-negative::--empty-org
+ansible source save::empty-negative::--empty-path
+ansible source save::empty-negative::--empty-ref-kind
+ansible source save::empty-negative::--empty-ref-pattern
+ansible source save::empty-negative::--empty-repo
+ansible source save::empty-negative::--empty-team
+ansible source save::positional-or-keyword::--name
+ansible source save::verb::save
+ansible source show::positional-or-keyword::--name
+ansible source show::verb::show
+ansible source status::positional-or-keyword::--name

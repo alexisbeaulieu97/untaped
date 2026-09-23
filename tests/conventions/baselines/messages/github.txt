@@ -1,0 +1,12 @@
+# Known violations of the messages convention check for 'github'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+src/untaped/capabilities/github/application/search.py::error-case::GitHub repository search query text length {} exceeds {}; narrow the fre
+src/untaped/capabilities/github/application/search.py::error-case::GitHub {} search has {} boolean operators; GitHub allows at most {}. Nar
+src/untaped/capabilities/github/cli/search_commands.py::echo-warning::warning: {}
+src/untaped/capabilities/github/cli/sweep_commands.py::echo-warning::warning: refresh failed for {} repo{}; scanned cached copies
+src/untaped/capabilities/github/cli/sweep_commands.py::echo-warning::warning: stale {}: {}
+src/untaped/capabilities/github/cli/sweep_commands.py::echo-warning::warning: unscanned {}: {}
+src/untaped/capabilities/github/infrastructure/git_corpus.py::echo-warning::warning: {}
+src/untaped/capabilities/github/infrastructure/graphql.py::usage-phrase::chunk_size must be >= 1, got {}
+src/untaped/capabilities/github/infrastructure/graphql.py::usage-phrase::chunk_size must be >= 1, got {}

@@ -1,0 +1,15 @@
+# Known violations of the structure convention check for 'ansible'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+src/untaped/capabilities/ansible/cli/graph_commands.py::foreign-section::github
+src/untaped/capabilities/ansible/cli/source_commands.py::foreign-section::github
+tests/ansible/unit/test_cli.py::private-test-import::untaped.capabilities.ansible.cli:_refresh
+tests/ansible/unit/test_refresh_git_index.py::private-test-import::untaped.capabilities.ansible.application.refresh_git_index:_repo_candidate
+tests/ansible/unit/test_refresh_git_index.py::private-test-import::untaped.capabilities.ansible.application.refresh_git_index:_source_refresh_fingerprint
+untaped.capabilities.ansible.application.graph._EdgeBatchRead::protocol-location
+untaped.capabilities.ansible.application.refresh_git_index.GitCache::protocol-location
+untaped.capabilities.ansible.infrastructure.auto_ref_probe._RefProbe::protocol-location
+untaped.capabilities.ansible.infrastructure.git_ref_probe._LsRemoteGit::protocol-location
+untaped.capabilities.ansible.infrastructure.github_ref_probe._BatchRepoRefsClient::protocol-location
+untaped.capabilities.ansible.settings.AnsibleSettings::settings-not-frozen::profile
+untaped.capabilities.ansible.settings.AnsibleState::settings-not-frozen::state

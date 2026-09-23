@@ -1,0 +1,18 @@
+# Known violations of the help_tree convention check for 'jira'.
+# This list may only shrink: fix an entry and delete its line.
+# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
+jira board list::missing-help::--type
+jira issue assigned::verb::assigned
+jira issue comment::missing-help::--body-file
+jira issue comment::verb::comment
+jira issue create::empty-negative::--empty-field
+jira issue create::empty-negative::--empty-json-field
+jira issue edit::empty-negative::--empty-field
+jira issue edit::empty-negative::--empty-json-field
+jira issue edit::missing-help::--body-file
+jira issue edit::missing-help::--description
+jira issue edit::missing-help::--summary
+jira issue search::verb::search
+jira issue transition::verb::transition
+jira issue transitions::verb::transitions
+jira me::verb::me
