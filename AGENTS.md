@@ -96,7 +96,7 @@ rules below.
 
 ```bash
 uv sync                                         # install / sync the app
-uv run pytest                                   # tests with coverage (gate: 80%)
+uv run pytest                                   # tests (add `--cov` for the 89% coverage gate, as CI does)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run mypy                                     # strict types
 ```
