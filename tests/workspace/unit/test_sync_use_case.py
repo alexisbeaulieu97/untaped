@@ -51,7 +51,7 @@ def test_clones_missing_repo(tmp_path: Path) -> None:
     )
     git = StubGit()
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "clone"
+    assert outcomes[0].action == "cloned"
     assert any(e[0] == "clone" for e in git.events)
 
 
@@ -91,7 +91,7 @@ def test_skips_declared_dir_without_git_metadata(tmp_path: Path) -> None:
     (workspace.path / "svc-a").mkdir()
     git = StubGit()
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "not a git repository"
     assert git.events == []
 
@@ -104,7 +104,7 @@ def test_skips_branch_without_upstream(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(statuses={"svc-a": RepoStatus(branch="local-only", upstream=None)})
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "no upstream"
     assert not any(e[0] == "pull" for e in git.events)
 
@@ -120,7 +120,7 @@ def test_skips_dirty_existing_repo(tmp_path: Path) -> None:
         statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", modified=2)},
     )
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert "dirty" in outcomes[0].detail
 
 
@@ -135,7 +135,7 @@ def test_skips_diverged_repo(tmp_path: Path) -> None:
         statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", ahead=2, behind=3)},
     )
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert "diverged" in outcomes[0].detail
 
 
@@ -153,7 +153,7 @@ def test_skips_wrong_branch_when_target_set(tmp_path: Path) -> None:
         statuses={"svc-a": RepoStatus(branch="feature/x")},
     )
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert "expected main" in outcomes[0].detail
 
 
@@ -168,7 +168,7 @@ def test_pulls_when_behind_clean(tmp_path: Path) -> None:
         statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", behind=3)},
     )
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "pull"
+    assert outcomes[0].action == "pulled"
     assert "3 commits" in outcomes[0].detail
     assert ("pull", "svc-a", "main") in git.events
 
@@ -184,7 +184,7 @@ def test_up_to_date(tmp_path: Path) -> None:
         statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main")},
     )
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "up-to-date"
+    assert outcomes[0].action == "unchanged"
 
 
 def test_only_filters_repos(tmp_path: Path) -> None:
@@ -285,7 +285,7 @@ def test_only_partial_match_under_strict_false_emits_unmatched_rows(
     by_repo = {o.repo: o.action for o in outcomes}
     assert by_repo == {
         "nonexistent": "unmatched",
-        "svc-a": "clone",
+        "svc-a": "cloned",
     }
 
 
@@ -326,7 +326,7 @@ def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
     )
     outcomes = _sync_and_prune(YamlManifestRepository(), git, workspace, tmp_path)
     actions = {o.repo: o.action for o in outcomes}
-    assert actions["svc-old"] == "remove"
+    assert actions["svc-old"] == "removed"
     assert not orphan.exists()
 
 
@@ -344,7 +344,7 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
         statuses={"svc-old": RepoStatus(branch="main", upstream="origin/main", modified=1)},
     )
     outcomes = _sync_and_prune(YamlManifestRepository(), git, workspace, tmp_path)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "unsafe local state: dirty working tree"
     assert orphan.exists()
 
@@ -365,7 +365,7 @@ def test_prune_skips_clean_orphan_with_unpushed_commits(tmp_path: Path) -> None:
         },
     )
     outcomes = _sync_and_prune(YamlManifestRepository(), git, workspace, tmp_path)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == (
         "unsafe local state: local commits not reachable from any remote-tracking ref"
     )
@@ -392,7 +392,7 @@ def test_prune_formats_multiple_blockers(tmp_path: Path) -> None:
         },
     )
     outcomes = _sync_and_prune(YamlManifestRepository(), git, workspace, tmp_path)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].detail == "unsafe local state: dirty working tree; +2 more"
     assert orphan.exists()
 
@@ -411,7 +411,7 @@ def test_prune_skips_symlinked_orphan(tmp_path: Path) -> None:
     git = StubGit(on_disk=["linked"])
     outcomes = _sync_and_prune(YamlManifestRepository(), git, workspace, tmp_path)
 
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert outcomes[0].repo == "linked"
     assert outcomes[0].detail == "symlinked git repo (refusing to prune)"
     assert link.is_symlink()
@@ -556,7 +556,7 @@ def test_detached_head_with_no_target_branch_yields_skip(tmp_path: Path) -> None
         statuses={"svc-a": RepoStatus(branch=None, behind=3)},
     )
     outcomes = SyncWorkspace(YamlManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert "detached head" in outcomes[0].detail
 
 
@@ -620,7 +620,7 @@ def test_prune_inspection_failure_yields_not_usable_skip(tmp_path: Path) -> None
     (orphan / ".git").mkdir()
     git = StubGit(on_disk=["svc-old"], prune_fail={"svc-old"})
     outcomes = _sync_and_prune(YamlManifestRepository(), git, workspace, tmp_path)
-    assert outcomes[0].action == "skip"
+    assert outcomes[0].action == "skipped"
     assert "not a usable git repo" in outcomes[0].detail
     assert orphan.exists()  # not removed
 
@@ -787,7 +787,7 @@ def test_bare_fetch_failure_leaves_url_unclaimed_for_retry(tmp_path: Path) -> No
 
     # Second call must retry — the URL is unclaimed after the failure.
     second = use_case(Workspace(name="b", path=ws_b_path), bare_tracker=tracker)
-    assert second[0].action == "clone", second
+    assert second[0].action == "cloned", second
     bare_fetch_successes = sum(1 for e in git.events if e[0] == "bare_fetch")
     assert bare_fetch_successes == 1, git.events
 

@@ -99,6 +99,7 @@ class Foreach:
             return ForeachOutcome(
                 workspace=workspace.name,
                 repo=repo.name,
+                target_path=local,
                 command=command,
                 returncode=-1,
                 stdout="",
@@ -112,6 +113,7 @@ class Foreach:
             return ForeachOutcome(
                 workspace=workspace.name,
                 repo=repo.name,
+                target_path=local,
                 command=command,
                 returncode=-1,
                 stdout="",
@@ -121,6 +123,7 @@ class Foreach:
         return ForeachOutcome(
             workspace=workspace.name,
             repo=repo.name,
+            target_path=local,
             command=command,
             returncode=completed.returncode,
             stdout=completed.stdout or "",

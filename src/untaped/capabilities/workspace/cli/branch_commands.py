@@ -16,6 +16,7 @@ from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
     progress_ui,
+    record_row,
     resolve_workspace,
 )
 from untaped.capabilities.workspace.domain import BranchApplyOutcome
@@ -29,10 +30,11 @@ from untaped.capability_api import (
     FormatOption,
     OutputFormat,
     create_app,
-    echo,
     emit,
     finish,
+    q,
     report_errors,
+    ui_context,
 )
 
 CreateOption = Annotated[
@@ -83,12 +85,12 @@ def branch_set_command(
     with report_errors():
         ws = resolve_workspace(workspace, path)
         change = SetWorkspaceBranch(YamlManifestRepository())(ws, branch=branch, repo=repo)
+        ui = ui_context(strict=False)
         if change.repo is None:
-            echo(f"set default branch for {change.workspace!r} to {change.branch}", err=True)
+            ui.success(f"set default branch for {q(change.workspace)} to {change.branch}")
         else:
-            echo(
-                f"set branch for repo {change.repo!r} in {change.workspace!r} to {change.branch}",
-                err=True,
+            ui.success(
+                f"set branch for repo {q(change.repo)} in {q(change.workspace)} to {change.branch}"
             )
         if apply_checkout:
             with progress_ui().progress("Applying branches…"):
@@ -113,17 +115,23 @@ def branch_unset_command(
     ] = None,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Unset the default branch or a repo branch override in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
         change = UnsetWorkspaceBranch(YamlManifestRepository())(ws, repo=repo)
+        ui = ui_context(strict=False)
         if change.repo is None:
-            echo(f"unset default branch for {change.workspace!r}", err=True)
-            return
-        echo(
-            f"unset branch for repo {change.repo!r} in {change.workspace!r}",
-            err=True,
+            ui.success(f"unset default branch for {q(change.workspace)}")
+        else:
+            ui.success(f"unset branch for repo {q(change.repo)} in {q(change.workspace)}")
+        emit(
+            [record_row(change)],
+            fmt=fmt,
+            columns=columns,
+            kind="workspace.branch_unset_outcome",
         )
 
 
@@ -156,7 +164,7 @@ def print_branch_apply_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows = [row.model_dump() for row in outcomes]
+    rows = [record_row(row) for row in outcomes]
     emit(
         rows,
         fmt=fmt,

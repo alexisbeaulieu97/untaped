@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 from pathlib import Path
 from typing import Annotated
 
 from cyclopts import Parameter
+from pydantic import BaseModel
 
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace
@@ -21,6 +23,7 @@ RepoSelectorOption = Annotated[
     list[str] | None,
     Parameter(
         name=["--repo", "-r"],
+        negative="",
         help="Limit to these repos (repeatable; name or URL).",
         consume_multiple=False,
     ),
@@ -97,3 +100,17 @@ def parallel_cap() -> int:
     tests stays live.
     """
     return (os.cpu_count() or 1) * 2
+
+
+def record_row(record: BaseModel) -> dict[str, object]:
+    """Dump ``record`` for output, in the order its own class declares.
+
+    Pydantic lists fields inherited from ``OutcomeRecord``/``TargetRecord``
+    (``action``, ``target_path``) first. Re-ordering by the record's own
+    annotations keeps the identifying field first, which ``--format raw``
+    prints; inherited fields that the class does not re-declare go last.
+    """
+    data = record.model_dump(mode="json")
+    row = {key: data[key] for key in inspect.get_annotations(type(record)) if key in data}
+    row.update(data)
+    return row

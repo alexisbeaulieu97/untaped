@@ -19,6 +19,7 @@ from untaped.capabilities.workspace.cli.common import (
     WorkspacePathOption,
     parallel_cap,
     progress_ui,
+    record_row,
     resolve_workspace,
     target_workspaces,
     workspace_settings,
@@ -42,6 +43,8 @@ from untaped.capability_api import (
     ConfigError,
     FormatOption,
     OutputFormat,
+    ParallelOption,
+    YesOption,
     batch_apply,
     clamp_parallel,
     echo,
@@ -49,6 +52,7 @@ from untaped.capability_api import (
     finish,
     raise_usage,
     report_errors,
+    summary,
 )
 
 
@@ -74,10 +78,7 @@ def sync_command(
             ),
         ),
     ] = False,
-    yes: Annotated[
-        bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the prune confirmation prompt."),
-    ] = False,
+    yes: YesOption = False,
     timeout: Annotated[
         float | None,
         Parameter(
@@ -96,9 +97,8 @@ def sync_command(
         Parameter(name="--all", negative="", help="Sync every registered workspace."),
     ] = False,
     parallel: Annotated[
-        int,
+        ParallelOption,
         Parameter(
-            name=["--parallel", "-j"],
             help=(
                 "Concurrent repo sync jobs. Per-repo outcomes are rows, "
                 "not exceptions, so the pool drains to completion. Capped "
@@ -113,8 +113,6 @@ def sync_command(
     """Reconcile workspace clones with the manifest."""
     if timeout is not None and timeout <= 0:
         raise_usage("--timeout must be positive")
-    if parallel < 1:
-        raise_usage("--parallel must be >= 1")
     workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
     with report_errors():
         targets = target_workspaces(workspace, path, all_workspaces=all_workspaces)
@@ -126,13 +124,13 @@ def sync_command(
             fs=LocalFilesystem(),
             cache_dir=workspace_settings().cache_dir,
         )
-        if all_workspaces and repo:
-            echo(
-                "warning: --all --repo filters per-workspace; workspaces without "
-                "matching repos will be skipped, not rejected.",
-                err=True,
-            )
         ui = progress_ui()
+        if all_workspaces and repo:
+            ui.message(
+                "warning",
+                "--all --repo filters per-workspace; workspaces without "
+                "matching repos will be skipped, not rejected",
+            )
         with ui.progress("Syncing repos…") as p:
             sweep = SyncWorkspaces(YamlManifestRepository(), engine, notify=p.update)
             outcomes = sweep(
@@ -181,7 +179,7 @@ def print_sync_outcomes(
     fmt: OutputFormat,
     columns: list[str] | None,
 ) -> None:
-    rows: list[dict[str, object]] = [o.model_dump() for o in outcomes]
+    rows = [record_row(o) for o in outcomes]
     emit(
         rows,
         fmt=fmt,
@@ -197,31 +195,18 @@ def any_sync_failed(outcomes: list[SyncOutcome]) -> bool:
 
 
 def _sync_summary(outcomes: list[SyncOutcome]) -> str:
-    total = len(outcomes)
-    noun = "repo" if total == 1 else "repos"
-    if total == 0:
-        return "sync complete: 0 repos"
     counts = Counter(o.action for o in outcomes)
-    action_labels: tuple[tuple[SyncAction, str], ...] = (
-        ("clone", "cloned"),
-        ("pull", "pulled"),
-        ("up-to-date", "up to date"),
-        ("skip", "skipped"),
-        ("failed", "failed"),
-        ("remove", "removed"),
-        ("unmatched", "unmatched"),
+    actions: tuple[SyncAction, ...] = (
+        "cloned",
+        "pulled",
+        "unchanged",
+        "skipped",
+        "failed",
+        "removed",
+        "unmatched",
+        "unavailable",
     )
-    parts = [f"{counts[action]} {label}" for action, label in action_labels if counts[action]]
-    if counts["unavailable"]:
-        repo_total = total - counts["unavailable"]
-        repo_noun = "repo" if repo_total == 1 else "repos"
-        workspace_noun = "workspace" if counts["unavailable"] == 1 else "workspaces"
-        detail = f" ({', '.join(parts)})" if parts else ""
-        return (
-            f"sync complete: {repo_total} {repo_noun}, "
-            f"{counts['unavailable']} {workspace_noun} unavailable{detail}"
-        )
-    return f"sync complete: {total} {noun} ({', '.join(parts)})"
+    return summary("sync", {action: counts[action] for action in actions})
 
 
 def status_command(
@@ -244,7 +229,7 @@ def status_command(
         with progress_ui().progress("Gathering workspace status…"):
             for ws in targets:
                 for entry in use_case(ws, only=repo, skip_manifest_errors=all_workspaces):
-                    rows.append(entry.model_dump())
+                    rows.append(record_row(entry))
         emit(
             rows,
             fmt=fmt,
@@ -261,15 +246,13 @@ def foreach_command(
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
     parallel: Annotated[
-        int,
+        ParallelOption,
         Parameter(
-            name=["--parallel", "-j"],
             help=(
                 "Concurrent workers. Capped at a CPU-relative ceiling; "
-                "values above are clamped with a stderr warning. Values "
-                "<= 0 run serially (1 worker). Fail-fast cancellation is "
-                "best-effort: in-flight commands run to completion; only "
-                "queued work stops."
+                "values above are clamped with a stderr warning. Fail-fast "
+                "cancellation is best-effort: in-flight commands run to "
+                "completion; only queued work stops."
             ),
         ),
     ] = 1,
@@ -323,7 +306,7 @@ def foreach_command(
         raise_usage("--timeout must be positive")
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        workers = clamp_parallel(max(parallel, 1), cap=parallel_cap(), policy="2 * os.cpu_count()")
+        workers = clamp_parallel(parallel, cap=parallel_cap(), policy="2 * os.cpu_count()")
         keep_going = continue_on_error or ignore_errors
         shell = InterruptibleShellRunner()
         outcomes = Foreach(
@@ -348,7 +331,7 @@ def foreach_command(
             if failed:
                 echo(f"failed in: {', '.join(failed)}", err=True)
         else:
-            rows = [o.model_dump() for o in outcomes]
+            rows = [record_row(o) for o in outcomes]
             emit(rows, fmt=fmt, columns=columns, kind="workspace.foreach_outcome")
         finish(bool(failed) and not ignore_errors)
 

@@ -15,11 +15,12 @@ from untaped.capabilities.workspace.application import (
     SyncWorkspace,
     WorkspaceBootstrapper,
 )
-from untaped.capabilities.workspace.cli.common import workspace_settings
+from untaped.capabilities.workspace.cli.common import record_row, workspace_settings
 from untaped.capabilities.workspace.cli.ops_commands import (
     any_sync_failed,
     print_sync_outcomes,
 )
+from untaped.capabilities.workspace.domain import WorkspaceOutcome
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
@@ -28,10 +29,15 @@ from untaped.capabilities.workspace.infrastructure import (
     YamlManifestRepository,
 )
 from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
     UntapedError,
+    YesOption,
     batch_apply,
-    echo,
+    emit,
     finish,
+    plural,
+    q,
     report_errors,
     ui_context,
 )
@@ -62,6 +68,8 @@ def init_command(
         str | None,
         Parameter(name=["--branch", "-b"], help="Default branch for newly cloned repos."),
     ] = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Initialize a new workspace named `name`.
 
@@ -74,7 +82,9 @@ def init_command(
             YamlManifestRepository(), WorkspaceRegistryRepository()
         )
         ws = InitWorkspace(bootstrapper)(target, name=name, branch=branch)
-        echo(f"initialised workspace {ws.name!r} at {ws.path}", err=True)
+        ui_context(strict=False).success(f"initialized workspace {q(ws.name)} at {ws.path}")
+        row = WorkspaceOutcome(name=ws.name, action="created", target_path=ws.path)
+        emit([record_row(row)], fmt=fmt, columns=columns, kind="workspace.init_outcome")
 
 
 def adopt_command(
@@ -94,6 +104,7 @@ def adopt_command(
     its current `origin` URL and checked-out branch.
     """
     with report_errors():
+        ui = ui_context(strict=False)
         bootstrapper = WorkspaceBootstrapper(
             YamlManifestRepository(), WorkspaceRegistryRepository()
         )
@@ -101,7 +112,7 @@ def adopt_command(
             bootstrapper,
             LocalRepoDiscoverer(GitRunner()),
             fs=LocalFilesystem(),
-            warn=lambda m: echo(f"warning: {m}", err=True),
+            warn=lambda m: ui.message("warning", m),
         )(path, name=name)
         ws = result.workspace
         n = len(result.repos)
@@ -110,10 +121,7 @@ def adopt_command(
             if result.discovered and n == 0
             else ""
         )
-        echo(
-            f"adopted workspace {ws.name!r} at {ws.path} ({n} repo{'s' if n != 1 else ''}){suffix}",
-            err=True,
-        )
+        ui.success(f"adopted workspace {q(ws.name)} at {ws.path} ({plural(n, 'repo')}){suffix}")
 
 
 def forget_command(
@@ -131,10 +139,9 @@ def forget_command(
             ),
         ),
     ] = False,
-    yes: Annotated[
-        bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the prune confirmation prompt."),
-    ] = False,
+    yes: YesOption = False,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
 ) -> None:
     """Remove a workspace from the registry.
 
@@ -145,13 +152,14 @@ def forget_command(
     it ends up empty.
     """
     with report_errors():
+        ui = ui_context(strict=False)
         registry = WorkspaceRegistryRepository()
         forget_workspace = ForgetWorkspace(
             registry,
             YamlManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=GitRunner(),
-            warn=lambda m: echo(f"warning: {m}", err=True),
+            warn=lambda m: ui.message("warning", m),
         )
 
         def _describe(workspace_name: str) -> dict[str, object]:
@@ -163,11 +171,15 @@ def forget_command(
                 location = "(not registered)"
             return {"workspace": workspace_name, "path": location}
 
-        def _forget_one(workspace_name: str) -> str:
+        def _forget_one(workspace_name: str) -> WorkspaceOutcome:
             ws = forget_workspace(workspace_name, prune=prune)
             action = "forgot and pruned" if prune else "forgot"
-            echo(f"{action} workspace {ws.name!r}", err=True)
-            return ws.name
+            ui.success(f"{action} workspace {q(ws.name)}")
+            return WorkspaceOutcome(
+                name=ws.name,
+                action="pruned" if prune else "forgotten",
+                target_path=ws.path,
+            )
 
         outcome = batch_apply(
             [name],
@@ -176,10 +188,17 @@ def forget_command(
             noun="workspace",
             label=lambda workspace_name: workspace_name,
             describe=_describe,
-            ui=ui_context(strict=False),
+            ui=ui,
             destructive=prune,
             assume_yes=yes,
         )
+        if outcome.results:
+            emit(
+                [record_row(row) for _, row in outcome.results],
+                fmt=fmt,
+                columns=columns,
+                kind="workspace.forget_outcome",
+            )
     finish(outcome)
 
 
@@ -207,7 +226,7 @@ def import_command(
         bootstrapper = WorkspaceBootstrapper(manifests, WorkspaceRegistryRepository())
         result = ImportWorkspace(manifests, bootstrapper)(source, path=dest, name=name)
         ws = result.workspace
-        echo(f"imported workspace {ws.name!r} at {ws.path}", err=True)
+        ui_context(strict=False).success(f"imported workspace {q(ws.name)} at {ws.path}")
         if sync:
             outcomes = SyncWorkspace(
                 YamlManifestRepository(),
