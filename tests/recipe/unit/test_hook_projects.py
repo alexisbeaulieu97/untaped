@@ -1330,7 +1330,7 @@ def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: P
         "    return helpers.pass_()\n"
     )
     worker = (
-        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "hook_worker.py"
+        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "_worker" / "hook_worker.py"
     )
     proc = subprocess.Popen(
         [sys.executable, str(worker)],
@@ -1401,7 +1401,7 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
         "    raise RuntimeError('fake yaml_options imported')\n"
     )
     worker = (
-        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "hook_worker.py"
+        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "_worker" / "hook_worker.py"
     )
     proc = subprocess.Popen(
         [sys.executable, str(worker)],
@@ -1449,7 +1449,7 @@ def test_worker_script_rejects_invalid_validate_return_object(tmp_path: Path) ->
         "def validate(*, inputs, target, args, helpers):\n    return object()\n"
     )
     worker = (
-        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "hook_worker.py"
+        Path(__file__).parents[3] / "src" / "untaped" / "capabilities" / "recipe" / "_worker" / "hook_worker.py"
     )
     proc = subprocess.Popen(
         [sys.executable, str(worker)],
@@ -1663,3 +1663,58 @@ class _SlowProcess:
 
     def kill(self) -> None:
         self.killed = True
+
+
+@pytest.mark.parametrize("shadowed", ["settings", "cli", "domain", "worker_protocol"])
+def test_uv_hook_worker_launch_does_not_shadow_pack_top_level_modules(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    shadowed: str,
+) -> None:
+    project = tmp_path / "project"
+    src = project / "src"
+    (src / "worker_hooks").mkdir(parents=True)
+    (src / "worker_hooks" / "__init__.py").write_text("")
+    (src / "worker_hooks" / "sample.py").write_text(
+        f"import {shadowed}\n\n"
+        "def validate(*, inputs, target, args, helpers):\n"
+        f"    return helpers.pass_({shadowed}.MARKER)\n"
+    )
+    (src / f"{shadowed}.py").write_text("MARKER = 'pack module'\n")
+    calls: list[list[str]] = []
+
+    def popen(args: list[str], **kwargs: object) -> _FakeProcess:
+        calls.append(args)
+        return _FakeProcess(stdout="")
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    UvHookWorker(project)
+    monkeypatch.undo()
+    # Re-run the exact interpreter arguments the client launches uv with.
+    python_args = calls[0][calls[0].index("python") + 1 :]
+    proc = subprocess.run(
+        [sys.executable, *python_args],
+        cwd=project,
+        env={"PYTHONPATH": str(src)},
+        input=json.dumps(
+            {
+                "id": "1",
+                "kind": "validate",
+                "module": "worker_hooks.sample",
+                "inputs": {},
+                "target": str(tmp_path),
+                "args": {},
+            }
+        )
+        + "\n",
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    lines = proc.stdout.splitlines()
+    assert json.loads(lines[0]) == {"ready": True}, proc.stderr
+    response = json.loads(lines[1])
+    assert response["ok"] is True, response
+    assert response["result"] == {"status": "pass", "message": "pack module"}
