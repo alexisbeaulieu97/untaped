@@ -161,9 +161,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
     @app.command(name="set")
     def set_command(
         key: Annotated[str, Parameter(help="Fully qualified setting key (section.key).")],
-        value: Annotated[
-            str | None, Parameter(help="New value (validated for its type).")
-        ] = None,
+        value: Annotated[str | None, Parameter(help="New value (validated for its type).")] = None,
         /,
         *,
         target_profile: Annotated[

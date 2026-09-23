@@ -168,7 +168,7 @@ def _current_command() -> None:
 
     Honours ``UNTAPED_PROFILE`` and the root ``--profile`` option (any
     token position), falling back to ``default`` when none is set. The
-    source of the answer (``env`` / ``config`` / ``fallback``) goes to
+    source of the answer (``flag`` / ``env`` / ``config`` / ``fallback``) goes to
     stderr so stdout stays a single bare profile name suitable for piping.
     """
     with report_errors():

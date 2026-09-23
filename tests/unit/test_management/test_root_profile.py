@@ -13,6 +13,7 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.config_file import read_config_dict
 from untaped.management.profile import build_root_profile_app
+from untaped.profile_resolver import reset_profile_override, set_profile_override
 from untaped.settings import get_settings, register_profile_settings
 from untaped.testing import CliInvoker, TtyStringIO, invoke_cli
 
@@ -118,3 +119,28 @@ def test_show_redacts_secrets(app, _isolated_config: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "ghp_secret" not in result.stdout
     assert "***" in result.stdout
+
+
+def test_current_honours_root_profile_flag(_isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    app = build_root_profile_app(command="untaped")
+    token = set_profile_override("stage")
+    try:
+        result = CliInvoker().invoke(app, ["current"])
+    finally:
+        reset_profile_override(token)
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "stage"
+    assert "(source: flag)" in result.stderr
+
+
+def test_current_rejects_root_profile_flag_naming_missing_profile(_isolated_config: Path) -> None:
+    _seed(_isolated_config)
+    app = build_root_profile_app(command="untaped")
+    token = set_profile_override("typo")
+    try:
+        result = CliInvoker().invoke(app, ["current"])
+    finally:
+        reset_profile_override(token)
+    assert result.exit_code == 1
+    assert "'typo' (from flag) is not defined" in result.stderr
