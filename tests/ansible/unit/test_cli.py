@@ -1156,6 +1156,80 @@ def test_graph_source_upstream_requires_refresh_when_index_missing(
     assert "untaped ansible graph acme/base --source platform --upstream --refresh" in result.output
 
 
+def test_graph_live_downstream_works_before_first_source_refresh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        extra_profile={"github": {"token": "ghp_test"}},
+        top_level_ansible={"sources": [{"name": "platform", "repos": ["acme/site"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
+        result = CliInvoker().invoke(
+            app,
+            [
+                "graph",
+                "acme/site",
+                "--source",
+                "platform",
+                "--downstream",
+                "--depth",
+                "1",
+                "--live",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/live" in result.stdout
+
+
+def test_graph_missing_source_downstream_hint_matches_direction(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        top_level_ansible={"sources": [{"name": "platform", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "platform", "--downstream"]
+    )
+
+    assert result.exit_code == 1
+    assert "--upstream" not in result.stderr
+    assert "--source platform --downstream --refresh" in result.stderr
+    assert "--live" in result.stderr
+
+
+def test_graph_invalid_depth_fails_before_refreshing(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        top_level_ansible={"sources": [{"name": "platform", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    def fail_refresh(*args: object, **kwargs: object) -> RefreshResult:
+        raise AssertionError("refresh must not run for an invalid --depth")
+
+    monkeypatch.setattr(_refresh, "refresh_source", fail_refresh)
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "platform", "--refresh", "--depth", "abc"]
+    )
+
+    assert result.exit_code == 2
+    assert "--depth" in result.output
+
+
 def test_graph_repeated_sources_union_cached_upstream(
     tmp_path: Path,
     monkeypatch,
@@ -2337,6 +2411,78 @@ def test_graph_empty_local_dependency_result_does_not_fall_back_to_cache(
     assert result.exit_code == 0, result.output
     assert "acme/stale" not in result.stdout
     assert "warning: no declared downstream dependencies found for acme/empty" in result.stdout
+
+
+def _seed_other_source_edge(index_path: Path) -> None:
+    _seed_index(
+        SqliteDependencyIndex(index_path),
+        "source:other",
+        (
+            IndexedDependency(
+                source_repo="acme/users",
+                source_ref="main",
+                dependency_repo="acme/from-other-source",
+                dependency_name="from-other-source",
+                dependency_version=None,
+                source_path="roles/requirements.yml",
+            ),
+        ),
+    )
+
+
+def test_graph_local_target_without_source_reads_live_not_mixed_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "index.sqlite3"
+    _seed_other_source_edge(index_path)
+    target = tmp_path / "role"
+    (target / "roles").mkdir(parents=True)
+    (target / "roles" / "requirements.yml").write_text("- src: acme/users\n  version: main\n")
+    cfg = _write_config(
+        tmp_path, index_path=index_path, extra_profile={"github": {"token": "ghp_test"}}
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/repos/acme/users/git/matching-refs/heads/main").mock(
+            return_value=httpx.Response(
+                200, json=[{"ref": "refs/heads/main", "object": {"sha": "sha-users"}}]
+            )
+        )
+        _mock_dependency_file(
+            mock, "acme/users", sha="sha-users", content="- src: acme/from-live\n"
+        )
+        result = CliInvoker().invoke(
+            app,
+            ["graph", str(target), "--target-repo", "acme/role", "--downstream", "--depth", "2"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/from-live" in result.stdout
+    assert "acme/from-other-source" not in result.stdout
+
+
+def test_graph_local_target_without_source_or_token_stays_offline(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "index.sqlite3"
+    _seed_other_source_edge(index_path)
+    target = tmp_path / "role"
+    (target / "roles").mkdir(parents=True)
+    (target / "roles" / "requirements.yml").write_text("- src: acme/users\n  version: main\n")
+    cfg = _write_config(tmp_path, index_path=index_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/role", "--downstream"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/users@main" in result.stdout
+    assert "acme/from-other-source" not in result.stdout
+    assert "transitive dependencies were not expanded" in result.stdout
 
 
 def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(

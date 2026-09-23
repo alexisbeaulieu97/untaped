@@ -1,4 +1,4 @@
-"""Dependency index adapter that overlays local dependency reads."""
+"""Dependency index adapters that overlay local dependency reads (or nothing)."""
 
 from __future__ import annotations
 
@@ -125,3 +125,58 @@ class OverlayDependencyIndex:
                 continue
             metadata.append(CachedRef(name=ref))
         return tuple(metadata)
+
+
+class NullDependencyIndex:
+    """Index with no data: reads return nothing, so only overlays contribute."""
+
+    def dependencies(
+        self,
+        repo: str,
+        ref: str | None,
+        *,
+        source_key: str | None,
+    ) -> list[IndexedDependency]:
+        return []
+
+    def dependents(
+        self,
+        repo: str,
+        ref: str | None,
+        *,
+        source_key: str | None,
+    ) -> list[IndexedDependency]:
+        return []
+
+    def dependencies_batch(
+        self,
+        pairs: Sequence[tuple[str, str | None]],
+        *,
+        source_key: str | None,
+    ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
+        return {pair: [] for pair in pairs}
+
+    def dependents_batch(
+        self,
+        pairs: Sequence[tuple[str, str | None]],
+        *,
+        source_key: str | None,
+    ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
+        return {pair: [] for pair in pairs}
+
+    def cached_refs(self, repo: str, *, source_key: str | None) -> set[str]:
+        return set()
+
+    def cached_ref_metadata(self, repo: str, *, source_key: str | None) -> tuple[CachedRef, ...]:
+        return ()
+
+    def cached_ref_metadata_batch(
+        self,
+        repos: Sequence[str],
+        *,
+        source_key: str | None,
+    ) -> dict[str, tuple[CachedRef, ...]]:
+        return {repo: () for repo in repos}
+
+    def is_stale(self, source_key: str | None, *, max_age_seconds: int) -> bool:
+        return False
