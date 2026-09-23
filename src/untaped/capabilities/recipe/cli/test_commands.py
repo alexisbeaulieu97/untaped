@@ -15,7 +15,6 @@ from untaped.api import (
     echo,
     finish,
     render_rows,
-    ui_context,
     unified_diff_text,
 )
 from untaped.capabilities.recipe.application.harness import (
@@ -27,6 +26,7 @@ from untaped.capabilities.recipe.application.harness import (
     update_case,
 )
 from untaped.capabilities.recipe.application.resolution import resolve_explicit_recipe
+from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.cli.common import (
     hook_startup_notice,
     hook_timeout_seconds,
@@ -154,7 +154,7 @@ def _execute(root: Path, selection: _Selection, *, update: bool) -> list[CaseRes
     if not selection.cases:
         return results
     runner = update_case if update else run_case
-    ui = ui_context(strict=False)
+    ui = recipe_ui()
     with UvHookWorkerPool(
         max_workers_per_project=1,
         hook_timeout_seconds=hook_timeout_seconds(None),
@@ -197,7 +197,7 @@ def _render_diffs(results: list[CaseResult]) -> None:
 
 
 def _render_summary(selection: _Selection, results: list[CaseResult], *, update: bool) -> None:
-    ui = ui_context(strict=False)
+    ui = recipe_ui()
     errors = sum(1 for result in results if result.status == "error")
     if update:
         updated = sum(1 for result in results if result.status == "updated")

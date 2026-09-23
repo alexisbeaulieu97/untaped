@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.api import echo, render_rows, ui_context, unified_diff_text
+from untaped.api import echo, render_rows, unified_diff_text
 from untaped.capabilities.recipe.application.inputs import has_sensitive_inputs
+from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 
@@ -23,7 +24,7 @@ def render_preview(
     preview_max_rows: int = 50,
 ) -> None:
     """Render the selected stderr preview for planned targets."""
-    ui_context(strict=False).message("info", preview_summary(plans))
+    recipe_ui().message("info", preview_summary(plans))
     if preview == "none":
         return
     if preview == "diff":
