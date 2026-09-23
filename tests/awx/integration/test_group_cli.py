@@ -513,6 +513,24 @@ def test_groups_hosts_add_accepts_positional_names(fake_aap: Any) -> None:
     assert fake_aap.memberships[("groups", 200, "hosts")] == {101, 102}
 
 
+def test_groups_hosts_add_parent_flag_scopes_the_target(fake_aap: Any) -> None:
+    """``--parent`` is the scope filter, not a second spelling of the target."""
+    _seed_groups(fake_aap)
+    _seed_two_hosts(fake_aap)
+    result = CliInvoker().invoke(
+        app, ["groups", "hosts", "add", "--yes", "web-servers", "web-01", "--parent", "prod"]
+    )
+    assert result.exit_code == 0, result.output
+    assert fake_aap.memberships[("groups", 200, "hosts")] == {101}
+
+
+def test_membership_help_uses_an_before_vowels() -> None:
+    result = CliInvoker().invoke(app, ["inventories", "input_inventories", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "a Inventory" not in result.output
+    assert "an Inventory" in result.output
+
+
 def test_groups_hosts_add_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
     _seed_groups(fake_aap)
     _seed_two_hosts(fake_aap)
