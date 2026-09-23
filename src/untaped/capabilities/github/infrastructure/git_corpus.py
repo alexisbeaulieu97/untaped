@@ -9,7 +9,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from collections.abc import Callable
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse
 
+from untaped.api import echo
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -77,6 +77,7 @@ class GitCorpusCache:
         fetch_attempts: int = DEFAULT_FETCH_ATTEMPTS,
         fetch_batch_size: int = DEFAULT_FETCH_BATCH_SIZE,
         sleep: Callable[[float], None] = time.sleep,
+        warn: Callable[[str], None] | None = None,
     ) -> None:
         if fetch_attempts < 1:
             raise ValueError("fetch_attempts must be positive")
@@ -89,6 +90,7 @@ class GitCorpusCache:
         self._fetch_attempts = fetch_attempts
         self._fetch_batch_size = fetch_batch_size
         self._sleep = sleep
+        self._warn = warn or _echo_warning
 
     def sync_repo(
         self,
@@ -353,7 +355,7 @@ class GitCorpusCache:
             try:
                 entries.append((metadata_path, _read_metadata(metadata_path)))
             except GitCorpusError as exc:
-                print(f"warning: {exc}", file=sys.stderr)
+                self._warn(str(exc))
         return entries
 
     def clean_repo(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
@@ -654,6 +656,10 @@ class GitCorpusCache:
                 f"git {' '.join(args)} failed: {_redact(stderr, auth_header) or 'no stderr'}"
             )
         return result
+
+
+def _echo_warning(message: str) -> None:
+    echo(f"warning: {message}", err=True)
 
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:
