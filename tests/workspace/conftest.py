@@ -50,7 +50,12 @@ from untaped.capabilities.workspace.domain.prune_safety import (
     DIRTY_WORKTREE_BLOCKER,
     UNREACHABLE_COMMITS_BLOCKER,
 )
-from untaped.capabilities.workspace.errors import GitError, ManifestError, RegistryError
+from untaped.capabilities.workspace.errors import (
+    GitError,
+    ManifestError,
+    RegistryError,
+    WorkspaceError,
+)
 
 # ``pytest_plugins`` is only honored in the root conftest; this package-level
 # conftest re-exports the shared CLI fixtures instead so they stay scoped to
@@ -70,6 +75,9 @@ def empty_manifest() -> WorkspaceManifest:
     return WorkspaceManifest()
 
 
+_DEFAULT_STATUS = RepoStatus(branch="main", upstream="origin/main")
+
+
 class StubGit:
     """Stub satisfying the ``GitRunner`` port for unit tests."""
 
@@ -86,6 +94,7 @@ class StubGit:
         prune_blockers: dict[str, tuple[str, ...]] | None = None,
         pull_fail: Set[str] = frozenset(),
         checkout_fail: Set[str] = frozenset(),
+        missing_branches: Set[str] = frozenset(),
     ) -> None:
         self.events: list[tuple[Any, ...]] = []
         self._on_disk = set(on_disk)
@@ -98,6 +107,7 @@ class StubGit:
         self._prune_blockers = prune_blockers or {}
         self._pull_fail = pull_fail
         self._checkout_fail = checkout_fail
+        self._missing_branches = missing_branches
 
     def bare_cache_path(self, url: str, *, cache_dir: Path) -> Path:
         return Path(f"/tmp/cache/{url.split('/')[-1]}")
@@ -129,7 +139,7 @@ class StubGit:
         self.events.append(("status", repo_path.name))
         if repo_path.name in self._status_fail:
             raise GitError("status failed")
-        return self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        return self._statuses.get(repo_path.name, _DEFAULT_STATUS)
 
     def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
         self.events.append(("prune_blockers", repo_path.name))
@@ -137,7 +147,7 @@ class StubGit:
             raise GitError("status failed")
         if repo_path.name in self._prune_blockers:
             return self._prune_blockers[repo_path.name]
-        status = self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        status = self._statuses.get(repo_path.name, _DEFAULT_STATUS)
         if status.dirty:
             return (DIRTY_WORKTREE_BLOCKER,)
         if status.ahead:
@@ -149,11 +159,15 @@ class StubGit:
         if repo_path.name in self._pull_fail:
             raise GitError("non-fast-forward pull")
 
+    def has_branch(self, repo_path: Path, *, branch: str) -> bool:
+        self.events.append(("has_branch", repo_path.name, branch))
+        return branch not in self._missing_branches
+
     def checkout_branch(self, repo_path: Path, *, branch: str) -> None:
         self.events.append(("checkout", repo_path.name, branch))
         if repo_path.name in self._checkout_fail:
             raise GitError("checkout failed")
-        current = self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        current = self._statuses.get(repo_path.name, _DEFAULT_STATUS)
         self._statuses[repo_path.name] = current.model_copy(update={"branch": branch})
 
 
@@ -248,6 +262,16 @@ class StubFilesystem:
         self._dirs = {p for p in self._dirs if p != path and path not in p.parents}
         self._symlinks.discard(path)
 
+    def unlink(self, path: Path) -> None:
+        self.events.append(("unlink", path))
+        self._symlinks.discard(path)
+
+    def rmdir(self, path: Path) -> None:
+        self.events.append(("rmdir", path))
+        if any(p.parent == path for p in self._dirs | self._symlinks):
+            raise WorkspaceError(f"could not remove {path}: directory not empty")
+        self._dirs.discard(path)
+
 
 class StubManifests:
     """In-memory ``ManifestRepository`` for stub-driven use-case tests.
@@ -272,6 +296,9 @@ class StubManifests:
 
     def write(self, workspace_dir: Path, manifest: WorkspaceManifest) -> None:
         self._manifests[workspace_dir] = manifest
+
+    def delete(self, workspace_dir: Path) -> None:
+        self._manifests.pop(workspace_dir, None)
 
     def read_external(self, source: Path) -> ManifestSource:
         raise NotImplementedError("StubManifests.read_external is not used by current tests")

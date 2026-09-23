@@ -101,3 +101,15 @@ def test_add_repo_explicit_collision_message_omits_repo_name_flag(tmp_path: Path
             repo_name="svc-a",
         )
     assert "--repo-name" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("repo_name", ["../escape", "/etc", ".", "C:\\x", "untaped.yml"])
+def test_add_repo_rejects_unsafe_repo_name(tmp_path: Path, repo_name: str) -> None:
+    ws_path = tmp_path / "prod"
+    ManifestRepository().write(ws_path, empty_manifest())
+    workspace = Workspace(name="prod", path=ws_path)
+    with pytest.raises(WorkspaceError, match="repo name"):
+        AddRepo(ManifestRepository())(
+            workspace, url="https://github.com/org/svc-a.git", repo_name=repo_name
+        )
+    assert ManifestRepository().read(ws_path).repos == ()

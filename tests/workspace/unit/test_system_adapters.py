@@ -90,6 +90,60 @@ def test_shell_runner_timeout_kills_background_child_process(tmp_path: Path) -> 
         pytest.fail(f"timed-out child process {child_pid} was not reaped")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="process group cleanup is POSIX-only")
+def test_shell_runner_interrupt_kills_process_group_and_reraises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    pidfile = tmp_path / "child.pid"
+    script = (
+        "import os, pathlib, time; "
+        f"pathlib.Path({str(pidfile)!r}).write_text(str(os.getpid())); "
+        "time.sleep(60)"
+    )
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(script)} & wait"
+    original = subprocess.Popen.communicate
+    spawned: list[subprocess.Popen[str]] = []
+
+    def interrupted(self: subprocess.Popen[str], *args: object, **kwargs: object) -> object:
+        if not spawned:
+            spawned.append(self)
+            deadline = time.monotonic() + 5.0
+            while not pidfile.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            raise KeyboardInterrupt
+        return original(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        shell_runner(command, tmp_path, timeout=30)
+
+    assert spawned[0].returncode is not None  # shell reaped
+    child_pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        if _is_zombie(child_pid):
+            break
+        time.sleep(0.05)
+    else:
+        os.kill(child_pid, signal.SIGKILL)
+        pytest.fail(f"interrupted child process {child_pid} was left running")
+
+
+def _is_zombie(pid: int) -> bool:
+    try:
+        stat_line = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    return stat_line.rsplit(")", 1)[-1].split()[0] == "Z"
+
+
 # ── editor selection precedence ────────────────────────────────────────────
 
 

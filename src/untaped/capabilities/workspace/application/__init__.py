@@ -20,6 +20,7 @@ from untaped.capabilities.workspace.application.show_workspace import ShowWorksp
 from untaped.capabilities.workspace.application.status_workspace import WorkspaceStatus
 from untaped.capabilities.workspace.application.sync_workspace import (
     BareFetchTracker,
+    PruneCandidate,
     RepoSyncEngine,
     SyncWorkspace,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "ImportWorkspace",
     "InitWorkspace",
     "ListWorkspaces",
+    "PruneCandidate",
     "RemoveRepo",
     "RepoSyncEngine",
     "SetWorkspaceBranch",

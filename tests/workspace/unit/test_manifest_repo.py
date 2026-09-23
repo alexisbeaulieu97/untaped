@@ -144,3 +144,31 @@ def test_write_repos_emits_plain_yaml_sequence(tmp_path: Path) -> None:
     # Round-trip through the safe loader to confirm the dumped shape is
     # a plain mapping/sequence pydantic can parse back without help.
     assert ManifestRepository().read(tmp_path).repos == manifest.repos
+
+
+def test_write_does_not_use_a_fixed_temp_name(tmp_path: Path) -> None:
+    """A stale/concurrent ``untaped.yml.tmp`` must not break the write."""
+    (tmp_path / "untaped.yml.tmp").mkdir()
+    ManifestRepository().write(tmp_path, WorkspaceManifest(name="prod"))
+    assert ManifestRepository().read(tmp_path).name == "prod"
+    assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")] == ["untaped.yml.tmp"]
+
+
+def test_write_wraps_os_errors(tmp_path: Path) -> None:
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x")
+    with pytest.raises(ManifestError, match="could not write manifest"):
+        ManifestRepository().write(blocker, WorkspaceManifest())
+
+
+def test_reads_utf8_manifest(tmp_path: Path) -> None:
+    (tmp_path / "untaped.yml").write_bytes("name: café\n".encode())
+    assert ManifestRepository().read(tmp_path).name == "café"
+
+
+def test_delete_removes_manifest_and_tolerates_missing(tmp_path: Path) -> None:
+    repo = ManifestRepository()
+    repo.write(tmp_path, WorkspaceManifest())
+    repo.delete(tmp_path)
+    assert not (tmp_path / "untaped.yml").exists()
+    repo.delete(tmp_path)
