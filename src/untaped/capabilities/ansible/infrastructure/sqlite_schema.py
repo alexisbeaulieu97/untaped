@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from untaped.api import echo
 from untaped.capabilities.ansible.errors import DependencyIndexError
 
 # Version 4 added lowercase ``*_repo_key`` columns: GitHub repo ids are
@@ -104,10 +105,10 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
     """Create dependency index tables on a fresh database.
 
     Databases stamped with the current ``SCHEMA_VERSION`` pass through
-    untouched. Any other non-empty database is rejected: cache schema
-    compatibility is intentionally not preserved, so the user must delete the
-    index file and refresh saved sources. The message distinguishes an older
-    cache from one written by a newer untaped release.
+    untouched. An older (or unstamped) database is a stale cache: its tables
+    are dropped and recreated empty, with a warning to refresh saved sources.
+    A database written by a newer untaped release is rejected instead, so a
+    downgrade never destroys data a newer install still reads.
     """
     version = int(db.execute("pragma user_version").fetchone()[0])
     if version == SCHEMA_VERSION:
@@ -119,10 +120,12 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
             f"{path} and re-run 'untaped ansible source refresh <name>'"
         )
     if version != 0 or _has_tables(db):
-        raise DependencyIndexError(
-            f"index schema is outdated (version {version}, expected {SCHEMA_VERSION}); "
-            f"the index is a cache, so delete {path} and re-run "
-            "'untaped ansible source refresh <name>'"
+        _drop_tables(db)
+        echo(
+            f"warning: rebuilt the outdated dependency index at {path} (schema version "
+            f"{version}, expected {SCHEMA_VERSION}); re-run "
+            "'untaped ansible source refresh <name>' for each saved source",
+            err=True,
         )
     # Table creation and the version stamp must be one atomic unit: a crash
     # between them would leave a version-0 database that already has tables,
@@ -130,6 +133,17 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
     # transactional in SQLite, so wrapping the script in begin/commit makes
     # the whole bootstrap all-or-nothing.
     db.executescript(f"begin;\n{_SCHEMA_SQL}\npragma user_version = {SCHEMA_VERSION};\ncommit;")
+
+
+def _drop_tables(db: sqlite3.Connection) -> None:
+    names = [
+        str(row[0])
+        for row in db.execute(
+            "select name from sqlite_master where type = 'table' and name not like 'sqlite_%'"
+        )
+    ]
+    statements = "".join(f'drop table if exists "{name}";\n' for name in names)
+    db.executescript(f"begin;\n{statements}pragma user_version = 0;\ncommit;")
 
 
 def _has_tables(db: sqlite3.Connection) -> bool:

@@ -444,38 +444,51 @@ def test_fresh_index_stamps_current_schema_version(tmp_path) -> None:
         db.close()
 
 
-def _assert_outdated_schema_error(db_path: Path) -> None:
+def _assert_outdated_schema_is_rebuilt(db_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     index = SqliteDependencyIndex(db_path)
-    with pytest.raises(UntapedError) as excinfo:
-        index.status("source:prod")
-    message = str(excinfo.value)
-    assert str(db_path) in message
-    assert "untaped ansible source refresh" in message
+
+    assert index.status("source:prod") is None
+    db = sqlite3.connect(db_path)
+    try:
+        assert db.execute("pragma user_version").fetchone()[0] == SCHEMA_VERSION
+        stale = db.execute(
+            "select count(*) from sqlite_master where name = 'stale_table'"
+        ).fetchone()[0]
+        assert stale == 0
+    finally:
+        db.close()
+    err = capsys.readouterr().err
+    assert "rebuilt" in err
+    assert "untaped ansible source refresh" in err
 
 
-def test_outdated_schema_version_raises_actionable_error(tmp_path) -> None:
+def test_outdated_schema_version_is_rebuilt_as_empty_cache(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
     db_path = tmp_path / "index.sqlite3"
     db = sqlite3.connect(db_path)
     try:
         db.execute("pragma user_version = 1")
-        db.execute("create table source_runs (source_key text primary key)")
+        db.execute("create table stale_table (source_key text primary key)")
         db.commit()
     finally:
         db.close()
 
-    _assert_outdated_schema_error(db_path)
+    _assert_outdated_schema_is_rebuilt(db_path, capsys)
 
 
-def test_versionless_db_with_tables_raises_actionable_error(tmp_path) -> None:
+def test_versionless_db_with_tables_is_rebuilt_as_empty_cache(
+    tmp_path, capsys: pytest.CaptureFixture[str]
+) -> None:
     db_path = tmp_path / "index.sqlite3"
     db = sqlite3.connect(db_path)
     try:
-        db.execute("create table source_runs (source_key text primary key)")
+        db.execute("create table stale_table (source_key text primary key)")
         db.commit()
     finally:
         db.close()
 
-    _assert_outdated_schema_error(db_path)
+    _assert_outdated_schema_is_rebuilt(db_path, capsys)
 
 
 def test_recommitting_unchanged_scan_reuses_snapshot_and_edges(tmp_path) -> None:
