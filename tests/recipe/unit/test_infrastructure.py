@@ -926,3 +926,64 @@ def test_file_change_kind_reports_create_modify_and_remove(tmp_path: Path) -> No
     assert create.kind == "create"
     assert modify.kind == "modify"
     assert remove.kind == "remove"
+
+
+def test_flush_changes_preserves_executable_mode(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    script = target / "run.sh"
+    script.write_text("#!/bin/sh\necho old\n")
+    script.chmod(0o755)
+
+    flush_changes(
+        (
+            FileChange(
+                target=target,
+                relative_path=Path("run.sh"),
+                before="#!/bin/sh\necho old\n",
+                after="#!/bin/sh\necho new\n",
+            ),
+        )
+    )
+
+    assert script.read_text() == "#!/bin/sh\necho new\n"
+    assert script.stat().st_mode & 0o777 == 0o755
+
+
+def test_flush_changes_rollback_restores_mode_of_deleted_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    script = target / "run.sh"
+    script.write_text("old\n")
+    script.chmod(0o755)
+    other = target / "other.txt"
+    other.write_text("before\n")
+    original_replace = file_writer_module.os.replace
+
+    def fail_other(src: Path, dst: Path) -> None:
+        if Path(dst).name == "other.txt" and ".rollback." not in Path(src).name:
+            raise OSError("disk full")
+        original_replace(src, dst)
+
+    monkeypatch.setattr(file_writer_module.os, "replace", fail_other)
+
+    with pytest.raises(ApplyWriteError, match="disk full"):
+        flush_changes(
+            (
+                FileChange(
+                    target=target, relative_path=Path("run.sh"), before="old\n", after=None
+                ),
+                FileChange(
+                    target=target,
+                    relative_path=Path("other.txt"),
+                    before="before\n",
+                    after="after\n",
+                ),
+            )
+        )
+
+    assert script.read_text() == "old\n"
+    assert script.stat().st_mode & 0o777 == 0o755
