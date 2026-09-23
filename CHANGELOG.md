@@ -19,9 +19,9 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     tables only. A closed output pipe exits 0. `--verbose` with `--quiet` is a
     usage error. `--columns` accepts comma lists and rejects unknown columns
     for typed records.
-  - `profile current` honors `--profile`; a missing `http.ca_bundle`, an
-    unknown `ui.theme`, and cross-origin pagination links are reported
-    clearly. Config writes create the temporary file with mode 0600.
+  - `profile current` honors `--profile`; a missing, unreadable, or invalid
+    `http.ca_bundle`, an unknown `ui.theme`, and cross-origin pagination links
+    are reported clearly. Config writes create the temporary file with mode 0600.
 - workspace
   - Repo and workspace names must be a single safe path segment; the bare
     cache path is sanitized.

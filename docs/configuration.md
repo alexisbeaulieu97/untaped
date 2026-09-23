@@ -236,8 +236,9 @@ untaped config set http.ca_bundle /path/to/corp-ca.pem
 untaped config set http.verify_hostname false --target-profile work
 ```
 
-`http.ca_bundle` must point to an existing file; a missing file is reported as
-a configuration error naming the path (and fails `doctor`'s `http` row).
+`http.ca_bundle` must point to a readable PEM file; a missing, unreadable, or
+unparsable file is reported as a configuration error naming the path (and
+fails `doctor`'s `http` row).
 `http.verify_hostname: false` keeps chain validation enabled while skipping the
 hostname check. `http.verify_ssl: false` disables certificate validation and
 should be reserved for a controlled network.
