@@ -22,6 +22,9 @@ class RepoStatus(BaseModel):
     branch: str | None
     """Current local branch name. ``None`` if detached."""
 
+    upstream: str | None = None
+    """Configured upstream (e.g. ``origin/main``). ``None`` when unset."""
+
     ahead: int = 0
     """Local commits not on the upstream."""
 

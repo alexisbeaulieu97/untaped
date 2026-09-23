@@ -305,7 +305,15 @@ registry is the index and is not repaired automatically.
 `--timeout <seconds>` caps every git invocation in this sync run, so a
 hung remote can't strand a `--all` sweep. Defaults are 60s for
 local-only git ops and 600s for clone/fetch; passing `--timeout 30` caps
-both at 30s (CI-friendly fail-fast).
+both at 30s (CI-friendly fail-fast). A clone that fails or times out
+removes the directory it created, so the next sync retries the clone
+instead of treating a partial directory as an existing repo.
+
+Git runs non-interactively: stdin is closed and terminal/credential
+manager prompts are disabled (`GIT_TERMINAL_PROMPT=0`,
+`GCM_INTERACTIVE=never`), so a remote that needs credentials fails that
+repo instead of hanging the sweep. Configure an SSH agent or a
+credential helper for private remotes.
 
 `--parallel N` / `-j N` runs up to `N` repo sync jobs concurrently.
 This works for a single workspace and for `--all`; the cap is global
