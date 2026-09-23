@@ -374,12 +374,18 @@ def _local_project_root(project_dir: Path | None) -> Path:
 
 
 def _git_root(path: Path) -> Path | None:
-    result = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError as exc:
+        raise ConfigError(
+            f"could not run git to find the project root ({exc.strerror or exc}); "
+            "pass --project-dir to choose the project directory"
+        ) from exc
     if result.returncode != 0:
         return None
     root = result.stdout.strip()
