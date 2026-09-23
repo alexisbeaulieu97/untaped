@@ -2,7 +2,7 @@
 
 Owns the bounded-worker / launch-order collection / error-wrap shape that
 both ``_drain_parallel`` (``--track``) and ``_wait_parallel`` (``--wait``)
-need, on top of :func:`untaped.api.bounded_map`; each caller contributes
+need, on top of :func:`untaped.capability_api.bounded_map`; each caller contributes
 only its unique mechanics (queue + print loop for track; ``WatchJob``
 lambda for wait).
 """
@@ -14,13 +14,13 @@ from collections.abc import Callable
 from rich.console import Console
 from rich.text import Text
 
-from untaped.api import UntapedError, bounded_map
 from untaped.capabilities.awx.application import WatchJob
 from untaped.capabilities.awx.application.ports import JobMonitor, RawHttpResourceClient
 from untaped.capabilities.awx.application.scheduling import MAX_PARALLEL
 from untaped.capabilities.awx.cli._event_render import render_event_text
 from untaped.capabilities.awx.domain import Job, JobEvent
 from untaped.capabilities.awx.domain.job import JOB_ROUTES
+from untaped.capability_api import UntapedError, bounded_map
 
 
 def _drain_parallel_with_worker(

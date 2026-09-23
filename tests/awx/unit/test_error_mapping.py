@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from untaped.api import ConfigError, HttpError
 from untaped.capabilities.awx.errors import (
     AwxApiError,
     BadRequestError,
@@ -10,6 +9,7 @@ from untaped.capabilities.awx.errors import (
     PermissionDeniedError,
 )
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors, to_awx_error
+from untaped.capability_api import ConfigError, HttpError
 
 
 def _http_error(status: int, body: str = "") -> HttpError:

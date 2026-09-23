@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from cyclopts import Parameter, validators
 
-from untaped.api import (
+from untaped.capabilities.github.application import RepositoryInventoryScope
+from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
@@ -20,10 +24,6 @@ from untaped.api import (
     read_identifiers,
     report_errors,
 )
-from untaped.capabilities.github.application import RepositoryInventoryScope
-from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
-from untaped.capabilities.github.settings import GithubSettings
 
 if TYPE_CHECKING:
     from untaped.capabilities.github.application import GitCorpus, SweepMatch, SweepReport

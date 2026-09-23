@@ -15,14 +15,6 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlparse
 
-from untaped.api import (
-    GitCommandError,
-    GitResult,
-    echo,
-    run_git,
-    safe_cache_path,
-    safe_path_segment,
-)
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
@@ -34,6 +26,14 @@ from untaped.capabilities.github.domain import (
     profile_join,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capability_api import (
+    GitCommandError,
+    GitResult,
+    echo,
+    run_git,
+    safe_cache_path,
+    safe_path_segment,
+)
 
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0

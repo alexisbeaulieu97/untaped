@@ -30,6 +30,7 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="github",
     app_factory=build_app,
+    help="Inspect and search GitHub from the authenticated user's account.",
     config_section="github",
     profile_model=GithubSettings,
     skills=(

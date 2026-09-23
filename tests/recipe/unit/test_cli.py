@@ -14,7 +14,6 @@ from packaging.version import Version
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 from untaped import bootstrap
-from untaped.api import invalidate_settings_cache
 from untaped.capabilities.recipe import SPEC
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS, BuiltinHook
 from untaped.capabilities.recipe.cli import app
@@ -22,6 +21,7 @@ from untaped.capabilities.recipe.cli.common import library_root
 from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.infrastructure.backup import BackupDraft, BackupStore
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker, assert_destructive_contract
 
 pytestmark = pytest.mark.usefixtures("isolate_config")
@@ -682,7 +682,7 @@ def test_apply_table_preview_uses_configured_collection_view(
 ) -> None:
     monkeypatch.setenv("COLUMNS", "240")
     isolate_config.write_text("profiles:\n  default:\n    ui:\n      collection_view: list\n")
-    invalidate_settings_cache()
+    get_settings.cache_clear()
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
         "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
@@ -708,7 +708,7 @@ def test_apply_table_preview_uses_configured_preview_max_rows(
 ) -> None:
     monkeypatch.setenv("COLUMNS", "500")
     monkeypatch.setenv("UNTAPED_RECIPE__PREVIEW_MAX_ROWS", "1")
-    invalidate_settings_cache()
+    get_settings.cache_clear()
     recipe = tmp_path / "recipe.yml"
     recipe.write_text(
         "version: 1\n"
@@ -3716,7 +3716,7 @@ def test_backup_prune_uses_settings_when_flags_absent(
     old = _seed_bundle(backups, "20250101T000000000000Z-aaaaaaaa")
     new = _seed_bundle(backups, "20990301T000000000000Z-cccccccc")
     monkeypatch.setenv("UNTAPED_RECIPE__BACKUP_KEEP", "1")
-    invalidate_settings_cache()
+    get_settings.cache_clear()
 
     result = CliInvoker().invoke(app, ["backup", "prune", "--yes"])
 

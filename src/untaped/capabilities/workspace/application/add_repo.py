@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from untaped.api import first_validation_error
 from untaped.capabilities.workspace.application.ports import ManifestRepository
 from untaped.capabilities.workspace.domain import (
     DuplicateRepoName,
@@ -13,6 +12,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
 )
 from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capability_api import first_validation_error
 
 
 class AddRepo:

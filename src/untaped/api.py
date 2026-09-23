@@ -1,94 +1,85 @@
-"""The shared SDK surface for the unified ``untaped`` application.
+"""Deprecated alias of :mod:`untaped.capability_api` (kept for one release).
 
-Capability providers import their stable composition helpers from
-:mod:`untaped.capability_api`; this module contains the shared runtime helpers
-used by the built-in application and providers.
+``untaped.capability_api`` is the single public SDK surface. This module only
+re-exports the names it historically published so existing imports keep
+working; it emits no warning at import time. Import from
+``untaped.capability_api`` instead — this module will be removed.
 """
 
 from __future__ import annotations
 
-from untaped.app_context import AppContext, app_context
-from untaped.batch import BatchOutcome, batch_apply, finish
-from untaped.cli import (
+from untaped.capability_api import (
+    AppContext,
+    BatchOutcome,
     ColumnsOption,
+    ConfigError,
     FormatOption,
+    GitCommandError,
+    GitResult,
+    HttpClient,
+    HttpError,
+    HttpSettings,
+    HttpStatusError,
+    HttpTransportError,
+    OutputFormat,
+    PipeEnvelope,
+    ProgressHandle,
+    PromptChoice,
+    RetryPolicy,
+    StateCollection,
+    StateMap,
+    UiContext,
+    UntapedError,
+    app_context,
+    atomic_write,
+    batch_apply,
+    bounded_map,
     clamp_parallel,
+    connected_client,
     create_app,
     echo,
     emit,
-    existing_directory,
     existing_file,
-    parse_json_pairs,
-    parse_kv_pairs,
-    raise_usage,
-    render_rows,
-    report_errors,
-    resolve_each,
-)
-from untaped.concurrency import bounded_map
-from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
-from untaped.diff import DiffStats, diff_stats, unified_diff_text
-from untaped.errors import (
-    ConfigError,
-    HttpError,
-    HttpStatusError,
-    HttpTransportError,
-    UntapedError,
+    finish,
     first_validation_error,
-)
-from untaped.fs import (
-    FileChange,
-    FileWriteError,
-    apply_file_changes,
-    atomic_write,
-    read_structured_file,
-)
-from untaped.git import (
-    GitCommandError,
-    GitResult,
+    get_config_section,
+    get_core_settings,
     git_auth_header,
-    run_git,
-    safe_cache_path,
-    safe_path_segment,
-)
-from untaped.http import (
-    HttpClient,
-    RetryPolicy,
-    connected_client,
-    missing_setting_error,
+    is_envelope_line,
     paginate_link,
     paginate_offset,
     paginate_pages,
-    resolve_verify,
-)
-from untaped.pipe import PipeEnvelope, common_kind, is_envelope_line, parse_envelope_line
-from untaped.progress import ProgressHandle
-from untaped.prompts import PromptChoice
-from untaped.render import OutputFormat
-from untaped.settings import (
-    HttpSettings,
-    get_config_section,
-    get_core_settings,
-    get_settings,
-)
-from untaped.state import StateCollection, StateMap
-from untaped.stdin import (
+    parse_envelope_line,
+    parse_json_pairs,
+    parse_kv_pairs,
+    raise_usage,
     read_identifiers,
-    read_records,
     read_stdin,
-    read_stdin_text,
+    read_structured_file,
+    render_rows,
+    report_errors,
+    resolve_each,
     resolve_text_input,
+    resolve_verify,
+    run_git,
+    safe_cache_path,
+    safe_path_segment,
+    ui_context,
+    unified_diff_text,
 )
+from untaped.cli import existing_directory
+from untaped.config_file import ensure_config, mutate_tool_state, read_tool_state
+from untaped.diff import DiffStats, diff_stats
+from untaped.fs import FileChange, FileWriteError, apply_file_changes
+from untaped.http import missing_setting_error
+from untaped.pipe import common_kind
+from untaped.settings import get_settings
+from untaped.stdin import read_records, read_stdin_text
 from untaped.theme import ThemeSpec
-from untaped.ui import UiContext, ui_context
 
 
 def invalidate_settings_cache() -> None:
-    """Drop the cached settings instance so the next read re-resolves.
-
-    Root-option handlers (e.g. the built-in ``--profile``) call this after
-    changing process state that feeds settings resolution.
-    """
+    """Drop the cached settings instance so the next read re-resolves."""
     get_settings.cache_clear()
 
 

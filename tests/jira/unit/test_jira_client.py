@@ -11,10 +11,10 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from untaped.api import ConfigError, HttpClient, HttpSettings
 from untaped.capabilities.jira.infrastructure import JiraClient
 from untaped.capabilities.jira.infrastructure import jira_client as jira_client_module
 from untaped.capabilities.jira.settings import JiraSettings
+from untaped.capability_api import ConfigError, HttpClient, HttpSettings
 
 
 def _settings() -> JiraSettings:

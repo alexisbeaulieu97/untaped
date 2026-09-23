@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.workspace.application import WorkspaceResolver
 from untaped.capabilities.workspace.domain import WorkspaceManifest
 from untaped.capabilities.workspace.infrastructure import (
     ManifestRepository,
     WorkspaceRegistryRepository,
 )
+from untaped.capability_api import ConfigError
 from untaped.settings import get_settings
 from workspace.conftest import empty_manifest
 

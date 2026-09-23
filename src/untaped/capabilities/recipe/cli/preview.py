@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from untaped.api import echo, render_rows, unified_diff_text
 from untaped.capabilities.recipe.application.inputs import has_sensitive_inputs
 from untaped.capabilities.recipe.cli._context import recipe_ui
 from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
+from untaped.capability_api import echo, render_rows, unified_diff_text
 
 PreviewMode = Literal["table", "diff", "none"]
 

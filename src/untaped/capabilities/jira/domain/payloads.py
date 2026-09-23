@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from untaped.api import ConfigError
+from untaped.capability_api import ConfigError
 
 
 def build_issue_payload(

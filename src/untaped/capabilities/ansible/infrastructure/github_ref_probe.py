@@ -14,7 +14,6 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from untaped.api import HttpError, UntapedError, bounded_map
 from untaped.capabilities.ansible.domain.payloads import (
     GitRef,
     ProbedRepo,
@@ -23,6 +22,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     ProbeTarget,
 )
 from untaped.capabilities.github.ansible import GithubGraphqlError
+from untaped.capability_api import HttpError, UntapedError, bounded_map
 
 if TYPE_CHECKING:
     from untaped.capabilities.github.ansible import BatchRepoRefsResult

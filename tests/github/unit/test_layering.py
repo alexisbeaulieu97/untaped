@@ -95,6 +95,7 @@ def test_infrastructure_does_not_read_global_settings() -> None:
             if isinstance(imp, ast.ImportFrom) and imp.module in {
                 "untaped",
                 "untaped.api",
+                "untaped.capability_api",
                 "untaped.settings",
             }:
                 bad = sorted(

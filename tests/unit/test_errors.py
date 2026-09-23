@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from untaped import first_validation_error
+from untaped.capability_api import first_validation_error
 from untaped.errors import ConfigError, HttpError, UntapedError
 
 

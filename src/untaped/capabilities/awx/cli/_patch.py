@@ -6,7 +6,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import ColumnsOption, ConfigError, FormatOption, raise_usage, report_errors
 from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.apply_planner import unrecognized_fields
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
@@ -32,6 +31,13 @@ from untaped.capabilities.awx.cli.options import (
 )
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capability_api import (
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    raise_usage,
+    report_errors,
+)
 
 
 def _add_patch(app: App, spec: AwxResourceSpec) -> None:

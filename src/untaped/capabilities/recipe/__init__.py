@@ -30,6 +30,7 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="recipe",
     app_factory=build_app,
+    help="Apply reusable local recipes to plain directories.",
     config_section="recipe",
     profile_model=RecipeSettings,
     skills=(

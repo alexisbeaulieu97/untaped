@@ -7,7 +7,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import UntapedError, batch_apply, echo, finish, report_errors, ui_context
 from untaped.capabilities.workspace.application import (
     AdoptWorkspace,
     ForgetWorkspace,
@@ -27,6 +26,14 @@ from untaped.capabilities.workspace.infrastructure import (
     LocalRepoDiscoverer,
     ManifestRepository,
     WorkspaceRegistryRepository,
+)
+from untaped.capability_api import (
+    UntapedError,
+    batch_apply,
+    echo,
+    finish,
+    report_errors,
+    ui_context,
 )
 
 

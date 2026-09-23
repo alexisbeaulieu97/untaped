@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.workspace.application.workspace_resolver import WorkspaceResolver
 from untaped.capabilities.workspace.domain import Workspace, WorkspaceManifest
+from untaped.capability_api import ConfigError
 from workspace.conftest import StubManifests, StubRegistry, empty_manifest
 
 

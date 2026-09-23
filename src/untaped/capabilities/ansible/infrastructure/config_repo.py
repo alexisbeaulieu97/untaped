@@ -14,8 +14,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from untaped.api import ConfigError, StateCollection, StateMap, first_validation_error
 from untaped.capabilities.ansible.settings import SourceDefinition
+from untaped.capability_api import ConfigError, StateCollection, StateMap, first_validation_error
 
 _SECTION = "ansible"
 _ALIASES_KEY = "aliases"

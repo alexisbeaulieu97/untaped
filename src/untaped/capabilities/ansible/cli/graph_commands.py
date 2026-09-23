@@ -10,15 +10,6 @@ from typing import Annotated, Literal
 from cyclopts import App, Group, Parameter, validators
 
 import untaped.capabilities.ansible.cli.source_commands as source_commands
-from untaped.api import (
-    HttpSettings,
-    UntapedError,
-    app_context,
-    echo,
-    get_config_section,
-    raise_usage,
-    report_errors,
-)
 from untaped.capabilities.ansible.application import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
@@ -47,6 +38,15 @@ from untaped.capabilities.ansible.infrastructure import (
 )
 from untaped.capabilities.ansible.settings import AnsibleSettings, SourceDefinition
 from untaped.capabilities.github.ansible import GithubClient, GithubSettings
+from untaped.capability_api import (
+    HttpSettings,
+    UntapedError,
+    app_context,
+    echo,
+    get_config_section,
+    raise_usage,
+    report_errors,
+)
 
 GraphDirection = Literal["deps", "impact", "both"]
 GraphFormatOption = Annotated[

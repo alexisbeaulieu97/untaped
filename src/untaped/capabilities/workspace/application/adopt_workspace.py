@@ -8,7 +8,6 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.api import first_validation_error
 from untaped.capabilities.workspace.application.ports import (
     Filesystem,
     RepoDiscoverer,
@@ -22,6 +21,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
 )
 from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capability_api import first_validation_error
 
 
 @dataclass(frozen=True)

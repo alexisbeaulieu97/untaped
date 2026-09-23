@@ -1,7 +1,7 @@
 """Bounded, dependency-aware scheduling of fixed AWX work items with stop-on-failure.
 
 The one scheduler behind batch mutations and independent selected actions.
-It runs on :func:`untaped.api.bounded_map`, so at most ``parallel`` workers
+It runs on :func:`untaped.capability_api.bounded_map`, so at most ``parallel`` workers
 run, each sees the caller's context variables (``--quiet`` reaches them),
 and Ctrl-C cancels work that has not started instead of draining it.
 
@@ -18,7 +18,7 @@ import heapq
 import threading
 from collections.abc import Callable, Sequence
 
-from untaped.api import bounded_map
+from untaped.capability_api import bounded_map
 
 MAX_PARALLEL = 10
 """Upper bound on concurrent AWX requests for any batch."""

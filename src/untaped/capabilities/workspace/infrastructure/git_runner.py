@@ -4,7 +4,7 @@ Domain layers depend on a ``GitRunner`` Protocol; this is the concrete
 adapter. Every call shells out to the system ``git`` binary; failures are
 mapped to :class:`GitError`.
 
-Invocations run through :func:`untaped.api.run_git`, so they never wait
+Invocations run through :func:`untaped.capability_api.run_git`, so they never wait
 for interactive credential prompts (a missing credential fails fast instead
 of hanging a sweep), and per-repo calls set ``GIT_CEILING_DIRECTORIES`` so
 git never falls through to a repository enclosing the target directory.
@@ -15,7 +15,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from untaped.api import GitCommandError, run_git
 from untaped.capabilities.workspace.domain import BareCacheEntry, RepoStatus
 from untaped.capabilities.workspace.domain.prune_safety import (
     DIRTY_WORKTREE_BLOCKER,
@@ -24,6 +23,7 @@ from untaped.capabilities.workspace.domain.prune_safety import (
 )
 from untaped.capabilities.workspace.errors import GitError
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
+from untaped.capability_api import GitCommandError, run_git
 
 DEFAULT_TIMEOUT = 60.0
 """Per-call timeout (seconds) for fast/local git ops (status, config, …)."""

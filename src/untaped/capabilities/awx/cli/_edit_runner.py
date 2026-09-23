@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from contextlib import ExitStack
 from pathlib import Path
 
-from untaped.api import OutputFormat
 from untaped.capabilities.awx.application.edit_resources import EditResources
 from untaped.capabilities.awx.application.save_resource import SaveResource
 from untaped.capabilities.awx.application.selection import SelectedResource
@@ -18,7 +17,7 @@ from untaped.capabilities.awx.cli._mutation_runner import (
     prompt_ui,
 )
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capability_api import ConfigError, UntapedError, echo, run_editor
+from untaped.capability_api import ConfigError, OutputFormat, UntapedError, echo, run_editor
 
 
 def run_edit(

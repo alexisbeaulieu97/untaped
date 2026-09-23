@@ -4,14 +4,6 @@ import json
 import sys
 from collections.abc import Mapping
 
-from untaped.api import (
-    ConfigError,
-    PipeEnvelope,
-    echo,
-    is_envelope_line,
-    parse_envelope_line,
-    parse_kv_pairs,
-)
 from untaped.capabilities.awx.application.selection import (
     SelectedResource,
     SelectionRequest,
@@ -19,6 +11,14 @@ from untaped.capabilities.awx.application.selection import (
 )
 from untaped.capabilities.awx.cli._context import AwxContext, scope_for_command
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capability_api import (
+    ConfigError,
+    PipeEnvelope,
+    echo,
+    is_envelope_line,
+    parse_envelope_line,
+    parse_kv_pairs,
+)
 
 
 def select_resources(

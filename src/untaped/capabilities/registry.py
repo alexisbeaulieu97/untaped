@@ -31,7 +31,7 @@ from untaped.errors import ConfigError
 from untaped.settings import Settings, validate_disjoint_settings_sections
 
 #: SDK capability-API version providers build against (spec §2).
-CAPABILITY_API_VERSION: float = 1.0
+CAPABILITY_API_VERSION: float = 1.1
 
 #: Declared API range for built-in capabilities (spec §7.1).
 _BUILTIN_API_REQUIRES: tuple[float, float] = (1.0, 2.0)
@@ -141,7 +141,13 @@ class ApplicationSpec:
 
 @dataclass(frozen=True)
 class CapabilitySpec:
-    """One composable capability unit (spec §1)."""
+    """One composable capability unit (spec §1).
+
+    ``help`` is the one-line summary shown in the root command listing. A
+    built-in that declares it is mounted lazily: its ``app_factory`` (and so
+    its CLI import tree) runs only when the command is dispatched. Without
+    it, the listing falls back to the built app's own help.
+    """
 
     name: str
     app_factory: Callable[[], App]
@@ -150,6 +156,7 @@ class CapabilitySpec:
     state_model: type[BaseModel] | None = None
     skills: tuple[SkillAsset, ...] = ()
     doctor_checks: tuple[DoctorCheck, ...] = ()
+    help: str | None = None
 
     def __post_init__(self) -> None:
         _check_spec_shape(
@@ -159,6 +166,12 @@ class CapabilitySpec:
             self.state_model,
             f"capability {self.name!r}",
         )
+        if self.help is not None and (
+            not isinstance(self.help, str) or not self.help.strip() or "\n" in self.help
+        ):
+            raise ConfigError(
+                f"capability {self.name!r} help must be a non-empty single line or None"
+            )
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "doctor_checks", tuple(self.doctor_checks))
 
@@ -186,6 +199,9 @@ class RegisteredCapability:
     spec: CapabilitySpec
     provider_ref: ProviderRef
     skills: tuple[SkillAsset, ...]
+    #: App staged by the one validating ``app_factory`` call, reused at
+    #: mount time; ``None`` when the factory is deferred (lazy built-in).
+    app: App | None = None
 
 
 #: Every valid quarantine/diagnostic reason code lives here (spec §5 table).
@@ -556,7 +572,7 @@ def _check_rows_1_to_8(spec: CapabilitySpec, state: _CompositionState) -> None:
         seen_checks.add(check.id)
 
 
-def _check_factory(spec: CapabilitySpec) -> None:
+def _check_factory(spec: CapabilitySpec) -> App:
     try:
         staged = spec.app_factory()
     except Exception as exc:
@@ -570,12 +586,34 @@ def _check_factory(spec: CapabilitySpec) -> None:
             f"app factory of capability {spec.name!r} returned "
             f"{type(staged).__name__}, expected cyclopts App",
         )
+    return staged
+
+
+def build_deferred_app(spec: CapabilitySpec) -> App:
+    """Run and validate a deferred built-in factory at first dispatch.
+
+    Lazy built-ins skip :func:`_check_factory` during composition; a factory
+    that raises or returns a non-``App`` is still an SDK bug and surfaces as
+    the same fatal ``ConfigError`` composition would have raised.
+    """
+    try:
+        return _check_factory(spec)
+    except _Quarantine as failed:
+        raise ConfigError(
+            f"built-in capability {spec.name!r} failed validation "
+            f"[{failed.reason}]: {failed.detail}"
+        ) from None
 
 
 def _commit(
-    spec: CapabilitySpec, ref: ProviderRef, state: _CompositionState
+    spec: CapabilitySpec,
+    ref: ProviderRef,
+    state: _CompositionState,
+    app: App | None,
 ) -> RegisteredCapability:
-    registered = RegisteredCapability(spec=spec, provider_ref=ref, skills=tuple(spec.skills))
+    registered = RegisteredCapability(
+        spec=spec, provider_ref=ref, skills=tuple(spec.skills), app=app
+    )
     state.names.add(spec.name)
     state.sections.add(spec.config_section)
     state.profile_fields[spec.config_section] = set(spec.profile_model.model_fields)
@@ -612,7 +650,9 @@ def compose(
         try:
             _check_rows_1_to_8(spec, state)
             check_api_range(_BUILTIN_API_REQUIRES, CAPABILITY_API_VERSION)
-            _check_factory(spec)
+            # A built-in declaring ``help`` is mounted lazily: its factory
+            # runs (and is validated) only when its command is dispatched.
+            staged = None if spec.help is not None else _check_factory(spec)
             check_builtin_metadata(
                 ProviderRef(
                     kind="built-in",
@@ -636,6 +676,7 @@ def compose(
                     api_requires=_BUILTIN_API_REQUIRES,
                 ),
                 state,
+                staged,
             )
         )
     ordered = sorted(externals, key=lambda candidate: (candidate.distribution, candidate.name))
@@ -690,7 +731,9 @@ def compose(
                     "bad-metadata",
                     f"provider {candidate.name!r} declares an empty distribution name",
                 )
-            _check_factory(spec)
+            # Externals always stage eagerly so a bad factory quarantines
+            # the provider instead of failing at dispatch.
+            staged = _check_factory(spec)
         except _Quarantine as failed:
             quarantined.append(failed.to_record(candidate))
             continue
@@ -706,6 +749,7 @@ def compose(
                     api_requires=api_requires,
                 ),
                 state,
+                staged,
             )
         )
     return CompositionResult(capabilities=tuple(capabilities), quarantine=tuple(quarantined))

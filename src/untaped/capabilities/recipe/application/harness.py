@@ -12,7 +12,6 @@ from typing import Literal
 import yaml
 from pydantic import ValidationError
 
-from untaped.api import ConfigError
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.files import read_recipe_file
 from untaped.capabilities.recipe.application.ports import HookExecutorPort
@@ -21,6 +20,7 @@ from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.pack import InstalledPack
 from untaped.capabilities.recipe.domain.plan import FileChange, HookDebugResult, Verdict
 from untaped.capabilities.recipe.domain.testcase import CaseSpec, VerdictExpectation
+from untaped.capability_api import ConfigError
 
 CaseStatus = Literal["pass", "fail", "error", "updated"]
 

@@ -3,13 +3,13 @@
 import stat
 from pathlib import Path
 
-from untaped.api import OutputFormat, UntapedError, atomic_write, echo, emit
 from untaped.capabilities.awx.application import SaveResource, SaveResources
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.yaml_io import dump_resource
+from untaped.capability_api import OutputFormat, UntapedError, atomic_write, echo, emit
 
 
 def run_save_selection(

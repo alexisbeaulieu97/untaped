@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from untaped.api import HttpError, UntapedError
+from untaped.capability_api import HttpError, UntapedError
 
 GithubGraphqlErrorKind = Literal[
     "rate_limited",

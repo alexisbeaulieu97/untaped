@@ -6,7 +6,6 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 
-from untaped.api import bounded_map
 from untaped.capabilities.workspace.application.ports import Filesystem, ManifestReader, ShellRunner
 from untaped.capabilities.workspace.application.repo_selector import select_repos
 from untaped.capabilities.workspace.domain import (
@@ -16,6 +15,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
 )
 from untaped.capabilities.workspace.errors import UnmatchedRepoFilter
+from untaped.capability_api import bounded_map
 
 
 class Foreach:

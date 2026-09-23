@@ -10,16 +10,6 @@ from typing import Annotated, Literal
 import yaml
 from cyclopts import Parameter
 
-from untaped.api import (
-    ColumnsOption,
-    ConfigError,
-    create_app,
-    echo,
-    emit,
-    finish,
-    parse_kv_pairs,
-    unified_diff_text,
-)
 from untaped.capabilities.recipe.application.run_hook import (
     AmbiguousHookVerbError,
     RunHook,
@@ -46,6 +36,16 @@ from untaped.capabilities.recipe.infrastructure.hook_executor import (
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_files import read_hook_project
+from untaped.capability_api import (
+    ColumnsOption,
+    ConfigError,
+    create_app,
+    echo,
+    emit,
+    finish,
+    parse_kv_pairs,
+    unified_diff_text,
+)
 
 app = create_app(name="hook", help="Run installed recipe hooks.")
 HookRunFormat = Literal["json", "yaml", "table", "pipe"]

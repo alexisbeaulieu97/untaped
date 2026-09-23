@@ -204,8 +204,8 @@ def test_connected_client_retries_by_default(no_sleep: list[float]) -> None:
     assert route.call_count == 2
 
 
-def test_retry_policy_is_exported_from_package() -> None:
-    from untaped import RetryPolicy as Exported
+def test_retry_policy_is_exported_from_capability_api() -> None:
+    from untaped.capability_api import RetryPolicy as Exported
 
     assert Exported is RetryPolicy
 

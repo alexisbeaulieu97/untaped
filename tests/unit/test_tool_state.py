@@ -76,7 +76,3 @@ def test_mutate_tool_state_removes_emptied_section(tmp_path: Path) -> None:
 def test_read_tool_state_absent_returns_empty(tmp_path: Path) -> None:
     cfg = tmp_path / "config.yml"
     assert read_tool_state("ansible", path=cfg) == {}
-
-
-def test_safe_config_surface_exported_from_api() -> None:
-    from untaped.api import ensure_config, mutate_tool_state, read_tool_state  # noqa: F401

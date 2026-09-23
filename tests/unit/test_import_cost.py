@@ -35,6 +35,10 @@ def _loaded_heavy_modules(snippet: str) -> str:
 
 
 def test_public_api_import_does_not_load_prompt_toolkit_or_httpx() -> None:
+    assert _loaded_heavy_modules("import untaped.capability_api") == ""
+
+
+def test_deprecated_api_shim_import_does_not_load_prompt_toolkit_or_httpx() -> None:
     assert _loaded_heavy_modules("import untaped.api") == ""
 
 
@@ -46,3 +50,36 @@ def test_building_and_rendering_a_ui_context_does_not_load_prompt_toolkit() -> N
         "ctx.message('info', 'rendered')\n"
     )
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
+
+
+_DISPATCH_PROBE = (
+    "import contextlib, io\n"
+    "from untaped.bootstrap import main\n"
+    "with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
+    "    main({argv!r})\n"
+    "cli = sorted(\n"
+    "    m for m in sys.modules\n"
+    "    if m.startswith('untaped.capabilities.') and '.cli' in m\n"
+    ")\n"
+    "print(' '.join(cli))\n"
+)
+
+
+def _capability_cli_modules(argv: list[str]) -> set[str]:
+    """Capability CLI modules a clean ``untaped <argv>`` run imports (httpx never)."""
+    # The verdict's heavy-module line follows the CLI line; empty lines strip away.
+    cli_line, _, heavy_line = _loaded_heavy_modules(_DISPATCH_PROBE.format(argv=argv)).partition(
+        "\n"
+    )
+    assert "httpx" not in heavy_line.split(",")
+    return set(cli_line.split())
+
+
+def test_root_help_imports_no_capability_cli() -> None:
+    assert _capability_cli_modules(["--help"]) == set()
+
+
+def test_capability_help_imports_only_its_own_cli() -> None:
+    loaded = _capability_cli_modules(["workspace", "--help"])
+    assert loaded
+    assert {module.split(".")[2] for module in loaded} == {"workspace"}

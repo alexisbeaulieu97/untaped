@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-from untaped.api import safe_path_segment
+from untaped.capability_api import safe_path_segment
 
 
 def cache_path_for(url: str, *, cache_dir: Path) -> Path:

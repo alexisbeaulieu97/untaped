@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from untaped.api import HttpClient, paginate_link
+from untaped.capability_api import HttpClient, paginate_link
 
 
 def paginate_search(

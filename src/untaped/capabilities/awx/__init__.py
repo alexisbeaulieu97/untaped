@@ -25,6 +25,7 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="awx",
     app_factory=build_app,
+    help="Talk to Ansible Automation Platform / AWX.",
     config_section="awx",
     profile_model=AwxSettings,
     skills=(

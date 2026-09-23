@@ -4,7 +4,6 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.api import ColumnsOption, FormatOption, report_errors
 from untaped.capabilities.awx.cli._action_runner import run_action_selection
 from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
@@ -25,6 +24,7 @@ from untaped.capabilities.awx.cli.options import (
     YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capability_api import ColumnsOption, FormatOption, report_errors
 
 
 def _add_sync(app: App, spec: AwxResourceSpec) -> None:

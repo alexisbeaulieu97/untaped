@@ -13,13 +13,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from untaped.api import ConfigError, HttpError, UntapedError
 from untaped.capabilities.awx.errors import (
     AwxApiError,
     BadRequestError,
     ConflictError,
     PermissionDeniedError,
 )
+from untaped.capability_api import ConfigError, HttpError, UntapedError
 
 _BODY_SNIPPET = 500
 

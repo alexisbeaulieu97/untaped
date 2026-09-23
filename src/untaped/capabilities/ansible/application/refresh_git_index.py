@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from untaped.api import UntapedError, bounded_map
 from untaped.capabilities.ansible.application.ports import (
     GitHubDependencyReader,
     IncrementalDependencyIndexWriter,
@@ -47,6 +46,7 @@ from untaped.capabilities.github.ansible import (
     ResolveRepositoryInventory,
     normalize_team_scopes,
 )
+from untaped.capability_api import UntapedError, bounded_map
 
 ProgressCallback = Callable[[RefreshProgressEvent], None]
 ProbeMode = Literal["all", "default_branch"]

@@ -29,6 +29,7 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="ansible",
     app_factory=build_app,
+    help="Analyze Ansible dependency graphs.",
     config_section="ansible",
     profile_model=AnsibleSettings,
     state_model=AnsibleState,

@@ -25,7 +25,10 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import (
+from untaped.capabilities.awx.application import GetUnifiedTemplate
+from untaped.capabilities.awx.cli._context import open_context
+from untaped.capabilities.awx.cli._get import default_get_columns
+from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
@@ -39,9 +42,6 @@ from untaped.api import (
     render_rows,
     report_errors,
 )
-from untaped.capabilities.awx.application import GetUnifiedTemplate
-from untaped.capabilities.awx.cli._context import open_context
-from untaped.capabilities.awx.cli._get import default_get_columns
 
 app = create_app(
     name="unified-templates",
