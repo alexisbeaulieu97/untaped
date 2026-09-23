@@ -59,6 +59,9 @@ TRANSIENT_FETCH_MARKERS = (
     "returned error: 504",
 )
 METADATA_FILE = "untaped-corpus.json"
+# Bare repos live at <root>/<host>/<name>-<digest>.git (see cache_path_for);
+# a fixed-depth glob avoids walking objects/ and managed worktrees.
+METADATA_GLOB = f"*/*.git/{METADATA_FILE}"
 NON_INTERACTIVE_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 
@@ -310,13 +313,8 @@ class GitCorpusCache:
         if not managed_root.exists():
             return ()
         rows: list[CorpusRepoResult] = []
-        for metadata_path in sorted(managed_root.rglob(METADATA_FILE)):
+        for metadata_path, data in self._metadata_entries(managed_root):
             bare = metadata_path.parent
-            try:
-                data = _read_metadata(metadata_path)
-            except GitCorpusError as exc:
-                print(f"warning: {exc}", file=sys.stderr)
-                continue
             rows.append(
                 CorpusRepoResult(
                     repo=str(data.get("repo") or ""),
@@ -337,8 +335,7 @@ class GitCorpusCache:
         managed_root = root.expanduser()
         if not managed_root.exists():
             return None
-        for metadata_path in sorted(managed_root.rglob(METADATA_FILE)):
-            data = _read_metadata(metadata_path)
+        for _metadata_path, data in self._metadata_entries(managed_root):
             if data.get("repo") != repo:
                 continue
             return CorpusRepoTarget(
@@ -348,6 +345,16 @@ class GitCorpusCache:
                 archived=_metadata_archived(data),
             )
         return None
+
+    def _metadata_entries(self, managed_root: Path) -> list[tuple[Path, dict[str, object]]]:
+        """Read every managed bare repo's metadata, warning on and skipping corrupt files."""
+        entries: list[tuple[Path, dict[str, object]]] = []
+        for metadata_path in sorted(managed_root.glob(METADATA_GLOB)):
+            try:
+                entries.append((metadata_path, _read_metadata(metadata_path)))
+            except GitCorpusError as exc:
+                print(f"warning: {exc}", file=sys.stderr)
+        return entries
 
     def clean_repo(self, *, root: Path, repo: CorpusRepoResult) -> CorpusRepoResult:
         """Remove one cached repository from the managed corpus root."""
