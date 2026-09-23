@@ -515,6 +515,26 @@ def _parse_link_value(value: str) -> tuple[str, dict[str, str]]:
     return value[1:end], params
 
 
+def _same_origin_next(response: httpx.Response) -> str | None:
+    """Resolve the ``rel="next"`` link, refusing to leave the current origin.
+
+    The client attaches its credentials (e.g. a bearer token) to every
+    request, so following a link to another scheme/host/port would leak
+    them to a server the user never configured.
+    """
+    link = _parse_link_next(response.headers.get("link"))
+    if link is None:
+        return None
+    current = response.request.url
+    target = current.join(link)
+    if (target.scheme, target.host, target.port) != (current.scheme, current.host, current.port):
+        raise HttpError(
+            f"refusing to follow cross-origin pagination link {target} from {current}",
+            url=str(current),
+        )
+    return str(target)
+
+
 def paginate_link(
     http: HttpClient,
     path: str,
@@ -529,8 +549,10 @@ def paginate_link(
     """Walk an RFC 5988 ``Link``-header paginated endpoint (GitHub-style).
 
     The first request asks for ``min(page_size, limit)`` rows via
-    ``size_param``; each ``rel="next"`` URL is absolute and carries its own
-    cursor parameters, so it is followed verbatim with no extra params.
+    ``size_param``; each ``rel="next"`` URL carries its own cursor
+    parameters, so it is followed verbatim with no extra params. A next link
+    to a different origin raises :class:`HttpError` rather than sending the
+    client's credentials elsewhere; a non-JSON page raises too.
     ``item_key`` unwraps an envelope (e.g. search's ``items``); ``None``
     means the payload body is the row array. A 200 with a non-list body
     short-circuits gracefully. Loop mechanics (limit, cursor-cycle guard,
@@ -541,13 +563,13 @@ def paginate_link(
 
     def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
         response = http.get(cursor or path, params=first_params if cursor is None else None)
-        payload = response.json()
+        payload = _decode_json(response)
         items = (
             payload.get(item_key) if item_key is not None and isinstance(payload, dict) else payload
         )
         if not isinstance(items, list):
             return [], None
-        return items, _parse_link_next(response.headers.get("link"))
+        return items, _same_origin_next(response)
 
     yield from paginate_pages(fetch, limit=limit, max_pages=max_pages)
 
