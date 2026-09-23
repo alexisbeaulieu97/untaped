@@ -9,8 +9,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
+from untaped.capabilities.github.domain.errors import is_auth_failure
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import app_context
+from untaped.capability_api import ConfigError, UntapedError, app_context, hint
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -40,4 +41,12 @@ def open_client() -> Iterator[tuple[GithubClient, UiContext]]:
     # default theme rather than raising on the data path (e.g. --format raw).
     ui = ctx.ui(strict=False)
     with GithubClient(ctx.section("github", GithubSettings), http=ctx.http) as client:
-        yield client, ui
+        try:
+            yield client, ui
+        except UntapedError as exc:
+            if is_auth_failure(exc):
+                raise ConfigError(
+                    "GitHub rejected the configured token (HTTP 401)\n"
+                    + hint("config set github.token --prompt")
+                ) from exc
+            raise

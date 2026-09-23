@@ -25,7 +25,7 @@ from untaped.capabilities.github.domain import (
     WorktreeResult,
     profile_join,
 )
-from untaped.capabilities.github.domain.errors import GitCorpusError
+from untaped.capabilities.github.errors import GitCorpusError
 from untaped.capability_api import (
     GitCommandError,
     GitResult,

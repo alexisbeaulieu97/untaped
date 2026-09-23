@@ -11,7 +11,7 @@ from untaped.capabilities.github.application import (
     RepositoryInventoryScope,
 )
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption
+from untaped.capabilities.github.cli.scopes import OrgOption
 from untaped.capabilities.github.domain import CorpusRepoResult
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
