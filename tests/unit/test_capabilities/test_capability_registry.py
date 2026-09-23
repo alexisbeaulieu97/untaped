@@ -6,6 +6,7 @@ from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
+from cyclopts import App
 
 from test_capabilities.capharness import (
     OtherProfile,
@@ -13,6 +14,7 @@ from test_capabilities.capharness import (
     State,
     exploding_check,
     function_provider,
+    make_app,
     make_check,
     make_external,
     make_shell,
@@ -349,3 +351,36 @@ def test_capability_context_snapshot_shape() -> None:
     assert ctx.profile_fields == frozenset({"token", "region"})
     assert ctx.state_fields == frozenset({"last_run"})
     assert ctx.settings is settings
+
+
+@pytest.mark.parametrize("bad_help", ["", "   ", "two\nlines", 42])
+def test_capability_help_must_be_one_non_empty_line(bad_help: object) -> None:
+    with pytest.raises(ConfigError, match="help must be a non-empty single line"):
+        CapabilitySpec(
+            name="alpha",
+            app_factory=make_spec().app_factory,
+            config_section="alpha",
+            profile_model=Profile,
+            help=bad_help,  # type: ignore[arg-type]
+        )
+
+
+def test_builtin_with_help_defers_its_factory() -> None:
+    calls: list[str] = []
+
+    def factory() -> App:
+        calls.append("lazy")
+        return make_app("lazy")
+
+    lazy = CapabilitySpec(
+        name="lazy",
+        app_factory=factory,
+        config_section="lazy",
+        profile_model=Profile,
+        help="Lazy capability.",
+    )
+    result = compose(make_shell(), [lazy, make_spec()])
+    lazy_cap, eager_cap = result.capabilities
+    assert calls == []
+    assert lazy_cap.app is None
+    assert isinstance(eager_cap.app, App)
