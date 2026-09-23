@@ -298,7 +298,7 @@ def test_plan_field_change_carries_sorted_before_after() -> None:
 # ---- execute ----
 
 
-def test_execute_issues_disassociate_then_associate_posts() -> None:
+def test_execute_issues_associate_then_disassociate_posts() -> None:
     rec = MembershipReconciler()
     client = _StubClient()
     plans = [
@@ -311,9 +311,9 @@ def test_execute_issues_disassociate_then_associate_posts() -> None:
     ]
     rec.execute(GROUP_SPEC, 42, plans, client=cast(ResourceClient, client))
     assert client.subendpoint_calls == [
-        (42, "hosts", "POST", {"id": 9, "disassociate": True}),
         (42, "hosts", "POST", {"id": 7}),
         (42, "hosts", "POST", {"id": 8}),
+        (42, "hosts", "POST", {"id": 9, "disassociate": True}),
     ]
 
 
@@ -483,3 +483,21 @@ def test_supplied_membership_snapshot_cannot_refresh_missing_relationship() -> N
             membership_snapshots={},
         )
     assert not client.subendpoint_calls
+
+
+def test_ordered_replacement_removes_unwanted_members_after_adding() -> None:
+    ref = FkRef(field="members", kind="Item", multi=True, sub_endpoint="members", ordered=True)
+    client = _StubClient()
+    plan = MembershipPlan(
+        ref=ref,
+        to_associate=(3,),
+        to_disassociate=(2,),
+        field_change=None,
+        existing_ids=(1, 2),
+        desired_ids=(1, 3),
+    )
+    MembershipReconciler().execute(GROUP_SPEC, 42, [plan], client=cast(ResourceClient, client))
+    assert client.subendpoint_calls == [
+        (42, "members", "POST", {"id": 3}),
+        (42, "members", "POST", {"id": 2, "disassociate": True}),
+    ]

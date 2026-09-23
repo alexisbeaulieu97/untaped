@@ -53,6 +53,9 @@ class FakeAap:
         # of the fields the template's ``ask_*_on_launch`` flags ignore).
         self.next_action_ignored_fields: dict[str, Any] = {}
         self.ignored_write_fields: set[str] = set()
+        # Member ids whose associate POST is refused with 403 (e.g. no
+        # permission on that credential); disassociation still works.
+        self.forbidden_associate_ids: set[int] = set()
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
 
@@ -98,6 +101,11 @@ class FakeAap:
                 return self._get(parts[0], int(parts[1]))
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "launch":
                 return self._launch_info(parts[0], int(parts[1]))
+            if len(parts) == 3 and parts[1].isdigit() and parts[2] == "survey_spec":
+                record = self.store.get(parts[0], {}).get(int(parts[1]))
+                if record is None:
+                    return _err(404, f"{path} not found")
+                return httpx.Response(200, json=record.get("survey_spec") or {})
             if len(parts) == 3 and parts[1].isdigit() and parts[2] == "stdout":
                 return self._stdout(parts[0], int(parts[1]), params)
             if len(parts) == 3 and parts[1].isdigit():
@@ -247,11 +255,19 @@ class FakeAap:
             "status": status,
         }
         if action == "launch":
-            # Real AWX accepts unprompted fields and reports them as ignored.
+            # Real AWX accepts unprompted fields and reports them as ignored,
+            # unless the value equals the template's own (a no-op).
             ignored = {
                 field: value
                 for field, value in body.items()
-                if field in _LAUNCH_PROMPTS and not self._prompts_for(record, field)
+                if field in _LAUNCH_PROMPTS
+                and not self._prompts_for(record, field)
+                and _template_launch_value(record, field) != value
+                and not (field == "extra_vars" and value in ("{}", {}))
+                and not (
+                    field == "credentials"
+                    and set(value) <= set(_template_launch_value(record, field))
+                )
             }
             ignored.update(self.next_action_ignored_fields)
             self.next_action_ignored_fields = {}
@@ -273,6 +289,11 @@ class FakeAap:
             return _err(404, f"{api_path}/{id_}/launch/ not found")
         info: dict[str, Any] = {
             ask: bool(record.get(ask, False)) for ask in _LAUNCH_PROMPTS.values()
+        }
+        info["defaults"] = {
+            field: _template_launch_value(record, field)
+            for field in _LAUNCH_PROMPTS
+            if field == "credentials" or field in record
         }
         info["survey_enabled"] = bool(record.get("survey_enabled", False))
         info["variables_needed_to_start"] = list(record.get("variables_needed_to_start", []))
@@ -349,6 +370,8 @@ class FakeAap:
         if body.get("disassociate"):
             self.memberships[key].discard(member_id)
         else:
+            if member_id in self.forbidden_associate_ids:
+                return _err(403, "You do not have permission to perform this action.")
             if sub_path == "credentials":
                 # AWX allows at most one credential per credential type.
                 credentials = self.store["credentials"]
@@ -430,6 +453,14 @@ _LAUNCH_PROMPTS: dict[str, str] = {
     "diff_mode": "ask_diff_mode_on_launch",
     "job_type": "ask_job_type_on_launch",
 }
+
+
+def _template_launch_value(record: dict[str, Any], field: str) -> Any:
+    """The template's own value for a launch field (credentials as ids)."""
+    if field == "credentials":
+        summary = record.get("summary_fields") or {}
+        return [c["id"] for c in summary.get("credentials") or []]
+    return record.get(field)
 
 
 # Strict execution routes mirror Controller URLs; arbitrary subcollections must
@@ -525,6 +556,11 @@ def _matches_all(  # noqa: C901
                 # caller seeded ``<x>_name`` directly without an FK chain.
             flat = f"{base}_name"
             if str(record.get(flat, "")) != value:
+                return False
+            continue
+        if key.endswith("__isnull"):
+            base = key[: -len("__isnull")]
+            if (record.get(base) is None) != (value == "true"):
                 return False
             continue
         if key.endswith("__icontains"):

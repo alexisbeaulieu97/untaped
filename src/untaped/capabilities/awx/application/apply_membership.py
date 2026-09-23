@@ -25,7 +25,7 @@ from typing import Any, Literal
 
 from untaped.capabilities.awx.application.apply_planner import resolve_fk_value, scope_for
 from untaped.capabilities.awx.application.mutation_refs import DeferredReference, PlannedId
-from untaped.capabilities.awx.application.ports import FkResolver, ResourceClient
+from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.domain import FieldChange, FkRef, Resource, ResourceSpec
 from untaped.capabilities.awx.errors import BadRequest
 
@@ -53,10 +53,22 @@ class MembershipPlan:
     mode: Literal["replacement", "additive"] = "replacement"
     requested_associate: tuple[int, ...] = ()
     requested_disassociate: tuple[int, ...] = ()
+    disassociate_first: tuple[int, ...] = ()
+    """Removed members that must leave before associating (credential type clash)."""
 
 
 class MembershipReconciler:
-    """Plan + execute multi-FK sub-endpoint membership writes."""
+    """Plan + execute multi-FK sub-endpoint membership writes.
+
+    Replacements associate before they disassociate, so a refused associate
+    (for example a 403 on one credential) never strips the resource. The only
+    exception is a credential whose type matches an incoming credential: AWX
+    allows one credential per type, so that one must leave first. If an
+    associate still fails after removals, the removed members are re-added.
+    """
+
+    def __init__(self, catalog: Catalog | None = None) -> None:
+        self._catalog = catalog
 
     def plan(  # noqa: C901
         self,
@@ -98,6 +110,7 @@ class MembershipReconciler:
             scope = scope_for(ref, resource)
             existing_ids: list[int] = []
             existing_name_by_id: dict[int, str] = {}
+            existing_type_by_id: dict[int, Any] = {}
             if record_id is not None:
                 member_records: Iterable[dict[str, Any]]
                 if membership_snapshots is None:
@@ -114,6 +127,8 @@ class MembershipReconciler:
                     rname = record.get("name")
                     if isinstance(rname, str):
                         existing_name_by_id[rid] = rname
+                    if record.get("credential_type") is not None:
+                        existing_type_by_id[rid] = record["credential_type"]
 
             resolved_desired_ids = tuple(
                 resolve_fk_value(ref.kind, value, scope=scope, fk=fk) for value in desired_names
@@ -132,6 +147,11 @@ class MembershipReconciler:
             to_disassociate = tuple(
                 member_id for member_id in existing_ids if member_id not in desired_set
             )
+            disassociate_first: tuple[int, ...] = ()
+            if ref.kind == "Credential" and to_associate and to_disassociate:
+                disassociate_first = self._type_clashes(
+                    to_associate, to_disassociate, existing_type_by_id, client=client
+                )
             to_reorder: tuple[PlannedId, ...] = ()
             if ref.ordered:
                 to_reorder = _ordered_replacements(
@@ -166,9 +186,44 @@ class MembershipReconciler:
                     existing_ids=tuple(existing_ids),
                     desired_ids=resolved_desired_ids,
                     to_reorder=to_reorder,
+                    disassociate_first=disassociate_first,
                 )
             )
         return plans
+
+    def _type_clashes(
+        self,
+        to_associate: tuple[PlannedId, ...],
+        to_disassociate: tuple[int, ...],
+        existing_types: Mapping[int, Any],
+        *,
+        client: ResourceClient,
+    ) -> tuple[int, ...]:
+        """Removed credentials sharing a type with an incoming one.
+
+        An unknown type on either side is treated as a clash, so a same-type
+        swap still frees the slot; the restore on failure covers that case.
+        """
+        incoming: set[Any] = set()
+        for member in to_associate:
+            member_type = self._credential_type(member, client)
+            if member_type is None:
+                return to_disassociate
+            incoming.add(member_type)
+        return tuple(
+            member
+            for member in to_disassociate
+            if existing_types.get(member) is None or existing_types[member] in incoming
+        )
+
+    def _credential_type(self, member: PlannedId, client: ResourceClient) -> Any:
+        if self._catalog is None or not isinstance(member, int):
+            return None
+        try:
+            record = client.get(self._catalog.get("Credential"), member)
+        except Exception:
+            return None
+        return record.model_dump().get("credential_type")
 
     def plan_additive(
         self,
@@ -251,28 +306,69 @@ class MembershipReconciler:
         """POST associate / disassociate per ``plans`` against the resource's id."""
         for plan in plans:
             if plan.ref.ordered and plan.mode == "replacement":
+                # Reordered members must leave to be re-appended in order;
+                # members no longer wanted leave only after the adds succeed.
                 associate = set(plan.to_reorder) | set(plan.to_associate)
-                operations = (
-                    (tuple(dict.fromkeys((*plan.to_disassociate, *plan.to_reorder))), True),
+                reorder = plan.to_reorder
+                operations: tuple[tuple[tuple[PlannedId, ...], bool], ...] = (
+                    (reorder, True),
                     (tuple(member for member in plan.desired_ids if member in associate), False),
+                    (tuple(m for m in plan.to_disassociate if m not in reorder), True),
                 )
             else:
-                # Replacement removes first: AWX rejects a second credential
-                # of the same type, so swapping one must free the slot before
-                # associating. Additive plans only ever carry one direction.
+                # Associate first so a refused associate leaves the resource
+                # intact; only same-type credentials must leave beforehand.
+                # Additive plans only ever carry one direction.
+                first = plan.disassociate_first
                 operations = (
-                    (plan.to_disassociate, True),
+                    (first, True),
                     (plan.to_associate, False),
+                    (tuple(m for m in plan.to_disassociate if m not in first), True),
                 )
+            removed: list[PlannedId] = []
             for member_ids, disassociate in operations:
+                try:
+                    for member_id in member_ids:
+                        self.post_members(
+                            spec,
+                            parent_id=record_id,
+                            ref=plan.ref,
+                            member_ids=(member_id,),
+                            disassociate=disassociate,
+                            client=client,
+                        )
+                        if disassociate:
+                            removed.append(member_id)
+                except Exception as exc:
+                    if disassociate or not removed:
+                        raise
+                    raise self._restore(spec, record_id, plan, removed, exc, client) from exc
+
+    def _restore(
+        self,
+        spec: ResourceSpec,
+        record_id: int,
+        plan: MembershipPlan,
+        removed: list[PlannedId],
+        error: Exception,
+        client: ResourceClient,
+    ) -> BadRequest:
+        """Re-add members removed earlier in this reconcile after an associate failed."""
+        lost: list[PlannedId] = []
+        for member_id in removed:
+            try:
                 self.post_members(
-                    spec,
-                    parent_id=record_id,
-                    ref=plan.ref,
-                    member_ids=member_ids,
-                    disassociate=disassociate,
-                    client=client,
+                    spec, parent_id=record_id, ref=plan.ref, member_ids=(member_id,), client=client
                 )
+            except Exception:
+                lost.append(member_id)
+        members = ", ".join(str(member) for member in lost or removed)
+        outcome = (
+            f"could not restore removed members {members}"
+            if lost
+            else f"restored removed members {members}"
+        )
+        return BadRequest(f"{plan.ref.field}: associate failed ({error}); {outcome}")
 
     def post_members(
         self,

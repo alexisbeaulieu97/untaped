@@ -5,6 +5,7 @@ the per-flag visibility / rejection / payload-translation triple), the
 launch command body; submission and monitoring use the shared action runner.
 """
 
+import datetime
 import json
 import re
 from collections.abc import Callable
@@ -74,7 +75,8 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             Parameter(
                 name="--extra-vars",
                 help=(
-                    "KEY=VAL (JSON-decoded value), @FILE (YAML/JSON), or a JSON/YAML "
+                    "KEY=VAL (true/false/null, integers and JSON objects/arrays "
+                    "decoded; anything else stays a string), @FILE (YAML/JSON), or a JSON/YAML "
                     "mapping; repeatable, merged left to right."
                 ),
                 consume_multiple=False,
@@ -334,7 +336,7 @@ def _build_launch_payload(
     """
     payload: dict[str, Any] = {}
     if extra_vars and "extra_vars" in accepts:
-        payload["extra_vars"] = json.dumps(parse_extra_vars(extra_vars))
+        payload["extra_vars"] = encode_extra_vars(parse_extra_vars(extra_vars))
     if limit and "limit" in accepts:
         payload["limit"] = limit
     for f in LAUNCH_FLAGS:
@@ -348,13 +350,59 @@ def _build_launch_payload(
 
 
 _KEY_VALUE = re.compile(r"^[A-Za-z_][\w.-]*=")
+_INTEGER = re.compile(r"^-?(0|[1-9]\d*)$")
+_JSON_WORDS: dict[str, Any] = {"true": True, "false": False, "null": None}
+
+
+def _decode_key_value(raw: str) -> Any:
+    """Decode ``true``/``false``/``null``, integers, and JSON objects/arrays.
+
+    Everything else (``1.10``, ``1e3``, ``NaN``, quoted text) stays the
+    literal string the user typed, so version-like values are not mangled.
+    """
+    if raw in _JSON_WORDS:
+        return _JSON_WORDS[raw]
+    if _INTEGER.match(raw):
+        return int(raw)
+    if raw[:1] in {"{", "["}:
+        try:
+            decoded = json.loads(raw, parse_constant=_reject_constant)
+        except json.JSONDecodeError, ValueError:
+            return raw
+        if isinstance(decoded, dict | list):
+            return decoded
+    return raw
+
+
+def _reject_constant(name: str) -> Any:
+    raise ValueError(name)
+
+
+def _normalize(value: Any) -> Any:
+    """Turn YAML timestamps into ISO strings so the mapping is JSON-encodable."""
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _normalize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize(item) for item in value]
+    return value
+
+
+def encode_extra_vars(values: dict[str, Any]) -> str:
+    """JSON-encode merged extra vars, rejecting values JSON cannot carry."""
+    try:
+        return json.dumps(_normalize(values), allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise_usage(f"--extra-vars contains a value JSON cannot encode: {exc}")
 
 
 def parse_extra_vars(values: list[str]) -> dict[str, Any]:
     """Merge ``--extra-vars`` entries (left to right) into one mapping.
 
     Each entry is ``@PATH`` (a YAML/JSON mapping file), ``KEY=VAL`` (the
-    value JSON-decoded when valid JSON, else kept as a string), or a raw
+    value decoded only for ``true``/``false``/``null``, integers, and JSON
+    objects/arrays; anything else is kept as the typed string), or a raw
     JSON/YAML mapping. AWX expects a mapping; anything else is a usage error.
     """
     merged: dict[str, Any] = {}
@@ -363,10 +411,7 @@ def parse_extra_vars(values: list[str]) -> dict[str, Any]:
             merged.update(read_structured_file(Path(entry[1:]).expanduser()))
         elif _KEY_VALUE.match(entry):
             key, _, raw = entry.partition("=")
-            try:
-                merged[key] = json.loads(raw)
-            except json.JSONDecodeError:
-                merged[key] = raw
+            merged[key] = _decode_key_value(raw)
         else:
             try:
                 parsed = yaml.safe_load(entry)
@@ -380,4 +425,4 @@ def parse_extra_vars(values: list[str]) -> dict[str, Any]:
     return merged
 
 
-__all__ = ["LAUNCH_FLAGS", "LaunchFlag", "parse_extra_vars"]
+__all__ = ["LAUNCH_FLAGS", "LaunchFlag", "encode_extra_vars", "parse_extra_vars"]

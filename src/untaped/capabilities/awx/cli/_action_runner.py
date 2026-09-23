@@ -2,8 +2,8 @@
 
 import json
 from collections import Counter
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, NoReturn
 
 from rich.console import Console
 
@@ -19,7 +19,11 @@ from untaped.api import (
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
-from untaped.capabilities.awx.application.selected_actions import run_selected_actions
+from untaped.capabilities.awx.application.selected_actions import (
+    ActionsInterrupted,
+    SelectedActionOutcome,
+    run_selected_actions,
+)
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
@@ -73,8 +77,10 @@ def run_action_selection(
     def safe_error(exc: Exception, target: SelectedResource) -> str:
         return _action_error(exc, spec, target, payload)
 
-    outcomes = run_selected_actions(
+    labels = _monitor_labels(targets)
+    outcomes = _submit(
         targets,
+        labels,
         lambda item: RunAction(ctx.repo).execute(spec, item.id, action=action, payload=payload),
         parallel=parallel,
         continue_on_error=continue_on_error,
@@ -82,7 +88,6 @@ def run_action_selection(
     )
     launched: list[tuple[str, Job]] = []
     row_by_label: dict[str, int] = {}
-    labels = _monitor_labels(targets)
     for index, outcome in enumerate(outcomes):
         row = rows[index]
         row.update(action=outcome.action, detail=outcome.detail)
@@ -94,7 +99,7 @@ def run_action_selection(
             launched.append((label, outcome.result))
             row_by_label[label] = index
     if launched and (wait or track):
-        finals, errors = _monitor(ctx, launched, track=track)
+        finals, errors = _monitor(ctx, launched, _unmonitored(outcomes, labels), track=track)
         row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
         for job in finals:
             row = rows[row_by_job[(job.kind, job.id)]]
@@ -111,23 +116,97 @@ def run_action_selection(
     finish(any(row["action"] != "completed" for row in rows))
 
 
+def _submit(
+    targets: Sequence[SelectedResource],
+    labels: list[str],
+    worker: Callable[[SelectedResource], Job],
+    *,
+    parallel: int,
+    continue_on_error: bool,
+    error_detail: Callable[[Exception, SelectedResource], str],
+) -> list[SelectedActionOutcome[Job]]:
+    """Run the POST phase; Ctrl-C names the executions submitted so far."""
+    try:
+        return run_selected_actions(
+            targets,
+            worker,
+            parallel=parallel,
+            continue_on_error=continue_on_error,
+            error_detail=error_detail,
+        )
+    except ActionsInterrupted as interrupted:
+        label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
+        report_interrupted(
+            [
+                (label_by_target[id(outcome.target)], job)
+                for outcome in interrupted.outcomes
+                if (job := _submitted_execution(outcome)) is not None
+            ]
+        )
+
+
 def _monitor(
-    ctx: AwxContext, launched: list[tuple[str, Job]], *, track: bool
+    ctx: AwxContext,
+    launched: list[tuple[str, Job]],
+    unmonitored: list[tuple[str, Job]],
+    *,
+    track: bool,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Wait on launched executions; Ctrl-C stops polling and names what still runs."""
+    finished: dict[str, Job] = {}
     try:
         if track:
             console = Console(stderr=True, highlight=False)
-            return _drain_parallel(ctx.monitor, launched, console, stop=ctx.stop)
-        return _wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop)
+            return _drain_parallel(ctx.monitor, launched, console, stop=ctx.stop, finished=finished)
+        return _wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
     except KeyboardInterrupt:
-        by_kind: dict[str, list[str]] = {}
-        for label, job in launched:
-            echo(f"interrupted: {label}: {job.kind} {job.id} keeps running", err=True)
-            by_kind.setdefault(job.kind, []).append(str(job.id))
-        for kind, ids in by_kind.items():
-            echo(f"hint: untaped awx jobs wait {' '.join(ids)} --kind {kind}", err=True)
-        raise SystemExit(130) from None
+        report_interrupted(
+            [(label, finished.get(label, job)) for label, job in launched] + unmonitored
+        )
+
+
+_ACTIVE_STATUSES = frozenset({"new", "pending", "waiting", "running"})
+
+
+def report_interrupted(executions: Sequence[tuple[str | None, Job]]) -> NoReturn:
+    """Name every execution not known to have ended, with a ``jobs wait`` hint; exit 130.
+
+    A status known locally to be terminal is skipped; an active one "keeps
+    running"; an unknown status (e.g. a job AWX created while ignoring
+    fields) is reported as "was launched".
+    """
+    by_kind: dict[str, list[str]] = {}
+    for label, job in executions:
+        if job.is_terminal:
+            continue
+        state = "keeps running" if job.status in _ACTIVE_STATUSES else "was launched"
+        prefix = f"{label}: " if label else ""
+        echo(f"interrupted: {prefix}{job.kind} {job.id} {state}", err=True)
+        by_kind.setdefault(job.kind, []).append(str(job.id))
+    for kind, ids in by_kind.items():
+        echo(f"hint: untaped awx jobs wait {' '.join(ids)} --kind {kind}", err=True)
+    raise SystemExit(130)
+
+
+def _unmonitored(
+    outcomes: Sequence[SelectedActionOutcome[Job]], labels: list[str]
+) -> list[tuple[str, Job]]:
+    """Executions AWX created for failed rows (ignored fields); not waited on."""
+    return [
+        (labels[index], job)
+        for index, outcome in enumerate(outcomes)
+        if outcome.result is None and (job := _submitted_execution(outcome)) is not None
+    ]
+
+
+def _submitted_execution(outcome: SelectedActionOutcome[Job]) -> Job | None:
+    """The execution an outcome created: its result, or one AWX made despite errors."""
+    if outcome.result is not None:
+        return outcome.result
+    error = outcome.error
+    if isinstance(error, ActionResponseError) and error.execution_id is not None:
+        return Job(id=error.execution_id, kind=error.execution_kind or "job", status="unknown")
+    return None
 
 
 def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:

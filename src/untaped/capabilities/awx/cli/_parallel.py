@@ -28,9 +28,14 @@ def _drain_parallel_with_worker(
     *,
     while_running: Callable[[], None] | None = None,
     stop: threading.Event | None = None,
+    finished: dict[str, Job] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Run ``worker_fn(name, job)`` concurrently and collect outcomes in
     launch order.
+
+    ``finished``, if given, receives each worker's final :class:`Job` as
+    soon as it returns, so an interrupted caller knows which executions
+    already ended.
 
     ``UntapedError`` raised by ``worker_fn`` is captured into
     ``errors``; any other ``Exception`` is wrapped at the worker
@@ -53,11 +58,14 @@ def _drain_parallel_with_worker(
         # propagates to the main thread for the executor's ``shutdown(wait=True)``
         # to cancel pending work cleanly. Widening this clause swallows Ctrl-C.
         try:
-            return worker_fn(name, job)
+            result = worker_fn(name, job)
         except UntapedError:
             raise
         except Exception as exc:
             raise UntapedError(f"{type(exc).__name__}: {exc}") from exc
+        if finished is not None:
+            finished[name] = result
+        return result
 
     with ThreadPoolExecutor(max_workers=min(10, len(jobs))) as pool:
         futures = [(name, pool.submit(_wrap, name, job)) for name, job in jobs]
@@ -86,6 +94,7 @@ def _drain_parallel(
     console: Console,
     *,
     stop: threading.Event | None = None,
+    finished: dict[str, Job] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Drain ``--track`` events from multiple jobs concurrently.
 
@@ -135,7 +144,9 @@ def _drain_parallel(
             else:
                 console.print(render_event_text(ev, prefix=name))
 
-    return _drain_parallel_with_worker(jobs, _worker, while_running=_drain_queue, stop=stop)
+    return _drain_parallel_with_worker(
+        jobs, _worker, while_running=_drain_queue, stop=stop, finished=finished
+    )
 
 
 def _wait_parallel(
@@ -144,6 +155,7 @@ def _wait_parallel(
     *,
     sleep: Callable[[float], None] | None = None,
     stop: threading.Event | None = None,
+    finished: dict[str, Job] | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Block-wait on multiple jobs concurrently — no streaming.
 
@@ -154,4 +166,6 @@ def _wait_parallel(
     :func:`_drain_parallel_with_worker`.
     """
     watch = WatchJob(client, sleep=sleep) if sleep is not None else WatchJob(client)
-    return _drain_parallel_with_worker(jobs, lambda _name, job: watch(job), stop=stop)
+    return _drain_parallel_with_worker(
+        jobs, lambda _name, job: watch(job), stop=stop, finished=finished
+    )

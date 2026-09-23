@@ -36,18 +36,6 @@ def _preflight_launch(
 ) -> None:
     info = client.sub_endpoint_request(spec, item.id, "launch", "GET")
     label = f"{spec.kind} {item.name!r} (id={item.id})"
-    for field in payload:
-        prompt = LAUNCH_PROMPTS.get(field)
-        if prompt is None:
-            continue
-        ask_key, flag = prompt
-        if info.get(ask_key) is False and not (
-            field == "extra_vars" and info.get("survey_enabled")
-        ):
-            raise LaunchPromptError(
-                f"{label} does not prompt for {field} on launch ({ask_key} is false); "
-                f"AWX would ignore {flag}. Enable {ask_key} on the template or drop {flag}."
-            )
     needed = info.get("variables_needed_to_start") or []
     supplied = _extra_var_names(payload.get("extra_vars"))
     missing = [name for name in needed if name not in supplied]
@@ -56,6 +44,70 @@ def _preflight_launch(
             f"{label} requires survey variables {', '.join(map(str, missing))}; "
             "pass them with --extra-vars KEY=VAL."
         )
+    for field, value in payload.items():
+        prompt = LAUNCH_PROMPTS.get(field)
+        if prompt is None:
+            continue
+        ask_key, flag = prompt
+        if info.get(ask_key) is not False:
+            continue
+        if field == "extra_vars":
+            names = _extra_var_names(value)
+            if not names:
+                continue
+            if info.get("survey_enabled"):
+                _check_survey_variables(client, spec, item, label, names)
+                continue
+        elif _is_template_value(field, value, _template_value(field, info, item.record)):
+            # AWX treats a value equal to the template's own as a no-op.
+            continue
+        raise LaunchPromptError(
+            f"{label} does not prompt for {field} on launch ({ask_key} is false); "
+            f"AWX would ignore {flag}. Enable {ask_key} on the template or drop {flag}."
+        )
+
+
+def _check_survey_variables(
+    client: ResourceClient,
+    spec: ResourceSpec,
+    item: SelectedResource,
+    label: str,
+    names: set[str],
+) -> None:
+    """Without ``ask_variables_on_launch`` AWX keeps only the survey's variables."""
+    survey = client.sub_endpoint_request(spec, item.id, "survey_spec", "GET")
+    questions = survey.get("spec") if isinstance(survey, Mapping) else None
+    allowed = {
+        str(question["variable"])
+        for question in questions or []
+        if isinstance(question, Mapping) and "variable" in question
+    }
+    if outside := sorted(names - allowed):
+        raise LaunchPromptError(
+            f"{label} does not prompt for extra variables outside its survey "
+            f"(ask_variables_on_launch is false); AWX would ignore {', '.join(outside)}. "
+            "Enable ask_variables_on_launch or pass only survey variables."
+        )
+
+
+def _template_value(field: str, info: Mapping[str, Any], record: Mapping[str, Any]) -> Any:
+    """The template's current value for ``field`` (launch ``defaults`` first)."""
+    defaults = info.get("defaults")
+    if isinstance(defaults, Mapping) and field in defaults:
+        return defaults[field]
+    if field == "credentials":
+        return (record.get("summary_fields") or {}).get("credentials")
+    return record.get(field)
+
+
+def _is_template_value(field: str, supplied: Any, current: Any) -> bool:
+    if field == "credentials":
+        # Supplying credentials the template already has adds nothing.
+        current_ids = {c.get("id") if isinstance(c, Mapping) else c for c in current or []}
+        return isinstance(supplied, list) and set(supplied) <= current_ids
+    if isinstance(current, Mapping):
+        current = current.get("id")
+    return bool(supplied == current)
 
 
 def _extra_var_names(value: Any) -> set[str]:

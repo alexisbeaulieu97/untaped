@@ -23,6 +23,12 @@ def read_resources(path: Path) -> Iterator[Resource]:
     ``path`` may be a single ``.yml`` (one or many docs) or a directory
     walked recursively for ``*.yml`` and ``*.yaml``. Empty docs are skipped.
     """
+    for _source, resource in read_resource_files(path):
+        yield resource
+
+
+def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:
+    """Like :func:`read_resources`, pairing each document with its source file."""
     p = path.expanduser()
     if not p.exists():
         raise ConfigError(f"file not found: {p}")
@@ -30,7 +36,8 @@ def read_resources(path: Path) -> Iterator[Resource]:
     if p.is_dir() and not files:
         raise ConfigError(f"no .yml/.yaml files found under {p}")
     for f in files:
-        yield from _read_file(f)
+        for resource in _read_file(f):
+            yield f, resource
 
 
 def write_resource(
@@ -61,7 +68,10 @@ def dump_resource(resource: Resource, *, header_comment: str | None = None) -> s
 
 
 def _read_file(path: Path) -> Iterator[Resource]:
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
     try:
         docs = list(yaml.safe_load_all(text))
     except yaml.YAMLError as exc:
@@ -79,6 +89,13 @@ def _read_file(path: Path) -> Iterator[Resource]:
 
 def _dump(resource: Resource, *, header_comment: str | None = None) -> str:
     payload = resource.model_dump(exclude_none=True)
+    if resource.metadata.organization is None and "organization" in (
+        resource.metadata.model_fields_set
+    ):
+        # Explicit null identity (org-less record) survives the round trip.
+        payload["metadata"] = {"name": resource.metadata.name, "organization": None} | payload[
+            "metadata"
+        ]
     body = yaml.safe_dump(payload, sort_keys=False, default_flow_style=False, allow_unicode=True)
     if header_comment:
         return f"# {header_comment}\n{body}"

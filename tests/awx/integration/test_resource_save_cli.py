@@ -76,6 +76,64 @@ def test_job_templates_save_translates_fks(fake_aap: Any, tmp_path: Path) -> Non
     assert "inventory: prod" in text
 
 
+def _save_to(out: str) -> Any:
+    return CliInvoker().invoke(
+        app, ["job-templates", "save", "deploy", "--organization", "Default", f"--out={out}"]
+    )
+
+
+def test_save_out_writes_through_a_symlink(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    target = tmp_path / "real.yml"
+    target.write_text("old\n")
+    link = tmp_path / "link.yml"
+    link.symlink_to(target)
+
+    result = _save_to(str(link))
+
+    assert result.exit_code == 0, result.output
+    assert link.is_symlink()
+    assert "kind: JobTemplate" in target.read_text()
+
+
+def test_save_out_dash_writes_stdout(fake_aap: Any) -> None:
+    _seed_basic(fake_aap)
+    result = _save_to("-")
+    assert result.exit_code == 0, result.output
+    assert "kind: JobTemplate" in result.stdout
+
+
+def test_save_out_writes_to_a_fifo(fake_aap: Any, tmp_path: Path) -> None:
+    import os
+    import threading
+
+    _seed_basic(fake_aap)
+    fifo = tmp_path / "pipe"
+    os.mkfifo(fifo)
+    received: list[str] = []
+    reader = threading.Thread(target=lambda: received.append(fifo.read_text()), daemon=True)
+    reader.start()
+
+    result = _save_to(str(fifo))
+    reader.join(5)
+
+    assert result.exit_code == 0, result.output
+    assert "kind: JobTemplate" in received[0]
+    assert not fifo.is_file()
+
+
+def test_save_out_reports_unwritable_paths(fake_aap: Any, tmp_path: Path) -> None:
+    _seed_basic(fake_aap)
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+
+    result = _save_to(str(blocker / "out.yml"))
+
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
+    assert "out.yml" in result.stderr
+
+
 def test_job_templates_save_emits_credentials_from_sub_endpoint(fake_aap: Any) -> None:
     _seed_basic(fake_aap)
     fake_aap.seed("credentials", id=40, name="ssh", organization=1, organization_name="Default")
