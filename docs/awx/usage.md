@@ -16,6 +16,10 @@ printf '%s\n' "$AAP_TOKEN" | untaped config set awx.token --stdin
 untaped awx ping
 ```
 
+`ping` reads the unauthenticated `/ping/` health endpoint and then `/me/`, so
+a rejected token fails the command; the output includes the authenticated
+`user`.
+
 Use `untaped --profile <name> awx ...` to select a different configured
 profile. Tokens are secret settings; do not put them in a manifest or command
 history.

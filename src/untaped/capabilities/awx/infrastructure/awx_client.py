@@ -12,6 +12,7 @@ from typing import Any
 
 from untaped.api import HttpSettings, connected_client
 from untaped.capabilities.awx.infrastructure.config import AwxConfig
+from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
 
 
 class AwxClient:
@@ -40,6 +41,11 @@ class AwxClient:
 
     def ping(self) -> dict[str, Any]:
         return self._http.get_json_dict(self._url("ping/"))
+
+    def me(self) -> dict[str, Any]:
+        """``GET me/``: the authenticated user (401 maps to ConfigError)."""
+        with map_awx_errors():
+            return self._http.get_json_dict(self._url("me/"))
 
     def get_json(self, path: str, **kwargs: Any) -> Any:
         """GET ``<api_prefix><path>`` and return the JSON body."""

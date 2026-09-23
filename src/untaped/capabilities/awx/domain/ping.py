@@ -13,3 +13,5 @@ class PingStatus(BaseModel):
     version: str
     active_node: str
     install_uuid: str | None = None
+    user: str | None = None
+    """Username the configured token authenticates as (from ``/me/``)."""
