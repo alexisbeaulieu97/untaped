@@ -219,6 +219,11 @@ untaped awx jobs events 101 --kind inventory_update
 untaped awx jobs logs 101 --kind project_update
 ```
 
+`--kind` accepts `job` (default), `workflow_job`, `project_update`,
+`inventory_update`, and `ad_hoc_command`. Typed records piped with `--stdin`
+(for example `launch --format pipe | untaped awx jobs wait --stdin`) carry
+their own execution kind, which takes precedence over `--kind`.
+
 Use `--kind workflow_job` only with operations supported by that execution
 route, such as `jobs wait`; workflow job `events` and `logs` are rejected
 without making an unsupported request. A polymorphic launch response with no

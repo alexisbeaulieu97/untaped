@@ -697,6 +697,29 @@ def test_jobs_get_reads_ids_from_pipe_envelope_stdin(fake_aap: Any) -> None:
     assert result.stdout.strip() == "42"
 
 
+def test_jobs_wait_stdin_honours_execution_kind_from_pipe(fake_aap: Any) -> None:
+    """A launched workflow's pipe row must be waited on at workflow_jobs/, not jobs/."""
+    fake_aap.seed("workflow_jobs", id=77, name="wf", status="successful")
+    fake_aap.seed("jobs", id=42, name="run", status="successful")
+    lines = [
+        {"untaped": "1", "kind": "awx.job", "record": {"id": 77, "kind": "workflow_job"}},
+        {"untaped": "1", "kind": "awx.job", "record": {"id": 42, "type": "job"}},
+    ]
+    result = CliInvoker().invoke(
+        app,
+        ["jobs", "wait", "--stdin", "--format", "json"],
+        input="".join(json.dumps(line) + "\n" for line in lines),
+    )
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert [(row["id"], row["kind"]) for row in rows] == [(77, "workflow_job"), (42, "job")]
+
+
+def test_jobs_kind_rejects_unknown_values(fake_aap: Any) -> None:
+    result = CliInvoker().invoke(app, ["jobs", "get", "42", "--kind", "workflow"])
+    assert result.exit_code == 2, result.output
+
+
 def test_jobs_get_continues_when_one_id_missing(fake_aap: Any) -> None:
     """A missing id in a multi-id batch must not suppress the resolved
     ids — same rule as ``awx <kind> get --stdin``."""
