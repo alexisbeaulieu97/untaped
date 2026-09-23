@@ -76,7 +76,9 @@ class Schedule:
             try:
                 for dependency in deps[index]:
                     finished[dependency].wait()
-                if self.stopped or interrupted.is_set():
+                if interrupted.is_set():
+                    return
+                if self.stopped:
                     results[index] = skipped(index)
                     return
                 replacement = (
@@ -85,6 +87,10 @@ class Schedule:
                     else None
                 )
                 results[index] = work(index) if replacement is None else replacement
+            except BaseException:
+                # An interrupt raised by the item itself: start nothing else.
+                interrupted.set()
+                raise
             finally:
                 finished[index].set()
 
@@ -101,10 +107,17 @@ class Schedule:
                 concurrency=self._parallel,
                 on_each=lambda _index, _result: None,
                 on_abort=abort,
+                # Always on worker threads (even serially): Ctrl-C then lands
+                # in the main thread's wait, so in-flight requests finish.
+                while_running=_idle,
             )
         except KeyboardInterrupt:
             raise ScheduleInterrupted(dict(results)) from None
         return results
+
+
+def _idle() -> None:
+    return None
 
 
 def _dependency_order(dependencies: Sequence[Sequence[int]]) -> list[int]:
