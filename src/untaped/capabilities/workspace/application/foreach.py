@@ -14,7 +14,7 @@ from untaped.capabilities.workspace.domain import (
     Repo,
     Workspace,
 )
-from untaped.capabilities.workspace.errors import UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import UnmatchedRepoFilterError
 from untaped.capability_api import bounded_map
 
 
@@ -61,7 +61,7 @@ class Foreach:
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = select_repos(manifest, only)
         if unmatched:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
 
         stop = threading.Event()
         outcomes: list[ForeachOutcome] = []

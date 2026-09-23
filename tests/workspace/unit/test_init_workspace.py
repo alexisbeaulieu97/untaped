@@ -12,16 +12,16 @@ import pytest
 
 from untaped.capabilities.workspace.application import InitWorkspace, WorkspaceBootstrapper
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capabilities.workspace.infrastructure import ManifestRepository
+from untaped.capabilities.workspace.infrastructure import YamlManifestRepository
 from workspace.conftest import StubRegistry
 
 
-def _init(repo: ManifestRepository, reg: StubRegistry) -> InitWorkspace:
+def _init(repo: YamlManifestRepository, reg: StubRegistry) -> InitWorkspace:
     return InitWorkspace(WorkspaceBootstrapper(repo, reg))
 
 
 def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     reg = StubRegistry()
     ws_path = tmp_path / "prod"
     result = _init(repo, reg)(ws_path, name="prod", branch="main")
@@ -34,7 +34,7 @@ def test_init_creates_dir_manifest_and_registers(tmp_path: Path) -> None:
 
 
 def test_init_without_branch_leaves_defaults_branch_unset(tmp_path: Path) -> None:
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     _init(repo, StubRegistry())(tmp_path / "lab")
     assert repo.read(tmp_path / "lab").defaults.branch is None
 
@@ -43,6 +43,6 @@ def test_init_without_branch_leaves_defaults_branch_unset(tmp_path: Path) -> Non
 def test_init_rejects_unsafe_workspace_names(tmp_path: Path, name: str) -> None:
     reg = StubRegistry()
     with pytest.raises(WorkspaceError, match="workspace name"):
-        _init(ManifestRepository(), reg)(tmp_path / "ws", name=name)
+        _init(YamlManifestRepository(), reg)(tmp_path / "ws", name=name)
     assert not (tmp_path / "ws").exists()
     assert reg.registered == []

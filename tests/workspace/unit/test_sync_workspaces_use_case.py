@@ -22,7 +22,11 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import ManifestError, UnmatchedRepoFilter, WorkspaceError
+from untaped.capabilities.workspace.errors import (
+    ManifestError,
+    UnmatchedRepoFilterError,
+    WorkspaceError,
+)
 from workspace.conftest import StubFilesystem, StubGit, StubManifests
 
 
@@ -241,7 +245,7 @@ def test_strict_unmatched_raises_before_network_work(tmp_path: Path) -> None:
     engine = _Engine()
     use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("api")}, engine)
 
-    with pytest.raises(UnmatchedRepoFilter) as excinfo:
+    with pytest.raises(UnmatchedRepoFilterError) as excinfo:
         use_case(workspaces, only=["ghost"], parallel=2)
 
     assert excinfo.value.unmatched == ("ghost",)

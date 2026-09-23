@@ -36,8 +36,8 @@ from untaped.capabilities.workspace.domain.prune_safety import (
 )
 from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import (
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
 )
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
 from untaped.capabilities.workspace.infrastructure.git_runner import (
@@ -385,11 +385,11 @@ def test_f04_manifest(tmp_path: Path) -> None:
         "via": "os.replace",
     }
     nested = tmp_path / "deep" / "ws"
-    ManifestRepository().write(nested, manifest)
+    YamlManifestRepository().write(nested, manifest)
     written = nested / "untaped.yml"
     assert written.is_file()
     assert stat.S_IMODE(written.stat().st_mode) == 0o644
-    assert ManifestRepository().read(nested) == manifest
+    assert YamlManifestRepository().read(nested) == manifest
     leftovers = list(nested.glob("*.tmp"))
     assert leftovers == []
 
@@ -397,15 +397,15 @@ def test_f04_manifest(tmp_path: Path) -> None:
     from untaped.capabilities.workspace.errors import ManifestError
 
     with pytest.raises(ManifestError, match="run `untaped workspace init` first"):
-        ManifestRepository().read(tmp_path / "missing")
+        YamlManifestRepository().read(tmp_path / "missing")
     (tmp_path / "bad").mkdir()
     (tmp_path / "bad" / "untaped.yml").write_text("repos: [unclosed\n")
     with pytest.raises(ManifestError, match="invalid YAML in"):
-        ManifestRepository().read(tmp_path / "bad")
+        YamlManifestRepository().read(tmp_path / "bad")
     (tmp_path / "bad2").mkdir()
     (tmp_path / "bad2" / "untaped.yml").write_text("repos: [{url: x}, {url: x}]\n")
     with pytest.raises(ManifestError, match="invalid manifest at"):
-        ManifestRepository().read(tmp_path / "bad2")
+        YamlManifestRepository().read(tmp_path / "bad2")
     for message in fix["errors"]:
         assert isinstance(message, str)
 
@@ -643,11 +643,11 @@ def test_f08_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "[upstream] hello" in result.stdout
     assert "[ui] hello" in result.stdout
     # --repo with no match stays strict (same as status --repo): the typed
-    # UnmatchedRepoFilter names the offending identifier. The P19 table hint
+    # UnmatchedRepoFilterError names the offending identifier. The P19 table hint
     # fires only when the manifest itself yields no repos (no filter).
     result = _run(["workspace", "foreach", "echo hi", "--workspace", "smoke", "--repo", "typo"])
     assert result.exit_code != 0
-    assert "unknown repo identifier(s) for --repo: typo" in result.stderr
+    assert "1 unknown repo identifier for --repo: typo" in result.stderr
     _registered(tmp_path, "empty")
     result = _run(["workspace", "foreach", "echo hi", "--workspace", "empty"])
     assert result.exit_code == 0, result.output
@@ -793,7 +793,7 @@ def test_f11_resolver_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     # unregistered on-disk manifest resolves with manifest name (beats dirname)
     alien = tmp_path / "odd-dirname"
     alien.mkdir()
-    ManifestRepository().write(alien, WorkspaceManifest(name="realname"))
+    YamlManifestRepository().write(alien, WorkspaceManifest(name="realname"))
     result = _run(["workspace", "show", "--path", str(alien), "--format", "json"])
     rows = _json_rows(result, tmp_path)
     assert rows[0]["workspace"] == "realname"
@@ -818,7 +818,7 @@ def test_f11_resolver_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "no workspace manifest at" in norm(result.stderr, tmp_path)
     result = _run(["workspace", "status", "--workspace", "prod", "--repo", "typo"])
     assert result.exit_code == 1, result.output
-    assert "unknown repo identifier(s) for --repo: typo" in result.stderr
+    assert "1 unknown repo identifier for --repo: typo" in result.stderr
 
     # option validation (P32)
     result = _run(["workspace", "sync", "--workspace", "prod", "--timeout", "0"])
@@ -935,7 +935,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert all(r["detail"] == "not in this workspace's manifest" for r in unmatched)
     result = _run(["workspace", "status", "--all", "--repo", "typo", "--format", "json"])
     assert result.exit_code == 1, result.output
-    assert "unknown repo identifier(s) for --repo: typo" in result.stderr
+    assert "1 unknown repo identifier for --repo: typo" in result.stderr
     assert fix["prune_remove_detail"] == "no longer declared"
 
 
@@ -1184,7 +1184,7 @@ def test_f16_branch_adopt_parallel(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     adopted = tmp_path / "adopted"
     adopted.mkdir()
     manifest = WorkspaceManifest(name="prod", repos=[{"url": f"file://{upstream}"}])
-    ManifestRepository().write(adopted, manifest)
+    YamlManifestRepository().write(adopted, manifest)
     before = (adopted / "untaped.yml").read_bytes()
     result = _run(["workspace", "adopt", str(adopted), "--name", "adopted"])
     assert result.exit_code == 0, result.output
@@ -1344,7 +1344,7 @@ def test_p48_branch_set_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     # set --apply writes the manifest first, then checks out existing clones
     result = _run(["workspace", "branch", "set", "develop", "--workspace", "prod", "--apply"])
     assert result.exit_code == 0, result.output
-    assert ManifestRepository().read(target).defaults.branch == "develop"
+    assert YamlManifestRepository().read(target).defaults.branch == "develop"
     current = subprocess.run(
         ["git", "-C", str(target / "upstream"), "branch", "--show-current"],
         check=True,

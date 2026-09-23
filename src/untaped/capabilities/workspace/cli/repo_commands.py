@@ -20,7 +20,7 @@ from untaped.capabilities.workspace.cli.ops_commands import (
 from untaped.capabilities.workspace.infrastructure import (
     GitRunner,
     LocalFilesystem,
-    ManifestRepository,
+    YamlManifestRepository,
 )
 from untaped.capability_api import (
     batch_apply,
@@ -80,7 +80,7 @@ def add_command(
     ``--branch`` and ``--repo-name`` apply uniformly to every URL in
     the batch. ``--sync`` only clones URLs that actually landed.
     """
-    add_repo = AddRepo(ManifestRepository())
+    add_repo = AddRepo(YamlManifestRepository())
     any_failed = False
     with report_errors():
         idents = read_identifiers(list(urls or []), stdin=stdin)
@@ -98,7 +98,7 @@ def add_command(
         added, any_failed = resolve_each(idents, _add_one)
         if sync and added:
             outcomes = SyncWorkspace(
-                ManifestRepository(),
+                YamlManifestRepository(),
                 GitRunner(),
                 fs=LocalFilesystem(),
                 cache_dir=workspace_settings().cache_dir,
@@ -142,7 +142,7 @@ def remove_command(
         idents = read_identifiers(list(repos or []), stdin=stdin)
         ws = resolve_workspace(workspace, path)
         remove_repo = RemoveRepo(
-            ManifestRepository(),
+            YamlManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=GitRunner(),
         )

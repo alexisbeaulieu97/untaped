@@ -22,12 +22,16 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import (
+    GitError,
+    UnmatchedRepoFilterError,
+    WorkspaceError,
+)
 
 NOT_A_GIT_REPOSITORY = "not a git repository"
 
 
-class _Failed(Exception):
+class _StepFailedError(WorkspaceError):
     """Module-private control-flow signal carrying a pre-formatted
     ``"<step>: <git err>"`` detail string for a ``failed`` row."""
 
@@ -39,12 +43,12 @@ class _Failed(Exception):
 @contextmanager
 def _step(prefix: str) -> Iterator[None]:
     """Catch :class:`GitError` inside the body and re-raise as
-    :class:`_Failed` with ``prefix`` joined to the error message via
+    :class:`_StepFailedError` with ``prefix`` joined to the error message via
     ``": "``. Keeps step-chained callers' decision trees linear."""
     try:
         yield
     except GitError as exc:
-        raise _Failed(f"{prefix}: {exc}") from exc
+        raise _StepFailedError(f"{prefix}: {exc}") from exc
 
 
 @dataclass
@@ -170,7 +174,7 @@ class RepoSyncEngine:
             with _step("ff-only pull failed"):
                 self._git.ff_only_pull(local, branch=target)
             return _outcome(workspace, repo, "pull", f"{status.behind} commits")
-        except _Failed as exc:
+        except _StepFailedError as exc:
             return _outcome(workspace, repo, "failed", exc.detail)
 
     def plan_prune(
@@ -274,7 +278,7 @@ class SyncWorkspace:
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = select_repos(manifest, only)
         if unmatched and strict_only:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
         outcomes: list[SyncOutcome] = [
             SyncOutcome(
                 workspace=workspace.name,

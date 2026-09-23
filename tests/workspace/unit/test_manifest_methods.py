@@ -13,8 +13,8 @@ import pytest
 from pydantic import ValidationError
 
 from untaped.capabilities.workspace.domain import (
-    DuplicateRepoName,
-    DuplicateRepoUrl,
+    DuplicateRepoNameError,
+    DuplicateRepoUrlError,
     ManifestDefaults,
     Repo,
     WorkspaceManifest,
@@ -56,23 +56,23 @@ def test_add_repo_preserves_name_and_defaults() -> None:
 
 
 def test_add_repo_raises_duplicate_repo_name_carrying_incumbent() -> None:
-    """Collision on `name` raises `DuplicateRepoName` with the incumbent attached.
+    """Collision on `name` raises `DuplicateRepoNameError` with the incumbent attached.
 
     The incumbent lets callers (`AddRepo`) build CLI messages without
     re-scanning the manifest.
     """
     incumbent = Repo(url="https://x/a.git", name="alpha")
     manifest = _manifest(incumbent)
-    with pytest.raises(DuplicateRepoName) as exc_info:
+    with pytest.raises(DuplicateRepoNameError) as exc_info:
         manifest.add_repo(Repo(url="https://x/b.git", name="alpha"))
     assert exc_info.value.existing is incumbent
 
 
 def test_add_repo_raises_duplicate_repo_url_carrying_incumbent() -> None:
-    """Same URL twice → ``DuplicateRepoUrl`` with the incumbent attached."""
+    """Same URL twice → ``DuplicateRepoUrlError`` with the incumbent attached."""
     incumbent = Repo(url="https://x/a.git", name="alpha")
     manifest = _manifest(incumbent)
-    with pytest.raises(DuplicateRepoUrl) as exc_info:
+    with pytest.raises(DuplicateRepoUrlError) as exc_info:
         manifest.add_repo(Repo(url="https://x/a.git", name="beta"))
     assert exc_info.value.existing is incumbent
 
@@ -80,29 +80,29 @@ def test_add_repo_raises_duplicate_repo_url_carrying_incumbent() -> None:
 def test_add_repo_raises_on_derived_name_collision() -> None:
     """Two URLs that derive to the same name collide just as explicit names do."""
     manifest = _manifest(Repo(url="https://github.com/org/svc.git"))
-    with pytest.raises(DuplicateRepoName):
+    with pytest.raises(DuplicateRepoNameError):
         manifest.add_repo(Repo(url="https://gitlab.com/team/svc.git"))
 
 
 def test_duplicate_repo_exceptions_subclass_value_error() -> None:
     """``except ValueError`` keeps working for callers that don't care which kind."""
-    assert issubclass(DuplicateRepoName, ValueError)
-    assert issubclass(DuplicateRepoUrl, ValueError)
+    assert issubclass(DuplicateRepoNameError, ValueError)
+    assert issubclass(DuplicateRepoUrlError, ValueError)
 
 
 def test_duplicate_collision_precedence_url_before_name() -> None:
     """When both invariants would fire on the same input, ``add_repo`` and the
     YAML-load validator must raise the *same* typed exception. Url
     precedence keeps "re-add the same URL" surfacing as
-    ``DuplicateRepoUrl`` ("already in workspace") rather than
-    ``DuplicateRepoName`` — derived names also collide in that case but
+    ``DuplicateRepoUrlError`` ("already in workspace") rather than
+    ``DuplicateRepoNameError`` — derived names also collide in that case but
     the user's correct mental model is the URL one."""
     incumbent = Repo(url="https://x/a.git", name="alpha")
     manifest = _manifest(incumbent)
     # Same name AND same url — both invariants violated simultaneously.
     colliding = Repo(url="https://x/a.git", name="alpha")
 
-    with pytest.raises(DuplicateRepoUrl):
+    with pytest.raises(DuplicateRepoUrlError):
         manifest.add_repo(colliding)
 
     # YAML-load path: the validator wraps into ValidationError but the
@@ -110,7 +110,7 @@ def test_duplicate_collision_precedence_url_before_name() -> None:
     with pytest.raises(ValidationError) as exc_info:
         WorkspaceManifest(repos=[incumbent, colliding])
     causes = [err["ctx"]["error"] for err in exc_info.value.errors() if "ctx" in err]
-    assert any(isinstance(cause, DuplicateRepoUrl) for cause in causes)
+    assert any(isinstance(cause, DuplicateRepoUrlError) for cause in causes)
 
 
 def test_duplicate_repo_exceptions_round_trip_through_pickle() -> None:
@@ -118,15 +118,15 @@ def test_duplicate_repo_exceptions_round_trip_through_pickle() -> None:
 
     ``Exception.__reduce__`` defaults to pickling ``self.args``, which is
     a single message string for our subclasses — unpickling would call
-    ``DuplicateRepoName(str)`` and crash on ``.name`` access. Our custom
+    ``DuplicateRepoNameError(str)`` and crash on ``.name`` access. Our custom
     ``__reduce__`` round-trips via the incumbent.
     """
     import pickle
 
     incumbent = Repo(url="https://x/a.git", name="alpha")
-    original = DuplicateRepoName(incumbent)
+    original = DuplicateRepoNameError(incumbent)
     restored = pickle.loads(pickle.dumps(original))
-    assert isinstance(restored, DuplicateRepoName)
+    assert isinstance(restored, DuplicateRepoNameError)
     assert restored.existing == incumbent
     assert str(restored) == str(original)
 

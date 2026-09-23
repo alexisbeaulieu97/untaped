@@ -19,7 +19,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilterError
 
 
 class ApplyWorkspaceBranch:
@@ -60,7 +60,7 @@ class ApplyWorkspaceBranch:
         identifiers = (repo,) if isinstance(repo, str) else repo
         repos, unmatched = select_repos(manifest, identifiers)
         if unmatched:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
         return repos
 
     def _apply_repo(

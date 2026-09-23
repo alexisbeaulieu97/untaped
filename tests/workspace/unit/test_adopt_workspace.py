@@ -15,7 +15,7 @@ import pytest
 from untaped.capabilities.workspace.application import AdoptWorkspace, WorkspaceBootstrapper
 from untaped.capabilities.workspace.domain import DiscoveredRepo, Repo, Workspace, WorkspaceManifest
 from untaped.capabilities.workspace.errors import WorkspaceError
-from untaped.capabilities.workspace.infrastructure import LocalFilesystem, ManifestRepository
+from untaped.capabilities.workspace.infrastructure import LocalFilesystem, YamlManifestRepository
 from workspace.conftest import StubRegistry
 
 _FS = LocalFilesystem()
@@ -38,7 +38,7 @@ class _StubDiscoverer:
 
 
 def _adopt(
-    repo: ManifestRepository,
+    repo: YamlManifestRepository,
     reg: StubRegistry,
     discoverer: _StubDiscoverer,
     *,
@@ -61,11 +61,11 @@ def test_adopt_writes_manifest_with_discovered_repos(tmp_path: Path) -> None:
     )
     reg = StubRegistry()
 
-    result = _adopt(ManifestRepository(), reg, discoverer)(ws_path, name="prod")
+    result = _adopt(YamlManifestRepository(), reg, discoverer)(ws_path, name="prod")
 
     assert result.workspace.name == "prod"
     assert [r.name for r in result.repos] == ["svc-a", "svc-b"]
-    manifest = ManifestRepository().read(ws_path)
+    manifest = YamlManifestRepository().read(ws_path)
     assert manifest.name == "prod"
     assert manifest.defaults.branch is None
     assert [(r.name, r.url, r.branch) for r in manifest.repos] == [
@@ -80,22 +80,22 @@ def test_adopt_with_empty_discovery_succeeds(tmp_path: Path) -> None:
     ws_path = tmp_path / "empty"
     ws_path.mkdir()
     reg = StubRegistry()
-    result = _adopt(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
-    assert ManifestRepository().read(ws_path).repos == ()
+    result = _adopt(YamlManifestRepository(), reg, _StubDiscoverer([]))(ws_path)
+    assert YamlManifestRepository().read(ws_path).repos == ()
     assert reg.registered[0].path == ws_path.resolve()
     assert result.discovered is True
 
 
 def test_adopt_refuses_when_path_missing(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError, match="does not exist"):
-        _adopt(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(tmp_path / "ghost")
+        _adopt(YamlManifestRepository(), StubRegistry(), _StubDiscoverer([]))(tmp_path / "ghost")
 
 
 def test_adopt_refuses_when_path_is_a_file(tmp_path: Path) -> None:
     f = tmp_path / "file"
     f.write_text("nope")
     with pytest.raises(WorkspaceError, match="not a directory"):
-        _adopt(ManifestRepository(), StubRegistry(), _StubDiscoverer([]))(f)
+        _adopt(YamlManifestRepository(), StubRegistry(), _StubDiscoverer([]))(f)
 
 
 def test_adopt_existing_manifest_registers_manifest_name_without_discovery(
@@ -106,7 +106,7 @@ def test_adopt_existing_manifest_registers_manifest_name_without_discovery(
     """
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     repo.write(
         ws_path,
         WorkspaceManifest(
@@ -142,7 +142,7 @@ def test_adopt_existing_manifest_name_override_is_registry_only(
     discoverer = _StubDiscoverer([])
     reg = StubRegistry()
 
-    result = _adopt(ManifestRepository(), reg, discoverer)(ws_path, name="alias")
+    result = _adopt(YamlManifestRepository(), reg, discoverer)(ws_path, name="alias")
 
     assert result.workspace.name == "alias"
     assert reg.registered[0].name == "alias"
@@ -155,12 +155,12 @@ def test_adopt_existing_manifest_refuses_already_registered_path(
 ) -> None:
     ws_path = tmp_path / "prod"
     ws_path.mkdir()
-    ManifestRepository().write(ws_path, WorkspaceManifest(name="prod"))
+    YamlManifestRepository().write(ws_path, WorkspaceManifest(name="prod"))
     reg = StubRegistry([Workspace(name="prod", path=ws_path.resolve())])
     discoverer = _StubDiscoverer([])
 
     with pytest.raises(WorkspaceError, match="already registered"):
-        _adopt(ManifestRepository(), reg, discoverer)(ws_path)
+        _adopt(YamlManifestRepository(), reg, discoverer)(ws_path)
 
     assert discoverer.calls == []  # the expensive walk never happened
 
@@ -186,7 +186,7 @@ def test_adopt_collision_check_runs_before_fs_existence_check(tmp_path: Path) ->
     reg.registered.append(Workspace(name="ghost", path=ws_path.resolve()))
 
     with pytest.raises(WorkspaceError, match="already registered"):
-        _adopt(ManifestRepository(), reg, _StubDiscoverer([]))(ws_path, name="ghost")
+        _adopt(YamlManifestRepository(), reg, _StubDiscoverer([]))(ws_path, name="ghost")
 
 
 def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
@@ -202,7 +202,7 @@ def test_adopt_forwards_skipped_reasons_to_warn(tmp_path: Path) -> None:
         skipped=["b: no 'origin' remote — skipping", "c: symlink — skipping"],
     )
 
-    _adopt(ManifestRepository(), StubRegistry(), discoverer, warn=warnings.append)(
+    _adopt(YamlManifestRepository(), StubRegistry(), discoverer, warn=warnings.append)(
         ws_path, name="lab"
     )
 
@@ -223,11 +223,11 @@ def test_adopt_skips_clones_with_unsafe_directory_names(tmp_path: Path) -> None:
         ]
     )
 
-    result = _adopt(ManifestRepository(), StubRegistry(), discoverer, warn=warnings.append)(
+    result = _adopt(YamlManifestRepository(), StubRegistry(), discoverer, warn=warnings.append)(
         ws_path, name="lab"
     )
 
     assert [r.name for r in result.repos] == ["ok"]
-    assert [r.name for r in ManifestRepository().read(ws_path).repos] == ["ok"]
+    assert [r.name for r in YamlManifestRepository().read(ws_path).repos] == ["ok"]
     assert len(warnings) == 1
     assert warnings[0].startswith("bad:name: ")

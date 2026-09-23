@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
-from untaped.capabilities.workspace.application.ports import ManifestReader
+from untaped.capabilities.workspace.application.ports import ManifestReader, ProgressNotify
 from untaped.capabilities.workspace.application.repo_selector import select_repos
 from untaped.capabilities.workspace.application.sync_workspace import (
     BareFetchTracker,
@@ -14,14 +13,12 @@ from untaped.capabilities.workspace.application.sync_workspace import (
     RepoSyncEngine,
 )
 from untaped.capabilities.workspace.domain import Repo, SyncOutcome, Workspace, WorkspaceManifest
-from untaped.capabilities.workspace.errors import ManifestError, UnmatchedRepoFilter, WorkspaceError
+from untaped.capabilities.workspace.errors import (
+    ManifestError,
+    UnmatchedRepoFilterError,
+    WorkspaceError,
+)
 from untaped.capability_api import bounded_map
-
-
-class ProgressNotify(Protocol):
-    def __call__(
-        self, message: str, *, fraction: float | None = None, new_phase: bool = False
-    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -168,7 +165,7 @@ class SyncWorkspaces:
                 )
                 ordinal += 1
         if unmatched_errors:
-            raise UnmatchedRepoFilter(tuple(sorted(set(unmatched_errors))))
+            raise UnmatchedRepoFilterError(tuple(sorted(set(unmatched_errors))))
         return _SyncPlan(rows=rows, jobs=jobs)
 
     def _run_jobs(

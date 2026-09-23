@@ -15,7 +15,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import UnmatchedRepoFilter, WorkspaceError
+from untaped.capabilities.workspace.errors import UnmatchedRepoFilterError, WorkspaceError
 from workspace.conftest import StubFilesystem, StubGit, StubManifests
 
 
@@ -402,7 +402,7 @@ def test_apply_workspace_branch_errors_on_unknown_repo(tmp_path: Path) -> None:
     workspace = Workspace(name="prod", path=tmp_path / "prod")
     manifests = StubManifests({workspace.path: WorkspaceManifest()})
 
-    with pytest.raises(UnmatchedRepoFilter, match="ghost") as excinfo:
+    with pytest.raises(UnmatchedRepoFilterError, match="ghost") as excinfo:
         ApplyWorkspaceBranch(manifests, StubGit(), fs=StubFilesystem())(workspace, repo="ghost")
     assert excinfo.value.unmatched == ("ghost",)
 

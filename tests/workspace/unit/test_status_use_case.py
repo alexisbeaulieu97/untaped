@@ -11,7 +11,7 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
 )
 from untaped.capabilities.workspace.errors import ManifestError, WorkspaceError
-from untaped.capabilities.workspace.infrastructure import LocalFilesystem, ManifestRepository
+from untaped.capabilities.workspace.infrastructure import LocalFilesystem, YamlManifestRepository
 from workspace.conftest import StubGit, StubManifests
 
 _FS = LocalFilesystem()
@@ -20,14 +20,14 @@ _FS = LocalFilesystem()
 def _seed(tmp_path: Path, manifest: WorkspaceManifest) -> Workspace:
     ws = tmp_path / "prod"
     ws.mkdir()
-    ManifestRepository().write(ws, manifest)
+    YamlManifestRepository().write(ws, manifest)
     return Workspace(name="prod", path=ws)
 
 
 def test_reports_not_cloned_when_dir_missing(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     git = StubGit()
-    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
+    entries = WorkspaceStatus(YamlManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False
     assert entries[0].action == "status"
 
@@ -45,7 +45,7 @@ def test_reports_status_for_cloned_repos(tmp_path: Path) -> None:
             "b": RepoStatus(branch="develop", modified=1, untracked=2),
         }
     )
-    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
+    entries = WorkspaceStatus(YamlManifestRepository(), git, fs=_FS)(workspace)
     by_repo = {e.repo: e for e in entries}
     assert by_repo["a"].cloned and by_repo["a"].behind == 2
     assert by_repo["b"].modified == 1
@@ -56,7 +56,7 @@ def test_git_error_keeps_cloned_and_reports_detail(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     (workspace.path / "a" / ".git").mkdir(parents=True)
     git = StubGit(status_fail={"a"})
-    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
+    entries = WorkspaceStatus(YamlManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is True
     assert entries[0].detail == "status failed: status failed"
 
@@ -65,7 +65,7 @@ def test_dir_without_git_metadata_is_not_inspected(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     (workspace.path / "a").mkdir()
     git = StubGit()
-    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace)
+    entries = WorkspaceStatus(YamlManifestRepository(), git, fs=_FS)(workspace)
     assert entries[0].cloned is False
     assert entries[0].detail == "not a git repository"
     assert git.events == []
@@ -78,7 +78,7 @@ def test_filters_by_repo_name(tmp_path: Path) -> None:
     )
     git = StubGit()
 
-    entries = WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace, only=["b"])
+    entries = WorkspaceStatus(YamlManifestRepository(), git, fs=_FS)(workspace, only=["b"])
 
     assert [entry.repo for entry in entries] == ["b"]
 
@@ -88,7 +88,7 @@ def test_unknown_repo_filter_raises_before_git_status(tmp_path: Path) -> None:
     git = StubGit()
 
     with pytest.raises(WorkspaceError, match="ghost"):
-        WorkspaceStatus(ManifestRepository(), git, fs=_FS)(workspace, only=["ghost"])
+        WorkspaceStatus(YamlManifestRepository(), git, fs=_FS)(workspace, only=["ghost"])
 
     assert git.events == []
 

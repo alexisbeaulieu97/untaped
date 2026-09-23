@@ -7,7 +7,7 @@ import pytest
 from untaped.capabilities.workspace.application import ForgetWorkspace
 from untaped.capabilities.workspace.domain import Workspace
 from untaped.capabilities.workspace.errors import GitError, RegistryError, WorkspaceError
-from untaped.capabilities.workspace.infrastructure import LocalFilesystem, ManifestRepository
+from untaped.capabilities.workspace.infrastructure import LocalFilesystem, YamlManifestRepository
 from workspace.conftest import StubRegistry
 
 
@@ -36,7 +36,7 @@ def _seed_manifest(ws_path: Path, *, repos: list[tuple[str, str]] = ()) -> None:
         name=ws_path.name,
         repos=[Repo(url=url, name=name) for name, url in repos],
     )
-    ManifestRepository().write(ws_path, manifest)
+    YamlManifestRepository().write(ws_path, manifest)
 
 
 def test_forget_removes_registry_entry(tmp_path: Path) -> None:
@@ -47,7 +47,7 @@ def test_forget_removes_registry_entry(tmp_path: Path) -> None:
 
     use_case = ForgetWorkspace(
         reg,
-        ManifestRepository(),
+        YamlManifestRepository(),
         fs=LocalFilesystem(),
         prune_safety=_PruneSafety(),
     )
@@ -65,7 +65,7 @@ def test_forget_unknown_workspace_raises(tmp_path: Path) -> None:
     with pytest.raises(RegistryError, match="unknown workspace"):
         ForgetWorkspace(
             reg,
-            ManifestRepository(),
+            YamlManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=_PruneSafety(),
         )("ghost")
@@ -85,7 +85,7 @@ def test_forget_with_prune_deletes_managed_workspace_dir(tmp_path: Path) -> None
 
     ForgetWorkspace(
         reg,
-        ManifestRepository(),
+        YamlManifestRepository(),
         fs=LocalFilesystem(),
         prune_safety=_PruneSafety(),
         warn=warnings.append,
@@ -109,7 +109,7 @@ def test_forget_prune_keeps_unmanaged_files_and_warns(tmp_path: Path) -> None:
 
     ForgetWorkspace(
         reg,
-        ManifestRepository(),
+        YamlManifestRepository(),
         fs=LocalFilesystem(),
         prune_safety=_PruneSafety(),
         warn=warnings.append,
@@ -135,7 +135,7 @@ def test_forget_prune_refuses_dirty_repo(tmp_path: Path) -> None:
     status = _PruneSafety(blockers={repo_dir: ("dirty working tree",)})
 
     with pytest.raises(WorkspaceError, match="unsafe local state"):
-        ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), prune_safety=status)(
+        ForgetWorkspace(reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=status)(
             "prod", prune=True
         )
 
@@ -147,9 +147,9 @@ def test_forget_prune_succeeds_when_path_missing(tmp_path: Path) -> None:
     ws_path = tmp_path / "ghost"  # never created
     reg = StubRegistry([Workspace(name="ghost", path=ws_path)])
 
-    ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety())(
-        "ghost", prune=True
-    )
+    ForgetWorkspace(
+        reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety()
+    )("ghost", prune=True)
 
     assert reg.registered == []
 
@@ -163,9 +163,9 @@ def test_forget_succeeds_when_manifest_missing(tmp_path: Path) -> None:
     (ws_path / "stranded.txt").write_text("no manifest here")
     reg = StubRegistry([Workspace(name="prod", path=ws_path)])
 
-    ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety())(
-        "prod"
-    )
+    ForgetWorkspace(
+        reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=_PruneSafety()
+    )("prod")
 
     assert reg.registered == []
     assert ws_path.is_dir()  # preserved
@@ -184,7 +184,7 @@ def test_forget_prune_refuses_when_manifest_missing(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError, match="no manifest"):
         ForgetWorkspace(
             reg,
-            ManifestRepository(),
+            YamlManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=_PruneSafety(),
         )("prod", prune=True)
@@ -208,7 +208,7 @@ def test_forget_prune_leaves_declared_dir_that_is_not_a_clone(tmp_path: Path) ->
 
     ForgetWorkspace(
         reg,
-        ManifestRepository(),
+        YamlManifestRepository(),
         fs=LocalFilesystem(),
         prune_safety=status,
         warn=warnings.append,
@@ -229,7 +229,7 @@ def test_forget_prune_refuses_when_clone_cannot_be_inspected(tmp_path: Path) -> 
     with pytest.raises(WorkspaceError, match="cannot inspect 'svc-a'"):
         ForgetWorkspace(
             reg,
-            ManifestRepository(),
+            YamlManifestRepository(),
             fs=LocalFilesystem(),
             prune_safety=_PruneSafety(failures={ws_path / "svc-a"}),
         )("prod", prune=True)
@@ -251,7 +251,7 @@ def test_forget_prune_refuses_unsafe_undeclared_clone(tmp_path: Path) -> None:
     )
 
     with pytest.raises(WorkspaceError, match="scratch"):
-        ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), prune_safety=status)(
+        ForgetWorkspace(reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=status)(
             "prod", prune=True
         )
 
@@ -282,7 +282,7 @@ def test_forget_prune_skips_symlinked_child_clones(tmp_path: Path) -> None:
         }
     )
 
-    ForgetWorkspace(reg, ManifestRepository(), fs=LocalFilesystem(), prune_safety=status)(
+    ForgetWorkspace(reg, YamlManifestRepository(), fs=LocalFilesystem(), prune_safety=status)(
         "prod", prune=True
     )
 
