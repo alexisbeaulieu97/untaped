@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from base64 import b64encode
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -167,6 +169,21 @@ def _mock_refresh_graphql_error(
             )
         )
     mock.post("/graphql").mock(return_value=response)
+
+
+requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _init_git_repo(path: Path, **remotes: str) -> None:
+    """Create a real Git repository at ``path`` with the given remotes."""
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q")
+    for name, url in remotes.items():
+        _git(path, "remote", "add", name, url)
 
 
 class _SeedGitCache:
@@ -1955,16 +1972,14 @@ def test_inline_source_cache_key_is_order_insensitive(tmp_path: Path, monkeypatc
     assert refresh_calls == 1
 
 
+@requires_git
 def test_graph_repo_is_source_selector_and_target_repo_overrides_local_identity(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "role"
     (target / "roles").mkdir(parents=True)
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text(
-        '[remote "origin"]\n  url = https://github.com/acme/wrong.git\n'
-    )
+    _init_git_repo(target, origin="https://github.com/acme/wrong.git")
     (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
     cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -1980,18 +1995,28 @@ def test_graph_repo_is_source_selector_and_target_repo_overrides_local_identity(
     assert "|       +-- acme/users" in result.stdout
 
 
-def test_graph_local_target_infers_repo_from_gitdir_file(
+@requires_git
+def test_graph_local_target_infers_repo_from_git_worktree(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    target = tmp_path / "role"
-    gitdir = tmp_path / "gitdir"
-    (target / "roles").mkdir(parents=True)
-    gitdir.mkdir()
-    (target / ".git").write_text(f"gitdir: {gitdir}\n")
-    (gitdir / "config").write_text(
-        '[remote "origin"]\n  url = git@github.com:acme/worktree-role.git\n'
+    main = tmp_path / "main"
+    _init_git_repo(main, origin="git@github.com:acme/worktree-role.git")
+    _git(
+        main,
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
     )
+    target = tmp_path / "role"
+    _git(main, "worktree", "add", "-q", str(target))
+    (target / "roles").mkdir(parents=True)
     (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
     cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -2004,18 +2029,72 @@ def test_graph_local_target_infers_repo_from_gitdir_file(
     assert "|       +-- acme/users" in result.stdout
 
 
+@requires_git
+def test_graph_local_target_tolerates_duplicate_git_config_keys(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "role"
+    _init_git_repo(target, origin="https://github.com/acme/dup-role.git")
+    _git(target, "config", "--add", "remote.origin.fetch", "+refs/tags/*:refs/tags/*")
+    (target / "roles").mkdir()
+    (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/dup-role\n")
+
+
+@requires_git
+def test_graph_local_subdirectory_resolves_enclosing_repo(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "repo"
+    _init_git_repo(repo, origin="https://github.com/acme/mono.git")
+    target = repo / "roles" / "web"
+    (target / "meta").mkdir(parents=True)
+    (target / "meta" / "main.yml").write_text("dependencies:\n  - src: acme/users\n")
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/mono\n")
+
+
+@requires_git
+def test_graph_local_repo_without_remote_hints_target_repo(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "role"
+    _init_git_repo(target)
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 1
+    assert "could not resolve target" in result.stderr
+    assert "--target-repo" in result.stderr
+
+
+@requires_git
 def test_graph_local_target_prefers_origin_remote_for_identity(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "role"
     (target / "roles").mkdir(parents=True)
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text(
-        '[remote "upstream"]\n'
-        "  url = https://github.com/acme/upstream-role.git\n"
-        '[remote "origin"]\n'
-        "  url = https://github.com/acme/origin-role.git\n"
+    _init_git_repo(
+        target,
+        upstream="https://github.com/acme/upstream-role.git",
+        origin="https://github.com/acme/origin-role.git",
     )
     (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
     cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
@@ -2027,16 +2106,14 @@ def test_graph_local_target_prefers_origin_remote_for_identity(
     assert result.stdout.startswith("acme/origin-role\n")
 
 
+@requires_git
 def test_graph_local_target_surfaces_parse_warnings(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "role"
     (target / "roles").mkdir(parents=True)
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text(
-        '[remote "origin"]\n  url = https://github.com/acme/origin-role.git\n'
-    )
+    _init_git_repo(target, origin="https://github.com/acme/origin-role.git")
     (target / "roles" / "requirements.yml").write_text(
         "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
     )
