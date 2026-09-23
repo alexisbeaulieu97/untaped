@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 
+from untaped.capabilities.ansible.domain.identity import repo_key
 from untaped.capabilities.ansible.domain.payloads import (
     CachedRef,
     IndexedDependency,
@@ -201,7 +202,7 @@ class SqliteDependencyIndex:
             source_key=source_key,
             join_sql="""
                 join source_ref_scans as scans
-                  on scans.source_repo = requested.repo collate nocase
+                  on scans.source_repo_key = requested.repo
                  and (requested.ref is null or scans.source_ref = requested.ref)
                 join snapshot_edges as edges
                   on edges.snapshot_id = scans.snapshot_id
@@ -221,7 +222,7 @@ class SqliteDependencyIndex:
             source_key=source_key,
             join_sql="""
                 join snapshot_edges as edges
-                  on edges.dependency_repo = requested.repo collate nocase
+                  on edges.dependency_repo_key = requested.repo
                  and (
                      requested.ref is null
                      or edges.dependency_version = requested.ref
@@ -236,8 +237,8 @@ class SqliteDependencyIndex:
                          select 1
                          from source_repo_metadata as dependency_metadata
                          where dependency_metadata.source_key = scans.source_key
-                           and dependency_metadata.source_repo
-                               = edges.dependency_repo collate nocase
+                           and dependency_metadata.source_repo_key
+                               = edges.dependency_repo_key
                            and dependency_metadata.default_branch = requested.ref
                      )
                  )
@@ -252,9 +253,9 @@ class SqliteDependencyIndex:
                 """
                 select source_ref
                 from source_ref_scans
-                where source_key = ? and source_repo = ? collate nocase and source_ref != ''
+                where source_key = ? and source_repo_key = ? and source_ref != ''
                 """,
-                (source_key, repo),
+                (source_key, repo_key(repo)),
             ).fetchall()
         return {str(row["source_ref"]) for row in rows}
 
@@ -274,8 +275,11 @@ class SqliteDependencyIndex:
         grouped: dict[str, dict[tuple[str, str | None], CachedRef]] = {
             repo: {} for repo in requested
         }
+        by_key: dict[str, list[str]] = {}
+        for repo in requested:
+            by_key.setdefault(repo_key(repo), []).append(repo)
         with self._db() as db:
-            for chunk in _chunks(requested, 400):
+            for chunk in _chunks(list(by_key), 400):
                 placeholders = ",".join("(?)" for _ in chunk)
                 params: list[object] = [*chunk, source_key]
                 rows = db.execute(
@@ -288,7 +292,7 @@ class SqliteDependencyIndex:
                            metadata.default_branch
                     from requested
                     join source_ref_scans as scans
-                      on scans.source_repo = requested.repo collate nocase
+                      on scans.source_repo_key = requested.repo
                     left join source_repo_metadata as metadata
                       on metadata.source_key = scans.source_key
                      and metadata.source_repo = scans.source_repo
@@ -299,14 +303,15 @@ class SqliteDependencyIndex:
                 ).fetchall()
                 for row in rows:
                     key = (str(row["name"]), _optional_str(row["kind"]))
-                    grouped[str(row["requested_repo"])].setdefault(
-                        key,
-                        CachedRef(
-                            name=key[0],
-                            kind=key[1],
-                            default_branch=_optional_str(row["default_branch"]),
-                        ),
-                    )
+                    for repo in by_key[str(row["requested_repo"])]:
+                        grouped[repo].setdefault(
+                            key,
+                            CachedRef(
+                                name=key[0],
+                                kind=key[1],
+                                default_branch=_optional_str(row["default_branch"]),
+                            ),
+                        )
         return {repo: tuple(refs.values()) for repo, refs in grouped.items()}
 
     def status(self, source_key: str) -> SourceIndexStatus | None:
@@ -364,10 +369,13 @@ class SqliteDependencyIndex:
         if not requested:
             return results
         key_clause = "" if source_key is None else "where scans.source_key = ?"
+        by_key: dict[tuple[str, str | None], list[tuple[str, str | None]]] = {}
+        for repo, ref in requested:
+            by_key.setdefault((repo_key(repo), ref), []).append((repo, ref))
         with self._db() as db:
             # 400 pairs x 2 columns = 800 bound params, under the pre-3.32
             # limit of 999 (matching the ref_scans VALUES chunking above).
-            for chunk in _chunks(requested, 400):
+            for chunk in _chunks(list(by_key), 400):
                 placeholders = ",".join("(?, ?)" for _ in chunk)
                 params: list[object] = [value for pair in chunk for value in pair]
                 if source_key is not None:
@@ -398,7 +406,9 @@ class SqliteDependencyIndex:
                         str(row["requested_repo"]),
                         str(requested_ref) if requested_ref is not None else None,
                     )
-                    results[key].append(edge_from_row(row))
+                    edge = edge_from_row(row)
+                    for pair in by_key[key]:
+                        results[pair].append(edge)
         return results
 
     def _connect(self) -> sqlite3.Connection:
@@ -468,15 +478,16 @@ def _replace_ref_scans(db: sqlite3.Connection, scans: tuple[RefScan, ...]) -> No
     db.executemany(
         """
         insert into source_ref_scans(
-            source_key, source_repo, ref_kind, source_ref, source_sha,
+            source_key, source_repo, source_repo_key, ref_kind, source_ref, source_sha,
             clone_url, clone_protocol, dependency_paths_fingerprint,
             aliases_fingerprint, checked_at, indexed_at, snapshot_id
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
                 scan.source_key,
                 scan.source_repo,
+                repo_key(scan.source_repo),
                 scan.ref_kind,
                 scan.source_ref,
                 scan.source_sha,
@@ -554,14 +565,15 @@ def _insert_snapshot(db: sqlite3.Connection, scan: RefScan) -> int:
         db.executemany(
             """
             insert into snapshot_edges(
-                snapshot_id, dependency_repo, dependency_name, dependency_version,
-                source_path, unresolved
-            ) values (?, ?, ?, ?, ?, ?)
+                snapshot_id, dependency_repo, dependency_repo_key, dependency_name,
+                dependency_version, source_path, unresolved
+            ) values (?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     snapshot_id,
                     edge.dependency_repo,
+                    repo_key(edge.dependency_repo) if edge.dependency_repo else None,
                     edge.dependency_name,
                     edge.dependency_version,
                     edge.source_path,
@@ -619,13 +631,14 @@ def _replace_source_repo_metadata(
         return
     db.executemany(
         """
-        insert into source_repo_metadata(source_key, source_repo, default_branch)
-        values (?, ?, ?)
+        insert into source_repo_metadata(
+            source_key, source_repo, source_repo_key, default_branch
+        ) values (?, ?, ?, ?)
         on conflict(source_key, source_repo) do update set
             default_branch = excluded.default_branch
         """,
         [
-            (source_key, row.source_repo, row.default_branch)
+            (source_key, row.source_repo, repo_key(row.source_repo), row.default_branch)
             for row in sorted(by_repo.values(), key=lambda item: item.source_repo)
         ],
     )
@@ -639,13 +652,14 @@ def _upsert_source_repo_metadata(
         return
     db.executemany(
         """
-        insert into source_repo_metadata(source_key, source_repo, default_branch)
-        values (?, ?, ?)
+        insert into source_repo_metadata(
+            source_key, source_repo, source_repo_key, default_branch
+        ) values (?, ?, ?, ?)
         on conflict(source_key, source_repo) do update set
             default_branch = excluded.default_branch
         """,
         [
-            (row.source_key, row.source_repo, row.default_branch)
+            (row.source_key, row.source_repo, repo_key(row.source_repo), row.default_branch)
             for row in sorted(metadata, key=lambda item: (item.source_key, item.source_repo))
         ],
     )
