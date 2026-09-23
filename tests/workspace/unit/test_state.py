@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -23,10 +25,10 @@ def test_status_is_frozen() -> None:
 
 
 def test_sync_outcome_default_detail() -> None:
-    o = SyncOutcome(workspace="prod", repo="svc-a", action="clone")
+    o = SyncOutcome(workspace="prod", repo="svc-a", target_path=Path("/ws/svc-a"), action="cloned")
     assert o.detail == ""
 
 
 def test_sync_outcome_rejects_legacy_ignored_action() -> None:
     with pytest.raises(ValidationError):
-        SyncOutcome(workspace="prod", repo="svc-a", action="ignored")
+        SyncOutcome(workspace="prod", repo="svc-a", target_path=Path("/ws/svc-a"), action="ignored")

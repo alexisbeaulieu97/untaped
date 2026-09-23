@@ -22,12 +22,16 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import (
+    GitError,
+    UnmatchedRepoFilterError,
+    WorkspaceError,
+)
 
 NOT_A_GIT_REPOSITORY = "not a git repository"
 
 
-class _Failed(Exception):
+class _StepFailedError(WorkspaceError):
     """Module-private control-flow signal carrying a pre-formatted
     ``"<step>: <git err>"`` detail string for a ``failed`` row."""
 
@@ -39,12 +43,12 @@ class _Failed(Exception):
 @contextmanager
 def _step(prefix: str) -> Iterator[None]:
     """Catch :class:`GitError` inside the body and re-raise as
-    :class:`_Failed` with ``prefix`` joined to the error message via
+    :class:`_StepFailedError` with ``prefix`` joined to the error message via
     ``": "``. Keeps step-chained callers' decision trees linear."""
     try:
         yield
     except GitError as exc:
-        raise _Failed(f"{prefix}: {exc}") from exc
+        raise _StepFailedError(f"{prefix}: {exc}") from exc
 
 
 @dataclass
@@ -130,12 +134,12 @@ class RepoSyncEngine:
                         url=repo.url, dest=local, bare=bare, branch=target_branch
                     )
                 return _outcome(
-                    workspace, repo, "clone", f"branch {target_branch}" if target_branch else ""
+                    workspace, repo, "cloned", f"branch {target_branch}" if target_branch else ""
                 )
             if not self._fs.exists(local / ".git"):
                 # Without its own ``.git`` git would resolve an enclosing
                 # repository and fetch/pull *that* instead.
-                return _outcome(workspace, repo, "skip", NOT_A_GIT_REPOSITORY)
+                return _outcome(workspace, repo, "skipped", NOT_A_GIT_REPOSITORY)
 
             # Refresh the working clone's remote refs so behind/ahead numbers
             # are current. The bare cache already got ``bare_fetch``, but each
@@ -146,37 +150,37 @@ class RepoSyncEngine:
                 status = self._git.status(local)
 
             if status.dirty:
-                return _outcome(workspace, repo, "skip", "dirty working tree")
+                return _outcome(workspace, repo, "skipped", "dirty working tree")
             if target_branch is not None and status.branch != target_branch:
                 return _outcome(
                     workspace,
                     repo,
-                    "skip",
+                    "skipped",
                     f"on {status.branch or 'detached'}, expected {target_branch}",
                 )
             if status.branch is not None and status.upstream is None:
                 # Without an upstream there is nothing to compare against;
                 # reporting "already up to date" would be a lie.
-                return _outcome(workspace, repo, "skip", "no upstream")
+                return _outcome(workspace, repo, "skipped", "no upstream")
             if status.diverged:
-                return _outcome(workspace, repo, "skip", "diverged from origin")
+                return _outcome(workspace, repo, "skipped", "diverged from origin")
             if status.behind == 0:
                 detail = f"{status.ahead} ahead" if status.ahead else "already up to date"
-                return _outcome(workspace, repo, "up-to-date", detail)
+                return _outcome(workspace, repo, "unchanged", detail)
 
             target = status.branch or target_branch
             if target is None:
-                return _outcome(workspace, repo, "skip", "detached head")
+                return _outcome(workspace, repo, "skipped", "detached head")
             with _step("ff-only pull failed"):
                 self._git.ff_only_pull(local, branch=target)
-            return _outcome(workspace, repo, "pull", f"{status.behind} commits")
-        except _Failed as exc:
+            return _outcome(workspace, repo, "pulled", f"{status.behind} commits")
+        except _StepFailedError as exc:
             return _outcome(workspace, repo, "failed", exc.detail)
 
     def plan_prune(
         self, workspace: Workspace, manifest: WorkspaceManifest
     ) -> tuple[list[SyncOutcome], list[PruneCandidate]]:
-        """Split orphan clones into ``skip`` rows and safe deletion candidates.
+        """Split orphan clones into ``skipped`` rows and safe deletion candidates.
 
         Nothing is deleted here, so callers can confirm the candidates
         before calling :meth:`prune_candidate` for each one.
@@ -195,7 +199,8 @@ class RepoSyncEngine:
                         SyncOutcome(
                             workspace=workspace.name,
                             repo=entry.name,
-                            action="skip",
+                            target_path=entry,
+                            action="skipped",
                             detail="symlinked git repo (refusing to prune)",
                         )
                     )
@@ -219,7 +224,8 @@ class RepoSyncEngine:
         return SyncOutcome(
             workspace=workspace.name,
             repo=entry.name,
-            action="remove",
+            target_path=entry,
+            action="removed",
             detail="no longer declared",
         )
 
@@ -230,14 +236,16 @@ class RepoSyncEngine:
             return SyncOutcome(
                 workspace=workspace.name,
                 repo=entry.name,
-                action="skip",
+                target_path=entry,
+                action="skipped",
                 detail="not a usable git repo",
             )
         if blockers:
             return SyncOutcome(
                 workspace=workspace.name,
                 repo=entry.name,
-                action="skip",
+                target_path=entry,
+                action="skipped",
                 detail=format_prune_blockers(blockers),
             )
         return None
@@ -274,11 +282,12 @@ class SyncWorkspace:
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = select_repos(manifest, only)
         if unmatched and strict_only:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
         outcomes: list[SyncOutcome] = [
             SyncOutcome(
                 workspace=workspace.name,
                 repo=identifier,
+                target_path=workspace.path,
                 action="unmatched",
                 detail="not in this workspace's manifest",
             )
@@ -294,6 +303,7 @@ def _outcome(workspace: Workspace, repo: Repo, action: SyncAction, detail: str =
     return SyncOutcome(
         workspace=workspace.name,
         repo=repo.name,
+        target_path=workspace.path / repo.name,
         action=action,
         detail=detail,
     )

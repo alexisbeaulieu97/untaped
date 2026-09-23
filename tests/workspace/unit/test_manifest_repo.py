@@ -10,17 +10,17 @@ from untaped.capabilities.workspace.domain import (
     WorkspaceManifest,
 )
 from untaped.capabilities.workspace.errors import ManifestError
-from untaped.capabilities.workspace.infrastructure import ManifestRepository
+from untaped.capabilities.workspace.infrastructure import YamlManifestRepository
 
 
 def test_read_missing_raises(tmp_path: Path) -> None:
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     with pytest.raises(ManifestError, match="no manifest"):
         repo.read(tmp_path)
 
 
 def test_round_trip(tmp_path: Path) -> None:
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     manifest = WorkspaceManifest(
         name="prod",
         defaults=ManifestDefaults(branch="main"),
@@ -40,14 +40,14 @@ def test_round_trip(tmp_path: Path) -> None:
 
 def test_write_creates_dir(tmp_path: Path) -> None:
     target = tmp_path / "deeply" / "nested"
-    ManifestRepository().write(target, WorkspaceManifest())
+    YamlManifestRepository().write(target, WorkspaceManifest())
     assert (target / "untaped.yml").is_file()
 
 
 def test_read_invalid_yaml(tmp_path: Path) -> None:
     (tmp_path / "untaped.yml").write_text("not: valid: yaml: at all:")
     with pytest.raises(ManifestError, match="invalid YAML"):
-        ManifestRepository().read(tmp_path)
+        YamlManifestRepository().read(tmp_path)
 
 
 def test_read_invalid_schema(tmp_path: Path) -> None:
@@ -55,7 +55,7 @@ def test_read_invalid_schema(tmp_path: Path) -> None:
         yaml.safe_dump({"repos": [{"url": "https://x/a.git", "weird_field": True}]})
     )
     with pytest.raises(ManifestError, match="invalid manifest"):
-        ManifestRepository().read(tmp_path)
+        YamlManifestRepository().read(tmp_path)
 
 
 def test_read_unreadable_manifest_wraps_os_error(
@@ -74,7 +74,7 @@ def test_read_unreadable_manifest_wraps_os_error(
     monkeypatch.setattr(Path, "read_text", _read_text)
 
     with pytest.raises(ManifestError, match=r"could not read manifest at .*untaped\.yml"):
-        ManifestRepository().read(tmp_path)
+        YamlManifestRepository().read(tmp_path)
 
 
 def test_read_external(tmp_path: Path) -> None:
@@ -88,14 +88,14 @@ def test_read_external(tmp_path: Path) -> None:
             }
         )
     )
-    loaded = ManifestRepository().read_external(src)
+    loaded = YamlManifestRepository().read_external(src)
     assert loaded.source == src
     assert loaded.manifest.name == "team-prod"
 
 
 def test_read_external_missing(tmp_path: Path) -> None:
     with pytest.raises(ManifestError, match="not found"):
-        ManifestRepository().read_external(tmp_path / "absent.yml")
+        YamlManifestRepository().read_external(tmp_path / "absent.yml")
 
 
 def test_read_external_unreadable_manifest_wraps_os_error(
@@ -114,11 +114,11 @@ def test_read_external_unreadable_manifest_wraps_os_error(
     monkeypatch.setattr(Path, "read_text", _read_text)
 
     with pytest.raises(ManifestError, match=r"could not read manifest at .*team-prod\.yml"):
-        ManifestRepository().read_external(source)
+        YamlManifestRepository().read_external(source)
 
 
 def test_write_empty_defaults_omitted(tmp_path: Path) -> None:
-    ManifestRepository().write(tmp_path, WorkspaceManifest())
+    YamlManifestRepository().write(tmp_path, WorkspaceManifest())
     raw = yaml.safe_load((tmp_path / "untaped.yml").read_text())
     assert "defaults" not in raw
 
@@ -138,19 +138,19 @@ def test_write_repos_emits_plain_yaml_sequence(tmp_path: Path) -> None:
             Repo(url="https://github.com/org/svc-b.git"),
         ],
     )
-    ManifestRepository().write(tmp_path, manifest)
+    YamlManifestRepository().write(tmp_path, manifest)
     text = (tmp_path / "untaped.yml").read_text()
     assert "python/tuple" not in text
     # Round-trip through the safe loader to confirm the dumped shape is
     # a plain mapping/sequence pydantic can parse back without help.
-    assert ManifestRepository().read(tmp_path).repos == manifest.repos
+    assert YamlManifestRepository().read(tmp_path).repos == manifest.repos
 
 
 def test_write_does_not_use_a_fixed_temp_name(tmp_path: Path) -> None:
     """A stale/concurrent ``untaped.yml.tmp`` must not break the write."""
     (tmp_path / "untaped.yml.tmp").mkdir()
-    ManifestRepository().write(tmp_path, WorkspaceManifest(name="prod"))
-    assert ManifestRepository().read(tmp_path).name == "prod"
+    YamlManifestRepository().write(tmp_path, WorkspaceManifest(name="prod"))
+    assert YamlManifestRepository().read(tmp_path).name == "prod"
     assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")] == ["untaped.yml.tmp"]
 
 
@@ -158,16 +158,16 @@ def test_write_wraps_os_errors(tmp_path: Path) -> None:
     blocker = tmp_path / "not-a-dir"
     blocker.write_text("x")
     with pytest.raises(ManifestError, match="could not write manifest"):
-        ManifestRepository().write(blocker, WorkspaceManifest())
+        YamlManifestRepository().write(blocker, WorkspaceManifest())
 
 
 def test_reads_utf8_manifest(tmp_path: Path) -> None:
     (tmp_path / "untaped.yml").write_bytes("name: café\n".encode())
-    assert ManifestRepository().read(tmp_path).name == "café"
+    assert YamlManifestRepository().read(tmp_path).name == "café"
 
 
 def test_delete_removes_manifest_and_tolerates_missing(tmp_path: Path) -> None:
-    repo = ManifestRepository()
+    repo = YamlManifestRepository()
     repo.write(tmp_path, WorkspaceManifest())
     repo.delete(tmp_path)
     assert not (tmp_path / "untaped.yml").exists()

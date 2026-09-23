@@ -6,8 +6,8 @@ from pydantic import ValidationError
 
 from untaped.capabilities.workspace.application.ports import ManifestRepository
 from untaped.capabilities.workspace.domain import (
-    DuplicateRepoName,
-    DuplicateRepoUrl,
+    DuplicateRepoNameError,
+    DuplicateRepoUrlError,
     Repo,
     Workspace,
 )
@@ -34,9 +34,9 @@ class AddRepo:
             raise WorkspaceError(f"invalid repo {url!r}: {first_validation_error(exc)}") from exc
         try:
             new_manifest = manifest.add_repo(repo)
-        except DuplicateRepoUrl as exc:
+        except DuplicateRepoUrlError as exc:
             raise WorkspaceError(f"repo already in workspace {workspace.name!r}: {url}") from exc
-        except DuplicateRepoName as exc:
+        except DuplicateRepoNameError as exc:
             base = (
                 f"repo name {exc.existing.name!r} already in use in workspace "
                 f"{workspace.name!r} by {exc.existing.url}"

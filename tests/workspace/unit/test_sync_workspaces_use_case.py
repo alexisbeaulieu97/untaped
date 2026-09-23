@@ -22,7 +22,11 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import ManifestError, UnmatchedRepoFilter, WorkspaceError
+from untaped.capabilities.workspace.errors import (
+    ManifestError,
+    UnmatchedRepoFilterError,
+    WorkspaceError,
+)
 from workspace.conftest import StubFilesystem, StubGit, StubManifests
 
 
@@ -113,9 +117,15 @@ def _manifest(*names: str) -> WorkspaceManifest:
 
 
 def _outcome(
-    workspace: str, repo: str, action: SyncAction = "up-to-date", detail: str = ""
+    workspace: str, repo: str, action: SyncAction = "unchanged", detail: str = ""
 ) -> SyncOutcome:
-    return SyncOutcome(workspace=workspace, repo=repo, action=action, detail=detail)
+    return SyncOutcome(
+        workspace=workspace,
+        repo=repo,
+        target_path=Path("/ws") / workspace / repo,
+        action=action,
+        detail=detail,
+    )
 
 
 def _scheduler(
@@ -232,8 +242,8 @@ def test_parallel_phase_order_is_unmatched_sync_then_prune(tmp_path: Path) -> No
 
     assert [(o.repo, o.action) for o in outcomes] == [
         ("ghost", "unmatched"),
-        ("z-repo", "up-to-date"),
-        ("a-repo", "up-to-date"),
+        ("z-repo", "unchanged"),
+        ("a-repo", "unchanged"),
     ]
 
 
@@ -241,7 +251,7 @@ def test_strict_unmatched_raises_before_network_work(tmp_path: Path) -> None:
     engine = _Engine()
     use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("api")}, engine)
 
-    with pytest.raises(UnmatchedRepoFilter) as excinfo:
+    with pytest.raises(UnmatchedRepoFilterError) as excinfo:
         use_case(workspaces, only=["ghost"], parallel=2)
 
     assert excinfo.value.unmatched == ("ghost",)
@@ -253,8 +263,8 @@ def test_skip_manifest_errors_emits_unavailable_row_and_skips_prune(tmp_path: Pa
     manifests = StubManifests({workspaces[0].path: _manifest("api")})
     engine = _Engine(
         prune_rows={
-            "alpha": [_outcome("alpha", "old-repo", "remove")],
-            "missing": [_outcome("missing", "old-repo", "remove")],
+            "alpha": [_outcome("alpha", "old-repo", "removed")],
+            "missing": [_outcome("missing", "old-repo", "removed")],
         }
     )
 
@@ -265,9 +275,9 @@ def test_skip_manifest_errors_emits_unavailable_row_and_skips_prune(tmp_path: Pa
 
     assert candidates == []
     assert [(o.workspace, o.repo, o.action) for o in outcomes] == [
-        ("alpha", "api", "up-to-date"),
+        ("alpha", "api", "unchanged"),
         ("missing", "", "unavailable"),
-        ("alpha", "old-repo", "remove"),
+        ("alpha", "old-repo", "removed"),
     ]
     assert "workspace manifest unavailable: no manifest at" in outcomes[1].detail
     assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [("alpha", "api")]
@@ -291,7 +301,7 @@ def test_skip_manifest_errors_emits_unavailable_for_invalid_manifest(tmp_path: P
     )
 
     assert [(o.workspace, o.repo, o.action) for o in outcomes] == [
-        ("alpha", "api", "up-to-date"),
+        ("alpha", "api", "unchanged"),
         ("broken", "", "unavailable"),
     ]
     assert outcomes[1].detail == (
@@ -403,7 +413,7 @@ def test_parallel_same_cache_path_urls_share_bare_fetch_lock(tmp_path: Path) -> 
 
     outcomes = SyncWorkspaces(manifests, engine)(workspaces, parallel=2)
 
-    assert [o.action for o in outcomes] == ["clone", "clone"]
+    assert [o.action for o in outcomes] == ["cloned", "cloned"]
     bare_fetch_count = sum(1 for event in git.events if event[0] == "bare_fetch")
     assert bare_fetch_count == 1, git.events
 

@@ -16,18 +16,22 @@ from untaped.capabilities.workspace.application import (
 from untaped.capabilities.workspace.cli.common import (
     WorkspaceNameOption,
     WorkspacePathOption,
+    record_row,
     resolve_workspace,
 )
-from untaped.capabilities.workspace.domain import Workspace, WorkspaceDetailRow
+from untaped.capabilities.workspace.domain import Workspace, WorkspaceSummaryRow
 from untaped.capabilities.workspace.infrastructure import (
-    ManifestRepository,
     WorkspaceRegistryRepository,
+    YamlManifestRepository,
     editor_runner,
     resolve_editor_argv,
 )
 from untaped.capability_api import (
     ColumnsOption,
+    ConfigError,
     FormatOption,
+    StdinOption,
+    deprecated_alias,
     echo,
     emit,
     finish,
@@ -39,7 +43,8 @@ from untaped.capability_api import (
 
 def register_display_commands(app: App) -> None:
     app.command(list_command, name="list")
-    app.command(show_command, name="show")
+    app.command(get_command, name="get")
+    deprecated_alias(app, "show", "get")
 
 
 def register_ux_commands(app: App) -> None:
@@ -66,7 +71,7 @@ def list_command(
         )
 
 
-def show_command(
+def get_command(
     *,
     workspace: WorkspaceNameOption = None,
     path: WorkspacePathOption = None,
@@ -76,19 +81,26 @@ def show_command(
     """Show manifest details for one workspace."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        rows = [_show_row(row) for row in ShowWorkspace(ManifestRepository())(ws)]
-        emit(rows, fmt=fmt, columns=columns, kind=_show_kind(rows))
+        details = ShowWorkspace(YamlManifestRepository())(ws)
+        kind = (
+            "workspace.repo.summary"
+            if any(isinstance(row, WorkspaceSummaryRow) for row in details)
+            else "workspace.repo"
+        )
+        emit([record_row(row) for row in details], fmt=fmt, columns=columns, kind=kind)
 
 
 def path_command(
-    names: Annotated[list[str] | None, Parameter(help="Workspace name(s).")] = None,
+    names: Annotated[list[str] | None, Parameter(negative="", help="Workspace names.")] = None,
+    /,
     *,
     stdin: Annotated[
-        bool,
+        StdinOption,
         Parameter(
-            name="--stdin",
-            negative="",
-            help="Read workspace names from stdin (one per line, or a --format pipe stream).",
+            help=(
+                "Read workspace names from stdin: one per line, or a --format pipe "
+                "stream of workspace.workspace records."
+            ),
         ),
     ] = False,
 ) -> None:
@@ -96,7 +108,12 @@ def path_command(
     get_path = WorkspacePath(WorkspaceRegistryRepository())
     any_failed = False
     with report_errors():
-        idents = read_identifiers(list(names or []), stdin=stdin, id_field="name")
+        idents = read_identifiers(
+            list(names or []),
+            stdin=stdin,
+            id_field="name",
+            accept_kinds={"workspace.workspace"},
+        )
 
         def _echo_path(workspace_name: str) -> None:
             echo(str(get_path(workspace_name)))
@@ -130,7 +147,7 @@ def edit_command(
         argv = resolve_editor_argv(editor)
         rc = EditWorkspace(runner=editor_runner)(ws, argv=argv)
         if rc != 0:
-            raise SystemExit(rc)
+            raise ConfigError(f"editor exited with status {rc}")
 
 
 def _workspace_row(w: Workspace) -> dict[str, object]:
@@ -138,21 +155,3 @@ def _workspace_row(w: Workspace) -> dict[str, object]:
     # feed back into the next command. See root AGENTS.md '--format raw
     # default-column contract'; pinned by tests/unit/test_format_raw_first_key.py.
     return {"name": w.name, "path": str(w.path)}
-
-
-def _show_row(row: WorkspaceDetailRow) -> dict[str, object]:
-    data = row.model_dump()
-    if data.get("target_path") is None:
-        del data["target_path"]
-    return data
-
-
-def _show_kind(rows: list[dict[str, object]]) -> str:
-    if (
-        len(rows) == 1
-        and rows[0].get("repo_count") == 0
-        and rows[0].get("repo") == ""
-        and "target_path" not in rows[0]
-    ):
-        return "workspace.repo.summary"
-    return "workspace.repo"

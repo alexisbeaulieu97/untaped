@@ -32,7 +32,7 @@ def test_show_workspace_json_details(tmp_path: Path) -> None:
         ],
     )
 
-    result = runner.invoke(app, ["show", "--workspace", "prod", "--format", "json"])
+    result = runner.invoke(app, ["get", "--workspace", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -67,7 +67,7 @@ def test_show_workspace_by_path_json_details(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
-    result = runner.invoke(app, ["show", "--path", str(target), "--format", "json"])
+    result = runner.invoke(app, ["get", "--path", str(target), "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -90,7 +90,7 @@ def test_show_rejects_workspace_and_path_together(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["show", "--workspace", "prod", "--path", str(target)])
+    result = runner.invoke(app, ["get", "--workspace", "prod", "--path", str(target)])
 
     assert result.exit_code != 0
     assert "--workspace and --path are mutually exclusive" in result.output
@@ -101,7 +101,7 @@ def test_show_empty_workspace_outputs_summary_row(tmp_path: Path) -> None:
     target = tmp_path / "empty"
     runner.invoke(app, ["init", "empty", "--path", str(target)])
 
-    result = runner.invoke(app, ["show", "--workspace", "empty", "--format", "json"])
+    result = runner.invoke(app, ["get", "--workspace", "empty", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == [
@@ -125,7 +125,7 @@ def test_show_raw_columns_emit_repo_names(tmp_path: Path) -> None:
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
     result = runner.invoke(
-        app, ["show", "--workspace", "prod", "--format", "raw", "--columns", "repo"]
+        app, ["get", "--workspace", "prod", "--format", "raw", "--columns", "repo"]
     )
 
     assert result.exit_code == 0, result.output
@@ -137,7 +137,7 @@ def test_show_accepts_workspace_short_option(tmp_path: Path) -> None:
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target)])
 
-    result = runner.invoke(app, ["show", "-w", "prod", "--format", "json"])
+    result = runner.invoke(app, ["get", "-w", "prod", "--format", "json"])
 
     assert result.exit_code == 0, result.output
 

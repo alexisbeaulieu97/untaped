@@ -19,7 +19,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
-from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilter
+from untaped.capabilities.workspace.errors import GitError, UnmatchedRepoFilterError
 
 
 class ApplyWorkspaceBranch:
@@ -60,7 +60,7 @@ class ApplyWorkspaceBranch:
         identifiers = (repo,) if isinstance(repo, str) else repo
         repos, unmatched = select_repos(manifest, identifiers)
         if unmatched:
-            raise UnmatchedRepoFilter(unmatched)
+            raise UnmatchedRepoFilterError(unmatched)
         return repos
 
     def _apply_repo(
@@ -74,11 +74,11 @@ class ApplyWorkspaceBranch:
         target_branch = manifest.target_branch_for(repo)
         local = workspace.path / repo.name
         if target_branch is None:
-            return _outcome(workspace, repo, target_branch, "skip", "no target branch")
+            return _outcome(workspace, repo, target_branch, "skipped", "no target branch")
         if not self._fs.exists(local):
-            return _outcome(workspace, repo, target_branch, "skip", "not cloned")
+            return _outcome(workspace, repo, target_branch, "skipped", "not cloned")
         if not self._fs.exists(local / ".git"):
-            return _outcome(workspace, repo, target_branch, "skip", NOT_A_GIT_REPOSITORY)
+            return _outcome(workspace, repo, target_branch, "skipped", NOT_A_GIT_REPOSITORY)
         if (detail := self._try_fetch(local)) is not None:
             return _outcome(workspace, repo, target_branch, "failed", detail)
         try:
@@ -86,15 +86,15 @@ class ApplyWorkspaceBranch:
         except GitError as exc:
             return _outcome(workspace, repo, target_branch, "failed", f"status failed: {exc}")
         if status.dirty:
-            return _outcome(workspace, repo, target_branch, "skip", "dirty working tree")
+            return _outcome(workspace, repo, target_branch, "skipped", "dirty working tree")
         if status.diverged:
-            return _outcome(workspace, repo, target_branch, "skip", "diverged from origin")
+            return _outcome(workspace, repo, target_branch, "skipped", "diverged from origin")
         if status.branch == target_branch:
             return _outcome(
                 workspace,
                 repo,
                 target_branch,
-                "up-to-date",
+                "unchanged",
                 f"already on {target_branch}",
             )
         if not create and not self._git.has_branch(local, branch=target_branch):
@@ -102,7 +102,7 @@ class ApplyWorkspaceBranch:
                 workspace,
                 repo,
                 target_branch,
-                "skip",
+                "skipped",
                 "branch not found locally or on origin",
             )
         try:
@@ -113,7 +113,7 @@ class ApplyWorkspaceBranch:
             workspace,
             repo,
             target_branch,
-            "checkout",
+            "checked_out",
             f"from {status.branch or 'detached'}",
         )
 
@@ -135,6 +135,7 @@ def _outcome(
     return BranchApplyOutcome(
         repo=repo.name,
         workspace=workspace.name,
+        target_path=workspace.path / repo.name,
         target_branch=target_branch,
         action=action,
         detail=detail,

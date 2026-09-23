@@ -42,7 +42,7 @@ def test_sync_clones_repos(tmp_path: Path, upstream: Path, isolated_cache: Path)
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "clone" in result.stdout
+    assert "cloned" in result.stdout
     assert (target / "upstream").is_dir()
 
 
@@ -78,7 +78,7 @@ def test_sync_repo_filter_limits_cloned_repos(
     )
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.splitlines() == ["upstream\tclone"]
+    assert result.stdout.splitlines() == ["upstream\tcloned"]
     assert (target / "upstream").is_dir()
     assert not (target / "ui").exists()
 
@@ -106,7 +106,7 @@ def test_sync_failed_clone_is_failed_row_and_exit_one(
 
     assert result.exit_code == 1, result.output
     rows = {row["repo"]: row for row in json.loads(result.stdout)}
-    assert rows["upstream"]["action"] == "clone"
+    assert rows["upstream"]["action"] == "cloned"
     assert rows["gone"]["action"] == "failed"
     assert rows["gone"]["detail"].startswith("cache fetch failed: git clone failed: ")
     assert str(isolated_cache) not in rows["gone"]["detail"]
@@ -151,8 +151,9 @@ def test_sync_prune_with_yes_removes_safe_orphan(
         {
             "workspace": "smoke",
             "repo": "upstream",
-            "action": "remove",
+            "action": "removed",
             "detail": "no longer declared",
+            "target_path": str(orphan.resolve()),
         }
     ]
     assert not orphan.exists()
@@ -225,7 +226,7 @@ def test_sync_all_repo_filter_emits_warning_and_per_workspace_outcomes(
     # Stdout rows: alpha synced upstream (clone), beta produced
     # an unmatched row for upstream.
     rows = [r for r in result.output.strip().splitlines() if "\t" in r]
-    assert "alpha\tupstream\tclone" in rows, rows
+    assert "alpha\tupstream\tcloned" in rows, rows
     assert "beta\tupstream\tunmatched" in rows, rows
 
 
@@ -297,7 +298,7 @@ def test_sync_parallel_single_workspace_uses_repo_workers_in_manifest_order(
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines() == ["z-repo", "a-repo"]
     assert "syncing 2 repos with up to 2 workers" in result.output
-    assert "sync complete: 2 repos (2 cloned)" in result.output
+    assert "sync: 2 cloned" in result.output
 
 
 def test_sync_quiet_suppresses_progress_and_summary(
@@ -355,8 +356,8 @@ def test_sync_json_stdout_shape_stays_data_only(
     parsed = json.loads(result.stdout)
     assert isinstance(parsed, list)
     assert len(parsed) == 1
-    assert set(parsed[0]) == {"workspace", "repo", "action", "detail"}
-    assert parsed[0]["action"] == "clone"
+    assert set(parsed[0]) == {"workspace", "repo", "action", "detail", "target_path"}
+    assert parsed[0]["action"] == "cloned"
     assert "Syncing repos" not in result.stdout
     assert "sync complete:" not in result.stdout
 
@@ -475,9 +476,9 @@ def test_sync_all_parallel_covers_every_workspace(
     assert result.exit_code == 0, result.output
     # stderr header — CliInvoker combines stderr into output by default.
     assert "syncing 4 repos with up to 4 workers" in result.output
-    assert "sync complete: 4 repos (4 cloned)" in result.output
+    assert "sync: 4 cloned" in result.output
     rows = [r for r in result.stdout.strip().splitlines() if "\t" in r]
-    assert sorted(rows) == sorted(f"{n}\tclone" for n in names), rows
+    assert sorted(rows) == sorted(f"{n}\tcloned" for n in names), rows
 
 
 def test_sync_all_parallel_ordering_is_stable(
@@ -664,7 +665,7 @@ def test_sync_all_unavailable_manifest_does_not_abort_valid_workspace(
 
     assert result.exit_code == 0, result.output
     rows = result.stdout.splitlines()
-    assert "alpha\tupstream\tclone\t" in rows
+    assert "alpha\tupstream\tcloned\t" in rows
     ghost_rows = [row for row in rows if row.startswith("ghost\t\tunavailable\t")]
     assert len(ghost_rows) == 1
     assert "workspace manifest unavailable: no manifest at" in ghost_rows[0]
@@ -700,7 +701,7 @@ def test_sync_all_unavailable_manifest_json_output(
 
     assert result.exit_code == 0, result.output
     rows = json.loads(result.stdout)
-    assert any(row["workspace"] == "alpha" and row["action"] == "clone" for row in rows)
+    assert any(row["workspace"] == "alpha" and row["action"] == "cloned" for row in rows)
     ghost_rows = [row for row in rows if row["workspace"] == "ghost"]
     assert len(ghost_rows) == 1
     assert ghost_rows[0]["repo"] == ""
@@ -739,7 +740,7 @@ def test_status_all_unavailable_manifest_outputs_machine_visible_row(
     ghost_rows = [row for row in rows if row["workspace"] == "ghost"]
     assert len(ghost_rows) == 1
     row = ghost_rows[0]
-    assert {key: value for key, value in row.items() if key != "detail"} == {
+    assert {key: value for key, value in row.items() if key not in {"detail", "target_path"}} == {
         "workspace": "ghost",
         "repo": "",
         "action": "unavailable",
@@ -1245,12 +1246,10 @@ def test_foreach_summary_suppressed_in_structured_format(
 # foreach-specific case worth a CLI-level pin.
 
 
-def test_foreach_parallel_zero_coerces_to_serial(
+def test_foreach_parallel_zero_is_a_usage_error(
     tmp_path: Path, upstream: Path, isolated_cache: Path
 ) -> None:
-    """``foreach -j 0`` runs cleanly with exit 0 and no warning — the
-    ``max(parallel, 1)`` upstream of ``clamp_parallel`` keeps the use
-    case from seeing ``0`` and matches the issue spec."""
+    """``foreach -j 0`` is rejected with exit 2 like every ``--parallel``."""
     runner = CliInvoker()
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "smoke", "--path", str(target)])
@@ -1258,7 +1257,8 @@ def test_foreach_parallel_zero_coerces_to_serial(
     runner.invoke(app, ["sync", "--workspace", "smoke"])
 
     result = runner.invoke(app, ["foreach", "true", "--workspace", "smoke", "-j", "0"])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output
+    assert "Must be >= 1" in result.stderr
 
 
 def test_sync_empty_workspace_reports_progress_and_hint(tmp_path: Path) -> None:
@@ -1272,7 +1272,7 @@ def test_sync_empty_workspace_reports_progress_and_hint(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert "Syncing repos" in result.stderr
-    assert "sync complete: 0 repos" in result.stderr
+    assert "sync: nothing to do" in result.stderr
     assert "Nothing to sync" in result.stderr
 
 

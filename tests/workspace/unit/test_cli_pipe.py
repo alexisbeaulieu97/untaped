@@ -34,7 +34,7 @@ def test_show_pipe_tags_repo(tmp_path: Path) -> None:
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
     runner.invoke(app, ["add", "https://x/api.git", "--repo-name", "api", "--workspace", "prod"])
 
-    result = runner.invoke(app, ["show", "--workspace", "prod", "--format", "pipe"])
+    result = runner.invoke(app, ["get", "--workspace", "prod", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
@@ -49,7 +49,7 @@ def test_show_pipe_empty_workspace_tags_summary_and_omits_target_path(tmp_path: 
     target = tmp_path / "ws"
     runner.invoke(app, ["init", "prod", "--path", str(target), "--branch", "main"])
 
-    result = runner.invoke(app, ["show", "--workspace", "prod", "--format", "pipe"])
+    result = runner.invoke(app, ["get", "--workspace", "prod", "--format", "pipe"])
 
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip())
@@ -103,8 +103,9 @@ def test_sync_pipe_tags_sync_outcome(tmp_path: Path, upstream: Path, isolated_ca
     assert result.exit_code == 0, result.output
     envelope = json.loads(result.stdout.strip().splitlines()[0])
     assert envelope["kind"] == "workspace.sync_outcome"
-    assert set(envelope["record"]) == {"workspace", "repo", "action", "detail"}
-    assert envelope["record"]["action"] == "clone"
+    assert set(envelope["record"]) == {"workspace", "repo", "action", "detail", "target_path"}
+    assert envelope["record"]["target_path"] == str((target / "upstream").resolve())
+    assert envelope["record"]["action"] == "cloned"
     assert "Syncing repos" not in result.stdout
     assert "sync complete:" not in result.stdout
 
@@ -172,8 +173,9 @@ def test_sync_prune_pipe_reports_unsafe_orphan_skip(tmp_path: Path, upstream: Pa
     assert envelope["record"] == {
         "workspace": "smoke",
         "repo": "scratch",
-        "action": "skip",
+        "action": "skipped",
         "detail": "unsafe local state: local commits not reachable from any remote-tracking ref",
+        "target_path": str(orphan.resolve()),
     }
     assert orphan.is_dir()
 

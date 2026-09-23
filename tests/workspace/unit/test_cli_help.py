@@ -27,7 +27,7 @@ def test_help_lists_all_commands() -> None:
         "path",
         "shell-init",
         "edit",
-        "show",
+        "get",
         "branch",
     ):
         assert cmd in result.stdout
