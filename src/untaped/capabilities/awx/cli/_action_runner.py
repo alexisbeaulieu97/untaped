@@ -16,6 +16,7 @@ from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
 from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
+from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 
@@ -110,7 +111,10 @@ def run_action_selection(
 def _confirm_targets(ctx: AwxContext, targets: Sequence[SelectedResource], *, action: str) -> bool:
     """Preview every target on stderr, then ask once with No as the default."""
     for item in targets:
-        echo(f"{action} {item.kind}/{item.name} id={item.id} scope={item.scope}", err=True)
+        echo(
+            f"{action} {item.kind}/{item.name} id={item.id} scope={format_scope(item.scope)}",
+            err=True,
+        )
     if confirm_batch(ctx, count=len(targets), verb=action, yes=False, dry_run=False):
         return True
     echo(f"Cancelled; nothing to {action}.", err=True)

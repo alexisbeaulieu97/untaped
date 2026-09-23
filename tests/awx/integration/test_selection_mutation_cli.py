@@ -662,6 +662,33 @@ def test_patch_set_keeps_string_fields_as_strings(fake_aap: Any) -> None:
     assert record["verbosity"] == 2
 
 
+def test_mutation_preview_renders_scope_and_values_readably(fake_aap: Any) -> None:
+    """Previews show ``org=Default`` and compact JSON, never Python reprs."""
+    seed(fake_aap, "job_templates")
+    fake_aap.store["job_templates"][10]["organization_name"] = "Default"
+    result = CliInvoker().invoke(
+        app,
+        [
+            "job-templates",
+            "patch",
+            "target",
+            "--organization",
+            "Default",
+            "--set",
+            "description=new",
+            "--set",
+            'job_slice_count={"a": [1, true]}',
+            "--allow-unknown-fields",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "{'organization'" not in result.stderr
+    assert "org=Default" in result.stderr
+    assert 'description: "old" → "new"' in result.stderr
+    assert '{"a":[1,true]}' in result.stderr
+
+
 def test_patch_rejects_unknown_fields_by_default(fake_aap: Any) -> None:
     seed(fake_aap, "job_templates")
     result = CliInvoker().invoke(
