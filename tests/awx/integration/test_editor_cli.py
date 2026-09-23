@@ -517,7 +517,7 @@ def test_invalid_fk_mapping_never_leaks_parser_values(fake_aap: Any, editor: Any
     )
     assert result.exit_code == 1, result.output
     assert "new-secret-in-invalid-input" not in result.output
-    assert "validation cancelled" in result.output
+    assert "cancelled; no changes made" in result.output
     assert paths[0].exists()
     assert not any(call.request.method in {"PATCH", "POST"} for call in fake_aap.router.calls)
 

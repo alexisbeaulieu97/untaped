@@ -32,7 +32,7 @@ from untaped.capability_api import (
 
 app = create_app(
     name="test",
-    help="Run declarative AWX-job test suites (parameterised launch matrices).",
+    help="Run declarative AWX-job test suites (parameterized launch matrices).",
 )
 
 
