@@ -297,3 +297,44 @@ def test_live_auth_failures_still_abort() -> None:
 
     with pytest.raises(HttpStatusError):
         index.dependencies("acme/site", None, source_key=None)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"message": "API rate limit exceeded for user ID 1."}',
+        '{"message": "You have exceeded a secondary rate limit."}',
+    ],
+)
+def test_live_rate_limited_403_aborts(body: str) -> None:
+    class RateLimitedGithub(MultiRepoGithub):
+        def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+            raise HttpStatusError("403 Forbidden", status_code=403, body=body)
+
+    index = GithubDependencyIndex(
+        github=RateLimitedGithub(),
+        wrapped=EmptyIndex(),
+        aliases={},
+        dependency_paths=["roles/requirements.yml"],
+    )
+
+    with pytest.raises(HttpStatusError):
+        index.dependencies("acme/site", None, source_key=None)
+
+
+def test_live_permission_403_is_a_per_repo_error() -> None:
+    class ForbiddenGithub(MultiRepoGithub):
+        def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+            raise HttpStatusError(
+                "403 Forbidden", status_code=403, body='{"message": "Resource not accessible"}'
+            )
+
+    index = GithubDependencyIndex(
+        github=ForbiddenGithub(),
+        wrapped=EmptyIndex(),
+        aliases={},
+        dependency_paths=["roles/requirements.yml"],
+    )
+
+    assert index.dependencies("acme/site", None, source_key=None) == []
+    assert index.errors and "403" in index.errors[0]

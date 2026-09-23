@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from untaped.api import HttpError, UntapedError, bounded_map
+from untaped.api import UntapedError, bounded_map
 from untaped.capabilities.ansible.domain.identity import IdentityResolver, repo_key
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
 from untaped.capabilities.ansible.domain.payloads import (
@@ -14,6 +14,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SkippedDependencyFile,
 )
 from untaped.capabilities.ansible.errors import AnsibleError
+from untaped.capabilities.github.ansible import is_global_github_failure
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -177,7 +178,8 @@ class GithubDependencyIndex:
         try:
             self._read_into(read, repo, ref)
         except UntapedError as exc:
-            if isinstance(exc, HttpError) and exc.status_code in _GLOBAL_FAILURE_STATUSES:
+            # Auth and rate-limit failures hit every repo alike: surface them once.
+            if is_global_github_failure(exc):
                 raise
             read.edges.clear()
             read.errors.append(
@@ -260,10 +262,6 @@ class GithubDependencyIndex:
             if isinstance(path, str) and path:
                 paths.add(path)
         return paths, truncated
-
-
-# Auth and rate-limit failures hit every repo alike: surface them as one error.
-_GLOBAL_FAILURE_STATUSES = frozenset({401, 429})
 
 
 def _split_repo(repo: str) -> tuple[str, str]:
