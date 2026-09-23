@@ -15,6 +15,10 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     broken section can be repaired from the CLI (including with
     `config set KEY --prompt`). Non-mapping config shapes are
     reported as config errors instead of tracebacks.
+  - Capability settings are validated per section on first use: an invalid
+    value in one capability's section no longer breaks other capabilities'
+    commands, and the error names the section and config file. `doctor` and
+    `config list` still report every invalid section.
   - `doctor` reports one row per core, capability, and state section,
     including `UNTAPED_*` overrides and the selected profile.
   - **Behavior change:** `config list/get` and `profile list` emit native

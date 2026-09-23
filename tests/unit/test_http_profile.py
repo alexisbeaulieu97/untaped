@@ -11,6 +11,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, SecretStr
 
+from untaped.http import connected_client
 from untaped.settings import get_settings, register_profile_settings
 
 
@@ -53,3 +54,30 @@ def test_active_profile_http_overrides_default_base(_isolated_config: Path) -> N
     # ``default`` supplies the proxy (base layer); ``work`` overrides verify_ssl.
     assert settings.http.proxy == "http://base:3128"
     assert settings.http.verify_ssl is False
+
+
+class _PagedSettings(BaseModel):
+    page_size: int = 10
+
+
+class _ConnSettings(BaseModel):
+    base_url: str | None = None
+    token: SecretStr | None = None
+
+
+def test_connected_client_http_default_ignores_invalid_sibling_section(
+    _isolated_config: Path,
+) -> None:
+    register_profile_settings("github", _GithubSettings)
+    register_profile_settings("paged", _PagedSettings)
+    _isolated_config.write_text(
+        "profiles:\n  default:\n"
+        "    http:\n      timeout: 7\n"
+        "    paged:\n      page_size: notanint\n",
+        encoding="utf-8",
+    )
+    get_settings.cache_clear()
+
+    config = _ConnSettings(base_url="https://example.test", token=SecretStr("t"))
+    with connected_client(config, section="conn") as client:
+        assert client is not None

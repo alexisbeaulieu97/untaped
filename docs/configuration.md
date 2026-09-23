@@ -21,6 +21,12 @@ Capability settings remain in their own sections. Existing section names and
 stored keys, such as `github.token` and `awx.base_url`, are part of the config
 contract.
 
+Each section is validated only when a command reads it, so an invalid value in
+one capability's section (say `awx.page_size: abc`) does not break unrelated
+commands such as `untaped github ...`. The error, raised by the commands that
+do read the section, names the section and the config file. `untaped doctor`
+and `untaped config list` still report every invalid section.
+
 ## File and layout
 
 The default file is `~/.untaped/config.yml`. Set `UNTAPED_CONFIG` to use a

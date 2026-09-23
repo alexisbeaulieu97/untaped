@@ -34,7 +34,7 @@ from untaped.errors import (
     HttpTransportError,
     UntapedError,
 )
-from untaped.settings import HttpSettings, get_settings
+from untaped.settings import HttpSettings, load_settings_section
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -458,7 +458,7 @@ def connected_client(
         if token:
             request_headers.setdefault("Authorization", f"Bearer {token}")
 
-    http_settings = http if http is not None else get_settings().http
+    http_settings = http if http is not None else load_settings_section("http")
     return HttpClient(
         base_url=values[base_url_field].rstrip("/"),
         headers=request_headers,
