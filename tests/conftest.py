@@ -32,6 +32,9 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
         patch.setenv("HOME", str(home))
         patch.setenv("UV_CACHE_DIR", uv_cache)
         patch.setenv("UNTAPED_CONFIG", str(home / ".untaped" / "config.yml"))
+        # ``UNTAPED_STATE`` was cleared above, so state.yml resolves next to
+        # whichever temp config a test points ``UNTAPED_CONFIG`` at.
+        assert "UNTAPED_STATE" not in os.environ
         patch.setenv("GIT_CONFIG_NOSYSTEM", "1")
         for key, value in _TERMINAL_ENV.items():
             patch.setenv(key, value)

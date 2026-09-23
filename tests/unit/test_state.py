@@ -1,4 +1,4 @@
-"""Behavioral tests for StateCollection/StateMap over the shared config file."""
+"""Behavioral tests for StateCollection/StateMap over the shared state file."""
 
 from pathlib import Path
 
@@ -60,14 +60,15 @@ def test_remove_reports_and_collapses_empty_key(
     collection.upsert({"name": "a"})
     assert collection.remove("a") is True
     assert collection.remove("a") is False
-    data = yaml.safe_load(_isolated_config.read_text(encoding="utf-8")) or {}
+    state_file = _isolated_config.parent / "state.yml"
+    data = yaml.safe_load(state_file.read_text(encoding="utf-8")) or {}
     assert "demo" not in data  # key collapsed → section collapsed
 
 
 def test_entries_rejects_malformed_state(
     collection: StateCollection, _isolated_config: Path
 ) -> None:
-    _isolated_config.write_text("demo:\n  items: not-a-list\n")
+    (_isolated_config.parent / "state.yml").write_text("demo:\n  items: not-a-list\n")
     with pytest.raises(ConfigError, match="must be a list"):
         collection.entries()
 
@@ -80,12 +81,13 @@ def test_state_map_set_get_remove(_isolated_config: Path) -> None:
     assert aliases.entries() == {"web": "org/web-repo"}
     assert aliases.remove("web") is True
     assert aliases.remove("web") is False
-    data = yaml.safe_load(_isolated_config.read_text(encoding="utf-8")) or {}
+    state_file = _isolated_config.parent / "state.yml"
+    data = yaml.safe_load(state_file.read_text(encoding="utf-8")) or {}
     assert "demo" not in data
 
 
 def test_state_map_rejects_malformed_mapping(_isolated_config: Path) -> None:
-    _isolated_config.write_text("demo:\n  aliases: not-a-map\n")
+    (_isolated_config.parent / "state.yml").write_text("demo:\n  aliases: not-a-map\n")
     aliases = StateMap("demo", "aliases")
 
     with pytest.raises(ConfigError, match="must be a mapping"):
@@ -93,7 +95,7 @@ def test_state_map_rejects_malformed_mapping(_isolated_config: Path) -> None:
 
 
 def test_state_map_rejects_non_string_entries(_isolated_config: Path) -> None:
-    _isolated_config.write_text("demo:\n  aliases:\n    web: 123\n")
+    (_isolated_config.parent / "state.yml").write_text("demo:\n  aliases:\n    web: 123\n")
     aliases = StateMap("demo", "aliases")
 
     with pytest.raises(ConfigError, match="must be a string map"):
@@ -101,12 +103,13 @@ def test_state_map_rejects_non_string_entries(_isolated_config: Path) -> None:
 
 
 def test_state_map_set_does_not_replace_malformed_state(_isolated_config: Path) -> None:
-    _isolated_config.write_text("demo:\n  aliases: not-a-map\n")
+    (_isolated_config.parent / "state.yml").write_text("demo:\n  aliases: not-a-map\n")
     aliases = StateMap("demo", "aliases")
 
     with pytest.raises(ConfigError, match="must be a mapping"):
         aliases.set("web", "org/web-repo")
 
-    assert yaml.safe_load(_isolated_config.read_text(encoding="utf-8")) == {
+    state_file = _isolated_config.parent / "state.yml"
+    assert yaml.safe_load(state_file.read_text(encoding="utf-8")) == {
         "demo": {"aliases": "not-a-map"}
     }

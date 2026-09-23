@@ -1,9 +1,9 @@
-"""Config-file repositories for Ansible aliases and sources.
+"""State-file repositories for Ansible aliases and sources.
 
 Aliases and sources are the tool-managed ``ansible`` *state*: the ``aliases``
-map and ``sources`` list live under the top-level ``ansible`` section. Writes
-go through the SDK's strict state wrappers rather than reaching into
-config-file internals: the shared config file is co-owned by every untaped
+map and ``sources`` list live under the ``ansible`` section of ``state.yml``.
+Writes go through the SDK's strict state wrappers rather than reaching into
+file internals: the shared state file is co-owned by every untaped
 tool, so a write must only touch this tool's section and never clobber
 another's.
 """
@@ -25,7 +25,7 @@ _SOURCES = StateCollection(_SECTION, _SOURCES_KEY, id_field="name")
 
 
 class AliasRepository:
-    """Read/write Ansible dependency aliases in ``~/.untaped/config.yml``."""
+    """Read/write Ansible dependency aliases in ``~/.untaped/state.yml``."""
 
     def entries(self) -> dict[str, str]:
         return _ALIASES.entries()
@@ -38,7 +38,7 @@ class AliasRepository:
 
 
 class SourceRepository:
-    """Read/write named repository sources in ``~/.untaped/config.yml``."""
+    """Read/write named repository sources in ``~/.untaped/state.yml``."""
 
     def entries(self) -> list[SourceDefinition]:
         return [_source_from_raw(raw) for raw in _SOURCES.entries()]

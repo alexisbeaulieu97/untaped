@@ -280,9 +280,9 @@ def test_f02_profile_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 # ── f03: registry (P6-P7) ────────────────────────────────────────────────
 
 
-def _write_state(cfg: Path, entries: list[dict[str, str]]) -> None:
+def _write_state(state_file: Path, entries: list[dict[str, str]]) -> None:
     payload = {"workspace": {"workspaces": entries}}
-    cfg.write_text(yaml.safe_dump(payload), encoding="utf-8")
+    state_file.write_text(yaml.safe_dump(payload), encoding="utf-8")
     get_settings.cache_clear()
 
 
@@ -304,7 +304,7 @@ def test_f03_registry(tmp_path: Path) -> None:
     assert repo.entries() == []
 
     stored = str(tmp_path / "ws")
-    _write_state(cfg, [{"name": "prod", "path": stored}])
+    _write_state(cfg.parent / "state.yml", [{"name": "prod", "path": stored}])
     assert fix["entries"] == [{"name": "prod", "path": "<tmp>/ws"}]
     assert repo.get("prod").path == (tmp_path / "ws").expanduser().resolve()
 
@@ -907,7 +907,7 @@ def test_f12_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     # bulk rows: unavailable + unmatched shapes (P35)
     _write_state(
-        tmp_path / "config.yml",
+        tmp_path / "state.yml",
         [
             {"name": "prod", "path": str(target)},
             {"name": "ghost", "path": str(tmp_path / "ghost")},
