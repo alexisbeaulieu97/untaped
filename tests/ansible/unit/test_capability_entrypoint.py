@@ -9,6 +9,7 @@ mounted as built-in ``untaped ansible ...`` under the unified root.
 
 from __future__ import annotations
 
+import json
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
@@ -71,7 +72,7 @@ def test_spec_is_ansible_capability() -> None:
         "Use the built-in `untaped ansible` capability for Ansible analysis."
     )
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["ansible.deprecated-settings"]
 
 
 def test_build_app_is_nullary_factory() -> None:
@@ -135,3 +136,26 @@ def test_help_renders_unified_prefix(_isolate: Path) -> None:
     result = CliInvoker().invoke(root.meta, ["ansible", "--help"])
     assert result.exit_code == 0, result.output
     assert "untaped-ansible" not in result.output
+
+
+def _doctor_row(cfg: Path, body: str) -> dict[str, object]:
+    cfg.write_text(body)
+    get_settings.cache_clear()
+    result = CliInvoker().invoke(_root().meta, ["doctor", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    return next(row for row in rows if row["check"] == "ansible.deprecated-settings")
+
+
+def test_doctor_warns_when_freshness_ttl_is_set(_isolate: Path) -> None:
+    row = _doctor_row(_isolate, "profiles:\n  default:\n    ansible:\n      freshness_ttl: 3600\n")
+
+    assert row["status"] == "warn"
+    assert "ansible.freshness_ttl is deprecated and ignored" in str(row["detail"])
+    assert "config unset ansible.freshness_ttl" in str(row["detail"])
+
+
+def test_doctor_passes_without_deprecated_settings(_isolate: Path) -> None:
+    row = _doctor_row(_isolate, "profiles:\n  default:\n    ansible: {}\n")
+
+    assert row["status"] == "pass"

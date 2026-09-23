@@ -214,7 +214,8 @@ flags, messages, exit codes and record shapes.
 
 Provider imports come from `untaped.capability_api` only. The module exports the
 composition types (`CapabilitySpec`, `SkillAsset`, `DoctorCheck`, and related
-records), `CAPABILITY_API_VERSION`, and the supported helpers including
+records; `DoctorResult(..., warn=True)` reports a `warn` row that does not fail
+`doctor`), `CAPABILITY_API_VERSION`, and the supported helpers including
 `create_app`, `app_context`, `get_config_section`, `emit`, `read_identifiers`,
 `report_errors`, `FormatOption`, and `ColumnsOption`. The canonical v1 wire
 parser and record type are also exported as `parse_envelope_line` and

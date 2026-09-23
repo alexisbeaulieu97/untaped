@@ -78,6 +78,29 @@ def test_contributed_passing_check_reports_detail(_isolated_config: Path) -> Non
     assert "token valid" in result.stdout
 
 
+def test_contributed_warning_check_is_a_warn_row_that_exits_zero(
+    _isolated_config: Path,
+) -> None:
+    app = _doctor_app(
+        make_spec("ext", doctor_checks=(check("ext.legacy", warn=True, detail="old key set"),))
+    )
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    assert result.exit_code == 0, result.output
+    row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.legacy")
+    assert row["status"] == "warn"
+    assert row["detail"] == "old key set"
+
+
+def test_failed_check_wins_over_warn(_isolated_config: Path) -> None:
+    app = _doctor_app(
+        make_spec("ext", doctor_checks=(check("ext.auth", ok=False, warn=True, detail="bad"),))
+    )
+    result = CliInvoker().invoke(app, ["--format", "json"])  # type: ignore[arg-type]
+    assert result.exit_code == 1
+    row = next(r for r in json.loads(result.stdout) if r["check"] == "ext.auth")
+    assert row["status"] == "fail"
+
+
 # ── execution failures isolate per row ───────────────────────────────────────
 
 

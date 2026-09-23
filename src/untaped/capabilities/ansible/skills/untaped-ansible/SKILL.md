@@ -28,7 +28,7 @@ Use this skill when the user wants an agent to operate the `untaped ansible` CLI
 - `--refresh`, `--cached`, and `--live` are mutually exclusive, as are `--upstream`, `--downstream`, and `--both`; conflicting flags are usage errors (exit 2). `--refresh` also requires `--source` or inline source boundary selectors (`--org`, `--team`, or `--repo`); modifiers such as `--path`, `--ref-kind`, `--ref-pattern`, and `--ref-scan-default` do not count by themselves.
 - `--team` accepts ORG/SLUG; a bare SLUG is allowed when exactly one `--org` is given and normalizes to ORG/SLUG.
 - Inline source selectors are cached under a deterministic fingerprint key, so repeating the identical graph command reuses the scan.
-- `ansible.freshness_ttl` is deprecated and ignored; commands print a warning when it is set. Use `--refresh` or `source refresh NAME` when remote data should be checked.
+- `ansible.freshness_ttl` is deprecated and ignored; commands print a warning when it is set and `untaped doctor` reports it as a `warn` row. Use `--refresh` or `source refresh NAME` when remote data should be checked.
 - `--ref R --upstream` also includes consumers that declare the target without a version when `R` is the target's cached default branch; if that default branch is unknown, the graph warns how many unpinned dependents were omitted.
 - Repo ids match case-insensitively (`Acme/Base` equals `acme/base`); graph node ids use the lowercase form while labels keep display casing. URLs on the GitHub host derived from `github.base_url` (GitHub Enterprise) resolve like `github.com` URLs; path-like sources such as `./local` stay unresolved.
 - Tree output prints a shared subtree once and marks later occurrences `(see above)`.
