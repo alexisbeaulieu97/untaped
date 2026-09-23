@@ -7,10 +7,10 @@ from typing import Any, cast
 
 import pytest
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.ports import Catalog, FkResolver, ResourceClient
 from untaped.capabilities.awx.application.save_resources import SaveResources
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
-from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure.specs import (
     CREDENTIAL_SPEC,
     HOST_SPEC,

@@ -130,7 +130,8 @@ def test_mutation_selection_requires_explicit_source() -> None:
 def test_search_and_filters_form_one_query_mode() -> None:
     client = _Client()
     selected = _resolver(client).resolve(
-        PROJECT_SPEC, SelectionRequest(filters={"status": "ok"}, search="one", require_explicit=True)
+        PROJECT_SPEC,
+        SelectionRequest(filters={"status": "ok"}, search="one", require_explicit=True),
     )
     assert len(selected) == 2
     assert client.find_calls[-1] == ("list", {"status": "ok", "search": "one"})
@@ -159,7 +160,8 @@ def test_scope_uses_summary_fields() -> None:
 
 def test_explicit_empty_pipe_is_empty_mutation_selection() -> None:
     assert (
-        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(pipe=(), require_explicit=True)) == ()
+        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(pipe=(), require_explicit=True))
+        == ()
     )
 
 

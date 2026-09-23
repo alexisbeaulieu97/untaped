@@ -1,7 +1,7 @@
 """Default :class:`Filesystem` adapter — straight :func:`Path.read_text`.
 
 Wraps :class:`OSError` (missing file, permission denied, …) in
-:class:`AwxApiError` so the CLI's ``report_errors`` boundary catches it
+:class:`ConfigError` so the CLI's ``report_errors`` boundary catches it
 instead of leaking a raw stack trace.
 """
 
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from untaped.api import ConfigError
 
 
 class LocalFilesystem:
@@ -17,4 +18,3 @@ class LocalFilesystem:
             return path.read_text(encoding="utf-8")
         except OSError as exc:
             raise ConfigError(f"failed to read {path}: {exc}") from exc
-from untaped.api import ConfigError
