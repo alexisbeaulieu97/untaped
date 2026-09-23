@@ -77,12 +77,12 @@ def _repo(full_name: str, source: Path, *, archived: bool = False) -> dict[str, 
     }
 
 
-def _populate_cache(tmp_path: Path, repos: list[dict[str, object]]) -> None:
+def _populate_cache(tmp_path: Path, repos: list[dict[str, object]], *, org: str = "acme") -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=repos))
+        mock.get(f"/orgs/{org}/repos").mock(return_value=httpx.Response(200, json=repos))
         result = CliInvoker().invoke(
             app,
-            ["sweep", "--org", "acme", "--has-file", "README.md", "--format", "json"],
+            ["sweep", "--org", org, "--has-file", "README.md", "--format", "json"],
         )
     assert result.exit_code == 0, result.output
 
@@ -144,7 +144,7 @@ def test_cache_prune_removes_departed_repos(
     assert [row["repo"] for row in json.loads(listed_after_prune.stdout)] == ["acme/api"]
 
 
-def test_cache_prune_rejects_team_scope(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cache_clean_has_no_team_option(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
     source = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
     _populate_cache(tmp_path, [_repo("acme/api", source)])
@@ -156,7 +156,44 @@ def test_cache_prune_rejects_team_scope(tmp_path: Path, monkeypatch: pytest.Monk
     listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
 
     assert result.exit_code != 0
-    assert "--prune cannot resolve team membership from the corpus" in result.output
+    assert "--team" in result.output
+    assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
+
+
+def test_cache_clean_all_with_org_only_removes_that_org(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    tool = _source_repo(tmp_path, "tool", {"README.md": "hello\n"})
+    _populate_cache(tmp_path, [_repo("acme/api", api)])
+    _populate_cache(tmp_path, [_repo("other/tool", tool)], org="other")
+
+    cleaned = CliInvoker().invoke(
+        app, ["cache", "clean", "--all", "--org", "ACME", "--yes", "--format", "json"]
+    )
+    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
+
+    assert cleaned.exit_code == 0, cleaned.output
+    assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
+    assert [row["repo"] for row in json.loads(listed.stdout)] == ["other/tool"]
+
+
+def test_cache_clean_repo_with_org_filters_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    _populate_cache(tmp_path, [_repo("acme/api", api)])
+
+    cleaned = CliInvoker().invoke(
+        app,
+        ["cache", "clean", "--repo", "acme/api", "--org", "other", "--yes", "--format", "json"],
+    )
+    listed = CliInvoker().invoke(app, ["cache", "status", "--format", "json"])
+
+    assert cleaned.exit_code == 0, cleaned.output
+    assert json.loads(cleaned.stdout) == []
     assert [row["repo"] for row in json.loads(listed.stdout)] == ["acme/api"]
 
 
