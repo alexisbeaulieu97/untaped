@@ -66,10 +66,12 @@ def _render_tree(graph: DependencyGraph) -> str:
 
 def _render_mermaid(graph: DependencyGraph) -> str:
     lines = ["graph LR"]
+    # Index-based ids: sanitizing graph ids would collide (web-app vs web_app).
+    mermaid_ids = {node.id: f"n{index}" for index, node in enumerate(graph.nodes)}
     for node in graph.nodes:
-        lines.append(f'  {_mermaid_id(node.id)}["{_escape_mermaid(node.label)}"]')
+        lines.append(f'  {mermaid_ids[node.id]}["{_escape_mermaid(node.label)}"]')
     for edge in graph.edges:
-        lines.append(f"  {_mermaid_id(edge.source_id)} --> {_mermaid_id(edge.target_id)}")
+        lines.append(f"  {mermaid_ids[edge.source_id]} --> {mermaid_ids[edge.target_id]}")
     for cycle in graph.cycles:
         detail = " -> ".join(cycle.node_ids) if cycle.kind == "cycle" else ", ".join(cycle.node_ids)
         lines.append(f"  %% {cycle.kind} {cycle.relation}: {_escape_mermaid_comment(detail)}")
@@ -214,15 +216,9 @@ def _ref_display(node: GraphNode) -> RefDisplay:
     )
 
 
-def _mermaid_id(value: str) -> str:
-    cleaned = "".join(char if char.isalnum() or char == "_" else "_" for char in value)
-    if cleaned and not cleaned[0].isdigit():
-        return cleaned
-    return f"n_{cleaned}"
-
-
 def _escape_mermaid(value: str) -> str:
-    return value.replace('"', '\\"')
+    """Escape a quoted Mermaid label; Mermaid uses entity codes, not backslashes."""
+    return value.replace('"', "#quot;")
 
 
 def _escape_mermaid_comment(value: str) -> str:
