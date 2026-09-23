@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 import untaped.capability_api as capability_api
 from untaped.capabilities.github import ansible as ansible_api
@@ -28,10 +31,12 @@ from untaped.capabilities.github.ansible import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
     TeamScope,
+    github_settings,
     is_global_github_failure,
     normalize_team_scopes,
 )
 from untaped.errors import UntapedError
+from untaped.settings import get_settings, register_profile_settings
 
 EXPECTED_ALL = [
     "BatchRepoRefsFailure",
@@ -46,6 +51,7 @@ EXPECTED_ALL = [
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "TeamScope",
+    "github_settings",
     "is_global_github_failure",
     "normalize_team_scopes",
 ]
@@ -201,3 +207,21 @@ def test_batch_refs_result_shape() -> None:
 def test_settings_contract() -> None:
     assert set(GithubSettings.model_fields) == {"base_url", "token", "corpus_path", "sweep"}
     assert GithubSettings().token is None
+
+
+def test_github_settings_reads_the_active_github_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("profiles:\n  default:\n    github:\n      token: ghp_test\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    register_profile_settings("github", GithubSettings)
+    get_settings.cache_clear()
+    try:
+        settings = github_settings()
+    finally:
+        get_settings.cache_clear()
+
+    assert isinstance(settings, GithubSettings)
+    assert settings.token is not None
+    assert settings.token.get_secret_value() == "ghp_test"
