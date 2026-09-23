@@ -28,7 +28,6 @@ from untaped.capabilities.recipe.cli.common import (
 from untaped.capabilities.recipe.cli.preview import (
     PlanCounts,
     PreviewMode,
-    plural,
     preview_summary,
     render_preview,
 )
@@ -43,8 +42,15 @@ from untaped.capability_api import (
     BatchOutcome,
     ColumnsOption,
     ConfigError,
+    DryRunOption,
     FormatOption,
+    OutcomeRecord,
+    ParallelOption,
+    StdinOption,
+    TargetRecord,
     UntapedError,
+    UsageError,
+    YesOption,
     batch_apply,
     clamp_parallel,
     echo,
@@ -56,6 +62,21 @@ from untaped.capability_api import (
 )
 
 MessageKind = Literal["success", "warning", "error", "info"]
+
+
+class ApplyOutcomeRecord(OutcomeRecord, TargetRecord):
+    """One target's ``recipe apply`` result (kind ``recipe.apply_outcome``).
+
+    ``action`` is ``planned`` (preview), ``applied``, ``unchanged``,
+    ``skipped`` (a validate hook marked the target not applicable),
+    ``cancelled`` (confirmation declined) or ``failed``.
+    """
+
+    files_changed: int
+    warnings: list[str]
+    error: str | None
+    inputs: dict[str, object]
+    recipe: str
 
 
 @dataclass(frozen=True)
@@ -90,31 +111,33 @@ class TargetInput:
 def apply_command(
     recipe_ref: Annotated[str, Parameter(help="Recipe id, pack/recipe ref, or path.")],
     dirs: Annotated[list[Path] | None, Parameter(help="Target directories.")] = None,
+    /,
     *,
     recipe_id: Annotated[
         str | None,
         Parameter(name="--recipe", help="Recipe id when applying a local pack path."),
     ] = None,
     stdin: Annotated[
-        bool,
-        Parameter(
-            name="--stdin",
-            negative="",
-            help="Read target paths or pipe records from stdin.",
-        ),
+        StdinOption, Parameter(help="Read target paths, or --format pipe records, from stdin.")
     ] = False,
     var: Annotated[
         list[str] | None,
-        Parameter(name="--var", help="Input override as key=value.", consume_multiple=False),
+        Parameter(
+            name="--var",
+            negative="",
+            help="Input override as key=value.",
+            consume_multiple=False,
+        ),
     ] = None,
     vars_file: Annotated[
         Path | None,
-        Parameter(name="--vars", help="YAML file containing input overrides."),
+        Parameter(name="--vars-file", help="YAML file containing input overrides."),
     ] = None,
     input_from: Annotated[
         list[str] | None,
         Parameter(
             name="--input-from",
+            negative="",
             help="Derive one input from a per-target Jinja expression as key=template.",
             consume_multiple=False,
         ),
@@ -123,30 +146,21 @@ def apply_command(
         bool,
         Parameter(name="--interactive", negative="", help="Prompt for unresolved inputs."),
     ] = False,
-    dry_run: Annotated[
-        bool,
-        Parameter(name="--dry-run", negative="", help="Preview without writing."),
-    ] = False,
+    dry_run: DryRunOption = False,
     check: Annotated[
         bool,
         Parameter(
             name="--check",
             negative="",
-            help="Preview and exit non-zero when changes would be made.",
+            help="Preview and exit 3 when changes would be made.",
         ),
     ] = False,
-    yes: Annotated[
-        bool,
-        Parameter(name=["--yes", "-y"], negative="", help="Skip the confirmation prompt."),
-    ] = False,
+    yes: YesOption = False,
     backup: Annotated[
         bool,
         Parameter(name="--backup", negative="--no-backup", help="Create backups before writing."),
     ] = True,
-    parallel: Annotated[
-        int,
-        Parameter(name=["--parallel", "-j"], help="Target planning workers."),
-    ] = 1,
+    parallel: ParallelOption = 1,
     hook_timeout: Annotated[
         float | None,
         Parameter(name="--hook-timeout", help="Per-hook timeout in seconds; 0 disables."),
@@ -167,13 +181,14 @@ def apply_command(
     """Apply a recipe to target directories."""
     with report_config_errors():
         if interactive and check:
-            raise ConfigError("--interactive cannot be used with --check")
-        if stdin and not yes and not dry_run and not check:
-            raise ConfigError(
-                "apply requires --yes with --stdin unless --dry-run or --check is used"
-            )
+            raise UsageError("--interactive cannot be combined with --check")
+        if stdin and not (yes or dry_run or check):
+            # Refuse before any hook runs when the confirmation could never be
+            # answered: stdin carries the targets and there is no terminal.
+            with recipe_ui().terminal(refusal="apply requires --yes when not interactive"):
+                pass
         with ExitStack() as stack:
-            prompt = _interactive_prompt(stdin=stdin, interactive=interactive, stack=stack)
+            prompt = _interactive_prompt(interactive=interactive, stack=stack)
             context = _apply_context(
                 recipe_ref,
                 dirs=list(dirs or []),
@@ -204,19 +219,28 @@ def apply_command(
             context.plans,
             outcome,
             recipe_ref=context.recipe_ref,
-            preview_status=_preview_status(dry_run, check),
+            preview=dry_run or check,
         )
         if fmt == "table":
-            # Human view: key=value pairs instead of a dict repr. Structured
-            # formats keep the real mapping for pipe/json consumers.
-            rows = [{**row, "inputs": _inputs_cell(row["inputs"])} for row in rows]
-        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.outcome")
+            # Human view: key=value pairs and joined warnings instead of reprs.
+            # Structured formats keep the real mapping and list.
+            rows = [
+                {
+                    **row,
+                    "warnings": "; ".join(_strings(row["warnings"])),
+                    "inputs": _inputs_cell(row["inputs"]),
+                }
+                for row in rows
+            ]
+        rendered = render_rows(rows, fmt=fmt, columns=columns, kind="recipe.apply_outcome")
         if rendered:
             echo(rendered)
         _render_result_summary(context.plans, outcome, check=check, dry_run=dry_run)
+        if outcome.cancelled:
+            finish(outcome.outcome)
         has_errors = any(plan.status == "error" for plan in context.plans)
         has_drift = check and any(plan.status != "error" and plan.changes for plan in context.plans)
-        finish(has_errors or outcome.outcome.any_failed or has_drift)
+        finish(has_errors or outcome.outcome.any_failed, predicate_hit=has_drift)
 
 
 def _apply_context(
@@ -249,10 +273,10 @@ def _apply_context(
                 recipe_ref=recipe_resolution.ref,
                 plans=[],
             )
-        raise ConfigError("at least one target directory is required (or use --stdin)")
+        raise UsageError("at least one target directory is required (or use --stdin)")
     inputs = _input_values(raw_vars, vars_file)
     input_from = _input_sources(raw_input_from)
-    workers = clamp_parallel(max(parallel, 1), cap=32, policy="recipe planning cap")
+    workers = clamp_parallel(parallel, cap=32, policy="recipe planning cap")
     ui = recipe_ui()
     with UvHookWorkerPool(
         max_workers_per_project=workers,
@@ -353,7 +377,7 @@ def _execute_plans(
         verb="apply",
         noun="target",
         label=lambda plan: str(plan.target),
-        describe=_row,
+        describe=_describe,
         ui=recipe_ui(),
         destructive=True,
         assume_yes=yes,
@@ -364,7 +388,7 @@ def _execute_plans(
     backup_id = draft.id if draft is not None and draft.entries else None
     if draft is not None:
         draft.discard_if_empty()
-    cancelled = bool(actionable) and not dry_run and not outcome.results and not outcome.failed
+    cancelled = outcome.cancelled
     return ApplyExecution(
         outcome=outcome,
         applied=frozenset(applied),
@@ -379,39 +403,40 @@ def _outcome_rows(
     execution: ApplyExecution,
     *,
     recipe_ref: str,
-    preview_status: str | None,
+    preview: bool,
 ) -> list[dict[str, object]]:
-    rows = [{**_row(plan), "recipe": recipe_ref} for plan in plans]
-    if preview_status is not None:
-        return [
-            {**row, "status": preview_status} if row["status"] == "planned" else row for row in rows
-        ]
-    if execution.cancelled:
-        # Declined confirmation: nothing ran, so rows honestly stay "planned".
-        # (An executed run where every target was already conformant is NOT
-        # cancelled and falls through to report "unchanged" per target.)
-        return rows
     rendered: list[dict[str, object]] = []
-    for plan, row in zip(plans, rows, strict=True):
+    for plan in plans:
         plan_id = id(plan)
-        if plan.status in {"skipped", "error"}:
-            # Not applicable / failed planning: keep the honest status through
-            # execution (a planning error is never "unchanged").
-            rendered.append(row)
+        if plan.status == "skipped":
+            # Not applicable: never a failure, and never touched.
+            action = "skipped"
+        elif plan.status == "error":
+            # A planning error is never "unchanged".
+            action = "failed"
+        elif not plan.changes:
+            action = "unchanged"
+        elif preview:
+            action = "planned"
+        elif execution.cancelled:
+            # Declined confirmation: nothing ran.
+            action = "cancelled"
         elif plan_id in execution.failed:
-            rendered.append({**row, "status": "error", "error": execution.failed[plan_id]})
+            action = "failed"
         elif plan_id in execution.applied:
-            rendered.append({**row, "status": "applied"})
+            action = "applied"
         else:
-            # Nothing to write for this target — say "unchanged", matching the
-            # summary line's vocabulary, instead of leaking planner state.
-            rendered.append({**row, "status": "unchanged"})
+            action = "unchanged"
+        row = _row(plan, action=action, recipe_ref=recipe_ref)
+        if plan_id in execution.failed:
+            row["error"] = execution.failed[plan_id]
+        rendered.append(row)
     return rendered
 
 
 def _targets(positional: list[Path], *, stdin: bool) -> TargetInput:
     if stdin and positional:
-        raise ConfigError("provide targets as positional args or via --stdin, not both")
+        raise UsageError("provide targets as positional args or via --stdin, not both")
     if not stdin:
         return TargetInput([Target(path=path) for path in positional])
     lines = read_stdin()
@@ -429,7 +454,7 @@ def _targets(positional: list[Path], *, stdin: bool) -> TargetInput:
 def _input_values(raw_vars: list[str], vars_file: Path | None) -> dict[str, object]:
     values: dict[str, object] = {}
     if vars_file is not None:
-        values.update(load_yaml_mapping_file(vars_file, flag="--vars"))
+        values.update(load_yaml_mapping_file(vars_file, flag="--vars-file"))
     values.update(parse_kv_pairs(raw_vars, flag="--var"))
     return values
 
@@ -441,22 +466,14 @@ def _input_sources(raw_sources: list[str]) -> dict[str, str]:
 
 def _interactive_prompt(
     *,
-    stdin: bool,
     interactive: bool,
     stack: ExitStack,
 ) -> PromptFunc | None:
     if not interactive:
         return None
-    if stdin:
-        try:
-            tty = stack.enter_context(
-                Path("/dev/tty").open("r+", encoding="utf-8")  # noqa: SIM115
-            )
-        except OSError as exc:
-            raise ConfigError("interactive input requires a terminal") from exc
-        ui = ui_context(stdin=tty, stderr=tty, strict=True)
-    else:
-        ui = ui_context(strict=True)
+    ui = stack.enter_context(
+        ui_context(strict=True).terminal(refusal="interactive input requires a terminal")
+    )
 
     def ask(
         message: str,
@@ -471,14 +488,6 @@ def _interactive_prompt(
         return ui.text(message, default=text_default, required=required)
 
     return ask
-
-
-def _preview_status(dry_run: bool, check: bool) -> str | None:
-    if check:
-        return "check"
-    if dry_run:
-        return "dry-run"
-    return None
 
 
 def _render_result_summary(
@@ -510,12 +519,7 @@ def _render_result_summary(
         )
         return
     if execution.cancelled:
-        ui.message(
-            "warning",
-            "Recipe apply cancelled: "
-            f"{plural(changed, 'changing target')} not applied, "
-            f"{unchanged} unchanged{skipped_note}, {failed} failed",
-        )
+        # finish() prints the standard decline line.
         return
     kind = "warning" if failed else "info"
     backup = f", backup {execution.backup_id}" if execution.backup_id else ""
@@ -532,12 +536,25 @@ def _inputs_cell(inputs: object) -> str:
     return ", ".join(f"{key}={value}" for key, value in inputs.items())
 
 
-def _row(plan: TargetPlan) -> dict[str, object]:
-    return {
-        "target": str(plan.target),
-        "status": plan.status,
-        "files_changed": plan.files_changed,
-        "warnings": "; ".join(plan.warnings),
-        "error": plan.error,
-        "inputs": plan.display_inputs,
-    }
+def _strings(value: object) -> list[str]:
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _row(plan: TargetPlan, *, action: str, recipe_ref: str) -> dict[str, object]:
+    return ApplyOutcomeRecord(
+        target_path=_absolute(plan.target),
+        action=action,
+        files_changed=plan.files_changed,
+        warnings=list(plan.warnings),
+        error=plan.error or None,
+        inputs=dict(plan.display_inputs),
+        recipe=recipe_ref,
+    ).model_dump(mode="json")
+
+
+def _describe(plan: TargetPlan) -> dict[str, object]:
+    return {"target_path": str(_absolute(plan.target)), "files_changed": plan.files_changed}
+
+
+def _absolute(path: Path) -> Path:
+    return path if path.is_absolute() else Path.cwd() / path

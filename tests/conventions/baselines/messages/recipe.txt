@@ -3,13 +3,3 @@
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
 src/untaped/capabilities/recipe/_worker/hook_worker.py::sys-stdin::sys.stdin
 src/untaped/capabilities/recipe/_worker/hook_worker.py::sys-stdin::sys.stdin
-src/untaped/capabilities/recipe/application/run_hook.py::usage-phrase::provide --content or --content-file, not both
-src/untaped/capabilities/recipe/cli/apply_commands.py::usage-phrase::provide targets as positional args or via --stdin, not both
-src/untaped/capabilities/recipe/cli/backup_commands.py::paren-s::backup(s), kept
-src/untaped/capabilities/recipe/cli/backup_commands.py::paren-s::file(s):
-src/untaped/capabilities/recipe/cli/hook_commands.py::sys-stdin::sys.stdin
-src/untaped/capabilities/recipe/cli/hook_commands.py::usage-phrase::pass the hook as a ./pack/hook path or with --project, not both
-src/untaped/capabilities/recipe/cli/library_commands.py::echo-warning::warning: library copy has local edits; --discard-edits will overwrite th
-src/untaped/capabilities/recipe/cli/library_commands.py::echo-warning::warning: pack '{}' has local edits in the library (via edit or new recip
-src/untaped/capabilities/recipe/cli/library_commands.py::paren-s::pack(s):
-src/untaped/capabilities/recipe/cli/preview.py::local-plural::plural

@@ -1,24 +1,4 @@
 # Known violations of the help_tree convention check for 'recipe'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-recipe add::mutation-format::add
-recipe apply::empty-negative::--empty-dirs
-recipe apply::empty-negative::--empty-input-from
-recipe apply::empty-negative::--empty-var
-recipe apply::positional-or-keyword::--dirs
-recipe apply::positional-or-keyword::--recipe-ref
-recipe backup prune::destructive-controls::--dry-run
 recipe backup restore::verb::restore
-recipe backup show::verb::show
-recipe check::verb::check
-recipe hook run::empty-negative::--empty-arg
-recipe hook run::empty-negative::--empty-input
-recipe new hook::needless-negative::--no-lock
-recipe new hook::verb::hook
-recipe new pack::needless-negative::--no-lock
-recipe new pack::verb::pack
-recipe new recipe::needless-negative::--no-lock
-recipe new recipe::verb::recipe
-recipe remove::destructive-controls::--dry-run
-recipe remove::mutation-format::remove
-recipe show::verb::show

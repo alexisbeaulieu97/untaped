@@ -2,7 +2,7 @@
 
 Reads ``pyproject.toml`` manifests, scans hook module files, and enforces the
 hook-project file contract (compatible metadata, a ``uv.lock`` when hooks are
-declared, and a module file per hook) in one place for ``add``, ``check``, and
+declared, and a module file per hook) in one place for ``add``, ``validate``, and
 hook resolution.
 """
 

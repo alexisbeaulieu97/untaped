@@ -104,7 +104,7 @@ class PackLibraryPort(Protocol):
 
 
 class PackInspectorPort(Protocol):
-    """File-backed hook-project checks used by ``check``."""
+    """File-backed hook-project checks used by ``validate``."""
 
     def read_hook_project(self, project_root: Path) -> PackManifest:
         """Read a local hook project's manifest (absent tables are empty)."""

@@ -34,6 +34,7 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    UsageError,
     echo,
     finish,
     render_rows,
@@ -73,7 +74,7 @@ def test_command(
     """Run golden-fixture test cases for packs."""
     with report_config_errors():
         if update and ref_text is None:
-            raise ConfigError("--update requires an explicit pack or recipe argument")
+            raise UsageError("--update requires an explicit pack or recipe argument")
         root = library_root()
         selection = _select(root, ref_text)
         results = _execute(root, selection, update=update)
