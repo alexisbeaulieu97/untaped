@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
+from packaging.version import Version
 
 import untaped.capabilities.recipe.infrastructure.pack_scaffold as pack_scaffold
 from untaped.capabilities.recipe.cli import app
@@ -60,7 +62,7 @@ def test_scaffold_pack_writes_parseable_manifest_with_hook_api_floors(
         "dependencies = []\n"
         "\n"
         "[dependency-groups]\n"
-        'dev = ["untaped>=6.0.0,<7", "pytest"]\n'
+        f'dev = ["{_expected_dev_requirement()}", "pytest"]\n'
         "\n"
         "[tool.pytest.ini_options]\n"
         'pythonpath = ["src"]\n'
@@ -525,3 +527,8 @@ def test_new_hook_pack_not_found_omits_hint_when_no_matching_directory(
     assert result.exit_code != 0
     assert "pack not found: missing" in result.output
     assert "directory named" not in result.output
+
+
+def _expected_dev_requirement() -> str:
+    installed = Version(version("untaped"))
+    return f"untaped>={installed.public},<{installed.major + 1}"

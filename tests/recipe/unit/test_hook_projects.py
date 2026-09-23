@@ -11,12 +11,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
+from importlib.metadata import version
 from io import StringIO
 from pathlib import Path
 from threading import Barrier, Event
 from typing import Literal
 
 import pytest
+from packaging.version import Version
 from pydantic import ValidationError
 
 import untaped.capabilities.recipe.infrastructure.hook_resolver as hook_resolver_module
@@ -243,7 +245,7 @@ def test_hook_resolver_rejects_runtime_cli_dependency(
     ) as exc_info:
         HookResolver().resolve("check", recipe_dir)
     assert "dependency-groups.dev" in str(exc_info.value)
-    assert "untaped>=6.0.0,<7" in str(exc_info.value)
+    assert _expected_dev_requirement() in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
@@ -1730,3 +1732,8 @@ def test_uv_hook_worker_launch_does_not_shadow_pack_top_level_modules(
     response = json.loads(lines[1])
     assert response["ok"] is True, response
     assert response["result"] == {"status": "pass", "message": "pack module"}
+
+
+def _expected_dev_requirement() -> str:
+    installed = Version(version("untaped"))
+    return f"untaped>={installed.public},<{installed.major + 1}"
