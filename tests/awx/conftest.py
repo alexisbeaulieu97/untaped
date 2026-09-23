@@ -349,6 +349,19 @@ class FakeAap:
         if body.get("disassociate"):
             self.memberships[key].discard(member_id)
         else:
+            if sub_path == "credentials":
+                # AWX allows at most one credential per credential type.
+                credentials = self.store["credentials"]
+                new_type = credentials.get(member_id, {}).get("credential_type")
+                clash = [
+                    other
+                    for other in self.memberships[key]
+                    if other != member_id
+                    and new_type is not None
+                    and credentials.get(other, {}).get("credential_type") == new_type
+                ]
+                if clash:
+                    return _err(400, "Cannot assign multiple credentials of the same type.")
             self.memberships[key].add(member_id)
         return httpx.Response(204)
 
