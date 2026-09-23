@@ -56,7 +56,7 @@ def init_command(
         Parameter(name=["--branch", "-b"], help="Default branch for newly cloned repos."),
     ] = None,
 ) -> None:
-    """Initialise a new workspace named `name`.
+    """Initialize a new workspace named `name`.
 
     Default location is `<workspace.workspaces_dir>/<name>` (the
     `workspaces_dir` setting defaults to `~/.untaped/workspaces`).
@@ -186,7 +186,7 @@ def import_command(
         Parameter(
             name="--sync",
             negative="",
-            help="Clone the imported repos immediately (only the repos in <source>).",
+            help="Clone the imported repos immediately (only the repos in SOURCE).",
         ),
     ] = False,
 ) -> None:

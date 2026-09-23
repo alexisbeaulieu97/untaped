@@ -78,6 +78,21 @@ def test_stdin_flags_do_not_expose_negative_aliases() -> None:
         assert "--no-stdin" not in result.output
 
 
+def test_import_help_names_source_argument() -> None:
+    result = CliInvoker().invoke(app, ["import", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "only the repos in SOURCE" in " ".join(result.output.split())
+
+
+def test_init_help_uses_initialize_spelling() -> None:
+    result = CliInvoker().invoke(app, ["--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Initialize a new workspace" in result.output
+    assert "Initialise" not in result.output
+
+
 def test_sync_help_describes_safe_prune_behavior() -> None:
     result = CliInvoker().invoke(app, ["sync", "--help"])
 
