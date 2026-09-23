@@ -97,8 +97,9 @@ def test_branch_apply_json_skips_missing_clone(tmp_path: Path) -> None:
             "repo": "api",
             "workspace": "prod",
             "target_branch": "develop",
-            "action": "skip",
+            "action": "skipped",
             "detail": "not cloned",
+            "target_path": str((target / "api").resolve()),
         }
     ]
 
@@ -219,8 +220,9 @@ def test_branch_set_apply_writes_manifest_and_applies(tmp_path: Path) -> None:
             "repo": "api",
             "workspace": "prod",
             "target_branch": "develop",
-            "action": "skip",
+            "action": "skipped",
             "detail": "not cloned",
+            "target_path": str((target / "api").resolve()),
         }
     ]
     raw = yaml.safe_load((target / "untaped.yml").read_text())
@@ -252,8 +254,9 @@ def test_branch_set_apply_creates_tracking_branch_for_remote_target(
             "repo": "upstream",
             "workspace": "smoke",
             "target_branch": "develop",
-            "action": "checkout",
+            "action": "checked_out",
             "detail": "from main",
+            "target_path": str((target / "upstream").resolve()),
         }
     ]
     head = subprocess.run(
@@ -305,8 +308,9 @@ def test_branch_apply_creates_tracking_branch_for_single_branch_clone(
             "repo": "upstream",
             "workspace": "smoke",
             "target_branch": "develop",
-            "action": "checkout",
+            "action": "checked_out",
             "detail": "from main",
+            "target_path": str((target / "upstream").resolve()),
         }
     ]
     head = subprocess.run(
@@ -346,8 +350,9 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
             "repo": "upstream",
             "workspace": "smoke",
             "target_branch": "ticket-123",
-            "action": "skip",
+            "action": "skipped",
             "detail": "branch not found locally or on origin",
+            "target_path": str((target / "upstream").resolve()),
         }
     ]
 
@@ -361,8 +366,9 @@ def test_branch_apply_creates_local_branch_when_remote_target_is_missing(
             "repo": "upstream",
             "workspace": "smoke",
             "target_branch": "ticket-123",
-            "action": "checkout",
+            "action": "checked_out",
             "detail": "from main",
+            "target_path": str((target / "upstream").resolve()),
         }
     ]
     head = subprocess.run(

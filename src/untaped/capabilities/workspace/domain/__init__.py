@@ -17,7 +17,11 @@ from untaped.capabilities.workspace.domain.payloads import (
     DiscoveredRepo,
     DiscoveryResult,
     ManifestSource,
+    RepoAddOutcome,
+    RepoRemoveOutcome,
     WorkspaceDetailRow,
+    WorkspaceOutcome,
+    WorkspaceSummaryRow,
 )
 from untaped.capabilities.workspace.domain.state import (
     DEFAULT_FOREACH_TIMEOUT,
@@ -44,6 +48,8 @@ __all__ = [
     "ManifestDefaults",
     "ManifestSource",
     "Repo",
+    "RepoAddOutcome",
+    "RepoRemoveOutcome",
     "RepoStatus",
     "StatusAction",
     "StatusEntry",
@@ -52,6 +58,8 @@ __all__ = [
     "Workspace",
     "WorkspaceDetailRow",
     "WorkspaceManifest",
+    "WorkspaceOutcome",
+    "WorkspaceSummaryRow",
     "check_path_segment",
     "derive_repo_name",
 ]

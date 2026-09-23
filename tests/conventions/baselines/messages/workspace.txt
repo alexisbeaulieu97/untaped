@@ -1,10 +1,3 @@
 # Known violations of the messages convention check for 'workspace'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-src/untaped/capabilities/workspace/cli/lifecycle_commands.py::echo-warning::warning: {}
-src/untaped/capabilities/workspace/cli/lifecycle_commands.py::echo-warning::warning: {}
-src/untaped/capabilities/workspace/cli/ops_commands.py::echo-warning::warning: --all --repo filters per-workspace; workspaces without matching
-src/untaped/capabilities/workspace/cli/repo_commands.py::error-case::--repo-name applies to a single URL; drop --repo-name or pass URLs one a
-src/untaped/capabilities/workspace/cli/repo_commands.py::paren-s::Repo URL(s) or alias(es) to remove.
-src/untaped/capabilities/workspace/cli/repo_commands.py::paren-s::Repo URL(s) to add.
-src/untaped/capabilities/workspace/cli/ux_commands.py::paren-s::Workspace name(s).

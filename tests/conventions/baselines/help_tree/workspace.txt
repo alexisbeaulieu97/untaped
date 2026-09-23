@@ -1,24 +1,9 @@
 # Known violations of the help_tree convention check for 'workspace'.
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-workspace add::empty-negative::--empty-urls
-workspace add::mutation-format::add
-workspace add::positional-or-keyword::--urls
 workspace adopt::verb::adopt
-workspace branch apply::empty-negative::--empty-repo
-workspace branch unset::mutation-format::unset
-workspace foreach::empty-negative::--empty-repo
 workspace foreach::verb::foreach
 workspace forget::verb::forget
 workspace import::verb::import
-workspace path::empty-negative::--empty-names
-workspace path::positional-or-keyword::--names
 workspace path::verb::path
-workspace remove::destructive-controls::--dry-run
-workspace remove::empty-negative::--empty-repos
-workspace remove::mutation-format::remove
-workspace remove::positional-or-keyword::--repos
 workspace shell-init::verb::shell-init
-workspace show::verb::show
-workspace status::empty-negative::--empty-repo
-workspace sync::empty-negative::--empty-repo

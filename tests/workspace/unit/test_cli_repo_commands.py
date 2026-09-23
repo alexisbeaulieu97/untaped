@@ -121,7 +121,7 @@ def test_remove_prune_refuses_clean_local_commit(
     assert clone.is_dir()
     shown = runner.invoke(
         app,
-        ["show", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+        ["get", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
     )
     assert "upstream" in shown.stdout.splitlines()
 
@@ -153,7 +153,7 @@ def test_remove_prune_decline_exits_one_without_mutation(
     assert (target / "upstream").is_dir()
     shown = runner.invoke(
         app,
-        ["show", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+        ["get", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
     )
     assert "upstream" in shown.stdout.splitlines()
 
@@ -190,7 +190,7 @@ def test_remove_prune_conforms_to_destructive_contract(
         assert (target / "upstream").is_dir()
         shown = runner.invoke(
             app,
-            ["show", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
+            ["get", "--workspace", "smoke", "--format", "raw", "--columns", "repo"],
         )
         assert shown.exit_code == 0, shown.output
         assert "upstream" in shown.stdout.splitlines()

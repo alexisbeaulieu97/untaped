@@ -9,6 +9,7 @@ root. ``ToolSpec`` assertions are retired per spec §9 gate 2.
 
 from __future__ import annotations
 
+import json
 import tomllib
 from collections.abc import Iterator
 from pathlib import Path
@@ -76,8 +77,22 @@ def test_workspace_mounts_under_root(_isolate: Path) -> None:
     root = _root()
     result = CliInvoker().invoke(root.meta, ["workspace", "--help"])
     assert result.exit_code == 0, result.output
-    for cmd in ("list", "show", "sync", "status", "foreach", "branch"):
+    for cmd in ("list", "get", "sync", "status", "foreach", "branch"):
         assert cmd in result.stdout
+    assert " show " not in result.stdout
+
+
+def test_show_is_a_deprecated_alias_of_get(_isolate: Path, tmp_path: Path) -> None:
+    root = _root()
+    invoker = CliInvoker()
+    invoker.invoke(root.meta, ["workspace", "init", "prod", "--path", str(tmp_path / "ws")])
+
+    result = invoker.invoke(root.meta, ["workspace", "show", "-w", "prod", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert "warning: `show` is deprecated" in result.stderr
+    assert "use `get`" in result.stderr
+    assert json.loads(result.stdout)[0]["workspace"] == "prod"
 
 
 def test_top_level_help_lists_workspace(_isolate: Path) -> None:

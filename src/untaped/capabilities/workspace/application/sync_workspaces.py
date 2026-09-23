@@ -148,6 +148,7 @@ class SyncWorkspaces:
                             outcome=SyncOutcome(
                                 workspace=workspace.name,
                                 repo=identifier,
+                                target_path=workspace.path,
                                 action="unmatched",
                                 detail="not in this workspace's manifest",
                             ),
@@ -219,15 +220,15 @@ def _unexpected_sync_error(errors: Sequence[tuple[RepoSyncJob, Exception]]) -> W
     ]
     if len(errors) > 3:
         details.append(f"{len(errors) - 3} more")
-    return WorkspaceError(
-        f"sync failed with unexpected error{'s' if len(errors) != 1 else ''}: " + "; ".join(details)
-    )
+    noun = "unexpected error" if len(errors) == 1 else "unexpected errors"
+    return WorkspaceError(f"sync failed with {noun}: " + "; ".join(details))
 
 
 def _unavailable_outcome(workspace: Workspace, exc: ManifestError) -> SyncOutcome:
     return SyncOutcome(
         workspace=workspace.name,
         repo="",
+        target_path=workspace.path,
         action="unavailable",
         detail=f"workspace manifest unavailable: {exc}",
     )
