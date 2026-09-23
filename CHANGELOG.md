@@ -19,6 +19,10 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     value in one capability's section no longer breaks other capabilities'
     commands, and the error names the section and config file. `doctor` and
     `config list` still report every invalid section.
+  - Config writes (`config set/unset`, `profile`, capability state) preserve
+    comments, key order, and formatting in `config.yml`, rewriting only the
+    changed keys. **Behavior change:** keys are no longer sorted alphabetically
+    on write; new keys are appended.
   - `doctor` reports one row per core, capability, and state section,
     including `UNTAPED_*` overrides and the selected profile.
   - **Behavior change:** `config list/get` and `profile list` emit native
