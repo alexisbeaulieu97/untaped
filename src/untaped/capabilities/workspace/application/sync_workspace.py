@@ -146,6 +146,10 @@ class RepoSyncEngine:
                     "skip",
                     f"on {status.branch or 'detached'}, expected {target_branch}",
                 )
+            if status.branch is not None and status.upstream is None:
+                # Without an upstream there is nothing to compare against;
+                # reporting "already up to date" would be a lie.
+                return _outcome(workspace, repo, "skip", "no upstream")
             if status.diverged:
                 return _outcome(workspace, repo, "skip", "diverged from origin")
             if status.behind == 0:
