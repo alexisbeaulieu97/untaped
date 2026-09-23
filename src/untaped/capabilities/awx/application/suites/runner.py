@@ -27,7 +27,7 @@ from untaped.capabilities.awx.domain.suite import (
     Suite,
     SuiteRunOutcome,
 )
-from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
+from untaped.capabilities.awx.errors import ActionResponseError
 
 _LAUNCH_ACTION = "launch"
 

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.suites.ports import Prompt
 from untaped.capabilities.awx.domain.suite import VariableSpec
-from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure.suites.vars_resolver import resolve_variables
 
 

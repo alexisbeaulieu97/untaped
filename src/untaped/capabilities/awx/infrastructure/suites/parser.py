@@ -22,7 +22,6 @@ from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
 from untaped.api import ConfigError
 from untaped.capabilities.awx.domain.suite import RefSentinel
-from untaped.capabilities.awx.errors import AwxApiError
 
 __all__ = [
     "DefaultParser",

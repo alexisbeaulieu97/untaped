@@ -8,6 +8,7 @@ from cyclopts import Parameter, validators
 
 from untaped.api import (
     ColumnsOption,
+    ConfigError,
     FormatOption,
     create_app,
     echo,
@@ -17,7 +18,6 @@ from untaped.api import (
     raise_usage,
     report_errors,
 )
-from untaped.api import ConfigError
 from untaped.capabilities.awx.cli._context import AwxContext, open_context
 from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.suite import Suite
