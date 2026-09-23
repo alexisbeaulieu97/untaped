@@ -11,8 +11,8 @@ from awx.unit.support import _Catalog, _Client, _Fk, _MembershipClient, _Strateg
 from untaped.capabilities.awx.application.mutation_engine import (
     BatchMutationEngine,
     MutationConflictError,
-    _PlanningFkResolver,
 )
+from untaped.capabilities.awx.application.mutation_planning import PlanningFkResolver
 from untaped.capabilities.awx.application.mutation_types import DeferredReference
 from untaped.capabilities.awx.application.ports import (
     Catalog,
@@ -119,7 +119,7 @@ def test_planned_fk_reference_does_not_confuse_negative_literal_values() -> None
 
 
 def test_planned_fk_resolver_advertises_typed_deferred_reference() -> None:
-    return_type = get_type_hints(_PlanningFkResolver.name_to_id)["return"]
+    return_type = get_type_hints(PlanningFkResolver.name_to_id)["return"]
 
     assert return_type == int | DeferredReference
 

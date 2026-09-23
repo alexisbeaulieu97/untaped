@@ -88,6 +88,10 @@ class ConflictError(AwxApiError):
     """409 — resource state conflicts with the request (e.g. concurrent edit)."""
 
 
+class MutationConflictError(AwxApiError):
+    """Raised for an invalid no-create target or an unusable prepared plan."""
+
+
 class AmbiguousIdentityError(AwxApiError):
     """Raised when an identity-by-name lookup matches more than one record.
 
