@@ -7,7 +7,7 @@ from typing import Literal
 
 import pytest
 
-from untaped.api import ConfigError, UntapedError
+from untaped.api import ConfigError, HttpStatusError, UntapedError
 from untaped.capabilities.github.application import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
@@ -535,3 +535,53 @@ def test_archived_repos_excluded_by_default(tmp_path: Path) -> None:
 
     assert [synced.repo for synced in corpus.synced] == ["acme/api"]
     assert [row.full_name for row in report.rows] == ["acme/api"]
+
+
+class _StatusResolver(_Resolver):
+    """Fails every explicit repo with an HTTP status, wrapped like the real resolver."""
+
+    def __init__(self, status: int, body: str) -> None:
+        super().__init__(())
+        self.status = status
+        self.body = body
+
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
+        self.scopes.append(scope)
+        cause = HttpStatusError(f"HTTP {self.status}", status_code=self.status, body=self.body)
+        raise UntapedError(f"failed to expand repository {scope.repos[0]}") from cause
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (401, '{"message": "Bad credentials"}'),
+        (429, '{"message": "Too many requests"}'),
+        (403, '{"message": "API rate limit exceeded for 1.2.3.4."}'),
+    ],
+)
+def test_global_resolution_failures_abort_instead_of_unscanned(
+    tmp_path: Path, status: int, body: str
+) -> None:
+    resolver = _StatusResolver(status, body)
+
+    with pytest.raises(UntapedError):
+        _sweep(_Corpus(), resolver, tmp_path / "corpus")(
+            _options(
+                SweepQuery(has_files=("README.md",)),
+                scope=RepositoryInventoryScope(repos=("acme/a", "acme/b")),
+            )
+        )
+
+    assert len(resolver.scopes) == 1
+
+
+def test_every_explicit_repo_failing_raises(tmp_path: Path) -> None:
+    resolver = _FailingResolver((), missing={"acme/a", "acme/b"})
+
+    with pytest.raises(UntapedError, match="acme/a"):
+        _sweep(_Corpus(), resolver, tmp_path / "corpus")(
+            _options(
+                SweepQuery(has_files=("README.md",)),
+                scope=RepositoryInventoryScope(repos=("acme/a", "acme/b")),
+            )
+        )

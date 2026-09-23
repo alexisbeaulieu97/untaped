@@ -565,3 +565,46 @@ def test_branch_and_tag_with_same_name_are_both_swept(
         (["heads/x"], "needle branch"),
         (["tags/x"], "needle tag"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (401, {"message": "Bad credentials"}),
+        (403, {"message": "API rate limit exceeded for user ID 1."}),
+        (403, {"message": "You have exceeded a secondary rate limit."}),
+    ],
+)
+def test_auth_or_rate_limit_failure_on_explicit_repo_aborts_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: int, body: dict[str, str]
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    args = ["sweep", "--repo", "acme/a", "--repo", "acme/b", "--grep", "needle"]
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/repos/acme/a").mock(return_value=httpx.Response(status, json=body))
+        mock.get("/repos/acme/b").mock(return_value=httpx.Response(status, json=body))
+        result = CliInvoker().invoke(app, [*args, "--fail-on-match", "--format", "json"])
+
+    assert result.exit_code != 0, result.output
+    assert "unscanned" not in result.stderr
+
+
+def test_every_explicit_repo_failing_resolution_exits_non_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    args = ["sweep", "--repo", "acme/a", "--repo", "acme/b", "--grep", "needle"]
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/repos/acme/a").mock(
+            return_value=httpx.Response(404, json={"message": "Not Found"})
+        )
+        mock.get("/repos/acme/b").mock(
+            return_value=httpx.Response(403, json={"message": "Must have admin rights"})
+        )
+        result = CliInvoker().invoke(app, [*args, "--fail-on-match", "--format", "json"])
+
+    assert result.exit_code != 0, result.output
+    assert "acme/a" in result.stderr
+    assert "acme/b" in result.stderr
