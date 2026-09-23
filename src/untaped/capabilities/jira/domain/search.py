@@ -50,7 +50,11 @@ class JiraIssueSearchFilters(BaseModel):
         if self.text:
             clauses.append(f"text ~ {_quote(self.text)}")
         if self.sprint:
-            clauses.append(f"sprint = {_quote_sprint(self.sprint)}")
+            function = _sprint_function(self.sprint)
+            if function is not None:
+                clauses.append(f"sprint in {function}")
+            else:
+                clauses.append(f"sprint = {_quote_sprint(self.sprint)}")
         return clauses
 
 
@@ -82,6 +86,8 @@ def _find_order_by(jql: str) -> int | None:
         if char in {'"', "'"}:
             quote = char
             continue
+        if index == 0 and re.match(r"order\s+by\s+", jql, flags=re.IGNORECASE):
+            return index
         if char.isspace() and re.match(r"\s+order\s+by\s+", jql[index:], flags=re.IGNORECASE):
             return index
     return None
@@ -93,6 +99,16 @@ def _quote_project(value: str) -> str:
 
 def _quote_or_current_user(value: str) -> str:
     return "currentUser()" if value in {"@me", "me", "currentUser()"} else _quote(value)
+
+
+_SPRINT_FUNCTIONS = {
+    name.casefold(): name for name in ("openSprints()", "futureSprints()", "closedSprints()")
+}
+
+
+def _sprint_function(value: str) -> str | None:
+    """Return the canonical JQL sprint function named by ``value``, if any."""
+    return _SPRINT_FUNCTIONS.get(value.strip().casefold())
 
 
 def _quote_sprint(value: str) -> str:
