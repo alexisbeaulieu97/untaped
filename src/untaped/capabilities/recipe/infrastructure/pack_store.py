@@ -7,12 +7,14 @@ import hashlib
 import shutil
 import subprocess
 import tomllib
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import tomlkit
 
+from untaped.api import atomic_write
 from untaped.capabilities.recipe.domain.hook_exports import hook_exports
 from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
@@ -141,19 +143,44 @@ class PackLibrary:
             raise ValueError(local_edits_message(installed_name))
 
         self.packs_dir.mkdir(parents=True, exist_ok=True)
-        if force and dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(source_dir, dest, ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE))
+        content_hash = self._install_tree(source_dir, dest)
         index[installed_name] = _IndexEntry(
             source=source,
             rev=rev or "",
             version=manifest.version,
-            content_hash=pack_content_hash(dest),
+            content_hash=content_hash,
         )
         self._write_index(index)
         self._packs_cache = None
         self._load_errors = {}
         return manifest
+
+    def _install_tree(self, source_dir: Path, dest: Path) -> str:
+        """Copy ``source_dir`` into place at ``dest`` without a window of loss.
+
+        The copy lands in a staging directory beside ``packs/`` first; only a
+        complete copy is renamed over the destination, and a replaced pack is
+        moved aside (not deleted) until the swap succeeds.
+        """
+        token = uuid.uuid4().hex
+        staging = self._library_root / f".pack-staging-{token}"
+        retired = self._library_root / f".pack-retired-{token}"
+        try:
+            shutil.copytree(source_dir, staging, ignore=shutil.ignore_patterns(*PACK_COPY_IGNORE))
+            content_hash = pack_content_hash(staging)
+            if dest.exists():
+                dest.rename(retired)
+                try:
+                    staging.rename(dest)
+                except OSError:
+                    retired.rename(dest)
+                    raise
+            else:
+                staging.rename(dest)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+            shutil.rmtree(retired, ignore_errors=True)
+        return content_hash
 
     def local_edits(self, name: str) -> bool:
         """Return true when the installed copy diverged from its install hash.
@@ -325,7 +352,7 @@ class PackLibrary:
             table.add("version", entry.version)
             table.add("content_hash", entry.content_hash)
             doc.add(name, table)
-        self.index_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        atomic_write(self.index_path, tomlkit.dumps(doc))
 
 
 def validate_pack(source_dir: Path, manifest: PackManifest) -> None:

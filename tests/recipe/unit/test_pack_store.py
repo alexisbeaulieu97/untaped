@@ -295,7 +295,10 @@ def _git_pack_repo(tmp_path: Path) -> tuple[Path, str]:
     subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(
-        [*git, "commit", "--no-gpg-sign", "-m", "first"], cwd=repo, check=True, stdout=subprocess.PIPE
+        [*git, "commit", "--no-gpg-sign", "-m", "first"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
     )
     first = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
@@ -303,7 +306,10 @@ def _git_pack_repo(tmp_path: Path) -> tuple[Path, str]:
     (repo / "later.txt").write_text("later\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(
-        [*git, "commit", "--no-gpg-sign", "-m", "second"], cwd=repo, check=True, stdout=subprocess.PIPE
+        [*git, "commit", "--no-gpg-sign", "-m", "second"],
+        cwd=repo,
+        check=True,
+        stdout=subprocess.PIPE,
     )
     return repo, first
 
@@ -325,7 +331,9 @@ def test_fetch_pack_source_rejects_option_like_rev(
     monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: calls.append(args))
 
     with pytest.raises(ValueError, match="rev"):
-        fetch_pack_source("https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d")
+        fetch_pack_source(
+            "https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d"
+        )
     assert calls == []
 
 
@@ -346,3 +354,33 @@ def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
     with pytest.raises(ValueError, match="Authentication failed"):
         fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
     assert len(calls) == 1
+
+
+def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    replacement = tmp_path / "replacement"
+    _write_pack(source, manifest_name="ansible", version="0.1.0")
+    _write_pack(replacement, manifest_name="ansible", version="0.2.0")
+    library_root = tmp_path / "library"
+    library = PackLibrary(library_root=library_root)
+    library.add(source, source=str(source), rev=None, name=None, force=False)
+    index_before = (library_root / "packs.toml").read_text()
+
+    def failing_copytree(src: Path, dst: Path, **kwargs: object) -> Path:
+        Path(dst).mkdir(parents=True)
+        (Path(dst) / "partial.txt").write_text("partial")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "copytree", failing_copytree)
+
+    with pytest.raises(OSError, match="disk full"):
+        library.add(replacement, source=str(replacement), rev=None, name=None, force=True)
+
+    fresh = PackLibrary(library_root=library_root)
+    assert fresh.packs()[0].installed_version == "0.1.0"
+    assert (library_root / "packs.toml").read_text() == index_before
+    assert sorted(path.name for path in library_root.iterdir()) == ["packs", "packs.toml"]
+    assert [path.name for path in (library_root / "packs").iterdir()] == ["ansible"]
