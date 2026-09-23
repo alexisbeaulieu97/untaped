@@ -1,6 +1,6 @@
 [manifest]
 schema = "untaped.release-manifest.v1"
-version = "6.0.0"
+version = "6.0.1"
 requires-python = ">=3.14"
 capabilities = ["workspace", "github", "jira", "awx", "ansible", "recipe"]
 
