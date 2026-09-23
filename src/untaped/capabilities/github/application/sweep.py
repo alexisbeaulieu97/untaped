@@ -30,7 +30,7 @@ from untaped.capabilities.github.domain import (
     ref_matches,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError, is_global_github_failure
-from untaped.capability_api import ConfigError, UntapedError, bounded_map
+from untaped.capability_api import ConfigError, UntapedError, UsageError, bounded_map
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
 AuthHeaderSupplier = Callable[[], str | None]
@@ -222,7 +222,7 @@ class Sweep:
 
     def _resolve_offline_scope(self, options: SweepOptions) -> tuple[CorpusRepoTarget, ...]:
         if options.scope.teams:
-            raise ConfigError("--team requires the API and cannot resolve offline")
+            raise UsageError("--team requires the API and cannot be combined with --cached")
         # GitHub owner and repo names are case-insensitive.
         names = {name.casefold() for name in (*options.scope.repos, *options.stdin_repos)}
         owners = {org.casefold() for org in options.scope.orgs}
@@ -244,7 +244,7 @@ class Sweep:
                 )
             )
         if not targets:
-            raise ConfigError("corpus has no repos in scope; run without --no-sync to populate")
+            raise ConfigError("corpus has no repos in scope; run without --cached to populate")
         return tuple(sorted(targets, key=lambda repo: repo.full_name))
 
     def _prepare_repos(

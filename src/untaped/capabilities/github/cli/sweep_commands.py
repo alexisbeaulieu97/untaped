@@ -8,14 +8,21 @@ from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.application import RepositoryInventoryScope
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli.scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capabilities.github.cli.scopes import (
+    REPO_KINDS,
+    OrgOption,
+    TeamOption,
+    parse_team_scopes,
+)
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
     ColumnsOption,
-    ConfigError,
     FormatOption,
     OutputFormat,
+    ParallelOption,
+    StdinOption,
     UiContext,
+    UsageError,
     app_context,
     clamp_parallel,
     echo,
@@ -33,11 +40,12 @@ if TYPE_CHECKING:
 
 RepoOption = Annotated[
     list[str] | None,
-    Parameter(name="--repo", help="Repository owner/name. Repeatable.", consume_multiple=False),
-]
-StdinOption = Annotated[
-    bool,
-    Parameter(name="--stdin", negative="", help="Read repository full_name values from stdin."),
+    Parameter(
+        name="--repo",
+        help="Repository OWNER/NAME. Repeatable.",
+        consume_multiple=False,
+        negative="",
+    ),
 ]
 DepthOption = Annotated[
     int,
@@ -47,9 +55,9 @@ DepthOption = Annotated[
         help="Git fetch depth; 0 is full.",
     ),
 ]
-ParallelOption = Annotated[
-    int | None,
-    Parameter(name=["--parallel", "-j"], help="Parallel Git workers (capped at 32)."),
+SweepParallelOption = Annotated[
+    ParallelOption,
+    Parameter(help="Parallel Git workers (capped at 32; default from github.sweep settings)."),
 ]
 
 
@@ -59,13 +67,16 @@ def sweep_command(
     team: TeamOption = None,
     repo: RepoOption = None,
     stdin: StdinOption = False,
-    archived: Annotated[bool, Parameter(name="--archived", negative="")] = False,
+    archived: Annotated[
+        bool, Parameter(name="--archived", negative="", help="Include archived repositories.")
+    ] = False,
     grep: Annotated[
         list[str] | None,
         Parameter(
             name="--grep",
             help="Content regex, POSIX extended (`a|b`, `\\(`; no `\\d`). Repeatable.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     not_grep: Annotated[
@@ -74,51 +85,104 @@ def sweep_command(
             name="--not-grep",
             help="Content regex (POSIX extended) that must not match.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     path: Annotated[
         list[str] | None,
         Parameter(
-            name="--path", help="Git pathspec for content predicates.", consume_multiple=False
+            name="--path",
+            help="Git pathspec for content predicates.",
+            consume_multiple=False,
+            negative="",
         ),
     ] = None,
     has_file: Annotated[
         list[str] | None,
-        Parameter(name="--has-file", help="File glob that must exist.", consume_multiple=False),
+        Parameter(
+            name="--has-file",
+            help="File glob that must exist.",
+            consume_multiple=False,
+            negative="",
+        ),
     ] = None,
     lacks_file: Annotated[
         list[str] | None,
         Parameter(
-            name="--lacks-file", help="File glob that must not exist.", consume_multiple=False
+            name="--lacks-file",
+            help="File glob that must not exist.",
+            consume_multiple=False,
+            negative="",
         ),
     ] = None,
-    any_mode: Annotated[bool, Parameter(name="--any", negative="")] = False,
-    ignore_case: Annotated[bool, Parameter(name=["--ignore-case", "-i"], negative="")] = False,
-    fixed_strings: Annotated[bool, Parameter(name=["--fixed-strings", "-F"], negative="")] = False,
-    word_regexp: Annotated[bool, Parameter(name=["--word-regexp", "-w"], negative="")] = False,
+    any_mode: Annotated[
+        bool,
+        Parameter(name="--any", negative="", help="Match when any predicate holds (default: all)."),
+    ] = False,
+    ignore_case: Annotated[
+        bool,
+        Parameter(
+            name=["--ignore-case", "-i"], negative="", help="Match content case-insensitively."
+        ),
+    ] = False,
+    fixed_strings: Annotated[
+        bool,
+        Parameter(
+            name=["--fixed-strings", "-F"],
+            negative="",
+            help="Treat --grep/--not-grep as literal strings.",
+        ),
+    ] = False,
+    word_regexp: Annotated[
+        bool,
+        Parameter(name="--word-regexp", negative="", help="Match whole words only."),
+    ] = False,
     refs: Annotated[
         Literal["default", "branches", "tags", "all"],
         Parameter(name="--refs", help="Ref profile to sweep."),
     ] = "default",
     ref: Annotated[
         list[str] | None,
-        Parameter(name="--ref", help="Additional ref glob. Repeatable.", consume_multiple=False),
+        Parameter(
+            name="--ref",
+            help="Additional ref glob. Repeatable.",
+            consume_multiple=False,
+            negative="",
+        ),
     ] = None,
-    sync: Annotated[
+    refresh: Annotated[
         bool | None,
-        Parameter(name="--sync", negative="--no-sync", help="Force sync or use cache only."),
+        Parameter(
+            name="--refresh",
+            negative="--cached",
+            help=(
+                "--refresh fetches every repo; --cached scans the local corpus only. "
+                "Default: refresh copies older than github.sweep.max_age_seconds."
+            ),
+        ),
     ] = None,
     show: Annotated[
         Literal["repos", "matches"],
         Parameter(name="--show", help="Report repo rows or deduped match rows."),
     ] = "repos",
-    owners: Annotated[bool, Parameter(name="--owners", negative="--no-owners")] = True,
+    owners: Annotated[
+        bool,
+        Parameter(
+            name="--owners", negative="--no-owners", help="Report CODEOWNERS for matching repos."
+        ),
+    ] = True,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
-    strict: Annotated[bool, Parameter(name="--strict", negative="")] = False,
-    fail_on_match: Annotated[bool, Parameter(name="--fail-on-match", negative="")] = False,
+    strict: Annotated[
+        bool,
+        Parameter(name="--strict", negative="", help="Exit 3 when any repository went unscanned."),
+    ] = False,
+    fail_on_match: Annotated[
+        bool,
+        Parameter(name="--fail-on-match", negative="", help="Exit 3 when any repository matches."),
+    ] = False,
     depth: DepthOption = 1,
-    parallel: ParallelOption = None,
+    parallel: SweepParallelOption | None = None,
 ) -> None:
     """Sweep repository refs for content and file-presence predicates."""
     from untaped.capabilities.github.application import (  # noqa: PLC0415
@@ -132,7 +196,11 @@ def sweep_command(
     with report_errors():
         ctx = app_context()
         settings = ctx.section("github", GithubSettings)
-        stdin_repos = tuple(read_identifiers([], stdin=True, id_field="full_name")) if stdin else ()
+        stdin_repos = (
+            tuple(read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS))
+            if stdin
+            else ()
+        )
         scope = _scope(org=org, team=team, repo=repo, stdin_repos=stdin_repos)
         query = SweepQuery(
             greps=tuple(grep or ()),
@@ -147,12 +215,16 @@ def sweep_command(
             refs=RefSelector(profile=refs, globs=tuple(ref or ())),
         )
         _validate_query(query)
-        workers = _parallel(parallel if parallel is not None else settings.sweep.sync_concurrency)
+        workers = clamp_parallel(
+            parallel if parallel is not None else settings.sweep.sync_concurrency,
+            cap=32,
+            policy="Git corpus worker cap",
+        )
         corpus = GitCorpusCache()
         _validate_content_patterns(corpus, settings, query)
 
         sync_mode: Literal["auto", "force", "off"]
-        sync_mode = "auto" if sync is None else "force" if sync else "off"
+        sync_mode = "auto" if refresh is None else "force" if refresh else "off"
         options = SweepOptions(
             scope=scope,
             stdin_repos=stdin_repos,
@@ -198,7 +270,11 @@ def sweep_command(
                 empty="No matching repositories found.",
             )
         _footer(report, ctx.ui(strict=False))
-        finish((strict and bool(report.unscanned)) or (fail_on_match and bool(report.rows)))
+        finish(
+            False,
+            predicate_hit=(strict and bool(report.unscanned))
+            or (fail_on_match and bool(report.rows)),
+        )
 
 
 def _scope(
@@ -212,7 +288,7 @@ def _scope(
     team_scopes = parse_team_scopes(team, orgs=orgs)
     repos = tuple(repo or ())
     if not orgs and not team_scopes and not repos and not stdin_repos:
-        raise ConfigError("sweep requires --org, --team, --repo, or --stdin")
+        raise UsageError("sweep requires --org, --team, --repo, or --stdin")
     return RepositoryInventoryScope(orgs=orgs, teams=team_scopes, repos=repos)
 
 
@@ -220,7 +296,7 @@ def _validate_query(query: SweepQuery) -> None:
     try:
         query.validate()
     except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+        raise UsageError(str(exc)) from exc
 
 
 def _validate_content_patterns(
@@ -244,18 +320,12 @@ def _validate_content_patterns(
             continue
         path = _path_from_error(paths, error)
         if path is not None:
-            raise ConfigError(f"--path {path!r}: {error}")
-        raise ConfigError(f"{flag} {pattern!r}: {error}")
+            raise UsageError(f"--path {path!r}: {error}")
+        raise UsageError(f"{flag} {pattern!r}: {error}")
 
 
 def _path_from_error(paths: tuple[str, ...], error: str) -> str | None:
     return next((path for path in paths if path in error), None)
-
-
-def _parallel(value: int) -> int:
-    if value < 1:
-        raise ConfigError("--parallel must be positive")
-    return clamp_parallel(value, cap=32, policy="Git corpus worker cap")
 
 
 def _token(settings: GithubSettings) -> str:

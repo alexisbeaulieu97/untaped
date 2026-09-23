@@ -9,20 +9,4 @@ github search code::verb::code
 github search issues::verb::issues
 github search repos::verb::repos
 github search users::verb::users
-github sweep::empty-negative::--empty-grep
-github sweep::empty-negative::--empty-has-file
-github sweep::empty-negative::--empty-lacks-file
-github sweep::empty-negative::--empty-not-grep
-github sweep::empty-negative::--empty-path
-github sweep::empty-negative::--empty-ref
-github sweep::empty-negative::--empty-repo
-github sweep::missing-help::--any
-github sweep::missing-help::--archived
-github sweep::missing-help::--fail-on-match
-github sweep::missing-help::--fixed-strings
-github sweep::missing-help::--ignore-case
-github sweep::missing-help::--owners
-github sweep::missing-help::--strict
-github sweep::missing-help::--word-regexp
-github sweep::reserved-short::-w --word-regexp
 github sweep::verb::sweep
