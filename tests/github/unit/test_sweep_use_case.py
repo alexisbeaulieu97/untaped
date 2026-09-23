@@ -222,6 +222,30 @@ def test_offline_scope_from_corpus_metadata(tmp_path: Path) -> None:
     assert report.cached == 1
 
 
+def test_offline_scope_matches_owner_and_name_case_insensitively(tmp_path: Path) -> None:
+    corpus = _Corpus(cached_rows=(_row("acme/api"), _row("Other/Tool"), _row("zed/x")))
+    corpus.tree_map[("acme/api", "main")] = ("README.md",)
+    corpus.tree_map[("Other/Tool", "main")] = ("README.md",)
+
+    by_org = _sweep(corpus, _Resolver(()), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(orgs=("ACME", "other")),
+            sync="off",
+        )
+    )
+    by_repo = _sweep(corpus, _Resolver(()), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(repos=("Acme/API",)),
+            sync="off",
+        )
+    )
+
+    assert [row.full_name for row in by_org.rows] == ["Other/Tool", "acme/api"]
+    assert [row.full_name for row in by_repo.rows] == ["acme/api"]
+
+
 def test_offline_team_scope_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="--team requires the API"):
         _sweep(_Corpus(), _Resolver(()), tmp_path / "corpus")(

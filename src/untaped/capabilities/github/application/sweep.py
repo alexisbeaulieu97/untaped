@@ -216,17 +216,17 @@ class Sweep:
     def _resolve_offline_scope(self, options: SweepOptions) -> tuple[CorpusRepoTarget, ...]:
         if options.scope.teams:
             raise ConfigError("--team requires the API and cannot resolve offline")
-        names = set((*options.scope.repos, *options.stdin_repos))
+        # GitHub owner and repo names are case-insensitive.
+        names = {name.casefold() for name in (*options.scope.repos, *options.stdin_repos)}
+        owners = {org.casefold() for org in options.scope.orgs}
         rows = self._corpus.list_repos(root=self._root)
         targets: list[CorpusRepoTarget] = []
         for row in rows:
             if not options.include_archived and row.archived:
                 continue
-            if options.scope.orgs and not any(
-                row.repo.startswith(f"{org}/") for org in options.scope.orgs
-            ):
+            if owners and row.repo.partition("/")[0].casefold() not in owners:
                 continue
-            if names and row.repo not in names:
+            if names and row.repo.casefold() not in names:
                 continue
             targets.append(
                 CorpusRepoTarget(
