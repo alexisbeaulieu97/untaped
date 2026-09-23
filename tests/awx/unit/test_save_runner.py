@@ -7,12 +7,12 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._save_runner import run_save_batch
 from untaped.capabilities.awx.domain import ResourceSpec, ServerRecord
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC, PROJECT_SPEC
+from untaped.capability_api import ConfigError
 
 
 class _Catalog:

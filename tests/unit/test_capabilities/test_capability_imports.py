@@ -2,10 +2,9 @@
 
 Files under ``src/untaped/capabilities/<name>/`` are provider-side code:
 every ``untaped``-rooted import in them must resolve to the kernel-only
-surface — ``untaped.capability_api`` (the stable provider surface),
-``untaped.api`` (the transitional v1 SDK path the in-repo capabilities
-import from today), or the capability's own subtree. Anything else
-(kernel internals by module path, the composition kernel
+surface — ``untaped.capability_api`` (the single public SDK surface) — or
+the capability's own subtree. Anything else (kernel internals by module
+path, the deprecated ``untaped.api`` shim, the composition kernel
 ``untaped.capabilities.registry``, sibling capabilities, or the bare
 ``untaped`` root) fails this suite.
 
@@ -64,10 +63,43 @@ APPROVED_HELPERS = frozenset(
         "run_git",
         "safe_cache_path",
         "safe_path_segment",
+        "AppContext",
+        "BatchOutcome",
+        "HttpClient",
+        "HttpError",
+        "HttpSettings",
+        "HttpStatusError",
+        "HttpTransportError",
+        "OutputFormat",
+        "ProgressHandle",
+        "PromptChoice",
+        "RetryPolicy",
+        "StateMap",
+        "atomic_write",
+        "batch_apply",
+        "bounded_map",
+        "clamp_parallel",
+        "connected_client",
+        "existing_file",
+        "get_core_settings",
+        "is_envelope_line",
+        "paginate_link",
+        "paginate_offset",
+        "paginate_pages",
+        "parse_json_pairs",
+        "parse_kv_pairs",
+        "read_stdin",
+        "read_structured_file",
+        "render_rows",
+        "resolve_each",
+        "resolve_text_input",
+        "resolve_verify",
+        "ui_context",
+        "unified_diff_text",
     }
 )
 
-_KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api", "untaped.api"})
+_KERNEL_SURFACE_MODULES = frozenset({"untaped.capability_api"})
 
 #: Wave 2 amendment 1 (import plan): the single sanctioned cross-capability
 #: import — ansible consumes GitHub behavior only through this closed API
@@ -168,7 +200,7 @@ def _from_violation(module: str, own_prefix: str) -> str | None:
         return None
     return (
         "capability code must import kernel helpers only via "
-        "untaped.capability_api (or the transitional untaped.api) "
+        "untaped.capability_api "
         f"and sibling code only from its own {own_prefix} subtree"
     )
 
@@ -184,7 +216,7 @@ def _import_violation(name: str, own_prefix: str) -> str | None:
         return None
     return (
         "capability code must import kernel helpers only via "
-        "untaped.capability_api (or the transitional untaped.api) "
+        "untaped.capability_api "
         f"and sibling code only from its own {own_prefix} subtree"
     )
 
@@ -274,13 +306,26 @@ def test_bare_root_and_direct_module_imports_fail(tmp_path: Path) -> None:
     assert len(violations) == 2
 
 
+def test_deprecated_api_shim_import_fails(tmp_path: Path) -> None:
+    src = _probe_tree(
+        tmp_path,
+        {
+            "atlas/__init__.py": "",
+            "atlas/mod.py": "from untaped.api import echo\n",
+        },
+    )
+    violations = surface_violations(src)
+    assert len(violations) == 1
+    assert "untaped.api" in violations[0]
+
+
 def test_stable_surface_and_own_subtree_pass(tmp_path: Path) -> None:
     src = _probe_tree(
         tmp_path,
         {
             "atlas/__init__.py": "from untaped.capability_api import CapabilitySpec\n",
             "atlas/mod.py": (
-                "from untaped.api import echo, report_errors\n"
+                "from untaped.capability_api import echo, report_errors\n"
                 "from untaped.capabilities.atlas.inner import thing\n"
                 "from . import sibling\n"
                 "import untaped.capability_api\n"

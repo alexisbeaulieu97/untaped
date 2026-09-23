@@ -6,7 +6,6 @@ from collections.abc import Iterator, Sequence
 from types import TracebackType
 from typing import Any
 
-from untaped.api import HttpSettings, connected_client
 from untaped.capabilities.github.domain.models import BatchRepoRefsResult
 from untaped.capabilities.github.infrastructure.graphql import (
     fetch_default_branch_refs,
@@ -15,6 +14,7 @@ from untaped.capabilities.github.infrastructure.graphql import (
 )
 from untaped.capabilities.github.infrastructure.pagination import paginate_list, paginate_search
 from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import HttpSettings, connected_client
 
 
 class GithubClient:

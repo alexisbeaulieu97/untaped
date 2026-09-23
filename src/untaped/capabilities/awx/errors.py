@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from untaped.api import UntapedError
+from untaped.capability_api import UntapedError
 
 
 class AwxApiError(UntapedError):

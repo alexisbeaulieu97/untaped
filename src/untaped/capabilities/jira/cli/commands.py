@@ -7,7 +7,12 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter, validators
 
-from untaped.api import (
+from untaped.capabilities.jira.cli._client import current_jira_settings, open_client
+from untaped.capabilities.jira.domain import (
+    JiraIssueSearchFilters,
+    build_issue_payload,
+)
+from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
@@ -20,11 +25,6 @@ from untaped.api import (
     read_structured_file,
     report_errors,
     resolve_text_input,
-)
-from untaped.capabilities.jira.cli._client import current_jira_settings, open_client
-from untaped.capabilities.jira.domain import (
-    JiraIssueSearchFilters,
-    build_issue_payload,
 )
 
 LimitOption = Annotated[

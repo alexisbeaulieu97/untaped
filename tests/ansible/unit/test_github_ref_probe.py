@@ -7,7 +7,6 @@ from collections.abc import Sequence
 
 import pytest
 
-from untaped.api import HttpError, UntapedError
 from untaped.capabilities.ansible.domain.payloads import GitRef, ProbeFailure
 from untaped.capabilities.ansible.infrastructure.github_ref_probe import (
     GithubRefProbe,
@@ -20,6 +19,7 @@ from untaped.capabilities.github.ansible import (
     RepoRef,
     RepoRefs,
 )
+from untaped.capability_api import HttpError, UntapedError
 
 
 class FakeBatchClient:

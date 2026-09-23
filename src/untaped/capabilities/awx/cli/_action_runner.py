@@ -7,15 +7,6 @@ from typing import Any, NoReturn
 
 from rich.console import Console
 
-from untaped.api import (
-    ColumnsOption,
-    FormatOption,
-    UntapedError,
-    echo,
-    emit,
-    finish,
-    raise_usage,
-)
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
@@ -31,6 +22,15 @@ from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parall
 from untaped.capabilities.awx.cli.format import format_scope
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    UntapedError,
+    echo,
+    emit,
+    finish,
+    raise_usage,
+)
 
 
 def run_action_selection(

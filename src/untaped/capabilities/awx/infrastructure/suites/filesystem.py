@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.api import ConfigError
+from untaped.capability_api import ConfigError
 
 
 class LocalFilesystem:

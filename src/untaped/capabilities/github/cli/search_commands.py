@@ -12,7 +12,9 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter, validators
 
-from untaped.api import (
+from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     create_app,
@@ -21,8 +23,6 @@ from untaped.api import (
     read_identifiers,
     report_errors,
 )
-from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
 
 # Shared across all four search subcommands. GitHub-specific (the
 # 1000-result cap belongs to GitHub, not untaped), so it lives

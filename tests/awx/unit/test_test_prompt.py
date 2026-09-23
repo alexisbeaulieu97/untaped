@@ -6,9 +6,9 @@ from collections.abc import Sequence
 
 import pytest
 
-from untaped.api import ConfigError, PromptChoice
 from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capabilities.awx.infrastructure.suites.prompt import UiPrompt
+from untaped.capability_api import ConfigError, PromptChoice
 
 
 def test_is_interactive_when_stdin_is_tty(monkeypatch: pytest.MonkeyPatch) -> None:

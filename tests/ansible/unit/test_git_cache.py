@@ -8,12 +8,12 @@ from typing import Any
 
 import pytest
 
-from untaped.api import GitResult, UntapedError
 from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
     cache_path_for,
 )
+from untaped.capability_api import GitResult, UntapedError
 
 _ORIGIN = "https://github.com/acme/site.git\n"
 

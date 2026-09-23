@@ -6,7 +6,15 @@ from typing import Annotated
 
 from cyclopts import Parameter
 
-from untaped.api import (
+from untaped.capabilities.github.application import (
+    RepositoryInventoryItem,
+    RepositoryInventoryScope,
+)
+from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli._scopes import OrgOption
+from untaped.capabilities.github.domain import CorpusRepoResult
+from untaped.capabilities.github.settings import GithubSettings
+from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
@@ -18,14 +26,6 @@ from untaped.api import (
     finish,
     report_errors,
 )
-from untaped.capabilities.github.application import (
-    RepositoryInventoryItem,
-    RepositoryInventoryScope,
-)
-from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption
-from untaped.capabilities.github.domain import CorpusRepoResult
-from untaped.capabilities.github.settings import GithubSettings
 
 RepoOption = Annotated[
     list[str] | None,

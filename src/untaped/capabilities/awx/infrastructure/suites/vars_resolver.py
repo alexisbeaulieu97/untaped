@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.domain.suite import VariableSpec
+from untaped.capability_api import ConfigError
 
 if TYPE_CHECKING:
     from untaped.capabilities.awx.application.suites.ports import Prompt

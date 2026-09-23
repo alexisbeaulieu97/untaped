@@ -39,7 +39,7 @@ def test_ignores_extra_fields() -> None:
 
 
 def test_authentication_failure_propagates() -> None:
-    from untaped.api import ConfigError
+    from untaped.capability_api import ConfigError
 
     payload = {"version": "4.5", "active_node": "n1"}
     with pytest.raises(ConfigError):

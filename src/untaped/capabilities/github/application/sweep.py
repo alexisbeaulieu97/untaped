@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from untaped.api import ConfigError, UntapedError, bounded_map
 from untaped.capabilities.github.application.inventory import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
@@ -31,6 +30,7 @@ from untaped.capabilities.github.domain import (
     ref_matches,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError, is_global_github_failure
+from untaped.capability_api import ConfigError, UntapedError, bounded_map
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
 AuthHeaderSupplier = Callable[[], str | None]

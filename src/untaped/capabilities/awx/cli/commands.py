@@ -15,25 +15,6 @@ from typing import Annotated, Literal
 from cyclopts import Parameter
 from rich.console import Console
 
-from untaped.api import (
-    ColumnsOption,
-    ConfigError,
-    FormatOption,
-    OutputFormat,
-    create_app,
-    echo,
-    emit,
-    finish,
-    get_config_section,
-    get_core_settings,
-    parse_envelope_line,
-    parse_kv_pairs,
-    raise_usage,
-    read_identifiers,
-    render_rows,
-    report_errors,
-    resolve_each,
-)
 from untaped.capabilities.awx.application import Ping, TailJobLogs, WatchJob
 from untaped.capabilities.awx.cli._apply_runner import run_apply
 from untaped.capabilities.awx.cli._context import open_context
@@ -59,6 +40,25 @@ from untaped.capabilities.awx.domain.job import JOB_ROUTES
 from untaped.capabilities.awx.infrastructure import AwxClient
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS
 from untaped.capabilities.awx.settings import AwxSettings
+from untaped.capability_api import (
+    ColumnsOption,
+    ConfigError,
+    FormatOption,
+    OutputFormat,
+    create_app,
+    echo,
+    emit,
+    finish,
+    get_config_section,
+    get_core_settings,
+    parse_envelope_line,
+    parse_kv_pairs,
+    raise_usage,
+    read_identifiers,
+    render_rows,
+    report_errors,
+    resolve_each,
+)
 
 app = create_app(
     name="awx",

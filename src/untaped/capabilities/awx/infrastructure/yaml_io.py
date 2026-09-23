@@ -11,8 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.domain import Resource
+from untaped.capability_api import ConfigError
 
 
 def read_resource_files(path: Path) -> Iterator[tuple[Path, Resource]]:

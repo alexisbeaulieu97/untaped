@@ -7,11 +7,11 @@ from typing import cast
 
 import pytest
 
-from untaped.api import ConfigError
 from untaped.capabilities.awx.application.suites.loader import LoadTestSuite
 from untaped.capabilities.awx.application.suites.ports import Filesystem, Prompt
 from untaped.capabilities.awx.domain.suite import RefSentinel, VariableSpec
 from untaped.capabilities.awx.infrastructure.suites import DefaultParser, resolve_variables
+from untaped.capability_api import ConfigError
 
 
 class FakeFilesystem(Filesystem):

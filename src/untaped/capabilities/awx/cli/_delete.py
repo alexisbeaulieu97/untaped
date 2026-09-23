@@ -2,7 +2,6 @@
 
 from cyclopts import App
 
-from untaped.api import ColumnsOption, FormatOption, echo, emit, finish, raise_usage, report_errors
 from untaped.capabilities.awx.application import DeleteResource
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.selected_actions import run_selected_actions
@@ -26,6 +25,15 @@ from untaped.capabilities.awx.cli.options import (
     YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
+from untaped.capability_api import (
+    ColumnsOption,
+    FormatOption,
+    echo,
+    emit,
+    finish,
+    raise_usage,
+    report_errors,
+)
 
 
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:

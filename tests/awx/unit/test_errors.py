@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from untaped.api import HttpError, UntapedError
 from untaped.capabilities.awx.errors import (
     AwxApiError,
     BadRequestError,
@@ -9,6 +8,7 @@ from untaped.capabilities.awx.errors import (
     ResourceNotFoundError,
 )
 from untaped.capabilities.awx.infrastructure.errors import to_awx_error
+from untaped.capability_api import HttpError, UntapedError
 
 
 def test_awx_api_error_is_untaped_error() -> None:

@@ -5,7 +5,6 @@ from typing import Any
 
 import pytest
 
-from untaped import ConfigError
 from untaped.config_file import (
     MISSING,
     get_at_path,
@@ -16,6 +15,7 @@ from untaped.config_file import (
     unset_at_path,
     write_config_dict,
 )
+from untaped.errors import ConfigError
 
 
 def test_read_returns_empty_when_file_absent(
@@ -124,7 +124,7 @@ def test_mutate_config_clears_get_settings_cache(
 ) -> None:
     """A successful write must invalidate ``get_settings`` so the next
     reader sees the new values without manual ``cache_clear()``."""
-    from untaped import get_settings
+    from untaped.settings import get_settings
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -146,7 +146,7 @@ def test_mutate_config_no_op_does_not_clear_cache(
     """When the callback doesn't change anything, the cache must stay warm
     — clearing it on every call would defeat the cache for read-mostly
     flows like ``config list``."""
-    from untaped import get_settings
+    from untaped.settings import get_settings
 
     cfg = tmp_path / "config.yml"
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))

@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from untaped.api import (
+from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli.cache_commands import app as cache_app
+from untaped.capabilities.github.cli.repos_commands import app as repos_app
+from untaped.capabilities.github.cli.search_commands import app as search_app
+from untaped.capabilities.github.cli.sweep_commands import sweep_command
+from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     create_app,
     emit,
     report_errors,
 )
-from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli.cache_commands import app as cache_app
-from untaped.capabilities.github.cli.repos_commands import app as repos_app
-from untaped.capabilities.github.cli.search_commands import app as search_app
-from untaped.capabilities.github.cli.sweep_commands import sweep_command
 
 app = create_app(
     name="github",

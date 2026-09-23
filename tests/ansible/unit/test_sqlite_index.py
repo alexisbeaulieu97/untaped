@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 
-from untaped.api import UntapedError
 from untaped.capabilities.ansible.domain.payloads import (
     CachedRef,
     IndexedDependency,
@@ -20,6 +19,7 @@ from untaped.capabilities.ansible.domain.payloads import (
 )
 from untaped.capabilities.ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped.capabilities.ansible.infrastructure.sqlite_schema import SCHEMA_VERSION
+from untaped.capability_api import UntapedError
 
 
 def _edge(

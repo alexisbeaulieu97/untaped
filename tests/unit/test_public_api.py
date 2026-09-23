@@ -1,62 +1,55 @@
+"""The package root is not an SDK surface; ``untaped.capability_api`` is."""
+
 import untaped
-from untaped import cli, prompts, ui
+import untaped.capability_api as capi
+from untaped import cli, errors, prompts, ui
 
 
-def test_root_reexports_match_api_surface() -> None:
-    """The package root re-exports exactly the ``untaped.api`` surface."""
-    from untaped import api
-
-    assert set(untaped.__all__) == set(api.__all__)
-
-
-def test_render_rows_is_re_exported() -> None:
-    assert untaped.render_rows is cli.render_rows
-    assert "render_rows" in untaped.__all__
+def test_package_root_re_exports_nothing() -> None:
+    """``from untaped import X`` is retired; the root only hosts submodules."""
+    assert not hasattr(untaped, "__all__")
+    for name in ("echo", "emit", "create_app", "ConfigError", "UntapedError", "bounded_map"):
+        assert not hasattr(untaped, name), f"untaped.{name} must not be re-exported at the root"
 
 
-def test_ui_helpers_are_re_exported() -> None:
-    assert untaped.UiContext is ui.UiContext
-    assert untaped.ThemeSpec is ui.ThemeSpec
-    assert untaped.ui_context is ui.ui_context
+def test_render_rows_is_exported() -> None:
+    assert capi.render_rows is cli.render_rows
+    assert "render_rows" in capi.__all__
 
 
-def test_prompt_choice_is_re_exported() -> None:
-    assert untaped.PromptChoice is prompts.PromptChoice
-    assert "PromptChoice" in untaped.__all__
+def test_ui_helpers_are_exported() -> None:
+    assert capi.UiContext is ui.UiContext
+    assert capi.ui_context is ui.ui_context
 
 
-def test_http_error_subclasses_are_re_exported() -> None:
-    from untaped import errors
-
-    assert untaped.HttpStatusError is errors.HttpStatusError
-    assert untaped.HttpTransportError is errors.HttpTransportError
-    assert issubclass(untaped.HttpStatusError, untaped.HttpError)
-    assert issubclass(untaped.HttpTransportError, untaped.HttpError)
-    assert {"HttpStatusError", "HttpTransportError"} <= set(untaped.__all__)
+def test_prompt_choice_is_exported() -> None:
+    assert capi.PromptChoice is prompts.PromptChoice
+    assert "PromptChoice" in capi.__all__
 
 
-def test_three_oh_primitives_are_re_exported() -> None:
+def test_http_error_subclasses_are_exported() -> None:
+    assert capi.HttpStatusError is errors.HttpStatusError
+    assert capi.HttpTransportError is errors.HttpTransportError
+    assert issubclass(capi.HttpStatusError, capi.HttpError)
+    assert issubclass(capi.HttpTransportError, capi.HttpError)
+    assert {"HttpStatusError", "HttpTransportError"} <= set(capi.__all__)
+
+
+def test_shared_primitives_are_exported() -> None:
     for name in (
         "atomic_write",
-        "apply_file_changes",
         "bounded_map",
-        "diff_stats",
         "finish",
-        "missing_setting_error",
         "paginate_link",
         "parse_json_pairs",
         "read_structured_file",
-        "read_stdin_text",
         "resolve_text_input",
         "unified_diff_text",
-        "DiffStats",
-        "FileChange",
-        "FileWriteError",
         "StateCollection",
         "StateMap",
     ):
-        assert hasattr(untaped, name), name
-        assert name in untaped.__all__, name
+        assert hasattr(capi, name), name
+        assert name in capi.__all__, name
 
 
 def test_retired_names_are_not_exposed() -> None:
@@ -75,5 +68,5 @@ def test_retired_names_are_not_exposed() -> None:
         "get_logger",
         "configure_logging",
     ):
-        assert not hasattr(untaped, name), f"untaped.{name} should be retired"
-        assert name not in untaped.__all__
+        assert not hasattr(capi, name), f"capability_api.{name} should be retired"
+        assert name not in capi.__all__
