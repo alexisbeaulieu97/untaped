@@ -20,13 +20,15 @@ from typing import TYPE_CHECKING
 from untaped.capabilities.awx.domain import ResourceSpec
 from untaped.capabilities.awx.errors import WaitCancelledError
 from untaped.capabilities.awx.infrastructure import AwxClient, AwxResourceCatalog
-from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
+from untaped.capabilities.awx.infrastructure.fk_resolver import HttpFkResolver
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
 from untaped.capabilities.awx.infrastructure.resource_repo import ResourceRepository
 from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStrategyResolver
-from untaped.capabilities.awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
-from untaped.capabilities.awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
+from untaped.capabilities.awx.infrastructure.unified_template_repo import (
+    HttpUnifiedTemplateRepository,
+)
+from untaped.capabilities.awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
 from untaped.capabilities.awx.settings import AwxSettings
 from untaped.capability_api import AppContext, ConfigError, UsageError, app_context
 
@@ -46,7 +48,7 @@ class AwxContext:
         self.client = AwxClient(config, http=context.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()
-        self.fk = FkResolver(
+        self.fk = HttpFkResolver(
             self.repo,
             self.catalog,
             warn=lambda msg: self.progress_ui().message("warning", msg),
@@ -56,8 +58,8 @@ class AwxContext:
         self.stop = threading.Event()
         self.monitor = PollingJobMonitor(self.repo, sleep=self.pause)
         self.jobs = JobRecordRepository(self.repo)
-        self.ujts = UnifiedTemplateRepository(self.repo)
-        self.workflow_nodes = WorkflowNodeRepository(self.repo)
+        self.ujts = HttpUnifiedTemplateRepository(self.repo)
+        self.workflow_nodes = HttpWorkflowNodeRepository(self.repo)
         self.default_organization = config.default_organization
 
     def pause(self, seconds: float) -> None:

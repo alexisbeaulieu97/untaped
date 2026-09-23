@@ -1,4 +1,4 @@
-"""Unit tests for :class:`WorkflowNodeRepository` (infrastructure).
+"""Unit tests for :class:`HttpWorkflowNodeRepository` (infrastructure).
 
 The adapter is pure delegation — the nested per-workflow endpoint and
 the collection-wide reverse-lookup endpoint. Tests stub the underlying
@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 from untaped.capabilities.awx.application.ports import RawHttpResourceClient
-from untaped.capabilities.awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
+from untaped.capabilities.awx.infrastructure.workflow_node_repo import HttpWorkflowNodeRepository
 
 
 class _FakeClient:
@@ -32,7 +32,7 @@ class _FakeClient:
 
 def test_list_nodes_walks_nested_workflow_endpoint() -> None:
     client = _FakeClient(list_pages=[{"id": 1}])
-    repo = WorkflowNodeRepository(cast(RawHttpResourceClient, client))
+    repo = HttpWorkflowNodeRepository(cast(RawHttpResourceClient, client))
     out = list(repo.list_nodes(workflow_id=7, params={"page_size": "200"}))
     assert [r["id"] for r in out] == [1]
     assert client.paginate_calls == [
@@ -42,7 +42,7 @@ def test_list_nodes_walks_nested_workflow_endpoint() -> None:
 
 def test_list_references_filters_collection_by_unified_job_template() -> None:
     client = _FakeClient(list_pages=[{"id": 1, "workflow_job_template": 100}])
-    repo = WorkflowNodeRepository(cast(RawHttpResourceClient, client))
+    repo = HttpWorkflowNodeRepository(cast(RawHttpResourceClient, client))
     out = list(repo.list_references(unified_job_template=10))
     assert [r["id"] for r in out] == [1]
     assert client.paginate_calls == [
@@ -54,7 +54,7 @@ def test_list_references_merges_params_without_widening_the_query() -> None:
     # A caller-supplied ``unified_job_template`` filter must not override
     # the queried template id — that would silently widen the lookup.
     client = _FakeClient()
-    repo = WorkflowNodeRepository(cast(RawHttpResourceClient, client))
+    repo = HttpWorkflowNodeRepository(cast(RawHttpResourceClient, client))
     list(
         repo.list_references(
             unified_job_template=10,

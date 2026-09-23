@@ -1,4 +1,4 @@
-"""Concrete :class:`UnifiedTemplateRepository` implementation.
+"""Concrete :class:`HttpUnifiedTemplateRepository` implementation.
 
 Wraps a :class:`RawHttpResourceClient`; the only AWX-specific piece is
 the collection name ``unified_job_templates/``. Lists are alphabetical
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 _PATH = "unified_job_templates/"
 
 
-class UnifiedTemplateRepository:
+class HttpUnifiedTemplateRepository:
     def __init__(self, client: RawHttpResourceClient) -> None:
         self._client = client
 

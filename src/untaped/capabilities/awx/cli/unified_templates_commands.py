@@ -26,8 +26,8 @@ from typing import Annotated
 from cyclopts import Parameter
 
 from untaped.capabilities.awx.application import GetUnifiedTemplate
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._get import default_get_columns
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,

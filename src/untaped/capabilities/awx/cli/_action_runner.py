@@ -11,15 +11,15 @@ from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
 from untaped.capabilities.awx.application.selected_actions import (
-    ActionsInterrupted,
+    ActionsInterruptedError,
     SelectedActionOutcome,
     run_selected_actions,
 )
 from untaped.capabilities.awx.application.selection import SelectedResource
-from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import confirm_batch
-from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
+from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.cli.format import format_scope
+from untaped.capabilities.awx.cli.parallel import drain_parallel, wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
 from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 from untaped.capability_api import (
@@ -134,7 +134,7 @@ def _submit(
             continue_on_error=continue_on_error,
             error_detail=error_detail,
         )
-    except ActionsInterrupted as interrupted:
+    except ActionsInterruptedError as interrupted:
         label_by_target = {id(item): label for item, label in zip(targets, labels, strict=True)}
         report_interrupted(
             [
@@ -157,8 +157,10 @@ def _monitor(
     try:
         if track:
             console = Console(stderr=True, highlight=False)
-            return _drain_parallel(ctx.monitor, launched, console, stop=ctx.stop, finished=finished)
-        return _wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
+            return drain_parallel(
+                ctx.monitor, launched, console.print, stop=ctx.stop, finished=finished
+            )
+        return wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
     except KeyboardInterrupt:
         report_interrupted(
             [(label, finished.get(label, job)) for label, job in launched] + unmonitored

@@ -4,8 +4,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from untaped.capabilities.awx.application import BatchMutationEngine, prepare_apply_file
-from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan
+from untaped.capabilities.awx.cli.context import AwxContext
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.yaml_io import read_resource_files
 from untaped.capability_api import ConfigError, OutputFormat

@@ -2,7 +2,5 @@
 # This list may only shrink: fix an entry and delete its line.
 # See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
 src/untaped/capabilities/awx/cli/_action_runner.py::rich-console::Console()
-src/untaped/capabilities/awx/cli/_parallel.py::print::print()
-src/untaped/capabilities/awx/cli/_parallel.py::print::print()
 src/untaped/capabilities/awx/cli/commands.py::print::print()
 src/untaped/capabilities/awx/cli/commands.py::rich-console::Console()

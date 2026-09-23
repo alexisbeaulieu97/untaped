@@ -9,10 +9,9 @@ from cyclopts import App, Parameter
 from untaped.capabilities.awx.application import SaveResource
 from untaped.capabilities.awx.application.apply_planner import unrecognized_fields
 from untaped.capabilities.awx.cli._apply_runner import build_mutation_engine
-from untaped.capabilities.awx.cli._context import open_context
 from untaped.capabilities.awx.cli._mutation_runner import run_mutation_plan, validate_controls
-from untaped.capabilities.awx.cli._patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -30,6 +29,7 @@ from untaped.capabilities.awx.cli.options import (
     UnverifiedOption,
     YesOption,
 )
+from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capabilities.awx.domain import Resource
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (

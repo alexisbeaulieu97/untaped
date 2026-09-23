@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from untaped.capabilities.awx.application import WatchJob
-from untaped.capabilities.awx.cli import _parallel, app
+from untaped.capabilities.awx.cli import app, context, parallel
 from untaped.testing import CliInvoker
 
 pytestmark = pytest.mark.integration
@@ -33,7 +33,7 @@ def test_sliced_launch_wait_keeps_mixed_execution_kinds(
     )
     fake_aap.install(fake_aap.router)
     monkeypatch.setattr(
-        _parallel, "WatchJob", lambda client, **_: WatchJob(client, sleep=lambda _: None)
+        parallel, "WatchJob", lambda client, **_: WatchJob(client, sleep=lambda _: None)
     )
     result = CliInvoker().invoke(
         app,
@@ -115,7 +115,6 @@ def test_track_pending_to_terminal_uses_only_supported_routes(
     status: str,
     also_wait: bool,
 ) -> None:
-    from untaped.capabilities.awx.cli import _context
     from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 
     seed_templates(fake_aap)
@@ -131,7 +130,7 @@ def test_track_pending_to_terminal_uses_only_supported_routes(
     )
     fake_aap.install(fake_aap.router)
     monkeypatch.setattr(
-        _context,
+        context,
         "PollingJobMonitor",
         lambda client, **_: PollingJobMonitor(client, sleep=lambda _: None),
     )

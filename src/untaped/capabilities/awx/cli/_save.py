@@ -5,9 +5,8 @@ from typing import Annotated
 
 from cyclopts import App, Parameter
 
-from untaped.capabilities.awx.cli._context import open_context
-from untaped.capabilities.awx.cli._save_runner import run_save_selection
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,
@@ -20,6 +19,7 @@ from untaped.capabilities.awx.cli.options import (
     SearchOption,
     StdinOption,
 )
+from untaped.capabilities.awx.cli.save_runner import run_save_selection
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import ColumnsOption, FormatOption, raise_usage, report_errors
 

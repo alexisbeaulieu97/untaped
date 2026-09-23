@@ -18,9 +18,9 @@ from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.cli._action_runner import run_action_selection
-from untaped.capabilities.awx.cli._context import open_context, scope_for_command
 from untaped.capabilities.awx.cli._mutation_runner import validate_controls
 from untaped.capabilities.awx.cli._selection import select_resources
+from untaped.capabilities.awx.cli.context import open_context, scope_for_command
 from untaped.capabilities.awx.cli.options import (
     AllOption,
     ByIdOption,

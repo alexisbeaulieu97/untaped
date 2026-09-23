@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 from cyclopts import Parameter
 
-from untaped.capabilities.awx.cli._context import AwxContext, open_context
+from untaped.capabilities.awx.cli.context import AwxContext, open_context
 from untaped.capabilities.awx.domain import Job
 from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.errors import AwxApiError
@@ -279,9 +279,9 @@ def list_command(
         )
 
     if fmt in {"json", "yaml"}:
-        rows: list[dict[str, Any]] = [_test_suite_row(suite) for suite in suites]
+        rows: list[dict[str, Any]] = [suite_row(suite) for suite in suites]
     else:
-        rows = [_test_case_row(suite, case_name) for suite in suites for case_name in suite.cases]
+        rows = [case_row(suite, case_name) for suite in suites for case_name in suite.cases]
     emit(rows, fmt=fmt, columns=columns, kind="awx.test_case")
 
 
@@ -330,7 +330,7 @@ def validate_command(
     ui_context(strict=False).success(f"{plural(count, 'case')} validated")
 
 
-def _test_case_row(suite: Suite, case_name: str) -> dict[str, Any]:
+def case_row(suite: Suite, case_name: str) -> dict[str, Any]:
     # ``suite`` first: under ``--format raw`` (table/raw branch) the
     # first key is what pipelines feed back into the next command
     # (xargs identifier semantics); pinned by
@@ -338,9 +338,9 @@ def _test_case_row(suite: Suite, case_name: str) -> dict[str, Any]:
     return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
 
 
-def _test_suite_row(suite: Suite) -> dict[str, Any]:
+def suite_row(suite: Suite) -> dict[str, Any]:
     # Suite-level shape for --format json|yaml only (raw uses
-    # _test_case_row). Kept ``suite``-first for symmetry with the raw
+    # case_row). Kept ``suite``-first for symmetry with the raw
     # row source; pinned by tests/awx/unit/test_format_raw_first_key.py.
     return {
         "suite": suite.name,
