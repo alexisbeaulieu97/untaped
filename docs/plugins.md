@@ -171,7 +171,13 @@ provider = AcmeProvider()
 ```
 
 `CapabilitySpec` validates the name, section, Pydantic models, and normalized
-asset tuples. Composition invokes `build_app()` only after provider validation.
+asset tuples. Composition invokes `build_app()` only after provider validation,
+exactly once, and mounts the app it returned; a factory that raises or returns
+something other than a cyclopts `App` quarantines the provider. The optional
+`help` field (one non-empty line, default `None`) is the summary for the root
+command listing. Built-ins set it so their factories run only when their
+command is dispatched. An external's factory still runs during composition so
+a bad factory is quarantined, and its listing shows the built app's own help.
 The provider callable must have no registration, filesystem, network, or
 `ContextVar` side effects; the root owns registration and mounting.
 
