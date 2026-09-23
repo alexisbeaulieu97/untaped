@@ -152,7 +152,7 @@ def test_composition_names_resolve_to_registry() -> None:
     assert capi.ApplicationSpec is registry.ApplicationSpec
     assert capi.CapabilitySpec is registry.CapabilitySpec
     assert capi.CapabilityProvider is registry.CapabilityProvider
-    assert capi.CAPABILITY_API_VERSION == registry.CAPABILITY_API_VERSION == 1.0
+    assert capi.CAPABILITY_API_VERSION == registry.CAPABILITY_API_VERSION == 1.1
     assert capi.SkillAsset is registry.SkillAsset
     assert capi.DoctorCheck is registry.DoctorCheck
     assert capi.DoctorResult is registry.DoctorResult

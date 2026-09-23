@@ -33,7 +33,7 @@ from untaped.capabilities.registry import (
     CompositionResult,
     ExternalProvider,
     RegisteredCapability,
-    check_factory_result,
+    build_deferred_app,
     compose,
     discover_external_providers,
 )
@@ -308,8 +308,9 @@ class _LazyCapabilityCommand(CommandSpec):
     command. Resolution calls the factory exactly once and applies the same
     parent defaults an eager ``App.command(sub)`` mount would, against the
     root the command was mounted on (not whichever app dispatch passes in,
-    which may be the meta app). The cyclopts internals touched here are
-    pinned by ``uv.lock`` and guarded by the lazy-vs-eager rendering test.
+    which may be the meta app). The private cyclopts internals touched here
+    are pinned by ``uv.lock`` and guarded by the internals-presence and
+    lazy-vs-eager rendering tests in ``tests/unit/test_bootstrap.py``.
     """
 
     def __init__(self, spec: CapabilitySpec, mount_parent: App) -> None:
@@ -323,7 +324,7 @@ class _LazyCapabilityCommand(CommandSpec):
         if resolved is not None:
             return resolved
         spec = self._capability
-        app = check_factory_result(spec, spec.app_factory())
+        app = build_deferred_app(spec)
         _apply_parent_defaults_to_app(app, self._mount_parent)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False
@@ -340,7 +341,7 @@ def _mount_capability(root: App, capability: RegisteredCapability) -> None:
         _mount(root, capability.app, name=spec.name)
         return
     if spec.help is None:
-        _mount(root, check_factory_result(spec, spec.app_factory()), name=spec.name)
+        _mount(root, build_deferred_app(spec), name=spec.name)
         return
     if spec.name in root:
         del root[spec.name]

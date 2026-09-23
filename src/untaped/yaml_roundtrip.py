@@ -89,14 +89,41 @@ def _sync_map(node: Any, before: Mapping[Any, Any], after: Mapping[Any, Any]) ->
         for key, value in after.items():
             node[_fresh(key)] = _fresh(value)
         return
+    carried = _carry_renames(node, before, after)
     for key in [key for key in node if key not in after]:
         del node[key]
     for key, value in after.items():
-        if key in before and before[key] == value:
+        if key in carried or (key in before and before[key] == value):
             continue
         if key in node and _sync_child(node, key, before[key], value):
             continue
         node[_fresh(key)] = _fresh(value)
+
+
+def _carry_renames(node: Any, before: Mapping[Any, Any], after: Mapping[Any, Any]) -> set[Any]:
+    """Rename keys in place when a dropped key's container moved to a new key.
+
+    ``profile rename`` pops ``profiles.<old>`` and re-adds it as ``<new>``;
+    reusing the ruamel child keeps its comments, formatting and position.
+    Returns the new keys that were carried over (already equal to ``after``).
+    """
+    carried: set[Any] = set()
+    gone = [key for key in node if key not in after and isinstance(before[key], dict | list)]
+    for key, value in after.items():
+        if key in before:
+            continue
+        match = next((old for old in gone if before[old] == value), None)
+        if match is None:
+            continue
+        gone.remove(match)
+        position = list(node).index(match)
+        child = node.pop(match)
+        comment = node.ca.items.pop(match, None)
+        node.insert(position, _fresh(key), child)
+        if comment is not None:
+            node.ca.items[key] = comment
+        carried.add(key)
+    return carried
 
 
 def _sync_seq(node: Any, before: list[Any], after: list[Any]) -> None:

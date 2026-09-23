@@ -141,6 +141,14 @@ def test_profile_writes_preserve_comments(cfg: Path) -> None:
     assert read_config_dict(cfg)["profiles"]["staging"] == {}
 
 
+def test_profile_rename_keeps_the_profile_in_place_with_its_comments(cfg: Path) -> None:
+    ProfileFileRepository().rename("work", "prod")
+
+    expected = _replace_line(COMMENTED, "active: work ", "active: prod ")
+    expected = _replace_line(expected, "  work:\n", "  prod:\n")
+    assert cfg.read_text(encoding="utf-8") == expected
+
+
 def test_fresh_file_and_full_replacement_still_write(tmp_path: Path) -> None:
     path = tmp_path / "fresh.yml"
     write_config_dict({"b": {"y": 1, "x": [1, 2]}, "a": "no"}, path)

@@ -52,8 +52,8 @@ Import direction inside a capability: `cli → application → domain` and
 - `capability_api.py` is the single public SDK surface and the **only**
   untaped module capability code (built-in or external) imports from. Its
   exported types, helpers, and API version are the source of truth for
-  provider compatibility. `untaped.api` is a deprecated re-export shim; the
-  package root re-exports nothing.
+  provider compatibility. `untaped.api` is a deprecated re-export shim, and
+  the package root only forwards `from untaped import X` lazily (deprecated).
 - `capabilities/registry.py` is the internal composition kernel: discovery /
   API pre-checks → provider resolution → declaration validation + app-factory
   staging → commit. Built-in violations raise `ConfigError` (fatal);

@@ -18,10 +18,13 @@ Correctness and safety fixes from a whole-codebase review. Items marked
   - Capability settings are validated per section on first use: an invalid
     value in one capability's section no longer breaks other capabilities'
     commands, and the error names the section and config file. `doctor` and
-    `config list` still report every invalid section.
+    `config list` still report every invalid section. **Behavior change**
+    for SDK code: `AppContext` no longer accepts a `settings=` argument; get
+    one from `app_context()`.
   - Config writes (`config set/unset`, `profile`, capability state) preserve
     comments, key order, and formatting in `config.yml`, rewriting only the
-    changed keys. **Behavior change:** keys are no longer sorted alphabetically
+    changed keys (`profile rename` keeps the profile in place with its
+    comments). **Behavior change:** keys are no longer sorted alphabetically
     on write; new keys are appended.
   - `doctor` reports one row per core, capability, and state section,
     including `UNTAPED_*` overrides and the selected profile.
@@ -160,26 +163,29 @@ Shared infrastructure consolidation (git, recipe, awx). Items marked
     ancestry fields the `patch`/`edit` commands already rejected (one
     `ResourceSpec.immutable_fields` set).
 
-One SDK surface.
+Startup and SDK surface.
 
+- Built-in capability command trees load lazily: `untaped --help` and
+  `untaped <capability> ...` import only the selected capability's CLI
+  (about a third fewer modules; root `--help` roughly 0.85s to 0.55s).
+  `CapabilitySpec` gains an optional one-line `help` for the root listing, and
+  each app factory now runs at most once per composition (external factories
+  were called twice).
 - `untaped.capability_api` is the single public SDK surface for built-in and
   external capabilities. It now also exports the shared helpers built-ins
   use (HTTP client and pagination, `bounded_map`, `batch_apply`, output and
   argument helpers, `atomic_write`, `StateMap`, ...). The additions are
-  backwards compatible, so `CAPABILITY_API_VERSION` stays `1.0`.
+  backwards compatible: `CAPABILITY_API_VERSION` is now `1.1`, and providers
+  declaring `(1.0, 2.0)` keep composing.
 - `untaped.api` is deprecated: it still re-exports every name it published
   (without a warning) and will be removed in a later release. Import from
   `untaped.capability_api` instead.
-- **Behavior change:** the package root no longer re-exports the SDK;
-  `from untaped import X` must become `from untaped.capability_api import X`.
-
-CLI startup:
-
-- Built-in capability command trees load lazily: `untaped --help` and
-  `untaped <capability> ...` import only the selected capability's CLI
-  (roughly a third fewer modules and faster startup). `CapabilitySpec` gains an
-  optional one-line `help` for the root listing, and each app factory now runs
-  at most once per composition (external factories were called twice).
+- **Behavior change:** the package root no longer star-exports the SDK
+  (`from untaped import *` and `untaped.__all__` are gone). `from untaped
+  import X` still resolves `untaped.capability_api` and former `untaped.api`
+  names lazily, so importing `untaped` loads nothing; this is deprecated and
+  goes away with `untaped.api`. `untaped.app_context` now names the submodule
+  rather than the function.
 
 ## 6.0.1
 
