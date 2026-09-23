@@ -293,3 +293,77 @@ def test_mutate_config_translates_yaml_error_to_config_error(
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
     with pytest.raises(ConfigError, match=str(cfg)):
         mutate_config(lambda data: data.update({"x": 1}))
+
+
+@pytest.mark.parametrize("value", ["x", "-1", "nan", "inf"])
+def test_invalid_lock_timeout_env_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(tmp_path / "config.yml"))
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", value)
+    with pytest.raises(ConfigError, match="UNTAPED_CONFIG_LOCK_TIMEOUT"):
+        mutate_config(lambda data: None)
+
+
+def test_unreadable_config_is_a_config_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = tmp_path / "config.yml"
+    cfg.write_text("log_level: INFO\n")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    real_open = Path.open
+
+    def deny(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == cfg:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny)
+    with pytest.raises(ConfigError, match=r"could not read .*Permission denied"):
+        read_config_dict()
+
+
+def test_write_creates_the_file_owner_only_from_the_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The temp file must never exist with looser permissions than 0600."""
+    import os
+    import stat
+
+    cfg = tmp_path / "config.yml"
+    modes: list[int] = []
+    real_replace = os.replace
+
+    def spy_replace(src: Any, dst: Any) -> None:
+        modes.append(stat.S_IMODE(os.stat(src).st_mode))
+        real_replace(src, dst)
+
+    old_umask = os.umask(0o022)
+    monkeypatch.setattr(os, "replace", spy_replace)
+    try:
+        write_config_dict({"token": "secret"}, cfg)
+    finally:
+        os.umask(old_umask)
+    assert modes == [0o600]
+    assert stat.S_IMODE(cfg.stat().st_mode) == 0o600
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yml"]
+
+
+def test_failed_write_leaves_no_temp_file_and_keeps_the_original(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+    write_config_dict({"log_level": "INFO"}, cfg)
+    before = cfg.read_text()
+
+    with pytest.raises(Exception, match="cannot represent"):
+        write_config_dict({"bad": object()}, cfg)
+
+    assert cfg.read_text() == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yml"]
+
+
+def test_write_ignores_a_stale_fixed_name_temp_file(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.yml"
+    stale = tmp_path / "config.yml.tmp"
+    stale.write_text("stale")
+    write_config_dict({"log_level": "INFO"}, cfg)
+    assert read_config_dict(cfg) == {"log_level": "INFO"}
