@@ -1,5 +1,84 @@
 # Changelog
 
+## Unreleased
+
+Correctness and safety fixes from a whole-codebase review. Items marked
+**behavior change** alter output, exit codes, or defaults.
+
+- Core
+  - `config set` validates the raw value against the setting's type instead of
+    parsing it as YAML: `#` no longer truncates secrets, and numeric strings
+    such as `0123456` are accepted for string settings.
+  - `config` and `profile` commands validate only the section they touch, so a
+    broken section can be repaired from the CLI. Non-mapping config shapes are
+    reported as config errors instead of tracebacks.
+  - `doctor` reports one row per core, capability, and state section,
+    including `UNTAPED_*` overrides and the selected profile.
+  - **Behavior change:** `config list/get` and `profile list` emit native
+    values (`null`, booleans, numbers) in json/yaml/pipe; glyphs remain in
+    tables only. A closed output pipe exits 0. `--verbose` with `--quiet` is a
+    usage error. `--columns` accepts comma lists and rejects unknown columns
+    for typed records.
+  - `profile current` honors `--profile`; a missing `http.ca_bundle`, an
+    unknown `ui.theme`, and cross-origin pagination links are reported
+    clearly. Config writes create the temporary file with mode 0600.
+- workspace
+  - Repo and workspace names must be a single safe path segment; the bare
+    cache path is sanitized.
+  - **Behavior change:** `forget --prune` deletes only managed clones and the
+    manifest, and leaves other files in place. `sync --prune` now confirms
+    (`--yes` to skip). `sync` and `branch apply` report failures as `failed`
+    and exit 1. `branch apply` no longer creates missing branches unless
+    `--create` is passed.
+  - Git never runs in an enclosing repository, never prompts for
+    credentials, and fast-forwards from the branch's upstream. The bare cache
+    now actually refreshes. Ctrl-C stops queued work and child processes;
+    `foreach` streams rows as repos finish.
+- github
+  - `sweep --grep` always uses extended regular expressions, so `a|b` works
+    and git config cannot change results.
+  - `search code`/`search issues` batch repo scopes within GitHub's operator
+    limit instead of truncating or failing.
+  - CODEOWNERS matching follows GitHub's gitignore-style rules.
+  - One bad repo no longer aborts a sweep; failed refreshes that fall back to
+    cached copies are reported. `cache clean --all --org X` only removes X.
+    Branches and tags with the same name are both scanned.
+- jira
+  - `issue assigned --jql` keeps the configured assignee filter, and bare
+    `issue search` uses `jira.assigned_jql`. JQL starting with `ORDER BY` and
+    sprint functions render correctly. `issue get` shows description, type,
+    priority, reporter, labels, created, and resolution.
+- awx
+  - `--extra-vars` is sent as a mapping (`KEY=VAL`, `@file`, or JSON/YAML).
+  - **Behavior change:** launch checks the template's ask-on-launch flags
+    first and fails rows whose fields AWX ignored. Launching or syncing more
+    than one target asks for confirmation (`--yes` to skip). `patch` rejects
+    unknown fields (`--allow-unknown-fields` to opt out). `jobs list`
+    defaults to 20 rows (`--limit 0` for all).
+  - Replacing a credential with one of the same type works. `patch --set`
+    keeps string fields as strings. Ctrl-C interrupts waits and prints the
+    running job IDs. `ping` validates the token. Fewer API requests for
+    scoped selection, `list --limit`, and `delete`.
+- recipe
+  - Writes preserve file permissions. Glob steps work through symlinked
+    targets. One broken installed pack no longer breaks every command.
+    `yaml_edit` leaves files untouched when nothing changes.
+  - **Behavior change:** `hook run` no longer runs hooks from the current
+    directory implicitly (use `--project`), and bare hook names inside a pack
+    resolve to that pack's hooks and built-ins only (use `pack/hook` across
+    packs). The hook worker runs isolated from untaped's own modules.
+- ansible
+  - `graph ./repo` resolves the origin through git (worktrees, duplicate
+    config keys) and git output parsing no longer depends on the locale.
+  - Shared dependencies are expanded once, fixing exponential time and
+    output on large graphs.
+  - Versions such as `1.10` stay strings, repo names match
+    case-insensitively, GitHub Enterprise URLs resolve, and unpinned
+    dependents are included for the default branch. The first refresh after
+    upgrading rescans each source.
+- Tests run hermetically: local runs no longer read the developer's config or
+  depend on terminal width, and coverage is gated in CI at 89%.
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP
