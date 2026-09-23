@@ -165,6 +165,14 @@ One SDK surface.
 - **Behavior change:** the package root no longer re-exports the SDK;
   `from untaped import X` must become `from untaped.capability_api import X`.
 
+CLI startup:
+
+- Built-in capability command trees load lazily: `untaped --help` and
+  `untaped <capability> ...` import only the selected capability's CLI
+  (roughly a third fewer modules and faster startup). `CapabilitySpec` gains an
+  optional one-line `help` for the root listing, and each app factory now runs
+  at most once per composition (external factories were called twice).
+
 ## 6.0.1
 
 - `github sweep` now retries transient Git transport failures (dropped TLS/TCP

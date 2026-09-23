@@ -498,3 +498,98 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     )
     assert helped.returncode == 0, helped.stderr
     assert "untaped" in helped.stdout
+
+
+def _counting_spec(
+    name: str, calls: list[str], *, help: str | None = None, result: object = None
+) -> CapabilitySpec:
+    def _factory() -> App:
+        calls.append(name)
+        if result is not None:
+            return result  # type: ignore[return-value]
+        return _who_app(name, _token_body_for(name))
+
+    return CapabilitySpec(
+        name=name,
+        app_factory=_factory,
+        config_section=name,
+        profile_model=_ExtProfile,
+        help=help,
+    )
+
+
+def test_lazy_builtin_factory_runs_only_on_dispatch_and_once() -> None:
+    calls: list[str] = []
+    spec = _counting_spec("lazy", calls, help="Lazy capability.")
+    root = bootstrap.build_root_app(builtins=(spec,), externals=())
+    assert calls == []
+
+    listed = CliInvoker().invoke(root.meta, ["--help"])
+    assert listed.exit_code == 0, listed.output
+    assert "Lazy capability." in listed.stdout
+    assert calls == []
+
+    for _ in range(2):
+        result = CliInvoker().invoke(root.meta, ["lazy", "who"])
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == "default-token"
+    assert calls == ["lazy"]
+
+
+def test_eager_factories_are_called_once_per_composition() -> None:
+    builtin_calls: list[str] = []
+    external_calls: list[str] = []
+    builtin = _counting_spec("eager", builtin_calls)
+    external = _external(_counting_spec("ext", external_calls), [])
+
+    root = bootstrap.build_root_app(builtins=(builtin,), externals=[external])
+    for name in ("eager", "ext"):
+        result = CliInvoker().invoke(root.meta, [name, "who"])
+        assert result.exit_code == 0, result.output
+
+    assert builtin_calls == ["eager"]
+    assert external_calls == ["ext"]
+
+
+def test_external_help_does_not_defer_factory_validation() -> None:
+    calls: list[str] = []
+    bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
+    composition = bootstrap.compose_root(builtins=(), externals=[_external(bad, [])])
+    assert composition.capabilities == ()
+    assert [record.reason for record in composition.quarantine] == ["bad-app-factory"]
+    assert calls == ["bad"]
+
+
+def test_lazy_builtin_bad_factory_is_fatal_at_dispatch() -> None:
+    calls: list[str] = []
+    bad = _counting_spec("bad", calls, help="Bad capability.", result="not-an-app")
+    root = bootstrap.build_root_app(builtins=(bad,), externals=())
+    assert calls == []
+
+    result = CliInvoker().invoke(root.meta, ["bad", "who"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ConfigError)
+    assert "bad-app-factory" in str(result.exception)
+
+
+def test_lazy_builtins_render_like_eager_mounts() -> None:
+    from dataclasses import replace
+
+    eager_specs = tuple(replace(spec, help=None) for spec in bootstrap.BUILTIN_CAPABILITIES)
+    argv_cases = [["--help"]] + [
+        [spec.name, flag]
+        for spec in bootstrap.BUILTIN_CAPABILITIES
+        for flag in ("--help", "--version")
+    ]
+    for argv in argv_cases:
+        lazy = CliInvoker().invoke(bootstrap.build_root_app(externals=()).meta, argv)
+        eager = CliInvoker().invoke(
+            bootstrap.build_root_app(builtins=eager_specs, externals=()).meta, argv
+        )
+        assert (lazy.exit_code, lazy.output) == (eager.exit_code, eager.output), argv
+
+
+def test_builtin_help_matches_app_summary() -> None:
+    for spec in bootstrap.BUILTIN_CAPABILITIES:
+        assert spec.help is not None, spec.name
+        assert spec.help == spec.app_factory().help, spec.name

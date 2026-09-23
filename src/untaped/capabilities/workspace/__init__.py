@@ -25,6 +25,7 @@ def build_app() -> App:
 SPEC = CapabilitySpec(
     name="workspace",
     app_factory=build_app,
+    help="Manage local git workspaces (collections of repos).",
     config_section="workspace",
     profile_model=WorkspaceSettings,
     state_model=WorkspaceState,

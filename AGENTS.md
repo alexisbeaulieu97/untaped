@@ -34,7 +34,7 @@ A capability owns its directory end to end:
 
 ```
 src/untaped/capabilities/<name>/
-├── __init__.py        # SPEC: CapabilitySpec + nullary build_app() (lazy CLI import; never build at import time)
+├── __init__.py        # SPEC: CapabilitySpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
 ├── settings.py        # profile model + state model (field sets must be disjoint)
 ├── cli/               # cyclopts commands (thin)
 ├── application/       # use cases (orchestration); ports in application/ports.py
@@ -63,7 +63,11 @@ Import direction inside a capability: `cli → application → domain` and
   `untaped --help` and `src/untaped/management/` when adding a capability.
 - A new built-in capability: add `capabilities/<name>/` per the layout
   above, expose `SPEC` + `build_app`, and append it to
-  `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order.
+  `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Set
+  `SPEC.help` to the app's one-line help: built-ins with `help` are mounted
+  lazily (factory runs once, on dispatch), so `untaped --help` and other
+  capabilities never import their CLI. Externals are always built once during
+  composition (validation/quarantine) and that staged app is mounted.
 
 ## Management commands
 
