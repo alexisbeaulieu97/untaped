@@ -326,13 +326,20 @@ def warn_legacy_state(config_path: Path, state_path: Path, section: str) -> None
 def resolve_state_path() -> Path:
     """Return the active state file path.
 
-    ``UNTAPED_STATE`` wins; otherwise ``state.yml`` next to the resolved
-    config file (``~/.untaped/state.yml`` by default). The state file must
-    never be the config file itself.
+    ``UNTAPED_STATE`` wins; otherwise the name derives from the resolved
+    config file in the same directory: ``config.yml`` → ``state.yml``
+    (``~/.untaped/state.yml`` by default), any other ``<stem>.<ext>`` →
+    ``<stem>.state.yml``, so sibling config files never share state. The
+    state file must never be the config file itself.
     """
     config_path = resolve_config_path()
     override = os.environ.get(STATE_PATH_ENV, "").strip()
-    path = Path(override).expanduser() if override else config_path.parent / STATE_FILE_NAME
+    if override:
+        path = Path(override).expanduser()
+    elif config_path.name == "config.yml":
+        path = config_path.parent / STATE_FILE_NAME
+    else:
+        path = config_path.parent / f"{config_path.stem}.{STATE_FILE_NAME}"
     if path.resolve() == config_path.resolve():
         raise ConfigError(
             f"the state file {path} must not be the config file; "

@@ -4,8 +4,10 @@ Decision ID: `dec_01a0d05a563c7751139b4452ccadb3b7`
 
 `~/.untaped/config.yml` holds only user settings: `active`, `profiles`, and
 per-profile capability sections addressed as `section.key`. Capability-managed
-state lives in a separate `state.yml`, next to the resolved config file unless
-`UNTAPED_STATE` names another path (never the config file itself). The
+state lives in a separate state file in the resolved config file's directory:
+`state.yml` for `config.yml`, `<stem>.state.yml` for any other config name (so
+sibling config files never share state), unless `UNTAPED_STATE` names another
+path (never the config file itself). The
 profiles/env-override contract of the superseded decision is unchanged; state
 models stay disjoint from profile models and are never writable through
 `untaped config`.

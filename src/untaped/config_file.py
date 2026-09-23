@@ -126,7 +126,12 @@ def mutate_config(fn: Callable[[dict[str, Any]], None], path: Path | None = None
 @contextlib.contextmanager
 def _locked(target: Path) -> Iterator[None]:
     """Hold the advisory ``<target>.lock`` (creating the parent directory)."""
-    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError(
+            f"could not create the directory for {target}: {exc.strerror or exc}"
+        ) from exc
     timeout = _lock_timeout()
     lock = FileLock(str(target) + ".lock", timeout=timeout)
     try:
@@ -136,6 +141,8 @@ def _locked(target: Path) -> Iterator[None]:
             f"could not acquire lock on {target}; another untaped process is "
             f"writing to it (waited {timeout}s)."
         ) from exc
+    except OSError as exc:
+        raise ConfigError(f"could not lock {target}: {exc.strerror or exc}") from exc
     try:
         yield
     finally:

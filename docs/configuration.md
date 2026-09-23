@@ -31,13 +31,16 @@ and `untaped config list` still report every invalid section.
 
 The default file is `~/.untaped/config.yml`. Set `UNTAPED_CONFIG` to use a
 process-specific path. Capability-managed state (for example the workspace
-registry and ansible aliases) lives in a separate `state.yml` next to the
-config file; set `UNTAPED_STATE` to put it elsewhere:
+registry and ansible aliases) lives in a separate state file in the config
+file's directory, named after it: `config.yml` pairs with `state.yml`, and any
+other config file `<name>.<ext>` pairs with `<name>.state.yml` (so
+`UNTAPED_CONFIG=~/work.yml` keeps its state in `~/work.state.yml`, and sibling
+config files never share state). Set `UNTAPED_STATE` to put it elsewhere:
 
 ```text
 ~/.untaped/config.yml             # settings and profiles (default)
 $UNTAPED_CONFIG                   # one-process override
-~/.untaped/state.yml              # capability state (default: next to the config file)
+~/.untaped/state.yml              # capability state (default: derived from the config file)
 $UNTAPED_STATE                    # one-process override
 ```
 
