@@ -1,5 +1,6 @@
 """Submit fixed launch/sync targets and preserve execution IDs through monitoring failures."""
 
+import json
 from collections import Counter
 from collections.abc import Sequence
 from typing import Any
@@ -109,13 +110,26 @@ def _action_error(
     # complete submitted string and individual values in controller exceptions.
     secrets = dict(payload or {})
     if isinstance(secrets.get("extra_vars"), str):
-        secrets["extra_vars"] = [
-            part.partition("=")[2] for part in secrets["extra_vars"].splitlines()
-        ]
+        try:
+            decoded = json.loads(secrets["extra_vars"])
+        except json.JSONDecodeError:
+            decoded = None
+        secrets["extra_vars"] = [str(value) for value in _leaf_values(decoded)]
     secret_spec = spec.model_copy(
         update={"secret_paths": (*spec.secret_paths, "extra_vars", "extra_vars.*")}
     )
     return redact_error(exc, secret_spec, target.record, payload or {}, secrets)
+
+
+def _leaf_values(value: Any) -> list[Any]:
+    """Every scalar inside a decoded extra-vars document (bools/None excluded)."""
+    if isinstance(value, dict):
+        return [leaf for child in value.values() for leaf in _leaf_values(child)]
+    if isinstance(value, list):
+        return [leaf for child in value for leaf in _leaf_values(child)]
+    if value is None or isinstance(value, bool):
+        return []
+    return [value]
 
 
 def _monitor_labels(targets: Sequence[SelectedResource]) -> list[str]:

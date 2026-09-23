@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -172,7 +174,7 @@ def test_launch_forwards_full_action_payload(
     launches = [c for c in fake_aap.actions_called if c[2] == "launch"]
     assert len(launches) == 1
     body = launches[0][3]
-    assert body["extra_vars"] == "foo=1"
+    assert json.loads(body["extra_vars"]) == {"foo": 1}
     assert body["limit"] == "web*"
     assert body["inventory"] == ids["inventory"]
     assert body["credentials"] == [ids["ssh"], ids["vault"]]
@@ -356,3 +358,86 @@ def test_launch_help_narrows_flags_by_accepts() -> None:
         assert _flag_in_help(narrowable_flag, jt_help.output), (
             f"{narrowable_flag} missing from JT launch --help"
         )
+
+
+def _launch_body(fake: Any, *args: str) -> dict[str, Any]:
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", *args])
+    assert result.exit_code == 0, result.output
+    launches = [c for c in fake.actions_called if c[2] == "launch"]
+    assert len(launches) == 1
+    return launches[0][3]  # type: ignore[no-any-return]
+
+
+def test_launch_extra_vars_key_values_become_a_json_mapping(seeded_default_org: Any) -> None:
+    """Repeated KEY=VAL entries merge into one mapping; JSON values are decoded."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    body = _launch_body(
+        seeded_default_org,
+        "--extra-vars",
+        "count=2",
+        "--extra-vars",
+        "region=us-east",
+        "--extra-vars",
+        'tags=["a", "b"]',
+        "--extra-vars",
+        "version=1.10.0",
+    )
+    assert json.loads(body["extra_vars"]) == {
+        "count": 2,
+        "region": "us-east",
+        "tags": ["a", "b"],
+        "version": "1.10.0",
+    }
+
+
+def test_launch_extra_vars_accepts_files_and_raw_mappings(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    yml = tmp_path / "vars.yml"
+    yml.write_text("region: eu\nnested:\n  enabled: true\n")
+    js = tmp_path / "more.json"
+    js.write_text('{"count": 3}')
+    body = _launch_body(
+        seeded_default_org,
+        "--extra-vars",
+        f"@{yml}",
+        "--extra-vars",
+        f"@{js}",
+        "--extra-vars",
+        '{"region": "us"}',
+        "--extra-vars",
+        "flag: yes",
+    )
+    assert json.loads(body["extra_vars"]) == {
+        "region": "us",
+        "nested": {"enabled": True},
+        "count": 3,
+        "flag": True,
+    }
+
+
+def test_launch_extra_vars_rejects_non_mapping_values(seeded_default_org: Any) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--extra-vars", "[1, 2]"])
+    assert result.exit_code != 0
+    assert "--extra-vars" in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_error_redacts_extra_var_values(seeded_default_org: Any) -> None:
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    seeded_default_org.next_action_error = "bad value hunter2-secret"
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "password=hunter2-secret"]
+    )
+    assert result.exit_code != 0
+    assert "hunter2-secret" not in result.output

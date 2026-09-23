@@ -49,6 +49,8 @@ class FakeAap:
         # set these before each call.
         self.next_action_status: str = "successful"
         self.next_action_stdout: str | None = None
+        # One-shot 400 rejection detail for the next action POST.
+        self.next_action_error: str | None = None
         self.ignored_write_fields: set[str] = set()
         self.mask_secret_write_response = False
         self.enrich_survey_spec_response = False
@@ -220,6 +222,9 @@ class FakeAap:
         if record is None:
             return _err(404, f"{api_path}/{id_}/{action}/")
         self.actions_called.append((api_path, id_, action, body))
+        if self.next_action_error is not None:
+            detail, self.next_action_error = self.next_action_error, None
+            return _err(400, detail)
         # Consume the one-shot overrides so a subsequent launch sees defaults.
         status = self.next_action_status
         stdout = self.next_action_stdout
