@@ -30,7 +30,6 @@ from datetime import datetime
 from itertools import batched
 from typing import Any, NamedTuple, cast
 
-from untaped.capabilities.github.domain.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped.capabilities.github.domain.models import (
     BatchRepoRefsFailure,
     BatchRepoRefsFailureKind,
@@ -39,6 +38,7 @@ from untaped.capabilities.github.domain.models import (
     RepoRef,
     RepoRefs,
 )
+from untaped.capabilities.github.errors import GithubGraphqlError, GithubGraphqlErrorKind
 from untaped.capability_api import HttpClient, HttpError, HttpTransportError, UntapedError
 
 _REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}

@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption, parse_team_scopes
+from untaped.capabilities.github.cli.scopes import OrgOption, TeamOption, parse_team_scopes
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,

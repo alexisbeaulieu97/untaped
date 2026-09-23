@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class SweepSettings(BaseModel):
     """Settings for sweep corpus refresh behavior."""
+
+    model_config = ConfigDict(frozen=True)
 
     max_age_seconds: int = 3600
     sync_concurrency: int = 12
@@ -16,6 +18,8 @@ class SweepSettings(BaseModel):
 
 class GithubSettings(BaseModel):
     """GitHub API settings."""
+
+    model_config = ConfigDict(frozen=True)
 
     base_url: str = "https://api.github.com"
     token: SecretStr | None = None
