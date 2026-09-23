@@ -1,8 +1,9 @@
 """Declarative file/directory apply command for writable resource kinds."""
 
 from pathlib import Path
+from typing import Annotated
 
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.cli._apply_runner import run_apply
 from untaped.capabilities.awx.cli._context import open_context
@@ -21,7 +22,7 @@ from untaped.capability_api import ColumnsOption, FormatOption, report_errors
 def _add_apply(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="apply")
     def apply_command(
-        file: Path,
+        file: Annotated[Path, Parameter(help="YAML file or directory.")],
         /,
         *,
         yes: YesOption = False,

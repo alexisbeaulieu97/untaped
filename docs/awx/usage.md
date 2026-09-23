@@ -26,7 +26,7 @@ history.
 
 The writable resource groups are job templates, workflow templates, projects,
 schedules, hosts, groups, inventories, and inventory sources. They support the
-shared `list`, `get`, `save`, `apply`, `patch`, `edit`, and `delete` lifecycle
+shared `list`, `get`, `export`, `apply`, `patch`, `edit`, and `delete` lifecycle
 where shown by their help. Credentials, credential types, organizations, and
 unified templates remain lookup or browse views. `awx jobs` inspects execution
 records and does not edit configuration.
@@ -148,7 +148,7 @@ and directory are removed after a clean session; an editor, parse, or
 validation failure retains the edited file and prints its path. Invalid YAML
 can be reopened or cancelled. A no-op editor session does not prompt or write.
 
-## Apply, save, and inventory lifecycle
+## Apply, export, and inventory lifecycle
 
 `apply FILE_OR_DIRECTORY` is the declarative create/update path. It accepts
 complete portable YAML documents, resolves dependencies, previews the full
@@ -168,8 +168,8 @@ organization-scoped kind without `metadata.organization` is scoped by
 configured, a name that exists in more than one organization is an ambiguity
 error rather than a guess. A `spec.organization` name is used as the identity
 when metadata omits one, and an explicit `metadata.organization: null` means
-the org-less record (for example a global workflow template); `save` writes
-that null for org-less records so a save/apply round trip never lands in the
+the org-less record (for example a global workflow template); `export` writes
+that null for org-less records so an export/apply round trip never lands in the
 default organization.
 
 Relationship lists (`credentials`, group `hosts`/`children`, inventory
@@ -179,16 +179,16 @@ credential that shares a type with an incoming one is removed first (AWX allows
 one per type); if the add then fails, the removed members are re-added and the
 row reports `partial`.
 
-`save` exports a fixed selection as portable YAML. Per-resource save accepts
+`export` writes a fixed selection as portable YAML. Per-resource export accepts
 `--out FILE`; without it (or with `--out=-`), YAML is written to stdout. A
 symlinked FILE is written through the link, and FIFOs or `/dev/stdout` are
 written directly. Inventory and source exports preserve organization and
 parent identity:
 
 ```bash
-untaped awx inventories save Production --organization Default \
+untaped awx inventories export Production --organization Default \
   --out inventory.yml
-untaped awx inventory-sources save Cloud --inventory Production \
+untaped awx inventory-sources export Cloud --inventory Production \
   --inventory-organization Default --out source.yml
 ```
 
@@ -219,12 +219,12 @@ cannot carry (`.nan`, `!!binary`) are a usage error.
 
 ```bash
 untaped awx job-templates launch Deploy --organization Default \
-  --extra-vars @vars.yml --extra-vars version=1.10.0 --limit web --wait
+  --extra-vars @vars.yml --extra-vars version=1.10.0 --host-pattern web --wait
 ```
 
 Before any POST, each target's `launch/` endpoint is read. A supplied flag
 whose template setting `ask_*_on_launch` is false (AWX would silently ignore
-it, for example running the whole inventory despite `--limit`) is a usage
+it, for example running the whole inventory despite `--host-pattern`) is a usage
 error naming the flag and template, unless the value equals the template's own
 (credentials: every supplied credential is already on the template), which
 AWX treats as a no-op. An empty `--extra-vars` mapping is never rejected. When
@@ -278,6 +278,9 @@ untaped awx jobs logs 101 --kind project_update
 different count or `--limit 0` for every record. `<kind> list --limit N` stops
 paging once N records are read. `--limit 0` means no limit on every awx list.
 
+`get` prints a table of the default columns; pass `--format yaml` or
+`--format json` for the complete records. `export` stays YAML by default.
+
 `--kind` accepts `job` (default), `workflow_job`, `project_update`,
 `inventory_update`, and `ad_hoc_command`. Typed records piped with `--stdin`
 (for example `launch --format pipe | untaped awx jobs wait --stdin`) carry
@@ -324,17 +327,30 @@ The old `apply --stdin --set ...` overlay interface is removed; use
 `--fail-fast` is removed; default runtime scheduling stops on failure, and
 `--continue-on-error` opts into best effort. There are no compatibility aliases.
 
+These spellings were renamed and keep working with a deprecation warning
+until 7.0:
+
+| Old | New |
+|---|---|
+| `awx save`, `awx <kind> save` | `awx export`, `awx <kind> export` |
+| `launch --limit` | `launch --host-pattern` |
+| `jobs logs -f` | `jobs logs --follow` |
+| `usage -r`, `nodes -r` | `--recursive` |
+| `inventories input_inventories`, `instance_groups` | `input-inventories`, `instance-groups` |
+
+`ping` options are keyword-only: use `awx ping -f json`, not `awx ping json`.
+
 ## Optional disposable live-AAP smoke
 
 The automated suite uses a strict HTTP fake. If you explicitly choose a
 disposable inventory and harmless source on a configured controller, run a
-smoke test like this and restore the saved files afterward:
+smoke test like this and restore the exported files afterward:
 
 ```bash
 untaped awx ping
-untaped awx inventories save Disposable --organization Default \
+untaped awx inventories export Disposable --organization Default \
   --out disposable-inventory.yml
-untaped awx inventory-sources save DisposableSource --inventory Disposable \
+untaped awx inventory-sources export DisposableSource --inventory Disposable \
   --inventory-organization Default --out disposable-source.yml
 
 untaped awx inventory-sources patch DisposableSource \

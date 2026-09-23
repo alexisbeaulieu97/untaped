@@ -44,6 +44,7 @@ from untaped.capability_api import (
     FormatOption,
     OutputFormat,
     create_app,
+    deprecated_alias,
     echo,
     emit,
     finish,
@@ -67,6 +68,7 @@ app = create_app(
 
 @app.command(name="ping")
 def ping_command(
+    *,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -137,8 +139,8 @@ def _is_raw_org_scope_filter(key: str) -> bool:
     )
 
 
-@app.command(name="save")
-def save_top_command(
+@app.command(name="export")
+def export_top_command(
     *,
     out_dir: Annotated[
         Path,
@@ -149,7 +151,7 @@ def save_top_command(
         Parameter(
             name="--all-kinds",
             negative="",
-            help="Save every saveable kind (iterate the type axis).",
+            help="Export every exportable kind (iterate the type axis).",
         ),
     ] = False,
     kind: Annotated[
@@ -157,7 +159,7 @@ def save_top_command(
         Parameter(
             name="--kind",
             help=(
-                "Limit save to a single kind. Accepts a CLI name "
+                "Limit the export to a single kind. Accepts a CLI name "
                 "(job-templates) or a domain kind (JobTemplate)."
             ),
         ),
@@ -169,10 +171,11 @@ def save_top_command(
             name="--filter",
             help=(
                 "Expert server-side filter, KEY=VALUE (repeatable). Passed "
-                "verbatim to AWX for each saved kind. For organization backups, "
+                "verbatim to AWX for each exported kind. For organization backups, "
                 "prefer --org so each kind gets a compatible scope."
             ),
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     print_paths: Annotated[
@@ -184,9 +187,9 @@ def save_top_command(
         ),
     ] = False,
 ) -> None:
-    """Bulk-save resources to a directory.
+    """Bulk-export resources to a directory.
 
-    ``save --all-kinds --out-dir DIR`` writes one file per resource
+    ``export --all-kinds --out-dir DIR`` writes one file per resource
     using the full identity in the filename so same-named records
     across organizations don't collide:
     ``<Kind>[__<org>][__<parent_kind>__[<parent_org>__]<parent_name>]__<name>.yml``.
@@ -228,6 +231,8 @@ _JOB_KIND_HELP = (
     "Hits the matching AWX collection (e.g. workflow_jobs/<id>/)."
 )
 
+
+JobIdsArgument = Annotated[list[str] | None, Parameter(help="AWX job ids.")]
 
 JobKind = Literal["job", "workflow_job", "project_update", "inventory_update", "ad_hoc_command"]
 
@@ -294,6 +299,7 @@ def jobs_list(
             name="--filter",
             help="Server-side filter, KEY=VALUE (repeatable). Forwarded verbatim.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     limit: Annotated[
@@ -301,10 +307,7 @@ def jobs_list(
         Parameter(name="--limit", help="Newest N jobs (default 20; 0 lists every job)."),
     ] = 20,
     kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
-    fmt: Annotated[
-        OutputFormat,
-        Parameter(name=["--format", "-f"], help="Output format."),
-    ] = "table",
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """List recent AWX jobs (newest first)."""
@@ -329,14 +332,15 @@ def jobs_list(
 
 @jobs_app.command(name="get")
 def jobs_get(
-    job_ids: Annotated[list[str] | None, Parameter(help="Job ID(s).")] = None,
+    job_ids: JobIdsArgument = None,
+    /,
     *,
     stdin: Annotated[
         bool,
         Parameter(name="--stdin", negative="", help="Read job ids from stdin (one per line)."),
     ] = False,
     kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
-    fmt: Annotated[OutputFormat, Parameter(name=["--format", "-f"])] = "yaml",
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Fetch one or more jobs by id."""
@@ -356,7 +360,8 @@ def jobs_get(
 
 @jobs_app.command(name="events")
 def jobs_events(
-    job_ids: Annotated[list[str] | None, Parameter(help="Job ID(s).")] = None,
+    job_ids: JobIdsArgument = None,
+    /,
     *,
     stdin: Annotated[
         bool,
@@ -376,6 +381,7 @@ def jobs_events(
             name="--filter",
             help="Server-side AWX filter, KEY=VALUE (repeatable). E.g. event=runner_on_failed.",
             consume_multiple=False,
+            negative="",
         ),
     ] = None,
     kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
@@ -516,7 +522,8 @@ def _emit_log_lines(
 
 @jobs_app.command(name="logs")
 def jobs_logs(
-    job_ids: Annotated[list[str] | None, Parameter(help="Job ID(s).")] = None,
+    job_ids: JobIdsArgument = None,
+    /,
     *,
     stdin: Annotated[
         bool,
@@ -524,7 +531,7 @@ def jobs_logs(
     ] = False,
     follow: Annotated[
         bool,
-        Parameter(name=["--follow", "-f"], negative="", help="Tail until terminal."),
+        Parameter(name="--follow", negative="", help="Tail until terminal."),
     ] = False,
     tail: Annotated[
         int | None,
@@ -541,7 +548,7 @@ def jobs_logs(
     kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
     fmt: Annotated[
         OutputFormat,
-        Parameter(name="--format", help="Output format (json|yaml|table|raw|pipe)."),
+        Parameter(name="--format", help="Output format."),
     ] = "raw",
     columns: ColumnsOption = None,
 ) -> None:
@@ -583,7 +590,8 @@ def jobs_logs(
 
 @jobs_app.command(name="wait")
 def jobs_wait(
-    job_ids: Annotated[list[str] | None, Parameter(help="Job ID(s).")] = None,
+    job_ids: JobIdsArgument = None,
+    /,
     *,
     stdin: Annotated[
         bool,
@@ -594,10 +602,7 @@ def jobs_wait(
         Parameter(name="--timeout", help="Seconds to wait before giving up (applies per id)."),
     ] = None,
     kind: Annotated[JobKind, Parameter(name="--kind", help=_JOB_KIND_HELP)] = "job",
-    fmt: Annotated[
-        OutputFormat,
-        Parameter(name=["--format", "-f"], help="Output format (json|yaml|table|raw|pipe)."),
-    ] = "table",
+    fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """Block until each named job reaches a terminal state.
@@ -632,6 +637,8 @@ def jobs_wait(
 
 
 app.command(jobs_app, name="jobs")
+deprecated_alias(app, "save", "export")
+deprecated_alias(jobs_app["logs"], "-f", "--follow")
 app.command(unified_templates_app, name="unified-templates")
 app.command(test_app, name="test")
 

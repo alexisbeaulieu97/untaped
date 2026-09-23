@@ -17,6 +17,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -39,7 +40,8 @@ from untaped.capability_api import (
 def _add_delete(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="delete")
     def delete_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,

@@ -21,6 +21,7 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
+    deprecated_alias,
     echo,
     emit,
     finish,
@@ -48,6 +49,7 @@ def register_nodes_command(parent: App) -> None:
                 ),
             ),
         ] = None,
+        /,
         *,
         stdin: Annotated[
             bool,
@@ -67,7 +69,7 @@ def register_nodes_command(parent: App) -> None:
         recursive: Annotated[
             bool,
             Parameter(
-                name=["--recursive", "-r"],
+                name="--recursive",
                 negative="",
                 help=(
                     "Expand sub-workflows: every node whose referenced "
@@ -105,6 +107,7 @@ def register_nodes_command(parent: App) -> None:
                 name="--filter",
                 help="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         fmt: FormatOption = "table",
@@ -152,3 +155,5 @@ def register_nodes_command(parent: App) -> None:
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         emit(rows, fmt=fmt, columns=cols, kind="awx.workflow_node")
         finish(any_failed)
+
+    deprecated_alias(parent["nodes"], "-r", "--recursive")

@@ -18,9 +18,10 @@ re-removing returns 204), so ``add`` and ``remove`` are safe to run
 repeatedly.
 """
 
-from typing import Any, Literal
+import re
+from typing import Annotated, Any, Literal
 
-from cyclopts import App
+from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application import ManageMembership
 from untaped.capabilities.awx.application.mutation_values import redact_error
@@ -47,6 +48,7 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     create_app,
+    deprecated_alias,
     echo,
     emit,
     finish,
@@ -59,14 +61,28 @@ def register_membership_subapp(parent_app: App, spec: AwxResourceSpec, ref: FkRe
     if not (ref.multi and ref.sub_endpoint and ref.kind):
         return
 
+    name = ref.sub_endpoint.replace("_", "-")
     sub = create_app(
-        name=ref.sub_endpoint,
+        name=name,
         help=f"Manage {ref.kind} membership on {spec.kind}.{ref.field}.",
     )
 
     _add_membership_verb(sub, spec, ref, action="associate", verb="add")
     _add_membership_verb(sub, spec, ref, action="disassociate", verb="remove")
     parent_app.command(sub)
+    if name != ref.sub_endpoint:
+        deprecated_alias(parent_app, ref.sub_endpoint, name)
+
+
+def _words(kind: str) -> str:
+    """``InstanceGroup`` -> ``instance group``."""
+    return re.sub(r"(?<!^)(?=[A-Z])", " ", kind).lower()
+
+
+def _plural_words(kind: str) -> str:
+    """``Inventory`` -> ``inventories``; ``Host`` -> ``hosts``."""
+    words = _words(kind)
+    return f"{words[:-1]}ies" if words.endswith("y") else f"{words}s"
 
 
 def _add_membership_verb(
@@ -77,17 +93,25 @@ def _add_membership_verb(
     action: Literal["associate", "disassociate"],
     verb: str,
 ) -> None:
-    preposition = "to" if action == "associate" else "from"
+    assert ref.kind is not None
+    preposition = "with" if action == "associate" else "from"
     verb_doc = "Associate" if action == "associate" else "Disassociate"
-    article = "an" if spec.kind[:1].lower() in "aeiou" else "a"
-    help_text = f"{verb_doc} {ref.kind}(s) {preposition} {article} {spec.kind}."
+    parent_noun = _words(spec.kind)
+    article = "an" if parent_noun[:1] in "aeiou" else "a"
+    members_noun = _plural_words(ref.kind)
+    help_text = f"{verb_doc} {members_noun} {preposition} {article} {parent_noun}."
 
     # Positional-only: a keyword spelling of ``parent`` would claim ``--parent``,
     # which belongs to the ``ParentOption`` scope filter below.
     @sub.command(name=verb, help=help_text)
     def cmd(
-        parent: str,
-        members: list[str] | None = None,
+        parent: Annotated[
+            str, Parameter(help=f"Name of the {parent_noun}, or its id with --by-id.")
+        ],
+        members: Annotated[
+            list[str] | None,
+            Parameter(help=f"Names of the {members_noun}, or their ids with --by-id."),
+        ] = None,
         /,
         *,
         stdin: StdinOption = False,

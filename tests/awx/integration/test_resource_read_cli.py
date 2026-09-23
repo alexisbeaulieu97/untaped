@@ -349,6 +349,28 @@ def test_get_format_table_defaults_to_list_columns(fake_aap: Any) -> None:
     assert "deploy" in result.stdout
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["job-templates", "get", "deploy", "--organization", "Default"],
+        ["jobs", "get", "501"],
+        ["unified-templates", "get", "5"],
+    ],
+)
+def test_get_defaults_to_table(fake_aap: Any, args: list[str]) -> None:
+    """Every ``get`` renders the default table unless ``--format`` says otherwise."""
+    _seed_basic(fake_aap)
+    fake_aap.seed("jobs", id=501, name="deploy", status="successful", related={})
+    fake_aap.seed("unified_job_templates", id=5, name="deploy", type="job_template", related={})
+
+    result = CliInvoker().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert "deploy" in result.stdout
+    assert "related:" not in result.stdout
+    assert not result.stdout.lstrip().startswith(("-", "{", "["))
+
+
 def test_get_format_raw_keeps_first_key_default(fake_aap: Any) -> None:
     """``get --format raw`` without ``--columns`` must keep
     the row renderer's first-key behavior so pipelines like
@@ -981,7 +1003,7 @@ def test_scope_aliases_are_advertised_on_generated_commands() -> None:
     org_scoped_commands = [
         ["job-templates", "get", "--help"],
         ["job-templates", "list", "--help"],
-        ["job-templates", "save", "--help"],
+        ["job-templates", "export", "--help"],
         ["job-templates", "delete", "--help"],
         ["projects", "sync", "--help"],
     ]

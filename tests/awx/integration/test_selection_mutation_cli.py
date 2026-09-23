@@ -73,7 +73,7 @@ def test_apply_wrong_kind_rejects_complete_batch(fake_aap: Any, tmp_path: Path) 
     assert fake_aap.get_record("projects", 10)["description"] == "old"
 
 
-@pytest.mark.parametrize("command", ["get", "list", "patch", "delete", "save"])
+@pytest.mark.parametrize("command", ["get", "list", "patch", "delete", "export"])
 def test_typed_pipe_selects_id_not_stale_name(fake_aap: Any, command: str) -> None:
     seed(fake_aap, "projects")
     extras = (
@@ -90,7 +90,7 @@ def test_typed_pipe_selects_id_not_stale_name(fake_aap: Any, command: str) -> No
     assert "target" in result.stdout
 
 
-@pytest.mark.parametrize("command", ["patch", "delete", "get", "list", "save"])
+@pytest.mark.parametrize("command", ["patch", "delete", "get", "list", "export"])
 def test_empty_pipe_is_clear_no_match(fake_aap: Any, command: str) -> None:
     seed(fake_aap, "projects")
     extras = ["--set", "description=new"] if command == "patch" else []
@@ -160,7 +160,7 @@ def test_save_multiple_ids_as_portable_documents(fake_aap: Any, tmp_path: Path) 
     fake_aap.seed("projects", id=11, name="second", organization=1, description="two")
     target = tmp_path / "saved.yml"
     result = CliInvoker().invoke(
-        app, ["projects", "save", "10", "11", "--by-id", "--out", str(target)]
+        app, ["projects", "export", "10", "11", "--by-id", "--out", str(target)]
     )
     assert result.exit_code == 0, result.output
     assert "name: target" in target.read_text()
@@ -245,7 +245,7 @@ def test_patch_secret_values_redacted_in_all_formats(fake_aap: Any, fmt: str) ->
 
 
 @pytest.mark.parametrize("cli", ["organizations", "credentials", "credential-types"])
-@pytest.mark.parametrize("verb", ["apply", "patch", "save", "delete"])
+@pytest.mark.parametrize("verb", ["apply", "patch", "export", "delete"])
 def test_readonly_kinds_reject_mutation_commands(cli: str, verb: str) -> None:
     result = CliInvoker().invoke(app, [cli, verb, "target"])
     assert result.exit_code != 0
@@ -476,7 +476,7 @@ def test_save_masks_secrets_with_preservation_placeholder(fake_aap: Any, tmp_pat
     seed(fake_aap, "job_templates")
     fake_aap.store["job_templates"][10]["webhook_key"] = "secret-for-export"
     output = tmp_path / "saved.yml"
-    result = CliInvoker().invoke(app, ["job-templates", "save", "target", "--out", str(output)])
+    result = CliInvoker().invoke(app, ["job-templates", "export", "target", "--out", str(output)])
     assert result.exit_code == 0, result.output
     assert "secret-for-export" not in output.read_text()
     assert "$encrypted$" in output.read_text()

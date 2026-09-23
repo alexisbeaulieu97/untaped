@@ -26,6 +26,7 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     UntapedError,
+    deprecated_alias,
     echo,
     emit,
     finish,
@@ -53,6 +54,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 ),
             ),
         ] = None,
+        /,
         *,
         stdin: Annotated[
             bool,
@@ -72,7 +74,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         recursive: Annotated[
             bool,
             Parameter(
-                name=["--recursive", "-r"],
+                name="--recursive",
                 negative="",
                 help=(
                     "Walk up the ancestry: every workflow that contains "
@@ -99,6 +101,7 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
                 name="--filter",
                 help="Server-side filter, KEY=VALUE (repeatable). Passed verbatim to AWX.",
                 consume_multiple=False,
+                negative="",
             ),
         ] = None,
         fmt: FormatOption = "table",
@@ -141,3 +144,5 @@ def register_usage_command(parent: App, spec: AwxResourceSpec) -> None:
         cols = list(columns) if columns else list(_DEFAULT_COLUMNS)
         emit(rows, fmt=fmt, columns=cols, kind="awx.template_usage")
         finish(any_failed)
+
+    deprecated_alias(parent["usage"], "-r", "--recursive")

@@ -16,6 +16,7 @@ from untaped.capabilities.awx.cli.options import (
     FilterOption,
     InventoryOption,
     InventoryOrganizationOption,
+    NamesArgument,
     OrganizationOption,
     ParallelOption,
     ParentOption,
@@ -30,7 +31,8 @@ from untaped.capability_api import ColumnsOption, FormatOption, report_errors
 def _add_sync(app: App, spec: AwxResourceSpec) -> None:
     @app.command(name="sync")
     def sync_command(
-        names: list[str] | None = None,
+        names: NamesArgument = None,
+        /,
         *,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,

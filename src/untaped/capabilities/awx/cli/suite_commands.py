@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 
 from untaped.capabilities.awx.cli._context import AwxContext, open_context
 from untaped.capabilities.awx.domain import Job
@@ -16,6 +16,7 @@ from untaped.capability_api import (
     ColumnsOption,
     ConfigError,
     FormatOption,
+    ParallelOption,
     create_app,
     echo,
     emit,
@@ -36,18 +37,19 @@ app = create_app(
 
 _LOG_TAIL_LINES = 40
 
-_PATHS_ARG = Annotated[list[Path], Parameter(help="Test file(s) or director(y/ies).")]
+_PATHS_ARG = Annotated[list[Path], Parameter(help="Test files, or directories of them.")]
 _CASE_OPT = Annotated[
     list[str] | None,
     Parameter(
         name="--case",
-        help="Run only the named case(s); repeat the flag.",
+        help="Run only the named cases (repeatable).",
         consume_multiple=False,
+        negative="",
     ),
 ]
 _VAR_OPT = Annotated[
     list[str] | None,
-    Parameter(name="--var", help="key=value (repeatable).", consume_multiple=False),
+    Parameter(name="--var", help="KEY=VALUE (repeatable).", consume_multiple=False, negative=""),
 ]
 _VARS_FILE_OPT = Annotated[
     list[Path] | None,
@@ -55,6 +57,7 @@ _VARS_FILE_OPT = Annotated[
         name="--vars-file",
         help="YAML file of variable values (repeatable).",
         consume_multiple=False,
+        negative="",
     ),
 ]
 _NON_INTERACTIVE_OPT = Annotated[
@@ -141,21 +144,18 @@ def _jt_scope(ctx: AwxContext, spec: AwxResourceSpec) -> dict[str, str] | None:
 @app.command(name="run")
 def run_command(
     paths: _PATHS_ARG,
+    /,
+    *,
     cases: _CASE_OPT = None,
     var: _VAR_OPT = None,
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
     parallel: Annotated[
-        int,
-        Parameter(
-            name="--parallel",
-            validator=validators.Number(gte=1),
-            help="Concurrent launch limit.",
-        ),
+        ParallelOption, Parameter(help="Maximum number of concurrent launches.")
     ] = 1,
     timeout: Annotated[
         float | None,
-        Parameter(name="--timeout", help="Per-case wait timeout (s)."),
+        Parameter(name="--timeout", help="Per-case wait timeout in seconds."),
     ] = None,
     show_logs: Annotated[
         bool,
@@ -256,6 +256,8 @@ def _print_failure_logs(ctx: AwxContext, suite: str, case: str, job_id: int) -> 
 @app.command(name="list")
 def list_command(
     paths: _PATHS_ARG,
+    /,
+    *,
     var: _VAR_OPT = None,
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
@@ -287,6 +289,8 @@ def list_command(
 @app.command(name="validate")
 def validate_command(
     paths: _PATHS_ARG,
+    /,
+    *,
     var: _VAR_OPT = None,
     vars_file: _VARS_FILE_OPT = None,
     non_interactive: _NON_INTERACTIVE_OPT = False,
