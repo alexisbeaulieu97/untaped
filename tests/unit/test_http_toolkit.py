@@ -286,6 +286,62 @@ def test_paginate_link_accepts_rfc_valid_next_link_forms(link_header: str) -> No
 
 
 @respx.mock
+def test_paginate_link_non_json_page_is_an_http_error() -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(200, text="<html>login</html>")
+    )
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo") as client,
+        pytest.raises(HttpError, match="non-JSON"),
+    ):
+        list(paginate_link(client, "/things"))
+
+
+@pytest.mark.parametrize(
+    "next_url",
+    [
+        "https://evil.example.net/things?page=2",
+        "http://api.example.com/things?page=2",
+        "https://api.example.com:8443/things?page=2",
+    ],
+)
+@respx.mock
+def test_paginate_link_refuses_cross_origin_next_link(next_url: str) -> None:
+    respx.get(url__startswith="https://api.example.com/things").mock(
+        return_value=httpx.Response(
+            200, json=[{"id": 1}], headers={"link": f'<{next_url}>; rel="next"'}
+        )
+    )
+    other = respx.route(url__startswith=next_url.split("/things")[0])
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with (
+        connected_client(config, section="demo") as client,
+        pytest.raises(HttpError, match="cross-origin"),
+    ):
+        list(paginate_link(client, "/things"))
+    assert not other.called
+
+
+@respx.mock
+def test_paginate_link_follows_relative_next_link() -> None:
+    def responder(request: httpx.Request) -> httpx.Response:
+        if httpx.QueryParams(request.url.query).get("page") == "2":
+            return httpx.Response(200, json=[{"id": 2}])
+        return httpx.Response(
+            200, json=[{"id": 1}], headers={"link": '</things?page=2>; rel="next"'}
+        )
+
+    respx.get(url__startswith="https://api.example.com/things").mock(side_effect=responder)
+    config = DemoSettings(token=SecretStr("sekret"))
+
+    with connected_client(config, section="demo") as client:
+        assert [row["id"] for row in paginate_link(client, "/things")] == [1, 2]
+
+
+@respx.mock
 def test_paginate_link_first_request_caps_page_size_to_limit() -> None:
     seen: list[str | None] = []
 
