@@ -19,7 +19,7 @@ from untaped.api import (
 )
 from untaped.capabilities.awx.cli._context import AwxContext, open_context
 from untaped.capabilities.awx.domain import Job
-from untaped.capabilities.awx.domain.test_suite import TestSuite
+from untaped.capabilities.awx.domain.suite import Suite
 from untaped.capabilities.awx.errors import AwxApiError
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -91,9 +91,9 @@ def _load_suites(
     cli_vars: dict[str, str],
     vars_files: tuple[Path, ...],
     non_interactive: bool,
-) -> list[TestSuite]:
-    from untaped.capabilities.awx.application.test.loader import LoadTestSuite  # noqa: PLC0415
-    from untaped.capabilities.awx.infrastructure.test import (  # noqa: PLC0415
+) -> list[Suite]:
+    from untaped.capabilities.awx.application.suites.loader import LoadTestSuite  # noqa: PLC0415
+    from untaped.capabilities.awx.infrastructure.suites import (  # noqa: PLC0415
         DefaultParser,
         LocalFilesystem,
         UiPrompt,
@@ -171,10 +171,10 @@ def run_command(
 ) -> None:
     """Render, resolve, launch and report on one or more test files."""
     from untaped.capabilities.awx.application import RunAction, WatchJob  # noqa: PLC0415
-    from untaped.capabilities.awx.application.test.resolver import (  # noqa: PLC0415
+    from untaped.capabilities.awx.application.suites.resolver import (  # noqa: PLC0415
         ResolveCasePayload,
     )
-    from untaped.capabilities.awx.application.test.runner import RunTestSuite  # noqa: PLC0415
+    from untaped.capabilities.awx.application.suites.runner import RunTestSuite  # noqa: PLC0415
     from untaped.capabilities.awx.cli._action_runner import report_interrupted  # noqa: PLC0415
 
     cli_vars = parse_kv_pairs(var, flag="--var")
@@ -291,7 +291,7 @@ def validate_command(
     non_interactive: _NON_INTERACTIVE_OPT = False,
 ) -> None:
     """Render + parse + resolve each case; report errors without launching."""
-    from untaped.capabilities.awx.application.test.resolver import (  # noqa: PLC0415
+    from untaped.capabilities.awx.application.suites.resolver import (  # noqa: PLC0415
         ResolveCasePayload,
     )
 
@@ -322,7 +322,7 @@ def validate_command(
     echo(f"OK — {sum(len(s.cases) for s in suites)} case(s) validated", err=True)
 
 
-def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
+def _test_case_row(suite: Suite, case_name: str) -> dict[str, Any]:
     # ``suite`` first: under ``--format raw`` (table/raw branch) the
     # first key is what pipelines feed back into the next command
     # (xargs identifier semantics). See root AGENTS.md
@@ -331,7 +331,7 @@ def _test_case_row(suite: TestSuite, case_name: str) -> dict[str, Any]:
     return {"suite": suite.name, "case": case_name, "job_template": suite.job_template}
 
 
-def _test_suite_row(suite: TestSuite) -> dict[str, Any]:
+def _test_suite_row(suite: Suite) -> dict[str, Any]:
     # Suite-level shape for --format json|yaml only (raw uses
     # _test_case_row). Kept ``suite``-first for symmetry with the raw
     # row source — the contract is documented in

@@ -1,6 +1,6 @@
 """Domain models for ``awx test`` — declarative AWX-job test suites.
 
-A :class:`TestSuite` is a parameterised matrix of launch payloads against
+A :class:`Suite` is a parameterised matrix of launch payloads against
 one job template. Each :class:`Case` is one launch; :class:`VariableSpec`
 declares an input the user supplies (CLI / vars file / interactive
 prompt). Pure domain — no I/O, no Jinja2, no httpx.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -21,7 +21,7 @@ class RefSentinel:
 
     Lives in domain because it's a domain concept (a typed reference to
     another AWX resource); the YAML constructor that builds it lives in
-    :mod:`untaped.capabilities.awx.infrastructure.test.parser`. Resolution to a numeric
+    :mod:`untaped.capabilities.awx.infrastructure.suites.parser`. Resolution to a numeric
     ID happens via :class:`FkResolver` in the resolver use case.
     """
 
@@ -86,10 +86,8 @@ class Case(BaseModel):
     assert_: dict[str, Any] | None = Field(default=None, alias="assert")
 
 
-class TestSuite(BaseModel):
+class Suite(BaseModel):
     """One ``AwxTestSuite`` document."""
-
-    __test__: ClassVar[bool] = False  # pytest: this is a domain model, not a test
 
     model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
@@ -124,10 +122,8 @@ class CaseResult(BaseModel):
     failure_reason: str | None = None
 
 
-class TestRunOutcome(BaseModel):
+class SuiteRunOutcome(BaseModel):
     """Aggregate result of a test run across all selected cases."""
-
-    __test__: ClassVar[bool] = False  # pytest: this is a domain model, not a test
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

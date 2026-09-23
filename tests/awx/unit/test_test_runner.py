@@ -8,11 +8,11 @@ from typing import Any, cast
 
 import pytest
 
-from untaped.capabilities.awx.application.test.ports import FkPrefetcher, Launcher, Watcher
-from untaped.capabilities.awx.application.test.resolver import ResolveCasePayload
-from untaped.capabilities.awx.application.test.runner import RunTestSuite
+from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
+from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
+from untaped.capabilities.awx.application.suites.runner import RunTestSuite
 from untaped.capabilities.awx.domain import Job
-from untaped.capabilities.awx.domain.test_suite import Case, TestSuite
+from untaped.capabilities.awx.domain.suite import Case, Suite
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
@@ -79,8 +79,8 @@ def _job(*, id_: int = 1000, status: str = "successful") -> Job:
     return Job.model_validate({"id": id_, "kind": "job", "name": "x", "status": status})
 
 
-def _suite(name: str, cases: dict[str, dict[str, Any]]) -> TestSuite:
-    return TestSuite(
+def _suite(name: str, cases: dict[str, dict[str, Any]]) -> Suite:
+    return Suite(
         name=name,
         job_template="JT",
         cases={k: Case.model_validate({"launch": v}) for k, v in cases.items()},
@@ -323,7 +323,7 @@ def test_prefetch_includes_defaults_top_level_fks() -> None:
     watcher = StubWatcher()
     runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher, default_org="org-a")
     defaults_case = Case.model_validate({"launch": {"inventory": "Web Inventory"}})
-    suite = TestSuite(
+    suite = Suite(
         name="s",
         job_template="JT",
         defaults=defaults_case,

@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from untaped.capabilities.awx.domain.test_suite import VariableSpec
+from untaped.capabilities.awx.domain.suite import VariableSpec
 from untaped.capabilities.awx.errors import AwxApiError
 
 if TYPE_CHECKING:
-    from untaped.capabilities.awx.application.test.ports import Prompt
+    from untaped.capabilities.awx.application.suites.ports import Prompt
 
 _TRUE = frozenset({"1", "true", "yes", "on"})
 _FALSE = frozenset({"0", "false", "no", "off"})

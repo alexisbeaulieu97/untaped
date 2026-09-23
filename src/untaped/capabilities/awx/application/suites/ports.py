@@ -1,6 +1,6 @@
 """Adapter interfaces for the ``awx test`` use cases.
 
-Concrete implementations live in :mod:`untaped.capabilities.awx.infrastructure.test`,
+Concrete implementations live in :mod:`untaped.capabilities.awx.infrastructure.suites`,
 except ``Launcher`` / ``Watcher`` (which reuse the existing
 :class:`RunAction` / :class:`WatchJob` use cases) and ``FkPrefetcher`` /
 ``FkLookup`` (narrow views of :class:`FkResolver`, implemented by
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from untaped.capabilities.awx.domain import Job, ResourceSpec
-from untaped.capabilities.awx.domain.test_suite import VariableSpec
+from untaped.capabilities.awx.domain.suite import VariableSpec
 
 
 @runtime_checkable
@@ -60,7 +60,7 @@ class Parser(Protocol):
     """Splits frontmatter, parses YAML (with ``!ref``), renders Jinja2.
 
     The concrete implementation lives in
-    :mod:`untaped.capabilities.awx.infrastructure.test.parser`; the loader takes this
+    :mod:`untaped.capabilities.awx.infrastructure.suites.parser`; the loader takes this
     via injection so the application layer never imports YAML or Jinja2
     directly.
     """

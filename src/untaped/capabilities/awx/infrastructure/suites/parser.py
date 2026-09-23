@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError, UndefinedError
 
-from untaped.capabilities.awx.domain.test_suite import RefSentinel
+from untaped.capabilities.awx.domain.suite import RefSentinel
 from untaped.capabilities.awx.errors import AwxApiError
 
 __all__ = [
@@ -168,7 +168,7 @@ def build_jinja_env() -> Environment:
 
 
 class DefaultParser:
-    """Concrete :class:`untaped.capabilities.awx.application.test.ports.Parser`.
+    """Concrete :class:`untaped.capabilities.awx.application.suites.ports.Parser`.
 
     Wraps the module-level functions plus a single Jinja2 environment so
     callers don't pay rebuild cost per file. Stateless aside from the
