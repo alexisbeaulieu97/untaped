@@ -49,6 +49,23 @@ def test_directory_walk(tmp_path: Path) -> None:
     assert kinds == ["JobTemplate", "Project"]
 
 
+def test_directory_walk_includes_yaml_extension(tmp_path: Path) -> None:
+    write_resource(tmp_path / "a.yml", _resource("JobTemplate", "deploy"))
+    write_resource(tmp_path / "b.yaml", _resource("Project", "playbooks"))
+    names = [r.metadata.name for r in read_resources(tmp_path)]
+    assert names == ["deploy", "playbooks"]
+
+
+def test_writers_emit_readable_utf8(tmp_path: Path) -> None:
+    out = tmp_path / "jt.yml"
+    r = _resource("JobTemplate", "déploiement", description="café ✓")
+    write_resource(out, r)
+    write_resources(tmp_path / "all.yml", [r])
+    assert "café ✓" in out.read_text(encoding="utf-8")
+    [back] = list(read_resources(tmp_path / "all.yml"))
+    assert back == r
+
+
 def test_header_comment_preserved_in_output(tmp_path: Path) -> None:
     out = tmp_path / "wf.yml"
     r = _resource("WorkflowJobTemplate", "pipeline")
