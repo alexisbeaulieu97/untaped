@@ -702,3 +702,37 @@ def test_cached_ref_metadata_batch_includes_missing_repos(tmp_path) -> None:
     }
     assert batch["acme/missing"] == ()
     assert index.cached_ref_metadata_batch(["acme/site"], source_key=None) == {"acme/site": ()}
+
+
+def test_index_creates_missing_parent_directories(tmp_path) -> None:
+    db_path = tmp_path / "missing" / "nested" / "index.sqlite3"
+
+    assert SqliteDependencyIndex(db_path).status("source:prod") is None
+    assert db_path.is_file()
+
+
+def test_unopenable_index_raises_untaped_error(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    db_path.mkdir()
+
+    with pytest.raises(UntapedError, match=str(db_path)):
+        SqliteDependencyIndex(db_path).status("source:prod")
+
+
+def test_newer_schema_version_is_not_reported_as_outdated(tmp_path) -> None:
+    db_path = tmp_path / "index.sqlite3"
+    db = sqlite3.connect(db_path)
+    try:
+        db.execute(f"pragma user_version = {SCHEMA_VERSION + 1}")
+        db.execute("create table source_runs (source_key text primary key)")
+        db.commit()
+    finally:
+        db.close()
+
+    with pytest.raises(UntapedError) as excinfo:
+        SqliteDependencyIndex(db_path).status("source:prod")
+
+    message = str(excinfo.value)
+    assert "outdated" not in message
+    assert "newer" in message
+    assert str(db_path) in message

@@ -371,6 +371,30 @@ def test_alias_add_list_remove_updates_config(
     assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("aliases") is None
 
 
+def test_alias_add_rejects_non_owner_repo_target(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["alias", "add", "foo", "bar"])
+
+    assert result.exit_code == 1
+    assert "owner/name" in result.stderr
+    assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("aliases") is None
+
+
+def test_alias_add_warns_that_saved_sources_need_refresh(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(
+        tmp_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["alias", "add", "common", "acme/common"])
+
+    assert result.exit_code == 0, result.output
+    assert "untaped ansible source refresh" in result.stderr
+
+
 def test_alias_list_table_honours_global_collection_view_list(
     tmp_path: Path,
     monkeypatch,

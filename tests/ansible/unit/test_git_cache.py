@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from untaped.api import UntapedError
 from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
@@ -202,4 +203,13 @@ def test_read_file_returns_none_only_for_missing_paths(monkeypatch, tmp_path: Pa
             "abc123",
             "roles/requirements.yml",
             auth_header=None,
+        )
+
+
+def test_git_cache_errors_are_untaped_errors(monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    with pytest.raises(UntapedError, match="not found on PATH"):
+        GitRepositoryCache().ls_remote(
+            "https://github.com/acme/site.git", patterns=["HEAD"], auth_header=None
         )

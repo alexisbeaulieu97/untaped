@@ -18,6 +18,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SourceIndexStatus,
     SourceRepoMetadata,
 )
+from untaped.capabilities.ansible.errors import DependencyIndexError
 from untaped.capabilities.ansible.infrastructure.sqlite_rows import (
     dump_dt,
     edge_from_row,
@@ -34,6 +35,7 @@ class SqliteDependencyIndex:
         self._path = path.expanduser()
         self._schema_lock = Lock()
         self._schema_ready = False
+        self._parent_ready = False
 
     def ref_scans(
         self,
@@ -86,11 +88,10 @@ class SqliteDependencyIndex:
         failed_repos: frozenset[str] = frozenset(),
     ) -> None:
         """Commit a refresh; ``scans`` must be unique per (source_key, source_repo,
-        ref_kind, source_ref) -- duplicates raise IntegrityError inside the
+        ref_kind, source_ref) -- duplicates fail (DependencyIndexError) inside the
         transaction instead of last-wins. Cached refs and repo metadata for
         ``failed_repos`` are preserved even though they are absent from
         ``keep``."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             _replace_ref_scans(db, scans)
             _touch_ref_scans(db, touches)
@@ -116,7 +117,6 @@ class SqliteDependencyIndex:
         """Commit processed repos without marking the whole source fresh."""
         if progress_statuses and source_fingerprint is None:
             raise ValueError("source_fingerprint is required when progress_statuses are provided")
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             _replace_ref_scans(db, scans)
             _touch_ref_scans(db, touches)
@@ -134,7 +134,6 @@ class SqliteDependencyIndex:
         scanned_at: datetime,
     ) -> None:
         """Mark a source refresh complete and prune repos outside the expanded source."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             _prune_source_refs_to_repos(db, source_key, source_repos)
             _prune_source_repo_metadata_to_repos(db, source_key, source_repos)
@@ -148,7 +147,6 @@ class SqliteDependencyIndex:
         source_fingerprint: str,
     ) -> dict[str, str]:
         """Return processed repo statuses for the current refresh fingerprint."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             db.execute(
                 """
@@ -386,6 +384,14 @@ class SqliteDependencyIndex:
         return results
 
     def _connect(self) -> sqlite3.Connection:
+        if not self._parent_ready:
+            try:
+                self._path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise DependencyIndexError(
+                    f"cannot create index directory {self._path.parent}: {exc}"
+                ) from exc
+            self._parent_ready = True
         db = sqlite3.connect(self._path)
         db.row_factory = sqlite3.Row
         return db
@@ -400,11 +406,16 @@ class SqliteDependencyIndex:
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
-        db = self._connect()
+        try:
+            db = self._connect()
+        except sqlite3.Error as exc:
+            raise DependencyIndexError(f"cannot open index {self._path}: {exc}") from exc
         try:
             with db:
                 self._ensure_schema(db)
                 yield db
+        except sqlite3.Error as exc:
+            raise DependencyIndexError(f"index {self._path} failed: {exc}") from exc
         finally:
             db.close()
 
