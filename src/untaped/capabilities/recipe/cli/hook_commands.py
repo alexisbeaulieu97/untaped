@@ -19,6 +19,7 @@ from untaped.api import (
     finish,
     parse_kv_pairs,
     ui_context,
+    unified_diff_text,
 )
 from untaped.capabilities.recipe.application.run_hook import (
     AmbiguousHookVerbError,
@@ -37,8 +38,7 @@ from untaped.capabilities.recipe.cli.common import (
 )
 from untaped.capabilities.recipe.domain.hook_project import HookKind, read_hook_metadata
 from untaped.capabilities.recipe.domain.paths import is_path_ref
-from untaped.capabilities.recipe.domain.plan import FileChange, Verdict
-from untaped.capabilities.recipe.infrastructure.diff import unified_diff
+from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import (
     HookExecutionError,
     HookExecutor,
@@ -208,13 +208,10 @@ def _run_transform(
     _print_hook_diagnostics(execution.diagnostics)
     _print_hook_warnings(execution.warnings)
     diff_text = (
-        unified_diff(
-            FileChange(
-                target=execution.target,
-                relative_path=execution.relative_file,
-                before=execution.before,
-                after=execution.content,
-            )
+        unified_diff_text(
+            execution.before,
+            execution.content,
+            path=execution.relative_file.as_posix(),
         )
         if diff
         else None

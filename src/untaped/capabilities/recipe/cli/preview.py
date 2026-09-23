@@ -6,11 +6,10 @@ import difflib
 from pathlib import Path
 from typing import Literal
 
-from untaped.api import echo, render_rows, ui_context
+from untaped.api import echo, render_rows, ui_context, unified_diff_text
 from untaped.capabilities.recipe.application.inputs import has_sensitive_inputs
 from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe.infrastructure.diff import unified_diff
 
 PreviewMode = Literal["table", "diff", "none"]
 
@@ -64,7 +63,9 @@ def _render_diff_preview(recipe: Recipe, plans: list[TargetPlan]) -> None:
     for plan in diffable_plans:
         target = _display_target(plan)
         for change in plan.changes:
-            diff = unified_diff(change)
+            diff = unified_diff_text(
+                change.before, change.after, path=change.relative_path.as_posix()
+            )
             if diff:
                 echo(f"# {target}", err=True)
                 echo(diff, err=True, nl=False)
