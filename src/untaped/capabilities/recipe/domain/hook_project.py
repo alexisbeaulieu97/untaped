@@ -131,21 +131,6 @@ def normalize_hook_name(name: str) -> str:
     return normalized
 
 
-def project_name_for_hook(name: str) -> str:
-    """Return the hook library project directory for a public hook name."""
-    return normalize_hook_name(name).split(".", maxsplit=1)[0]
-
-
-def project_name_from_metadata(metadata: HookProjectMetadata) -> str:
-    """Return the single library project directory implied by hook metadata."""
-    if not metadata.hooks:
-        raise ValueError("hook project must declare at least one hook")
-    project_names = {project_name_for_hook(public_name) for public_name in metadata.hooks}
-    if len(project_names) != 1:
-        raise ValueError("hook project hooks must share the same namespace")
-    return next(iter(project_names))
-
-
 def read_hook_metadata(project_root: Path) -> HookProjectMetadata:
     """Read hook metadata from a uv hook project's pyproject."""
     pyproject = project_root / "pyproject.toml"

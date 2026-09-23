@@ -18,7 +18,7 @@ from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS, Builtin
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
 from untaped.capabilities.recipe.domain.plan import FileChange
-from untaped.capabilities.recipe.infrastructure.backup import BackupStore
+from untaped.capabilities.recipe.infrastructure.backup import BackupDraft, BackupStore
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.testing import CliInvoker, assert_destructive_contract
 
@@ -3493,7 +3493,8 @@ def test_backup_commands_show_list_and_restore(tmp_path: Path) -> None:
     config = target / "config.yml"
     config.write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={"service": "api"},
         changes=[
@@ -3532,7 +3533,8 @@ def test_backup_restore_refuses_non_tty_without_yes_and_restores_with_yes(
     config = target / "config.yml"
     config.write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3568,7 +3570,8 @@ def test_backup_restore_failing_item_exits_nonzero(
     first.write_text("one-before\n")
     second.write_text("two-before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3625,7 +3628,7 @@ def test_backup_restore_flushes_bundle_in_one_transaction(
             )
         )
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(recipe_name="demo", inputs={}, changes=changes)
+    bundle = _create_backup(store, recipe_name="demo", inputs={}, changes=changes)
     for name in ("one.txt", "two.txt", "three.txt"):
         (target / name).write_text(f"{name}-after\n")
 
@@ -3899,7 +3902,8 @@ def test_backup_show_renders_files_as_lines(tmp_path: Path) -> None:
     target.mkdir()
     (target / "config.yml").write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -3949,7 +3953,8 @@ def test_backup_restore_decline_prints_no_success(
     target.mkdir()
     (target / "config.yml").write_text("before\n")
     store = BackupStore(library_root() / "backups")
-    bundle = store.create(
+    bundle = _create_backup(
+        store,
         recipe_name="demo",
         inputs={},
         changes=[
@@ -4093,3 +4098,15 @@ def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
     assert result.exit_code != 0
     assert "--rev is only valid for git URL sources" in result.stderr
     assert not (library_root() / "packs" / "demo").exists()
+
+
+def _create_backup(
+    store: BackupStore,
+    *,
+    recipe_name: str,
+    inputs: dict[str, object],
+    changes: list[FileChange],
+) -> BackupDraft:
+    draft = store.start(recipe_name=recipe_name, inputs=inputs)
+    draft.commit(draft.stage(changes, inputs=inputs))
+    return draft

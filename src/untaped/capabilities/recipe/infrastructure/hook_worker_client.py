@@ -551,9 +551,6 @@ class UvHookWorker:
             return f"{message}\n{diagnostics}"
         return message
 
-    def _discard_diagnostics(self) -> None:
-        self._drain_diagnostics(limit=APPLY_DIAGNOSTIC_LIMIT)
-
     def _drain_diagnostics(
         self,
         *,

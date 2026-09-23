@@ -36,7 +36,6 @@ from untaped.capabilities.recipe.application.resolution import (
     existing_path_hint,
     resolve_apply_recipe,
 )
-from untaped.capabilities.recipe.application.run_bulk import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.application.targets import Target, resolve_target_lines
 from untaped.capabilities.recipe.builtins.registry import BUILTIN_HOOKS
 from untaped.capabilities.recipe.cli.backup_commands import app as backup_app
@@ -68,6 +67,7 @@ from untaped.capabilities.recipe.infrastructure import (
     pack_scaffold,
 )
 from untaped.capabilities.recipe.infrastructure.backup import BackupDraft
+from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import (
     InstalledPack,
