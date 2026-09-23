@@ -211,6 +211,19 @@ can route all three streams to a controlling terminal to protect piped stdout.
 The capability owns terminal requirements, temporary-file permissions, validation,
 and cleanup. Launch failures raise `ConfigError`.
 
+`run_git(args, *, timeout, cwd=None, capture=False, stdin=None, check=True,
+auth_header=None, auth_url=None, retry_transient=False, ...)` runs one `git`
+command non-interactively: stdin closed, terminal and credential-manager prompts
+disabled, ssh in `BatchMode` unless the user configured ssh, C locale, and
+inherited `GIT_DIR`-style variables dropped. It returns a `GitResult` and raises
+`GitCommandError` (with `returncode`, `timed_out`, and redacted `stderr`) on a
+missing binary, timeout, or non-zero exit. An `auth_header` (see
+`git_auth_header(token)`) reaches git only through a private, temporary include
+file, is redacted from errors, and disables Git trace variables.
+`retry_transient=True` retries transport failures of idempotent network commands
+with backoff. `safe_cache_path(url, root=...)` and `safe_path_segment(value)`
+give deterministic cache paths that cannot escape `root`.
+
 Use a provider's own dependency for domain-specific HTTP or filesystem adapters;
 do not reach into `untaped` internals to obtain an unexported helper. Shared
 settings, UI, error, and output behavior should use the stable exports. For
