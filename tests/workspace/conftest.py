@@ -70,6 +70,9 @@ def empty_manifest() -> WorkspaceManifest:
     return WorkspaceManifest()
 
 
+_DEFAULT_STATUS = RepoStatus(branch="main", upstream="origin/main")
+
+
 class StubGit:
     """Stub satisfying the ``GitRunner`` port for unit tests."""
 
@@ -129,7 +132,7 @@ class StubGit:
         self.events.append(("status", repo_path.name))
         if repo_path.name in self._status_fail:
             raise GitError("status failed")
-        return self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        return self._statuses.get(repo_path.name, _DEFAULT_STATUS)
 
     def prune_blockers(self, repo_path: Path) -> tuple[str, ...]:
         self.events.append(("prune_blockers", repo_path.name))
@@ -137,7 +140,7 @@ class StubGit:
             raise GitError("status failed")
         if repo_path.name in self._prune_blockers:
             return self._prune_blockers[repo_path.name]
-        status = self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        status = self._statuses.get(repo_path.name, _DEFAULT_STATUS)
         if status.dirty:
             return (DIRTY_WORKTREE_BLOCKER,)
         if status.ahead:
@@ -153,7 +156,7 @@ class StubGit:
         self.events.append(("checkout", repo_path.name, branch))
         if repo_path.name in self._checkout_fail:
             raise GitError("checkout failed")
-        current = self._statuses.get(repo_path.name, RepoStatus(branch="main"))
+        current = self._statuses.get(repo_path.name, _DEFAULT_STATUS)
         self._statuses[repo_path.name] = current.model_copy(update={"branch": branch})
 
 

@@ -294,6 +294,11 @@ Reconcile each repo on disk with the manifest:
 | `unmatched`  | `--all --repo <repo>` was passed and `<repo>` isn't in this workspace's manifest — `repo` carries the unmatched identifier. |
 | `unavailable` | `--all` hit a registered workspace whose manifest could not be read — `repo` is empty and `detail` explains the manifest failure. |
 
+A `pull` fast-forwards the checked-out branch to its configured upstream
+(`@{upstream}`), which need not be `origin/<same name>`. A branch with
+no upstream is skipped with `no upstream` rather than reported as up to
+date.
+
 `sync` exits `1` when any row is `failed` (after printing every row), so
 scripts and CI notice a clone or fetch that did not happen; `skip` rows
 alone keep exit `0`. `add --sync` and `import --sync` follow the same

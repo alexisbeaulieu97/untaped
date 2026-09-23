@@ -79,6 +79,19 @@ def test_skips_declared_dir_without_git_metadata(tmp_path: Path) -> None:
     assert git.events == []
 
 
+def test_skips_branch_without_upstream(tmp_path: Path) -> None:
+    workspace = _seed_workspace(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/svc-a.git")]),
+    )
+    (workspace.path / "svc-a" / ".git").mkdir(parents=True)
+    git = StubGit(statuses={"svc-a": RepoStatus(branch="local-only", upstream=None)})
+    outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
+    assert outcomes[0].action == "skip"
+    assert outcomes[0].detail == "no upstream"
+    assert not any(e[0] == "pull" for e in git.events)
+
+
 def test_skips_dirty_existing_repo(tmp_path: Path) -> None:
     workspace = _seed_workspace(
         tmp_path,
@@ -87,7 +100,7 @@ def test_skips_dirty_existing_repo(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(
         on_disk=["svc-a"],
-        statuses={"svc-a": RepoStatus(branch="main", modified=2)},
+        statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", modified=2)},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
@@ -102,7 +115,7 @@ def test_skips_diverged_repo(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(
         on_disk=["svc-a"],
-        statuses={"svc-a": RepoStatus(branch="main", ahead=2, behind=3)},
+        statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", ahead=2, behind=3)},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "skip"
@@ -135,7 +148,7 @@ def test_pulls_when_behind_clean(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(
         on_disk=["svc-a"],
-        statuses={"svc-a": RepoStatus(branch="main", behind=3)},
+        statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", behind=3)},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "pull"
@@ -151,7 +164,7 @@ def test_up_to_date(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(
         on_disk=["svc-a"],
-        statuses={"svc-a": RepoStatus(branch="main")},
+        statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main")},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
     assert outcomes[0].action == "up-to-date"
@@ -290,8 +303,8 @@ def test_prune_removes_orphaned_clones(tmp_path: Path) -> None:
     git = StubGit(
         on_disk=["svc-a", "svc-old"],
         statuses={
-            "svc-a": RepoStatus(branch="main"),
-            "svc-old": RepoStatus(branch="main"),
+            "svc-a": RepoStatus(branch="main", upstream="origin/main"),
+            "svc-old": RepoStatus(branch="main", upstream="origin/main"),
         },
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
@@ -313,7 +326,7 @@ def test_prune_skips_dirty_orphan(tmp_path: Path) -> None:
 
     git = StubGit(
         on_disk=["svc-old"],
-        statuses={"svc-old": RepoStatus(branch="main", modified=1)},
+        statuses={"svc-old": RepoStatus(branch="main", upstream="origin/main", modified=1)},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(
         workspace, prune=True
@@ -550,7 +563,7 @@ def test_pull_failure_yields_failed(tmp_path: Path) -> None:
     (workspace.path / "svc-a" / ".git").mkdir(parents=True)
     git = StubGit(
         on_disk=["svc-a"],
-        statuses={"svc-a": RepoStatus(branch="main", behind=3)},
+        statuses={"svc-a": RepoStatus(branch="main", upstream="origin/main", behind=3)},
         pull_fail={"svc-a"},
     )
     outcomes = SyncWorkspace(ManifestRepository(), git, fs=_FS, cache_dir=tmp_path)(workspace)
