@@ -774,3 +774,13 @@ def test_path_ref_helper_classifies_dot_forms() -> None:
         assert is_path_ref(value), value
     for value in ("pack", "pack/recipe", "x.yml", ".hidden"):
         assert not is_path_ref(value), value
+
+
+def test_list_empty_library_hint_only_in_table_format(tmp_path: Path) -> None:
+    table = CliInvoker().invoke(app, ["list"])
+    as_json = CliInvoker().invoke(app, ["list", "--format", "json"])
+
+    assert table.exit_code == 0, table.output
+    assert "untaped recipe new pack NAME" in table.stderr
+    assert as_json.exit_code == 0, as_json.output
+    assert "no packs installed" not in as_json.stderr
