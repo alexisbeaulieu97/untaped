@@ -52,7 +52,9 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                 consume_multiple=False,
             ),
         ] = None,
-        limit: Annotated[int | None, Parameter(name="--limit", help="Cap result count.")] = None,
+        limit: Annotated[
+            int | None, Parameter(name="--limit", help="Cap result count (0 = no limit).")
+        ] = None,
         stdin: StdinOption = False,
         by_id: ByIdOption = False,
         organization: OrganizationOption = None,
@@ -75,6 +77,8 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
         """List a complete selection by names, IDs, typed input, or query."""
         if limit is not None and limit < 0:
             raise_usage("--limit must be non-negative")
+        # ``--limit 0`` means "no limit", as it does for ``jobs list``.
+        limit = limit or None
         with report_errors(), open_context() as ctx:
             with (
                 ctx.progress_ui().progress(f"Loading {spec.kind}…")
@@ -95,6 +99,7 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                     inventory=inventory,
                     inventory_organization=inventory_organization,
                     parent=parent,
+                    limit=limit,
                 )
             records = [item.record for item in selected]
             if limit is not None:

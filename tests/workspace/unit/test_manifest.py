@@ -215,3 +215,50 @@ def test_manifest_repos_in_place_setitem_raises() -> None:
     m = WorkspaceManifest(repos=[Repo(url="https://x/a.git")])
     with pytest.raises(TypeError):
         m.repos[0] = Repo(url="https://x/b.git")  # type: ignore[index]
+
+
+# ---- repo names are single safe path segments -------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "..",
+        ".",
+        "../escape",
+        "a/b",
+        "/etc",
+        "a\\b",
+        "C:\\evil",
+        "c:",
+        "nul\0byte",
+        "untaped.yml",
+        "UNTAPED.YML",
+    ],
+)
+def test_repo_rejects_unsafe_names(name: str) -> None:
+    with pytest.raises(ValidationError, match="repo name"):
+        Repo(url="https://github.com/org/svc-a.git", name=name)
+
+
+@pytest.mark.parametrize("url", ["https://evil.example/org/..", "https://evil.example/"])
+def test_repo_rejects_urls_deriving_unsafe_names(url: str) -> None:
+    with pytest.raises(ValidationError, match="repo name"):
+        Repo(url=url)
+
+
+def test_manifest_rejects_repo_names_differing_only_by_case() -> None:
+    with pytest.raises(ValidationError, match="duplicate repo name"):
+        WorkspaceManifest(
+            repos=[
+                Repo(url="https://github.com/a/api.git", name="api"),
+                Repo(url="https://github.com/b/api.git", name="API"),
+            ]
+        )
+
+
+def test_derive_repo_name_handles_windows_paths() -> None:
+    assert derive_repo_name("C:\\repos\\svc-a.git") == "svc-a"
+    assert derive_repo_name("C:/repos/svc-b") == "svc-b"
+    assert derive_repo_name("\\\\server\\share\\svc-c.git") == "svc-c"
+    assert derive_repo_name("git@github.com:org\\svc-d.git") == "svc-d"

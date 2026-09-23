@@ -1110,10 +1110,9 @@ def test_apply_warns_on_unrecognized_field_but_passes_it_through() -> None:
     assert patch_payload == {"future_field": "x"}  # passed through, sparse
 
 
-def test_apply_to_existing_does_not_warn_on_unrecognized_field() -> None:
-    """The single-resource adapter leaves warnings to its batch planner.
-    over the shared overlay, so ``apply_to_existing`` must NOT warn per item
-    (else an N-item mass-patch would repeat the warning N times)."""
+def test_batch_prepare_warns_once_per_unrecognized_field_set() -> None:
+    """Every CLI path (apply/patch/edit) prepares through the engine, so the
+    warning lives there, deduplicated so an N-item mass-patch warns once."""
     existing = {"id": 42, "name": "playbooks", "organization": 1, "scm_type": "git"}
     strategy = _StubStrategy(existing=existing)
     warnings: list[str] = []
@@ -1128,8 +1127,11 @@ def test_apply_to_existing_does_not_warn_on_unrecognized_field() -> None:
         metadata=Metadata(name="playbooks", organization="Default"),
         spec={"future_field": "x"},
     )
-    apply.apply_to_existing(resource, existing, write=True)
-    assert warnings == []
+    other_existing = {**existing, "id": 43, "name": "roles"}
+    other = resource.model_copy(update={"metadata": Metadata(name="roles", organization="Default")})
+    apply.engine.prepare([resource, other], mode="patch", existing=[existing, other_existing])
+    assert len(warnings) == 1
+    assert "future_field" in warnings[0]
 
 
 def test_apply_does_not_warn_on_known_or_handled_fields() -> None:

@@ -82,9 +82,10 @@ def test_clone_with_reference(tmp_path: Path, upstream: Path) -> None:
     workspace = tmp_path / "ws"
     runner.clone_with_reference(url=f"file://{upstream}", dest=workspace / "svc-a", bare=bare)
     assert (workspace / "svc-a" / ".git").is_dir()
-    # Reference points to the bare's objects
+    # The cache only accelerates the clone: objects are copied in
+    # (``--dissociate``) so later cache pruning/gc can't corrupt it.
     alt = workspace / "svc-a" / ".git" / "objects" / "info" / "alternates"
-    assert alt.is_file()
+    assert not alt.exists()
 
 
 def test_clone_with_reference_specific_branch(tmp_path: Path, upstream: Path) -> None:
@@ -557,3 +558,129 @@ def test_read_current_branch_returns_none_when_detached(tmp_path: Path, upstream
         capture_output=True,
     )
     assert runner.read_current_branch(ws) is None
+
+
+# ── hardening ────────────────────────────────────────────────────────────────
+
+
+def _push_upstream_commit(upstream: Path, tmp_path: Path, name: str) -> str:
+    seed = tmp_path / f"_seed_{name}"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    _configure_identity(seed)
+    _commit(seed, f"{name}.txt", name, name)
+    _git(seed, "push", "origin", "main")
+    sha = _git(seed, "rev-parse", "HEAD").stdout.strip()
+    shutil.rmtree(seed)
+    return sha
+
+
+def test_bare_fetch_refreshes_branches_pushed_after_cache_exists(
+    tmp_path: Path, upstream: Path
+) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    new_sha = _push_upstream_commit(upstream, tmp_path, "later")
+
+    runner.bare_fetch(bare)
+
+    assert _git(bare, "rev-parse", "refs/heads/main").stdout.strip() == new_sha
+
+
+def test_git_does_not_fall_through_to_enclosing_repo(tmp_path: Path) -> None:
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    _git(outer, "init", "--quiet")
+    inner = outer / "not-a-clone"
+    inner.mkdir()
+
+    with pytest.raises(GitError):
+        GitRunner().status(inner)
+
+
+def test_git_failure_message_omits_argv_paths(tmp_path: Path) -> None:
+    dest = tmp_path / "ws" / "svc-a"
+    bare = tmp_path / "bare.git"
+    with pytest.raises(GitError) as excinfo:
+        GitRunner().clone_with_reference(
+            url=f"file://{tmp_path / 'missing.git'}", dest=dest, bare=bare
+        )
+    message = str(excinfo.value)
+    assert message.startswith("git clone failed: ")
+    assert str(dest) not in message
+    assert "--reference" not in message
+
+
+def test_status_reports_upstream(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    assert runner.status(ws).upstream == "origin/main"
+
+    _git(ws, "checkout", "-b", "local-only")
+    assert runner.status(ws).upstream is None
+
+
+def test_ff_only_pull_uses_configured_upstream(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _git(ws, "checkout", "-b", "work", "--track", "origin/main")
+    new_sha = _push_upstream_commit(upstream, tmp_path, "upstream-change")
+    runner.fetch(ws)
+
+    runner.ff_only_pull(ws, branch="work")
+
+    assert _git(ws, "rev-parse", "HEAD").stdout.strip() == new_sha
+
+
+def test_has_branch_checks_local_and_origin(tmp_path: Path, upstream: Path) -> None:
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    ws = tmp_path / "ws" / "svc-a"
+    runner.clone_with_reference(url=f"file://{upstream}", dest=ws, bare=bare)
+    _git(ws, "branch", "local-only")
+
+    assert runner.has_branch(ws, branch="main") is True
+    assert runner.has_branch(ws, branch="local-only") is True
+    _git(ws, "checkout", "--quiet", "local-only")
+    _git(ws, "branch", "-D", "main")
+    assert runner.has_branch(ws, branch="main") is True  # origin/main
+    assert runner.has_branch(ws, branch="mian") is False
+
+
+def test_clone_survives_cache_prune_and_gc_of_deleted_branch(
+    tmp_path: Path, upstream: Path
+) -> None:
+    """Objects only reachable from a deleted cache branch must not break clones."""
+    seed = tmp_path / "_seed_gc"
+    subprocess.run(["git", "clone", str(upstream), str(seed)], check=True, capture_output=True)
+    _configure_identity(seed)
+    _git(seed, "checkout", "-b", "feature")
+    _commit(seed, "feature.txt", "f", "feature work")
+    _git(seed, "push", "origin", "feature")
+
+    runner = GitRunner()
+    url = f"file://{upstream}"
+    bare = runner.ensure_bare(url, cache_dir=tmp_path / "cache").path
+    runner.bare_fetch(bare)
+    clone = tmp_path / "ws" / "svc"
+    runner.clone_with_reference(url=url, dest=clone, bare=bare, branch="feature")
+
+    _git(seed, "push", "origin", "--delete", "feature")
+    runner.bare_fetch(bare)
+    _git(bare, "gc", "--prune=now")
+
+    assert _git(clone, "fsck", "--full", check=False).returncode == 0
+    assert _git(clone, "log", "-1", "--format=%s").stdout.strip() == "feature work"
+
+
+def test_bare_cache_disables_auto_gc_and_pruning(tmp_path: Path, upstream: Path) -> None:
+    """Clones made before ``--dissociate`` still borrow cache objects."""
+    runner = GitRunner()
+    bare = runner.ensure_bare(f"file://{upstream}", cache_dir=tmp_path / "cache").path
+    _git(bare, "config", "--unset", "gc.pruneExpire", check=False)
+    runner.bare_fetch(bare)
+    assert _git(bare, "config", "gc.pruneExpire").stdout.strip() == "never"
+    assert _git(bare, "config", "gc.auto").stdout.strip() == "0"

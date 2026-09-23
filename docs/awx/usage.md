@@ -16,6 +16,10 @@ printf '%s\n' "$AAP_TOKEN" | untaped config set awx.token --stdin
 untaped awx ping
 ```
 
+`ping` reads the unauthenticated `/ping/` health endpoint and then `/me/`, so
+a rejected token fails the command; the output includes the authenticated
+`user`.
+
 Use `untaped --profile <name> awx ...` to select a different configured
 profile. Tokens are secret settings; do not put them in a manifest or command
 history.
@@ -66,8 +70,16 @@ stdout, while previews, prompts, progress, and warnings go to stderr.
 `patch` changes existing resources only. Repeat `--set KEY=VALUE` or provide a
 YAML/JSON mapping with `--patch-file`; `--set` wins when both specify a field.
 Values use JSON coercion when possible (`true`, `false`, numbers, arrays,
-objects, and `null`). A supplied value replaces that top-level field, and an
+objects, and `null`), except that a field the selected record holds as a string
+stays a string unless the value is a JSON object or array (`scm_branch=1.10`
+stays `"1.10"`). A supplied value replaces that top-level field, and an
 omitted field is unchanged. Nested objects are not implicitly merged.
+
+An unknown field name that closely matches a known field is rejected as a
+likely typo (`verbostiy=2` exits 2 with "did you mean verbosity?" before any
+request); pass `--allow-unknown-fields` to send it anyway. Other unknown names
+(for example a field a newer AWX added) are sent, and `apply`, `patch`, and
+`edit` all warn on stderr when a document carries unknown fields.
 
 ```bash
 untaped awx inventory-sources patch \
@@ -147,9 +159,31 @@ untaped awx apply ./awx-specs --dry-run
 untaped awx inventories apply ./inventory.yml --yes
 ```
 
+A directory contributes every `*.yml` and `*.yaml` file, so keep other YAML
+(for example CI or vars files) out of it; a file that cannot be read or parsed,
+or holds an unknown or unexpected kind, fails the apply with its path named.
+A document of an
+organization-scoped kind without `metadata.organization` is scoped by
+`awx.default_organization`, as selection and `awx test` are. With no default
+configured, a name that exists in more than one organization is an ambiguity
+error rather than a guess. A `spec.organization` name is used as the identity
+when metadata omits one, and an explicit `metadata.organization: null` means
+the org-less record (for example a global workflow template); `save` writes
+that null for org-less records so a save/apply round trip never lands in the
+default organization.
+
+Relationship lists (`credentials`, group `hosts`/`children`, inventory
+`instance_groups`) are replaced by adding new members before removing old
+ones, so a refused add never leaves a template without its credentials. Only a
+credential that shares a type with an incoming one is removed first (AWX allows
+one per type); if the add then fails, the removed members are re-added and the
+row reports `partial`.
+
 `save` exports a fixed selection as portable YAML. Per-resource save accepts
-`--out FILE`; without it, YAML is written to stdout. Inventory and source
-exports preserve organization and parent identity:
+`--out FILE`; without it (or with `--out=-`), YAML is written to stdout. A
+symlinked FILE is written through the link, and FIFOs or `/dev/stdout` are
+written directly. Inventory and source exports preserve organization and
+parent identity:
 
 ```bash
 untaped awx inventories save Production --organization Default \
@@ -169,6 +203,38 @@ constructed inventory and its generated source share `source_vars`,
 conflicting values for those fields through the two resources. Workflow
 template exports are partial: their node graph and edges are not round-tripped.
 
+## Launch templates
+
+`launch` submits job or workflow templates. `--extra-vars` is repeatable and
+merged left to right into one mapping sent as JSON:
+
+- `KEY=VAL`: only `true`/`false`/`null`, integers (`count=2`), and JSON
+  objects or arrays (`tags=["a"]`) are decoded; everything else is kept as the
+  typed string (`region=us-east`, `version=1.10`, `ratio=1.5`, `n=1e3`).
+- `@PATH`: a YAML or JSON mapping file (`.json` parses as JSON).
+- A raw JSON or YAML mapping: `'{"region": "eu"}'` or `'region: eu'`.
+
+YAML dates and timestamps are sent as ISO strings (`2024-01-01`). Values JSON
+cannot carry (`.nan`, `!!binary`) are a usage error.
+
+```bash
+untaped awx job-templates launch Deploy --organization Default \
+  --extra-vars @vars.yml --extra-vars version=1.10.0 --limit web --wait
+```
+
+Before any POST, each target's `launch/` endpoint is read. A supplied flag
+whose template setting `ask_*_on_launch` is false (AWX would silently ignore
+it, for example running the whole inventory despite `--limit`) is a usage
+error naming the flag and template, unless the value equals the template's own
+(credentials: every supplied credential is already on the template), which
+AWX treats as a no-op. An empty `--extra-vars` mapping is never rejected. When
+the template has a survey but does not prompt for variables, `--extra-vars`
+may carry only the survey's variables; others are a usage error naming them.
+Missing required survey variables (`variables_needed_to_start`) are reported
+the same way. If AWX still lists
+`ignored_fields` in a launch response, that row fails with the ignored field
+names and keeps the execution ID; `awx test` reports such a case as an error.
+
 ## Sync and track executions
 
 Project, inventory-source, and inventory synchronization use `sync`:
@@ -186,8 +252,14 @@ manual, or otherwise invalid target fails complete preflight with zero POSTs;
 invalid selection. `--dry-run` resolves and previews targets without
 submitting an action.
 
-`--wait` waits for terminal success and exits nonzero for failed, cancelled, or
-error executions. `--track` shows progress on stderr while waiting. Ordinary
+`--wait` waits for terminal success and exits nonzero for failed, canceled, or
+error executions. Ctrl-C while waiting or tracking (including
+`awx test run --parallel`) or while launches are still being submitted stops
+promptly, exits 130, and prints the IDs of executions not known to have
+finished (including ones AWX created while ignoring fields; "was launched"
+when their status is unknown) with an `untaped awx jobs wait ...` command to
+resume; the executions themselves keep running on the controller. `--track`
+shows progress on stderr while waiting. Ordinary
 jobs expose `job_events`; project and inventory updates expose their `events`
 routes. Workflow jobs, including sliced launches that return a workflow job,
 have no own events or stdout route, so tracking emits status transitions from
@@ -202,6 +274,15 @@ untaped awx jobs events 101 --kind inventory_update
 untaped awx jobs logs 101 --kind project_update
 ```
 
+`jobs list` shows the newest 20 executions by default; pass `--limit N` for a
+different count or `--limit 0` for every record. `<kind> list --limit N` stops
+paging once N records are read. `--limit 0` means no limit on every awx list.
+
+`--kind` accepts `job` (default), `workflow_job`, `project_update`,
+`inventory_update`, and `ad_hoc_command`. Typed records piped with `--stdin`
+(for example `launch --format pipe | untaped awx jobs wait --stdin`) carry
+their own execution kind, which takes precedence over `--kind`.
+
 Use `--kind workflow_job` only with operations supported by that execution
 route, such as `jobs wait`; workflow job `events` and `logs` are rejected
 without making an unsupported request. A polymorphic launch response with no
@@ -213,8 +294,11 @@ retained in the failed result.
 `patch`, `edit`, `apply`, and `delete` show one complete redacted preview and
 ask once with No as the default. `--yes` skips the prompt. `--dry-run` never
 writes; it is mutually exclusive with `--yes`. Configuration writes without a
-controlling terminal require `--yes` or `--dry-run`. Launch and sync are
-explicit actions and do not add a configuration-edit confirmation. An
+controlling terminal require `--yes` or `--dry-run`. `launch` and `sync` of a
+single named target submit immediately; when more than one target is selected,
+or the selection came from `--all`, `--filter`, `--search`, or `--stdin`, they
+list the targets on stderr and ask once (No by default). `--yes` skips that
+prompt and `--dry-run` previews without submitting. An
 explicit `--allow-unverified --yes` can accept an unverified configuration
 write, but the result remains labeled unverified. A configuration plan with no
 changes does not prompt or write.
@@ -242,10 +326,9 @@ The old `apply --stdin --set ...` overlay interface is removed; use
 
 ## Optional disposable live-AAP smoke
 
-No live AAP controller was available or exercised during development; the
-automated suite uses a strict HTTP fake. If you explicitly choose a disposable
-inventory and harmless source on a configured controller, run a smoke test
-like this and restore the saved files afterward:
+The automated suite uses a strict HTTP fake. If you explicitly choose a
+disposable inventory and harmless source on a configured controller, run a
+smoke test like this and restore the saved files afterward:
 
 ```bash
 untaped awx ping
@@ -274,5 +357,4 @@ untaped awx inventories apply disposable-inventory.yml --yes
 
 Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,
 the no-op editor made no write, and the sync reached the expected terminal
-state. These steps are opt-in live writes; they are instructions for a user's
-disposable controller, not a claim of live validation here.
+state. These steps are opt-in live writes against a disposable controller.

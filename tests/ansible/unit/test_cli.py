@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from base64 import b64encode
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -169,6 +171,21 @@ def _mock_refresh_graphql_error(
     mock.post("/graphql").mock(return_value=response)
 
 
+requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _init_git_repo(path: Path, **remotes: str) -> None:
+    """Create a real Git repository at ``path`` with the given remotes."""
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q")
+    for name, url in remotes.items():
+        _git(path, "remote", "add", name, url)
+
+
 class _SeedGitCache:
     """Git transport stub for seeding: fetches succeed, no dependency files."""
 
@@ -186,31 +203,31 @@ class _SeedGitCache:
     ) -> None:
         return None
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
-        return None
+    ) -> dict[str, str]:
+        return {}
 
 
 class _InvalidDependencyGitCache(_SeedGitCache):
     """Git transport stub that returns a templated dependency file."""
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
-        if path == "roles/requirements.yml":
-            return "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
-        return None
+    ) -> dict[str, str]:
+        if "roles/requirements.yml" in paths:
+            return {"roles/requirements.yml": "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"}
+        return {}
 
 
 class _NoGitFetchCache:
@@ -230,14 +247,14 @@ class _NoGitFetchCache:
     ) -> None:
         raise AssertionError("unexpected git fetch")
 
-    def read_file(
+    def read_files(
         self,
         bare_path: Path,
         sha: str,
-        path: str,
+        paths: list[str],
         *,
         auth_header: str | None,
-    ) -> str | None:
+    ) -> dict[str, str]:
         raise AssertionError("unexpected dependency file read")
 
 
@@ -369,6 +386,30 @@ def test_alias_add_list_remove_updates_config(
     result = runner.invoke(app, ["alias", "remove", "common"])
     assert result.exit_code == 0, result.output
     assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("aliases") is None
+
+
+def test_alias_add_rejects_non_owner_repo_target(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["alias", "add", "foo", "bar"])
+
+    assert result.exit_code == 1
+    assert "owner/name" in result.stderr
+    assert yaml.safe_load(cfg.read_text()).get("ansible", {}).get("aliases") is None
+
+
+def test_alias_add_warns_that_saved_sources_need_refresh(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(
+        tmp_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["alias", "add", "common", "acme/common"])
+
+    assert result.exit_code == 0, result.output
+    assert "untaped ansible source refresh" in result.stderr
 
 
 def test_alias_list_table_honours_global_collection_view_list(
@@ -1113,6 +1154,80 @@ def test_graph_source_upstream_requires_refresh_when_index_missing(
     assert "no cached source data found for source 'platform'" in result.output
     assert "untaped ansible source refresh platform" in result.output
     assert "untaped ansible graph acme/base --source platform --upstream --refresh" in result.output
+
+
+def test_graph_live_downstream_works_before_first_source_refresh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        extra_profile={"github": {"token": "ghp_test"}},
+        top_level_ansible={"sources": [{"name": "platform", "repos": ["acme/site"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
+        result = CliInvoker().invoke(
+            app,
+            [
+                "graph",
+                "acme/site",
+                "--source",
+                "platform",
+                "--downstream",
+                "--depth",
+                "1",
+                "--live",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/live" in result.stdout
+
+
+def test_graph_missing_source_downstream_hint_matches_direction(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        top_level_ansible={"sources": [{"name": "platform", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "platform", "--downstream"]
+    )
+
+    assert result.exit_code == 1
+    assert "--upstream" not in result.stderr
+    assert "--source platform --downstream --refresh" in result.stderr
+    assert "--live" in result.stderr
+
+
+def test_graph_invalid_depth_fails_before_refreshing(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        top_level_ansible={"sources": [{"name": "platform", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    def fail_refresh(*args: object, **kwargs: object) -> RefreshResult:
+        raise AssertionError("refresh must not run for an invalid --depth")
+
+    monkeypatch.setattr(_refresh, "refresh_source", fail_refresh)
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "platform", "--refresh", "--depth", "abc"]
+    )
+
+    assert result.exit_code == 2
+    assert "--depth" in result.output
 
 
 def test_graph_repeated_sources_union_cached_upstream(
@@ -1931,16 +2046,14 @@ def test_inline_source_cache_key_is_order_insensitive(tmp_path: Path, monkeypatc
     assert refresh_calls == 1
 
 
+@requires_git
 def test_graph_repo_is_source_selector_and_target_repo_overrides_local_identity(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "role"
     (target / "roles").mkdir(parents=True)
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text(
-        '[remote "origin"]\n  url = https://github.com/acme/wrong.git\n'
-    )
+    _init_git_repo(target, origin="https://github.com/acme/wrong.git")
     (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
     cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -1956,18 +2069,28 @@ def test_graph_repo_is_source_selector_and_target_repo_overrides_local_identity(
     assert "|       +-- acme/users" in result.stdout
 
 
-def test_graph_local_target_infers_repo_from_gitdir_file(
+@requires_git
+def test_graph_local_target_infers_repo_from_git_worktree(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    target = tmp_path / "role"
-    gitdir = tmp_path / "gitdir"
-    (target / "roles").mkdir(parents=True)
-    gitdir.mkdir()
-    (target / ".git").write_text(f"gitdir: {gitdir}\n")
-    (gitdir / "config").write_text(
-        '[remote "origin"]\n  url = git@github.com:acme/worktree-role.git\n'
+    main = tmp_path / "main"
+    _init_git_repo(main, origin="git@github.com:acme/worktree-role.git")
+    _git(
+        main,
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
     )
+    target = tmp_path / "role"
+    _git(main, "worktree", "add", "-q", str(target))
+    (target / "roles").mkdir(parents=True)
     (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
     cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
     monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
@@ -1980,18 +2103,260 @@ def test_graph_local_target_infers_repo_from_gitdir_file(
     assert "|       +-- acme/users" in result.stdout
 
 
+@requires_git
+def test_graph_local_target_tolerates_duplicate_git_config_keys(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "role"
+    _init_git_repo(target, origin="https://github.com/acme/dup-role.git")
+    _git(target, "config", "--add", "remote.origin.fetch", "+refs/tags/*:refs/tags/*")
+    (target / "roles").mkdir()
+    (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/dup-role\n")
+
+
+@requires_git
+def test_graph_local_subdirectory_requires_target_repo(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # Auto-resolving a subdirectory to the enclosing repo would let its local
+    # overlay replace the monorepo's real indexed edges.
+    repo = tmp_path / "repo"
+    _init_git_repo(repo, origin="https://github.com/acme/mono.git")
+    target = repo / "roles" / "web"
+    (target / "meta").mkdir(parents=True)
+    (target / "meta" / "main.yml").write_text("dependencies:\n  - src: acme/users\n")
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+    explicit = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/web-role", "--downstream"]
+    )
+
+    assert result.exit_code == 1
+    assert "could not resolve target" in result.stderr
+    assert "--target-repo" in result.stderr
+    assert explicit.exit_code == 0, explicit.output
+    assert explicit.stdout.startswith("acme/web-role\n")
+
+
+@requires_git
+def test_graph_local_target_ignores_inherited_git_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    other = tmp_path / "other"
+    _init_git_repo(other, origin="https://github.com/acme/other.git")
+    target = tmp_path / "role"
+    _init_git_repo(target, origin="https://github.com/acme/real-role.git")
+    (target / "roles").mkdir()
+    (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/real-role\n")
+
+
+@requires_git
+def test_graph_local_repo_without_remote_hints_target_repo(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "role"
+    _init_git_repo(target)
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 1
+    assert "could not resolve target" in result.stderr
+    assert "--target-repo" in result.stderr
+
+
+@requires_git
+def test_graph_local_target_resolves_configured_enterprise_host(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    target = tmp_path / "role"
+    _init_git_repo(target, origin="git@ghe.example.com:acme/ghe-role.git")
+    (target / "roles").mkdir()
+    (target / "roles" / "requirements.yml").write_text(
+        "- src: https://ghe.example.com/acme/users.git\n"
+    )
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        extra_profile={"github": {"base_url": "https://ghe.example.com/api/v3"}},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", str(target), "--downstream"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith("acme/ghe-role\n")
+    assert "+-- acme/users" in result.stdout
+    assert "unresolved" not in result.stdout
+
+
+def _unpinned_consumer_index(tmp_path: Path, *, base_default: str | None) -> Path:
+    index_path = tmp_path / "index.sqlite3"
+    metadata = (
+        ()
+        if base_default is None
+        else (
+            SourceRepoMetadata(
+                source_key="source:prod", source_repo="acme/base", default_branch=base_default
+            ),
+        )
+    )
+    _seed_index(
+        SqliteDependencyIndex(index_path),
+        "source:prod",
+        (
+            IndexedDependency(
+                source_repo="acme/pinned",
+                source_ref="main",
+                dependency_repo="acme/base",
+                dependency_name="base",
+                dependency_version="main",
+                source_path="roles/requirements.yml",
+            ),
+            IndexedDependency(
+                source_repo="acme/unpinned",
+                source_ref="main",
+                dependency_repo="acme/base",
+                dependency_name="base",
+                dependency_version=None,
+                source_path="roles/requirements.yml",
+            ),
+            # acme/base is itself scanned whenever its default branch is known.
+            *(
+                ()
+                if base_default is None
+                else (
+                    IndexedDependency(
+                        source_repo="acme/base",
+                        source_ref=base_default,
+                        dependency_repo="acme/core",
+                        dependency_name="core",
+                        dependency_version="main",
+                        source_path="roles/requirements.yml",
+                    ),
+                )
+            ),
+        ),
+        repo_metadata=metadata,
+    )
+    return index_path
+
+
+@pytest.mark.parametrize(("ref", "included"), [("main", True), ("v1", False)])
+def test_graph_upstream_ref_treats_unpinned_dependents_as_default_branch(
+    tmp_path: Path,
+    monkeypatch,
+    ref: str,
+    included: bool,
+) -> None:
+    index_path = _unpinned_consumer_index(tmp_path, base_default="main")
+    cfg = _write_config(
+        tmp_path,
+        index_path=index_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "prod", "--upstream", "--ref", ref]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert ("acme/unpinned@main" in result.stdout) is included
+    assert "unpinned" not in result.stdout.replace("acme/unpinned", "")
+
+
+def test_graph_upstream_ref_warns_when_unpinned_dependents_cannot_be_placed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = _unpinned_consumer_index(tmp_path, base_default=None)
+    cfg = _write_config(
+        tmp_path,
+        index_path=index_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "acme/base", "--source", "prod", "--upstream", "--ref", "main"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/pinned@main" in result.stdout
+    assert "acme/unpinned@main" not in result.stdout
+    assert "1 unpinned dependent of acme/base@main omitted" in result.stdout
+
+
+def test_graph_upstream_matches_repo_ids_case_insensitively(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "index.sqlite3"
+    _seed_index(
+        SqliteDependencyIndex(index_path),
+        "source:prod",
+        (
+            IndexedDependency(
+                source_repo="Acme/Site",
+                source_ref="main",
+                dependency_repo="acme/base",
+                dependency_name="base",
+                dependency_version="main",
+                source_path="roles/requirements.yml",
+            ),
+        ),
+    )
+    cfg = _write_config(
+        tmp_path,
+        index_path=index_path,
+        top_level_ansible={"sources": [{"name": "prod", "orgs": ["acme"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", "Acme/Base", "--source", "prod", "--upstream", "--ref", "main"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Acme/Site@main" in result.stdout
+
+
+@requires_git
 def test_graph_local_target_prefers_origin_remote_for_identity(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "role"
     (target / "roles").mkdir(parents=True)
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text(
-        '[remote "upstream"]\n'
-        "  url = https://github.com/acme/upstream-role.git\n"
-        '[remote "origin"]\n'
-        "  url = https://github.com/acme/origin-role.git\n"
+    _init_git_repo(
+        target,
+        upstream="https://github.com/acme/upstream-role.git",
+        origin="https://github.com/acme/origin-role.git",
     )
     (target / "roles" / "requirements.yml").write_text("- src: https://github.com/acme/users\n")
     cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
@@ -2003,16 +2368,14 @@ def test_graph_local_target_prefers_origin_remote_for_identity(
     assert result.stdout.startswith("acme/origin-role\n")
 
 
+@requires_git
 def test_graph_local_target_surfaces_parse_warnings(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     target = tmp_path / "role"
     (target / "roles").mkdir(parents=True)
-    (target / ".git").mkdir()
-    (target / ".git" / "config").write_text(
-        '[remote "origin"]\n  url = https://github.com/acme/origin-role.git\n'
-    )
+    _init_git_repo(target, origin="https://github.com/acme/origin-role.git")
     (target / "roles" / "requirements.yml").write_text(
         "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
     )
@@ -2078,6 +2441,78 @@ def test_graph_empty_local_dependency_result_does_not_fall_back_to_cache(
     assert result.exit_code == 0, result.output
     assert "acme/stale" not in result.stdout
     assert "warning: no declared downstream dependencies found for acme/empty" in result.stdout
+
+
+def _seed_other_source_edge(index_path: Path) -> None:
+    _seed_index(
+        SqliteDependencyIndex(index_path),
+        "source:other",
+        (
+            IndexedDependency(
+                source_repo="acme/users",
+                source_ref="main",
+                dependency_repo="acme/from-other-source",
+                dependency_name="from-other-source",
+                dependency_version=None,
+                source_path="roles/requirements.yml",
+            ),
+        ),
+    )
+
+
+def test_graph_local_target_without_source_reads_live_not_mixed_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "index.sqlite3"
+    _seed_other_source_edge(index_path)
+    target = tmp_path / "role"
+    (target / "roles").mkdir(parents=True)
+    (target / "roles" / "requirements.yml").write_text("- src: acme/users\n  version: main\n")
+    cfg = _write_config(
+        tmp_path, index_path=index_path, extra_profile={"github": {"token": "ghp_test"}}
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        mock.get("/repos/acme/users/git/matching-refs/heads/main").mock(
+            return_value=httpx.Response(
+                200, json=[{"ref": "refs/heads/main", "object": {"sha": "sha-users"}}]
+            )
+        )
+        _mock_dependency_file(
+            mock, "acme/users", sha="sha-users", content="- src: acme/from-live\n"
+        )
+        result = CliInvoker().invoke(
+            app,
+            ["graph", str(target), "--target-repo", "acme/role", "--downstream", "--depth", "2"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/from-live" in result.stdout
+    assert "acme/from-other-source" not in result.stdout
+
+
+def test_graph_local_target_without_source_or_token_stays_offline(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    index_path = tmp_path / "index.sqlite3"
+    _seed_other_source_edge(index_path)
+    target = tmp_path / "role"
+    (target / "roles").mkdir(parents=True)
+    (target / "roles" / "requirements.yml").write_text("- src: acme/users\n  version: main\n")
+    cfg = _write_config(tmp_path, index_path=index_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/role", "--downstream"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "acme/users@main" in result.stdout
+    assert "acme/from-other-source" not in result.stdout
+    assert "transitive dependencies were not expanded" in result.stdout
 
 
 def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(
@@ -2876,6 +3311,11 @@ def _counting_refresh(calls: list[str]):
     return fake_refresh
 
 
+def _only_freshness_ttl_deprecation(stderr: str) -> bool:
+    lines = stderr.splitlines()
+    return len(lines) == 1 and "ansible.freshness_ttl is deprecated" in lines[0]
+
+
 def test_graph_cache_first_ignores_freshness_ttl_for_fresh_source(
     tmp_path: Path,
     monkeypatch,
@@ -2904,7 +3344,7 @@ def test_graph_cache_first_ignores_freshness_ttl_for_fresh_source(
 
     assert result.exit_code == 0, result.output
     assert "    +-- acme/site@main" in result.stdout
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
 
 
 def test_graph_cache_first_does_not_print_freshness_ttl_skip_message(
@@ -2934,7 +3374,7 @@ def test_graph_cache_first_does_not_print_freshness_ttl_skip_message(
         assert len(mock.calls) == 0
 
     assert result.exit_code == 0, result.output
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
 
 
 def test_graph_cache_first_missing_source_fails_even_with_freshness_ttl(
@@ -3022,7 +3462,7 @@ def test_graph_cache_first_uses_stale_source_without_freshness_probe(
     assert result.exit_code == 0, result.output
     assert calls == []
     assert "    +-- acme/site@main" in result.stdout
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
 
 
 def test_graph_cache_first_ignores_freshness_ttl_for_mixed_sources(
@@ -3074,7 +3514,7 @@ def test_graph_cache_first_ignores_freshness_ttl_for_mixed_sources(
 
     assert result.exit_code == 0, result.output
     assert calls == []
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
     assert "    +-- acme/site@main" in result.stdout
     assert "    +-- acme/deploy@main" in result.stdout
 
@@ -3194,6 +3634,93 @@ def test_source_refresh_prints_skipped_dependency_files(
     assert (
         "warning: skipped acme/site@main roles/requirements.yml: could not parse dependency YAML"
     ) in result.stderr
+
+
+class _CollectionsGitCache(_SeedGitCache):
+    """Git transport stub whose requirements file declares collections."""
+
+    def read_files(
+        self,
+        bare_path: Path,
+        sha: str,
+        paths: list[str],
+        *,
+        auth_header: str | None,
+    ) -> dict[str, str]:
+        return {
+            "requirements.yml": (
+                "roles:\n  - src: acme/base\n"
+                "collections:\n  - community.general\n  - name: ansible.posix\n"
+            )
+        }
+
+
+def test_source_refresh_reports_ignored_collections(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        extra_profile={"github": {"token": "ghp_test"}},
+        top_level_ansible={"sources": [{"name": "prod", "repos": ["acme/site"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setattr(_refresh, "GitRepositoryCache", _CollectionsGitCache)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_refresh_repos(mock, {"acme/site": "sha-site"})
+        result = CliInvoker().invoke(app, ["source", "refresh", "prod", "--backend", "graphql"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: 2 collections in requirements files were ignored (only roles are graphed): "
+        "ansible.posix, community.general"
+    ) in result.stderr
+
+
+def test_graph_local_target_reports_ignored_collections(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "role"
+    target.mkdir()
+    (target / "requirements.yml").write_text(
+        "roles:\n  - src: acme/base\ncollections:\n  - community.general\n"
+    )
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/role", "--downstream"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: 1 collection in requirements files was ignored (only roles are graphed): "
+        "community.general"
+    ) in result.stdout
+
+
+def test_deprecated_freshness_ttl_setting_warns(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "role"
+    target.mkdir()
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        ansible_profile={"freshness_ttl": 3600},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/role", "--downstream"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "ansible.freshness_ttl is deprecated" in result.stderr
+
+
+def test_graph_cached_help_describes_the_default(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", "--help"])
+
+    assert "default" in " ".join(result.stdout.split()).rsplit("--cached", maxsplit=1)[1][:200]
 
 
 def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(

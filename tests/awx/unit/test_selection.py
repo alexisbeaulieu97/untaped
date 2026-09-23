@@ -206,3 +206,28 @@ def test_typed_pipe_requires_correct_kind_and_integer_id(kind: Any, id_value: An
         _resolver(_Client()).resolve(
             PROJECT_SPEC, SelectionRequest(pipe=(PipeEnvelope(kind, {"id": id_value}, 1),))
         )
+
+
+def test_scope_references_are_fetched_once_per_resolve() -> None:
+    """Fifty records scoped by one organization must not issue fifty GETs."""
+
+    class _Counting(_Client):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records = {
+                id_: {"id": id_, "name": f"p{id_}", "organization": 1} for id_ in range(10, 60)
+            }
+            self.gets: list[int] = []
+
+        def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
+            self.gets.append(id_)
+            if id_ == 1:
+                return ServerRecord(id=1, name="Default")
+            return super().get(spec, id_)
+
+    client = _Counting()
+    selected = _resolver(client).resolve(
+        PROJECT_SPEC, SelectionRequest(all=True, scope={"organization": "Default"})
+    )
+    assert len(selected) == 50
+    assert client.gets == [1]

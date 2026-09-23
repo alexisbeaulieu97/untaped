@@ -3,6 +3,7 @@
 from untaped.capabilities.jira.domain.models import (
     BoardResult,
     CommentResult,
+    IssueDetailResult,
     IssueMutationResult,
     IssueResult,
     JiraUser,
@@ -16,6 +17,7 @@ from untaped.capabilities.jira.domain.search import JiraIssueSearchFilters
 __all__ = [
     "BoardResult",
     "CommentResult",
+    "IssueDetailResult",
     "IssueMutationResult",
     "IssueResult",
     "JiraIssueSearchFilters",

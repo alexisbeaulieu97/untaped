@@ -1,8 +1,9 @@
 """Shared save runner for top-level and per-resource AWX save commands."""
 
+import stat
 from pathlib import Path
 
-from untaped.api import OutputFormat, echo, emit
+from untaped.api import OutputFormat, UntapedError, atomic_write, echo, emit
 from untaped.capabilities.awx.application import SaveResource, SaveResources
 from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
@@ -27,9 +28,9 @@ def run_save_selection(
     if comment:
         echo(f"{spec.fidelity} save: {comment}", err=True)
     text = "---\n".join(dump_resource(resource, header_comment=comment) for resource in resources)
-    if output:
-        output.expanduser().write_text(text)
-    elif fmt == "yaml":
+    if output and str(output) != "-":
+        write_output(output, text)
+    elif output or fmt == "yaml":
         if text:
             echo(text)
     else:
@@ -60,7 +61,10 @@ def run_save_batch(
         organization=organization,
     )
     out_dir = out_dir.expanduser()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise UntapedError(f"cannot create {out_dir}: {exc.strerror or exc}") from exc
     for outcome in outcomes:
         if outcome.action == "skipped":
             echo(f"skipping {outcome.kind}: {outcome.detail}", err=True)
@@ -70,12 +74,33 @@ def run_save_batch(
         target = out_dir / outcome.filename
         _assert_inside(out_dir, target)
         text = dump_resource(outcome.resource, header_comment=outcome.header_comment)
-        target.write_text(text)
+        write_output(target, text)
         if print_paths:
             echo(str(target))
         else:
             echo("---")
             echo(text)
+
+
+def write_output(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` without replacing what the path points at.
+
+    Regular files are replaced atomically, through a symlink when ``path`` is
+    one (the link survives). Existing non-regular targets such as FIFOs or
+    ``/dev/stdout`` are written directly. OS errors become an
+    :class:`UntapedError` naming the path instead of a traceback.
+    """
+    target = path.expanduser()
+    try:
+        if target.is_symlink():
+            target = target.resolve()
+        if target.exists() and not stat.S_ISREG(target.stat().st_mode):
+            with target.open("w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+        else:
+            atomic_write(target, text)
+    except OSError as exc:
+        raise UntapedError(f"cannot write {path}: {exc.strerror or exc}") from exc
 
 
 def _assert_inside(parent: Path, target: Path) -> None:

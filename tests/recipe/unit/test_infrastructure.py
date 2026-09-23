@@ -9,6 +9,7 @@ import pytest
 
 import untaped.capabilities.recipe.infrastructure.file_writer as file_writer_module
 import untaped.capabilities.recipe.infrastructure.ruamel_io as ruamel_io_module
+from untaped.capabilities.recipe._worker.hook_worker import HookHelpers as WorkerHookHelpers
 from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.run_bulk import (
     ApplyWriteError,
@@ -19,7 +20,6 @@ from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.builtins.hooks import yaml_edit
 from untaped.capabilities.recipe.domain.plan import FileChange
 from untaped.capabilities.recipe.domain.recipe import Recipe
-from untaped.capabilities.recipe.hook_worker import HookHelpers as WorkerHookHelpers
 from untaped.capabilities.recipe.infrastructure.hook_executor import HookExecutor
 from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers
 from untaped.capabilities.recipe.infrastructure.hook_resolver import HookResolver
@@ -434,6 +434,69 @@ def test_builtin_yaml_edit_ensure_noop_is_byte_identical(
     assert _ensure(content, edit) == content
 
 
+@pytest.mark.parametrize(
+    ("content", "edit"),
+    [
+        pytest.param(
+            "---\nimage:   nginx  # pinned\nreplicas: 2\n",
+            {"op": "set", "path": ["image"], "value": "nginx"},
+            id="set-same-scalar",
+        ),
+        pytest.param(
+            "spec:\n  replicas: 2\n",
+            {"op": "set", "path": ["spec", "replicas"], "value": 2},
+            id="set-same-nested-int",
+        ),
+        pytest.param(
+            "items:\n  - name: a\n    tag: v1\n",
+            {"op": "set", "path": ["items", {"where": {"name": "a"}}, "tag"], "value": "v1"},
+            id="set-same-in-list-item",
+        ),
+        pytest.param(
+            "settings:   {a: 1, b: two}\n",
+            {"op": "merge", "path": ["settings"], "value": {"b": "two"}},
+            id="merge-already-present",
+        ),
+    ],
+)
+def test_builtin_yaml_edit_set_and_merge_noop_is_byte_identical(
+    content: str,
+    edit: dict[str, object],
+) -> None:
+    assert _ensure(content, edit) == content
+
+
+@pytest.mark.parametrize(
+    ("content", "edit", "expected"),
+    [
+        pytest.param(
+            "enabled: 1\n",
+            {"op": "set", "path": ["enabled"], "value": True},
+            "enabled: true\n",
+            id="set-bool-over-int-is-a-change",
+        ),
+        pytest.param(
+            "top: 1\n",
+            {"op": "set", "path": ["spec", "replicas"], "value": 1},
+            "top: 1\nspec:\n  replicas: 1\n",
+            id="set-missing-path",
+        ),
+        pytest.param(
+            "settings:\n  a: 1\n",
+            {"op": "merge", "path": ["settings"], "value": {"a": 2}},
+            "settings:\n  a: 2\n",
+            id="merge-different-value",
+        ),
+    ],
+)
+def test_builtin_yaml_edit_set_and_merge_report_real_changes(
+    content: str,
+    edit: dict[str, object],
+    expected: str,
+) -> None:
+    assert _ensure(content, edit) == expected
+
+
 def test_builtin_yaml_edit_ensure_renders_value_tokens() -> None:
     result = _ensure(
         "collections: []\n",
@@ -597,7 +660,7 @@ def test_parallel_bulk_plan_returns_ordered_errors_and_flushes_atomically(tmp_pa
     assert not removable.exists()
 
 
-def test_bulk_plan_resolves_per_target_inputs_and_preserves_duplicate_order(
+def test_bulk_plan_resolves_per_target_inputs_and_dedupes_repeated_targets(
     tmp_path: Path,
 ) -> None:
     recipe_dir = tmp_path / "recipe"
@@ -649,13 +712,14 @@ def test_bulk_plan_resolves_per_target_inputs_and_preserves_duplicate_order(
         parallel=3,
     )
 
-    assert [plan.target for plan in plans] == [target, other, target]
-    assert [plan.display_inputs["token"] for plan in plans] == ["***", "***", "***"]
-    assert [plan.display_inputs["service"] for plan in plans] == ["first", "second", "third"]
+    # A repeated target directory is planned once (first-seen record wins):
+    # planning it twice would make the second flush fail "changed since planning".
+    assert [plan.target for plan in plans] == [target, other]
+    assert [plan.display_inputs["token"] for plan in plans] == ["***", "***"]
+    assert [plan.display_inputs["service"] for plan in plans] == ["first", "second"]
     assert [plan.changes[0].after for plan in plans] == [
         "service=first\n",
         "service=second\n",
-        "service=third\n",
     ]
 
 
@@ -926,3 +990,62 @@ def test_file_change_kind_reports_create_modify_and_remove(tmp_path: Path) -> No
     assert create.kind == "create"
     assert modify.kind == "modify"
     assert remove.kind == "remove"
+
+
+def test_flush_changes_preserves_executable_mode(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    script = target / "run.sh"
+    script.write_text("#!/bin/sh\necho old\n")
+    script.chmod(0o755)
+
+    flush_changes(
+        (
+            FileChange(
+                target=target,
+                relative_path=Path("run.sh"),
+                before="#!/bin/sh\necho old\n",
+                after="#!/bin/sh\necho new\n",
+            ),
+        )
+    )
+
+    assert script.read_text() == "#!/bin/sh\necho new\n"
+    assert script.stat().st_mode & 0o777 == 0o755
+
+
+def test_flush_changes_rollback_restores_mode_of_deleted_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    script = target / "run.sh"
+    script.write_text("old\n")
+    script.chmod(0o755)
+    other = target / "other.txt"
+    other.write_text("before\n")
+    original_replace = file_writer_module.os.replace
+
+    def fail_other(src: Path, dst: Path) -> None:
+        if Path(dst).name == "other.txt" and ".rollback." not in Path(src).name:
+            raise OSError("disk full")
+        original_replace(src, dst)
+
+    monkeypatch.setattr(file_writer_module.os, "replace", fail_other)
+
+    with pytest.raises(ApplyWriteError, match="disk full"):
+        flush_changes(
+            (
+                FileChange(target=target, relative_path=Path("run.sh"), before="old\n", after=None),
+                FileChange(
+                    target=target,
+                    relative_path=Path("other.txt"),
+                    before="before\n",
+                    after="after\n",
+                ),
+            )
+        )
+
+    assert script.read_text() == "old\n"
+    assert script.stat().st_mode & 0o777 == 0o755

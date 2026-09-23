@@ -501,7 +501,7 @@ def test_launch_track_parallel_drains_concurrently(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _BarrierStream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 0, result.output
 
@@ -518,7 +518,7 @@ def test_launch_track_output_lines_carry_template_prefix(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 0, result.output
     assert "[deploy-a]" in result.stderr
@@ -545,7 +545,7 @@ def test_launch_track_one_failed_exits_one_and_logs_both(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _PrefixingStubStream)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 1, result.output
     assert "[deploy-a]" in result.stderr
@@ -573,7 +573,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
     _seed_two_jts(fake_aap)
 
     class _StubWatch:
-        def __init__(self, client: Any) -> None:
+        def __init__(self, client: Any, **_kwargs: Any) -> None:
             pass
 
         def __call__(self, job: Job, **_kwargs: Any) -> Job:
@@ -591,6 +591,7 @@ def test_launch_wait_parallel_returns_results_in_launch_order(
         [
             "job-templates",
             "launch",
+            "--yes",
             "deploy-a",
             "deploy-b",
             "--wait",
@@ -640,7 +641,7 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
     monkeypatch.setattr(_parallel, "StreamJobEvents", _StubStreamWithDeployAFailure)
 
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "deploy-a", "deploy-b", "--track"]
+        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
     assert result.exit_code == 1, result.output
     # Single-prefix error row, with the original exception class name
@@ -694,6 +695,40 @@ def test_jobs_get_reads_ids_from_pipe_envelope_stdin(fake_aap: Any) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "42"
+
+
+def test_jobs_wait_stdin_honours_execution_kind_from_pipe(fake_aap: Any) -> None:
+    """A launched workflow's pipe row must be waited on at workflow_jobs/, not jobs/."""
+    fake_aap.seed("workflow_jobs", id=77, name="wf", status="successful")
+    fake_aap.seed("jobs", id=42, name="run", status="successful")
+    lines = [
+        {"untaped": "1", "kind": "awx.job", "record": {"id": 77, "kind": "workflow_job"}},
+        {"untaped": "1", "kind": "awx.job", "record": {"id": 42, "type": "job"}},
+    ]
+    result = CliInvoker().invoke(
+        app,
+        ["jobs", "wait", "--stdin", "--format", "json"],
+        input="".join(json.dumps(line) + "\n" for line in lines),
+    )
+    assert result.exit_code == 0, result.output
+    rows = json.loads(result.stdout)
+    assert [(row["id"], row["kind"]) for row in rows] == [(77, "workflow_job"), (42, "job")]
+
+
+@pytest.mark.parametrize(("args", "expected"), [([], 20), (["--limit", "0"], 25)])
+def test_jobs_list_defaults_to_twenty_and_zero_means_all(
+    fake_aap: Any, args: list[str], expected: int
+) -> None:
+    for index in range(25):
+        fake_aap.seed("jobs", id=100 + index, name=f"run{index}", status="successful")
+    result = CliInvoker().invoke(app, ["jobs", "list", *args, "--format", "raw", "--columns", "id"])
+    assert result.exit_code == 0, result.output
+    assert len(result.stdout.split()) == expected
+
+
+def test_jobs_kind_rejects_unknown_values(fake_aap: Any) -> None:
+    result = CliInvoker().invoke(app, ["jobs", "get", "42", "--kind", "workflow"])
+    assert result.exit_code == 2, result.output
 
 
 def test_jobs_get_continues_when_one_id_missing(fake_aap: Any) -> None:

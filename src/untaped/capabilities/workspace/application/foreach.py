@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import threading
 import time
-from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable, Sequence
 
+from untaped.api import bounded_map
 from untaped.capabilities.workspace.application.ports import Filesystem, ManifestReader, ShellRunner
 from untaped.capabilities.workspace.application.repo_selector import select_repos
 from untaped.capabilities.workspace.domain import (
@@ -24,10 +25,17 @@ class Foreach:
         *,
         runner: ShellRunner,
         fs: Filesystem,
+        on_interrupt: Callable[[], None] | None = None,
     ) -> None:
+        """``on_interrupt`` runs on the calling thread when anything
+        (typically ``KeyboardInterrupt``) escapes the run, before waiting
+        for in-flight repos; pass the runner's hook that kills running
+        commands so Ctrl-C under ``--parallel`` returns promptly.
+        """
         self._manifests = manifests
         self._runner = runner
         self._fs = fs
+        self._on_interrupt = on_interrupt
 
     def __call__(
         self,
@@ -38,61 +46,47 @@ class Foreach:
         continue_on_error: bool = False,
         only: Sequence[str] | None = None,
         timeout: float = DEFAULT_FOREACH_TIMEOUT,
+        on_result: Callable[[ForeachOutcome], None] | None = None,
     ) -> list[ForeachOutcome]:
+        """Run ``command`` in each selected repo; return outcomes in manifest order.
+
+        ``on_result`` is called on the calling thread as each repo
+        finishes (completion order when ``parallel > 1``), so callers can
+        stream output. Fail-fast (no ``continue_on_error``) stops queued
+        repos from starting; in-flight commands finish and are reported.
+        Anything escaping — including ``KeyboardInterrupt`` — cancels
+        queued work instead of draining it and calls ``on_interrupt`` to
+        stop in-flight commands.
+        """
         manifest = self._manifests.read(workspace.path)
         repos, unmatched = select_repos(manifest, only)
         if unmatched:
             raise UnmatchedRepoFilter(unmatched)
 
-        if parallel <= 1:
-            return self._run_serial(workspace, repos, command, continue_on_error, timeout)
-        return self._run_parallel(workspace, repos, command, parallel, continue_on_error, timeout)
-
-    def _run_serial(
-        self,
-        workspace: Workspace,
-        repos: Sequence[Repo],
-        command: str,
-        continue_on_error: bool,
-        timeout: float,
-    ) -> list[ForeachOutcome]:
+        stop = threading.Event()
         outcomes: list[ForeachOutcome] = []
-        for repo in repos:
-            outcome = self._run_one(workspace, repo, command, timeout)
+
+        def _run(repo: Repo) -> ForeachOutcome | None:
+            if stop.is_set():
+                return None
+            return self._run_one(workspace, repo, command, timeout)
+
+        def _collect(_repo: Repo, outcome: ForeachOutcome | None) -> None:
+            if outcome is None:
+                return
             outcomes.append(outcome)
             if outcome.returncode != 0 and not continue_on_error:
-                break
-        return outcomes
+                stop.set()
+            if on_result is not None:
+                on_result(outcome)
 
-    def _run_parallel(
-        self,
-        workspace: Workspace,
-        # ``Sequence`` — not ``Iterable`` — because the body walks ``repos``
-        # twice (submit pass and the ``enumerate`` ordering pass below); a
-        # single-shot iterator would exhaust on the first walk and silently
-        # empty the ``order`` map.
-        repos: Sequence[Repo],
-        command: str,
-        parallel: int,
-        continue_on_error: bool,
-        timeout: float,
-    ) -> list[ForeachOutcome]:
-        outcomes: list[ForeachOutcome] = []
-        with ThreadPoolExecutor(max_workers=parallel) as pool:
-            futures = {
-                pool.submit(self._run_one, workspace, repo, command, timeout): repo
-                for repo in repos
-            }
-            stopping = False
-            for fut in as_completed(futures):
-                if fut.cancelled():
-                    continue
-                outcome = fut.result()
-                outcomes.append(outcome)
-                if outcome.returncode != 0 and not continue_on_error and not stopping:
-                    stopping = True
-                    for other in futures:
-                        other.cancel()
+        bounded_map(
+            _run,
+            repos,
+            concurrency=max(parallel, 1),
+            on_each=_collect,
+            on_abort=self._on_interrupt,
+        )
         order = {repo.name: i for i, repo in enumerate(repos)}
         outcomes.sort(key=lambda o: order.get(o.repo, len(order)))
         return outcomes

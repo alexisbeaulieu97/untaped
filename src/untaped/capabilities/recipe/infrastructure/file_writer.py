@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
@@ -23,7 +24,8 @@ class ApplyWriteError(UntapedError):
 def flush_changes(changes: tuple[FileChange, ...]) -> None:
     """Write all planned changes for one target after planning succeeds."""
     _verify_current_content(changes)
-    staged, created_dirs = _stage_replacements(changes)
+    modes = _existing_modes(changes)
+    staged, created_dirs = _stage_replacements(changes, modes)
     applied: list[FileChange] = []
     try:
         for change in changes:
@@ -37,7 +39,7 @@ def flush_changes(changes: tuple[FileChange, ...]) -> None:
             applied.append(change)
     except (OSError, ApplyWriteError) as exc:
         _remove_staged_files(staged.values())
-        rollback_errors = _rollback(applied, created_dirs)
+        rollback_errors = _rollback(applied, created_dirs, modes)
         if rollback_errors:
             details = "; ".join(rollback_errors)
             raise ApplyWriteError(
@@ -62,8 +64,22 @@ def _verify_current_content(changes: tuple[FileChange, ...]) -> None:
             raise ApplyWriteError(f"{path} changed since planning")
 
 
+def _existing_modes(changes: tuple[FileChange, ...]) -> dict[FileChange, int]:
+    """Record permission bits of files that exist so rewrites keep them."""
+    modes: dict[FileChange, int] = {}
+    for change in changes:
+        if change.before is None:
+            continue
+        try:
+            modes[change] = stat.S_IMODE(_change_path(change).stat().st_mode)
+        except OSError as exc:
+            raise ApplyWriteError(str(exc)) from exc
+    return modes
+
+
 def _stage_replacements(
     changes: tuple[FileChange, ...],
+    modes: dict[FileChange, int],
 ) -> tuple[dict[FileChange, Path], list[Path]]:
     staged: dict[FileChange, Path] = {}
     created_dirs: list[Path] = []
@@ -74,8 +90,10 @@ def _stage_replacements(
             path = _change_path(change)
             created_dirs.extend(_ensure_parent(path))
             tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped-recipe.tmp")
-            tmp.write_text(change.after, encoding="utf-8", newline="")
             staged[change] = tmp
+            tmp.write_text(change.after, encoding="utf-8", newline="")
+            if change in modes:
+                tmp.chmod(modes[change])
     except ApplyWriteError:
         _remove_staged_files(staged.values())
         _remove_created_dirs(created_dirs)
@@ -104,7 +122,11 @@ def _ensure_parent(path: Path) -> list[Path]:
     return created
 
 
-def _rollback(applied: list[FileChange], created_dirs: list[Path]) -> list[str]:
+def _rollback(
+    applied: list[FileChange],
+    created_dirs: list[Path],
+    modes: dict[FileChange, int],
+) -> list[str]:
     errors: list[str] = []
     for change in reversed(applied):
         tmp: Path | None = None
@@ -119,6 +141,8 @@ def _rollback(applied: list[FileChange], created_dirs: list[Path]) -> list[str]:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.untaped-recipe.rollback.tmp")
             tmp.write_text(change.before, encoding="utf-8", newline="")
+            if change in modes:
+                tmp.chmod(modes[change])
             os.replace(tmp, path)
         except (OSError, ApplyWriteError) as exc:
             errors.append(f"{label}: {exc}")

@@ -1,8 +1,10 @@
 import json
 import sys
+from enum import Enum
 from pathlib import Path
 
 import pytest
+import yaml
 from cyclopts import App
 from pydantic import BaseModel
 
@@ -81,7 +83,8 @@ def test_passes_through_non_untaped_exception() -> None:
 
 def test_broken_pipe_from_command_exits_cleanly() -> None:
     """A consumer closing the pipe mid-write surfaces as ``BrokenPipeError``;
-    it must convert to a clean ``SystemExit(1)``, not leak as a traceback."""
+    it must convert to a quiet ``SystemExit(0)`` (``| head`` is not a
+    failure), not leak as a traceback."""
     app = create_app(name="test")
 
     @app.default
@@ -89,7 +92,8 @@ def test_broken_pipe_from_command_exits_cleanly() -> None:
         raise BrokenPipeError(32, "Broken pipe")
 
     result = CliInvoker().invoke(app, [])
-    assert result.exit_code == 1
+    assert result.exit_code == 0
+    assert result.stderr == ""
     # Clean exit — NOT a leaked BrokenPipeError bubbling up as a bug.
     assert isinstance(result.exception, SystemExit)
 
@@ -119,7 +123,7 @@ def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(sys, "stdout", _BrokenStdout())
     with pytest.raises(SystemExit) as exc:
         run_cyclopts_app(app, [])
-    assert exc.value.code == 1
+    assert exc.value.code == 0
 
 
 # ---- parse_kv_pairs ------------------------------------------------------
@@ -436,6 +440,37 @@ def test_emit_sequence_json_is_array(capsys: pytest.CaptureFixture[str]) -> None
     ]
 
 
+class _Color(Enum):
+    RED = "red"
+
+
+class _Located(BaseModel):
+    path: Path
+    color: _Color
+
+
+@pytest.mark.parametrize("fmt", ["yaml", "json", "pipe"])
+def test_emit_model_with_path_and_enum_uses_json_values(
+    capsys: pytest.CaptureFixture[str], fmt: str
+) -> None:
+    emit([_Located(path=Path("/tmp/x"), color=_Color.RED)], fmt=fmt)  # type: ignore[arg-type]
+    out = capsys.readouterr().out
+    assert "/tmp/x" in out
+    assert "red" in out
+    assert "_Color" not in out
+
+
+def test_emit_yaml_mapping_with_unknown_values_falls_back_to_str(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit({"path": Path("/tmp/x"), "color": _Color.RED, "tags": [Path("a")]}, fmt="yaml")
+    assert yaml.safe_load(capsys.readouterr().out) == {
+        "path": "/tmp/x",
+        "color": "red",
+        "tags": ["a"],
+    }
+
+
 def test_emit_accepts_a_single_mapping(capsys: pytest.CaptureFixture[str]) -> None:
     """A bare dict is treated as one record (detail), not iterated as a sequence."""
     emit({"name": "alpha", "value": 1}, fmt="json")
@@ -578,6 +613,71 @@ def test_render_rows_columns_question_mark_lists_keys(
     err = capsys.readouterr().err
     assert "name" in err
     assert "value" in err
+
+
+@pytest.mark.parametrize("fmt", ["table", "json", "raw", "yaml"])
+def test_emit_unknown_model_column_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str], fmt: str
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        emit([_Widget(name="a", value=1)], fmt=fmt, columns=["name", "nmae"])  # type: ignore[arg-type]
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "unknown column 'nmae'" in captured.err
+    assert "name, value" in captured.err
+
+
+def test_emit_unknown_mapping_column_warns_but_renders(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Mapping rows can be sparse (APIs omit fields), so an absent name only warns."""
+    emit([{"name": "a", "value": 1}], fmt="raw", columns=["name", "nmae"])
+    captured = capsys.readouterr()
+    assert captured.out == "a\t\n"
+    assert "warning: unknown column 'nmae'; valid columns: name, value" in captured.err
+
+
+def test_emit_column_names_containing_dots_match_whole_keys(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([{"has-file:release.txt": True}], fmt="raw", columns=["has-file:release.txt"])
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_emit_unknown_column_on_single_record_is_a_usage_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        emit(_Widget(name="a", value=1), fmt="json", columns=["bogus"])
+    assert excinfo.value.code == 2
+
+
+def test_emit_accepts_comma_separated_columns(capsys: pytest.CaptureFixture[str]) -> None:
+    emit([{"name": "a", "value": 1, "extra": 2}], fmt="raw", columns=["name,value"])
+    assert capsys.readouterr().out == "a\t1\n"
+
+
+def test_emit_mixes_comma_lists_and_repeats(capsys: pytest.CaptureFixture[str]) -> None:
+    emit([{"name": "a", "value": 1, "extra": 2}], fmt="json", columns=["name, value", "extra"])
+    assert json.loads(capsys.readouterr().out) == [{"name": "a", "value": 1, "extra": 2}]
+
+
+def test_emit_dotted_columns_validate_their_first_segment(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([{"meta": {"id": 7}}], fmt="raw", columns=["meta.id"])
+    assert capsys.readouterr() == ("7\n", "")
+    emit([{"meta": {"id": 7}}], fmt="raw", columns=["mta.id"])
+    assert "unknown column 'mta.id'" in capsys.readouterr().err
+
+
+def test_emit_unknown_column_on_empty_result_is_not_an_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit([], fmt="json", columns=["anything"])
+    assert capsys.readouterr().out == "[]\n"
 
 
 def test_emit_columns_question_mark_lists_model_fields(

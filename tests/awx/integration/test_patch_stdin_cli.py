@@ -276,10 +276,10 @@ def test_patch_stdin_project_default_environment_preview(seeded_default_org: Any
 
 
 def test_patch_stdin_warns_and_passes_through_unknown_field(seeded_default_org: Any) -> None:
-    """Passthrough model: a field this tool doesn't recognize is sent to AWX
-    as-is, with a soft warning (was a hard exit-2 rejection under the old
-    closed allowlist). NOTE: the fake server blindly stores the body, so this
-    proves the CLI *sends* the field — not that a real AWX accepts it."""
+    """With ``--allow-unknown-fields`` a field this tool doesn't recognize is
+    sent to AWX as-is, with a soft warning (rejected by default). NOTE: the
+    fake server blindly stores the body, so this proves the CLI *sends* the
+    field — not that a real AWX accepts it."""
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
         app,
@@ -289,6 +289,7 @@ def test_patch_stdin_warns_and_passes_through_unknown_field(seeded_default_org: 
             "--stdin",
             "--set",
             "zzz_bogus=1",
+            "--allow-unknown-fields",
             "--yes",
             "--organization",
             "Default",
@@ -313,6 +314,7 @@ def test_patch_stdin_ignored_unknown_field_fails_by_default(seeded_default_org: 
             "--stdin",
             "--set",
             "zzz_bogus=1",
+            "--allow-unknown-fields",
             "--yes",
             "--organization",
             "Default",
@@ -337,6 +339,7 @@ def test_patch_stdin_ignored_unknown_field_can_be_allowed(seeded_default_org: An
             "--stdin",
             "--set",
             "zzz_bogus=1",
+            "--allow-unknown-fields",
             "--yes",
             "--allow-unverified",
             "--organization",
@@ -362,6 +365,7 @@ def test_patch_stdin_allow_unverified_requires_yes(seeded_default_org: Any) -> N
             "--stdin",
             "--set",
             "zzz_bogus=1",
+            "--allow-unknown-fields",
             "--allow-unverified",
             "--organization",
             "Default",

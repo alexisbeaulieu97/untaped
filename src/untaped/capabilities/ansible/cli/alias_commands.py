@@ -15,7 +15,8 @@ from untaped.api import (
     emit,
     report_errors,
 )
-from untaped.capabilities.ansible.infrastructure import AliasRepository
+from untaped.capabilities.ansible.infrastructure import AliasRepository, SourceRepository
+from untaped.capabilities.ansible.settings import is_repo_name
 
 app = create_app(name="alias", help="Manage dependency aliases.")
 
@@ -27,8 +28,11 @@ def alias_add_command(
 ) -> None:
     """Map an Ansible role/Galaxy name to a GitHub owner/repo."""
     with report_errors():
+        if not is_repo_name(repo):
+            raise UntapedError(f"alias target must be a GitHub owner/name repo (got {repo!r})")
         AliasRepository().set(alias, repo)
         echo(f"set alias {alias!r} -> {repo}", err=True)
+        _warn_saved_sources_need_refresh()
 
 
 @app.command(name="list")
@@ -57,3 +61,17 @@ def alias_remove_command(alias: Annotated[str, Parameter(help="Alias to remove."
         if not removed:
             raise UntapedError(f"unknown alias: {alias!r}")
         echo(f"removed alias {alias!r}", err=True)
+        _warn_saved_sources_need_refresh()
+
+
+def _warn_saved_sources_need_refresh() -> None:
+    """Aliases are baked into cached source snapshots at refresh time."""
+    names = [source.name for source in SourceRepository().entries()]
+    if not names:
+        return
+    commands = ", ".join(f"`untaped ansible source refresh {name}`" for name in names)
+    echo(
+        "warning: cached source data resolves aliases at refresh time; "
+        f"run {commands} for this change to affect cached graphs",
+        err=True,
+    )

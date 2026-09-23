@@ -5,13 +5,24 @@ the per-flag visibility / rejection / payload-translation triple), the
 launch command body; submission and monitoring use the shared action runner.
 """
 
+import datetime
+import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any
 
+import yaml
 from cyclopts import App, Parameter
 
-from untaped.api import ColumnsOption, FormatOption, raise_usage, report_errors
+from untaped.api import (
+    ColumnsOption,
+    FormatOption,
+    raise_usage,
+    read_structured_file,
+    report_errors,
+)
 from untaped.capabilities.awx.application.ports import FkResolver
 from untaped.capabilities.awx.cli._action_runner import run_action_selection
 from untaped.capabilities.awx.cli._context import open_context, scope_for_command
@@ -29,6 +40,7 @@ from untaped.capabilities.awx.cli.options import (
     ParentOption,
     SearchOption,
     StdinOption,
+    YesOption,
 )
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 
@@ -53,6 +65,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         parent: ParentOption = None,
         inventory_organization: InventoryOrganizationOption = None,
         dry_run: DryRunOption = False,
+        yes: YesOption = False,
         continue_on_error: ContinueOption = False,
         parallel: ParallelOption = 1,
         by_id: ByIdOption = False,
@@ -61,7 +74,11 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
             list[str] | None,
             Parameter(
                 name="--extra-vars",
-                help="KEY=VAL override (repeatable).",
+                help=(
+                    "KEY=VAL (true/false/null, integers and JSON objects/arrays "
+                    "decoded; anything else stays a string), @FILE (YAML/JSON), or a JSON/YAML "
+                    "mapping; repeatable, merged left to right."
+                ),
                 consume_multiple=False,
             ),
         ] = None,
@@ -170,7 +187,7 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
         }
         _reject_unsupported_launch_flags(kind=spec.kind, accepts=accepts, supplied=supplied)
         with report_errors():
-            parallel = validate_controls(yes=False, dry_run=dry_run, parallel=parallel)
+            parallel = validate_controls(yes=yes, dry_run=dry_run, parallel=parallel)
             with open_context() as ctx:
                 # --inventory remains a payload override, never template scope.
                 selected = select_resources(
@@ -203,6 +220,10 @@ def _add_launch(app: App, spec: AwxResourceSpec) -> None:
                     action="launch",
                     payload=payload,
                     dry_run=dry_run,
+                    yes=yes,
+                    # Mass or multi-target selections preview and confirm first.
+                    confirm=len(selected) > 1
+                    or bool(stdin or all_ or filter_ or search is not None),
                     parallel=parallel,
                     continue_on_error=continue_on_error,
                     wait=wait,
@@ -315,7 +336,7 @@ def _build_launch_payload(
     """
     payload: dict[str, Any] = {}
     if extra_vars and "extra_vars" in accepts:
-        payload["extra_vars"] = "\n".join(extra_vars)
+        payload["extra_vars"] = encode_extra_vars(parse_extra_vars(extra_vars))
     if limit and "limit" in accepts:
         payload["limit"] = limit
     for f in LAUNCH_FLAGS:
@@ -328,4 +349,80 @@ def _build_launch_payload(
     return payload
 
 
-__all__ = ["LAUNCH_FLAGS", "LaunchFlag"]
+_KEY_VALUE = re.compile(r"^[A-Za-z_][\w.-]*=")
+_INTEGER = re.compile(r"^-?(0|[1-9]\d*)$")
+_JSON_WORDS: dict[str, Any] = {"true": True, "false": False, "null": None}
+
+
+def _decode_key_value(raw: str) -> Any:
+    """Decode ``true``/``false``/``null``, integers, and JSON objects/arrays.
+
+    Everything else (``1.10``, ``1e3``, ``NaN``, quoted text) stays the
+    literal string the user typed, so version-like values are not mangled.
+    """
+    if raw in _JSON_WORDS:
+        return _JSON_WORDS[raw]
+    if _INTEGER.match(raw):
+        return int(raw)
+    if raw[:1] in {"{", "["}:
+        try:
+            decoded = json.loads(raw, parse_constant=_reject_constant)
+        except json.JSONDecodeError, ValueError:
+            return raw
+        if isinstance(decoded, dict | list):
+            return decoded
+    return raw
+
+
+def _reject_constant(name: str) -> Any:
+    raise ValueError(name)
+
+
+def _normalize(value: Any) -> Any:
+    """Turn YAML timestamps into ISO strings so the mapping is JSON-encodable."""
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _normalize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize(item) for item in value]
+    return value
+
+
+def encode_extra_vars(values: dict[str, Any]) -> str:
+    """JSON-encode merged extra vars, rejecting values JSON cannot carry."""
+    try:
+        return json.dumps(_normalize(values), allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise_usage(f"--extra-vars contains a value JSON cannot encode: {exc}")
+
+
+def parse_extra_vars(values: list[str]) -> dict[str, Any]:
+    """Merge ``--extra-vars`` entries (left to right) into one mapping.
+
+    Each entry is ``@PATH`` (a YAML/JSON mapping file), ``KEY=VAL`` (the
+    value decoded only for ``true``/``false``/``null``, integers, and JSON
+    objects/arrays; anything else is kept as the typed string), or a raw
+    JSON/YAML mapping. AWX expects a mapping; anything else is a usage error.
+    """
+    merged: dict[str, Any] = {}
+    for entry in values:
+        if entry.startswith("@"):
+            merged.update(read_structured_file(Path(entry[1:]).expanduser()))
+        elif _KEY_VALUE.match(entry):
+            key, _, raw = entry.partition("=")
+            merged[key] = _decode_key_value(raw)
+        else:
+            try:
+                parsed = yaml.safe_load(entry)
+            except yaml.YAMLError:
+                parsed = None
+            if not isinstance(parsed, dict):
+                raise_usage(
+                    f"--extra-vars expects KEY=VAL, @FILE, or a JSON/YAML mapping (got {entry!r})"
+                )
+            merged.update(parsed)
+    return merged
+
+
+__all__ = ["LAUNCH_FLAGS", "LaunchFlag", "encode_extra_vars", "parse_extra_vars"]

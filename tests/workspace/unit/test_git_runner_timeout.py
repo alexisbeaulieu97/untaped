@@ -72,7 +72,9 @@ def test_ensure_bare_uses_slow_timeout_on_clone(
     # early-return check fails and we follow the clone branch — which is
     # the path that should pay the slow-timeout budget.
     GitRunner(slow_timeout=900.0).ensure_bare("https://example.com/repo.git", cache_dir=tmp_path)
-    assert recorded_timeouts == [900.0]
+    # The clone pays the slow budget; the cache-protection `git config`
+    # calls that follow are local.
+    assert recorded_timeouts == [900.0, DEFAULT_TIMEOUT, DEFAULT_TIMEOUT]
 
 
 # ── Per-method bucket-selection contract ───────────────────────────────────
@@ -136,7 +138,10 @@ def test_network_ops_use_slow_timeout(
     recorded_timeouts: list[float | None],
 ) -> None:
     op(GitRunner(timeout=11.0, slow_timeout=99.0), tmp_path)
-    assert recorded_timeouts == [99.0], (
+    # The network call comes first; any follow-up calls (bare_fetch's
+    # cache-protection `git config`) are local.
+    assert recorded_timeouts[0] == 99.0
+    assert set(recorded_timeouts[1:]) <= {11.0}, (
         f"{op_name} should use the slow/network timeout, got {recorded_timeouts}"
     )
 
@@ -201,4 +206,5 @@ def test_sync_timeout_overrides_both_buckets(
     GitRunner(timeout=42.0, slow_timeout=42.0).bare_fetch(tmp_path)
     GitRunner(timeout=42.0, slow_timeout=42.0).read_current_branch(tmp_path)
     get_settings.cache_clear()
-    assert recorded_timeouts == [42.0, 42.0]
+    assert recorded_timeouts
+    assert set(recorded_timeouts) == {42.0}

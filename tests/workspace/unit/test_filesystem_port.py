@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,6 +31,7 @@ from untaped.capabilities.workspace.domain import (
     Workspace,
     WorkspaceManifest,
 )
+from untaped.capabilities.workspace.errors import WorkspaceError
 from untaped.capabilities.workspace.infrastructure import LocalFilesystem
 from workspace.conftest import StubFilesystem
 
@@ -93,6 +95,60 @@ def test_local_filesystem_rmtree_removes_recursively(tmp_path: Path) -> None:
     (target / "f.txt").write_text("x")
     fs.rmtree(target)
     assert not target.exists()
+
+
+def test_local_filesystem_rmtree_retries_permission_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Read-only entries (Windows git objects) are chmodded and retried."""
+    import os
+
+    fs = LocalFilesystem()
+    target = tmp_path / "to-remove"
+    (target / "objects").mkdir(parents=True)
+    (target / "objects" / "pack").write_text("x")
+    real_unlink = os.unlink
+    refused: set[str] = set()
+
+    def flaky_unlink(path: Any, *args: Any, **kwargs: Any) -> None:
+        name = os.fspath(path)
+        if os.path.basename(name) == "pack" and not refused:
+            refused.add(name)
+            raise PermissionError(13, "read-only", name)
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "unlink", flaky_unlink)
+    fs.rmtree(target)
+    assert refused
+    assert not target.exists()
+
+
+def test_local_filesystem_rmtree_wraps_os_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    target = tmp_path / "to-remove"
+    target.mkdir()
+    (target / "f.txt").write_text("x")
+
+    def refuse(path: Any, *args: Any, **kwargs: Any) -> None:
+        raise PermissionError(13, "denied", os.fspath(path))
+
+    monkeypatch.setattr(os, "unlink", refuse)
+    with pytest.raises(WorkspaceError, match="could not remove"):
+        LocalFilesystem().rmtree(target)
+
+
+def test_local_filesystem_unlink_and_rmdir(tmp_path: Path) -> None:
+    fs = LocalFilesystem()
+    (tmp_path / "d").mkdir()
+    (tmp_path / "f").write_text("x")
+    fs.unlink(tmp_path / "f")
+    fs.rmdir(tmp_path / "d")
+    assert list(tmp_path.iterdir()) == []
+    with pytest.raises(WorkspaceError):
+        fs.rmdir(tmp_path / "missing")
 
 
 # ── Lint-as-test: no pathlib I/O in application/ ──────────────────────────

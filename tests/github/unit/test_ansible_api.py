@@ -28,6 +28,7 @@ from untaped.capabilities.github.ansible import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
     TeamScope,
+    is_global_github_failure,
     normalize_team_scopes,
 )
 from untaped.errors import UntapedError
@@ -45,6 +46,7 @@ EXPECTED_ALL = [
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "TeamScope",
+    "is_global_github_failure",
     "normalize_team_scopes",
 ]
 
@@ -68,6 +70,7 @@ def test_exports_are_canonical_objects() -> None:
     assert normalize_team_scopes is scopes.normalize_team_scopes
     assert GithubGraphqlError is errors.GithubGraphqlError
     assert GithubGraphqlErrorKind is errors.GithubGraphqlErrorKind
+    assert is_global_github_failure is errors.is_global_github_failure
     assert BatchRepoRefsResult is models.BatchRepoRefsResult
     assert BatchRepoRefsFailure is models.BatchRepoRefsFailure
     assert RepoRefs is models.RepoRefs

@@ -33,6 +33,10 @@ class AwxPingService(Protocol):
 
     def ping(self) -> dict[str, Any]: ...
 
+    def me(self) -> dict[str, Any]:
+        """Authenticated ``/me/`` list payload; fails when the token is rejected."""
+        ...
+
 
 class Catalog(Protocol):
     """Looks up resource specs by kind or CLI name.

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.domain.cycles import detect_cycles
 from untaped.capabilities.ansible.domain.graph import DependencyGraph, GraphEdge, GraphNode
+from untaped.capabilities.ansible.domain.identity import repo_key
 from untaped.capabilities.ansible.domain.payloads import CachedRef, IndexedDependency
 from untaped.capabilities.ansible.domain.ref_display import RefDisplay, sort_ref_displays
 
@@ -83,21 +84,14 @@ class _EdgeBatchRead(Protocol):
 
 
 class _Walk:
-    """One frontier entry: a node to expand carrying its own traversal path stack."""
+    """One frontier entry: a node to expand and the emissions it recorded."""
 
-    __slots__ = ("items", "ref", "remaining", "repo", "stack")
+    __slots__ = ("items", "ref", "remaining", "repo")
 
-    def __init__(
-        self,
-        repo: str,
-        ref: str | None,
-        remaining: int | None,
-        stack: set[str],
-    ) -> None:
+    def __init__(self, repo: str, ref: str | None, remaining: int | None) -> None:
         self.repo = repo
         self.ref = ref
         self.remaining = remaining
-        self.stack = stack
         self.items: list[_ReplayItem | _Walk] = []
 
 
@@ -114,6 +108,10 @@ class _GraphBuilder:
         self._dependents: dict[tuple[str, str | None, str | None], list[IndexedDependency]] = {}
         self._cached_refs: dict[tuple[str, str | None], set[str]] = {}
         self._cached_ref_metadata: dict[tuple[str, str | None], tuple[CachedRef, ...]] = {}
+        # Best remaining depth each node id was scheduled with in the current
+        # walk; a node is expanded again only when reached with more depth
+        # left, so shared dependencies cost one expansion, not one per path.
+        self._scheduled: dict[str, int | None] = {}
 
     def build(self) -> DependencyGraph:
         target_id = _node_id(self._request.repo, self._request.ref)
@@ -121,16 +119,18 @@ class _GraphBuilder:
         depth = self._request.depth
         if self._request.direction in {"deps", "both"}:
             self._walk(
-                _Walk(self._request.repo, self._request.ref, depth, {target_id}),
+                _Walk(self._request.repo, self._request.ref, depth),
                 expand=self._expand_deps,
                 prefetch=self._prefetch_deps_level,
             )
         if self._request.direction in {"impact", "both"}:
             self._walk(
-                _Walk(self._request.repo, self._request.ref, depth, {target_id}),
+                _Walk(self._request.repo, self._request.ref, depth),
                 expand=self._expand_impact,
                 prefetch=self._prefetch_impact_level,
             )
+            if self._request.ref is not None:
+                self._warn_unplaced_unpinned_dependents(self._request.repo, self._request.ref)
         warnings: list[str] = []
         if self._request.direction in {"impact", "both"} and self._index.is_stale(
             self._request.source_key,
@@ -164,9 +164,10 @@ class _GraphBuilder:
         Each depth level's uncached index reads are bulk-loaded before any
         entry in that level is expanded, so expansion reads only from the
         per-run caches. Emissions are recorded per entry and replayed
-        depth-first afterwards, keeping node/edge/warning ordering identical
-        to the previous recursive depth-first traversal.
+        depth-first afterwards, so node/edge/warning ordering stays
+        depth-first. Each node is expanded once (see :meth:`_claim`).
         """
+        self._scheduled = {_node_id(root.repo, root.ref): root.remaining}
         level = [root]
         while level:
             prefetch(level)
@@ -186,20 +187,17 @@ class _GraphBuilder:
             source_ref = entry.ref if entry.ref is not None else indexed.source_ref
             source_id = _node_id(entry.repo, source_ref)
             entry.items.append(_AddNodeItem(entry.repo, source_ref, indexed.source_ref_kind))
-            source_stack = {*entry.stack, source_id}
+            if entry.ref is None:
+                # A ref-less read expands every concrete ref of the repo.
+                self._claim(source_id, entry.remaining)
             target_id = _dependency_target_id(indexed)
             entry.items.append(_AddTargetItem(indexed))
             entry.items.append(_AddEdgeItem(source_id, target_id, "requires", indexed))
-            if target_id in source_stack:
-                continue
             if indexed.dependency_repo is None:
                 continue
-            child = _Walk(
-                indexed.dependency_repo,
-                indexed.dependency_version,
-                next_remaining,
-                {*source_stack, target_id},
-            )
+            if not self._claim(target_id, next_remaining):
+                continue
+            child = _Walk(indexed.dependency_repo, indexed.dependency_version, next_remaining)
             entry.items.append(child)
             children.append(child)
         return children
@@ -213,23 +211,64 @@ class _GraphBuilder:
             target_ref = entry.ref if entry.ref is not None else indexed.dependency_version
             target_id = _node_id(entry.repo, target_ref)
             entry.items.append(_AddNodeItem(entry.repo, target_ref, None))
-            target_stack = {*entry.stack, target_id}
+            if entry.ref is None:
+                self._claim(target_id, entry.remaining)
             source_id = _node_id(indexed.source_repo, indexed.source_ref)
             entry.items.append(
                 _AddNodeItem(indexed.source_repo, indexed.source_ref, indexed.source_ref_kind)
             )
             entry.items.append(_AddEdgeItem(source_id, target_id, "impacts", indexed))
-            if source_id in target_stack:
+            if not self._claim(source_id, next_remaining):
                 continue
-            child = _Walk(
-                indexed.source_repo,
-                indexed.source_ref,
-                next_remaining,
-                {*target_stack, source_id},
-            )
+            child = _Walk(indexed.source_repo, indexed.source_ref, next_remaining)
             entry.items.append(child)
             children.append(child)
         return children
+
+    def _warn_unplaced_unpinned_dependents(self, repo: str, ref: str) -> None:
+        """Warn when unpinned dependents cannot be matched to ``ref``.
+
+        Unpinned declarations install the dependency's default branch; the
+        index matches them when that branch is cached. When it is unknown
+        they are omitted from a ref-specific impact query, so say how many.
+        Checked for the requested target only, with one extra batch read.
+        """
+        source_key = self._request.source_key
+        if source_key is None:
+            return
+        if _first_default_branch(self._cached_ref_metadata_for(repo)) is not None:
+            return
+        included = {
+            (indexed.source_repo, indexed.source_ref) for indexed in self._dependents_for(repo, ref)
+        }
+        omitted = {
+            (indexed.source_repo, indexed.source_ref)
+            for indexed in self._index.dependents_batch([(repo, None)], source_key=source_key)[
+                (repo, None)
+            ]
+            if indexed.dependency_version is None
+        } - included
+        if not omitted:
+            return
+        count = len(omitted)
+        noun = "dependent" if count == 1 else "dependents"
+        self._add_warning(
+            f"{count} unpinned {noun} of {_label(repo, ref)} omitted: unpinned "
+            f"declarations install {repo}'s default branch, which is not in cached "
+            "source data. Add the repo to the source to place them."
+        )
+
+    def _claim(self, node_id: str, remaining: int | None) -> bool:
+        """Schedule ``node_id`` unless it was already scheduled with as much depth.
+
+        Ancestors (including the target) are always scheduled with more depth
+        than their descendants, so back-edges never re-expand: cycles are
+        still emitted as edges and labelled by cycle detection.
+        """
+        if node_id in self._scheduled and not _deeper(remaining, self._scheduled[node_id]):
+            return False
+        self._scheduled[node_id] = remaining
+        return True
 
     def _replay(self, entry: _Walk) -> None:
         stack = [iter(entry.items)]
@@ -332,7 +371,7 @@ class _GraphBuilder:
         )
         self._add_warning(
             f"unresolved dependency {unresolved} from "
-            f"{_node_id(indexed.source_repo, indexed.source_ref)} in {indexed.source_path}"
+            f"{_label(indexed.source_repo, indexed.source_ref)} in {indexed.source_path}"
         )
 
     def _add_node(self, repo: str, ref: str | None, *, ref_kind: str | None = None) -> str:
@@ -389,7 +428,7 @@ class _GraphBuilder:
         if self._request.source_key is None or ref is None:
             return
         cached_refs = self._cached_refs_for(repo)
-        node = _node_id(repo, ref)
+        node = _label(repo, ref)
         if ref in cached_refs:
             return
         if cached_refs:
@@ -501,8 +540,17 @@ class _NodeMetadata(BaseModel):
     default_branch: str | None
 
 
+def _deeper(remaining: int | None, best: int | None) -> bool:
+    """Whether ``remaining`` depth (``None`` = unlimited) exceeds ``best``."""
+    if best is None:
+        return False
+    return remaining is None or remaining > best
+
+
 def _node_id(repo: str, ref: str | None) -> str:
-    return f"{repo}@{ref}" if ref else repo
+    """Node id: GitHub repo ids are case-insensitive, so the repo part is folded."""
+    key = repo_key(repo)
+    return f"{key}@{ref}" if ref else key
 
 
 def _dependency_target_id(indexed: IndexedDependency) -> str:
@@ -513,7 +561,7 @@ def _dependency_target_id(indexed: IndexedDependency) -> str:
 
 
 def _label(repo: str, ref: str | None) -> str:
-    return _node_id(repo, ref)
+    return f"{repo}@{ref}" if ref else repo
 
 
 def _first_default_branch(refs: list[CachedRef] | tuple[CachedRef, ...]) -> str | None:

@@ -5,8 +5,11 @@ fields come from two sources, merged with ``--set`` winning:
 
 - ``--patch-file PATH`` — a partial-spec YAML mapping (the same field names a
   saved resource's ``spec:`` block uses).
-- ``--set NAME=VALUE`` (repeatable) — imperative, JSON-coerced so types reach
-  AWX correctly (``verbosity=2`` → ``2``, ``enabled=true`` → ``True``).
+- ``--set NAME=VALUE`` (repeatable) — imperative, coerced so types reach AWX
+  correctly (``verbosity=2`` → ``2``, ``enabled=true`` → ``True``). When the
+  target record is known, a field it holds as a string stays a string
+  (``scm_branch=1.10`` stays ``"1.10"``) unless the value is a JSON object or
+  array.
 
 The merged patch becomes a synthetic ``Resource.spec`` that flows through the
 normal apply pipeline (FK resolution, diff, sparse PATCH).
@@ -15,30 +18,41 @@ normal apply pipeline (FK resolution, diff, sparse PATCH).
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from untaped.api import parse_kv_pairs, read_structured_file
 
 
-def parse_set_pairs(values: list[str] | None) -> dict[str, Any]:
-    """Parse ``--set KEY=VALUE`` entries, JSON-coercing each value.
+def parse_set_pairs(
+    values: list[str] | None, *, record: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    """Parse ``--set KEY=VALUE`` entries, coercing each value.
 
     Splits on the first ``=`` (via the SDK's :func:`parse_kv_pairs`, which
     rejects malformed entries up front), then coerces the value with
     :func:`json.loads` so numbers, booleans, ``null`` and structured JSON land
     as the right type. A value that is not valid JSON is kept as a plain string
-    (so ``job_tags=deploy`` → ``"deploy"`` without needing quotes).
+    (so ``job_tags=deploy`` → ``"deploy"`` without needing quotes). When
+    ``record`` holds the field as a string, only a JSON object/array is decoded.
     """
     raw = parse_kv_pairs(values, flag="--set")
-    return {key: _coerce(value) for key, value in raw.items()}
+    existing = record or {}
+    return {
+        key: _coerce(value, string_field=isinstance(existing.get(key), str))
+        for key, value in raw.items()
+    }
 
 
-def _coerce(value: str) -> Any:
+def _coerce(value: str, *, string_field: bool = False) -> Any:
     try:
-        return json.loads(value)
+        decoded = json.loads(value)
     except json.JSONDecodeError:
         return value
+    if string_field and not isinstance(decoded, dict | list):
+        return value
+    return decoded
 
 
 def build_patch(set_pairs: list[str] | None, patch_file: Path | None) -> dict[str, Any]:

@@ -58,7 +58,7 @@ from untaped.capabilities.recipe.domain.hook_project import (
     hook_module_file,
 )
 from untaped.capabilities.recipe.domain.pack import HookEntry, PackManifest, RecipeEntry, parse_ref
-from untaped.capabilities.recipe.domain.paths import safe_library_name
+from untaped.capabilities.recipe.domain.paths import is_path_ref, safe_library_name
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capabilities.recipe.infrastructure import (
@@ -87,6 +87,10 @@ app.command(backup_app, name="backup")
 app.command(test_command, name="test")
 
 MessageKind = Literal["success", "warning", "error", "info"]
+_EMPTY_LIBRARY_HINT = (
+    "no packs installed; scaffold one with `untaped recipe new pack NAME` "
+    "or install one with `untaped recipe add PATH|GIT_URL`"
+)
 _NO_LOCK_NOTE = "uv.lock was not created/refreshed for {path}; hooks need `uv lock` before running."
 
 
@@ -370,6 +374,8 @@ def add_command(
 ) -> None:
     """Install a recipe pack from a path or git URL."""
     with report_config_errors(), tempfile.TemporaryDirectory() as temp_root:
+        if rev is not None and not is_git_url(source):
+            raise ConfigError("--rev is only valid for git URL sources")
         source_dir = (
             fetch_pack_source(source, rev=rev, dest=Path(temp_root) / "pack")
             if is_git_url(source)
@@ -430,7 +436,10 @@ def list_command(
     with report_config_errors():
         if hooks and packs:
             raise ConfigError("choose one of --hooks or --packs")
-        installed = UnifiedPackLibrary(library_root=library_root()).packs()
+        library = UnifiedPackLibrary(library_root=library_root())
+        installed = library.packs()
+        for name, error in library.load_errors().items():
+            ui_context(strict=False).message("warning", f"skipping pack '{name}': {error}")
         if packs:
             rows = [_pack_row(pack) for pack in installed]
             kind = "recipe.pack"
@@ -450,10 +459,11 @@ def list_command(
         rendered = render_rows(rows, fmt=fmt, columns=columns, kind=kind)
         if rendered:
             echo(rendered)
-        if not installed and not (hooks and BUILTIN_HOOKS):
+        # The hint is human guidance: structured formats stay machine-clean.
+        if fmt == "table" and not installed and not (hooks and BUILTIN_HOOKS):
             ui_context(strict=False).message(
                 "info",
-                "no packs installed; scaffold one with `new pack` or install with `add`",
+                _EMPTY_LIBRARY_HINT,
             )
 
 
@@ -539,7 +549,7 @@ def check_command(
         if ref_text is None and not rows:
             ui_context(strict=False).message(
                 "info",
-                "no packs installed; scaffold one with `new pack` or install with `add`",
+                _EMPTY_LIBRARY_HINT,
             )
         finish(any(row["status"] == "error" for row in rows))
 
@@ -568,7 +578,7 @@ def remove_command(
                 echo(f"  - {row['name']}", err=True)
             if library.local_edits(name):
                 echo(
-                    f"Warning: pack '{name}' has local edits in the library "
+                    f"warning: pack '{name}' has local edits in the library "
                     "(via edit or new recipe/hook); removing discards them.",
                     err=True,
                 )
@@ -764,13 +774,13 @@ def _render_pack_add_preview(
     echo(f"Hooks: {hooks}", err=True)
     if local_edits:
         echo(
-            "Warning: library copy has local edits; --discard-edits will overwrite them.",
+            "warning: library copy has local edits; --discard-edits will overwrite them.",
             err=True,
         )
 
 
 def _new_pack_child(ref_text: str) -> tuple[Path, str]:
-    if _is_explicit_new_path(ref_text):
+    if is_path_ref(ref_text):
         path = Path(ref_text).expanduser()
         if not path.name or path.parent == Path("."):
             raise ValueError("qualified refs must use <pack>/<name>")
@@ -783,10 +793,6 @@ def _new_pack_child(ref_text: str) -> tuple[Path, str]:
         if installed.name == installed_name:
             return installed.root, ref.name
     raise ValueError(f"pack not found: {ref.pack}{_new_pack_child_hint(ref.pack, ref.name)}")
-
-
-def _is_explicit_new_path(value: str) -> bool:
-    return value.startswith(("/", "./", "../", "~"))
 
 
 def _new_pack_child_hint(pack: str, name: str) -> str:
@@ -904,8 +910,9 @@ def _outcome_rows(
     rendered: list[dict[str, object]] = []
     for plan, row in zip(plans, rows, strict=True):
         plan_id = id(plan)
-        if plan.status == "skipped":
-            # Not applicable: keep the honest "skipped" status through execution.
+        if plan.status in {"skipped", "error"}:
+            # Not applicable / failed planning: keep the honest status through
+            # execution (a planning error is never "unchanged").
             rendered.append(row)
         elif plan_id in execution.failed:
             rendered.append({**row, "status": "error", "error": execution.failed[plan_id]})

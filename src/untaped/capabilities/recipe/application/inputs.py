@@ -166,19 +166,19 @@ def _resolve_one(
             raise ValueError(
                 f"--input-from for input {name!r} did not resolve for target: {target.path}"
             )
-        return _coerce_derived_value(spec, rendered)
+        return _coerce_derived_value(name, spec, rendered)
     recipe_source = config.recipe_sources.get(name) if target is not None else None
     if recipe_source is not None and target is not None:
         rendered = _derive_source_value(recipe_source, target)
         if rendered is not UNRESOLVED:
-            return _coerce_derived_value(spec, rendered)
+            return _coerce_derived_value(name, spec, rendered)
     if config.interactive:
         if spec.type in {"list", "dict"}:
             # Structured inputs cannot prompt, so they resolve exactly as in
             # non-interactive mode; the error replaces "missing required input"
             # only where a prompt would otherwise have been the last resort.
             if spec.default is not None:
-                return spec.coerce(spec.default)
+                return _coerce_input(name, spec, spec.default)
             if spec.required:
                 raise ConfigError(
                     f"interactive prompting is not supported for structured input {name!r}; "
@@ -187,9 +187,9 @@ def _resolve_one(
             return _UNSET
         prompt_target = None if target is None else target.path
         prompted = _prompt_value(name, spec, prompt_target, config)
-        return _UNSET if prompted is _UNSET else spec.coerce(prompted)
+        return _UNSET if prompted is _UNSET else _coerce_input(name, spec, prompted)
     if spec.default is not None:
-        return spec.coerce(spec.default)
+        return _coerce_input(name, spec, spec.default)
     if spec.required:
         raise ValueError(f"missing required input: {name}")
     return _UNSET
@@ -227,7 +227,7 @@ def _coerce_fixed_values(
         except ConfigError:
             raise
         except ValueError as exc:
-            raise ConfigError(str(exc)) from exc
+            raise ConfigError(f"input {name!r}: {exc}") from exc
     return typed
 
 
@@ -260,11 +260,19 @@ def _derive_source_value(source: CompiledInputSource, target: Target) -> object:
         raise ValueError(str(exc)) from exc
 
 
-def _coerce_derived_value(spec: InputSpec, value: object) -> object:
+def _coerce_input(name: str, spec: InputSpec, value: object) -> object:
+    """Coerce one input value, naming the input in any coercion error."""
+    try:
+        return spec.coerce(value)
+    except ValueError as exc:
+        raise ValueError(f"input {name!r}: {exc}") from exc
+
+
+def _coerce_derived_value(name: str, spec: InputSpec, value: object) -> object:
     structured = spec.type in {"list", "dict"}
     try:
         ensure_derived_value_within_bound(value, structured=structured)
-        coerced = spec.coerce(value)
+        coerced = _coerce_input(name, spec, value)
         ensure_derived_value_within_bound(coerced, structured=structured)
     except InputSourceError as exc:
         raise ValueError(str(exc)) from exc

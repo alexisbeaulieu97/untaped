@@ -99,3 +99,14 @@ def test_discover_skips_symlinked_directories(tmp_path: Path) -> None:
 
     assert [d.name for d in result.repos] == ["real"]
     assert any("link" in s and "symlink" in s for s in result.skipped), result.skipped
+
+
+def test_discover_wraps_os_errors(tmp_path: Path) -> None:
+    import pytest
+
+    from untaped.capabilities.workspace.errors import WorkspaceError
+
+    not_a_dir = tmp_path / "file.txt"
+    not_a_dir.write_text("x")
+    with pytest.raises(WorkspaceError, match="could not scan"):
+        _make({}).discover(not_a_dir)

@@ -23,6 +23,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         "extra_data",
         "inventory",
         "scm_branch",
+        "job_type",
         "job_tags",
         "skip_tags",
         "limit",
@@ -31,6 +32,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         "forks",
         "job_slice_count",
         "timeout",
+        "execution_environment",
     ),
     read_only_fields=(
         "id",
@@ -56,6 +58,7 @@ SCHEDULE_SPEC = AwxResourceSpec(
         ),
         # Schedules can override the parent's inventory; org-scoped.
         FkRef(field="inventory", kind="Inventory", scope_field="organization"),
+        FkRef(field="execution_environment", kind="ExecutionEnvironment"),
     ),
     apply_strategy="schedule",
     list_columns=("id", "name", "last_run", "next_run", "enabled"),

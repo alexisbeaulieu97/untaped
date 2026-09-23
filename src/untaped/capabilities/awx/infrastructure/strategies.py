@@ -72,6 +72,8 @@ class DefaultApplyStrategy:
                 continue
             if key == "name":
                 params["name"] = str(value)
+            elif key.endswith("__isnull"):
+                params[key] = "true" if value else "false"
             else:
                 params[f"{key}__name"] = str(value)
         record = client.find(spec, params=params)

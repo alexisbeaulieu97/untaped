@@ -7,6 +7,7 @@ from types import TracebackType
 from typing import Any
 
 from untaped.api import HttpSettings, RetryPolicy, connected_client, paginate_offset
+from untaped.capabilities.jira.domain.models import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
 from untaped.capabilities.jira.settings import JiraSettings
 
 # Jira's JQL search is a POST to an idempotent ``/search`` endpoint. Opt just
@@ -47,7 +48,7 @@ class JiraClient:
     def get_issue(self, issue_key: str) -> dict[str, Any]:
         return self._http.get_json_dict(
             self._api(f"issue/{issue_key}"),
-            params={"fields": "summary,status,assignee,updated"},
+            params={"fields": ",".join(ISSUE_DETAIL_FIELDS)},
         )
 
     def search_issues(self, jql: str, *, limit: int | None = None) -> Iterator[dict[str, Any]]:
@@ -56,7 +57,7 @@ class JiraClient:
             "POST",
             self._api("search"),
             item_key="issues",
-            body={"jql": jql, "fields": ["summary", "status", "assignee", "updated"]},
+            body={"jql": jql, "fields": list(ISSUE_ROW_FIELDS)},
             page_size=self._page_size,
             limit=limit,
             start_param="startAt",

@@ -29,3 +29,18 @@ def test_file_url(tmp_path: Path) -> None:
     p = cache_path_for("file:///tmp/foo/svc-a.git", cache_dir=tmp_path)
     # urlparse gives empty host for file://; falls back to _unknown
     assert "_unknown" in p.parts or "svc-a.git" in p.name
+
+
+def test_dot_dot_segments_stay_inside_cache_root(tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    for url in (
+        "https://evil/../../tmp/pwn.git",
+        "https://evil/org/..",
+        "git@evil:../../../tmp/pwn.git",
+        "a@evil/../..:x/y.git",
+        "https://evil/org/..\\..\\x.git",
+    ):
+        p = cache_path_for(url, cache_dir=tmp_path)
+        assert p.resolve().is_relative_to(root), url
+        assert ".." not in p.parts, url
+        assert "\\" not in str(p.relative_to(root)), url

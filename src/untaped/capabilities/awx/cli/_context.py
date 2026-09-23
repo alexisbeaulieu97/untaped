@@ -12,12 +12,14 @@ downstream consumes the package-local :class:`AwxConfig`.
 
 from __future__ import annotations
 
+import threading
 from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING
 
 from untaped.api import AppContext, ConfigError, app_context, echo
 from untaped.capabilities.awx.domain import ResourceSpec
+from untaped.capabilities.awx.errors import WaitCancelled
 from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig, AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
@@ -49,11 +51,18 @@ class AwxContext:
             warn=lambda msg: echo(f"warning: {msg}", err=True),
         )
         self.strategies = StaticStrategyResolver()
-        self.monitor = PollingJobMonitor(self.repo)
+        # Set on Ctrl-C so polling workers stop instead of blocking the exit.
+        self.stop = threading.Event()
+        self.monitor = PollingJobMonitor(self.repo, sleep=self.pause)
         self.jobs = JobRecordRepository(self.repo)
         self.ujts = UnifiedTemplateRepository(self.repo)
         self.workflow_nodes = WorkflowNodeRepository(self.repo)
         self.default_organization = config.default_organization
+
+    def pause(self, seconds: float) -> None:
+        """Poll-interval sleep that ends early (raising) once :attr:`stop` is set."""
+        if self.stop.wait(seconds):
+            raise WaitCancelled("wait interrupted")
 
     def progress_ui(self) -> UiContext:
         """Themed UI for stderr progress on slow AWX calls.

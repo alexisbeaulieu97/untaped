@@ -60,7 +60,10 @@ class ProfileFileRepository:
         return classify_active_profile(read_config_dict())
 
     def read(self, name: str) -> dict[str, Any] | None:
-        profile = _profiles(read_config_dict()).get(name)
+        profiles = _profiles(read_config_dict())
+        profile = profiles.get(name)
+        if profile is None and name in profiles:
+            return {}  # an empty ``name:`` entry (YAML null) is an empty profile
         return profile if isinstance(profile, dict) else None
 
     def resolved(self, name: str) -> dict[str, Any]:

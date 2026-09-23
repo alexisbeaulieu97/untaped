@@ -7,7 +7,7 @@ from typing import Literal
 
 import pytest
 
-from untaped.api import ConfigError
+from untaped.api import ConfigError, HttpStatusError, UntapedError
 from untaped.capabilities.github.application import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
@@ -96,6 +96,8 @@ class _Corpus:
         self.cached_rows = cached_rows
         self.freshness = freshness or {}
         self.sync_failures = sync_failures or {}
+        self.sync_errors: dict[str, Exception] = {}
+        self.freshness_errors: dict[str, str] = {}
         self.synced: list[_Synced] = []
         self.local_ref_map: dict[str, tuple[str, ...]] = {}
         self.tree_map: dict[tuple[str, str], tuple[str, ...]] = {}
@@ -116,6 +118,9 @@ class _Corpus:
         reason = self.sync_failures.get(repo.full_name)
         if reason is not None:
             raise GitCorpusError(reason)
+        error = self.sync_errors.get(repo.full_name)
+        if error is not None:
+            raise error
         fetched_at = datetime(2026, 7, 6, 12, tzinfo=UTC).isoformat()
         self.freshness[repo.full_name] = CorpusFreshness(
             fetched_at=datetime.fromisoformat(fetched_at),
@@ -135,6 +140,9 @@ class _Corpus:
         )
 
     def repo_freshness(self, repo: CorpusRepoTarget, *, root: Path) -> CorpusFreshness | None:
+        reason = self.freshness_errors.get(repo.full_name)
+        if reason is not None:
+            raise GitCorpusError(reason)
         return self.freshness.get(repo.full_name)
 
     def local_refs(
@@ -214,6 +222,30 @@ def test_offline_scope_from_corpus_metadata(tmp_path: Path) -> None:
     assert report.cached == 1
 
 
+def test_offline_scope_matches_owner_and_name_case_insensitively(tmp_path: Path) -> None:
+    corpus = _Corpus(cached_rows=(_row("acme/api"), _row("Other/Tool"), _row("zed/x")))
+    corpus.tree_map[("acme/api", "main")] = ("README.md",)
+    corpus.tree_map[("Other/Tool", "main")] = ("README.md",)
+
+    by_org = _sweep(corpus, _Resolver(()), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(orgs=("ACME", "other")),
+            sync="off",
+        )
+    )
+    by_repo = _sweep(corpus, _Resolver(()), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(repos=("Acme/API",)),
+            sync="off",
+        )
+    )
+
+    assert [row.full_name for row in by_org.rows] == ["Other/Tool", "acme/api"]
+    assert [row.full_name for row in by_repo.rows] == ["acme/api"]
+
+
 def test_offline_team_scope_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="--team requires the API"):
         _sweep(_Corpus(), _Resolver(()), tmp_path / "corpus")(
@@ -289,6 +321,7 @@ def test_failed_refresh_with_covering_cache_scans_cached(tmp_path: Path) -> None
 
     assert [row.full_name for row in report.rows] == ["acme/api"]
     assert report.unscanned == ()
+    assert report.stale == (CorpusFailure(repo="acme/api", reason="fetch denied"),)
     assert report.scanned == 1
     assert report.refreshed == 0
     assert report.cached == 1
@@ -308,6 +341,93 @@ def test_failed_refresh_without_cache_is_unscanned(tmp_path: Path) -> None:
     assert report.rows == ()
     assert report.unscanned == (CorpusFailure(repo="acme/api", reason="fetch denied"),)
     assert report.scanned == 0
+
+
+class _FailingResolver(_Resolver):
+    """Raises for explicit repos named in ``missing``, like a 404 on get_repository."""
+
+    def __init__(self, rows: tuple[RepositoryInventoryItem, ...], missing: set[str]) -> None:
+        super().__init__(rows)
+        self.missing = missing
+
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
+        self.scopes.append(scope)
+        for name in scope.repos:
+            if name in self.missing:
+                raise UntapedError(f"failed to expand repository {name}: 404 Not Found")
+        wanted = set(scope.repos)
+        return tuple(row for row in self.rows if not wanted or row.full_name in wanted)
+
+
+def test_unresolvable_explicit_repo_is_unscanned_not_fatal(tmp_path: Path) -> None:
+    corpus = _Corpus()
+    corpus.tree_map[("acme/api", "main")] = ("README.md",)
+    resolver = _FailingResolver((_item("acme/api"),), missing={"acme/gone"})
+
+    report = _sweep(corpus, resolver, tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(repos=("acme/gone", "acme/api")),
+        )
+    )
+
+    assert [row.full_name for row in report.rows] == ["acme/api"]
+    assert report.unscanned == (
+        CorpusFailure(
+            repo="acme/gone", reason="failed to expand repository acme/gone: 404 Not Found"
+        ),
+    )
+
+
+def test_corrupt_freshness_metadata_is_unscanned_not_fatal(tmp_path: Path) -> None:
+    corpus = _Corpus()
+    corpus.freshness_errors["acme/bad"] = "could not read corpus metadata: invalid JSON"
+    corpus.tree_map[("acme/api", "main")] = ("README.md",)
+
+    report = _sweep(corpus, _Resolver((_item("acme/api"), _item("acme/bad"))), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(orgs=("acme",)),
+        )
+    )
+
+    assert [row.full_name for row in report.rows] == ["acme/api"]
+    assert report.unscanned == (
+        CorpusFailure(repo="acme/bad", reason="could not read corpus metadata: invalid JSON"),
+    )
+
+
+def test_offline_corrupt_freshness_metadata_is_unscanned(tmp_path: Path) -> None:
+    corpus = _Corpus(cached_rows=(_row("acme/api"), _row("acme/bad")))
+    corpus.freshness_errors["acme/bad"] = "invalid fetched_at"
+    corpus.tree_map[("acme/api", "main")] = ("README.md",)
+
+    report = _sweep(corpus, _Resolver(()), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(orgs=("acme",)),
+            sync="off",
+        )
+    )
+
+    assert [row.full_name for row in report.rows] == ["acme/api"]
+    assert report.unscanned == (CorpusFailure(repo="acme/bad", reason="invalid fetched_at"),)
+
+
+def test_os_error_during_sync_is_unscanned_not_fatal(tmp_path: Path) -> None:
+    corpus = _Corpus()
+    corpus.sync_errors["acme/bad"] = PermissionError("permission denied: corpus")
+    corpus.tree_map[("acme/api", "main")] = ("README.md",)
+
+    report = _sweep(corpus, _Resolver((_item("acme/api"), _item("acme/bad"))), tmp_path / "corpus")(
+        _options(
+            SweepQuery(has_files=("README.md",)),
+            scope=RepositoryInventoryScope(orgs=("acme",)),
+        )
+    )
+
+    assert [row.full_name for row in report.rows] == ["acme/api"]
+    assert report.unscanned == (CorpusFailure(repo="acme/bad", reason="permission denied: corpus"),)
 
 
 def test_repo_matches_when_any_ref_matches(tmp_path: Path) -> None:
@@ -355,7 +475,9 @@ def test_owners_from_matched_paths(tmp_path: Path) -> None:
         GrepHit(path="src/app.py", line=1, text="needle()", blob_oid="abc123"),
     )
     corpus.tree_map[("acme/api", "main")] = ("src/app.yml",)
-    corpus.blob_map[("acme/api", "main", ".github/CODEOWNERS")] = "* @all\nsrc/ @src\n*.py @py\n"
+    corpus.blob_map[("acme/api", "refs/heads/main", ".github/CODEOWNERS")] = (
+        "* @all\nsrc/ @src\n*.py @py\n"
+    )
 
     report = _sweep(corpus, _Resolver((_item("acme/api"),)), tmp_path / "corpus")(
         _options(
@@ -369,7 +491,7 @@ def test_owners_from_matched_paths(tmp_path: Path) -> None:
 
 def test_pathless_match_uses_default_owners(tmp_path: Path) -> None:
     corpus = _Corpus()
-    corpus.blob_map[("acme/api", "main", ".github/CODEOWNERS")] = "* @all\n"
+    corpus.blob_map[("acme/api", "refs/heads/main", ".github/CODEOWNERS")] = "* @all\n"
 
     report = _sweep(corpus, _Resolver((_item("acme/api"),)), tmp_path / "corpus")(
         _options(
@@ -413,3 +535,53 @@ def test_archived_repos_excluded_by_default(tmp_path: Path) -> None:
 
     assert [synced.repo for synced in corpus.synced] == ["acme/api"]
     assert [row.full_name for row in report.rows] == ["acme/api"]
+
+
+class _StatusResolver(_Resolver):
+    """Fails every explicit repo with an HTTP status, wrapped like the real resolver."""
+
+    def __init__(self, status: int, body: str) -> None:
+        super().__init__(())
+        self.status = status
+        self.body = body
+
+    def __call__(self, scope: RepositoryInventoryScope) -> tuple[RepositoryInventoryItem, ...]:
+        self.scopes.append(scope)
+        cause = HttpStatusError(f"HTTP {self.status}", status_code=self.status, body=self.body)
+        raise UntapedError(f"failed to expand repository {scope.repos[0]}") from cause
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (401, '{"message": "Bad credentials"}'),
+        (429, '{"message": "Too many requests"}'),
+        (403, '{"message": "API rate limit exceeded for 1.2.3.4."}'),
+    ],
+)
+def test_global_resolution_failures_abort_instead_of_unscanned(
+    tmp_path: Path, status: int, body: str
+) -> None:
+    resolver = _StatusResolver(status, body)
+
+    with pytest.raises(UntapedError):
+        _sweep(_Corpus(), resolver, tmp_path / "corpus")(
+            _options(
+                SweepQuery(has_files=("README.md",)),
+                scope=RepositoryInventoryScope(repos=("acme/a", "acme/b")),
+            )
+        )
+
+    assert len(resolver.scopes) == 1
+
+
+def test_every_explicit_repo_failing_raises(tmp_path: Path) -> None:
+    resolver = _FailingResolver((), missing={"acme/a", "acme/b"})
+
+    with pytest.raises(UntapedError, match="acme/a"):
+        _sweep(_Corpus(), resolver, tmp_path / "corpus")(
+            _options(
+                SweepQuery(has_files=("README.md",)),
+                scope=RepositoryInventoryScope(repos=("acme/a", "acme/b")),
+            )
+        )

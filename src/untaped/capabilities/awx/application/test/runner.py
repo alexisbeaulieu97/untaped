@@ -9,6 +9,7 @@ cleaner than racing workers through it.)
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +26,7 @@ from untaped.capabilities.awx.domain.test_suite import (
     TestRunOutcome,
     TestSuite,
 )
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
 
 _LAUNCH_ACTION = "launch"
 
@@ -57,6 +58,7 @@ class RunTestSuite:
         fk_prefetcher: FkPrefetcher,
         jt_scope: dict[str, str] | None = None,
         clock: Callable[[], float] = time.monotonic,
+        stop: threading.Event | None = None,
     ) -> None:
         self._resolve = resolver
         self._launch = launcher
@@ -65,6 +67,10 @@ class RunTestSuite:
         self._fk = fk_prefetcher
         self._jt_scope = jt_scope
         self._clock = clock
+        self._stop = stop
+        self.launched: list[Job] = []
+        """Executions submitted so far (for reporting after an interrupt)."""
+        self._finals: dict[tuple[str, int], Job] = {}
 
     def __call__(
         self,
@@ -82,12 +88,23 @@ class RunTestSuite:
             results = [self._launch_and_wait(item, timeout) for item in resolved]
         else:
             with ThreadPoolExecutor(max_workers=parallel) as pool:
-                # ``map`` materialises results in submission order, so the
-                # report follows declaration order regardless of completion.
-                results = list(
-                    pool.map(lambda item: self._launch_and_wait(item, timeout), resolved)
-                )
+                futures = [pool.submit(self._launch_and_wait, item, timeout) for item in resolved]
+                try:
+                    # Collected in submission order, so the report follows
+                    # declaration order regardless of completion.
+                    results = [future.result() for future in futures]
+                except KeyboardInterrupt:
+                    # Stop polling workers and never launch queued cases.
+                    if self._stop is not None:
+                        self._stop.set()
+                    for future in futures:
+                        future.cancel()
+                    raise
         return TestRunOutcome(results=results)
+
+    def known_executions(self) -> list[Job]:
+        """Every submitted execution with its latest locally known status."""
+        return [self._finals.get((job.kind, job.id), job) for job in self.launched]
 
     def _build_plan(
         self,
@@ -153,16 +170,28 @@ class RunTestSuite:
                 scope=self._jt_scope,
                 payload=item.payload,
             )
+            self.launched.append(job)
         except Exception as exc:
+            # ``ignored_fields`` responses launched a job; keep its ID as evidence.
+            if isinstance(exc, ActionResponseError) and exc.execution_id is not None:
+                self.launched.append(
+                    Job(
+                        id=exc.execution_id,
+                        kind=exc.execution_kind or "job",
+                        status="unknown",
+                    )
+                )
             return CaseResult(
                 suite=item.suite_name,
                 case=item.case_name,
                 result="error",
+                job_id=exc.execution_id if isinstance(exc, ActionResponseError) else None,
                 duration_s=self._clock() - started_clock,
                 failure_reason=str(exc),
             )
         try:
             final = self._watch(job, timeout=timeout)
+            self._finals[(final.kind, final.id)] = final
         except Exception as exc:
             return CaseResult(
                 suite=item.suite_name,

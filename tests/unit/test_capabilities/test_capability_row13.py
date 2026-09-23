@@ -88,6 +88,54 @@ def test_row13_direct_reference_requires_dist_passes() -> None:
     assert result.quarantine == ()
 
 
+def _compose_with_sdk_version(
+    monkeypatch: pytest.MonkeyPatch, sdk_version: str, requirement: str
+) -> object:
+    import untaped.capabilities.registry as registry
+
+    real_version = registry.importlib_metadata.version
+
+    def fake_version(name: str) -> str:
+        return sdk_version if name == "untaped" else real_version(name)
+
+    monkeypatch.setattr(registry.importlib_metadata, "version", fake_version)
+    candidate = make_external(
+        make_spec(name="pep440"), "example-dist", requires_dist=(requirement,)
+    )
+    return compose(make_shell(), [], [candidate])
+
+
+@pytest.mark.parametrize(
+    ("sdk_version", "requirement", "admitted"),
+    [
+        ("6.1.0.dev3", "untaped>=6.1.0", False),
+        ("6.1.0rc1", "untaped>=6.1.0", False),
+        ("6.1.0.dev3", "untaped>=6.1.0.dev1", True),
+        ("6.1.0", "untaped~=6.0", True),
+        ("7.0.0", "untaped~=6.0", False),
+        ("6.1.0.post1", "untaped==6.1.0", False),
+        ("6.1.0", "untaped==6.1.*", True),
+        ("6.1.0", "untaped[extra]>=6,<7", True),
+        ("6.1.0", "untaped>=99; extra == 'dev'", True),
+        ("6.1.0", "untaped>=99; python_version < '3'", True),
+        ("6.1.0", "untaped>=99; python_version >= '3'", False),
+    ],
+)
+def test_row13_requires_dist_follows_pep_440_and_508(
+    monkeypatch: pytest.MonkeyPatch, sdk_version: str, requirement: str, admitted: bool
+) -> None:
+    result = _compose_with_sdk_version(monkeypatch, sdk_version, requirement)
+    names = [cap.spec.name for cap in result.capabilities]  # type: ignore[attr-defined]
+    assert names == (["pep440"] if admitted else [])
+
+
+def test_row13_malformed_marker_quarantines(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = _compose_with_sdk_version(monkeypatch, "6.1.0", "untaped>=1; bogus ==")
+    (record,) = result.quarantine  # type: ignore[attr-defined]
+    assert record.reason == "bad-metadata"
+    assert "malformed Requires-Dist" in record.detail
+
+
 def test_row13_multi_entry_point_distribution_passes() -> None:
     first = make_external(make_spec(name="alpha"), "multi-dist", distribution_version="1.2.3")
     second = make_external(make_spec(name="beta"), "multi-dist", distribution_version="1.2.3")

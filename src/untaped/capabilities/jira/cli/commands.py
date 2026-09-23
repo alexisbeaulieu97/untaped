@@ -16,6 +16,7 @@ from untaped.api import (
     existing_file,
     parse_json_pairs,
     parse_kv_pairs,
+    raise_usage,
     read_structured_file,
     report_errors,
     resolve_text_input,
@@ -42,9 +43,28 @@ JsonFieldOption = Annotated[
     list[str] | None,
     Parameter(name="--json-field", help="Set a field from JSON KEY=JSON.", consume_multiple=False),
 ]
+ProjectFilterOption = Annotated[
+    str | None,
+    Parameter(name="--project", help="Project key (e.g. ABC) or name."),
+]
+StatusFilterOption = Annotated[
+    str | None,
+    Parameter(name="--status", help="Status name (e.g. 'In Progress')."),
+]
+TextFilterOption = Annotated[
+    str | None,
+    Parameter(name="--text", help="Full-text search across summary, description, comments."),
+]
+SprintFilterOption = Annotated[
+    str | None,
+    Parameter(
+        name="--sprint",
+        help="Sprint id or name, or openSprints()/futureSprints()/closedSprints().",
+    ),
+]
 app = create_app(
     name="jira",
-    help="Manage Jira Data Center tickets from untaped.",
+    help="Manage Jira Data Center issues from untaped.",
 )
 issue_app = create_app(name="issue", help="Manage Jira issues.")
 project_app = create_app(name="project", help="Look up Jira projects.")
@@ -90,11 +110,14 @@ def issue_get_command(
 def issue_search_command(
     *,
     jql: Annotated[str | None, Parameter(name="--jql", help="Raw JQL base query.")] = None,
-    project: Annotated[str | None, Parameter(name="--project")] = None,
-    assignee: Annotated[str | None, Parameter(name="--assignee")] = None,
-    status: Annotated[str | None, Parameter(name="--status")] = None,
-    text: Annotated[str | None, Parameter(name="--text")] = None,
-    sprint: Annotated[str | None, Parameter(name="--sprint")] = None,
+    project: ProjectFilterOption = None,
+    assignee: Annotated[
+        str | None,
+        Parameter(name="--assignee", help="Assignee username, or @me for yourself."),
+    ] = None,
+    status: StatusFilterOption = None,
+    text: TextFilterOption = None,
+    sprint: SprintFilterOption = None,
     limit: LimitOption = 50,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -105,6 +128,7 @@ def issue_search_command(
 
     with report_errors():
         filters = JiraIssueSearchFilters(
+            default_jql=current_jira_settings().assigned_jql,
             raw_jql=jql,
             project=project,
             assignee=assignee,
@@ -120,11 +144,14 @@ def issue_search_command(
 @issue_app.command(name="assigned")
 def issue_assigned_command(
     *,
-    jql: Annotated[str | None, Parameter(name="--jql", help="Raw JQL base query.")] = None,
-    project: Annotated[str | None, Parameter(name="--project")] = None,
-    status: Annotated[str | None, Parameter(name="--status")] = None,
-    text: Annotated[str | None, Parameter(name="--text")] = None,
-    sprint: Annotated[str | None, Parameter(name="--sprint")] = None,
+    jql: Annotated[
+        str | None,
+        Parameter(name="--jql", help="Extra JQL ANDed with jira.assigned_jql."),
+    ] = None,
+    project: ProjectFilterOption = None,
+    status: StatusFilterOption = None,
+    text: TextFilterOption = None,
+    sprint: SprintFilterOption = None,
     limit: LimitOption = 50,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -136,7 +163,8 @@ def issue_assigned_command(
     with report_errors():
         settings = current_jira_settings()
         filters = JiraIssueSearchFilters(
-            raw_jql=_resolve_assigned_jql(jql=jql, configured=settings.assigned_jql),
+            scope_jql=settings.assigned_jql,
+            raw_jql=_nonblank_jql(jql),
             project=project,
             status=status,
             text=text,
@@ -147,9 +175,9 @@ def issue_assigned_command(
         emit(rows, fmt=fmt, columns=columns, kind="jira.issue", empty="No issues assigned to you.")
 
 
-def _resolve_assigned_jql(*, jql: str | None, configured: str) -> str:
+def _nonblank_jql(jql: str | None) -> str | None:
     if jql is None:
-        return configured
+        return None
     stripped = jql.strip()
     if not stripped:
         raise ConfigError("--jql must not be blank")
@@ -161,12 +189,23 @@ def issue_create_command(
     *,
     template: Annotated[
         Path | None,
-        Parameter(name="--template", validator=existing_file),
+        Parameter(
+            name="--template",
+            validator=existing_file,
+            help="Jira-shaped YAML/JSON payload file; flags override its fields.",
+        ),
     ] = None,
-    project: Annotated[str | None, Parameter(name="--project")] = None,
-    issue_type: Annotated[str | None, Parameter(name="--issue-type")] = None,
-    summary: Annotated[str | None, Parameter(name="--summary")] = None,
-    description: Annotated[str | None, Parameter(name="--description")] = None,
+    project: Annotated[
+        str | None,
+        Parameter(name="--project", help="Project key; defaults to jira.default_project."),
+    ] = None,
+    issue_type: Annotated[
+        str | None, Parameter(name="--issue-type", help="Issue type name (e.g. Bug, Task).")
+    ] = None,
+    summary: Annotated[str | None, Parameter(name="--summary", help="Issue summary.")] = None,
+    description: Annotated[
+        str | None, Parameter(name="--description", help="Issue description text.")
+    ] = None,
     field: FieldOption = None,
     json_field: JsonFieldOption = None,
     fmt: FormatOption = "table",
@@ -221,6 +260,11 @@ def issue_edit_command(
             fields=parse_kv_pairs(field, flag="--field"),
             json_fields=parse_json_pairs(json_field, flag="--json-field"),
         )
+        if not payload.get("fields") and not payload.get("update"):
+            raise_usage(
+                "nothing to update: pass --summary, --description, --field, --json-field, "
+                "or a --body-file with fields/update"
+            )
         with open_client() as (client, ui), ui.progress("Updating issue…"):
             row = EditIssue(client)(key, payload).model_dump()
         emit(row, fmt=fmt, columns=columns, kind="jira.issue")

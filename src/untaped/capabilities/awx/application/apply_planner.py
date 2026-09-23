@@ -64,6 +64,13 @@ class ApplyPlanner:
         identity: dict[str, Any] = {"name": resource.metadata.name}
         if "organization" in spec.identity_keys:
             identity["organization"] = resource.metadata.organization
+            if (
+                resource.metadata.organization is None
+                and "organization" in resource.metadata.model_fields_set
+            ):
+                # An explicit ``organization: null`` means "the org-less
+                # record", not "any organization".
+                identity["organization__isnull"] = True
         if resource.metadata.parent is not None:
             identity["parent"] = resource.metadata.parent
         return identity

@@ -51,6 +51,8 @@ class ProfilesSettingsLayout:
         profiles = raw.get("profiles")
         if not isinstance(profiles, dict):
             return None
+        if name in profiles and profiles[name] is None:
+            return {}
         data = profiles.get(name)
         return data if isinstance(data, dict) else None
 
@@ -75,7 +77,10 @@ class ProfilesSettingsLayout:
         profiles = raw.setdefault("profiles", {})
         if not isinstance(profiles, dict):
             raise ConfigError("config key 'profiles' must be a mapping")
-        target = profiles.setdefault(name, {})
+        target = profiles.get(name)
+        if target is None:
+            # Absent, or an empty ``name:`` entry (YAML null): start it fresh.
+            target = profiles[name] = {}
         if not isinstance(target, dict):
             raise ConfigError(f"profile {name!r} must be a mapping")
         return target, name
