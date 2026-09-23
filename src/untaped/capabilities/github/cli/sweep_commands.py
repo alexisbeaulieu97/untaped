@@ -59,12 +59,18 @@ def sweep_command(
     archived: Annotated[bool, Parameter(name="--archived", negative="")] = False,
     grep: Annotated[
         list[str] | None,
-        Parameter(name="--grep", help="Content regex. Repeatable.", consume_multiple=False),
+        Parameter(
+            name="--grep",
+            help="Content regex, POSIX extended (`a|b`, `\\(`; no `\\d`). Repeatable.",
+            consume_multiple=False,
+        ),
     ] = None,
     not_grep: Annotated[
         list[str] | None,
         Parameter(
-            name="--not-grep", help="Content regex that must not match.", consume_multiple=False
+            name="--not-grep",
+            help="Content regex (POSIX extended) that must not match.",
+            consume_multiple=False,
         ),
     ] = None,
     path: Annotated[
@@ -330,6 +336,15 @@ def _footer(report: SweepReport) -> None:
         ),
         err=True,
     )
+    if report.stale:
+        count = len(report.stale)
+        echo(
+            f"warning: refresh failed for {count} repo{'s' if count != 1 else ''}; "
+            "scanned cached copies",
+            err=True,
+        )
+        for failure in report.stale:
+            echo(f"warning: stale {failure.repo}: {failure.reason}", err=True)
     if report.unscanned:
         for failure in report.unscanned:
             echo(f"warning: unscanned {failure.repo}: {failure.reason}", err=True)

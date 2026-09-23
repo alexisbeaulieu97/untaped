@@ -515,14 +515,53 @@ def test_local_refs_default_first_then_sorted(tmp_path: Path) -> None:
     )
 
     assert cache.local_refs(repo, root=root, selector=RefSelector(profile="branches")) == (
-        "main",
-        "alpha",
-        "zeta",
+        "refs/heads/main",
+        "refs/heads/alpha",
+        "refs/heads/zeta",
     )
     assert cache.local_refs(repo, root=root, selector=RefSelector(globs=("v*",))) == (
-        "main",
-        "v2.0",
+        "refs/heads/main",
+        "refs/tags/v2.0",
     )
+
+
+def test_branch_and_tag_with_same_name_are_both_listed_and_greppable(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "main\n"})
+    _git(source, "tag", "x")
+    _git(source, "checkout", "-q", "-b", "x")
+    _commit_file(source, "branch.txt", "needle\n", "branch only")
+    _git(source, "checkout", "-q", "main")
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    cache.sync_repo(repo, root=root, selector=RefSelector(profile="all"), depth=1, auth_header=None)
+
+    refs = cache.local_refs(repo, root=root, selector=RefSelector(profile="all"))
+    branch_hits = cache.grep_ref(
+        repo,
+        root=root,
+        ref="refs/heads/x",
+        pattern="needle",
+        paths=(),
+        ignore_case=False,
+        fixed_strings=False,
+        word_regexp=False,
+    )
+    tag_hits = cache.grep_ref(
+        repo,
+        root=root,
+        ref="refs/tags/x",
+        pattern="needle",
+        paths=(),
+        ignore_case=False,
+        fixed_strings=False,
+        word_regexp=False,
+    )
+
+    assert refs == ("refs/heads/main", "refs/heads/x", "refs/tags/x")
+    assert [hit.path for hit in branch_hits] == ["branch.txt"]
+    assert tag_hits == ()
+    assert cache.tree_paths(repo, root=root, ref="refs/tags/x") == ("README.md",)
 
 
 def test_tree_paths_recursive(tmp_path: Path) -> None:
@@ -759,15 +798,41 @@ def test_worktree_rejects_non_cached_ref(tmp_path: Path) -> None:
         cache.materialize_worktree(repo, root=root, ref="v1.0")
 
 
-def test_get_repo_errors_on_corrupt_metadata(tmp_path: Path) -> None:
+def test_get_repo_skips_corrupt_metadata_with_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
     cache = GitCorpusCache()
     root = tmp_path / "corpus"
-    metadata = root / "github.com" / "api-deadbeef.git" / "untaped-corpus.json"
+    _sync_default(cache, _item("acme/api", source), root=root)
+    metadata = root / "github.com" / "aaa-deadbeef.git" / "untaped-corpus.json"
     metadata.parent.mkdir(parents=True)
     metadata.write_text("{")
 
-    with pytest.raises(GitCorpusError, match="could not read corpus metadata"):
-        cache.get_repo(root=root, repo="acme/api")
+    found = cache.get_repo(root=root, repo="acme/api")
+    missing = cache.get_repo(root=root, repo="acme/other")
+
+    assert found is not None
+    assert found.full_name == "acme/api"
+    assert missing is None
+    assert "warning: could not read corpus metadata" in capsys.readouterr().err
+
+
+def test_corpus_listing_only_reads_managed_bare_repo_metadata(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    synced = _sync_default(cache, _item("acme/api", source), root=root)
+    stray = '{"repo": "acme/stray", "ref": "main", "clone_url": "x"}\n'
+    for rel in ("worktrees/acme_api-main-abc/untaped-corpus.json", "untaped-corpus.json"):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(stray)
+    nested = Path(synced.path) / "objects" / "untaped-corpus.json"
+    nested.write_text(stray)
+
+    assert [row.repo for row in cache.list_repos(root=root)] == ["acme/api"]
+    assert cache.get_repo(root=root, repo="acme/stray") is None
 
 
 def test_list_skips_corrupt_metadata_with_warning(
@@ -879,7 +944,6 @@ def test_unauthenticated_run_discards_stdout_and_pipes_stderr(
     result = cache._run(["status"])
 
     assert result.returncode == 0
-    assert captured["env"] is None
     assert captured["stdout"] is subprocess.DEVNULL
     assert captured["stderr"] is subprocess.PIPE
 
@@ -926,3 +990,117 @@ def test_materialize_worktree_emits_no_git_chatter(
     captured = capfd.readouterr()
     assert captured.out == ""
     assert captured.err == ""
+
+
+def test_grep_uses_extended_regex_alternation_and_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "grep.patternType")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "fixed")
+    source = _source_repo(
+        tmp_path,
+        "source",
+        {"a.txt": "uses log4j here\n", "b.py": "requests.get(url)\n"},
+    )
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    _sync_default(cache, repo, root=root)
+
+    alternation = _grep_main(cache, repo, root=root, pattern="log4j|slf4j")
+    escaped = _grep_main(cache, repo, root=root, pattern=r"requests\.get\(")
+
+    assert [hit.path for hit in alternation] == ["a.txt"]
+    assert [hit.path for hit in escaped] == ["b.py"]
+
+
+def test_validate_pattern_accepts_extended_regex(tmp_path: Path) -> None:
+    cache = GitCorpusCache()
+
+    assert (
+        cache.validate_pattern(
+            root=tmp_path / "corpus",
+            pattern=r"requests\.get\(",
+            paths=(),
+            fixed_strings=False,
+        )
+        is None
+    )
+    assert cache.validate_pattern(
+        root=tmp_path / "corpus", pattern="(", paths=(), fixed_strings=False
+    )
+
+
+def test_run_never_lets_git_prompt_for_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(args, 0, stderr=b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    cache = GitCorpusCache()
+
+    cache._run(["status"])
+    cache._run(
+        ["fetch", "origin"],
+        auth_header="AUTHORIZATION: basic secret",
+        auth_url="https://github.example.com/acme/api.git",
+    )
+    cache._run(["update-ref", "--stdin"], stdin="delete refs/heads/x\n")
+
+    plain, authed, fed = calls
+    for kwargs in (plain, authed):
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["input"] is None
+    assert fed["stdin"] is None
+    assert fed["input"] == b"delete refs/heads/x\n"
+    for kwargs in calls:
+        assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+        assert kwargs["env"]["GCM_INTERACTIVE"] == "never"
+
+
+def test_ensure_origin_does_not_send_auth_header_to_local_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = "https://github.example.com/acme/api.git"
+    root = tmp_path / "corpus"
+    cache_path_for(url, cache_dir=root).mkdir(parents=True)
+    cache = GitCorpusCache()
+    seen: list[tuple[str, str | None]] = []
+
+    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        seen.append((" ".join(args[:2]), kwargs.get("auth_header")))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(cache, "_run", fake_run)
+
+    cache.sync_repo(
+        CorpusRepoTarget(full_name="acme/api", clone_url=url, default_branch="main"),
+        root=root,
+        selector=RefSelector(),
+        depth=1,
+        auth_header="AUTHORIZATION: basic secret",
+    )
+
+    remote_calls = [auth for command, auth in seen if command.startswith("remote ")]
+    assert remote_calls == [None, None]
+    assert any(auth is not None for command, auth in seen if command.startswith("fetch"))
+
+
+def test_corrupt_metadata_warnings_go_through_injected_warn(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    warnings: list[str] = []
+    cache = GitCorpusCache(warn=warnings.append)
+    root = tmp_path / "corpus"
+    corrupt = root / "github.com" / "broken.git" / "untaped-corpus.json"
+    corrupt.parent.mkdir(parents=True)
+    corrupt.write_text("{")
+
+    assert cache.list_repos(root=root) == ()
+    assert cache.get_repo(root=root, repo="acme/api") is None
+    assert len(warnings) == 2
+    assert all("could not read corpus metadata" in warning for warning in warnings)
+    assert capfd.readouterr().err == ""

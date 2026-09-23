@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import fnmatch
+import re
 from dataclasses import dataclass
+from functools import cache
 
 CODEOWNERS_LOCATIONS: tuple[str, ...] = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
 
@@ -58,15 +59,60 @@ def _supported_pattern(pattern: str) -> bool:
 
 
 def _matches(pattern: str, path: str) -> bool:
-    if pattern == "*":
+    """Match ``path`` with GitHub's gitignore-style CODEOWNERS semantics.
+
+    A pattern matching a directory owns everything beneath it, except a
+    pattern whose last segment is a bare ``*`` (``docs/*``), which GitHub
+    documents as owning direct children only. A trailing ``/`` restricts
+    the pattern to directories.
+    """
+    regex, directory_only, propagates = _compile(pattern)
+    parts = path.split("/")
+    ancestors = ["/".join(parts[:end]) for end in range(1, len(parts))]
+    if not directory_only and regex.fullmatch(path):
         return True
-    rooted = pattern.startswith("/")
-    normalized_pattern = pattern.lstrip("/")
-    if normalized_pattern.endswith("/"):
-        directory = normalized_pattern.rstrip("/")
-        if rooted:
-            return path == directory or path.startswith(f"{directory}/")
-        return path == directory or path.startswith(f"{directory}/") or f"/{directory}/" in path
-    if rooted or "/" in normalized_pattern:
-        return fnmatch.fnmatchcase(path, normalized_pattern)
-    return fnmatch.fnmatchcase(path.rsplit("/", maxsplit=1)[-1], normalized_pattern)
+    if not propagates:
+        return False
+    return any(regex.fullmatch(ancestor) for ancestor in ancestors)
+
+
+@cache
+def _compile(pattern: str) -> tuple[re.Pattern[str], bool, bool]:
+    directory_only = pattern.endswith("/")
+    body = pattern.rstrip("/")
+    # Any slash other than a trailing one anchors the pattern to the repo root.
+    anchored = "/" in body
+    body = body.lstrip("/")
+    segments = body.split("/")
+    propagates = directory_only or segments[-1] != "*"
+
+    out: list[str] = [] if anchored else ["(?:.*/)?"]
+    last = len(segments) - 1
+    for index, segment in enumerate(segments):
+        if segment == "**":
+            if index == last:
+                out.append(".*" if index == 0 else "/.*")
+            elif index == 0:
+                out.append("(?:.*/)?")
+            else:
+                out.append("/(?:.*/)?")
+            continue
+        if index > 0 and segments[index - 1] != "**":
+            out.append("/")
+        out.append(_segment_regex(segment))
+    return re.compile("".join(out)), directory_only, propagates
+
+
+def _segment_regex(segment: str) -> str:
+    out: list[str] = []
+    chars = iter(segment)
+    for char in chars:
+        if char == "\\":
+            out.append(re.escape(next(chars, "\\")))
+        elif char == "*":
+            out.append("[^/]*")
+        elif char == "?":
+            out.append("[^/]")
+        else:
+            out.append(re.escape(char))
+    return "".join(out)

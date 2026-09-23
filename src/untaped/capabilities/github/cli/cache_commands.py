@@ -23,7 +23,7 @@ from untaped.capabilities.github.application import (
     RepositoryInventoryScope,
 )
 from untaped.capabilities.github.cli._client import open_client
-from untaped.capabilities.github.cli._scopes import OrgOption, TeamOption
+from untaped.capabilities.github.cli._scopes import OrgOption
 from untaped.capabilities.github.domain import CorpusRepoResult
 from untaped.capabilities.github.settings import GithubSettings
 
@@ -77,7 +77,6 @@ def clean_command(
     all_repos: AllOption = False,
     prune: PruneOption = False,
     org: OrgOption = None,
-    team: TeamOption = None,
     yes: YesOption = False,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
@@ -94,17 +93,16 @@ def clean_command(
         _require_one_clean_mode(repos=repos, all_repos=all_repos, prune=prune)
         settings = app_context().section("github", GithubSettings)
         corpus = GitCorpusCache()
-        cached = corpus.list_repos(root=settings.corpus_path)
+        cached = _in_orgs(corpus.list_repos(root=settings.corpus_path), orgs=tuple(org or ()))
         if prune:
-            selected = _prune_selection(cached, org=org, team=team)
             with open_client() as (client, ui), ui.progress("Resolving repository inventory…"):
-                live = ResolveRepositoryInventory(client)(_prune_scope(org=org, team=team))
-            selected = _departed_or_archived(selected, live)
+                live = ResolveRepositoryInventory(client)(_prune_scope(org=org))
+            selected = _departed_or_archived(cached, live)
         elif all_repos:
             selected = cached
         else:
-            requested = set(repos)
-            selected = tuple(row for row in cached if row.repo in requested)
+            requested = {name.casefold() for name in repos}
+            selected = tuple(row for row in cached if row.repo.casefold() in requested)
 
         cleaner = CleanCorpus(corpus)
         ui = app_context().ui(strict=False)
@@ -178,26 +176,21 @@ def _require_one_clean_mode(
         raise ConfigError("cache clean requires exactly one of --repo, --all, or --prune")
 
 
-def _prune_scope(*, org: list[str] | None, team: list[str] | None) -> RepositoryInventoryScope:
+def _prune_scope(*, org: list[str] | None) -> RepositoryInventoryScope:
     orgs = tuple(org or ())
-    if team:
-        raise ConfigError(
-            "--prune cannot resolve team membership from the corpus; prune with --org or --repo"
-        )
     if not orgs:
         raise ConfigError("cache clean --prune requires --org")
     return RepositoryInventoryScope(orgs=orgs)
 
 
-def _prune_selection(
-    cached: tuple[CorpusRepoResult, ...],
-    *,
-    org: list[str] | None,
-    team: list[str] | None,
+def _in_orgs(
+    cached: tuple[CorpusRepoResult, ...], *, orgs: tuple[str, ...]
 ) -> tuple[CorpusRepoResult, ...]:
-    scope = _prune_scope(org=org, team=team)
-    orgs = set(scope.orgs)
-    return tuple(row for row in cached if any(row.repo.startswith(f"{org}/") for org in orgs))
+    """Keep cached repos owned by one of ``orgs`` (all when none); owners are case-insensitive."""
+    if not orgs:
+        return cached
+    owners = {org.casefold() for org in orgs}
+    return tuple(row for row in cached if row.repo.partition("/")[0].casefold() in owners)
 
 
 def _departed_or_archived(
