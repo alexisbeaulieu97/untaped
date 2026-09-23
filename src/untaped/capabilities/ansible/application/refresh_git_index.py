@@ -22,7 +22,6 @@ from untaped.capabilities.ansible.application.source_refs import (
     pattern_matches,
     source_ref_selections,
 )
-from untaped.capabilities.ansible.domain.errors import GitCacheError
 from untaped.capabilities.ansible.domain.identity import IdentityResolver
 from untaped.capabilities.ansible.domain.models import ParseReport, ParseWarning
 from untaped.capabilities.ansible.domain.parser import parse_dependency_file
@@ -41,6 +40,7 @@ from untaped.capabilities.ansible.domain.payloads import (
     SourceRepoMetadata,
 )
 from untaped.capabilities.ansible.domain.repo_targets import remote_url_for
+from untaped.capabilities.ansible.errors import GitCacheError
 from untaped.capabilities.ansible.settings import SourceDefinition
 from untaped.capabilities.github.ansible import (
     RepositoryInventoryScope,

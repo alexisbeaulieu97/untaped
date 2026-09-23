@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from untaped.capabilities.ansible.domain.errors import GitCacheError as GitCacheError
+from untaped.capabilities.ansible.errors import GitCacheError as GitCacheError
 
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SLOW_TIMEOUT = 600.0
