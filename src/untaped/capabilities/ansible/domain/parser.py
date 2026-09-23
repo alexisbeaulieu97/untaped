@@ -21,7 +21,7 @@ def parse_dependency_file(path: str, text: str) -> ParseReport:
     if parsed.status == "invalid":
         return _warning_report(path, "could not parse dependency YAML")
     data = parsed.data
-    if path.endswith("meta/main.yml"):
+    if _is_meta_main_path(path):
         if not isinstance(data, dict):
             return _warning_report(path, "expected mapping at top level")
         dependencies, warnings = _parse_list_section(data, "dependencies", path)
@@ -42,7 +42,24 @@ def parse_dependency_file(path: str, text: str) -> ParseReport:
                 warnings=(*dependency_warnings, *collection_warnings),
             )
         return _warning_report(path, "expected mapping or list at top level")
-    return ParseReport()
+    return _warning_report(path, "unsupported dependency file")
+
+
+class _StringScalarLoader(yaml.SafeLoader):
+    """Safe loader that keeps int/float-looking scalars as their original text.
+
+    Role versions such as ``1.10`` must not become the float ``1.1``.
+    """
+
+
+_StringScalarLoader.yaml_implicit_resolvers = {
+    first: [
+        (tag, regexp)
+        for tag, regexp in resolvers
+        if tag not in {"tag:yaml.org,2002:int", "tag:yaml.org,2002:float"}
+    ]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
 
 
 class _LoadedYaml:
@@ -59,12 +76,16 @@ def _load_yaml(text: str) -> _LoadedYaml:
     if not text.strip():
         return _LoadedYaml("empty")
     try:
-        data = yaml.safe_load(text)
+        data = yaml.load(text, Loader=_StringScalarLoader)
     except yaml.YAMLError:
         return _LoadedYaml("invalid")
     if data is None:
         return _LoadedYaml("empty")
     return _LoadedYaml("parsed", data)
+
+
+def _is_meta_main_path(path: str) -> bool:
+    return path.endswith("meta/main.yml") or path.endswith("meta/main.yaml")
 
 
 def _is_requirements_path(path: str) -> bool:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from untaped.api import UntapedError
+from untaped.capabilities.ansible.errors import DependencyIndexError
 
 SCHEMA_VERSION = 3
 
@@ -99,14 +99,22 @@ def ensure_schema(db: sqlite3.Connection, path: Path) -> None:
     Databases stamped with the current ``SCHEMA_VERSION`` pass through
     untouched. Any other non-empty database is rejected: cache schema
     compatibility is intentionally not preserved, so the user must delete the
-    index file and refresh saved sources.
+    index file and refresh saved sources. The message distinguishes an older
+    cache from one written by a newer untaped release.
     """
     version = int(db.execute("pragma user_version").fetchone()[0])
     if version == SCHEMA_VERSION:
         return
+    if version > SCHEMA_VERSION:
+        raise DependencyIndexError(
+            f"index schema version {version} was written by a newer untaped release "
+            f"(this release reads version {SCHEMA_VERSION}); upgrade untaped, or delete "
+            f"{path} and re-run 'untaped ansible source refresh <name>'"
+        )
     if version != 0 or _has_tables(db):
-        raise UntapedError(
-            f"index schema is outdated; delete {path} and re-run "
+        raise DependencyIndexError(
+            f"index schema is outdated (version {version}, expected {SCHEMA_VERSION}); "
+            f"the index is a cache, so delete {path} and re-run "
             "'untaped ansible source refresh <name>'"
         )
     # Table creation and the version stamp must be one atomic unit: a crash

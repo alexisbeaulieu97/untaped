@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import pytest
+
+from untaped.api import HttpStatusError
+from untaped.capabilities.ansible.application.graph import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.domain.payloads import (
     CachedRef,
     IndexedDependency,
@@ -204,3 +208,92 @@ def test_cached_ref_reads_include_live_fetched_refs() -> None:
         "acme/site": (CachedRef(name="release"),),
         "acme/other": (),
     }
+
+
+class MultiRepoGithub:
+    """Live reads where ``acme/gone`` fails and ``acme/huge`` has a truncated tree."""
+
+    def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+        if repo == "gone":
+            raise HttpStatusError("404 Not Found", status_code=404)
+        return {"default_branch": "main"}
+
+    def list_matching_refs(self, owner: str, repo: str, namespace: str) -> list[dict[str, object]]:
+        if repo == "gone":
+            raise HttpStatusError("404 Not Found", status_code=404)
+        return []
+
+    def get_tree(
+        self,
+        owner: str,
+        repo: str,
+        tree_sha: str,
+        *,
+        recursive: bool = False,
+    ) -> dict[str, object]:
+        return {
+            "tree": [{"path": "roles/requirements.yml"}],
+            "truncated": repo == "huge",
+        }
+
+    def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str:
+        return "- src: https://github.com/acme/base\n"
+
+
+def test_live_read_failures_become_errors_not_aborts() -> None:
+    index = GithubDependencyIndex(
+        github=MultiRepoGithub(),
+        wrapped=EmptyIndex(),
+        aliases={},
+        dependency_paths=["roles/requirements.yml"],
+        concurrency=4,
+    )
+
+    results = index.dependencies_batch(
+        [("acme/site", None), ("acme/gone", None), ("acme/huge", None)], source_key=None
+    )
+
+    assert [edge.dependency_repo for edge in results[("acme/site", None)]] == ["acme/base"]
+    assert results[("acme/gone", None)] == []
+    assert [edge.dependency_repo for edge in results[("acme/huge", None)]] == ["acme/base"]
+    assert len(index.errors) == 2
+    assert index.errors[0].startswith("could not read acme/gone live")
+    assert "404" in index.errors[0]
+    assert "acme/huge@main" in index.errors[1]
+    assert "truncated" in index.errors[1]
+
+
+def test_live_graph_keeps_building_past_a_failed_repo() -> None:
+    class ChainGithub(MultiRepoGithub):
+        def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str:
+            if repo == "site":
+                return "- src: acme/gone\n  version: v9\n- src: acme/base\n"
+            return ""
+
+    index = GithubDependencyIndex(
+        github=ChainGithub(),
+        wrapped=EmptyIndex(),
+        aliases={},
+        dependency_paths=["roles/requirements.yml"],
+    )
+
+    graph = BuildGraph(index)(GraphRequest(repo="acme/site", direction="deps", depth=None))
+
+    assert {node.id for node in graph.nodes} >= {"acme/site", "acme/gone@v9", "acme/base"}
+    assert any("acme/gone@v9" in error for error in index.errors)
+
+
+def test_live_auth_failures_still_abort() -> None:
+    class UnauthorizedGithub(MultiRepoGithub):
+        def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+            raise HttpStatusError("401 Unauthorized", status_code=401)
+
+    index = GithubDependencyIndex(
+        github=UnauthorizedGithub(),
+        wrapped=EmptyIndex(),
+        aliases={},
+        dependency_paths=["roles/requirements.yml"],
+    )
+
+    with pytest.raises(HttpStatusError):
+        index.dependencies("acme/site", None, source_key=None)

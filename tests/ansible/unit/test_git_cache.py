@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from untaped.api import UntapedError
 from untaped.capabilities.ansible.infrastructure.git_cache import (
     GitCacheError,
     GitRepositoryCache,
@@ -163,43 +164,83 @@ def test_fetch_refs_propagates_missing_remote_ref(monkeypatch, tmp_path: Path) -
         )
 
 
-def test_read_file_returns_none_only_for_missing_paths(monkeypatch, tmp_path: Path) -> None:
-    responses = [
-        subprocess.CompletedProcess(
-            ["git"],
-            128,
-            stdout="",
-            stderr="fatal: path 'roles/requirements.yml' does not exist in 'abc123'",
-        ),
-        subprocess.CompletedProcess(
-            ["git"],
-            128,
-            stdout="",
-            stderr="fatal: unable to access 'https://github.com/acme/private.git/': denied",
-        ),
-    ]
+def test_read_files_skips_absent_paths_by_listing_not_stderr(monkeypatch, tmp_path: Path) -> None:
+    commands: list[list[str]] = []
 
-    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return responses.pop(0)
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
+        cmd = args[0]
+        assert isinstance(cmd, list)
+        commands.append(cmd[1:])
+        if cmd[1] == "ls-tree":
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout="100644 blob b1\troles/requirements.yml\0", stderr=""
+            )
+        assert kwargs.get("input") == b"b1\n"
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"b1 blob 3\nabc\n", stderr=b"")
 
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")
     monkeypatch.setattr("subprocess.run", fake_run)
 
-    cache = GitRepositoryCache()
-
-    assert (
-        cache.read_file(
-            tmp_path,
-            "abc123",
-            "roles/requirements.yml",
-            auth_header=None,
-        )
-        is None
+    files = GitRepositoryCache().read_files(
+        tmp_path, "abc123", ["roles/requirements.yml", "requirements.yml"], auth_header=None
     )
-    with pytest.raises(GitCacheError, match="unable to access"):
-        cache.read_file(
-            tmp_path,
-            "abc123",
-            "roles/requirements.yml",
-            auth_header=None,
+
+    assert files == {"roles/requirements.yml": "abc"}
+    assert commands == [
+        ["ls-tree", "-z", "abc123", "--", "roles/requirements.yml", "requirements.yml"],
+        ["cat-file", "--batch"],
+    ]
+
+
+def test_read_files_propagates_listing_failures(monkeypatch, tmp_path: Path) -> None:
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args[0], 128, stdout="", stderr="fatal: denied")
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    with pytest.raises(GitCacheError, match="denied"):
+        GitRepositoryCache().read_files(
+            tmp_path, "abc123", ["roles/requirements.yml"], auth_header=None
+        )
+
+
+def test_every_git_call_forces_c_locale_and_never_prompts(monkeypatch, tmp_path: Path) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
+
+    cache = GitRepositoryCache()
+    cache.fetch_refs(
+        tmp_path,
+        refspecs=["+refs/heads/main:refs/heads/main"],
+        depth=1,
+        blob_filter=True,
+        auth_header=None,
+    )
+    cache.ls_remote("https://github.com/acme/site.git", patterns=["HEAD"], auth_header="X: y")
+
+    assert len(calls) == 2
+    for kwargs in calls:
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        assert env["LC_ALL"] == "C"
+        assert env["LANGUAGE"] == "C"
+        assert env["GIT_TERMINAL_PROMPT"] == "0"
+        assert env["GCM_INTERACTIVE"] == "never"
+        assert kwargs["stdin"] == subprocess.DEVNULL
+
+
+def test_git_cache_errors_are_untaped_errors(monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _: None)
+
+    with pytest.raises(UntapedError, match="not found on PATH"):
+        GitRepositoryCache().ls_remote(
+            "https://github.com/acme/site.git", patterns=["HEAD"], auth_header=None
         )

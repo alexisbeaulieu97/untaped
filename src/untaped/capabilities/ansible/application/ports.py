@@ -89,7 +89,7 @@ class IncrementalDependencyIndexWriter(Protocol):
         failed_repos: frozenset[str] = frozenset(),
     ) -> None:
         """Commit a refresh; ``scans`` must be unique per (source_key, source_repo,
-        ref_kind, source_ref) -- duplicates raise IntegrityError inside the
+        ref_kind, source_ref) -- duplicates fail (DependencyIndexError) inside the
         transaction instead of last-wins. Refs and repo metadata cached for
         ``failed_repos`` survive the prune even though they contribute nothing
         to ``keep``."""

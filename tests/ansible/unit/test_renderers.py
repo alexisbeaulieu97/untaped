@@ -323,10 +323,10 @@ def test_mermaid_renderer_emits_directional_edges() -> None:
     rendered = render_graph(_graph(), "mermaid")
 
     assert rendered.startswith("graph LR\n")
-    assert 'target["acme/base@v1.0.0"]' in rendered
-    assert "target --> users" in rendered
-    assert "site --> target" in rendered
-    assert "target --> missing" in rendered
+    assert 'n0["acme/base@v1.0.0"]' in rendered
+    assert "n0 --> n1" in rendered
+    assert "n2 --> n0" in rendered
+    assert "n0 --> n3" in rendered
     assert "%% warning: source data is stale" in rendered
 
 
@@ -356,8 +356,8 @@ def test_mermaid_renderer_emits_cycle_comments() -> None:
 
     rendered = render_graph(graph, "mermaid")
 
-    assert "target --> users" in rendered
-    assert "users --> target" in rendered
+    assert "n0 --> n1" in rendered
+    assert "n1 --> n0" in rendered
     assert "%% cycle requires: target -> users -> target" in rendered
 
 
@@ -406,3 +406,28 @@ def test_json_renderer_emits_structured_graph() -> None:
     assert data["edges"][0]["relation"] == "requires"
     assert data["cycles"] == []
     assert data["warnings"] == ["source data is stale"]
+
+
+def test_mermaid_ids_do_not_collide_and_labels_escape_quotes() -> None:
+    graph = DependencyGraph(
+        target_id="acme/web-app",
+        nodes=(
+            GraphNode(id="acme/web-app", label="acme/web-app", repo="acme/web-app"),
+            GraphNode(id="acme/web_app", label="acme/web_app", repo="acme/web_app"),
+            GraphNode(id='unresolved:say "hi"', label='unresolved: say "hi"', unresolved="x"),
+        ),
+        edges=(
+            GraphEdge(source_id="acme/web-app", target_id="acme/web_app", relation="requires"),
+            GraphEdge(
+                source_id="acme/web-app", target_id='unresolved:say "hi"', relation="requires"
+            ),
+        ),
+    )
+
+    rendered = render_graph(graph, "mermaid")
+
+    assert 'n0["acme/web-app"]' in rendered
+    assert 'n1["acme/web_app"]' in rendered
+    assert "n0 --> n1" in rendered
+    assert 'n2["unresolved: say #quot;hi#quot;"]' in rendered
+    assert '\\"' not in rendered

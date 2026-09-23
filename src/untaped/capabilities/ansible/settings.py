@@ -17,6 +17,7 @@ DEFAULT_DEPENDENCY_PATHS = (
     "meta/requirements.yml",
     "meta/requirements.yaml",
     "meta/main.yml",
+    "meta/main.yaml",
 )
 ALLOWED_REF_KINDS = ("heads", "tags")
 
@@ -44,7 +45,7 @@ class SourceDefinition(BaseModel):
         if not any((self.orgs, self.teams, self.repos)):
             raise ValueError("source requires --org, --team, or --repo")
         for repo in self.repos:
-            if not _is_repo_name(repo):
+            if not is_repo_name(repo):
                 raise ValueError(f"repo must be owner/name: {repo!r}")
         invalid_ref_kinds = sorted(set(self.ref_kinds) - set(ALLOWED_REF_KINDS))
         if invalid_ref_kinds:
@@ -57,6 +58,7 @@ class AnsibleSettings(BaseModel):
 
     index_path: Path = Path("~/.untaped/ansible-index.sqlite3")
     stale_after: int = 86_400
+    # Deprecated and ignored; kept so existing configs still validate.
     freshness_ttl: int | None = Field(default=None, ge=0)
     ref_scan_default: Literal["all", "default_branch"] = "all"
     source_refresh_backend: Literal["auto", "graphql", "git"] = "auto"
@@ -87,6 +89,7 @@ def _dedupe_sorted(values: list[str]) -> list[str]:
     return sorted(dict.fromkeys(values))
 
 
-def _is_repo_name(value: str) -> bool:
+def is_repo_name(value: str) -> bool:
+    """Return whether ``value`` is a GitHub ``owner/name`` repo id."""
     owner, separator, repo = value.partition("/")
     return bool(owner and separator and repo and "/" not in repo)

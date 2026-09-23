@@ -958,3 +958,86 @@ def test_depth_fanout_issues_one_dependencies_batch_read_per_level() -> None:
     assert [len(pairs) for pairs in index.dependencies_batch_calls] == [1, 4, 16]
     assert index.dependency_calls == {}
     assert index.dependent_calls == {}
+
+
+def _layered_dag(width: int, layers: int) -> list[IndexedDependency]:
+    """Every node in layer N depends on every node in layer N+1."""
+    edges: list[IndexedDependency] = []
+    sources = ["acme/root"]
+    for layer in range(layers):
+        targets = [f"acme/l{layer}-n{column}" for column in range(width)]
+        for source in sources:
+            for target in targets:
+                edges.append(
+                    IndexedDependency(
+                        source_repo=source,
+                        source_ref="main",
+                        dependency_repo=target,
+                        dependency_name=target.rsplit("/", maxsplit=1)[-1],
+                        dependency_version="main",
+                        source_path="roles/requirements.yml",
+                    )
+                )
+        sources = targets
+    return edges
+
+
+def test_shared_dependencies_are_expanded_once_in_a_layered_dag() -> None:
+    width, layers = 4, 9
+    index = StubIndex(_layered_dag(width, layers))
+
+    graph = BuildGraph(index)(
+        GraphRequest(repo="acme/root", ref="main", direction="deps", depth=None)
+    )
+
+    requested = [pair for call in index.dependencies_batch_calls for pair in call]
+    assert len(requested) == len(set(requested))
+    assert len(requested) <= 1 + width * layers
+    assert len(graph.nodes) == 1 + width * layers
+    assert len(graph.edges) == width + width * width * (layers - 1)
+
+    lines = render_graph(graph, "tree").splitlines()
+    assert len(lines) < 5 * len(graph.edges)
+    assert any(line.endswith("(see above)") for line in lines)
+
+
+def test_shared_dependents_are_expanded_once_in_a_layered_dag() -> None:
+    width, layers = 4, 9
+    index = StubIndex(_layered_dag(width, layers))
+
+    graph = BuildGraph(index)(
+        GraphRequest(repo=f"acme/l{layers - 1}-n0", ref="main", direction="impact", depth=None)
+    )
+
+    requested = [pair for call in index.dependents_batch_calls for pair in call]
+    assert len(requested) == len(set(requested))
+    lines = render_graph(graph, "tree").splitlines()
+    assert len(lines) < 5 * max(len(graph.edges), 1)
+
+
+def test_shared_subtree_prints_once_and_later_occurrences_point_above() -> None:
+    edges = [
+        IndexedDependency(
+            source_repo=source,
+            source_ref="main",
+            dependency_repo=target,
+            dependency_name=target.rsplit("/", maxsplit=1)[-1],
+            dependency_version="main",
+            source_path="roles/requirements.yml",
+        )
+        for source, target in (
+            ("acme/app", "acme/a"),
+            ("acme/app", "acme/b"),
+            ("acme/a", "acme/shared"),
+            ("acme/b", "acme/shared"),
+            ("acme/shared", "acme/leaf"),
+        )
+    ]
+
+    graph = BuildGraph(StubIndex(edges))(
+        GraphRequest(repo="acme/app", ref="main", direction="deps", depth=None)
+    )
+    tree = render_graph(graph, "tree")
+
+    assert tree.count("acme/leaf@main") == 1
+    assert "acme/shared@main (see above)" in tree
