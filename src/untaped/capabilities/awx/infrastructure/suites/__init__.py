@@ -5,6 +5,8 @@ interactive prompt, and the variable-resolution adapter all live here.
 The application layer depends on these via :mod:`untaped.capabilities.awx.application.suites.ports`.
 """
 
+from __future__ import annotations
+
 from untaped.capabilities.awx.infrastructure.suites.filesystem import LocalFilesystem
 from untaped.capabilities.awx.infrastructure.suites.parser import (
     DefaultParser,

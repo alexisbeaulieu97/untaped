@@ -1,5 +1,7 @@
 """Bounded scheduling for independent actions on already validated fixed targets."""
 
+from __future__ import annotations
+
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal

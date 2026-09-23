@@ -7,6 +7,8 @@ only its unique mechanics (queue + print loop for track; ``WatchJob``
 lambda for wait).
 """
 
+from __future__ import annotations
+
 import queue
 import threading
 from collections.abc import Callable

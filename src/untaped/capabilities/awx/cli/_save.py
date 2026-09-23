@@ -1,5 +1,7 @@
 """Export complete fixed selections as portable resource documents."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Annotated
 

@@ -1,5 +1,7 @@
 """Compose declarative file preparation with the shared CLI mutation gate."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from pathlib import Path
 

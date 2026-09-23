@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from untaped.capabilities.awx.domain.envelope import API_VERSION, IdentityRef, Metadata, Resource
 from untaped.capabilities.awx.domain.job import TERMINAL_STATUSES, Job, JobEvent
 from untaped.capabilities.awx.domain.outcomes import (

@@ -21,6 +21,8 @@ factory bakes in CRUD assumptions and identity-based ``get`` that this
 virtual collection cannot satisfy.
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import Parameter

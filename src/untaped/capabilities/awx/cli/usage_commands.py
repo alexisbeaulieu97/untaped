@@ -12,6 +12,8 @@ spec decides which kind the identifier resolves against; the underlying
 query is the same either way.
 """
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter

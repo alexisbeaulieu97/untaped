@@ -1,5 +1,7 @@
 """Fixed-selection deletion with whole-batch validation and strict receipts."""
 
+from __future__ import annotations
+
 from cyclopts import App
 
 from untaped.capabilities.awx.application import DeleteResource

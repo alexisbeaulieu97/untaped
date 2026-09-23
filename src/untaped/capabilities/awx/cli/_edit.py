@@ -1,5 +1,7 @@
 """Register external-editor batch editing for each writable AWX kind."""
 
+from __future__ import annotations
+
 from typing import Annotated
 
 from cyclopts import App, Parameter
