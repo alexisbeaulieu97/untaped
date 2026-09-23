@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from untaped.capability_api import OutcomeRecord, UtcTimestamp
 
 # Jira ``fields`` requested for list rows (search) and the richer single-issue
 # detail view (get); the client requests exactly what the models flatten.
@@ -22,28 +25,36 @@ ISSUE_DETAIL_FIELDS: tuple[str, ...] = (
 )
 
 
+_ROW_CONFIG = ConfigDict(frozen=True, extra="ignore")
+
+
 class JiraUser(BaseModel):
     """Authenticated Jira user returned by ``/myself``."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ROW_CONFIG
 
     name: str | None = None
     key: str | None = None
-    displayName: str | None = None
-    emailAddress: str | None = None
+    display_name: str | None = Field(
+        default=None, validation_alias=AliasChoices("display_name", "displayName")
+    )
+    email_address: str | None = Field(
+        default=None, validation_alias=AliasChoices("email_address", "emailAddress")
+    )
 
 
 class IssueResult(BaseModel):
     """One issue row with common nested Jira fields flattened."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ROW_CONFIG
 
     key: str
     summary: str = ""
     status: str = ""
     assignee: str = ""
-    updated: str = ""
+    updated_at: UtcTimestamp | None = None
     url: str = ""
+    api_url: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -59,20 +70,21 @@ class IssueResult(BaseModel):
             "summary": _text(fields.get("summary")),
             "status": status.get("name", "") if isinstance(status, dict) else "",
             "assignee": _display_name(assignee),
-            "updated": _text(fields.get("updated")),
+            "updated_at": _timestamp(fields.get("updated")),
             "url": _browser_url(data),
+            "api_url": _api_url(data),
         }
         return {**data, **patch}
 
 
 class IssueDetailResult(IssueResult):
-    """One issue with the extra fields shown by ``issue get``."""
+    """One issue with the extra fields shown by ``issues get``."""
 
-    issuetype: str = ""
+    issue_type: str = ""
     priority: str = ""
     reporter: str = ""
     labels: list[str] = Field(default_factory=list)
-    created: str = ""
+    created_at: UtcTimestamp | None = None
     resolution: str = ""
     description: str = ""
 
@@ -86,11 +98,11 @@ class IssueDetailResult(IssueResult):
             fields = {}
         labels = fields.get("labels") or []
         patch = {
-            "issuetype": _name(fields.get("issuetype")),
+            "issue_type": _name(fields.get("issuetype")),
             "priority": _name(fields.get("priority")),
             "reporter": _display_name(fields.get("reporter")),
             "labels": [str(label) for label in labels] if isinstance(labels, list) else [],
-            "created": _text(fields.get("created")),
+            "created_at": _timestamp(fields.get("created")),
             "resolution": _name(fields.get("resolution")),
             "description": _text(fields.get("description")),
         }
@@ -168,6 +180,18 @@ def _adf_inline(node: dict[str, Any]) -> str:
     return "".join(_adf_inline(child) for child in _adf_children(node))
 
 
+def _timestamp(value: Any) -> datetime | None:
+    """Parse a Jira timestamp (``2026-06-05T10:00:00.000-0400``); ``None`` if absent or odd."""
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
 def _name(value: Any) -> str:
     return str(value.get("name") or "") if isinstance(value, dict) else ""
 
@@ -176,6 +200,11 @@ def _display_name(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
     return str(value.get("displayName") or value.get("name") or value.get("key") or "")
+
+
+def _api_url(data: dict[str, Any]) -> str | None:
+    self_url = data.get("self")
+    return self_url if isinstance(self_url, str) and self_url else None
 
 
 def _browser_url(data: dict[str, Any]) -> str:
@@ -187,31 +216,32 @@ def _browser_url(data: dict[str, Any]) -> str:
     return self_url if isinstance(self_url, str) else ""
 
 
-class IssueMutationResult(BaseModel):
-    """One row emitted after an issue mutation command."""
+def browse_url(base_url: str | None, key: str) -> str | None:
+    """The browser URL of issue ``key`` on the Jira at ``base_url``."""
+    if not base_url:
+        return None
+    return f"{base_url.rstrip('/')}/browse/{key}"
 
-    model_config = ConfigDict(extra="ignore")
 
-    key: str
+class IssueOutcome(OutcomeRecord):
+    """The result of one issue mutation (``jira.issue_outcome``).
+
+    ``action`` is ``created``, ``updated``, ``commented``, ``transitioned``,
+    or ``planned`` under ``--dry-run`` (where a new issue has no ``key`` yet).
+    """
+
+    key: str | None = None
     id: str | None = None
-    self: str | None = None
-    status: str = "ok"
+    url: str | None = None
+    api_url: str | None = None
     transition_id: str | None = None
-
-
-class CommentResult(BaseModel):
-    """One row emitted after adding a comment."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    id: str
-    issue: str = ""
+    comment_id: str | None = None
 
 
 class TransitionResult(BaseModel):
     """One available Jira workflow transition."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ROW_CONFIG
 
     id: str
     name: str
@@ -220,34 +250,47 @@ class TransitionResult(BaseModel):
 class ProjectResult(BaseModel):
     """One Jira project lookup row."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ROW_CONFIG
 
     key: str
     name: str = ""
     id: str = ""
-    projectTypeKey: str | None = None
+    project_type_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("project_type_key", "projectTypeKey")
+    )
 
 
 class BoardResult(BaseModel):
     """One Jira Software board row."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ROW_CONFIG
 
     id: int
     name: str = ""
     type: str = ""
-    self: str | None = None
+    api_url: str | None = Field(default=None, validation_alias=AliasChoices("api_url", "self"))
 
 
 class SprintResult(BaseModel):
     """One Jira Software sprint row."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = _ROW_CONFIG
 
     id: int
     name: str = ""
     state: str = ""
-    startDate: str | None = None
-    endDate: str | None = None
+    start_at: UtcTimestamp | None = Field(
+        default=None, validation_alias=AliasChoices("start_at", "startDate")
+    )
+    end_at: UtcTimestamp | None = Field(
+        default=None, validation_alias=AliasChoices("end_at", "endDate")
+    )
     goal: str | None = None
-    originBoardId: int | None = Field(default=None)
+    origin_board_id: int | None = Field(
+        default=None, validation_alias=AliasChoices("origin_board_id", "originBoardId")
+    )
+
+    @field_validator("start_at", "end_at", mode="before")
+    @classmethod
+    def _parse_timestamp(cls, value: Any) -> datetime | None:
+        return _timestamp(value)
