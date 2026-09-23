@@ -83,7 +83,8 @@ def test_passes_through_non_untaped_exception() -> None:
 
 def test_broken_pipe_from_command_exits_cleanly() -> None:
     """A consumer closing the pipe mid-write surfaces as ``BrokenPipeError``;
-    it must convert to a clean ``SystemExit(1)``, not leak as a traceback."""
+    it must convert to a quiet ``SystemExit(0)`` (``| head`` is not a
+    failure), not leak as a traceback."""
     app = create_app(name="test")
 
     @app.default
@@ -91,7 +92,8 @@ def test_broken_pipe_from_command_exits_cleanly() -> None:
         raise BrokenPipeError(32, "Broken pipe")
 
     result = CliInvoker().invoke(app, [])
-    assert result.exit_code == 1
+    assert result.exit_code == 0
+    assert result.stderr == ""
     # Clean exit — NOT a leaked BrokenPipeError bubbling up as a bug.
     assert isinstance(result.exception, SystemExit)
 
@@ -121,7 +123,7 @@ def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(sys, "stdout", _BrokenStdout())
     with pytest.raises(SystemExit) as exc:
         run_cyclopts_app(app, [])
-    assert exc.value.code == 1
+    assert exc.value.code == 0
 
 
 # ---- parse_kv_pairs ------------------------------------------------------
