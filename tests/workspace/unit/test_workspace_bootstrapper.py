@@ -19,7 +19,7 @@ import pytest
 
 from untaped.capabilities.workspace.application import WorkspaceBootstrapper
 from untaped.capabilities.workspace.domain import ManifestDefaults, Workspace, WorkspaceManifest
-from untaped.capabilities.workspace.errors import WorkspaceError
+from untaped.capabilities.workspace.errors import RegistryError, WorkspaceError
 from untaped.capabilities.workspace.infrastructure import ManifestRepository
 from workspace.conftest import StubManifests, StubRegistry
 
@@ -72,8 +72,32 @@ def test_raises_when_manifest_already_exists(tmp_path: Path) -> None:
     manifests = StubManifests({ws_dir.resolve(): _manifest("prod")})
     boot = WorkspaceBootstrapper(manifests, StubRegistry())
 
-    with pytest.raises(WorkspaceError, match="already initialised"):
+    with pytest.raises(WorkspaceError, match="already initialised") as excinfo:
         boot(ws_dir, build_manifest=lambda n: _manifest(n), name="prod")
+    assert "untaped workspace adopt" in str(excinfo.value)
+
+
+def test_raises_when_registry_already_has_name_without_writing(tmp_path: Path) -> None:
+    registry = StubRegistry([Workspace(name="prod", path=tmp_path / "elsewhere")])
+    boot = WorkspaceBootstrapper(ManifestRepository(), registry)
+
+    with pytest.raises(WorkspaceError, match="name already registered: 'prod'"):
+        boot(tmp_path / "new", build_manifest=lambda n: _manifest(n), name="prod")
+
+    assert not (tmp_path / "new" / "untaped.yml").exists()
+
+
+def test_rolls_back_new_manifest_when_register_fails(tmp_path: Path) -> None:
+    class _FailingRegistry(StubRegistry):
+        def register(self, *, name: str, path: Path) -> Workspace:
+            raise RegistryError("config locked")
+
+    boot = WorkspaceBootstrapper(ManifestRepository(), _FailingRegistry())
+
+    with pytest.raises(RegistryError, match="config locked"):
+        boot(tmp_path / "new", build_manifest=lambda n: _manifest(n), name="prod")
+
+    assert not (tmp_path / "new" / "untaped.yml").exists()
 
 
 def test_raises_when_registry_already_has_path(tmp_path: Path) -> None:
