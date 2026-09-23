@@ -20,7 +20,11 @@ from untaped.api import (
     report_errors,
 )
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
-from untaped.capabilities.ansible.cli._refresh import pluralize, run_source_refresh
+from untaped.capabilities.ansible.cli._refresh import (
+    pluralize,
+    run_source_refresh,
+    warn_deprecated_settings,
+)
 from untaped.capabilities.ansible.infrastructure import (
     AliasRepository,
     SourceRepository,
@@ -324,6 +328,7 @@ def source_refresh_command(
         if source is None:
             raise UntapedError(f"unknown source: {name!r}")
         settings = get_config_section("ansible", AnsibleSettings)
+        warn_deprecated_settings(settings)
         aliases = AliasRepository().entries()
         git_concurrency = concurrency or settings.git_fetch_concurrency
         result = run_source_refresh(

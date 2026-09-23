@@ -3281,6 +3281,11 @@ def _counting_refresh(calls: list[str]):
     return fake_refresh
 
 
+def _only_freshness_ttl_deprecation(stderr: str) -> bool:
+    lines = stderr.splitlines()
+    return len(lines) == 1 and "ansible.freshness_ttl is deprecated" in lines[0]
+
+
 def test_graph_cache_first_ignores_freshness_ttl_for_fresh_source(
     tmp_path: Path,
     monkeypatch,
@@ -3309,7 +3314,7 @@ def test_graph_cache_first_ignores_freshness_ttl_for_fresh_source(
 
     assert result.exit_code == 0, result.output
     assert "    +-- acme/site@main" in result.stdout
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
 
 
 def test_graph_cache_first_does_not_print_freshness_ttl_skip_message(
@@ -3339,7 +3344,7 @@ def test_graph_cache_first_does_not_print_freshness_ttl_skip_message(
         assert len(mock.calls) == 0
 
     assert result.exit_code == 0, result.output
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
 
 
 def test_graph_cache_first_missing_source_fails_even_with_freshness_ttl(
@@ -3427,7 +3432,7 @@ def test_graph_cache_first_uses_stale_source_without_freshness_probe(
     assert result.exit_code == 0, result.output
     assert calls == []
     assert "    +-- acme/site@main" in result.stdout
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
 
 
 def test_graph_cache_first_ignores_freshness_ttl_for_mixed_sources(
@@ -3479,7 +3484,7 @@ def test_graph_cache_first_ignores_freshness_ttl_for_mixed_sources(
 
     assert result.exit_code == 0, result.output
     assert calls == []
-    assert result.stderr == ""
+    assert _only_freshness_ttl_deprecation(result.stderr)
     assert "    +-- acme/site@main" in result.stdout
     assert "    +-- acme/deploy@main" in result.stdout
 
@@ -3599,6 +3604,93 @@ def test_source_refresh_prints_skipped_dependency_files(
     assert (
         "warning: skipped acme/site@main roles/requirements.yml: could not parse dependency YAML"
     ) in result.stderr
+
+
+class _CollectionsGitCache(_SeedGitCache):
+    """Git transport stub whose requirements file declares collections."""
+
+    def read_files(
+        self,
+        bare_path: Path,
+        sha: str,
+        paths: list[str],
+        *,
+        auth_header: str | None,
+    ) -> dict[str, str]:
+        return {
+            "requirements.yml": (
+                "roles:\n  - src: acme/base\n"
+                "collections:\n  - community.general\n  - name: ansible.posix\n"
+            )
+        }
+
+
+def test_source_refresh_reports_ignored_collections(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        extra_profile={"github": {"token": "ghp_test"}},
+        top_level_ansible={"sources": [{"name": "prod", "repos": ["acme/site"]}]},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+    monkeypatch.setattr(_refresh, "GitRepositoryCache", _CollectionsGitCache)
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        _mock_refresh_repos(mock, {"acme/site": "sha-site"})
+        result = CliInvoker().invoke(app, ["source", "refresh", "prod", "--backend", "graphql"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: 2 collections in requirements files were ignored (only roles are graphed): "
+        "ansible.posix, community.general"
+    ) in result.stderr
+
+
+def test_graph_local_target_reports_ignored_collections(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "role"
+    target.mkdir()
+    (target / "requirements.yml").write_text(
+        "roles:\n  - src: acme/base\ncollections:\n  - community.general\n"
+    )
+    cfg = _write_config(tmp_path, index_path=tmp_path / "index.sqlite3")
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/role", "--downstream"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: 1 collection in requirements files was ignored (only roles are graphed): "
+        "community.general"
+    ) in result.stdout
+
+
+def test_deprecated_freshness_ttl_setting_warns(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "role"
+    target.mkdir()
+    cfg = _write_config(
+        tmp_path,
+        index_path=tmp_path / "index.sqlite3",
+        ansible_profile={"freshness_ttl": 3600},
+    )
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(
+        app, ["graph", str(target), "--target-repo", "acme/role", "--downstream"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "ansible.freshness_ttl is deprecated" in result.stderr
+
+
+def test_graph_cached_help_describes_the_default(tmp_path: Path, monkeypatch) -> None:
+    cfg = _write_config(tmp_path)
+    monkeypatch.setenv("UNTAPED_CONFIG", str(cfg))
+
+    result = CliInvoker().invoke(app, ["graph", "--help"])
+
+    assert "default" in " ".join(result.stdout.split()).rsplit("--cached", maxsplit=1)[1][:200]
 
 
 def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(

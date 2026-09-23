@@ -24,8 +24,10 @@ from untaped.capabilities.ansible.application.ports import DependencyIndex
 from untaped.capabilities.ansible.application.refresh_index import RefreshResult
 from untaped.capabilities.ansible.cli._refresh import (
     format_skipped_dependency_file,
+    ignored_collections_warning,
     pluralize,
     run_source_refresh,
+    warn_deprecated_settings,
 )
 from untaped.capabilities.ansible.domain.graph import DependencyGraph
 from untaped.capabilities.ansible.domain.identity import IdentityResolver, github_web_host
@@ -146,7 +148,10 @@ def graph_command(
             name="--cached",
             negative="",
             group=_SOURCE_DATA_GROUP,
-            help="Use cached source data without checking remote refs.",
+            help=(
+                "Read cached source data only, without checking remote refs. This is the "
+                "default; the flag only makes it explicit."
+            ),
         ),
     ] = False,
     concurrency: Annotated[
@@ -247,6 +252,7 @@ def graph_command(
     with report_errors():
         ctx = app_context()
         settings = get_config_section("ansible", AnsibleSettings)
+        warn_deprecated_settings(settings)
         aliases = AliasRepository().entries()
         github_settings = get_config_section("github", GithubSettings)
         github_host = github_web_host(github_settings.base_url)
@@ -614,6 +620,7 @@ def _local_dependencies(
 ) -> _LocalDependencies:
     edges: list[IndexedDependency] = []
     warnings: list[str] = []
+    ignored_collections: list[str] = []
     resolver = IdentityResolver(aliases, github_host=github_host)
     for relative in dependency_paths:
         dep_path = path / relative
@@ -621,6 +628,7 @@ def _local_dependencies(
             continue
         report = parse_dependency_file(relative, dep_path.read_text())
         warnings.extend(_parse_warning_messages(report.warnings))
+        ignored_collections.extend(report.ignored_collections)
         for declaration in report.dependencies:
             resolved = resolver.resolve(declaration)
             edges.append(
@@ -634,6 +642,9 @@ def _local_dependencies(
                     unresolved=resolved.unresolved,
                 )
             )
+    collections_warning = ignored_collections_warning(ignored_collections)
+    if collections_warning is not None:
+        warnings.append(collections_warning)
     return _LocalDependencies(edges=edges, warnings=warnings)
 
 
