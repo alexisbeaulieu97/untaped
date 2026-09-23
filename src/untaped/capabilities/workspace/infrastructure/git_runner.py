@@ -67,6 +67,7 @@ class GitRunner:
         # variant.
         bare.parent.mkdir(parents=True, exist_ok=True)
         self._clone(["clone", "--bare", url, str(bare)], dest=bare)
+        self._protect_cache_objects(bare)
         return BareCacheEntry(path=bare, created=True)
 
     def bare_fetch(self, bare_path: Path) -> None:
@@ -78,6 +79,18 @@ class GitRunner:
             cwd=bare_path,
             timeout=self._slow_timeout,
         )
+        self._protect_cache_objects(bare_path)
+
+    def _protect_cache_objects(self, bare_path: Path) -> None:
+        """Never auto-gc or prune the cache's objects.
+
+        Clones made before ``--dissociate`` was used still borrow objects
+        through ``objects/info/alternates``; pruning objects that became
+        unreachable in the cache (deleted or force-pushed branches) would
+        corrupt them.
+        """
+        self._run(["config", "gc.pruneExpire", "never"], cwd=bare_path)
+        self._run(["config", "gc.auto", "0"], cwd=bare_path)
 
     # workspace clone ----------------------------------------------------
 
@@ -90,7 +103,9 @@ class GitRunner:
         branch: str | None = None,
     ) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["clone", "--reference", str(bare)]
+        # ``--dissociate`` copies the borrowed objects into the clone, so the
+        # cache stays a pure accelerator: pruning it never breaks clones.
+        cmd = ["clone", "--reference", str(bare), "--dissociate"]
         if branch is not None:
             cmd += ["--branch", branch]
         cmd += [url, str(dest)]

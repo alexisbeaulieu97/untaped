@@ -149,7 +149,7 @@ containing `.git` is recorded in the new manifest with its current
 null`; clones missing an `origin` emit a stderr warning and are
 skipped). The on-disk clones stay where they are — `adopt` does
 **not** rewire them to share objects with the bare cache; the cascade
-only links *new* clones via `git clone --reference`.
+only seeds *new* clones via `git clone --reference --dissociate`.
 
 ```bash
 git clone git@github.com:acme/api  ~/work/prod/api
@@ -385,9 +385,11 @@ Known limitations:
 - Ctrl-C cancels queued repo jobs instead of draining them; the command
   then waits only for in-flight git calls, which receive the same
   terminal interrupt.
-- `git clone --reference` keeps working clones dependent on objects in
-  the bare cache unless you later dissociate them. Deleting or
-  corrupting the cache can damage referenced clones.
+- Clones made by older releases with plain `git clone --reference`
+  still borrow objects from the bare cache (see
+  `.git/objects/info/alternates`); deleting the cache can damage them.
+  Run `git repack -a -d && rm .git/objects/info/alternates` in such a
+  clone to make it independent.
 
 **`--all --repo` semantics.** Under `--all`, `--repo` is a per-workspace
 filter: workspaces whose manifests don't contain the requested
@@ -573,9 +575,14 @@ untaped workspace status --workspace prod        # already populated
 
 By default, bare clones are cached at `~/.untaped/repositories`
 (override with `untaped config set workspace.cache_dir <dir>`). Workspace
-clones use `git clone --reference` against the cached bare, so disk
-and bandwidth are shared without the branch conflicts that
-`git worktree` would introduce. Existing local clones do not touch the
+clones use `git clone --reference <bare> --dissociate`: the cached bare
+saves network transfer, and the needed objects are then copied into the
+clone, so every clone is self-contained and pruning, garbage-collecting,
+or deleting the cache never breaks it. There are no branch conflicts of
+the kind `git worktree` would introduce. The cache mirrors upstream
+branches with `fetch --prune`; untaped also sets `gc.auto=0` and
+`gc.pruneExpire=never` on it so clones made by older releases (which
+still borrow cache objects) are not corrupted by automatic gc. Existing local clones do not touch the
 bare cache during sync; they fetch their own `origin` refs and then
 fast-forward or skip. Missing clones use the bare cache as the
 reference source. A fresh bare clone is treated as already fresh, while

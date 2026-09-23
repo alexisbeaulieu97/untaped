@@ -32,7 +32,9 @@ Correctness and safety fixes from a whole-codebase review. Items marked
     `--create` is passed.
   - Git never runs in an enclosing repository, never prompts for
     credentials, and fast-forwards from the branch's upstream. The bare cache
-    now actually refreshes. Ctrl-C stops queued work and child processes;
+    now actually refreshes; new clones copy objects out of it
+    (`--dissociate`) and it is never auto-gc'd, so pruned cache branches
+    cannot corrupt clones. Ctrl-C stops queued work and child processes;
     `foreach` streams rows as repos finish.
 - github
   - `sweep --grep` always uses extended regular expressions, so `a|b` works
