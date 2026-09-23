@@ -101,8 +101,8 @@ def clean_command(
         elif all_repos:
             selected = cached
         else:
-            requested = set(repos)
-            selected = tuple(row for row in cached if row.repo in requested)
+            requested = {name.casefold() for name in repos}
+            selected = tuple(row for row in cached if row.repo.casefold() in requested)
 
         cleaner = CleanCorpus(corpus)
         ui = app_context().ui(strict=False)

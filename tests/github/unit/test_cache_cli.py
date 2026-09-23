@@ -275,3 +275,18 @@ def test_cache_worktree_materializes_cached_ref(
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
+
+
+def test_cache_clean_repo_matches_case_insensitively(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    api = _source_repo(tmp_path, "api", {"README.md": "hello\n"})
+    _populate_cache(tmp_path, [_repo("acme/api", api)])
+
+    cleaned = CliInvoker().invoke(
+        app, ["cache", "clean", "--repo", "ACME/Api", "--yes", "--format", "json"]
+    )
+
+    assert cleaned.exit_code == 0, cleaned.output
+    assert [row["repo"] for row in json.loads(cleaned.stdout)] == ["acme/api"]
