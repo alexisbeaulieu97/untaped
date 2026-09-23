@@ -59,6 +59,7 @@ class SelectionResolver:
     def __init__(self, client: ResourceClient, catalog: Catalog) -> None:
         self._client = client
         self._catalog = catalog
+        self._references: dict[tuple[str, int], Mapping[str, Any]] = {}
 
     def resolve(
         self,
@@ -91,6 +92,8 @@ class SelectionResolver:
             raise ConfigError("IDs require --by-id")
 
         effective_scope = {_scope_path(spec, key): value for key, value in request.scope.items()}
+        # Scope ancestors are shared by most selected records: fetch each once.
+        self._references = {}
         if request.pipe is not None:
             return self._from_pipe(spec, request.pipe, effective_scope)
         if request.names:
@@ -105,6 +108,18 @@ class SelectionResolver:
                 scope=effective_scope,
             )
         return ()
+
+    def _validate(
+        self, spec: ResourceSpec, record: Mapping[str, Any], scope: Mapping[str, str]
+    ) -> None:
+        validate_scope(
+            spec,
+            record,
+            scope,
+            client=self._client,
+            catalog=self._catalog,
+            cache=self._references,
+        )
 
     def _from_pipe(
         self,
@@ -126,7 +141,7 @@ class SelectionResolver:
                     f"line {envelope.lineno}: pipe record requires a positive integer id"
                 )
             record = _record_dict(self._client.get(spec, id_))
-            validate_scope(spec, record, scope, client=self._client, catalog=self._catalog)
+            self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
 
@@ -142,7 +157,7 @@ class SelectionResolver:
             if record is None:
                 raise ResourceNotFound(spec.kind, {"name": name, **scope})
             values = _record_dict(record)
-            validate_scope(spec, values, scope, client=self._client, catalog=self._catalog)
+            self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
 
@@ -156,7 +171,7 @@ class SelectionResolver:
         for raw_id in ids:
             id_ = _positive_id(raw_id)
             record = _record_dict(self._client.get(spec, id_))
-            validate_scope(spec, record, scope, client=self._client, catalog=self._catalog)
+            self._validate(spec, record, scope)
             selected.append(_selected(spec, record, scope))
         return _dedupe(selected)
 
@@ -179,7 +194,7 @@ class SelectionResolver:
         selected: list[SelectedResource] = []
         for record in self._client.list(spec, params=params or None):
             values = _record_dict(record)
-            validate_scope(spec, values, scope, client=self._client, catalog=self._catalog)
+            self._validate(spec, values, scope)
             selected.append(_selected(spec, values, scope))
         return _dedupe(selected)
 
@@ -239,8 +254,12 @@ def validate_scope(
     *,
     client: ResourceClient,
     catalog: Catalog,
+    cache: dict[tuple[str, int], Mapping[str, Any]] | None = None,
 ) -> None:
-    """Prove requested names against summary fields or referenced numeric IDs."""
+    """Prove requested names against summary fields or referenced numeric IDs.
+
+    ``cache`` memoizes referenced records by ``(kind, id)`` across calls.
+    """
     for path, expected in scope.items():
         current = record
         parts = _scope_path(spec, path).split("__")
@@ -253,7 +272,9 @@ def validate_scope(
                     if name != expected:
                         raise ResourceNotFound(spec.kind, {"id": record.get("id"), path: expected})
                     break
-            referenced = _scope_reference(current, relationship, client=client, catalog=catalog)
+            referenced = _scope_reference(
+                current, relationship, client=client, catalog=catalog, cache=cache
+            )
             if referenced is None or (
                 index == len(parts) - 1 and referenced.get("name") != expected
             ):
@@ -282,7 +303,12 @@ def _scope_path(spec: ResourceSpec, path: str) -> str:
 
 
 def _scope_reference(
-    record: Mapping[str, Any], relationship: str, *, client: ResourceClient, catalog: Catalog
+    record: Mapping[str, Any],
+    relationship: str,
+    *,
+    client: ResourceClient,
+    catalog: Catalog,
+    cache: dict[tuple[str, int], Mapping[str, Any]] | None = None,
 ) -> Mapping[str, Any] | None:
     summaries = record.get("summary_fields") or {}
     summary = summaries.get(relationship) if isinstance(summaries, Mapping) else None
@@ -309,4 +335,9 @@ def _scope_reference(
             )
     if kind is None:
         raise BadRequest(f"unsupported scope relationship {relationship!r}")
-    return _record_dict(client.get(catalog.get(kind), value))
+    if cache is None:
+        return _record_dict(client.get(catalog.get(kind), value))
+    key = (kind, value)
+    if key not in cache:
+        cache[key] = _record_dict(client.get(catalog.get(kind), value))
+    return cache[key]
