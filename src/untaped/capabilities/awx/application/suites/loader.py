@@ -13,6 +13,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.suites.ports import (
     Filesystem,
     Parser,
@@ -20,7 +21,6 @@ from untaped.capabilities.awx.application.suites.ports import (
     VarsResolver,
 )
 from untaped.capabilities.awx.domain.suite import Suite, VariableSpec
-from untaped.capabilities.awx.errors import AwxApiError
 
 
 class LoadTestSuite:
@@ -58,11 +58,11 @@ class LoadTestSuite:
         rendered = self._parser.render_body(body, values)
         data = self._parser.parse_yaml(rendered)
         if not isinstance(data, dict):
-            raise AwxApiError(
+            raise ConfigError(
                 f"{path}: rendered body must be a YAML mapping; got {type(data).__name__}"
             )
         if "kind" not in data:
-            raise AwxApiError(f"{path}: missing required 'kind: AwxTestSuite' marker")
+            raise ConfigError(f"{path}: missing required 'kind: AwxTestSuite' marker")
         data.setdefault("name", path.stem)
         # Carry the parsed frontmatter specs through so callers (e.g.
         # ``awx test list --format json``) can introspect required vars.
@@ -70,7 +70,7 @@ class LoadTestSuite:
         try:
             suite = Suite.model_validate(data)
         except ValidationError as exc:
-            raise AwxApiError(f"{path}: {exc}") from exc
+            raise ConfigError(f"{path}: {exc}") from exc
         _reject_non_empty_assert(path, suite)
         return suite
 
@@ -93,16 +93,16 @@ class LoadTestSuite:
         if meta is None:
             return {}
         if not isinstance(meta, dict):
-            raise AwxApiError("frontmatter must be a YAML mapping")
+            raise ConfigError("frontmatter must be a YAML mapping")
         raw_vars = meta.get("variables")
         if raw_vars is None:
             return {}
         if not isinstance(raw_vars, dict):
-            raise AwxApiError("frontmatter 'variables' must be a mapping")
+            raise ConfigError("frontmatter 'variables' must be a mapping")
         specs: dict[str, VariableSpec] = {}
         for name, body in raw_vars.items():
             if not isinstance(body, dict):
-                raise AwxApiError(f"variable {name!r} metadata must be a mapping")
+                raise ConfigError(f"variable {name!r} metadata must be a mapping")
             # Defensively drop ``name`` from the body so it can't conflict
             # with the explicit ``name=str(name)`` kwarg below — otherwise
             # ``VariableSpec(name=…, **body)`` raises a raw ``TypeError``
@@ -111,7 +111,7 @@ class LoadTestSuite:
             try:
                 specs[str(name)] = VariableSpec(name=str(name), **body_without_name)
             except ValidationError as exc:
-                raise AwxApiError(f"variable {name!r}: {exc}") from exc
+                raise ConfigError(f"variable {name!r}: {exc}") from exc
         return specs
 
 
@@ -124,7 +124,7 @@ def _reject_non_empty_assert(path: Path, suite: Suite) -> None:
             locations.append(f"cases.{name}")
     if locations:
         joined = ", ".join(locations)
-        raise AwxApiError(
+        raise ConfigError(
             f"{path}: non-empty 'assert:' block(s) at {joined} — assertions land in v2; "
             "remove or empty the assert: block in v1."
         )

@@ -7,7 +7,7 @@ the generic use cases need. Commands construct the context inside a
 
 This module is the **only** place in the ``awx`` capability that reads
 core settings (via :func:`untaped.api.app_context`); everything
-downstream consumes the package-local :class:`AwxConfig`.
+downstream consumes the :class:`AwxSettings` section.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from typing import TYPE_CHECKING
 
 from untaped.api import AppContext, ConfigError, app_context, echo
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.errors import WaitCancelled
-from untaped.capabilities.awx.infrastructure import AwxClient, AwxConfig, AwxResourceCatalog
+from untaped.capabilities.awx.errors import WaitCancelledError
+from untaped.capabilities.awx.infrastructure import AwxClient, AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
 from untaped.capabilities.awx.infrastructure.job_monitor import PollingJobMonitor
 from untaped.capabilities.awx.infrastructure.job_record_repo import JobRecordRepository
@@ -28,6 +28,7 @@ from untaped.capabilities.awx.infrastructure.resource_repo import ResourceReposi
 from untaped.capabilities.awx.infrastructure.strategy_resolver import StaticStrategyResolver
 from untaped.capabilities.awx.infrastructure.unified_template_repo import UnifiedTemplateRepository
 from untaped.capabilities.awx.infrastructure.workflow_node_repo import WorkflowNodeRepository
+from untaped.capabilities.awx.settings import AwxSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -41,7 +42,7 @@ class AwxContext:
     def __init__(self, context: AppContext | None = None) -> None:
         context = context or app_context()
         self._context = context
-        config = context.section("awx", AwxConfig)
+        config = context.section("awx", AwxSettings)
         self.client = AwxClient(config, http=context.http)
         self.repo = ResourceRepository(self.client, page_size=config.page_size)
         self.catalog = AwxResourceCatalog()
@@ -62,7 +63,7 @@ class AwxContext:
     def pause(self, seconds: float) -> None:
         """Poll-interval sleep that ends early (raising) once :attr:`stop` is set."""
         if self.stop.wait(seconds):
-            raise WaitCancelled("wait interrupted")
+            raise WaitCancelledError("wait interrupted")
 
     def progress_ui(self) -> UiContext:
         """Themed UI for stderr progress on slow AWX calls.

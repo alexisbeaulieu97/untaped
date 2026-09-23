@@ -10,7 +10,7 @@ import pytest
 
 from untaped.capabilities.awx.application.ports import ResourceClient
 from untaped.capabilities.awx.domain import ResourceSpec
-from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFound
+from untaped.capabilities.awx.errors import AwxApiError, ResourceNotFoundError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.fk_resolver import FkResolver
 
@@ -135,7 +135,7 @@ def test_name_to_id_with_scope_uses_nested_lookup() -> None:
 def test_name_to_id_raises_when_missing() -> None:
     repo = _StubRepo({"Organization": []})
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         fk.name_to_id("Organization", "Nope")
 
 
@@ -385,7 +385,7 @@ def test_integer_fk_validation_proves_kind_and_scope_without_name_lookup() -> No
     )
     fk = FkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
     assert fk.validate_id("Project", 1, scope={"organization": "Right"}) == 1
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         fk.validate_id("Project", 2, scope={"organization": "Right"})
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         fk.validate_id("Inventory", 1)

@@ -14,7 +14,7 @@ from untaped.capabilities.awx.application.list_workflow_nodes import ListWorkflo
 from untaped.capabilities.awx.application.manage_membership import ManageMembership
 from untaped.capabilities.awx.application.mutation_engine import (
     BatchMutationEngine,
-    MutationConflict,
+    MutationConflictError,
     MutationPlan,
     PreparedMutation,
 )
@@ -47,7 +47,7 @@ __all__ = [
     "ListTemplateUsage",
     "ListWorkflowNodes",
     "ManageMembership",
-    "MutationConflict",
+    "MutationConflictError",
     "MutationPlan",
     "Ping",
     "PreparedMutation",

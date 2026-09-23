@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.api import ConfigError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import ALL_SPECS, UNIVERSAL_READ_ONLY
 
@@ -31,7 +31,7 @@ def test_kinds_returns_all() -> None:
 
 def test_unknown_kind_errors() -> None:
     cat = AwxResourceCatalog()
-    with pytest.raises(AwxApiError) as exc_info:
+    with pytest.raises(ConfigError) as exc_info:
         cat.get("NotARealKind")
     assert "JobTemplate" in str(exc_info.value)  # message lists known kinds
 

@@ -11,14 +11,14 @@ from types import TracebackType
 from typing import Any
 
 from untaped.api import HttpSettings, connected_client
-from untaped.capabilities.awx.infrastructure.config import AwxConfig
 from untaped.capabilities.awx.infrastructure.errors import map_awx_errors
+from untaped.capabilities.awx.settings import AwxSettings
 
 
 class AwxClient:
     """Talks to AAP/AWX REST endpoints using the configured token."""
 
-    def __init__(self, config: AwxConfig, *, http: HttpSettings | None = None) -> None:
+    def __init__(self, config: AwxSettings, *, http: HttpSettings | None = None) -> None:
         # `token` is deliberately not in `required`: a token-less client can
         # still hit unauthenticated endpoints like `ping/`. When configured,
         # connected_client turns it into the Bearer header.

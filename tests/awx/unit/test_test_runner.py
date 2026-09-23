@@ -113,14 +113,14 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
     import os
     import signal
 
-    from untaped.capabilities.awx.errors import WaitCancelled
+    from untaped.capabilities.awx.errors import WaitCancelledError
 
     stop = threading.Event()
 
     class BlockingWatcher:
         def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
             if stop.wait(5):
-                raise WaitCancelled("wait interrupted")
+                raise WaitCancelledError("wait interrupted")
             return job
 
     fk = StubFk()
@@ -262,9 +262,9 @@ def test_case_filter_with_unmatched_names_raises() -> None:
     runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
     suite = _suite("s", {"keep": {}})
 
-    from untaped.capabilities.awx.errors import AwxApiError
+    from untaped.api import ConfigError
 
-    with pytest.raises(AwxApiError, match="nope"):
+    with pytest.raises(ConfigError, match="nope"):
         runner([suite], case_filter={"nope"})
     assert launcher.calls == []  # no launches on unmatched filter
 
@@ -276,9 +276,9 @@ def test_case_filter_partial_match_reports_only_unmatched() -> None:
     runner = _make_runner(fk=fk, launcher=launcher, watcher=watcher)
     suite = _suite("s", {"keep": {}, "skip": {}})
 
-    from untaped.capabilities.awx.errors import AwxApiError
+    from untaped.api import ConfigError
 
-    with pytest.raises(AwxApiError, match="bogus") as exc_info:
+    with pytest.raises(ConfigError, match="bogus") as exc_info:
         runner([suite], case_filter={"keep", "bogus"})
     assert "keep" not in str(exc_info.value)
 

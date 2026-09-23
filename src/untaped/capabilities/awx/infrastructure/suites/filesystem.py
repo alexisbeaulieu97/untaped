@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.capabilities.awx.errors import AwxApiError
 
 
 class LocalFilesystem:
@@ -17,4 +16,5 @@ class LocalFilesystem:
         try:
             return path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise AwxApiError(f"failed to read {path}: {exc}") from exc
+            raise ConfigError(f"failed to read {path}: {exc}") from exc
+from untaped.api import ConfigError

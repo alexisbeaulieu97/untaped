@@ -124,24 +124,24 @@ def test_duplicate_ids_are_removed_in_first_seen_order() -> None:
 
 def test_mutation_selection_requires_explicit_source() -> None:
     with pytest.raises(ConfigError, match="explicit"):
-        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(mutation=True))
+        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(require_explicit=True))
 
 
 def test_search_and_filters_form_one_query_mode() -> None:
     client = _Client()
     selected = _resolver(client).resolve(
-        PROJECT_SPEC, SelectionRequest(filters={"status": "ok"}, search="one", mutation=True)
+        PROJECT_SPEC, SelectionRequest(filters={"status": "ok"}, search="one", require_explicit=True)
     )
     assert len(selected) == 2
     assert client.find_calls[-1] == ("list", {"status": "ok", "search": "one"})
 
 
 def test_missing_scope_never_matches_requested_name() -> None:
-    from untaped.capabilities.awx.errors import ResourceNotFound
+    from untaped.capabilities.awx.errors import ResourceNotFoundError
 
     client = _Client()
     client.records[7] = {"id": 7, "name": "one"}
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         _resolver(client).resolve(
             PROJECT_SPEC,
             SelectionRequest(ids=("7",), by_id=True, scope={"organization": "Default"}),
@@ -159,7 +159,7 @@ def test_scope_uses_summary_fields() -> None:
 
 def test_explicit_empty_pipe_is_empty_mutation_selection() -> None:
     assert (
-        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(pipe=(), mutation=True)) == ()
+        _resolver(_Client()).resolve(PROJECT_SPEC, SelectionRequest(pipe=(), require_explicit=True)) == ()
     )
 
 

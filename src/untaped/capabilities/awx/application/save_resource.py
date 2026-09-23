@@ -24,7 +24,7 @@ from untaped.capabilities.awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
 )
-from untaped.capabilities.awx.errors import BadRequest, ResourceNotFound
+from untaped.capabilities.awx.errors import BadRequestError, ResourceNotFoundError
 
 _MetadataExtractor = Callable[[ResourceSpec, dict[str, Any], FkResolver], Metadata]
 
@@ -66,7 +66,7 @@ class SaveResource:
     ) -> Resource:
         record = self._client.find_by_identity(spec, name=name, scope=scope)
         if record is None:
-            raise ResourceNotFound(spec.kind, {"name": name, **(scope or {})})
+            raise ResourceNotFoundError(spec.kind, {"name": name, **(scope or {})})
         return self.snapshot_from_record(spec, record.model_dump()).resource
 
     def find_all(
@@ -202,7 +202,7 @@ def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolve
     parent: IdentityRef | None = None
     parent_id = record.get("unified_job_template") or parent_summary.get("id")
     if parent_kind == "InventorySource" and not isinstance(parent_id, int):
-        raise BadRequest("cannot save source-parent schedule without inventory ancestry")
+        raise BadRequestError("cannot save source-parent schedule without inventory ancestry")
     if isinstance(parent_id, int) and (
         not parent_kind
         or not parent_name
@@ -216,7 +216,7 @@ def _schedule_metadata(spec: ResourceSpec, record: dict[str, Any], fk: FkResolve
         parent_org = parent_summary.get("organization_name")
         parent = IdentityRef(kind=parent_kind, name=parent_name, organization=parent_org)
     if parent is None:
-        raise BadRequest("cannot save schedule without resolvable parent ancestry")
+        raise BadRequestError("cannot save schedule without resolvable parent ancestry")
     return Metadata(name=name, parent=parent)
 
 
@@ -249,7 +249,7 @@ def _inventory_child_metadata(
     inventory_id = record.get("inventory")
     if isinstance(inventory_id, int):
         return Metadata(name=name, parent=fk.id_to_identity("Inventory", inventory_id))
-    raise BadRequest(f"cannot save {spec.kind} without inventory ancestry")
+    raise BadRequestError(f"cannot save {spec.kind} without inventory ancestry")
 
 
 _METADATA_EXTRACTORS: dict[str, _MetadataExtractor] = {

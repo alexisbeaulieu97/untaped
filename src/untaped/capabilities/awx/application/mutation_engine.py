@@ -53,13 +53,13 @@ from untaped.capabilities.awx.domain import (
 from untaped.capabilities.awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
-    BadRequest,
+    BadRequestError,
 )
 
 MutationMode = Literal["apply", "patch", "edit"]
 
 
-class MutationConflict(AwxApiError):
+class MutationConflictError(AwxApiError):
     """Raised for an invalid no-create target or an unusable prepared plan."""
 
 
@@ -144,7 +144,7 @@ class _PlanningFkResolver:
         try:
             scope = reference.lookup_scope()
         except ValueError as exc:
-            raise BadRequest(str(exc)) from exc
+            raise BadRequestError(str(exc)) from exc
         return reference.kind, self.name_to_id(reference.kind, reference.name, scope=scope)
 
     def prefetch(self, plan: dict[str, list[dict[str, str] | None]]) -> None:
@@ -212,11 +212,11 @@ class BatchMutationEngine:
             copy.deepcopy(dict(membership_snapshots)) if membership_snapshots is not None else None
         )
         if mode not in {"apply", "patch", "edit"}:
-            raise BadRequest(f"unsupported mutation mode {mode!r}")
+            raise BadRequestError(f"unsupported mutation mode {mode!r}")
         docs = [resource.model_copy(deep=True) for resource in resources]
         selected = list(existing) if existing is not None else None
         if selected is not None and len(selected) != len(docs):
-            raise BadRequest("selected records and documents must have equal length")
+            raise BadRequestError("selected records and documents must have equal length")
         targets = self._build_targets(docs, selected)
         resolver = _PlanningFkResolver(self._fk, targets)
         resolved_existing: list[dict[str, Any] | None] = [None] * len(docs)
@@ -228,7 +228,9 @@ class BatchMutationEngine:
         for resource in docs:
             spec = self._catalog.get(resource.kind)
             if spec.fidelity == "read_only":
-                raise BadRequest(f"{spec.kind} does not support apply (fidelity={spec.fidelity!r})")
+                raise BadRequestError(
+                    f"{spec.kind} does not support apply (fidelity={spec.fidelity!r})"
+                )
             specs.append(spec)
             strategies.append(self._strategies.get(spec.apply_strategy))
             # One warning per distinct message: a mass patch shares its overlay.
@@ -255,14 +257,14 @@ class BatchMutationEngine:
                     item = selected[index]
                     if isinstance(item, SelectedResource):
                         if item.kind != resource.kind or item.record.get("id") != item.id:
-                            raise BadRequest(
+                            raise BadRequestError(
                                 "changing the kind or ID of a selected resource is not supported"
                             )
                         found = copy.deepcopy(item.record)
                     else:
                         found = dict(item)
                     if found.get("name") != resource.metadata.name:
-                        raise BadRequest("renaming a selected resource is not supported")
+                        raise BadRequestError("renaming a selected resource is not supported")
                 elif parent is not None and isinstance(parent[1], DeferredReference):
                     found = None
                 else:
@@ -291,32 +293,32 @@ class BatchMutationEngine:
                     record = _record_dict(found)
                     record_id = _record_id(record)
                     if record_id is None:
-                        raise BadRequest(f"{spec.kind} target returned no integer id")
+                        raise BadRequestError(f"{spec.kind} target returned no integer id")
                     if any(
                         other.index != index and other.kind == target.kind and other.id == record_id
                         for other in targets
                     ):
-                        raise MutationConflict(
+                        raise MutationConflictError(
                             f"duplicate resolved target {target.kind}#{record_id}"
                         )
                     target.id = record_id
                     resolved_existing[index] = self._snapshot(spec, record)
                 if spec.singleton_parent:
                     if parent is None:
-                        raise BadRequest(f"{spec.kind} requires a parent-owned identity")
+                        raise BadRequestError(f"{spec.kind} requires a parent-owned identity")
                     parent_id = (
                         parent[1].token if isinstance(parent[1], DeferredReference) else parent[1]
                     )
                     key = (spec.kind, parent[0], parent_id)
                     if key in parent_targets:
-                        raise MutationConflict(
+                        raise MutationConflictError(
                             f"duplicate parent-owned target {spec.kind} for {parent[0]}"
                         )
                     parent_targets.add(key)
                 pending.remove(index)
                 progressed = True
             if not progressed:
-                raise BadRequest("create-parent dependencies form a cycle")
+                raise BadRequestError("create-parent dependencies form a cycle")
 
         if mode in {"patch", "edit"}:
             missing = [
@@ -325,7 +327,7 @@ class BatchMutationEngine:
                 if existing is None
             ]
             if missing:
-                raise MutationConflict("; ".join(missing))
+                raise MutationConflictError("; ".join(missing))
 
         operations: list[PreparedMutation] = []
         for index, resource in enumerate(docs):
@@ -346,13 +348,13 @@ class BatchMutationEngine:
                         }
                     )
                 if forbidden.intersection(resource.spec):
-                    raise BadRequest(
+                    raise BadRequestError(
                         "renaming, reparenting, or changing the kind or ID "
                         "of a selected resource is not supported"
                     )
                 read_only = set(spec.read_only_fields).intersection(resource.spec)
                 if read_only:
-                    raise BadRequest(
+                    raise BadRequestError(
                         "explicit patch/edit contains read-only fields: "
                         + ", ".join(sorted(read_only))
                     )
@@ -468,7 +470,7 @@ class BatchMutationEngine:
         represented as failed/partial/skipped rows.
         """
         if parallel < 1:
-            raise BadRequest("parallel must be at least 1")
+            raise BadRequestError("parallel must be at least 1")
         parallel = min(parallel, 10)
         bindings: dict[str, int] = {}
         conflicts = self._preflight_conflicts(plan)
@@ -535,10 +537,10 @@ class BatchMutationEngine:
                 item = selected[index]
                 fixed_id = item.id if isinstance(item, SelectedResource) else _record_id(item)
                 if fixed_id is None:
-                    raise BadRequest("selected resource requires an integer ID")
+                    raise BadRequestError("selected resource requires an integer ID")
                 key = (resource.kind, fixed_id)
             if key in seen:
-                raise MutationConflict(
+                raise MutationConflictError(
                     f"duplicate target {resource.kind} {resource.metadata.name!r} "
                     f"at documents {seen[key] + 1} and {index + 1}"
                 )
@@ -715,7 +717,7 @@ class BatchMutationEngine:
                 wrote = True
                 target_id = _record_id(result)
                 if target_id is None:
-                    raise BadRequest(
+                    raise BadRequestError(
                         "create response had no integer 'id'; cannot verify or reconcile membership"
                     )
             else:
@@ -944,7 +946,7 @@ def _tokens_in(value: Any) -> set[str]:
 def _bind_deferred_values(value: Any, bindings: Mapping[str, int]) -> Any:
     if isinstance(value, DeferredReference):
         if value.token not in bindings:
-            raise MutationConflict(f"planned reference {value.token!r} was not created")
+            raise MutationConflictError(f"planned reference {value.token!r} was not created")
         return bindings[value.token]
     if isinstance(value, Mapping):
         return {key: _bind_deferred_values(item, bindings) for key, item in value.items()}
@@ -977,7 +979,7 @@ def _membership_ids(
 
 __all__ = [
     "BatchMutationEngine",
-    "MutationConflict",
+    "MutationConflictError",
     "MutationPlan",
     "PreparedMutation",
 ]
@@ -1004,10 +1006,10 @@ def _validate_selected_identity(
             and not (spec.kind == "Inventory" and record_type == "constructed_inventory")
         )
     ):
-        raise BadRequest("changing the kind of a selected resource is not supported")
+        raise BadRequestError("changing the kind of a selected resource is not supported")
     for field in spec.identity_keys:
         if field in payload and payload[field] != record.get(field):
-            raise BadRequest(f"changing selected identity field {field!r} is not supported")
+            raise BadRequestError(f"changing selected identity field {field!r} is not supported")
     if parent is not None:
         field = "inventory" if spec.apply_strategy == "inventory_child" else "unified_job_template"
         actual = record.get(field)
@@ -1015,7 +1017,7 @@ def _validate_selected_identity(
             summary = record.get("summary_fields") or {}
             actual = (summary.get(field) or {}).get("id")
         if isinstance(parent[1], DeferredReference) or parent[1] != actual:
-            raise BadRequest("reparenting a selected resource is not supported")
+            raise BadRequestError("reparenting a selected resource is not supported")
 
 
 def _validate_dependencies(operations: list[PreparedMutation]) -> None:
@@ -1023,7 +1025,7 @@ def _validate_dependencies(operations: list[PreparedMutation]) -> None:
     while remaining:
         ready = {index for index, dependencies in remaining.items() if not dependencies}
         if not ready:
-            raise BadRequest("body dependencies form a cycle")
+            raise BadRequestError("body dependencies form a cycle")
         remaining = {
             index: dependencies - ready
             for index, dependencies in remaining.items()
@@ -1073,7 +1075,7 @@ def _validate_parent_field_aliases(operations: list[PreparedMutation]) -> None:
                 parent.resource.spec[field],
                 structured_text=field in child.spec.structured_text_fields,
             ):
-                raise MutationConflict(
+                raise MutationConflictError(
                     f"conflicting desired field {field!r} on "
                     f"{parent.spec.kind} and {child.spec.kind}"
                 )

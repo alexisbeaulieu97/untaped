@@ -49,19 +49,19 @@ class LaunchPromptError(AwxApiError):
     """A launch supplies a field the template ignores, or omits a required survey var."""
 
 
-class WaitCancelled(AwxApiError):
+class WaitCancelledError(AwxApiError):
     """A monitor's poll wait was interrupted (Ctrl-C); the execution keeps running."""
 
 
-class BadRequest(AwxApiError):
+class BadRequestError(AwxApiError):
     """4xx response indicating malformed input (typically 400)."""
 
 
-class PermissionDenied(AwxApiError):
+class PermissionDeniedError(AwxApiError):
     """403 — token authenticated but lacks the necessary permission."""
 
 
-class ResourceNotFound(AwxApiError):
+class ResourceNotFoundError(AwxApiError):
     """404 — looked-up resource does not exist."""
 
     def __init__(
@@ -84,7 +84,7 @@ class ResourceNotFound(AwxApiError):
         self.identity = identity
 
 
-class Conflict(AwxApiError):
+class ConflictError(AwxApiError):
     """409 — resource state conflicts with the request (e.g. concurrent edit)."""
 
 

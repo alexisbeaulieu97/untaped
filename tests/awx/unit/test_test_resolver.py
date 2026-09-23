@@ -13,13 +13,13 @@ from untaped.capabilities.awx.application.suites.resolver import (
     UnknownLaunchFieldWarning,
 )
 from untaped.capabilities.awx.domain.suite import Case, RefSentinel
-from untaped.capabilities.awx.errors import ResourceNotFound
+from untaped.capabilities.awx.errors import ResourceNotFoundError
 from untaped.capabilities.awx.infrastructure import AwxResourceCatalog
 from untaped.capabilities.awx.infrastructure.specs import JOB_TEMPLATE_SPEC
 
 
 class StubFkResolver:
-    """Records lookups; returns a fixed mapping or raises ResourceNotFound."""
+    """Records lookups; returns a fixed mapping or raises ResourceNotFoundError."""
 
     def __init__(self, mapping: dict[tuple[str, str], int] | None = None) -> None:
         self._map = mapping or {}
@@ -28,7 +28,7 @@ class StubFkResolver:
     def name_to_id(self, kind: str, name: str, *, scope: dict[str, str] | None = None) -> int:
         self.calls.append((kind, name, dict(scope) if scope else None))
         if (kind, name) not in self._map:
-            raise ResourceNotFound(kind, {"name": name})
+            raise ResourceNotFoundError(kind, {"name": name})
         return self._map[(kind, name)]
 
 
@@ -312,5 +312,5 @@ def test_empty_case_with_defaults_uses_defaults() -> None:
 
 def test_unresolved_name_raises() -> None:
     fk = StubFkResolver()  # empty
-    with pytest.raises(ResourceNotFound):
+    with pytest.raises(ResourceNotFoundError):
         _resolve({"launch": {"inventory": "missing"}}, fk=fk)

@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from untaped.api import ConfigError
 from untaped.capabilities.awx.application.suites.ports import FkPrefetcher, Launcher, Watcher
 from untaped.capabilities.awx.application.suites.resolver import ResolveCasePayload
 from untaped.capabilities.awx.domain import Job, ResourceSpec
@@ -121,7 +122,7 @@ class RunTestSuite:
             matched = {case_name for _, case_name, _ in plan}
             unmatched = sorted(case_filter - matched)
             if unmatched:
-                raise AwxApiError(
+                raise ConfigError(
                     "no case matched --case " + ", ".join(repr(name) for name in unmatched)
                 )
         return plan
