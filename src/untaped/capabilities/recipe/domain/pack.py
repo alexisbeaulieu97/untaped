@@ -79,7 +79,7 @@ class PackManifest(BaseModel):
         try:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         except tomllib.TOMLDecodeError as exc:
-            raise ValueError(f"invalid pack project pyproject: {pyproject}") from exc
+            raise ValueError(f"invalid pack project pyproject: {pyproject}: {exc}") from exc
 
         project = as_mapping(data.get("project"), "project")
         if project is None:

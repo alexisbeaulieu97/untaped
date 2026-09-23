@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from untaped.capabilities.recipe import worker_protocol as protocol
+from untaped.capabilities.recipe._worker import worker_protocol as protocol
 from untaped.capabilities.recipe.application.ports import HookDebugResult, HookHelpersPort
 from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_helpers import HookHelpers

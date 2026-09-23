@@ -51,6 +51,24 @@ def resolve_target_lines(lines: list[tuple[int, str]]) -> list[Target]:
     return targets
 
 
+def dedupe_targets(targets: list[Target]) -> list[Target]:
+    """Drop targets naming an already-seen directory, keeping first-seen order.
+
+    ``./a``, ``a/`` and ``/abs/a`` (or a symlink to it) are one directory;
+    planning it twice would make the second flush fail "changed since
+    planning" after the first one wrote.
+    """
+    seen: set[Path] = set()
+    unique: list[Target] = []
+    for target in targets:
+        key = target.path.expanduser().resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(target)
+    return unique
+
+
 def _target_from_record(kind: str | None, record: dict[str, object], lineno: int) -> Path:
     target_path = _target_path(record, lineno)
     if target_path is not None:

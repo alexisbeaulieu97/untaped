@@ -203,7 +203,7 @@ def test_add_force_discard_edits_warns_in_preview_and_overwrites(
     )
 
     assert result.exit_code == 0, result.output
-    assert "Warning: library copy has local edits; --discard-edits will overwrite them." in (
+    assert "warning: library copy has local edits; --discard-edits will overwrite them." in (
         result.stderr
     )
     assert installed_recipe.read_text() == "version: 1\nsteps: []\n"
@@ -232,7 +232,7 @@ def test_remove_warns_on_local_edits_before_confirm(
     assert result.exit_code == 0, result.output
     assert "About to remove 1 pack(s):\n  - demo\n" in result.stderr
     assert (
-        "Warning: pack 'demo' has local edits in the library (via edit or new "
+        "warning: pack 'demo' has local edits in the library (via edit or new "
         "recipe/hook); removing discards them."
     ) in result.stderr
     assert (library_root() / "packs" / "demo").exists()
@@ -411,7 +411,7 @@ def test_apply_preview_diff_preserves_patch_headers(tmp_path: Path) -> None:
     recipe.write_text(
         "version: 1\nsteps:\n  - type: template\n    template: template.txt\n    dest: out.txt\n"
     )
-    (tmp_path / "template.txt").write_text("hello\n")
+    (tmp_path / "template.txt").write_text("hello")
     target = tmp_path / "target"
     target.mkdir()
 
@@ -423,8 +423,10 @@ def test_apply_preview_diff_preserves_patch_headers(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Recipe preview:" in result.stderr
     assert f"# {target}" in result.stderr
-    assert "--- a/out.txt" in result.stderr
-    assert "+++ b/out.txt" in result.stderr
+    # A created file diffs from /dev/null, and a missing final newline is
+    # marked so the output applies with `patch`/`git apply`.
+    assert "--- /dev/null\n+++ b/out.txt\n" in result.stderr
+    assert "+hello\n\\ No newline at end of file\n" in result.stderr
     assert str(target / "out.txt") not in result.stderr
 
 
@@ -449,7 +451,7 @@ def test_apply_diff_preview_renders_relative_target_context_as_absolute(
     assert result.exit_code == 0, result.output
     assert f"# {tmp_path / 'target'}" in result.stderr
     assert "# target" not in result.stderr
-    assert "--- a/out.txt" in result.stderr
+    assert "--- /dev/null" in result.stderr
     assert "+++ b/out.txt" in result.stderr
 
 
@@ -1046,7 +1048,7 @@ def test_apply_check_explicit_diff_preview_reports_drift_without_writing(
     assert not (target / "out.txt").exists()
     assert BackupStore(library_root() / "backups").list() == []
     assert f"# {tmp_path / 'target'}" in result.stderr
-    assert "--- a/out.txt" in result.stderr
+    assert "--- /dev/null" in result.stderr
     assert "+++ b/out.txt" in result.stderr
 
 
@@ -1287,10 +1289,11 @@ def test_apply_backup_bundle_records_only_successful_targets(tmp_path: Path) -> 
     target = tmp_path / "target"
     target.mkdir()
     (target / "config.txt").write_text("before\n")
+    missing = tmp_path / "missing"
 
     result = CliInvoker().invoke(
         app,
-        ["apply", str(recipe), str(target), str(target), "--yes", "--format", "json"],
+        ["apply", str(recipe), str(target), str(missing), "--yes", "--format", "json"],
     )
 
     assert result.exit_code != 0
@@ -1591,7 +1594,7 @@ def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
     assert secret not in result.stderr
     rows = json.loads(result.stdout)
     assert rows[0]["status"] == "error"
-    assert rows[0]["error"] == "cannot coerce value to int"
+    assert rows[0]["error"] == "input 'token': cannot coerce value to int"
     assert rows[0]["inputs"] == {}
 
 
@@ -2984,7 +2987,7 @@ def test_hook_run_explicit_project_must_be_valid_before_global_or_builtin_fallba
     assert "Hook run:" not in result.stderr
 
 
-def test_hook_run_resolution_order_prefers_cwd_then_installed_pack_then_builtin(
+def test_hook_run_never_adopts_cwd_project_without_explicit_project(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3016,20 +3019,74 @@ def test_hook_run_resolution_order_prefers_cwd_then_installed_pack_then_builtin(
     (target / "local.txt").write_text("ignored")
 
     monkeypatch.chdir(cwd_project)
-    cwd = CliInvoker().invoke(
+    implicit = CliInvoker().invoke(
         app,
         ["hook", "run", "shadow", "--target", str(target), "--file", "local.txt"],
     )
-    monkeypatch.chdir(tmp_path)
-    global_result = CliInvoker().invoke(
+    explicit = CliInvoker().invoke(
         app,
-        ["hook", "run", "shadow", "--target", str(target), "--file", "local.txt"],
+        [
+            "hook",
+            "run",
+            "shadow",
+            "--project",
+            ".",
+            "--target",
+            str(target),
+            "--file",
+            "local.txt",
+        ],
+    )
+    path_ref = CliInvoker().invoke(
+        app,
+        ["hook", "run", "../cwd/shadow", "--target", str(target), "--file", "local.txt"],
     )
 
-    assert cwd.exit_code == 0, cwd.output
-    assert cwd.stdout == "cwd"
-    assert global_result.exit_code == 0, global_result.output
-    assert global_result.stdout == "global"
+    # The cwd's hook project is only used when named explicitly.
+    assert implicit.exit_code == 0, implicit.output
+    assert implicit.stdout == "global"
+    assert explicit.exit_code == 0, explicit.output
+    assert explicit.stdout == "cwd"
+    assert path_ref.exit_code == 0, path_ref.output
+    assert path_ref.stdout == "cwd"
+
+
+def test_hook_run_builtin_is_not_shadowed_by_cwd_project(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cwd_project = tmp_path / "cloned"
+    _write_hook_project(
+        cwd_project,
+        public_name="yaml_edit",
+        module_name="evil",
+        code=(
+            "def transform(content, *, inputs, target, file, args, helpers):\n"
+            "    return 'repo code ran'\n"
+        ),
+    )
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "a.yml").write_text("a: 1\n")
+    monkeypatch.chdir(cwd_project)
+
+    result = CliInvoker().invoke(
+        app,
+        [
+            "hook",
+            "run",
+            "yaml_edit",
+            "--target",
+            str(target),
+            "--file",
+            "a.yml",
+            "--arg",
+            "edits=[{op: set, path: [a], value: 2}]",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "a: 2\n"
 
 
 def test_hook_run_external_failure_prints_traceback(tmp_path: Path) -> None:
@@ -3941,3 +3998,98 @@ def test_backup_prune_counts_failed_deletions_and_continues(
     assert "error: 20250101T000000000000Z-aaaaaaaa" in result.stderr
     assert first.exists()
     assert not second.exists()
+
+
+def test_recipe_check_accepts_input_templated_asset_paths(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    (recipe_dir / "templates").mkdir(parents=True)
+    (recipe_dir / "templates" / "web.txt").write_text("web\n")
+    (recipe_dir / "files").mkdir()
+    (recipe_dir / "files" / "web.cfg").write_text("cfg\n")
+    (recipe_dir / "recipe.yml").write_text(
+        "version: 1\n"
+        "inputs:\n"
+        "  kind: {type: str, default: web}\n"
+        "steps:\n"
+        "  - type: template\n"
+        "    template: 'templates/{{ kind }}.txt'\n"
+        "    dest: out.txt\n"
+        "  - type: copy\n"
+        "    source: 'files/{{ kind }}.cfg'\n"
+        "    dest: out.cfg\n"
+    )
+
+    result = CliInvoker().invoke(app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["status"] == "pass"
+
+
+def test_recipe_check_rejects_missing_prefix_of_templated_asset_path(tmp_path: Path) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "recipe.yml").write_text(
+        "version: 1\n"
+        "inputs:\n"
+        "  kind: {type: str, default: web}\n"
+        "steps:\n"
+        "  - type: template\n"
+        "    template: 'missing/{{ kind }}.txt'\n"
+        "    dest: out.txt\n"
+    )
+
+    result = CliInvoker().invoke(app, ["check", str(recipe_dir / "recipe.yml"), "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    assert "template not found" in json.loads(result.stdout)[0]["error"]
+
+
+def test_apply_var_coercion_error_names_the_input(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text("version: 1\ninputs:\n  replicas: {type: int, required: true}\nsteps: []\n")
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(
+        app, ["apply", str(recipe), str(target), "--var", "replicas=x", "--yes"]
+    )
+
+    assert result.exit_code != 0
+    assert "input 'replicas': cannot coerce value to int" in result.stderr
+
+
+def test_check_rejects_uncoercible_input_default(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text("version: 1\ninputs:\n  replicas: {type: int, default: many}\nsteps: []\n")
+
+    result = CliInvoker().invoke(app, ["check", str(recipe), "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    error = json.loads(result.stdout)[0]["error"]
+    assert "inputs.replicas" in error
+    assert "cannot coerce value to int" in error
+
+
+def test_check_rejects_required_input_with_default(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\ninputs:\n  replicas: {type: int, required: true, default: 2}\nsteps: []\n"
+    )
+
+    result = CliInvoker().invoke(app, ["check", str(recipe), "--format", "json"])
+
+    assert result.exit_code == 1, result.output
+    error = json.loads(result.stdout)[0]["error"]
+    assert "inputs.replicas" in error
+    assert "required" in error and "default" in error
+
+
+def test_add_rejects_rev_for_local_path_source(tmp_path: Path) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+
+    result = CliInvoker().invoke(app, ["add", str(pack), "--rev", "v1", "--yes"])
+
+    assert result.exit_code != 0
+    assert "--rev is only valid for git URL sources" in result.stderr
+    assert not (library_root() / "packs" / "demo").exists()

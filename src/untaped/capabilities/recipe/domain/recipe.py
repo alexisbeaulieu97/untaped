@@ -59,6 +59,13 @@ class InputSpec(BaseModel):
             raise ValueError("items is only valid with type list")
         if self.values is not None and self.type != "dict":
             raise ValueError("values is only valid with type dict")
+        if self.default is not None:
+            if self.required:
+                raise ValueError("required input cannot declare a default")
+            try:
+                self.coerce(self.default)
+            except ValueError as exc:
+                raise ValueError(f"default: {exc}") from exc
         return self
 
     def coerce(self, value: object) -> object:

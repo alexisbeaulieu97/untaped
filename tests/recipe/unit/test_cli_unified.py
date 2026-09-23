@@ -11,6 +11,7 @@ import pytest
 
 from untaped.capabilities.recipe.cli import app
 from untaped.capabilities.recipe.cli.common import library_root
+from untaped.capabilities.recipe.domain.paths import is_path_ref
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.testing import CliInvoker
 
@@ -668,3 +669,118 @@ def test_cli_emit_kinds_are_the_surviving_pack_unification_set() -> None:
         found.update(re.findall(r'kind="(recipe\.[^"]+)"', path.read_text(encoding="utf-8")))
 
     assert found == allowed
+
+
+def _install_good_and_broken_packs(tmp_path: Path) -> None:
+    good = tmp_path / "good"
+    _write_pack(good, manifest_name="good", recipes={"playbook": "recipes/playbook.yml"})
+    _install_pack(good)
+    broken = tmp_path / "broken"
+    _write_pack(broken, manifest_name="broken", recipes={"other": "recipes/other.yml"})
+    _install_pack(broken)
+    installed = library_root() / "packs" / "broken" / "pyproject.toml"
+    installed.write_text("[project\nname = ", encoding="utf-8")
+
+
+def test_list_skips_unparsable_pack_with_warning(tmp_path: Path) -> None:
+    _install_good_and_broken_packs(tmp_path)
+
+    result = CliInvoker().invoke(app, ["list", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert [row["ref"] for row in json.loads(result.stdout)] == ["good/playbook"]
+    assert "broken" in result.stderr
+    assert "warning" in result.stderr.lower()
+
+
+def test_check_reports_error_row_for_unparsable_pack(tmp_path: Path) -> None:
+    _install_good_and_broken_packs(tmp_path)
+
+    result = CliInvoker().invoke(app, ["check", "--format", "json"])
+
+    rows = {row["pack"]: row for row in json.loads(result.stdout)}
+    assert rows["good"]["status"] == "pass"
+    assert rows["broken"]["status"] == "error"
+    assert "pyproject" in rows["broken"]["error"]
+    # the TOML parse detail is included, not just the file path
+    assert "line" in rows["broken"]["error"]
+    assert result.exit_code != 0
+
+
+def test_resolution_ignores_unparsable_pack_unless_named(tmp_path: Path) -> None:
+    _install_good_and_broken_packs(tmp_path)
+
+    shown = CliInvoker().invoke(app, ["show", "playbook", "--format", "json"])
+    named = CliInvoker().invoke(app, ["show", "broken"])
+    qualified = CliInvoker().invoke(app, ["show", "broken/other"])
+
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.stdout)["ref"] == "good/playbook"
+    for result in (named, qualified):
+        assert result.exit_code != 0
+        assert "broken" in result.stderr
+        assert "line" in result.stderr
+
+
+def test_missing_recipe_path_with_unsafe_basename_reports_not_found(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="pack", recipes={"demo": "recipes/demo.yml"})
+    _install_pack(source)
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(app, ["apply", "./my recipe.yml", str(target), "--yes"])
+
+    assert result.exit_code == 1
+    assert "recipe file not found: my recipe.yml" in result.stderr
+    assert "safe library name" not in result.stderr
+
+
+def test_show_unsafe_ref_reports_not_found(tmp_path: Path) -> None:
+    result = CliInvoker().invoke(app, ["show", "foo bar"])
+
+    assert result.exit_code == 1
+    assert "not found: foo bar" in result.stderr
+    assert "safe library name" not in result.stderr
+
+
+@pytest.mark.parametrize("pack_arg", [".", "./"])
+def test_apply_dot_pack_path_with_recipe_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pack_arg: str,
+) -> None:
+    pack = tmp_path / "mypack"
+    _write_pack(pack, manifest_name="mypack", recipes={"fix": "recipes/fix.yml"})
+    target = tmp_path / "target"
+    target.mkdir()
+    monkeypatch.chdir(pack)
+
+    result = CliInvoker().invoke(
+        app,
+        ["apply", pack_arg, str(target), "--recipe", "fix", "--yes", "--format", "json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["recipe"] == "mypack/fix"
+
+
+def test_path_ref_helper_classifies_dot_forms() -> None:
+    for value in (".", "..", "./x", "../x", "/abs", "~/x", "~"):
+        assert is_path_ref(value), value
+    for value in ("pack", "pack/recipe", "x.yml", ".hidden"):
+        assert not is_path_ref(value), value
+
+
+def test_list_empty_library_hint_only_in_table_format(tmp_path: Path) -> None:
+    table = CliInvoker().invoke(app, ["list"])
+    as_json = CliInvoker().invoke(app, ["list", "--format", "json"])
+
+    assert table.exit_code == 0, table.output
+    assert "untaped recipe new pack NAME" in table.stderr
+    assert as_json.exit_code == 0, as_json.output
+    assert "no packs installed" not in as_json.stderr

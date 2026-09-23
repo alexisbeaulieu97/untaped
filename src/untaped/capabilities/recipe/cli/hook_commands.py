@@ -19,6 +19,7 @@ from untaped.api import (
     finish,
     parse_kv_pairs,
     ui_context,
+    unified_diff_text,
 )
 from untaped.capabilities.recipe.application.run_hook import (
     AmbiguousHookVerbError,
@@ -36,8 +37,8 @@ from untaped.capabilities.recipe.cli.common import (
     settings,
 )
 from untaped.capabilities.recipe.domain.hook_project import HookKind, read_hook_metadata
-from untaped.capabilities.recipe.domain.plan import FileChange, Verdict
-from untaped.capabilities.recipe.infrastructure.diff import unified_diff
+from untaped.capabilities.recipe.domain.paths import is_path_ref
+from untaped.capabilities.recipe.domain.plan import Verdict
 from untaped.capabilities.recipe.infrastructure.hook_executor import (
     HookExecutionError,
     HookExecutor,
@@ -57,7 +58,10 @@ def run_command(
     target: Annotated[Path, Parameter(name="--target", help="Target directory.")],
     project: Annotated[
         Path | None,
-        Parameter(name="--project", help="Hook project to search before installed packs."),
+        Parameter(
+            name="--project",
+            help="Local hook project to run from (never adopted implicitly from the cwd).",
+        ),
     ] = None,
     kind: Annotated[
         Literal["transform", "validate"] | None,
@@ -204,13 +208,10 @@ def _run_transform(
     _print_hook_diagnostics(execution.diagnostics)
     _print_hook_warnings(execution.warnings)
     diff_text = (
-        unified_diff(
-            FileChange(
-                target=execution.target,
-                relative_path=execution.relative_file,
-                before=execution.before,
-                after=execution.content,
-            )
+        unified_diff_text(
+            execution.before,
+            execution.content,
+            path=execution.relative_file.as_posix(),
         )
         if diff
         else None
@@ -251,7 +252,7 @@ def _split_project_hook_ref(name: str, project: Path | None) -> tuple[Path | Non
     name; an explicit ``--project`` keeps precedence and the two forms may not
     be combined.
     """
-    if not name.startswith(("/", "./", "../", "~")):
+    if not is_path_ref(name):
         return project, name
     if project is not None:
         raise ConfigError("pass the hook as a ./pack/hook path or with --project, not both")
@@ -272,13 +273,9 @@ def _local_hook_project(project: Path | None) -> Path | None:
         if not metadata.hooks:
             raise ConfigError(f"hook project has no hook metadata: {project}")
         return resolved
-    cwd = Path.cwd()
-    if not (cwd / "pyproject.toml").is_file():
-        return None
-    metadata = read_hook_metadata(cwd)
-    if not metadata.hooks:
-        return None
-    return cwd
+    # Never adopt the cwd's hook project implicitly: running code from
+    # whatever repository happens to be checked out requires --project/./path.
+    return None
 
 
 def _fixture_mapping(
