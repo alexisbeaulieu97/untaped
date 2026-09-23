@@ -17,7 +17,7 @@ def seed(fake: Any) -> None:
     fake.seed("inventories", id=20, name="prod", organization=1, kind="")
     fake.seed("inventory_sources", id=30, name="cloud", inventory=20, source="ec2")
     fake.seed("projects", id=40, name="playbooks", organization=1, scm_type="git")
-    fake.seed("job_templates", id=50, name="deploy", organization=1)
+    fake.seed("job_templates", id=50, name="deploy", organization=1, ask_variables_on_launch=True)
     fake.seed("workflow_job_templates", id=60, name="pipeline", organization=1)
 
 

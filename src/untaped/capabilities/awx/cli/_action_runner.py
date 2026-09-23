@@ -7,7 +7,7 @@ from typing import Any
 
 from rich.console import Console
 
-from untaped.api import ColumnsOption, FormatOption, echo, emit, finish
+from untaped.api import ColumnsOption, FormatOption, echo, emit, finish, raise_usage
 from untaped.capabilities.awx.application import RunAction
 from untaped.capabilities.awx.application.mutation_values import redact_error
 from untaped.capabilities.awx.application.prepare_actions import prepare_action_targets
@@ -16,7 +16,7 @@ from untaped.capabilities.awx.application.selection import SelectedResource
 from untaped.capabilities.awx.cli._context import AwxContext
 from untaped.capabilities.awx.cli._parallel import _drain_parallel, _wait_parallel
 from untaped.capabilities.awx.domain import Job, ResourceSpec
-from untaped.capabilities.awx.errors import ActionResponseError
+from untaped.capabilities.awx.errors import ActionResponseError, LaunchPromptError
 
 
 def run_action_selection(
@@ -35,7 +35,7 @@ def run_action_selection(
     columns: ColumnsOption = None,
 ) -> None:
     """One bounded POST phase, then monitor every known execution even after failures."""
-    spec, targets = prepare_action_targets(ctx.repo, ctx.catalog, spec, selected, action=action)
+    spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload)
     result_kinds = next(a.returns for a in spec.actions if a.name == action)
     result_kind = next(iter(result_kinds)) if len(result_kinds) == 1 else None
     rows: list[dict[str, Any]] = [
@@ -98,6 +98,23 @@ def run_action_selection(
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
     emit(rows, fmt=fmt, columns=columns, kind="awx.job")
     finish(any(row["action"] != "completed" for row in rows))
+
+
+def _prepare(
+    ctx: AwxContext,
+    spec: ResourceSpec,
+    selected: Sequence[SelectedResource],
+    *,
+    action: str,
+    payload: dict[str, Any] | None,
+) -> tuple[ResourceSpec, tuple[SelectedResource, ...]]:
+    """Launch-prompt preflight failures are usage errors (exit 2), not API errors."""
+    try:
+        return prepare_action_targets(
+            ctx.repo, ctx.catalog, spec, selected, action=action, payload=payload
+        )
+    except LaunchPromptError as exc:
+        raise_usage(str(exc))
 
 
 def _action_error(

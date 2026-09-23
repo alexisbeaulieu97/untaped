@@ -196,7 +196,13 @@ def test_launch_round_trips_falsy_but_meaningful_flag_values(
     case; a future "simplify" pass that switched to truthy filtering
     would silently drop both values."""
     seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        ask_verbosity_on_launch=True,
+        ask_diff_mode_on_launch=True,
     )
     result = CliInvoker().invoke(
         app,
@@ -371,7 +377,7 @@ def _launch_body(fake: Any, *args: str) -> dict[str, Any]:
 def test_launch_extra_vars_key_values_become_a_json_mapping(seeded_default_org: Any) -> None:
     """Repeated KEY=VAL entries merge into one mapping; JSON values are decoded."""
     seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
     )
     body = _launch_body(
         seeded_default_org,
@@ -396,7 +402,7 @@ def test_launch_extra_vars_accepts_files_and_raw_mappings(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:
     seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+        "job_templates", id=10, name="alpha", organization=1, ask_variables_on_launch=True
     )
     yml = tmp_path / "vars.yml"
     yml.write_text("region: eu\nnested:\n  enabled: true\n")
@@ -425,19 +431,66 @@ def test_launch_extra_vars_rejects_non_mapping_values(seeded_default_org: Any) -
     seeded_default_org.seed(
         "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
     )
-    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--extra-vars", "[1, 2]"])
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "[1, 2]"]
+    )
     assert result.exit_code != 0
     assert "--extra-vars" in result.output
     assert seeded_default_org.actions_called == []
 
 
-def test_launch_error_redacts_extra_var_values(seeded_default_org: Any) -> None:
+def test_launch_rejects_flags_the_template_does_not_prompt_for(seeded_default_org: Any) -> None:
+    """AWX silently drops unprompted fields; refuse before any POST instead."""
     seeded_default_org.seed(
-        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        ask_limit_on_launch=False,
     )
-    seeded_default_org.next_action_error = "bad value hunter2-secret"
+    result = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--limit", "web1"])
+    assert result.exit_code == 2, result.output
+    assert "--limit" in result.output
+    assert "alpha" in result.output
+    assert "ask_limit_on_launch" in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_reports_missing_required_survey_variables(seeded_default_org: Any) -> None:
+    seeded_default_org.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        survey_enabled=True,
+        variables_needed_to_start=["region", "size"],
+    )
     result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "alpha", "--extra-vars", "password=hunter2-secret"]
+        app, ["job-templates", "launch", "alpha", "--extra-vars", "region=eu"]
     )
-    assert result.exit_code != 0
-    assert "hunter2-secret" not in result.output
+    assert result.exit_code == 2, result.output
+    assert "size" in result.output
+    assert seeded_default_org.actions_called == []
+
+
+def test_launch_ignored_fields_fail_the_row(seeded_default_org: Any) -> None:
+    """A launch whose response lists ignored_fields did not run as requested."""
+    seeded_default_org.seed(
+        "job_templates",
+        id=10,
+        name="alpha",
+        organization=1,
+        organization_name="Default",
+        ask_limit_on_launch=True,
+    )
+    seeded_default_org.next_action_ignored_fields = {"limit": "web1"}
+    result = CliInvoker().invoke(
+        app, ["job-templates", "launch", "alpha", "--limit", "web1", "--format", "json"]
+    )
+    assert result.exit_code == 1, result.output
+    rows = json.loads(result.stdout)
+    assert rows[0]["action"] == "failed"
+    assert "limit" in rows[0]["detail"]
+    assert rows[0]["id"] is not None

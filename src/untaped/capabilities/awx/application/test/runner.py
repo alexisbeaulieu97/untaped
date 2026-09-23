@@ -25,7 +25,7 @@ from untaped.capabilities.awx.domain.test_suite import (
     TestRunOutcome,
     TestSuite,
 )
-from untaped.capabilities.awx.errors import AwxApiError
+from untaped.capabilities.awx.errors import ActionResponseError, AwxApiError
 
 _LAUNCH_ACTION = "launch"
 
@@ -154,10 +154,12 @@ class RunTestSuite:
                 payload=item.payload,
             )
         except Exception as exc:
+            # ``ignored_fields`` responses launched a job; keep its ID as evidence.
             return CaseResult(
                 suite=item.suite_name,
                 case=item.case_name,
                 result="error",
+                job_id=exc.execution_id if isinstance(exc, ActionResponseError) else None,
                 duration_s=self._clock() - started_clock,
                 failure_reason=str(exc),
             )
