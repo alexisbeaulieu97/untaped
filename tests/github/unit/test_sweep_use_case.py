@@ -451,7 +451,9 @@ def test_owners_from_matched_paths(tmp_path: Path) -> None:
         GrepHit(path="src/app.py", line=1, text="needle()", blob_oid="abc123"),
     )
     corpus.tree_map[("acme/api", "main")] = ("src/app.yml",)
-    corpus.blob_map[("acme/api", "main", ".github/CODEOWNERS")] = "* @all\nsrc/ @src\n*.py @py\n"
+    corpus.blob_map[("acme/api", "refs/heads/main", ".github/CODEOWNERS")] = (
+        "* @all\nsrc/ @src\n*.py @py\n"
+    )
 
     report = _sweep(corpus, _Resolver((_item("acme/api"),)), tmp_path / "corpus")(
         _options(
@@ -465,7 +467,7 @@ def test_owners_from_matched_paths(tmp_path: Path) -> None:
 
 def test_pathless_match_uses_default_owners(tmp_path: Path) -> None:
     corpus = _Corpus()
-    corpus.blob_map[("acme/api", "main", ".github/CODEOWNERS")] = "* @all\n"
+    corpus.blob_map[("acme/api", "refs/heads/main", ".github/CODEOWNERS")] = "* @all\n"
 
     report = _sweep(corpus, _Resolver((_item("acme/api"),)), tmp_path / "corpus")(
         _options(

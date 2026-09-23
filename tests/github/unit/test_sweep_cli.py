@@ -519,3 +519,49 @@ def test_failed_refresh_warns_that_cached_copy_was_scanned(
     assert [row["full_name"] for row in json.loads(refreshed.stdout)] == ["acme/api"]
     assert "refresh failed for 1 repo; scanned cached copies" in refreshed.stderr
     assert "warning: stale acme/api:" in refreshed.stderr
+
+
+def test_branch_and_tag_with_same_name_are_both_swept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "needle tag\n"})
+    _git(source, "tag", "x")
+    _git(source, "checkout", "-q", "-b", "x")
+    _commit_file(source, "README.md", "needle branch\n", "branch")
+    _git(source, "checkout", "-q", "main")
+    _commit_file(source, "README.md", "nothing\n", "main")
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(200, json=[_repo("acme/api", source)])
+        )
+        repos = CliInvoker().invoke(
+            app, ["sweep", "--org", "acme", "--refs", "all", "--grep", "needle", "--format", "json"]
+        )
+        matches = CliInvoker().invoke(
+            app,
+            [
+                "sweep",
+                "--org",
+                "acme",
+                "--refs",
+                "all",
+                "--grep",
+                "needle",
+                "--show",
+                "matches",
+                "--no-sync",
+                "--format",
+                "json",
+            ],
+        )
+
+    assert repos.exit_code == 0, repos.output
+    [row] = json.loads(repos.stdout)
+    assert row["refs_matched"] == ["heads/x", "tags/x"]
+    assert matches.exit_code == 0, matches.output
+    assert sorted((m["refs"], m["text"]) for m in json.loads(matches.stdout)) == [
+        (["heads/x"], "needle branch"),
+        (["tags/x"], "needle tag"),
+    ]

@@ -27,6 +27,7 @@ from untaped.capabilities.github.domain import (
     SweepQuery,
     covers,
     parse_codeowners,
+    ref_display_names,
     ref_matches,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
@@ -312,13 +313,15 @@ class Sweep:
         aggregate_hits: dict[str, int] = {}
         owner_paths: set[str] = set()
         matches: list[_ContentMatch] = []
-        for ref in self._corpus.local_refs(
-            ready.repo, root=self._root, selector=options.query.refs
-        ):
-            ref_scan = self._scan_ref(ready.repo, ref, options.query)
+        # Scan by full refname (a branch and a tag may share a short name);
+        # report the unambiguous short display name.
+        refs = self._corpus.local_refs(ready.repo, root=self._root, selector=options.query.refs)
+        display_names = ref_display_names(refs)
+        for ref in refs:
+            ref_scan = self._scan_ref(ready.repo, ref, options.query, display=display_names[ref])
             if not ref_matches(options.query, ref_scan.evaluation):
                 continue
-            refs_matched.append(ref)
+            refs_matched.append(display_names[ref])
             owner_paths.update(ref_scan.owner_paths)
             matches.extend(ref_scan.matches)
             for label, count in ref_scan.evaluation.hits.items():
@@ -341,7 +344,9 @@ class Sweep:
             matches=tuple(matches),
         )
 
-    def _scan_ref(self, repo: CorpusRepoTarget, ref: str, query: SweepQuery) -> _RefScan:
+    def _scan_ref(
+        self, repo: CorpusRepoTarget, ref: str, query: SweepQuery, *, display: str
+    ) -> _RefScan:
         hits: dict[str, int] = {}
         owner_paths: set[str] = set()
         matches: list[_ContentMatch] = []
@@ -350,7 +355,7 @@ class Sweep:
             grep_hits = self._grep(repo, ref, pattern, query)
             hits[label] = len(grep_hits)
             owner_paths.update(hit.path for hit in grep_hits)
-            matches.extend(_content_match(repo.full_name, ref, hit) for hit in grep_hits)
+            matches.extend(_content_match(repo.full_name, display, hit) for hit in grep_hits)
         for pattern in query.not_greps:
             label = f"not-grep:{pattern}"
             hits[label] = len(self._grep(repo, ref, pattern, query))
@@ -366,7 +371,7 @@ class Sweep:
             hits[f"lacks-file:{glob}"] = 1 if _matching_paths(tree, glob) else 0
 
         return _RefScan(
-            evaluation=RefEvaluation(ref=ref, hits=hits),
+            evaluation=RefEvaluation(ref=display, hits=hits),
             owner_paths=tuple(sorted(owner_paths)),
             matches=tuple(matches),
         )
@@ -399,7 +404,9 @@ class Sweep:
         rules = None
         for path in CODEOWNERS_LOCATIONS:
             try:
-                text = self._corpus.read_blob(repo, root=self._root, ref=branch, path=path)
+                text = self._corpus.read_blob(
+                    repo, root=self._root, ref=f"refs/heads/{branch}", path=path
+                )
             except GitCorpusError:
                 return ()
             if text is None:
