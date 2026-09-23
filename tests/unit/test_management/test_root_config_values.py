@@ -161,3 +161,18 @@ def test_non_mapping_config_shapes_are_config_errors(_isolated_config: Path, tex
     assert result.exit_code == 1
     assert result.stderr.startswith("error: ")
     assert "mapping" in result.stderr
+
+
+def test_set_rejects_unknown_ui_theme(_isolated_config: Path) -> None:
+    result = _invoke(["set", "ui.theme", "bogus"])
+    assert result.exit_code == 1
+    assert "invalid value for 'ui.theme'" in result.stderr
+    assert "unknown UI theme 'bogus'" in result.stderr
+    assert "classic" in result.stderr
+    assert not _isolated_config.exists()
+
+
+def test_set_accepts_builtin_ui_theme(_isolated_config: Path) -> None:
+    result = _invoke(["set", "ui.theme", "high-contrast"])
+    assert result.exit_code == 0, result.output
+    assert _default_profile(_isolated_config)["ui"] == {"theme": "high-contrast"}

@@ -23,7 +23,7 @@ from pydantic_settings.sources import InitSettingsSource
 
 from untaped.errors import ConfigError, first_validation_error
 from untaped.settings_layout import ProfilesSettingsLayout
-from untaped.theme import UiSettings
+from untaped.theme import CONFIG_WRITE_CONTEXT, UiSettings
 
 DEFAULT_CONFIG_PATH = "~/.untaped/config.yml"
 
@@ -292,12 +292,14 @@ def validate_settings_section(
     """Validate only the top-level field ``name`` of ``data`` (no disk/env reads).
 
     A missing key validates the field's default (so a required field that is
-    absent is reported). Raises :class:`pydantic.ValidationError`; error
+    absent is reported). Write-time checks (``CONFIG_WRITE_CONTEXT``) run
+    too, e.g. an unknown ``ui.theme`` is rejected. Raises :class:`pydantic.ValidationError`; error
     locations start with ``name``.
     """
     validator, _ = _section_models(settings_cls or get_settings_model(), name)
     payload = {name: data[name]} if name in data else {}
-    return getattr(validator.model_validate(payload), name)
+    validated = validator.model_validate(payload, context={CONFIG_WRITE_CONTEXT: True})
+    return getattr(validated, name)
 
 
 def load_settings_section(name: str, settings_cls: type[Settings] | None = None) -> Any:
