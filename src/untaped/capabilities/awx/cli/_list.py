@@ -1,5 +1,6 @@
 """``list`` builder for the spec-driven CLI factory."""
 
+from collections.abc import Sequence
 from contextlib import nullcontext
 from typing import Annotated
 
@@ -24,6 +25,7 @@ from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
 from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
+    OutputFormat,
     emit,
     raise_usage,
     report_errors,
@@ -107,7 +109,8 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             records = [item.record for item in selected]
             if limit is not None:
                 records = records[:limit]
-        cols = list(columns) if columns else list(spec.list_columns)
+        # Default columns shape the human views; json/yaml/pipe keep full records.
+        cols = list(columns) if columns else _default_list_columns(fmt, spec.list_columns)
         if with_names:
             # Pass ``cols`` so display-only FK columns (e.g. Host's
             # ``inventory``, which lives in ``read_only_fields`` rather
@@ -115,3 +118,8 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             records = flatten_fks(records, spec, columns=cols)
         records = [redact_value(record, spec.secret_paths) for record in records]
         emit(records, fmt=fmt, columns=cols, kind=pipe_kind_for_spec(spec), empty=False)
+
+
+def _default_list_columns(fmt: OutputFormat, default_cols: Sequence[str]) -> list[str] | None:
+    """``list`` projects its default columns for ``table`` and ``raw`` only."""
+    return list(default_cols) if fmt in {"table", "raw"} else None

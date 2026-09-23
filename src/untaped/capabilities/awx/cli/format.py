@@ -23,8 +23,8 @@ def outcome_rows(outcomes: list[ApplyOutcome]) -> list[dict[str, Any]]:
                 "unverified": o.unverified,
                 "name": o.name,
                 "action": o.action,
-                "fields_changed": ",".join(_changed_fields(o.changes)),
-                "preserved_secrets": ",".join(o.preserved_secrets),
+                "fields_changed": _changed_fields(o.changes),
+                "preserved_secrets": list(o.preserved_secrets),
                 "detail": o.detail or "",
             }
         )

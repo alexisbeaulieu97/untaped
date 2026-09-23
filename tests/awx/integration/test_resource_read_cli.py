@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -369,6 +370,16 @@ def test_get_defaults_to_table(fake_aap: Any, args: list[str]) -> None:
     assert "deploy" in result.stdout
     assert "related:" not in result.stdout
     assert not result.stdout.lstrip().startswith(("-", "{", "["))
+
+
+def test_list_structured_formats_keep_full_records(fake_aap: Any) -> None:
+    """Default columns shape table/raw only; json keeps every field."""
+    _seed_basic(fake_aap)
+    result = CliInvoker().invoke(app, ["job-templates", "list", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    record = json.loads(result.stdout)[0]
+    assert record["playbook"] == "deploy.yml"
+    assert record["description"] == "deploy the app"
 
 
 def test_get_format_raw_keeps_first_key_default(fake_aap: Any) -> None:
