@@ -36,7 +36,12 @@ from untaped.capabilities.workspace.cli.common import (
     target_workspaces,
     workspace_settings,
 )
-from untaped.capabilities.workspace.domain import DEFAULT_FOREACH_TIMEOUT, SyncAction, SyncOutcome
+from untaped.capabilities.workspace.domain import (
+    DEFAULT_FOREACH_TIMEOUT,
+    ForeachOutcome,
+    SyncAction,
+    SyncOutcome,
+)
 from untaped.capabilities.workspace.infrastructure import (
     DEFAULT_SLOW_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -306,7 +311,8 @@ def foreach_command(
 
     The default ``--format table`` is human-friendly: when each repo
     finishes, its captured stdout / stderr is replayed line-by-line
-    with a ``[<repo>]`` prefix. Output is buffered per repo (the
+    with a ``[<repo>]`` prefix (in completion order under
+    ``--parallel``). Output is buffered per repo (the
     underlying runner uses ``capture_output=True``), so users running
     chatty commands won't see anything until that repo's command
     exits. Pass ``--format json|yaml|raw`` to emit ``ForeachOutcome``
@@ -326,21 +332,25 @@ def foreach_command(
             continue_on_error=keep_going,
             only=repo,
             timeout=timeout,
+            # Table output streams each repo's block as soon as it finishes.
+            on_result=_echo_foreach_outcome if fmt == "table" else None,
         )
         failed = [o.repo for o in outcomes if o.returncode != 0]
         if fmt == "table":
             if not outcomes:
                 echo("No repos matched. Check --repo or the workspace manifest.", err=True)
-            for o in outcomes:
-                for line in o.stdout.splitlines():
-                    echo(f"[{o.repo}] {line}")
-                for line in o.stderr.splitlines():
-                    echo(f"[{o.repo}] {line}", err=True)
-                if o.returncode != 0:
-                    echo(f"[{o.repo}] exit {o.returncode}", err=True)
             if failed:
                 echo(f"failed in: {', '.join(failed)}", err=True)
         else:
             rows = [o.model_dump() for o in outcomes]
             emit(rows, fmt=fmt, columns=columns, kind="workspace.foreach_outcome")
         finish(bool(failed) and not ignore_errors)
+
+
+def _echo_foreach_outcome(o: ForeachOutcome) -> None:
+    for line in o.stdout.splitlines():
+        echo(f"[{o.repo}] {line}")
+    for line in o.stderr.splitlines():
+        echo(f"[{o.repo}] {line}", err=True)
+    if o.returncode != 0:
+        echo(f"[{o.repo}] exit {o.returncode}", err=True)

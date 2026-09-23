@@ -50,20 +50,27 @@ def shell_runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.Completed
         start_new_session=os.name != "nt",
     )
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _signal_process_group(process, signal.SIGTERM)
         try:
-            stdout, stderr = process.communicate(timeout=_FOREACH_TERMINATE_GRACE_SECONDS)
+            stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            _signal_process_group(process, _KILL_SIGNAL)
-            stdout, stderr = process.communicate()
-        return subprocess.CompletedProcess(
-            args=cmd,
-            returncode=_FOREACH_TIMEOUT_RETURN_CODE,
-            stdout=stdout or "",
-            stderr=_append_timeout_message(stderr or "", timeout),
-        )
+            _signal_process_group(process, signal.SIGTERM)
+            try:
+                stdout, stderr = process.communicate(timeout=_FOREACH_TERMINATE_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                _signal_process_group(process, _KILL_SIGNAL)
+                stdout, stderr = process.communicate()
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=_FOREACH_TIMEOUT_RETURN_CODE,
+                stdout=stdout or "",
+                stderr=_append_timeout_message(stderr or "", timeout),
+            )
+    except BaseException:
+        # Ctrl-C (or any other escape): the child runs in its own session,
+        # so the terminal's SIGINT never reached it. Tear the group down
+        # before propagating so no command keeps running unattended.
+        _terminate_process_group(process)
+        raise
     return subprocess.CompletedProcess(
         args=cmd,
         returncode=_completed_returncode(process),
@@ -93,6 +100,23 @@ def _signal_process_group(process: subprocess.Popen[str], sig: signal.Signals | 
         os.killpg(pgid, sig)
     except ProcessLookupError:
         return
+
+
+def _terminate_process_group(process: subprocess.Popen[str]) -> None:
+    """SIGTERM the group, wait briefly, then SIGKILL and reap."""
+    _signal_process_group(process, signal.SIGTERM)
+    try:
+        process.wait(timeout=_FOREACH_TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        _signal_process_group(process, _KILL_SIGNAL)
+        process.wait()
+    else:
+        # The shell may exit on TERM while descendants ignore it. After
+        # the leader is reaped ``getpgid`` fails, but with
+        # ``start_new_session`` the group id is the leader's pid.
+        if os.name != "nt":
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, _KILL_SIGNAL)
 
 
 def _append_timeout_message(stderr: str, timeout: float) -> str:

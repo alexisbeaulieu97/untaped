@@ -280,6 +280,46 @@ def test_filters_by_repo_name(tmp_path: Path) -> None:
     assert [outcome.repo for outcome in outcomes] == ["b"]
 
 
+def test_on_result_streams_each_outcome_as_it_finishes(tmp_path: Path) -> None:
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url="https://x/a.git"), Repo(url="https://x/b.git")]),
+    )
+    streamed: list[str] = []
+
+    outcomes = Foreach(ManifestRepository(), runner=_runner_factory(), fs=_FS)(
+        workspace, command="echo hi", on_result=lambda o: streamed.append(o.repo)
+    )
+
+    assert streamed == ["a", "b"]
+    assert [o.repo for o in outcomes] == ["a", "b"]
+
+
+def test_parallel_interrupt_cancels_queued_repos(tmp_path: Path) -> None:
+    """Ctrl-C (raised on the calling thread) must not drain queued repos."""
+    names = [f"r{i}" for i in range(12)]
+    workspace = _seed(
+        tmp_path,
+        WorkspaceManifest(repos=[Repo(url=f"https://x/{n}.git") for n in names]),
+    )
+    calls: list[str] = []
+
+    def _runner(cmd: str, cwd: Path, *, timeout: float) -> subprocess.CompletedProcess[str]:
+        calls.append(cwd.name)
+        time.sleep(0.05)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    def _interrupt(_outcome: object) -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        Foreach(ManifestRepository(), runner=_runner, fs=_FS)(
+            workspace, command="x", parallel=2, on_result=_interrupt
+        )
+
+    assert len(calls) < len(names)
+
+
 def test_unknown_repo_filter_raises_before_running_command(tmp_path: Path) -> None:
     workspace = _seed(tmp_path, WorkspaceManifest(repos=[Repo(url="https://x/a.git")]))
     calls: list[Path] = []
