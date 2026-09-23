@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import traceback
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -115,7 +116,7 @@ def test_template_and_copy_steps_accept_if_absent() -> None:
     assert copy.if_absent is True
 
 
-def test_transform_files_normalize_to_single_file_steps() -> None:
+def test_transform_files_stay_one_step_with_every_file() -> None:
     recipe = Recipe.model_validate(
         {
             "version": 1,
@@ -131,17 +132,14 @@ def test_transform_files_normalize_to_single_file_steps() -> None:
         }
     )
 
-    assert len(recipe.steps) == 2
-    assert all(isinstance(step, TransformStep) for step in recipe.steps)
-    first, second = recipe.steps
-    assert isinstance(first, TransformStep)
-    assert isinstance(second, TransformStep)
-    assert str(first.file) == "local.yml"
-    assert str(second.file) == "site.yml"
-    assert first.hook == "add_collections"
-    assert second.args == {"collections": ["ansible.builtin"]}
-    assert first.optional is True
-    assert second.optional is True
+    assert len(recipe.steps) == 1
+    step = recipe.steps[0]
+    assert isinstance(step, TransformStep)
+    assert step.file is None
+    assert step.files == (Path("local.yml"), Path("site.yml"))
+    assert step.hook == "add_collections"
+    assert step.args == {"collections": ["ansible.builtin"]}
+    assert step.optional is True
 
 
 def test_transform_globs_remain_single_planning_time_step() -> None:
@@ -190,7 +188,7 @@ def test_remove_globs_remain_single_planning_time_step() -> None:
     assert step.exclude == ("keep.bak",)
 
 
-def test_remove_files_normalize_to_single_file_steps() -> None:
+def test_remove_files_stay_one_step_with_every_file() -> None:
     recipe = Recipe.model_validate(
         {
             "version": 1,
@@ -203,13 +201,10 @@ def test_remove_files_normalize_to_single_file_steps() -> None:
         }
     )
 
-    assert len(recipe.steps) == 2
-    assert all(isinstance(step, RemoveStep) for step in recipe.steps)
-    first, second = recipe.steps
-    assert isinstance(first, RemoveStep)
-    assert isinstance(second, RemoveStep)
-    assert str(first.file) == "ansible.cfg"
-    assert str(second.file) == "group_vars/old.yml"
+    assert len(recipe.steps) == 1
+    step = recipe.steps[0]
+    assert isinstance(step, RemoveStep)
+    assert step.files == (Path("ansible.cfg"), Path("group_vars/old.yml"))
 
 
 @pytest.mark.parametrize(
@@ -223,6 +218,7 @@ def test_remove_files_normalize_to_single_file_steps() -> None:
         {"type": "remove", "file": "ansible.cfg", "globs": ["*.cfg"]},
         {"type": "remove", "files": ["ansible.cfg"], "globs": ["*.cfg"]},
         {"type": "remove"},
+        {"type": "remove", "file": None},
     ],
 )
 def test_file_fanout_steps_require_exactly_one_of_file_files_or_globs(
