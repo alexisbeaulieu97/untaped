@@ -48,7 +48,7 @@ def test_me_json_emits_bare_object(jira_config: Path) -> None:
         mock.get("/rest/api/2/myself").mock(
             return_value=httpx.Response(200, json={"name": "alexis", "displayName": "Alexis"})
         )
-        result = CliInvoker().invoke(app, ["me", "--format", "json"])
+        result = CliInvoker().invoke(app, ["whoami", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -60,7 +60,7 @@ def test_issue_get_json_emits_bare_object(jira_config: Path) -> None:
     body = {"key": "ABC-1", "fields": {"summary": "Fix deploy"}}
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.get("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(200, json=body))
-        result = CliInvoker().invoke(app, ["issue", "get", "ABC-1", "--format", "json"])
+        result = CliInvoker().invoke(app, ["issues", "get", "ABC-1", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -76,8 +76,9 @@ def test_issue_create_json_emits_bare_object(jira_config: Path) -> None:
         result = CliInvoker().invoke(
             app,
             [
-                "issue",
+                "issues",
                 "create",
+                "--yes",
                 "--project",
                 "ABC",
                 "--issue-type",
@@ -101,7 +102,7 @@ def test_issue_comment_json_emits_bare_object(jira_config: Path) -> None:
             return_value=httpx.Response(201, json={"id": "5", "body": "hi"})
         )
         result = CliInvoker().invoke(
-            app, ["issue", "comment", "ABC-1", "--body", "hi", "--format", "json"]
+            app, ["issues", "comment", "ABC-1", "--yes", "--body", "hi", "--format", "json"]
         )
 
     assert result.exit_code == 0, result.output
@@ -113,7 +114,7 @@ def test_issue_transition_json_emits_bare_object(jira_config: Path) -> None:
     with respx.mock(base_url="https://jira.example.com") as mock:
         mock.post("/rest/api/2/issue/ABC-1/transitions").mock(return_value=httpx.Response(204))
         result = CliInvoker().invoke(
-            app, ["issue", "transition", "ABC-1", "--id", "31", "--format", "json"]
+            app, ["issues", "transition", "ABC-1", "--yes", "--id", "31", "--format", "json"]
         )
 
     assert result.exit_code == 0, result.output
@@ -126,7 +127,7 @@ def test_project_get_json_emits_bare_object(jira_config: Path) -> None:
         mock.get("/rest/api/2/project/ABC").mock(
             return_value=httpx.Response(200, json={"id": "10000", "key": "ABC", "name": "App"})
         )
-        result = CliInvoker().invoke(app, ["project", "get", "ABC", "--format", "json"])
+        result = CliInvoker().invoke(app, ["projects", "get", "ABC", "--format", "json"])
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
@@ -153,7 +154,7 @@ def test_search_retries_429_on_idempotent_post(
         route = mock.post("/rest/api/2/search").mock(side_effect=[httpx.Response(429), ok])
         result = CliInvoker().invoke(
             app,
-            ["issue", "search", "--project", "ABC", "--format", "raw", "--columns", "key"],
+            ["issues", "search", "--project", "ABC", "--format", "raw", "--columns", "key"],
         )
 
     assert result.exit_code == 0, result.output
@@ -170,7 +171,18 @@ def test_create_429_is_not_retried(jira_config: Path, monkeypatch: pytest.Monkey
             side_effect=[httpx.Response(429), httpx.Response(201, json={"key": "ABC-1"})]
         )
         result = CliInvoker().invoke(
-            app, ["issue", "create", "--project", "ABC", "--issue-type", "Bug", "--summary", "x"]
+            app,
+            [
+                "issues",
+                "create",
+                "--yes",
+                "--project",
+                "ABC",
+                "--issue-type",
+                "Bug",
+                "--summary",
+                "x",
+            ],
         )
 
     assert result.exit_code != 0

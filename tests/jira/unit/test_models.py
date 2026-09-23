@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 
-from untaped.capabilities.jira.domain import IssueDetailResult
+import pytest
+from pydantic import ValidationError
+
+from untaped.capabilities.jira.domain import IssueDetailResult, SprintResult
 
 
 def _issue(**fields: object) -> dict[str, object]:
@@ -47,8 +50,47 @@ def test_detail_dumps_unrecognized_object_fields_as_json() -> None:
     )
 
     assert json.loads(row.description) == odd
-    assert json.loads(row.created) == {"iso": "2026-01-01"}
+    assert row.created_at is None  # an unparseable timestamp is dropped, not dumped
     assert json.loads(row.summary) == ["a", "b"]
+
+
+def test_timestamps_normalize_to_utc_and_bad_ones_become_none() -> None:
+    row = IssueDetailResult.model_validate(
+        _issue(updated="2026-06-05T10:00:00.000-0400", created="not a date")
+    )
+
+    assert row.model_dump(mode="json")["updated_at"] == "2026-06-05T14:00:00Z"
+    assert row.created_at is None
+
+
+def test_sprint_rows_use_snake_case_and_utc_timestamps() -> None:
+    row = SprintResult.model_validate(
+        {
+            "id": 20,
+            "name": "Sprint 20",
+            "state": "active",
+            "startDate": "2026-06-01T09:00:00.000+0000",
+            "endDate": None,
+            "originBoardId": 7,
+        }
+    )
+
+    assert row.model_dump(mode="json") == {
+        "id": 20,
+        "name": "Sprint 20",
+        "state": "active",
+        "start_at": "2026-06-01T09:00:00Z",
+        "end_at": None,
+        "goal": None,
+        "origin_board_id": 7,
+    }
+
+
+def test_rows_are_frozen() -> None:
+    row = SprintResult.model_validate({"id": 20})
+
+    with pytest.raises(ValidationError):
+        row.name = "renamed"  # type: ignore[misc]
 
 
 def test_detail_keeps_plain_string_description() -> None:
