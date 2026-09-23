@@ -10,8 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import yaml
-from pydantic import ValidationError
+from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from untaped.config_file import (
     mutate_config,
@@ -25,22 +24,27 @@ from untaped.settings import (
     Settings,
     active_settings_layout,
     get_profile_settings_model,
-    get_settings,
-    splice_registered_state,
-    validate_settings_isolated,
+    load_settings_section,
+    validate_settings_section,
 )
 
 
 class SettingsFileRepository:
-    """Single concrete adapter for everything ``config`` needs."""
+    """Single concrete adapter for everything ``config`` needs.
+
+    Reads and writes validate only the section a key belongs to, so one
+    invalid value elsewhere in the file never blocks inspecting or repairing
+    the rest of the config through the CLI.
+    """
 
     def __init__(self, settings_cls: type[Settings] | None = None) -> None:
         self._settings_cls = settings_cls
         self._descriptors: list[FieldDescriptor] | None = None
+        self._sections: dict[str, Any] = {}
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
-            self._descriptors = walk_settings(self._settings_cls or get_profile_settings_model())
+            self._descriptors = walk_settings(self._profile_model())
         return self._descriptors
 
     def descriptor(self, key: str) -> FieldDescriptor:
@@ -51,8 +55,33 @@ class SettingsFileRepository:
             raise ConfigError(f"unknown setting: {key!r}. Valid keys: {valid}")
         return descriptor
 
-    def current_settings(self) -> Settings:
-        return get_settings()
+    def setting_value(self, descriptor: FieldDescriptor) -> Any:
+        """Effective (env ⤥ profile ⤥ default) value of one leaf.
+
+        Validates only the leaf's top-level section; raises ``ConfigError``
+        when that section is invalid.
+        """
+        section = descriptor.path[0]
+        if section not in self._sections:
+            self._sections[section] = load_settings_section(section, self._settings_cls)
+        cursor: Any = self._sections[section]
+        for segment in descriptor.path[1:]:
+            cursor = getattr(cursor, segment, None)
+            if cursor is None:
+                return None
+        return cursor
+
+    def raw_setting_value(self, descriptor: FieldDescriptor) -> Any:
+        """Unvalidated effective value of one leaf (env string wins over YAML)."""
+        env_value = self.env_value_for(descriptor)
+        if env_value is not None:
+            return env_value
+        cursor: Any = active_settings_layout().effective(self.yaml_dict())
+        for segment in descriptor.path:
+            if not isinstance(cursor, dict) or segment not in cursor:
+                return None
+            cursor = cursor[segment]
+        return cursor
 
     def yaml_dict(self) -> dict[str, Any]:
         """The raw, unmerged YAML dict (top-level)."""
@@ -93,22 +122,25 @@ class SettingsFileRepository:
         return os.environ.get(self.env_var_for(descriptor))
 
     def set_value(self, key: str, raw_value: str, *, profile: str | None = None) -> str:
-        """Coerce ``raw_value``, validate against the schema, then persist.
+        """Validate ``raw_value`` against the key's type, then persist.
 
+        The raw string is validated against the leaf's annotation (lax mode:
+        ``true``/``no`` for bools, numbers, literals, paths); string and
+        secret fields keep the exact input. Only the key's own section is
+        re-validated, so an unrelated invalid section never blocks a repair.
         Returns the resolved target profile name so callers can report where
         the write landed.
         """
         descriptor = self.descriptor(key)
-        coerced = _coerce_scalar(raw_value)
+        value = _coerce_value(key, descriptor, raw_value)
         resolved: str | None = None
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
             target_data, resolved = active_settings_layout().write_profile(data, profile)
-            set_at_path(target_data, descriptor.path, coerced)
-            merged = _merge_for_validation(data, profile=resolved)
+            set_at_path(target_data, descriptor.path, value)
             try:
-                validate_settings_isolated(merged, self._settings_cls)
+                self._validate_section(data, descriptor, profile=resolved)
             except ValidationError as exc:
                 raise ConfigError(
                     f"invalid value for {key!r}: {first_validation_error(exc)}"
@@ -138,13 +170,12 @@ class SettingsFileRepository:
             if not unset_at_path(target_data, descriptor.path):
                 return
             removed = True
-            # Symmetric with ``set_value``: re-merge and re-validate so a
+            # Symmetric with ``set_value``: re-validate the key's section so a
             # removal that would leave the scope in a state pydantic would
             # reject surfaces here (with the offending key in the message),
             # not at next-load with an opaque traceback.
-            merged = _merge_for_validation(data, profile=resolved)
             try:
-                validate_settings_isolated(merged, self._settings_cls)
+                self._validate_section(data, descriptor, profile=resolved)
             except ValidationError as exc:
                 raise ConfigError(
                     f"unsetting {key!r} would leave profile {resolved!r} invalid: "
@@ -157,25 +188,38 @@ class SettingsFileRepository:
         assert resolved is not None
         return removed, resolved
 
+    def _profile_model(self) -> type[Settings]:
+        return self._settings_cls or get_profile_settings_model()
 
-def _merge_for_validation(data: dict[str, Any], *, profile: str | None) -> dict[str, Any]:
-    """Resolve the config as if ``profile`` were the live one.
+    def _validate_section(
+        self, data: dict[str, Any], descriptor: FieldDescriptor, *, profile: str
+    ) -> None:
+        """Validate the written key's section as ``profile`` would resolve it.
 
-    Used when writing to a profile that isn't the ambient active one — the
-    schema check has to validate the target profile's view, otherwise the
-    invalid value silently lands on disk and only fails when the profile is
-    later activated.
+        Merges from the *target* profile's perspective — otherwise an invalid
+        value silently lands in a non-active profile and only fails when that
+        profile is later activated. Env overrides are deliberately ignored:
+        the file must be valid on its own.
+        """
+        effective = active_settings_layout().effective(data, profile=profile)
+        validate_settings_section(effective, descriptor.path[0], self._profile_model())
+
+
+def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
+    """Validate a CLI-supplied string against the leaf type; return its YAML form.
+
+    ``str``/``SecretStr`` fields keep the input verbatim (no YAML parsing, so
+    ``p4ss #word`` or ``0123`` survive intact). Other types validate the raw
+    string in pydantic's lax mode and store the JSON-mode dump (e.g. a
+    ``Path`` as a string).
     """
-    effective = active_settings_layout().effective(data, profile=profile)
-    splice_registered_state(data, effective)
-    return effective
-
-
-def _coerce_scalar(raw_value: str) -> Any:
-    """Parse a CLI-supplied string as a YAML scalar.
-
-    Handles ``"true"`` → ``True``, ``"42"`` → ``42``, ``"null"`` → ``None``,
-    leaving non-scalar strings untouched. Pydantic does the final type
-    coercion when we validate the merged dict.
-    """
-    return yaml.safe_load(raw_value)
+    if descriptor.annotation in (str, SecretStr):
+        return raw_value
+    adapter: TypeAdapter[Any] = TypeAdapter(descriptor.annotation)
+    try:
+        value = adapter.validate_strings(raw_value)
+    except ValidationError as exc:
+        raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return adapter.dump_python(value, mode="json")

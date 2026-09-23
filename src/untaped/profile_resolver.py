@@ -92,22 +92,39 @@ def resolve_profiles(
     *,
     active_override: str | None = None,
 ) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
-    """Return ``(effective, provenance)`` from the parsed config dict."""
-    profiles = config_data.get("profiles") or {}
-    if not profiles:
-        return {}, {}
+    """Return ``(effective, provenance)`` from the parsed config dict.
 
+    Raises ``ConfigError`` when ``profiles`` (or one profile) is not a
+    mapping — an empty ``name:`` entry (YAML ``null``) counts as an empty
+    profile — or when an explicit override names an undefined profile.
+    """
+    profiles = _profiles_mapping(config_data)
     active_name = _select_active(config_data, active_override, profiles)
 
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
 
     if DEFAULT_PROFILE in profiles:
-        _layer(profiles[DEFAULT_PROFILE], DEFAULT_PROFILE, effective, provenance, ())
+        _layer(profiles[DEFAULT_PROFILE] or {}, DEFAULT_PROFILE, effective, provenance, ())
     if active_name is not None and active_name != DEFAULT_PROFILE:
-        _layer(profiles[active_name], active_name, effective, provenance, ())
+        _layer(profiles[active_name] or {}, active_name, effective, provenance, ())
 
     return effective, provenance
+
+
+def _profiles_mapping(config_data: dict[str, Any]) -> dict[str, Any]:
+    profiles = config_data.get("profiles")
+    if profiles is None:
+        return {}
+    if not isinstance(profiles, dict):
+        raise ConfigError(
+            f"config key 'profiles' must be a mapping of profile names, "
+            f"got {type(profiles).__name__}"
+        )
+    for name, data in profiles.items():
+        if data is not None and not isinstance(data, dict):
+            raise ConfigError(f"profile {name!r} must be a mapping, got {type(data).__name__}")
+    return profiles
 
 
 def _select_active(
@@ -127,10 +144,16 @@ def _select_active(
     """
     explicit = active_override if active_override else config_data.get("active")
     if explicit:
+        if not isinstance(explicit, str):
+            raise ConfigError(f"config key 'active' must be a profile name, got {explicit!r}")
+        # With no profiles at all only the conceptual ``default`` resolves
+        # (to schema defaults); any other name is a typo worth surfacing.
+        if not profiles and explicit == DEFAULT_PROFILE:
+            return None
         if explicit not in profiles:
             raise ConfigError(
                 f"active profile {explicit!r} is not defined in `profiles`. "
-                f"Known profiles: {', '.join(sorted(profiles))}"
+                f"Known profiles: {', '.join(sorted(profiles)) or '(none)'}"
             )
         return explicit
     return DEFAULT_PROFILE if DEFAULT_PROFILE in profiles else None
