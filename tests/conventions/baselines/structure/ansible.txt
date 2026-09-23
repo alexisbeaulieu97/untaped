@@ -1,5 +1,0 @@
-# Known violations of the structure convention check for 'ansible'.
-# This list may only shrink: fix an entry and delete its line.
-# See docs/conventions.md; regenerate with CONVENTIONS_UPDATE_BASELINES=1.
-src/untaped/capabilities/ansible/cli/graph_commands.py::foreign-section::github
-src/untaped/capabilities/ansible/cli/source_commands.py::foreign-section::github
