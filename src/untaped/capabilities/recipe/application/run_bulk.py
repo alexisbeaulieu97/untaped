@@ -10,12 +10,12 @@ from untaped.capabilities.recipe.application.apply_recipe import ApplyRecipe
 from untaped.capabilities.recipe.application.inputs import (
     InputResolutionConfig,
     InputResolutionResult,
-    PromptFunc,
     has_sensitive_inputs,
     prepare_input_resolution,
     resolve_global_values,
     resolve_target_inputs,
 )
+from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.targets import Target, dedupe_targets
 from untaped.capabilities.recipe.domain.plan import TargetPlan
 from untaped.capabilities.recipe.domain.recipe import Recipe

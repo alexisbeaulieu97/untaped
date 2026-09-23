@@ -19,9 +19,10 @@ from untaped.capabilities.recipe.domain.recipe import (
     ValidateStep,
 )
 from untaped.capabilities.recipe.domain.templates import render_field, render_template
+from untaped.capabilities.recipe.errors import RecipeError
 
 
-class _TargetSkipped(Exception):
+class _TargetSkippedError(RecipeError):
     """Internal signal that a validate hook marked the target not applicable."""
 
 
@@ -82,7 +83,7 @@ class ApplyRecipe:
                     )
                 else:
                     raise ValueError(f"unsupported recipe step: {step!r}")
-        except _TargetSkipped:
+        except _TargetSkippedError:
             # A validate hook reported the target not applicable: planning
             # stops, no changes are flushed, and the target is never counted
             # as a failure. Any warnings accumulated so far are retained.
@@ -121,7 +122,7 @@ class ApplyRecipe:
         if verdict.skipped:
             if verdict.message:
                 warnings.append(verdict.message)
-            raise _TargetSkipped
+            raise _TargetSkippedError
         if verdict.failed:
             raise ValueError(verdict.message or f"validate hook {hook!r} failed")
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 
 import yaml
 
+from untaped.capabilities.recipe.application.ports import PromptFunc
 from untaped.capabilities.recipe.application.targets import Target
 from untaped.capabilities.recipe.domain.input_jinja import (
     UNRESOLVED,
@@ -19,26 +19,14 @@ from untaped.capabilities.recipe.domain.input_jinja import (
     ensure_derived_value_within_bound,
 )
 from untaped.capabilities.recipe.domain.recipe import InputSpec, Recipe
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capability_api import ConfigError
 
 REDACTED = "***"
 _UNSET = object()
 
 
-class PromptFunc(Protocol):
-    """Prompt callback used by interactive input resolution."""
-
-    def __call__(
-        self,
-        message: str,
-        *,
-        sensitive: bool,
-        default: object | None = None,
-        required: bool = True,
-    ) -> object: ...
-
-
-class NoPromptAvailable(ConfigError):
+class NoPromptAvailableError(RecipeError):
     """Raised when interactive input is requested without a prompt backend."""
 
 
@@ -300,7 +288,7 @@ def _prompt_value(
     config: InputResolutionConfig,
 ) -> object:
     if config.prompt is None:
-        raise NoPromptAvailable("interactive input requires a terminal prompt backend")
+        raise NoPromptAvailableError("interactive input requires a terminal prompt backend")
     details: list[str] = []
     if spec.description:
         details.append(spec.description)

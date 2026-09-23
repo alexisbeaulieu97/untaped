@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Condition, Lock, Thread
-from typing import Protocol, TextIO
+from typing import TextIO
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
 
 from untaped.capabilities.recipe._worker import hook_worker
 from untaped.capabilities.recipe._worker import worker_protocol as protocol
+from untaped.capabilities.recipe.errors import RecipeError
 from untaped.capabilities.recipe.infrastructure.hook_resolver import UvHookRef
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
@@ -50,7 +51,7 @@ class HookWorkerResponse(BaseModel):
         return self
 
 
-class FatalHookWorkerError(ValueError):
+class FatalHookWorkerError(RecipeError, ValueError):
     """Raised when a worker process cannot safely be reused."""
 
 
@@ -61,20 +62,6 @@ class HookWorkerCallResult:
     result: object
     diagnostics: str
     warnings: tuple[str, ...] = ()
-
-
-class HookWorkerClient(Protocol):
-    """Request/response transport for external hook execution."""
-
-    def request(
-        self,
-        ref: UvHookRef,
-        payload: dict[str, object],
-        *,
-        diagnostic_limit: int | None = APPLY_DIAGNOSTIC_LIMIT,
-        settle_seconds: float = 0,
-    ) -> HookWorkerCallResult:
-        """Send one hook request and return the validated result plus diagnostics."""
 
 
 class UvHookWorkerPool:
