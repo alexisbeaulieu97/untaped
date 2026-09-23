@@ -203,6 +203,21 @@ def test_forget_with_prune_deletes_workspace_dir(tmp_path: Path) -> None:
     assert not target.exists()
 
 
+def test_forget_prune_keeps_loose_files_and_warns(tmp_path: Path) -> None:
+    runner = CliInvoker()
+    target = tmp_path / "ws"
+    runner.invoke(app, ["init", "scratch", "--path", str(target)])
+    (target / "notes.md").write_text("mine")
+
+    forget = runner.invoke(app, ["forget", "scratch", "--prune", "--yes"])
+
+    assert forget.exit_code == 0, forget.output
+    assert (target / "notes.md").read_text() == "mine"
+    assert not (target / "untaped.yml").exists()
+    assert "warning: left" in forget.stderr
+    assert "notes.md" in forget.stderr
+
+
 def test_forget_prune_decline_exits_zero_without_mutation(tmp_path: Path) -> None:
     runner = CliInvoker()
     target = tmp_path / "ws"
@@ -217,6 +232,7 @@ def test_forget_prune_decline_exits_zero_without_mutation(tmp_path: Path) -> Non
     )
     assert forget.exit_code == 0, forget.output
     assert backend.calls == [("confirm", "Continue?")]
+    assert str(target.resolve()) in forget.output  # preview names the directory
     assert "aborted" not in forget.output
     assert target.is_dir()  # files preserved
     listed = runner.invoke(app, ["list", "--format", "raw", "--columns", "name"])
