@@ -16,7 +16,7 @@ requirement = "cyclopts>=4.16.0,<5"
 [[dep]]
 name = "filelock"
 owner = "workspace"
-reason = "atomic config-file writes via kernel config_file FileLock"
+reason = "atomic config-file writes via kernel config_file FileLock; github corpus per-repo locks"
 requirement = "filelock>=3.29.7,<4"
 
 [[dep]]

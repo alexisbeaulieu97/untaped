@@ -6,18 +6,31 @@ command is a one-line composition-root call.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from untaped.capabilities.github.domain.errors import is_auth_failure
 from untaped.capabilities.github.settings import GithubSettings
-from untaped.capability_api import ConfigError, UntapedError, app_context, hint
+from untaped.capability_api import (
+    ConfigError,
+    UntapedError,
+    app_context,
+    git_auth_header,
+    hint,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from untaped.capabilities.github.infrastructure import GithubClient
     from untaped.capability_api import UiContext
+
+
+def corpus_auth_header(settings: GithubSettings) -> Callable[[], str | None]:
+    """Return the Git auth-header supplier for corpus fetches (None without a token)."""
+    token = settings.token.get_secret_value().strip() if settings.token is not None else ""
+    return lambda: git_auth_header(token) if token else None
 
 
 @contextmanager

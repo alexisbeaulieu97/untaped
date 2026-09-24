@@ -8,7 +8,10 @@ from untaped.capabilities.github.domain.corpus import (
     CorpusFreshness,
     CorpusRepoTarget,
     GrepHit,
+    GrepSpec,
+    LocalRef,
     covers,
+    unchanged_upstream,
 )
 from untaped.capabilities.github.domain.models import (
     BatchRepoRefsFailure,
@@ -16,6 +19,7 @@ from untaped.capabilities.github.domain.models import (
     CodeHitResult,
     CodeResult,
     CorpusRepoResult,
+    CorpusSyncOutcome,
     GithubUser,
     IssueResult,
     RepoListResult,
@@ -54,10 +58,13 @@ __all__ = [
     "CorpusFreshness",
     "CorpusRepoResult",
     "CorpusRepoTarget",
+    "CorpusSyncOutcome",
     "GithubUser",
     "GrepHit",
+    "GrepSpec",
     "IssueResult",
     "IssueSearchFilters",
+    "LocalRef",
     "RefEvaluation",
     "RefProfile",
     "RefSelector",
@@ -76,4 +83,5 @@ __all__ = [
     "profile_join",
     "ref_display_names",
     "ref_matches",
+    "unchanged_upstream",
 ]
