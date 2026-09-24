@@ -17,15 +17,7 @@ if TYPE_CHECKING:
 
 @contextmanager
 def open_client() -> Iterator[tuple[JiraClient, UiContext]]:
-    """Build a context-managed Jira client and themed UI from active settings.
-
-    The single tool context yields both the client and the themed
-    :class:`UiContext` so commands can report progress without resolving
-    settings twice. The UI is built with ``strict=False`` so a misconfigured
-    theme degrades to the default theme rather than failing an otherwise-valid
-    command on the data path (e.g. ``--format raw``).
-    """
-
+    """Yield a Jira client and a UI whose unknown theme falls back to the default."""
     from untaped.capabilities.jira.infrastructure import JiraClient  # noqa: PLC0415
 
     ctx = app_context()
