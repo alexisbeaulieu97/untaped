@@ -147,8 +147,9 @@ then the schema default.
 
 ## Profiles
 
-`--profile` is a root option and is position-independent. It applies to the
-root management commands and to a capability invocation for one process:
+`--profile` is a root option: put it right after `untaped` or at the end of the
+command. It applies to the root management commands and to a capability
+invocation for one process:
 
 ```bash
 untaped profile list
@@ -322,6 +323,9 @@ explicit opt-in.
 
 ## See also
 
+- [Configuration reference](./reference/config.md) — every setting, default and
+  environment variable.
+- [Environment variables](./reference/environment.md).
 - [Agent skills](./skills.md) — root skill discovery and installation.
 - [Capability authoring](./plugins.md) — building an external capability for
   the unified executable.

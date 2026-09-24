@@ -302,6 +302,93 @@ without making an unsupported request. A polymorphic launch response with no
 trusted kind fails rather than guessing an endpoint; a known submitted ID is
 retained in the failed result.
 
+## Inspect jobs
+
+```bash
+untaped awx jobs list --status failed --limit 10
+untaped awx jobs get 101 102 --format yaml
+untaped awx jobs logs 101 --tail 50 --follow
+untaped awx jobs logs 101 --grep 'fatal:' -i
+untaped awx jobs events 101 --filter event=runner_on_failed
+untaped awx jobs wait 101 --timeout 600
+```
+
+`logs` prints the job's stdout; `events` prints the structured per-task
+events. Both take `--follow` to tail a running job. Chain a launch into a
+wait or log tail through the pipe:
+
+```bash
+untaped awx job-templates launch Deploy --format pipe \
+  | untaped awx jobs logs --stdin --follow
+```
+
+## Memberships
+
+Credentials on a job template, hosts and child groups in a group, and input
+inventories and instance groups on an inventory are managed with `add` and
+`remove`. Both are idempotent and preview before they write.
+
+```bash
+untaped awx job-templates credentials add Deploy "Vault prod" --organization Default
+untaped awx groups hosts add web web-01 web-02 --inventory Production
+untaped awx hosts list --inventory Production --search web --format pipe \
+  | untaped awx groups hosts add web --inventory Production --stdin
+untaped awx inventories input-inventories remove Constructed Legacy --dry-run
+```
+
+## Find where a template is used
+
+```bash
+untaped awx job-templates usage Deploy --recursive
+untaped awx workflow-templates nodes "Release train" --recursive --type job_template
+untaped awx unified-templates list --type workflow_job_template
+```
+
+`usage` lists the workflow templates that contain a template (`--recursive`
+walks up to the top-level workflows). `nodes` lists what a workflow contains
+(`--recursive` expands nested workflows). `unified-templates` is AWX's view
+of every launchable kind.
+
+## Test suites
+
+`awx test` launches a job template with a matrix of parameters and reports
+one pass or fail per case. A test file is YAML. An optional `---`-delimited
+header declares variables; the body is a Jinja2 template rendered with them:
+
+```yaml
+---
+variables:
+  env: {type: choice, choices: [staging, prod], default: staging}
+---
+kind: AwxTestSuite
+name: deploy-smoke
+jobTemplate: Deploy app
+defaults:
+  launch:
+    extra_vars: {dry_run: true}
+cases:
+  web:
+    launch:
+      limit: "web-{{ env }}"
+  db:
+    launch:
+      limit: "db-{{ env }}"
+      inventory: !ref {kind: Inventory, name: "{{ env }} inventory"}
+```
+
+```bash
+untaped awx test validate tests/awx/
+untaped awx test list tests/awx/deploy-smoke.yml --var env=prod
+untaped awx test run tests/awx/ --var env=prod --parallel 4 --show-logs
+untaped awx test run tests/awx/deploy-smoke.yml --case web --non-interactive
+```
+
+- `launch` holds the AWX launch payload fields. `!ref {kind, name}` resolves a
+  resource name to its ID.
+- A variable without a default is required: pass `--var`, `--vars-file`, or
+  answer the prompt. `--non-interactive` fails instead of prompting.
+- `run` exits 1 unless at least one case ran and every case passed.
+
 ## Confirmations, failures, and integrity
 
 `patch`, `edit`, `apply`, and `delete` show one complete redacted preview and
@@ -353,9 +440,9 @@ until 7.0:
 
 ## Optional disposable live-AAP smoke
 
-The automated suite uses a strict HTTP fake. If you explicitly choose a
-disposable inventory and harmless source on a configured controller, run a
-smoke test like this and restore the exported files afterward:
+To try the write path safely, pick a disposable inventory and a harmless
+source on a configured controller, run a smoke test like this, and restore the
+exported files afterward:
 
 ```bash
 untaped awx ping
@@ -385,3 +472,10 @@ untaped awx inventories apply disposable-inventory.yml --yes
 Confirm that the cache timeout changed, `update_on_launch` stayed unchanged,
 the no-op editor made no write, and the sync reached the expected terminal
 state. These steps are opt-in live writes against a disposable controller.
+
+## See also
+
+- [Getting started](../getting-started.md)
+- [Pipes and record kinds](../reference/pipes.md)
+- [Configuration reference](../reference/config.md#awx)
+- [Exit codes](../reference/exit-codes.md)
