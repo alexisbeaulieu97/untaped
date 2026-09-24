@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from datetime import UTC, datetime
+from typing import Annotated, Literal
 
-from cyclopts import Parameter
+from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.application import (
     RepositoryInventoryItem,
     RepositoryInventoryScope,
 )
-from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli._client import corpus_auth_header, open_client
+from untaped.capabilities.github.cli.scopes import (
+    OrgOption,
+    TeamOption,
+    parse_team_scopes,
+    read_stdin_repos,
+)
 from untaped.capabilities.github.domain import CorpusRepoResult
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
@@ -18,16 +25,20 @@ from untaped.capability_api import (
     DryRunOption,
     FormatOption,
     OutputFormat,
+    ParallelOption,
+    StdinOption,
     UsageError,
     YesOption,
     app_context,
     batch_apply,
+    clamp_parallel,
     create_app,
     echo,
     emit,
     finish,
     plural,
     report_errors,
+    summary,
 )
 
 RepoOption = Annotated[
@@ -73,14 +84,119 @@ def status_command(
     with report_errors():
         settings = app_context().section("github", GithubSettings)
         rows = StatusCorpus(GitCorpusCache())(root=settings.corpus_path)
+        records = [row.model_dump() for row in rows]
         emit(
-            [row.model_dump() for row in rows],
+            _status_display(records) if fmt == "table" and not columns else records,
             fmt=fmt,
             columns=columns,
             kind="github.corpus_repo",
             empty="No repositories are cached in the local corpus.",
         )
         _status_summary(rows)
+
+
+@app.command(name="sync")
+def sync_command(
+    *,
+    org: OrgOption = None,
+    team: TeamOption = None,
+    repo: RepoOption = None,
+    stdin: StdinOption = False,
+    archived: Annotated[
+        bool, Parameter(name="--archived", negative="", help="Include archived repositories.")
+    ] = False,
+    refs: Annotated[
+        Literal["default", "branches", "tags", "all"],
+        Parameter(name="--refs", help="Ref profile to fetch."),
+    ] = "default",
+    ref: Annotated[
+        list[str] | None,
+        Parameter(
+            name="--ref",
+            help="Additional ref glob to fetch. Repeatable.",
+            consume_multiple=False,
+            negative="",
+        ),
+    ] = None,
+    refresh: Annotated[
+        bool,
+        Parameter(
+            name="--refresh",
+            negative="",
+            help=(
+                "Fetch every repo. Default: fetch copies older than "
+                "github.sweep.max_age_seconds that GitHub reports as pushed since."
+            ),
+        ),
+    ] = False,
+    depth: Annotated[
+        int,
+        Parameter(
+            name="--depth", validator=validators.Number(gte=0), help="Git fetch depth; 0 is full."
+        ),
+    ] = 1,
+    parallel: Annotated[
+        ParallelOption,
+        Parameter(help="Parallel Git workers (capped at 32; default from github.sweep settings)."),
+    ]
+    | None = None,
+    fmt: FormatOption = "table",
+    columns: ColumnsOption = None,
+) -> None:
+    """Fetch repositories into the local corpus without a query, so later sweeps start warm."""
+    from untaped.capabilities.github.application import (  # noqa: PLC0415
+        CorpusSyncOptions,
+        ResolveRepositoryInventory,
+        SyncCorpus,
+    )
+    from untaped.capabilities.github.domain import RefSelector  # noqa: PLC0415
+    from untaped.capabilities.github.infrastructure import GitCorpusCache  # noqa: PLC0415
+
+    with report_errors():
+        settings = app_context().section("github", GithubSettings)
+        stdin_repos, stdin_items = read_stdin_repos() if stdin else ((), ())
+        orgs = tuple(org or ())
+        teams = parse_team_scopes(team, orgs=orgs)
+        repos = tuple(repo or ())
+        if not (orgs or teams or repos or stdin_repos or stdin_items):
+            raise UsageError("cache sync requires --org, --team, --repo, or --stdin")
+        options = CorpusSyncOptions(
+            scope=RepositoryInventoryScope(orgs=orgs, teams=teams, repos=repos),
+            stdin_repos=stdin_repos,
+            stdin_items=stdin_items,
+            include_archived=archived,
+            refs=RefSelector(profile=refs, globs=tuple(ref or ())),
+            refresh=refresh,
+            max_age_seconds=settings.sweep.max_age_seconds,
+            depth=depth,
+            parallel=clamp_parallel(
+                parallel if parallel is not None else settings.sweep.sync_concurrency,
+                cap=32,
+                policy="Git corpus worker cap",
+            ),
+        )
+        with open_client() as (client, ui), ui.progress("Syncing repositories…") as progress:
+            outcomes = SyncCorpus(
+                inventory=ResolveRepositoryInventory(client),
+                corpus=GitCorpusCache(),
+                root=settings.corpus_path,
+                auth_header=corpus_auth_header(settings),
+            )(options, progress=progress)
+        emit(
+            [outcome.model_dump(mode="json") for outcome in outcomes],
+            fmt=fmt,
+            columns=columns,
+            kind="github.sync_outcome",
+            empty="No repositories in scope.",
+        )
+        for outcome in outcomes:
+            if outcome.failed:
+                ui.message("error", f"{outcome.repo}: {outcome.error}")
+        counts: dict[str, int] = {}
+        for outcome in outcomes:
+            counts[outcome.action] = counts.get(outcome.action, 0) + 1
+        echo(summary("sync", counts), err=True)
+        finish(any(outcome.failed for outcome in outcomes))
 
 
 @app.command(name="delete")
@@ -267,16 +383,60 @@ def worktree_command(
 
 
 def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:
-    total = sum(row.disk_bytes for row in rows)
-    dates = sorted(row.fetched_at for row in rows if row.fetched_at)
-    if dates:
-        echo(
-            f"Cache: {plural(len(rows), 'repo')}, {total} bytes, "
-            f"oldest {dates[0]}, newest {dates[-1]}",
-            err=True,
-        )
-    else:
-        echo(f"Cache: {plural(len(rows), 'repo')}, {total} bytes, oldest n/a, newest n/a", err=True)
+    total = _human_size(sum(row.disk_bytes for row in rows))
+    ages = sorted(age for row in rows if (age := _parse_time(row.fetched_at)) is not None)
+    oldest = _relative_age(ages[0]) if ages else "n/a"
+    newest = _relative_age(ages[-1]) if ages else "n/a"
+    echo(f"Cache: {plural(len(rows), 'repo')}, {total}, oldest {oldest}, newest {newest}", err=True)
+
+
+def _status_display(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Table rows with a readable size and fetch age; other formats keep raw values."""
+    return [
+        {
+            "repo": record["repo"],
+            "ref": record["ref"],
+            "profile": record["profile"],
+            "archived": record["archived"],
+            "size": _human_size(int(str(record["disk_bytes"]))),
+            "fetched": _relative_age(_parse_time(record["fetched_at"])),
+            "path": record["path"],
+        }
+        for record in records
+    ]
+
+
+def _human_size(size: int) -> str:
+    """Render a byte count with binary units: ``512 B``, ``1.5 KiB``, ``2.0 GiB``."""
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            return f"{size} B" if unit == "B" else f"{value:.1f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")
+
+
+def _parse_time(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _relative_age(value: datetime | None, *, now: datetime | None = None) -> str:
+    """Render how long ago ``value`` was: ``just now``, ``5 minutes ago``, ``3 days ago``."""
+    if value is None:
+        return "n/a"
+    seconds = int(((now or datetime.now(UTC)) - value).total_seconds())
+    if seconds < 60:
+        return "just now"
+    for unit, span in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= span:
+            return f"{plural(seconds // span, unit)} ago"
+    raise AssertionError("unreachable")
 
 
 def _require_one_clean_mode(

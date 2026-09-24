@@ -19,6 +19,8 @@ from untaped.capabilities.github.domain import (
     CorpusRepoResult,
     CorpusRepoTarget,
     GrepHit,
+    GrepSpec,
+    LocalRef,
 )
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.settings import get_settings, register_profile_settings
@@ -462,34 +464,30 @@ def test_content_modifiers_reach_validation_and_corpus(
             *,
             root: Path,
             selector: object,
-        ) -> tuple[str, ...]:
-            return ("main",)
+        ) -> tuple[LocalRef, ...]:
+            return (LocalRef(name="refs/heads/main", tree="t1"),)
 
-        def grep_ref(
+        def grep_trees(
             self,
             repo: CorpusRepoTarget,
             *,
             root: Path,
-            ref: str,
-            pattern: str,
-            paths: tuple[str, ...],
-            ignore_case: bool,
-            fixed_strings: bool,
-            word_regexp: bool,
-        ) -> tuple[GrepHit, ...]:
-            self.grep_flags.append((ignore_case, fixed_strings, word_regexp))
-            return (GrepHit(path="README.md", line=1, text=pattern, blob_oid="abc123"),)
+            trees: tuple[str, ...],
+            spec: GrepSpec,
+        ) -> dict[str, tuple[GrepHit, ...]]:
+            self.grep_flags.append((spec.ignore_case, spec.fixed_strings, spec.word_regexp))
+            return {"t1": (GrepHit(path="README.md", line=1, text=spec.pattern),)}
 
         def tree_paths(self, repo: CorpusRepoTarget, *, root: Path, ref: str) -> tuple[str, ...]:
             return ()
 
-        def read_blob(
+        def read_first_blob(
             self,
             repo: CorpusRepoTarget,
             *,
             root: Path,
             ref: str,
-            path: str,
+            paths: tuple[str, ...],
         ) -> str | None:
             return None
 
@@ -651,3 +649,59 @@ def test_every_explicit_repo_failing_resolution_exits_non_zero(
     assert result.exit_code != 0, result.output
     assert "acme/a" in result.stderr
     assert "acme/b" in result.stderr
+
+
+def test_piped_repo_records_are_swept_without_per_repo_lookups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(tmp_path, "api", {"README.md": "needle\n"})
+    other = _source_repo(tmp_path, "web", {"README.md": "needle\n"})
+    listed = json.dumps(
+        {"untaped": "1", "kind": "github.repo", "record": _repo("acme/api", source)}
+    )
+    swept = json.dumps(
+        {"untaped": "1", "kind": "github.sweep_repo", "record": {"full_name": "acme/web"}}
+    )
+
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        api_route = mock.get("/repos/acme/api")
+        web_route = mock.get("/repos/acme/web").mock(
+            return_value=httpx.Response(200, json=_repo("acme/web", other))
+        )
+        result = CliInvoker().invoke(
+            app,
+            ["sweep", "--stdin", "--grep", "needle", "--format", "json"],
+            input=f"{listed}\n{swept}\n",
+        )
+
+    assert result.exit_code == 0, result.output
+    assert not api_route.called
+    assert web_route.call_count == 1
+    assert [row["full_name"] for row in json.loads(result.stdout)] == ["acme/api", "acme/web"]
+
+
+def test_show_files_lists_each_matching_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNTAPED_CONFIG", str(_write_config(tmp_path)))
+    source = _source_repo(
+        tmp_path, "api", {"a.py": "needle()\nneedle()\n", "b.py": "needle\n", "c.py": "none\n"}
+    )
+
+    with respx.mock(base_url="https://api.github.com") as mock:
+        mock.get("/orgs/acme/repos").mock(
+            return_value=httpx.Response(200, json=[_repo("acme/api", source)])
+        )
+        result = CliInvoker().invoke(
+            app,
+            ["sweep", "--org", "acme", "--grep", "needle", "--show", "files", "--format", "pipe"],
+        )
+
+    assert result.exit_code == 0, result.output
+    envelopes = [json.loads(line) for line in result.stdout.splitlines()]
+    assert {envelope["kind"] for envelope in envelopes} == {"github.sweep_file"}
+    assert [envelope["record"] for envelope in envelopes] == [
+        {"full_name": "acme/api", "path": "a.py", "refs": ["main"], "hits": 2},
+        {"full_name": "acme/api", "path": "b.py", "refs": ["main"], "hits": 1},
+    ]

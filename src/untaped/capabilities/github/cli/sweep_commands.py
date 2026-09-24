@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from cyclopts import Parameter, validators
 
 from untaped.capabilities.github.application import RepositoryInventoryScope
-from untaped.capabilities.github.cli._client import open_client
+from untaped.capabilities.github.cli._client import corpus_auth_header, open_client
 from untaped.capabilities.github.cli.scopes import (
-    REPO_KINDS,
     OrgOption,
     TeamOption,
     parse_team_scopes,
+    read_stdin_repos,
 )
 from untaped.capabilities.github.settings import GithubSettings
 from untaped.capability_api import (
@@ -28,9 +28,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
-    git_auth_header,
     plural,
-    read_identifiers,
     report_errors,
 )
 
@@ -162,8 +160,11 @@ def sweep_command(
         ),
     ] = None,
     show: Annotated[
-        Literal["repos", "matches"],
-        Parameter(name="--show", help="Report repo rows or deduped match rows."),
+        Literal["repos", "files", "matches"],
+        Parameter(
+            name="--show",
+            help="Report repo rows, one row per matching file, or deduped match lines.",
+        ),
     ] = "repos",
     owners: Annotated[
         bool,
@@ -196,12 +197,8 @@ def sweep_command(
     with report_errors():
         ctx = app_context()
         settings = ctx.section("github", GithubSettings)
-        stdin_repos = (
-            tuple(read_identifiers([], stdin=True, id_field="full_name", accept_kinds=REPO_KINDS))
-            if stdin
-            else ()
-        )
-        scope = _scope(org=org, team=team, repo=repo, stdin_repos=stdin_repos)
+        stdin_repos, stdin_items = read_stdin_repos() if stdin else ((), ())
+        scope = _scope(org=org, team=team, repo=repo, stdin=bool(stdin_repos or stdin_items))
         query = SweepQuery(
             greps=tuple(grep or ()),
             not_greps=tuple(not_grep or ()),
@@ -235,27 +232,35 @@ def sweep_command(
             depth=depth,
             parallel=workers,
             owners=owners,
+            stdin_items=stdin_items,
         )
 
         if sync_mode == "off":
-            report = Sweep(
-                inventory=lambda _scope: (),
-                corpus=corpus,
-                root=settings.corpus_path,
-                auth_header=lambda: None,
-            )(options)
+            with ctx.ui(strict=False).progress("Sweeping cached repositories…") as progress:
+                report = Sweep(
+                    inventory=lambda _scope: (),
+                    corpus=corpus,
+                    root=settings.corpus_path,
+                    auth_header=lambda: None,
+                )(options, progress=progress)
         else:
-            with open_client() as (client, ui):
-                token = _token(settings)
-                with ui.progress("Sweeping repositories…"):
-                    report = Sweep(
-                        inventory=ResolveRepositoryInventory(client),
-                        corpus=corpus,
-                        root=settings.corpus_path,
-                        auth_header=lambda: git_auth_header(token) if token else None,
-                    )(options)
+            with open_client() as (client, ui), ui.progress("Sweeping repositories…") as progress:
+                report = Sweep(
+                    inventory=ResolveRepositoryInventory(client),
+                    corpus=corpus,
+                    root=settings.corpus_path,
+                    auth_header=corpus_auth_header(settings),
+                )(options, progress=progress)
 
-        if show == "matches":
+        if show == "files":
+            emit(
+                _file_records(report.matches),
+                fmt=fmt,
+                columns=columns,
+                kind="github.sweep_file",
+                empty="No matching files found.",
+            )
+        elif show == "matches":
             rows = _match_records(report.matches)
             emit(
                 rows, fmt=fmt, columns=columns, kind="github.sweep_match", empty="No matches found."
@@ -282,12 +287,12 @@ def _scope(
     org: list[str] | None,
     team: list[str] | None,
     repo: list[str] | None,
-    stdin_repos: tuple[str, ...],
+    stdin: bool,
 ) -> RepositoryInventoryScope:
     orgs = tuple(org or ())
     team_scopes = parse_team_scopes(team, orgs=orgs)
     repos = tuple(repo or ())
-    if not orgs and not team_scopes and not repos and not stdin_repos:
+    if not orgs and not team_scopes and not repos and not stdin:
         raise UsageError("sweep requires --org, --team, --repo, or --stdin")
     return RepositoryInventoryScope(orgs=orgs, teams=team_scopes, repos=repos)
 
@@ -328,12 +333,6 @@ def _path_from_error(paths: tuple[str, ...], error: str) -> str | None:
     return next((path for path in paths if path in error), None)
 
 
-def _token(settings: GithubSettings) -> str:
-    if settings.token is None:
-        return ""
-    return settings.token.get_secret_value().strip()
-
-
 def _repo_records(rows: tuple[RepoSweepOutcome, ...]) -> list[dict[str, object]]:
     return [
         {
@@ -358,6 +357,20 @@ def _match_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
             "text": row.text,
         }
         for row in rows
+    ]
+
+
+def _file_records(rows: tuple[SweepMatch, ...]) -> list[dict[str, object]]:
+    """Collapse match lines to one row per repo and path; ``hits`` counts its lines."""
+    refs: dict[tuple[str, str], dict[str, None]] = {}
+    hits: dict[tuple[str, str], int] = {}
+    for row in rows:
+        key = (row.full_name, row.path)
+        refs.setdefault(key, {}).update(dict.fromkeys(row.refs))
+        hits[key] = hits.get(key, 0) + 1
+    return [
+        {"full_name": key[0], "path": key[1], "refs": list(refs[key]), "hits": hits[key]}
+        for key in refs
     ]
 
 

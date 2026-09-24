@@ -54,8 +54,8 @@ variable shown.
 | `github.base_url` | string | `https://api.github.com` | `UNTAPED_GITHUB__BASE_URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
 | `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. |
 | `github.corpus_path` | path | `~/.untaped/github-corpus` | `UNTAPED_GITHUB__CORPUS_PATH` | Local Git corpus that `github sweep` and `github cache` manage. |
-| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` refreshes cached repos older than this. |
-| `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` Git workers. |
+| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
+| `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
 
 ## `jira`
 
