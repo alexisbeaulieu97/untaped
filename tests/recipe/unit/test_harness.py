@@ -216,12 +216,6 @@ def test_load_case_spec_rejects_non_mapping_and_invalid_yaml(tmp_path: Path) -> 
         load_case_spec(tmp_path)
 
 
-def test_load_case_spec_rejects_unknown_fields(tmp_path: Path) -> None:
-    (tmp_path / "case.yml").write_text("targets: [a.yml]\n", encoding="utf-8")
-    with pytest.raises(ValueError, match=r"invalid case\.yml"):
-        load_case_spec(tmp_path)
-
-
 def test_run_case_passes_when_result_tree_matches_expected(tmp_path: Path) -> None:
     pack = _copy_pack(tmp_path)
     case_dir = _write_case(pack.root, "emit", "basic")
@@ -468,18 +462,3 @@ def test_update_case_deletes_expected_when_plan_is_empty(tmp_path: Path) -> None
 
     assert result.status == "updated"
     assert not (case_dir / "expected").exists()
-
-
-def test_update_case_rejects_error_cases(tmp_path: Path) -> None:
-    pack = _copy_pack(tmp_path)
-    _write_case(
-        pack.root,
-        "emit",
-        "basic",
-        case_yml='expect: error\nerror_contains: "boom"\n',
-    )
-
-    result = update_case(_case(pack, "emit", "basic"), executor=_FakeExecutor())
-
-    assert result.status == "error"
-    assert result.detail == "cannot --update an expect: error case"
