@@ -64,12 +64,14 @@ VERBS = frozenset(
         "wait",
         "validate",
         "test",
+        "cancel",
+        "relaunch",
     }
 )
 MUTATION_VERBS = frozenset(
     {"create", "set", "unset", "add", "remove", "delete", "prune", "patch", "apply"}
 )
-DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune"})
+DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "prune", "cancel"})
 RESERVED_SHORTS = {
     "-f": "--format",
     "-c": "--columns",

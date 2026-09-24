@@ -34,10 +34,13 @@ class PollingJobMonitor:
         *,
         sleep: SleepFn = time.sleep,
         poll_interval: float = 2.0,
+        timeout: float | None = None,
     ) -> None:
         self._client = client
         self._sleep = sleep
         self._interval = poll_interval
+        self._timeout = timeout
+        """Seconds each follow loop polls before giving up; ``None`` waits until terminal."""
 
     def fetch(self, job: Job) -> Job:
         api_path = _api_path_for(job)
@@ -45,7 +48,9 @@ class PollingJobMonitor:
         return Job.model_validate({**record, "kind": job.kind})
 
     def _poll(self, job: Job) -> Iterator[Job]:
-        return poll_until_terminal(job, self.fetch, sleep=self._sleep, interval=self._interval)
+        return poll_until_terminal(
+            job, self.fetch, sleep=self._sleep, interval=self._interval, timeout=self._timeout
+        )
 
     def stream_status(self, job: Job) -> Iterator[Job]:
         """Emit initial status and changes until terminal using only the detail route."""

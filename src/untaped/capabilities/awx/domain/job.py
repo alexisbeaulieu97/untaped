@@ -25,14 +25,24 @@ class JobRoutes:
     collection: str
     events: str | None
     stdout: bool = True
+    relaunch: bool = False
+    """Whether ``<collection>/<id>/relaunch/`` exists."""
+    template_field: str | None = None
+    """The field naming the template (or project/source) that ran it."""
 
 
 JOB_ROUTES: dict[str, JobRoutes] = {
-    "job": JobRoutes("jobs", "job_events"),
-    "workflow_job": JobRoutes("workflow_jobs", None, stdout=False),
-    "project_update": JobRoutes("project_updates", "events"),
-    "inventory_update": JobRoutes("inventory_updates", "events"),
-    "ad_hoc_command": JobRoutes("ad_hoc_commands", "events"),
+    "job": JobRoutes("jobs", "job_events", relaunch=True, template_field="job_template"),
+    "workflow_job": JobRoutes(
+        "workflow_jobs",
+        None,
+        stdout=False,
+        relaunch=True,
+        template_field="workflow_job_template",
+    ),
+    "project_update": JobRoutes("project_updates", "events", template_field="project"),
+    "inventory_update": JobRoutes("inventory_updates", "events", template_field="inventory_source"),
+    "ad_hoc_command": JobRoutes("ad_hoc_commands", "events", relaunch=True),
 }
 KIND_TO_API_PATH: dict[str, str] = {kind: routes.collection for kind, routes in JOB_ROUTES.items()}
 """Derived status collection map shared by readers and waiters."""

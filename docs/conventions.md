@@ -86,7 +86,8 @@ come from a closed set:
 - Write: `create`, `set`, `unset`, `add`, `remove`, `delete`, `prune`, `edit`,
   `patch`, `apply`
 - Update: `sync`, `refresh`
-- Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`
+- Other: `export`, `init`, `run`, `launch`, `wait`, `validate`, `test`,
+  `cancel`, `relaunch`
 
 ## Confirmation and stdin
 
