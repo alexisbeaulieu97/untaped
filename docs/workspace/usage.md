@@ -29,18 +29,14 @@ untaped workspace sync --workspace prod              # clone everything in the m
 untaped workspace status --workspace prod            # per-repo git status
 ```
 
-Profile selection uses the built-in `--profile` option. It works in any
-token position, so it can sit next to the command being run:
+To use another profile's settings (for example its `workspace.workspaces_dir`),
+pass the root `--profile` option right after `untaped` or at the end of the
+command:
 
 ```bash
-untaped workspace init prod --profile work
+untaped --profile work workspace init prod
 untaped workspace sync --workspace prod --profile work
-untaped workspace status --workspace prod --profile work
 ```
-
-The `--profile` option works in any token position, for example
-`untaped workspace --profile work status --workspace prod`. It is the only
-profile selector.
 
 If you `cd` into a workspace directory, the `--workspace` flag becomes
 optional — most commands walk up from the current directory looking
@@ -640,5 +636,6 @@ run, on demand, before reference clones use it.
 
 - [Configuration](../configuration.md) — `untaped config`, profile selection,
   and the YAML schema.
+- [Pipes and record kinds](../reference/pipes.md) and [Exit codes](../reference/exit-codes.md).
 - Run `untaped workspace <command> --help` for the current options and
   `untaped config list --format json` to inspect the active configuration.
