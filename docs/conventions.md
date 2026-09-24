@@ -14,7 +14,8 @@ implements each one. Use the helper instead of writing your own version.
 | 3 | Predicate hit (`--check` drift, `--fail-on-match`, `--strict`) | Call `finish(any_failed, predicate_hit=True)`. |
 | 130 | Interrupted with Ctrl-C, including at a prompt | Handled by the root shell. |
 
-`ExitCode` names these values. A broken pipe exits 0.
+`ExitCode` names these values. Output into a closed pipe (`untaped … | head`)
+exits 0 quietly, for `--help` and data commands alike.
 
 Usage errors include conflicting flags, a value out of range, no selection,
 and "requires `--yes` when not interactive". Problems that depend on

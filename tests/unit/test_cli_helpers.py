@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
@@ -124,6 +126,35 @@ def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatc
     with pytest.raises(SystemExit) as exc:
         run_cyclopts_app(app, [])
     assert exc.value.code == 0
+
+
+def _run_with_closed_stdout(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run ``untaped <argv>`` with stdout a pipe whose reader is already gone."""
+    read_end, write_end = os.pipe()
+    os.close(read_end)
+    try:
+        return subprocess.run(
+            [sys.executable, "-c", "from untaped.bootstrap import main; main()", *argv],
+            stdout=write_end,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    finally:
+        os.close(write_end)
+
+
+def test_help_into_closed_pipe_exits_zero_quietly() -> None:
+    """``untaped --help | head`` must not exit 1 through Rich's broken-pipe hook."""
+    proc = _run_with_closed_stdout(["--help"])
+    assert proc.returncode == 0
+    assert proc.stderr == ""
+
+
+def test_data_command_into_closed_pipe_exits_zero_quietly() -> None:
+    proc = _run_with_closed_stdout(["config", "list", "-f", "json"])
+    assert proc.returncode == 0
+    assert proc.stderr == ""
 
 
 # ---- parse_kv_pairs ------------------------------------------------------
