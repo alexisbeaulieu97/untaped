@@ -12,7 +12,7 @@ from cyclopts import App, Group, Parameter, validators
 import untaped.capabilities.ansible.cli.source_commands as source_commands
 from untaped.capabilities.ansible.application import BuildGraph, GraphRequest
 from untaped.capabilities.ansible.application.ports import DependencyIndex
-from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     format_skipped_dependency_file,

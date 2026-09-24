@@ -77,32 +77,6 @@ class SqliteDependencyIndex:
                     scans[key] = ref_scan_from_row(row)
         return scans
 
-    def commit_source_ref_refresh(
-        self,
-        source_key: str,
-        *,
-        scans: tuple[RefScan, ...],
-        touches: tuple[RefScanTouch, ...],
-        keep: set[tuple[str, str, str]],
-        repo_metadata: tuple[SourceRepoMetadata, ...] = (),
-        scanned_at: datetime,
-        failed_repos: frozenset[str] = frozenset(),
-    ) -> None:
-        """Commit a refresh; ``scans`` must be unique per (source_key, source_repo,
-        ref_kind, source_ref) -- duplicates fail (DependencyIndexError) inside the
-        transaction instead of last-wins. Cached refs and repo metadata for
-        ``failed_repos`` are preserved even though they are absent from
-        ``keep``."""
-        with self._db() as db:
-            _replace_ref_scans(db, scans)
-            _touch_ref_scans(db, touches)
-            _prune_source_refs(db, source_key, keep, preserve_repos=failed_repos)
-            _replace_source_repo_metadata(
-                db, source_key, repo_metadata, preserve_repos=failed_repos
-            )
-            _refresh_source_run_from_ref_scans(db, source_key, scanned_at=scanned_at)
-            _delete_orphan_snapshots(db)
-
     def commit_source_ref_partial_refresh(
         self,
         source_key: str,
@@ -607,43 +581,6 @@ def _touch_ref_scans(db: sqlite3.Connection, touches: tuple[RefScanTouch, ...]) 
     )
 
 
-def _replace_source_repo_metadata(
-    db: sqlite3.Connection,
-    source_key: str,
-    metadata: tuple[SourceRepoMetadata, ...],
-    *,
-    preserve_repos: frozenset[str] = frozenset(),
-) -> None:
-    by_repo = {row.source_repo: row for row in metadata if row.source_key == source_key}
-    retained = sorted(set(by_repo) | preserve_repos)
-    if not retained:
-        db.execute("delete from source_repo_metadata where source_key = ?", (source_key,))
-        return
-    placeholders = ",".join("?" for _ in retained)
-    db.execute(
-        f"""
-        delete from source_repo_metadata
-        where source_key = ? and source_repo not in ({placeholders})
-        """,
-        (source_key, *retained),
-    )
-    if not by_repo:
-        return
-    db.executemany(
-        """
-        insert into source_repo_metadata(
-            source_key, source_repo, source_repo_key, default_branch
-        ) values (?, ?, ?, ?)
-        on conflict(source_key, source_repo) do update set
-            default_branch = excluded.default_branch
-        """,
-        [
-            (source_key, row.source_repo, repo_key(row.source_repo), row.default_branch)
-            for row in sorted(by_repo.values(), key=lambda item: item.source_repo)
-        ],
-    )
-
-
 def _upsert_source_repo_metadata(
     db: sqlite3.Connection,
     metadata: tuple[SourceRepoMetadata, ...],
@@ -663,36 +600,6 @@ def _upsert_source_repo_metadata(
             for row in sorted(metadata, key=lambda item: (item.source_key, item.source_repo))
         ],
     )
-
-
-def _prune_source_refs(
-    db: sqlite3.Connection,
-    source_key: str,
-    keep: set[tuple[str, str, str]],
-    *,
-    preserve_repos: frozenset[str] = frozenset(),
-) -> None:
-    rows = db.execute(
-        """
-        select source_repo, ref_kind, source_ref
-        from source_ref_scans
-        where source_key = ?
-        """,
-        (source_key,),
-    ).fetchall()
-    stale: list[tuple[str, str, str]] = []
-    for row in rows:
-        key = (str(row["source_repo"]), str(row["ref_kind"]), str(row["source_ref"]))
-        if key not in keep and key[0] not in preserve_repos:
-            stale.append(key)
-    if stale:
-        db.executemany(
-            """
-            delete from source_ref_scans
-            where source_key = ? and source_repo = ? and ref_kind = ? and source_ref = ?
-            """,
-            [(source_key, repo, ref_kind, source_ref) for repo, ref_kind, source_ref in stale],
-        )
 
 
 def _prune_source_refs_for_repos(

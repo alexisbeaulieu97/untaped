@@ -240,9 +240,6 @@ class SlowRefScanIndex:
             with self._lock:
                 self.active_ref_scans -= 1
 
-    def commit_source_ref_refresh(self, source_key: str, **kwargs):
-        return self._wrapped.commit_source_ref_refresh(source_key, **kwargs)
-
     def commit_source_ref_partial_refresh(self, source_key: str, **kwargs):
         return self._wrapped.commit_source_ref_partial_refresh(source_key, **kwargs)
 
@@ -268,9 +265,6 @@ class CountingRefScanIndex:
         refs_tuple = tuple(refs)
         self.ref_scans_calls.append((source_key, source_repo, refs_tuple))
         return self._wrapped.ref_scans(source_key, source_repo, refs_tuple)
-
-    def commit_source_ref_refresh(self, source_key: str, **kwargs):
-        return self._wrapped.commit_source_ref_refresh(source_key, **kwargs)
 
     def commit_source_ref_partial_refresh(self, source_key: str, **kwargs):
         return self._wrapped.commit_source_ref_partial_refresh(source_key, **kwargs)
