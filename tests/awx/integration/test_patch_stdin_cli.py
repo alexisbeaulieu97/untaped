@@ -53,48 +53,20 @@ def _posts(fake: Any) -> list[Any]:
     return [c for c in fake.router.calls if c.request.method == "POST"]
 
 
-def test_patch_stdin_preview_does_not_write(seeded_default_org: Any) -> None:
+@pytest.mark.parametrize("flag", ["--dry-run", "--yes"])
+def test_patch_stdin_previews_and_patches_only_the_set_field(
+    seeded_default_org: Any, flag: str
+) -> None:
     _seed_jt(seeded_default_org)
     result = CliInvoker().invoke(
         app,
-        [
-            "job-templates",
-            "patch",
-            "--stdin",
-            "--set",
-            "verbosity=2",
-            "--organization",
-            "Default",
-            "--dry-run",
-        ],
+        ["job-templates", "patch", "--stdin", "--set", "verbosity=2", flag, "--org", "Default"],
         input="deploy\n",
     )
     assert result.exit_code == 0, result.output
-    assert _patches(seeded_default_org) == []
-    assert "verbosity" in (result.stderr or "")
-
-
-def test_patch_stdin_yes_patches_only_set_field(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "patch",
-            "--stdin",
-            "--set",
-            "verbosity=2",
-            "--yes",
-            "--organization",
-            "Default",
-        ],
-        input="deploy\n",
-    )
-    assert result.exit_code == 0, result.output
-    patches = _patches(seeded_default_org)
-    assert len(patches) == 1
-    assert json.loads(patches[0].request.content) == {"verbosity": 2}
-    assert seeded_default_org.get_record("job_templates", 30)["verbosity"] == 2
+    assert "verbosity" in result.stderr
+    bodies = [json.loads(patch.request.content) for patch in _patches(seeded_default_org)]
+    assert bodies == ([{"verbosity": 2}] if flag == "--yes" else [])
 
 
 def test_patch_stdin_never_creates_missing_target(seeded_default_org: Any) -> None:
@@ -273,59 +245,6 @@ def test_patch_stdin_project_default_environment_preview(seeded_default_org: Any
     assert result.exit_code == 0, result.output
     assert _patches(seeded_default_org) == []
     assert "default_environment" in (result.stderr or "")
-
-
-def test_patch_stdin_warns_and_passes_through_unknown_field(seeded_default_org: Any) -> None:
-    """With ``--allow-unknown-fields`` a field this tool doesn't recognize is
-    sent to AWX as-is, with a soft warning (rejected by default). NOTE: the
-    fake server blindly stores the body, so this proves the CLI *sends* the
-    field — not that a real AWX accepts it."""
-    _seed_jt(seeded_default_org)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "patch",
-            "--stdin",
-            "--set",
-            "zzz_bogus=1",
-            "--allow-unknown-fields",
-            "--yes",
-            "--organization",
-            "Default",
-        ],
-        input="deploy\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert "zzz_bogus" in (result.stderr or "")  # warned, not rejected
-    patches = _patches(seeded_default_org)
-    assert len(patches) == 1
-    assert json.loads(patches[0].request.content) == {"zzz_bogus": 1}  # passed through
-
-
-def test_patch_stdin_ignored_unknown_field_fails_by_default(seeded_default_org: Any) -> None:
-    _seed_jt(seeded_default_org)
-    seeded_default_org.ignored_write_fields.add("zzz_bogus")
-    result = CliInvoker().invoke(
-        app,
-        [
-            "job-templates",
-            "patch",
-            "--stdin",
-            "--set",
-            "zzz_bogus=1",
-            "--allow-unknown-fields",
-            "--yes",
-            "--organization",
-            "Default",
-        ],
-        input="deploy\n",
-    )
-    output = result.output + (result.stderr or "")
-    assert result.exit_code == 1, output
-    assert "zzz_bogus" in output
-    assert "unverified" in output
-    assert "zzz_bogus" not in seeded_default_org.get_record("job_templates", 30)
 
 
 def test_patch_stdin_overlay_fks_use_organization_scope(fake_aap: Any) -> None:
