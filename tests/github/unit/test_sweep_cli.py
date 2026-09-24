@@ -601,6 +601,11 @@ def test_branch_and_tag_with_same_name_are_both_swept(
     assert repos.exit_code == 0, repos.output
     [row] = json.loads(repos.stdout)
     assert row["refs_matched"] == ["heads/x", "tags/x"]
+    # Regression: table-only per-predicate columns must not leak into json
+    # (they produced "unknown column" warnings and null keys).
+    assert set(row) == {"full_name", "clone_url", "refs_matched", "hits", "owners", "synced_at"}
+    assert set(row["hits"]) == {"grep:needle"}
+    assert "unknown column" not in repos.stderr
     assert matches.exit_code == 0, matches.output
     assert sorted((m["refs"], m["text"]) for m in json.loads(matches.stdout)) == [
         (["heads/x"], "needle branch"),
