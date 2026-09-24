@@ -112,7 +112,10 @@ untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run
 
 `links create KEY TYPE OTHER` reads as "KEY *outward phrase* OTHER": the
 example makes OPS-123 block OPS-124. `TYPE` is the link type name (`Blocks`,
-`Relates`, `Duplicate`, ...).
+`Relates`, `Duplicate`, ...). The request sends KEY as `inwardIssue` and
+OTHER as `outwardIssue`, the pairing under which Jira shows the outward phrase
+on KEY. The preview and `--dry-run` print a `reads as:` line; check the
+direction on one pair before linking in bulk.
 
 ## Projects, boards and sprints
 
