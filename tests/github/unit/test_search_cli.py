@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +13,7 @@ import respx
 
 from untaped.bootstrap import build_root_app
 from untaped.capabilities.github.cli import app
-from untaped.capabilities.github.settings import GithubSettings
-from untaped.settings import get_settings, register_profile_settings
+from untaped.settings import get_settings
 from untaped.testing import CliInvoker, CliResult, invoke_cli
 
 API = "https://api.github.com"
@@ -31,14 +30,8 @@ TEAMS = {
 
 
 @pytest.fixture(autouse=True)
-def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    # Invoking the github app directly skips the SDK profile-settings
-    # registration, so mirror it (idempotent for the same model class).
-    register_profile_settings("github", GithubSettings)
+def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write_config(tmp_path, monkeypatch)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def _write_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ui: str = "") -> None:

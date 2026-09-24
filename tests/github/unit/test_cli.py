@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -11,19 +10,7 @@ import pytest
 import respx
 
 from untaped.capabilities.github.cli import app
-from untaped.capabilities.github.settings import GithubSettings
-from untaped.settings import get_settings, register_profile_settings
 from untaped.testing import CliInvoker, CliResult
-
-
-@pytest.fixture(autouse=True)
-def _reset_settings_cache() -> Iterator[None]:
-    # Invoking the github app directly skips the SDK profile-settings
-    # registration, so mirror it (idempotent for the same model class).
-    register_profile_settings("github", GithubSettings)
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
 
 
 def _whoami(
