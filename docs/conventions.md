@@ -144,7 +144,7 @@ come from a closed set:
 | `test_help_tree.py` | Verbs, flags and help text |
 | `test_message_lint.py` | stderr wording |
 | `test_structure.py` | `errors.py`, exception names, ports, config sections, private test imports |
-| `test_layering.py` | Import direction inside a capability |
+| `test_layering.py` | Import direction inside a capability; only `cli` resolves settings |
 
 Existing violations are listed in
 `tests/conventions/baselines/<check>/<owner>.txt`. A new violation fails the

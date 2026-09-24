@@ -8,7 +8,10 @@ exempt) that crosses a layer the wrong way is flagged as
 - ``domain`` imports nothing from ``application``, ``infrastructure`` or ``cli``;
 - ``application`` imports nothing from ``infrastructure`` or ``cli``;
 - ``infrastructure`` imports nothing from ``cli`` and ``application`` only
-  under ``TYPE_CHECKING`` (adapters satisfy ports structurally).
+  under ``TYPE_CHECKING`` (adapters satisfy ports structurally);
+- none of them resolves settings (``app_context``, ``get_config_section``,
+  ``get_core_settings``): only ``cli`` does, as the composition root
+  (flagged as ``<file>::settings::<layer> -> <name>``).
 
 Imports between capabilities are covered by
 ``tests/unit/test_capabilities/test_capability_imports.py``. Existing
@@ -30,6 +33,8 @@ FORBIDDEN = {
     "application": ("infrastructure", "cli"),
     "infrastructure": ("cli", "application"),
 }
+# Only ``cli/`` resolves settings; lower layers receive narrowed models.
+SETTINGS_READERS = frozenset({"app_context", "get_config_section", "get_core_settings"})
 
 
 def _is_type_checking(test: ast.expr) -> bool:
@@ -75,6 +80,10 @@ def _violations(capability: str) -> Iterator[str]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
             package = _package(path)
             for node in _runtime_imports(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "untaped.capability_api":
+                    for alias in node.names:
+                        if alias.name in SETTINGS_READERS:
+                            yield f"{rel}::settings::{layer} -> {alias.name}"
                 for target in _targets(node, package):
                     for other in forbidden:
                         banned = f"{prefix}.{other}"
