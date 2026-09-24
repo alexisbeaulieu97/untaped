@@ -81,6 +81,8 @@ def test_parse_meta_main_dependencies_from_simple_and_complex_entries() -> None:
         ("meta/main.yml", "- common\n", "expected mapping at top level"),
         ("requirements.yml", "42\n", "expected mapping or list at top level"),
         ("meta/main.yml", "dependencies:\n  common: {}\n", "expected list at dependencies"),
+        # blank, non-mapping and name-less entries are skipped silently
+        ("requirements.yml", "- ''\n- [nested]\n- {version: v1}\n", None),
     ],
 )
 def test_files_without_dependencies_warn_only_when_malformed(
