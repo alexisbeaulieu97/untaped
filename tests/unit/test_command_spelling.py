@@ -55,7 +55,7 @@ def test_deprecated_command_alias_is_rewritten_with_a_warning(
     root, _ = _toy_root()
 
     assert canonical_command_tokens(root, ["jira", "me"]) == ["jira", "whoami"]
-    assert "warning: `me` is deprecated and will be removed in 7.0; use `whoami`" in (
+    assert "warning: `me` is deprecated and will be removed in 8.0; use `whoami`" in (
         capsys.readouterr().err
     )
     assert "me" not in list(root["jira"])  # hidden: never listed in help

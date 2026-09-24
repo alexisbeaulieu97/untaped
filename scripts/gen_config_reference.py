@@ -32,7 +32,7 @@ OUTPUT = REPO_ROOT / "docs" / "reference" / "config.md"
 
 #: Descriptions for settings whose model field has no ``description``.
 DESCRIPTIONS: dict[str, str] = {
-    "log_level": "Deprecated and ignored (removed in 7.0); `untaped doctor` warns when set.",
+    "log_level": "Deprecated and ignored (removed in 8.0); `untaped doctor` warns when set.",
     "http.ca_bundle": "PEM file of extra CA certificates to trust instead of the OS trust store.",
     "http.verify_ssl": "Verify TLS certificates. `false` disables all certificate checks.",
     "http.verify_hostname": "Check the certificate host name. `false` keeps chain validation.",

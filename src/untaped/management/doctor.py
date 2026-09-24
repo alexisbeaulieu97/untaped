@@ -64,7 +64,7 @@ _PASS = "pass"
 _FAIL = "fail"
 _WARN = "warn"
 _LOG_LEVEL_DEPRECATED = (
-    "log_level is deprecated and has no effect (removed in 7.0); "
+    "log_level is deprecated and has no effect (removed in 8.0); "
     "run `untaped config unset log_level` or drop UNTAPED_LOG_LEVEL"
 )
 

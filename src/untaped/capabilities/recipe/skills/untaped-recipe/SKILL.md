@@ -249,4 +249,4 @@ no control flow in recipes, and no state or inventory.
 - Run `untaped skills install --all` (or `untaped skills install untaped-recipe`)
   to install this packaged skill.
 - Old spellings (`check`, `show`, `new`, `backup show`, `apply --vars`) still
-  work with a deprecation warning until 7.0.
+  work with a deprecation warning until 8.0.

@@ -75,7 +75,7 @@ deprecated alias until the next major release:
 `deprecated_alias(parent_app, "me", "whoami")` for a command or group, and
 `deprecated_alias(command_app, "--repo-stdin", "--stdin")` for a flag. The
 root shell rewrites the old token and prints
-``warning: `me` is deprecated and will be removed in 7.0; use `whoami` ``.
+``warning: `me` is deprecated and will be removed in 8.0; use `whoami` ``.
 The old spelling never appears in `--help`. Aliases apply through the
 `untaped` root, so test them with `build_root_app()`.
 
