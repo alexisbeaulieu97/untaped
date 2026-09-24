@@ -95,9 +95,10 @@ come from a closed set:
   assume_yes=yes)`. It previews, then confirms. On a decline it sets
   `outcome.cancelled`, and `finish(outcome)` prints the decline line and
   exits 1.
-- Single confirmations use `ui.confirm_action(message, assume_yes=yes,
-  refusal="<verb> requires --yes when not interactive")`, or
-  `with ui.terminal(refusal=...)` around a custom preview and prompt.
+- Single confirmations use `ui.confirm_or_cancel(message, assume_yes=yes,
+  refusal="<verb> requires --yes when not interactive", preview=...)`, which
+  raises `OperationCancelledError` on a decline (`ui.confirm_action` returns
+  the answer instead).
 - When stdin carries piped data, prompts read from the controlling terminal
   (`/dev/tty`). If there is no terminal, the command exits 2 and names
   `--yes`.

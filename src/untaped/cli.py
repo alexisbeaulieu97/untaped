@@ -10,9 +10,9 @@ import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Annotated, Any, Literal, NoReturn
+from typing import Annotated, Any, NoReturn
 
-from cyclopts import App, Parameter
+from cyclopts import App, Parameter, ResultAction
 from cyclopts.exceptions import CycloptsError
 from cyclopts.validators import Number
 from pydantic import BaseModel
@@ -325,25 +325,7 @@ def run_cyclopts_app(
     *,
     console: Console | None = None,
     error_console: Console | None = None,
-    result_action: Literal[
-        "return_value",
-        "call_if_callable",
-        "print_non_int_return_int_as_exit_code",
-        "print_str_return_int_as_exit_code",
-        "print_str_return_zero",
-        "print_non_none_return_int_as_exit_code",
-        "print_non_none_return_zero",
-        "return_int_as_exit_code_else_zero",
-        "print_non_int_sys_exit",
-        "sys_exit",
-        "return_none",
-        "return_zero",
-        "print_return_zero",
-        "sys_exit_zero",
-        "print_sys_exit_zero",
-    ]
-    | Callable[[Any], Any]
-    | None = None,
+    result_action: ResultAction | None = None,
 ) -> object:
     """Run a Cyclopts app while preserving untaped's usage-error contract.
 
@@ -441,16 +423,14 @@ def parse_kv_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, str]
     Splits on the first ``=`` so values containing ``=`` survive intact.
     Malformed entries are rejected up front rather than passed through.
     """
-    if not values:
-        return {}
-    out: dict[str, str] = {}
-    for entry in values:
-        key, sep, value = entry.partition("=")
-        key = key.strip()
-        if not sep or not key:
-            raise_usage(f"{flag} expects KEY=VALUE (got {entry!r})")
-        out[key] = value
-    return out
+    return dict(_split_pair(entry, flag=flag, shape="KEY=VALUE") for entry in values or ())
+
+
+def _split_pair(entry: str, *, flag: str, shape: str) -> tuple[str, str]:
+    key, sep, value = entry.partition("=")
+    if not sep or not key.strip():
+        raise_usage(f"{flag} expects {shape} (got {entry!r})")
+    return key.strip(), value
 
 
 def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, Any]:
@@ -460,14 +440,9 @@ def parse_json_pairs(values: Iterable[str] | None, *, flag: str) -> dict[str, An
     first ``=`` must be valid JSON (``labels=["a"]``, ``count=3``,
     ``name="x"``). Malformed entries are usage errors.
     """
-    if not values:
-        return {}
     out: dict[str, Any] = {}
-    for entry in values:
-        key, sep, raw = entry.partition("=")
-        key = key.strip()
-        if not sep or not key:
-            raise_usage(f"{flag} expects KEY=JSON (got {entry!r})")
+    for entry in values or ():
+        key, raw = _split_pair(entry, flag=flag, shape="KEY=JSON")
         try:
             out[key] = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -502,28 +477,13 @@ def resolve_each[R](ids: list[str], fn: Callable[[str], R]) -> tuple[list[R], bo
 def clamp_parallel(requested: int, *, cap: int, policy: str) -> int:
     """Cap ``--parallel`` at ``cap`` with a uniform stderr warning.
 
-    Shared by every Cyclopts command that exposes ``-j / --parallel``
-    (workspace sync, workspace foreach, awx apply, ...) so the
-    cap-with-warning shape is one helper, not one per call site.
-    Friendly clamp rather than ``BadParameter`` so shell idioms like
-    ``-j $(nproc)`` keep composing on hosts where ``nproc`` already
-    exceeds the cap.
-
-    Only handles the upper bound. ``< 1`` policy stays per-caller
-    (workspace foreach silently coerces; sync and awx apply reject) — the lower
-    bound isn't a typo-vs-typo judgement, it's per-command UX.
-
-    ``policy`` is a short human-readable rationale (e.g.
-    ``"2 * os.cpu_count()"`` or ``"HTTP connection pool default"``)
-    appended in parens so users know *why* their value was capped
-    without grepping source.
+    A friendly clamp rather than a usage error, so ``-j $(nproc)`` keeps
+    working; ``policy`` is the short rationale shown in parentheses
+    (``"2 * os.cpu_count()"``). ``ParallelOption`` already enforces ``>= 1``.
     """
     if requested <= cap:
         return requested
-    echo(
-        f"warning: --parallel {requested} clamped to {cap} ({policy})",
-        err=True,
-    )
+    echo(f"warning: --parallel {requested} clamped to {cap} ({policy})", err=True)
     return cap
 
 
