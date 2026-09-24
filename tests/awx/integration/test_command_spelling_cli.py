@@ -49,7 +49,7 @@ def test_old_spelling_warns_and_resolves_to_the_new_one(
     result = invoke_cli(build_root_app(externals=[]), [*old, "--help"])
 
     assert result.exit_code == 0, result.output
-    assert f"is deprecated and will be removed in 7.0; use {new}" in result.stderr
+    assert f"is deprecated and will be removed in 8.0; use {new}" in result.stderr
     assert f"Usage: {usage}" in result.stdout
 
 

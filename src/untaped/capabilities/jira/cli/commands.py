@@ -763,7 +763,7 @@ app.command(projects_app, name="projects")
 app.command(boards_app, name="boards")
 app.command(sprints_app, name="sprints")
 
-# Old spellings stay as hidden, warning aliases until 7.0.
+# Old spellings stay as hidden, warning aliases until 8.0.
 deprecated_alias(app, "me", "whoami")
 deprecated_alias(app, "issue", "issues")
 deprecated_alias(app, "project", "projects")
