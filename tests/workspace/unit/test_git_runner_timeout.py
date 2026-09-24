@@ -92,7 +92,6 @@ def test_ensure_bare_uses_slow_timeout_on_clone(
 _FAST_OPS: list[tuple[str, Callable[[GitRunner, Path], object]]] = [
     ("status", lambda r, p: r.status(p)),
     ("prune_blockers", lambda r, p: r.prune_blockers(p)),
-    ("default_branch", lambda r, p: r.default_branch(p)),
     ("read_remote_url", lambda r, p: r.read_remote_url(p)),
     ("read_current_branch", lambda r, p: r.read_current_branch(p)),
     ("ff_only_pull", lambda r, p: r.ff_only_pull(p, branch="main")),

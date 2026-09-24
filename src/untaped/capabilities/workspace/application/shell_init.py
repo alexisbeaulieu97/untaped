@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from untaped.capabilities.workspace.errors import WorkspaceError
-
-Shell = Literal["zsh", "bash", "fish"]
 
 _POSIX = """\
 uwcd() {
