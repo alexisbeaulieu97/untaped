@@ -71,9 +71,10 @@ untaped profile use prod
 untaped profile current
 ```
 
-`--profile NAME` selects a profile for one command; put it right after
-`untaped` or at the end of the command. `profile use` changes the default for
-every later command. `UNTAPED_PROFILE` does the same for one shell session.
+`--profile NAME` selects a profile for one command; put it anywhere in the
+command, for example `untaped github --profile work whoami`. `profile use`
+changes the default for every later command. `UNTAPED_PROFILE` does the same
+for one shell session.
 
 ## First command in each capability
 

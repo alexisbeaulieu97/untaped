@@ -11,7 +11,7 @@ These are all the environment variables `untaped` reads or sets.
 | `UNTAPED_PROFILE` | Active profile for this process. It must name an existing profile. The root `--profile` option takes precedence over it. |
 | `UNTAPED_CONFIG_LOCK_TIMEOUT` | Seconds to wait for the config or state file lock before a write fails. A non-negative number; default `5`. |
 | `UNTAPED_<SECTION>__<FIELD>` | Overrides one profile setting for this process, for example `UNTAPED_GITHUB__TOKEN` or `UNTAPED_HTTP__VERIFY_SSL`. Nested fields add another `__`: `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS`. |
-| `UNTAPED_LOG_LEVEL` | Overrides the root `log_level` setting. |
+| `UNTAPED_LOG_LEVEL` | Overrides the root `log_level` setting, which is deprecated and has no effect. |
 
 A setting's value comes from the first of these that has it: its
 `UNTAPED_*` variable, the active profile, `profiles.default`, the built-in

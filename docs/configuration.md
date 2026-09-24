@@ -140,7 +140,8 @@ UNTAPED_<SECTION>__<FIELD>
 For example, `UNTAPED_GITHUB__TOKEN`, `UNTAPED_AWX__BASE_URL`,
 `UNTAPED_HTTP__VERIFY_SSL`, and `UNTAPED_UI__THEME` override one process's
 resolved values. The root scalar `log_level` is addressed as `log_level` and
-can be overridden with `UNTAPED_LOG_LEVEL`; capability fields still require
+can be overridden with `UNTAPED_LOG_LEVEL`. It is deprecated and has no
+effect; `untaped doctor` warns when it is set. Capability fields still require
 their fully qualified section key. For a setting value, precedence is the
 environment override, the selected active profile, `profiles.default`, and
 then the schema default.
@@ -149,7 +150,10 @@ then the schema default.
 
 `--profile` is a root option and is position-independent: it can go before the
 capability, between command names (`untaped github --profile work whoami`), or
-after the command. The same holds for `--verbose`/`-v` and `--quiet`/`-q`. It
+after the command. The same holds for `--verbose`/`-v` and `--quiet`/`-q`.
+Tokens after `--` belong to the command and are never read as root options,
+so `untaped workspace foreach -- "tool --profile x"` passes `--profile x`
+through. It
 applies to the root management commands and to a capability invocation for one
 process:
 
@@ -218,7 +222,6 @@ untaped config unset awx.token --target-profile prod
 untaped config set http.timeout 60 --dry-run --format json
 untaped config set ui.theme quiet
 untaped config set http.verify_ssl false
-untaped config set log_level DEBUG
 untaped config set ui.symbols '{"ok": "✓", "fail": "✗"}'
 untaped config edit
 ```
@@ -283,8 +286,9 @@ broken section to hide the rest:
   mapping root);
 - `profile` — the selected profile (`--profile`, `UNTAPED_PROFILE`, or
   `active:`) exists;
-- `settings` for the shell — one row each for `log_level`, `http` (including a
-  readable `http.ca_bundle`), and `ui` (including a known `ui.theme`);
+- `settings` for the shell — one row each for `log_level` (a warning when the
+  deprecated setting is set), `http` (including a readable `http.ca_bundle`),
+  and `ui` (including a known `ui.theme`);
 - `settings` per capability — the capability's profile section;
 - `state` per capability with a state model — its section in `state.yml` (or
   the legacy copy in `config.yml`), naming the file on failure;
