@@ -14,7 +14,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, create_model
@@ -42,6 +42,12 @@ class HttpSettings(BaseModel):
     verify_hostname: bool = True
     timeout: float = Field(default=30.0, gt=0)
     proxy: str | None = None
+
+
+class SkillsSettings(BaseModel):
+    """What every run does about installed agent skills that are out of date (per-profile)."""
+
+    updates: Literal["warn", "auto", "off"] = "warn"
 
 
 #: Built-in top-level *state* sections (tool-managed runtime data spliced in
@@ -134,6 +140,7 @@ class Settings(_SettingsSources):
     """Deprecated and ignored; ``untaped doctor`` warns when set. Removed in 8.0."""
     http: HttpSettings = Field(default_factory=HttpSettings)
     ui: UiSettings = Field(default_factory=UiSettings)
+    skills: SkillsSettings = Field(default_factory=SkillsSettings)
 
 
 _PROFILES_LAYOUT = ProfilesSettingsLayout()
@@ -169,7 +176,7 @@ def validate_disjoint_settings_sections(
 def _reject_reserved_section(section: str) -> None:
     """Reject a tool section name that collides with an SDK base field.
 
-    ``log_level``/``http``/``ui`` are base fields on :class:`Settings`;
+    ``log_level``/``http``/``ui``/``skills`` are base fields on :class:`Settings`;
     registering a tool section with one of those names would shadow the SDK
     field in the dynamically built model and break config resolution.
     """

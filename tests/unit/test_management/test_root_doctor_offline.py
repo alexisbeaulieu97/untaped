@@ -95,7 +95,26 @@ def test_outdated_installed_skill_warns(tmp_path: Path) -> None:
     skill.source.joinpath("SKILL.md").write_text("changed\n", encoding="utf-8")
     row = _row(_rows(spec), "skills")
     assert row["status"] == "warn"
-    assert "untaped skills install untaped-demo --force" in row["detail"]
+    assert "update with `untaped skills update`" in row["detail"]
+
+
+def test_skill_no_longer_shipped_warns(tmp_path: Path) -> None:
+    skill = asset(tmp_path, "untaped-gone")
+    install_skills(
+        {skill.name: skill},
+        [skill.name],
+        stdin=False,
+        all_skills=False,
+        target=SkillInstallTarget.codex,
+        force=False,
+        scope=SkillInstallScope.global_,
+        project_dir=None,
+        target_dir=None,
+    )
+    row = _row(_rows(make_spec("demo")), "skills")
+    assert row["status"] == "warn"
+    assert "orphaned:" in row["detail"]
+    assert "untaped skills remove" in row["detail"]
 
 
 @pytest.mark.parametrize(

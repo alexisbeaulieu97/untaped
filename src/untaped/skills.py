@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -176,32 +176,150 @@ _MARKER = ".untaped-skill.json"
 _IGNORED_PARTS = ("__pycache__",)
 
 
-def outdated_skills(
-    skills: Mapping[str, InstallableSkill], *, project_dir: Path | None = None
-) -> list[Path]:
-    """Return installed skill directories whose files differ from the packaged source.
+class SkillState(StrEnum):
+    """How an installed skill compares with the skills this version ships."""
 
-    Looks in the global codex/claude skill roots and, with ``project_dir``,
-    that directory's local roots. Only directories carrying the untaped
-    install marker count; hand-made skills with the same name are ignored.
+    current = "current"
+    outdated = "outdated"
+    orphaned = "orphaned"
+
+
+@dataclass(frozen=True)
+class InstalledSkill:
+    """One untaped-installed skill directory found in a skill root."""
+
+    name: str
+    target: str
+    scope: SkillInstallScope
+    path: Path
+    state: SkillState
+
+
+def project_root(start: Path) -> Path:
+    """Return the nearest ancestor of ``start`` holding ``.git``, else ``start``.
+
+    The same default ``--scope local`` installs use, found without running git
+    so the per-run skills check stays cheap.
     """
+    start = start.resolve()
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
+def skill_roots(*, project_dir: Path | None) -> list[SkillInstallDestination]:
+    """Return the global codex/claude skill roots plus ``project_dir``'s local ones."""
     roots = [
-        _codex_destination(SkillInstallScope.global_, project_root=None).root,
-        _claude_destination(SkillInstallScope.global_, project_root=None).root,
+        _codex_destination(SkillInstallScope.global_, project_root=None),
+        _claude_destination(SkillInstallScope.global_, project_root=None),
     ]
     if project_dir is not None:
         local = SkillInstallScope.local
-        roots.append(_codex_destination(local, project_root=project_dir).root)
-        roots.append(_claude_destination(local, project_root=project_dir).root)
-    stale: list[Path] = []
-    for root in dict.fromkeys(roots):
-        for name, spec in sorted(skills.items()):
-            installed = root / name
-            if not (installed / _MARKER).is_file() or not spec.source.is_dir():
+        roots.append(_codex_destination(local, project_root=project_dir))
+        roots.append(_claude_destination(local, project_root=project_dir))
+    unique: dict[Path, SkillInstallDestination] = {}
+    for root in roots:
+        unique.setdefault(root.root, root)
+    return list(unique.values())
+
+
+def find_installed_skills(
+    skills: Mapping[str, InstallableSkill],
+    roots: Iterable[SkillInstallDestination],
+) -> list[InstalledSkill]:
+    """Return every untaped-installed skill under ``roots`` with its state.
+
+    Only directories carrying the untaped install marker count; hand-made
+    skills are never reported. A marked skill this version no longer ships is
+    ``orphaned``; one whose files differ from the packaged copy is ``outdated``.
+    """
+    found: list[InstalledSkill] = []
+    for root in roots:
+        if not root.root.is_dir():
+            continue
+        for path in sorted(root.root.iterdir()):
+            if not (path / _MARKER).is_file():
                 continue
-            if _tree_bytes(installed) != _tree_bytes(spec.source):
-                stale.append(installed)
-    return stale
+            target, scope = _marker_location(path, root)
+            found.append(
+                InstalledSkill(
+                    name=path.name,
+                    target=target,
+                    scope=scope,
+                    path=path,
+                    state=_skill_state(skills.get(path.name), path),
+                )
+            )
+    return found
+
+
+def outdated_skills(
+    skills: Mapping[str, InstallableSkill], *, project_dir: Path | None = None
+) -> list[InstalledSkill]:
+    """Return installed skills that are outdated or no longer shipped.
+
+    Looks in the global codex/claude skill roots and, with ``project_dir``,
+    that directory's local roots.
+    """
+    return [
+        installed
+        for installed in find_installed_skills(skills, skill_roots(project_dir=project_dir))
+        if installed.state is not SkillState.current
+    ]
+
+
+def update_installed_skill(
+    skills: Mapping[str, InstallableSkill], installed: InstalledSkill
+) -> SkillInstallResult:
+    """Replace ``installed`` in place with the packaged copy of the same skill."""
+    spec = skills.get(installed.name)
+    if spec is None:
+        raise ConfigError(f"skill no longer shipped: {installed.name}")
+    if not spec.source.is_dir():
+        raise ConfigError(f"skill source missing: {installed.name} ({spec.source})")
+    destination = SkillInstallDestination(
+        target=installed.target, scope=installed.scope, root=installed.path.parent
+    )
+    try:
+        return _install_skill(
+            spec, target_destination=destination, destination=installed.path, force=True
+        )
+    except OSError as exc:
+        raise ConfigError(f"could not update {installed.path}: {exc.strerror or exc}") from exc
+
+
+def remove_installed_skill(installed: InstalledSkill) -> None:
+    """Delete one untaped-installed skill directory.
+
+    The directory is moved aside first, so an interrupted removal never leaves
+    a half-deleted skill where the agent would still load it.
+    """
+    if not (installed.path / _MARKER).is_file():
+        raise ConfigError(f"not an untaped-installed skill: {installed.path}")
+    backup = _backup_path(installed.path)
+    try:
+        os.replace(installed.path, backup)
+    except OSError as exc:
+        raise ConfigError(f"could not remove {installed.path}: {exc.strerror or exc}") from exc
+    shutil.rmtree(backup, ignore_errors=True)
+
+
+def _marker_location(path: Path, root: SkillInstallDestination) -> tuple[str, SkillInstallScope]:
+    try:
+        marker = json.loads((path / _MARKER).read_text(encoding="utf-8"))
+        return str(marker["target"]), SkillInstallScope(marker["scope"])
+    except OSError, ValueError, TypeError, KeyError:
+        return root.target, root.scope
+
+
+def _skill_state(spec: InstallableSkill | None, installed: Path) -> SkillState:
+    if spec is None:
+        return SkillState.orphaned
+    # A packaged source that vanished (a broken install) cannot be compared.
+    if spec.source.is_dir() and _tree_bytes(installed) != _tree_bytes(spec.source):
+        return SkillState.outdated
+    return SkillState.current
 
 
 def _tree_bytes(root: Path) -> dict[str, bytes]:
