@@ -374,9 +374,10 @@ def run_cyclopts_app(
         # Pipe broke mid-write (output large enough to flush before we got here).
         _exit_broken_pipe()
     except SystemExit as exc:
-        if isinstance(exc.__context__, BrokenPipeError):
-            # Rich's ``Console.on_broken_pipe`` (help output) exits 1 from
-            # inside its ``except BrokenPipeError``; a closed pipe exits 0.
+        if isinstance(exc.__context__, BrokenPipeError) and _stdout_is_devnull():
+            # Rich's ``Console.on_broken_pipe`` (help output) points stdout at
+            # /dev/null and exits 1 from inside its ``except BrokenPipeError``;
+            # a closed pipe exits 0. Any other exit keeps its code.
             _exit_broken_pipe()
         # cyclopts exits (0 on success) rather than returning. Flush buffered
         # stdout now so a broken pipe surfaces here — catchable — instead of at
@@ -393,6 +394,14 @@ def _flush_stdout() -> None:
         sys.stdout.flush()
     except BrokenPipeError:
         _exit_broken_pipe()
+
+
+def _stdout_is_devnull() -> bool:
+    """Whether stdout's fd was redirected to ``/dev/null`` (Rich's broken-pipe hook)."""
+    try:
+        return os.path.samestat(os.fstat(sys.stdout.fileno()), os.stat(os.devnull))
+    except AttributeError, OSError, ValueError:
+        return False
 
 
 def _exit_broken_pipe() -> NoReturn:

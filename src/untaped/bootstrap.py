@@ -358,6 +358,9 @@ def _install_root_callback(
     # handles both flags after the root options are consumed.
     app.meta.help_flags = ()
     app.meta.version_flags = ()
+    # Keep ``--`` in the forwarded tokens: the meta parse must not consume it,
+    # so the command sees it and root options never match past it.
+    app.meta.end_of_options_delimiter = ""
 
     def _root_callback(*tokens: str, **_unused: object) -> object:
         # Identity is set at dispatch time to the selected capability (or the
@@ -372,6 +375,8 @@ def _install_root_callback(
                 command_tokens = _consume_leading_root_options(
                     list(tokens), root_options, applied_tokens
                 )
+                if command_tokens[:1] == ["--"]:
+                    command_tokens = command_tokens[1:]  # `untaped [opts] -- cmd …`
                 selected = (
                     command_tokens[0]
                     if command_tokens and command_tokens[0] in capability_names

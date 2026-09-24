@@ -200,12 +200,19 @@ def _dispatch_with_root_options(
             )
         except UnknownOptionError as exc:
             name = _unknown_root_option(exc, root_options)
-            if name is None or name in applied:
+            index = (
+                None
+                if name is None or name in applied
+                else _last_root_option_index(remaining, root_options[name])
+            )
+            if name is None or index is None:
                 echo(f"error: {exc}", err=True)
                 raise SystemExit(2) from exc
             applied.add(name)
             spec = root_options[name]
-            value, remaining = _strip_trailing_root_option(remaining, spec)
+            value, remaining = _consume_option_at(
+                remaining, index, spec, remaining[index].partition("=")[0]
+            )
             _apply_root_option(spec, value, applied_tokens)
         except CycloptsError as exc:
             echo(f"error: {exc}", err=True)
@@ -339,14 +346,17 @@ def _unknown_root_option(
     return spec.name if spec is not None else None
 
 
-def _strip_trailing_root_option(tokens: list[str], spec: _RootOption) -> tuple[str, list[str]]:
-    """Remove the last occurrence of ``spec`` (by any spelling), returning its value."""
+def _last_root_option_index(tokens: list[str], spec: _RootOption) -> int | None:
+    """Index of the last ``spec`` token (any spelling) before ``--``, if any.
+
+    Tokens after ``--`` are positional data for the command, never root options.
+    """
     accepted = (spec.name, *spec.aliases)
-    for index in range(len(tokens) - 1, -1, -1):
-        head = tokens[index].partition("=")[0]
-        if head in accepted:
-            return _consume_option_at(tokens, index, spec, head)
-    raise_usage(f"{spec.name} expects a value")
+    end = tokens.index("--") if "--" in tokens else len(tokens)
+    for index in range(end - 1, -1, -1):
+        if tokens[index].partition("=")[0] in accepted:
+            return index
+    return None
 
 
 def _extract_root_option_value(tokens: list[str], index: int, name: str) -> tuple[str, list[str]]:
