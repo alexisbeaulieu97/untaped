@@ -147,6 +147,36 @@ def test_id_to_name_caches() -> None:
     assert len(repo.get_calls) == 1
 
 
+def test_id_to_identity_caches_each_ancestor() -> None:
+    repo = _StubRepo(
+        {
+            "Organization": [{"id": 1, "name": "Default"}],
+            "Inventory": [{"id": 7, "name": "prod", "organization": 1}],
+        }
+    )
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+
+    first = fk.id_to_identity("Inventory", 7)
+    second = fk.id_to_identity("Inventory", 7)
+
+    assert first == second
+    assert first.name == "prod"
+    assert first.organization == "Default"
+    assert repo.get_calls == [("Inventory", 7), ("Organization", 1)]
+
+
+def test_remember_summaries_answers_organization_lookups_without_requests() -> None:
+    repo = _StubRepo({})
+    fk = HttpFkResolver(cast(ResourceClient, repo), AwxResourceCatalog())
+
+    fk.remember_summaries([{"summary_fields": {"organization": {"id": 1, "name": "Default"}}}])
+
+    assert fk.id_to_name("Organization", 1) == "Default"
+    assert fk.name_to_id("Organization", "Default") == 1
+    assert repo.get_calls == []
+    assert repo.find_calls == []
+
+
 def test_resolve_polymorphic_dispatches_on_kind() -> None:
     repo = _StubRepo(
         {

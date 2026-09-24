@@ -84,6 +84,9 @@ def select_resources(
         limit=limit,
     )
     selected = SelectionResolver(ctx.repo, ctx.catalog).resolve(spec, request)
+    # Selected records already name their organization; later ancestry and
+    # FK lookups reuse that instead of reading it again.
+    ctx.fk.remember_summaries(item.record for item in selected)
     if not selected:
         echo(f"No matching {spec.kind} found.", err=True)
     return selected

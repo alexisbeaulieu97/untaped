@@ -41,19 +41,57 @@ def test_delete_by_id_removes_record(seeded_default_org: Any) -> None:
     assert result.stdout.strip() == "10"
 
 
-def test_delete_reads_each_target_once_after_confirmation(seeded_default_org: Any) -> None:
-    """Selection plus one post-confirmation re-read, then the DELETE."""
+def _detail_gets(fake: Any, suffix: str) -> int:
+    return sum(
+        1
+        for call in fake.router.calls
+        if call.request.method == "GET" and call.request.url.path.endswith(suffix)
+    )
+
+
+def test_delete_yes_reads_each_target_once(seeded_default_org: Any) -> None:
+    """--yes has no prompt window, so selection's read is the only one."""
     _seed_jt(seeded_default_org, id_=10, name="alpha")
 
     result = CliInvoker().invoke(app, ["job-templates", "delete", "--by-id", "10", "--yes"])
 
     assert result.exit_code == 0, result.output
-    detail_gets = [
-        call
-        for call in seeded_default_org.router.calls
-        if call.request.method == "GET" and call.request.url.path.endswith("/job_templates/10/")
-    ]
-    assert len(detail_gets) == 2
+    assert _detail_gets(seeded_default_org, "/job_templates/10/") == 1
+
+
+def test_delete_rereads_each_target_once_after_a_prompt(seeded_default_org: Any) -> None:
+    """Selection plus one post-confirmation re-read, then the DELETE."""
+    _seed_jt(seeded_default_org, id_=10, name="alpha")
+
+    result = CliInvoker().invoke(
+        app,
+        ["job-templates", "delete", "--by-id", "10"],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _detail_gets(seeded_default_org, "/job_templates/10/") == 2
+
+
+def test_delete_scoped_batch_reads_the_parent_once(fake_aap: Any) -> None:
+    """Scope ancestors are memoized across the batch and its re-read."""
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("inventories", id=7, name="prod", organization=1, kind="")
+    for i in range(5):
+        fake_aap.seed("hosts", id=100 + i, name=f"h{i}", inventory=7)
+
+    result = CliInvoker().invoke(
+        app,
+        ["hosts", "delete", "--all", "--inventory", "prod", "--inventory-org", "Default"],
+        interactive=True,
+        prompt_backend=ScriptedPromptBackend(confirms=[True]),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not fake_aap.store["hosts"]
+    assert _detail_gets(fake_aap, "/inventories/7/") == 2
+    assert _detail_gets(fake_aap, "/organizations/1/") == 2
 
 
 def test_delete_by_id_yes_validates_existence(

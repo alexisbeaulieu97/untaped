@@ -19,12 +19,14 @@ across the read+repo-call+write window so concurrent workers racing
 on the same ``(kind, name, scope)`` cache miss collapse into one repo
 lookup. ``Lock`` (not ``RLock``) so a future cross-cache call back
 into the resolver surfaces as a deadlock rather than silent recursion.
+The ``id_to_identity`` memo sits outside the lock (it recurses into
+parents); a race there costs one duplicate read, never a wrong answer.
 """
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from untaped.capabilities.awx.domain import IdentityRef
@@ -61,7 +63,27 @@ class HttpFkResolver:
         self._name_cache: dict[tuple[str, str, frozenset[tuple[str, str]]], int] = {}
         self._ambiguous_names: dict[tuple[str, str, frozenset[tuple[str, str]]], set[int]] = {}
         self._id_cache: dict[tuple[str, int], str] = {}
+        self._identity_cache: dict[tuple[str, int], IdentityRef] = {}
         self._cache_lock = threading.Lock()
+
+    def remember_summaries(self, records: Iterable[Mapping[str, Any]]) -> None:
+        """Learn organization names from records' ``summary_fields``.
+
+        AWX already embeds ``{id, name}`` for a record's organization, so
+        seeding both directions here saves the id-to-name and name-to-id
+        round trips for it. Organization names are unique on a controller,
+        so the unscoped name entry cannot hide an ambiguity.
+        """
+        with self._cache_lock:
+            for record in records:
+                summaries = record.get("summary_fields")
+                org = summaries.get("organization") if isinstance(summaries, Mapping) else None
+                if not isinstance(org, Mapping):
+                    continue
+                id_, name = org.get("id"), org.get("name")
+                if isinstance(id_, int) and not isinstance(id_, bool) and isinstance(name, str):
+                    self._id_cache.setdefault(("Organization", id_), name)
+                    self._name_cache.setdefault(("Organization", name, frozenset()), id_)
 
     def name_to_id(
         self,
@@ -121,6 +143,14 @@ class HttpFkResolver:
             return name
 
     def id_to_identity(self, kind: str, id_: int) -> IdentityRef:
+        """Portable ancestry for ``kind#id_``, memoized for this invocation."""
+        key = (kind, id_)
+        cached = self._identity_cache.get(key)
+        if cached is None:
+            cached = self._identity_cache.setdefault(key, self._read_identity(kind, id_))
+        return cached.model_copy(deep=True)
+
+    def _read_identity(self, kind: str, id_: int) -> IdentityRef:
         if kind == "UnifiedJobTemplate":
             lookup = AwxResourceSpec(
                 kind=kind,

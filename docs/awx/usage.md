@@ -248,7 +248,8 @@ untaped awx inventory-sources sync Cloud --inventory Production --wait
 untaped awx inventories sync Production --wait --track
 ```
 
-Inventory sync first resolves and freezes the current source IDs, then uses
+Inventory sync first resolves and freezes the current source IDs (one
+`inventory_sources` listing per 100 inventories), then uses
 the same source update action for each source. A known unsupported, source-less,
 manual, or otherwise invalid target fails complete preflight with zero POSTs;
 `--continue-on-error` applies to runtime failures after preflight, not to an
@@ -413,7 +414,8 @@ changes does not prompt or write.
 The complete batch is validated before the first write. Existing fields and
 memberships are re-read to detect conflicts or deletion; this check cannot
 close a race with a later controller request and provides no transaction or
-rollback. Resource bodies and memberships are verified separately, so a body
+rollback. `delete` re-reads its targets only after an interactive prompt;
+with `--yes` the selection read just before the writes is the check. Resource bodies and memberships are verified separately, so a body
 success with a membership failure is reported as `partial` and retains the
 resource ID. Membership changes are additive for the membership commands;
 replacement membership fields verify the exact set or declared order while
