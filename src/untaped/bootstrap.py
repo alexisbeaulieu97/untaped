@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Iterable, Sequence
 from contextvars import ContextVar, Token
-from importlib import metadata
+from importlib import import_module, metadata
 from itertools import chain
 from typing import Any
 
@@ -69,63 +69,12 @@ SHELL_SECTION = "shell"
 SHELL_DISTRIBUTION = "untaped"
 
 
-def _workspace_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the workspace built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.workspace import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
-def _github_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the github built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.github import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
-def _jira_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the jira built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.jira import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
-def _awx_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the awx built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.awx import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
-def _ansible_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the ansible built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.ansible import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
-def _recipe_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the recipe built-in without importing its CLI tree at module load."""
-    from untaped.capabilities.recipe import SPEC  # noqa: PLC0415
-
-    return (SPEC,)
-
-
-def _default_builtins() -> tuple[CapabilitySpec, ...]:
-    """Return the built-ins in declaration order."""
-    return (
-        *_workspace_builtins(),
-        *_github_builtins(),
-        *_jira_builtins(),
-        *_awx_builtins(),
-        *_ansible_builtins(),
-        *_recipe_builtins(),
-    )
-
-
 #: Built-in capabilities composed ahead of external providers, in declaration
-#: order.
-BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = _default_builtins()
+#: order. Importing a capability package loads only its ``SPEC``, never its CLI.
+BUILTIN_CAPABILITIES: tuple[CapabilitySpec, ...] = tuple(
+    import_module(f"untaped.capabilities.{name}").SPEC
+    for name in ("workspace", "github", "jira", "awx", "ansible", "recipe")
+)
 
 #: Active capability name for the current invocation (spec §4). Set at
 #: dispatch time to the selected capability (or the shell name when dispatch
@@ -156,23 +105,21 @@ SHELL_SPEC = ApplicationSpec(
     profile_model=ShellProfileSettings,
 )
 
-_COMPOSED_SHELL: ApplicationSpec | None = None
 _COMPOSED_RESULT: CompositionResult | None = None
 
 
-def _register_shell_and_capabilities(shell: ApplicationSpec, result: CompositionResult) -> None:
+def _register_shell_and_capabilities(result: CompositionResult) -> None:
     """Register the shell plus every composed capability's settings sections.
 
     Runs exactly once per composition, after validation succeeds (spec §5
     Phase D): a provider that fails any row registers nothing.
     """
-    register_profile_settings(shell.config_section, shell.profile_model)
-    if shell.state_model is not None:
-        register_state_settings(shell.config_section, shell.state_model)
-    for capability in result.capabilities:
-        register_profile_settings(capability.spec.config_section, capability.spec.profile_model)
-        if capability.spec.state_model is not None:
-            register_state_settings(capability.spec.config_section, capability.spec.state_model)
+    specs: list[ApplicationSpec | CapabilitySpec] = [SHELL_SPEC]
+    specs.extend(capability.spec for capability in result.capabilities)
+    for spec in specs:
+        register_profile_settings(spec.config_section, spec.profile_model)
+        if spec.state_model is not None:
+            register_state_settings(spec.config_section, spec.state_model)
 
 
 def _warn_quarantined(result: CompositionResult) -> None:
@@ -200,12 +147,10 @@ def compose_root(
     settings registration or resolution; registration happens only after every
     surviving provider validates. Remembers the composition for :func:`reset`.
     """
-    global _COMPOSED_SHELL, _COMPOSED_RESULT
-    shell = SHELL_SPEC
+    global _COMPOSED_RESULT
     candidates = discover_external_providers() if externals is None else externals
-    result = compose(shell, builtins, candidates)
-    _register_shell_and_capabilities(shell, result)
-    _COMPOSED_SHELL = shell
+    result = compose(SHELL_SPEC, builtins, candidates)
+    _register_shell_and_capabilities(result)
     _COMPOSED_RESULT = result
     _warn_quarantined(result)
     return result
@@ -227,16 +172,13 @@ def reset() -> None:
     get_settings.cache_clear()
     get_settings_model.cache_clear()
     get_profile_settings_model.cache_clear()
-    shell = _COMPOSED_SHELL
-    result = _COMPOSED_RESULT
-    if shell is not None and result is not None:
-        _register_shell_and_capabilities(shell, result)
+    if _COMPOSED_RESULT is not None:
+        _register_shell_and_capabilities(_COMPOSED_RESULT)
 
 
 def _clear_for_tests() -> None:
     """Drop the remembered composition entirely (test isolation only)."""
-    global _COMPOSED_SHELL, _COMPOSED_RESULT
-    _COMPOSED_SHELL = None
+    global _COMPOSED_RESULT
     _COMPOSED_RESULT = None
     reset()
 
@@ -266,7 +208,7 @@ def build_root_app(
     """
     candidates = list(externals) if externals is not None else list(discover_external_providers())
     result = compose_root(builtins=builtins, externals=candidates)
-    root = create_app(name=SHELL_NAME, help="Unified untaped developer CLI.")
+    root = _shell_app()
     _mount(root, build_root_config_app(shell=SHELL_SPEC, result=result), name="config")
     _mount(root, build_root_profile_app(command=SHELL_NAME), name="profile")
     _mount(root, build_root_skills_app(shell=SHELL_SPEC, result=result), name="skills")
