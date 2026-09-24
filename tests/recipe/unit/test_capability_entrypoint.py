@@ -60,7 +60,7 @@ def test_spec_is_recipe_capability() -> None:
         "Use the untaped recipe capability to apply local recipe packs across directories."
     )
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["recipe.uv", "recipe.git"]
 
 
 def test_library_root_default_keeps_tilde_like_other_path_defaults() -> None:

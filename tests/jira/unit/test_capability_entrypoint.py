@@ -51,6 +51,7 @@ def test_spec_is_jira_capability() -> None:
     assert set(JiraSettings.model_fields) == {
         "base_url",
         "token",
+        "token_command",
         "api_prefix",
         "agile_prefix",
         "assigned_jql",
@@ -62,7 +63,7 @@ def test_spec_is_jira_capability() -> None:
     assert skill.name == "untaped-jira"
     assert skill.description == "Use the built-in `untaped jira` capability for Jira workflows."
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["jira.connection"]
 
 
 def test_build_app_is_nullary_factory() -> None:

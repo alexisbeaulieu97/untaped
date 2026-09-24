@@ -22,7 +22,10 @@ a rejected token fails the command; the output includes the authenticated
 
 Use `untaped --profile <name> awx ...` to select a different configured
 profile. Tokens are secret settings; do not put them in a manifest or command
-history.
+history. To keep the token out of `config.yml` too, set `awx.token_command`
+to a command that prints it, for example
+`untaped config set awx.token_command '["pass", "show", "aap/token"]'`; see
+[Tokens](../configuration.md#tokens).
 
 The writable resource groups are job templates, workflow templates, projects,
 schedules, hosts, groups, inventories, and inventory sources. They support the

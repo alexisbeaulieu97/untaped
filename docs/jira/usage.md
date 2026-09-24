@@ -18,6 +18,7 @@ untaped jira whoami
 |---|---|---|
 | `jira.base_url` | unset | Jira URL. |
 | `jira.token` | unset | Personal access token. |
+| `jira.token_command` | unset | Command (argv list) that prints the token when `jira.token` is unset, for example `'["op", "read", "op://work/jira/token"]'`. See [Tokens](../configuration.md#tokens). |
 | `jira.assigned_jql` | `assignee = currentUser() AND resolution = Unresolved` | Base query for `issues assigned`. |
 | `jira.default_project` | unset | Project for `issues create` without `--project`. |
 | `jira.default_board_id` | unset | Board for `sprints list` without `--board-id`. |
