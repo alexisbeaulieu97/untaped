@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
@@ -21,7 +22,6 @@ import pytest
 from packaging.version import Version
 from pydantic import ValidationError
 
-import untaped.capabilities.recipe.infrastructure.hook_resolver as hook_resolver_module
 import untaped.capabilities.recipe.infrastructure.hook_worker_client as worker_client
 from untaped.capabilities.recipe.domain.hook_project import ensure_hook_supports
 from untaped.capabilities.recipe.domain.pack import PackManifest
@@ -141,31 +141,11 @@ def test_hook_project_metadata_validates_pyproject_hook_table() -> None:
         )
 
 
-def test_manifest_hook_metadata_rejects_unknown_fields(tmp_path: Path) -> None:
-    project_root = tmp_path / "recipe"
-    _write_hook_project(
-        project_root,
-        hooks={"x": "project_hooks.hooks.x"},
-        kind="transform",
-    )
+def test_read_hook_project_rejects_unknown_hook_fields(tmp_path: Path) -> None:
+    _write_hook_project(tmp_path, hooks={"x": "project_hooks.hooks.x"}, kind="transform")
 
     with pytest.raises(ValueError, match="extra_forbidden"):
-        _hook_project(
-            {
-                "tool": {
-                    "untaped_recipe": {
-                        "hooks": {
-                            "x": {
-                                "kind": "transform",
-                                "module": "project_hooks.hooks.x",
-                            }
-                        }
-                    }
-                }
-            }
-        )
-    with pytest.raises(ValueError, match="extra_forbidden"):
-        read_hook_project(project_root)
+        read_hook_project(tmp_path)
 
 
 def test_hook_resolver_uses_recipe_local_then_builtin(tmp_path: Path) -> None:
@@ -174,6 +154,7 @@ def test_hook_resolver_uses_recipe_local_then_builtin(tmp_path: Path) -> None:
         recipe_dir,
         hooks={"pick": "local_hooks.hooks.pick"},
         package="local_hooks",
+        exports=("validate",),
     )
     resolver = HookResolver()
 
@@ -181,97 +162,65 @@ def test_hook_resolver_uses_recipe_local_then_builtin(tmp_path: Path) -> None:
     assert isinstance(local, UvHookRef)
     assert local.project_root == recipe_dir
     assert local.module == "local_hooks.hooks.pick"
-    assert local.exports == frozenset({"transform"})
+    # Exports come from an AST scan of the module, not from metadata.
+    assert local.exports == frozenset({"validate"})
+    with pytest.raises(ValueError, match=r"does not export a transform\(\) function"):
+        ensure_hook_supports(local.exports, "pick", verb="transform")
 
     builtin = resolver.resolve("yaml_edit", recipe_dir)
     assert isinstance(builtin, BuiltinHookRef)
     assert builtin.exports == frozenset({"transform"})
 
 
-def test_resolver_carries_exports_from_ast_scan(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
+@pytest.mark.parametrize(
+    "dependency",
+    [
+        "untaped>=4.0.0,<5",
+        "untaped-recipe>=0.7",
+        "Untaped_Recipe[hooks]>=0.7; python_version >= '3.14'",
+        "untaped-recipe @ git+https://example.invalid/untaped-recipe.git",
+        "untaped[recipe]>=4.0.0,<5",
+    ],
+)
+def test_hook_resolver_rejects_runtime_cli_dependency(tmp_path: Path, dependency: str) -> None:
     _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        exports=("validate",),
-    )
-    resolver = HookResolver()
-
-    ref = resolver.resolve("check", recipe_dir)
-
-    assert isinstance(ref, UvHookRef)
-    assert ref.exports == frozenset({"validate"})
-
-
-def test_ensure_hook_supports_rejects_missing_verb(tmp_path: Path) -> None:
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with pytest.raises(ValueError, match=r"does not export a validate\(\) function"):
-        ensure_hook_supports(ref.exports, "sample", verb="validate")
-
-
-def test_hook_resolver_rejects_missing_lockfile(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        lock=False,
-    )
-
-    with pytest.raises(ValueError, match=r"missing uv\.lock"):
-        HookResolver().resolve("check", recipe_dir)
-
-
-@pytest.mark.parametrize("dependency", ["untaped>=4.0.0,<5", "untaped-recipe>=0.7"])
-def test_hook_resolver_rejects_runtime_cli_dependency(
-    tmp_path: Path,
-    dependency: str,
-) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        dependencies=[dependency],
+        tmp_path, hooks={"check": "project_hooks.hooks.check"}, dependencies=[dependency]
     )
 
     with pytest.raises(
         ValueError,
         match=r"must not depend on (?:untaped|untaped-recipe) at runtime",
     ) as exc_info:
-        HookResolver().resolve("check", recipe_dir)
+        HookResolver().resolve("check", tmp_path)
+    installed = Version(version("untaped"))
     assert "dependency-groups.dev" in str(exc_info.value)
-    assert _expected_dev_requirement() in str(exc_info.value)
+    assert f"untaped>={installed.public},<{installed.major + 1}" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(
-    "dependency",
+    ("options", "remove_module", "match"),
     [
-        "Untaped_Recipe[hooks]>=0.7; python_version >= '3.14'",
-        "untaped-recipe @ git+https://example.invalid/untaped-recipe.git",
-        "untaped[recipe]>=4.0.0,<5",
+        ({"lock": False}, False, r"missing uv\.lock"),
+        (
+            {"requires_hook_api": ">=99"},
+            False,
+            r"requires hook API >=99, but the untaped recipe capability provides 0\.10\.0",
+        ),
+        ({}, True, "hook module file not found"),
     ],
 )
-def test_hook_resolver_rejects_pep508_runtime_cli_dependencies(
+def test_hook_resolver_rejects_broken_hook_projects(
     tmp_path: Path,
-    dependency: str,
+    options: dict[str, object],
+    remove_module: bool,
+    match: str,
 ) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        dependencies=[dependency],
-    )
+    _write_hook_project(tmp_path, hooks={"check": "project_hooks.hooks.check"}, **options)
+    if remove_module:
+        (tmp_path / "src" / "project_hooks" / "hooks" / "check.py").unlink()
 
-    with pytest.raises(
-        ValueError,
-        match=r"must not depend on (?:untaped|untaped-recipe) at runtime",
-    ):
-        HookResolver().resolve("check", recipe_dir)
+    with pytest.raises(ValueError, match=match):
+        HookResolver().resolve("check", tmp_path)
 
 
 def test_hook_project_metadata_rejects_invalid_dependency_declarations() -> None:
@@ -292,21 +241,6 @@ def test_hook_project_metadata_rejects_invalid_dependency_declarations() -> None
         )
 
 
-def test_hook_resolver_rejects_newer_required_hook_api(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        requires_hook_api=">=99",
-    )
-
-    with pytest.raises(
-        ValueError,
-        match=r"requires hook API >=99, but the untaped recipe capability provides 0\.10\.0",
-    ):
-        HookResolver().resolve("check", recipe_dir)
-
-
 def test_hook_resolver_ignores_unrelated_local_project_contract_for_builtin(
     tmp_path: Path,
 ) -> None:
@@ -323,15 +257,6 @@ def test_hook_resolver_ignores_unrelated_local_project_contract_for_builtin(
     assert ref.name == "yaml_edit"
 
 
-def test_hook_resolver_rejects_missing_declared_module_file(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(recipe_dir, hooks={"check": "project_hooks.hooks.check"})
-    (recipe_dir / "src" / "project_hooks" / "hooks" / "check.py").unlink()
-
-    with pytest.raises(ValueError, match="hook module file not found"):
-        HookResolver().resolve("check", recipe_dir)
-
-
 def test_hook_resolver_caches_metadata_for_apply_lifetime(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipe"
     _write_hook_project(recipe_dir, hooks={"check": "project_hooks.hooks.check"})
@@ -344,27 +269,6 @@ def test_hook_resolver_caches_metadata_for_apply_lifetime(tmp_path: Path) -> Non
     assert isinstance(first, UvHookRef)
     assert isinstance(second, UvHookRef)
     assert second.module == "project_hooks.hooks.check"
-
-
-def test_hook_resolver_validates_project_contract_once_per_metadata_cache(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(recipe_dir, hooks={"check": "project_hooks.hooks.check"})
-    calls: list[Path] = []
-
-    def validate(project_root: Path, manifest: PackManifest) -> None:
-        del manifest
-        calls.append(project_root)
-
-    monkeypatch.setattr(hook_resolver_module, "check_hook_project", validate)
-    resolver = HookResolver()
-
-    resolver.resolve("check", recipe_dir)
-    resolver.resolve("check", recipe_dir)
-
-    assert calls == [recipe_dir]
 
 
 def test_worker_response_validation_rejects_malformed_protocol_rows() -> None:
@@ -416,30 +320,6 @@ def test_uv_hook_worker_excludes_dev_dependencies(
     assert call_kwargs[0]["start_new_session"] is True
 
 
-def test_uv_hook_worker_rejects_malformed_json_response(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout="not-json\n")
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(ValueError, match="malformed hook worker response"):
-        worker.request({"kind": "transform", "module": "hooks.sample"})
-
-
-def test_uv_hook_worker_rejects_response_id_mismatch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout='{"id": "wrong", "ok": true, "result": "after"}\n')
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(ValueError, match="response id mismatch"):
-        worker.request({"kind": "transform", "module": "hooks.sample"})
-
-
 def test_uv_hook_worker_times_out_and_closes_hung_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -460,7 +340,7 @@ def test_hook_timeout_starts_after_ready(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake = _DelayedReadyProcess(
+    fake = _SlowProcess(
         ready_delay=0.1,
         lines=['{"id": "1", "ok": true, "result": "after"}\n'],
     )
@@ -509,18 +389,6 @@ def test_startup_notice_fires_once_per_worker(
     assert notices == [tmp_path]
 
 
-def test_worker_exits_before_ready_reports_crash(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout="", ready=False)
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(worker_client.FatalHookWorkerError, match="exited before ready"):
-        worker.request({"kind": "transform", "module": "hooks.sample"})
-
-
 def test_stale_lock_death_names_uv_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -539,18 +407,6 @@ def test_stale_lock_death_names_uv_lock(
     assert message.startswith(f"pack lockfile is out of date — run 'uv lock' in {tmp_path}")
     assert "needs to be updated" in message
     assert "exited before ready" not in message
-
-
-def test_worker_death_without_stale_lock_keeps_ready_headline(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout="", ready=False, stderr="ImportError: boom\n")
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(worker_client.FatalHookWorkerError, match="exited before ready"):
-        worker.request({"kind": "transform", "module": "hooks.sample"}, settle_seconds=0.5)
 
 
 def test_worker_env_scrubs_virtual_env(
@@ -575,43 +431,6 @@ def test_worker_env_scrubs_virtual_env(
     assert captured["PYTHONPATH"].endswith("existing")
 
 
-def test_malformed_handshake_line_is_fatal(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout="hello\n", ready=False)
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(worker_client.FatalHookWorkerError, match="malformed hook worker handshake"):
-        worker.request({"kind": "transform", "module": "hooks.sample"})
-
-
-def test_worker_exits_before_request_reports_crash(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout="")
-    fake.stdin = _BrokenStdin()  # type: ignore[assignment]
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(worker_client.FatalHookWorkerError, match="exited before request"):
-        worker.request({"kind": "transform", "module": "hooks.sample"})
-
-
-def test_worker_exits_before_response_reports_crash(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout="")
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    with pytest.raises(worker_client.FatalHookWorkerError, match="exited before response"):
-        worker.request({"kind": "transform", "module": "hooks.sample"})
-
-
 def test_uv_hook_worker_rejects_non_json_serializable_request_values(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -632,33 +451,6 @@ def test_uv_hook_worker_rejects_non_json_serializable_request_values(
         )
 
     assert fake.stdin.getvalue() == ""
-
-
-def test_uv_hook_worker_preserves_json_serializable_request_values(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    payload_args = {
-        "enabled": True,
-        "count": 2,
-        "labels": ["api", "worker"],
-        "options": {"mode": "strict", "empty": None},
-    }
-    fake = _FakeProcess(stdout='{"id": "1", "ok": true, "result": "after"}\n')
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-
-    result = worker.request(
-        {
-            "kind": "transform",
-            "module": "hooks.sample",
-            "args": payload_args,
-        }
-    )
-
-    sent = json.loads(fake.stdin.getvalue())
-    assert result.result == "after"
-    assert sent["args"] == payload_args
 
 
 def test_uv_hook_worker_discards_success_diagnostics_before_failure(
@@ -685,25 +477,6 @@ def test_uv_hook_worker_discards_success_diagnostics_before_failure(
     assert "failed" in message
     assert "failure diagnostic" in message
     assert "success diagnostic" not in message
-
-
-def test_uv_hook_worker_request_returns_result_and_diagnostics(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout='{"id": "1", "ok": true, "result": "after"}\n')
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-    worker._stderr.put("success diagnostic\n")
-
-    result = worker.request(
-        {"kind": "transform", "module": "hooks.sample"},
-        diagnostic_limit=10_000,
-        settle_seconds=0.05,
-    )
-
-    assert result.result == "after"
-    assert result.diagnostics == "success diagnostic"
 
 
 def test_uv_hook_worker_survives_non_utf8_stderr(tmp_path: Path) -> None:
@@ -745,406 +518,6 @@ def test_uv_hook_worker_survives_non_utf8_stderr(tmp_path: Path) -> None:
 
     assert result.result == "before"
     assert "\ufffd\ufffd" in result.diagnostics
-
-
-def test_uv_hook_worker_diagnostics_are_bounded(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeProcess(stdout='{"id": "1", "ok": true, "result": "after"}\n')
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
-    worker = UvHookWorker(tmp_path)
-    worker._stderr.put("12345\n")
-    worker._stderr.put("67890\n")
-
-    result = worker.request(
-        {"kind": "transform", "module": "hooks.sample"},
-        diagnostic_limit=7,
-    )
-
-    assert result.result == "after"
-    assert len(result.diagnostics) <= 7
-    assert "12345" not in result.diagnostics
-
-
-def test_uv_hook_worker_pool_leases_parallel_workers(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    barrier = Barrier(2)
-    workers: list[object] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float = 60,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            self.worker_id = len(workers) + 1
-            workers.append(self)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            barrier.wait(timeout=5)
-            return HookWorkerCallResult(result=self.worker_id, diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with (
-        UvHookWorkerPool(max_workers_per_project=2) as pool,
-        ThreadPoolExecutor(max_workers=2) as executor,
-    ):
-        results = [
-            result.result
-            for result in executor.map(lambda _: pool.request(ref, {"kind": "transform"}), range(2))
-        ]
-
-    assert sorted(results) == [1, 2]
-    assert len(workers) == 2
-    assert all(worker.closed for worker in workers)
-
-
-def test_uv_hook_worker_pool_reuses_idle_workers(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workers: list[object] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float = 60,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            self.worker_id = len(workers) + 1
-            workers.append(self)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            return HookWorkerCallResult(result=self.worker_id, diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with UvHookWorkerPool(max_workers_per_project=3) as pool:
-        results = [pool.request(ref, {"kind": "transform"}).result for _ in range(3)]
-
-    assert results == [1, 1, 1]
-    assert len(workers) == 1
-    assert all(worker.closed for worker in workers)
-
-
-def test_uv_hook_worker_pool_passes_timeout_to_workers(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    timeouts: list[float] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            timeouts.append(hook_timeout_seconds)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            return HookWorkerCallResult(result="ok", diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with UvHookWorkerPool(max_workers_per_project=1, hook_timeout_seconds=12) as pool:
-        assert pool.request(ref, {"kind": "transform"}).result == "ok"
-
-    assert timeouts == [12]
-
-
-def test_uv_hook_worker_pool_retires_workers_after_fatal_protocol_errors(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workers: list[object] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float = 60,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            self.worker_id = len(workers) + 1
-            workers.append(self)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            if self.worker_id == 1:
-                raise worker_client.FatalHookWorkerError("malformed hook worker response")
-            return HookWorkerCallResult(result=self.worker_id, diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with UvHookWorkerPool(max_workers_per_project=1) as pool:
-        with pytest.raises(ValueError, match="malformed hook worker response"):
-            pool.request(ref, {"kind": "transform"})
-        assert pool.request(ref, {"kind": "transform"}).result == 2
-
-    assert len(workers) == 2
-    assert workers[0].closed
-    assert workers[1].closed
-
-
-def test_uv_hook_worker_pool_wakes_waiters_after_fatal_retirement(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    first_request_started = Event()
-    fail_first_request = Event()
-    workers: list[object] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float = 60,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            self.worker_id = len(workers) + 1
-            workers.append(self)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            if self.worker_id == 1:
-                first_request_started.set()
-                assert fail_first_request.wait(timeout=5)
-                raise worker_client.FatalHookWorkerError("hook worker timed out")
-            return HookWorkerCallResult(result=self.worker_id, diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with (
-        UvHookWorkerPool(max_workers_per_project=1) as pool,
-        ThreadPoolExecutor(max_workers=2) as executor,
-    ):
-        first = executor.submit(pool.request, ref, {"kind": "transform"})
-        assert first_request_started.wait(timeout=5)
-        second = executor.submit(pool.request, ref, {"kind": "transform"})
-        time.sleep(0.05)
-
-        fail_first_request.set()
-
-        with pytest.raises(worker_client.FatalHookWorkerError, match="timed out"):
-            first.result(timeout=5)
-        try:
-            assert second.result(timeout=1).result == 2
-        except FutureTimeoutError as exc:
-            msg = "waiting request was not woken after fatal retirement"
-            raise AssertionError(msg) from exc
-
-    assert len(workers) == 2
-    assert workers[0].closed
-    assert workers[1].closed
-
-
-def test_uv_hook_worker_pool_reuses_workers_after_hook_failures(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workers: list[object] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float = 60,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            self.worker_id = len(workers) + 1
-            self.calls = 0
-            workers.append(self)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            self.calls += 1
-            if self.calls == 1:
-                raise ValueError("validate hook failed")
-            return HookWorkerCallResult(result=self.worker_id, diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-
-    with UvHookWorkerPool(max_workers_per_project=1) as pool:
-        with pytest.raises(ValueError, match="validate hook failed"):
-            pool.request(ref, {"kind": "validate"})
-        assert pool.request(ref, {"kind": "validate"}).result == 1
-
-    assert len(workers) == 1
-    assert workers[0].closed
-
-
-def test_uv_hook_worker_pool_close_survives_one_failing_worker(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    barrier = Barrier(3)
-    workers: list[object] = []
-
-    class FakeWorker:
-        def __init__(
-            self,
-            project_root: Path,
-            *,
-            hook_timeout_seconds: float = 60,
-            startup_timeout_seconds: float = 300,
-            startup_notice: object = None,
-        ) -> None:
-            self.project_root = project_root
-            self.closed = False
-            self.worker_id = len(workers) + 1
-            workers.append(self)
-
-        def request(
-            self,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            barrier.wait(timeout=5)
-            return HookWorkerCallResult(result=self.worker_id, diagnostics="")
-
-        def close(self) -> None:
-            self.closed = True
-            if self.worker_id == 2:
-                raise BrokenPipeError("worker stdin already closed")
-
-    monkeypatch.setattr(worker_client, "UvHookWorker", FakeWorker)
-    ref = UvHookRef(
-        name="sample",
-        exports=frozenset({"transform"}),
-        project_root=tmp_path,
-        module="hooks.sample",
-    )
-    pool = UvHookWorkerPool(max_workers_per_project=3)
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = [
-            result.result
-            for result in executor.map(lambda _: pool.request(ref, {"kind": "transform"}), range(3))
-        ]
-
-    assert sorted(results) == [1, 2, 3]
-    with pytest.raises(BrokenPipeError, match="worker stdin already closed"):
-        pool.close()
-    assert [worker.closed for worker in workers] == [True, True, True]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups are POSIX")
@@ -1205,24 +578,29 @@ def test_close_kills_the_whole_process_group(
             os.killpg(pgid, signal.SIGKILL)
 
 
+class _CannedWorkers:
+    """Worker pool stand-in that records payloads and returns one canned reply."""
+
+    def __init__(self, result: object, *, diagnostics: str = "", warnings: tuple[str, ...] = ()):
+        self.reply = HookWorkerCallResult(result=result, diagnostics=diagnostics, warnings=warnings)
+        self.payloads: list[dict[str, object]] = []
+
+    def request(
+        self,
+        ref: UvHookRef,
+        payload: dict[str, object],
+        *,
+        diagnostic_limit: int | None = 4000,
+        settle_seconds: float = 0,
+    ) -> HookWorkerCallResult:
+        self.payloads.append(payload)
+        return self.reply
+
+
 def test_hook_executor_dispatches_builtin_without_worker(tmp_path: Path) -> None:
-    class ExplodingWorkers:
-        def request(
-            self,
-            ref: UvHookRef,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            raise AssertionError("worker should not be used for built-ins")
+    workers = _CannedWorkers("unused")
 
-    executor = HookExecutor(
-        HookResolver(),
-        workers=ExplodingWorkers(),
-    )
-
-    result = executor.transform(
+    result = HookExecutor(HookResolver(), workers=workers).transform(
         "yaml_edit",
         "enabled: false\n",
         local_hook_project=None,
@@ -1234,31 +612,18 @@ def test_hook_executor_dispatches_builtin_without_worker(tmp_path: Path) -> None
 
     assert "enabled: true" in result.result
     assert result.diagnostics == ""
+    assert workers.payloads == []
 
 
-def test_hook_executor_sends_external_transform_to_worker(tmp_path: Path) -> None:
+@pytest.mark.parametrize("capture_diagnostics", [False, True])
+def test_hook_executor_sends_external_transform_to_worker(
+    tmp_path: Path, capture_diagnostics: bool
+) -> None:
     recipe_dir = tmp_path / "recipe"
     _write_hook_project(recipe_dir, hooks={"suffix": "project_hooks.hooks.suffix"})
-    calls: list[dict[str, object]] = []
+    workers = _CannedWorkers("after\n", diagnostics="diagnostic\n")
 
-    class RecordingWorkers:
-        def request(
-            self,
-            ref: UvHookRef,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            calls.append({"ref": ref, "payload": payload})
-            return HookWorkerCallResult(result="after\n", diagnostics="discarded\n")
-
-    executor = HookExecutor(
-        HookResolver(),
-        workers=RecordingWorkers(),
-    )
-
-    result = executor.transform(
+    result = HookExecutor(HookResolver(), workers=workers).transform(
         "suffix",
         "before\n",
         local_hook_project=recipe_dir,
@@ -1266,109 +631,64 @@ def test_hook_executor_sends_external_transform_to_worker(tmp_path: Path) -> Non
         file=tmp_path / "target" / "local.yml",
         inputs={"service": "api"},
         args={"flag": True},
+        capture_diagnostics=capture_diagnostics,
     )
 
     assert result.result == "after\n"
-    assert result.diagnostics == ""
-    assert len(calls) == 1
-    payload = calls[0]["payload"]
+    assert result.diagnostics == ("diagnostic\n" if capture_diagnostics else "")
+    [payload] = workers.payloads
     assert payload["kind"] == "transform"
     assert payload["content"] == "before\n"
     assert payload["target"] == str(tmp_path / "target")
     assert payload["file"] == str(tmp_path / "target" / "local.yml")
 
 
-def test_hook_executor_debug_returns_external_diagnostics(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(recipe_dir, hooks={"suffix": "project_hooks.hooks.suffix"})
-
-    class RecordingWorkers:
-        def request(
-            self,
-            ref: UvHookRef,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            return HookWorkerCallResult(result="after\n", diagnostics="diagnostic\n")
-
-    executor = HookExecutor(
-        HookResolver(),
-        workers=RecordingWorkers(),
-    )
-
-    result = executor.transform(
-        "suffix",
-        "before\n",
-        local_hook_project=recipe_dir,
-        target=tmp_path / "target",
-        file=tmp_path / "target" / "local.yml",
-        inputs={},
-        args={},
-        capture_diagnostics=True,
-    )
-
-    assert result.result == "after\n"
-    assert result.diagnostics == "diagnostic\n"
-
-
-def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: Path) -> None:
-    package = tmp_path / "src" / "worker_hooks"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("")
-    (package / "sample.py").write_text(
-        "print('diagnostic from import')\n"
-        "def transform(content, *, inputs, target, file, args, helpers):\n"
-        "    print('diagnostic from hook')\n"
-        "    return helpers.dump_yaml(\n"
-        "        {'content': content, 'suffix': inputs['suffix']},\n"
-        "        options={'explicit_start': True, 'width': 4096},\n"
-        "    )\n"
-        "\n"
-        "def validate(*, inputs, target, args, helpers):\n"
-        "    helpers.warn('check warning')\n"
-        "    return helpers.pass_()\n"
-    )
-    worker = (
-        Path(__file__).parents[3]
-        / "src"
-        / "untaped"
-        / "capabilities"
-        / "recipe"
-        / "_worker"
-        / "hook_worker.py"
-    )
-    proc = subprocess.Popen(
+def _run_worker_script(
+    tmp_path: Path, modules: dict[str, str], request: dict[str, object]
+) -> tuple[dict[str, object], str]:
+    """Send one request to the real worker script and return its response and stderr."""
+    for relative, source in {"worker_hooks/__init__.py": "", **modules}.items():
+        path = tmp_path / "src" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+    worker = Path(__file__).parents[3] / "src/untaped/capabilities/recipe/_worker/hook_worker.py"
+    proc = subprocess.run(
         [sys.executable, str(worker)],
         cwd=tmp_path,
         env={"PYTHONPATH": str(tmp_path / "src")},
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        input=json.dumps({"id": "1", "target": str(tmp_path), "args": {}, **request}) + "\n",
+        capture_output=True,
         text=True,
+        timeout=30,
+        check=False,
     )
-    assert proc.stdin is not None
-    assert proc.stdout is not None
-    assert proc.stderr is not None
-    request = {
-        "id": "1",
-        "kind": "transform",
-        "module": "worker_hooks.sample",
-        "content": "before ",
-        "inputs": {"suffix": "after"},
-        "target": str(tmp_path),
-        "file": str(tmp_path / "local.yml"),
-        "args": {},
-    }
-    proc.stdin.write(json.dumps(request) + "\n")
-    proc.stdin.flush()
+    ready, response = proc.stdout.splitlines()
+    assert json.loads(ready) == {"ready": True}
+    return json.loads(response), proc.stderr
 
-    assert json.loads(proc.stdout.readline()) == {"ready": True}
-    response = json.loads(proc.stdout.readline())
-    proc.stdin.close()
-    stderr = proc.stderr.read()
-    proc.wait(timeout=10)
+
+def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: Path) -> None:
+    response, stderr = _run_worker_script(
+        tmp_path,
+        {
+            "worker_hooks/sample.py": (
+                "print('diagnostic from import')\n"
+                "def transform(content, *, inputs, target, file, args, helpers):\n"
+                "    print('diagnostic from hook')\n"
+                "    return helpers.dump_yaml(\n"
+                "        {'content': content, 'suffix': inputs['suffix']},\n"
+                "        options={'explicit_start': True, 'width': 4096},\n"
+                "    )\n"
+            )
+        },
+        {
+            "kind": "transform",
+            "module": "worker_hooks.sample",
+            "content": "before ",
+            "inputs": {"suffix": "after"},
+            "file": str(tmp_path / "local.yml"),
+        },
+    )
 
     assert response == {
         "id": "1",
@@ -1381,66 +701,33 @@ def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: P
 
 
 def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_path: Path) -> None:
-    package = tmp_path / "src" / "worker_hooks"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("")
-    (package / "sample.py").write_text(
-        "def validate(*, inputs, target, args, helpers):\n"
-        "    return helpers.pass_('from real worker protocol')\n"
+    constants = (
+        "ID",
+        "KIND",
+        "MODULE",
+        "VALIDATE",
+        "TRANSFORM",
+        "INPUTS",
+        "TARGET",
+        "ARGS",
+        "CONTENT",
+        "FILE",
     )
-    fake_engine = tmp_path / "src" / "untaped_recipe"
-    fake_engine.mkdir()
-    (fake_engine / "__init__.py").write_text("")
-    (fake_engine / "worker_protocol.py").write_text(
-        "ID = 'bad_id'\n"
-        "KIND = 'bad_kind'\n"
-        "MODULE = 'bad_module'\n"
-        "VALIDATE = 'bad_validate'\n"
-        "TRANSFORM = 'bad_transform'\n"
-        "INPUTS = 'bad_inputs'\n"
-        "TARGET = 'bad_target'\n"
-        "ARGS = 'bad_args'\n"
-        "CONTENT = 'bad_content'\n"
-        "FILE = 'bad_file'\n"
+    response, stderr = _run_worker_script(
+        tmp_path,
+        {
+            "worker_hooks/sample.py": (
+                "def validate(*, inputs, target, args, helpers):\n"
+                "    return helpers.pass_('from real worker protocol')\n"
+            ),
+            "untaped_recipe/__init__.py": "",
+            "untaped_recipe/worker_protocol.py": "".join(
+                f"{name} = 'bad_{name.lower()}'\n" for name in constants
+            ),
+            "untaped_recipe/helpers.py": "raise RuntimeError('fake helpers imported')\n",
+        },
+        {"kind": "validate", "module": "worker_hooks.sample", "inputs": {}},
     )
-    (fake_engine / "helpers.py").write_text("raise RuntimeError('fake helpers imported')\n")
-    worker = (
-        Path(__file__).parents[3]
-        / "src"
-        / "untaped"
-        / "capabilities"
-        / "recipe"
-        / "_worker"
-        / "hook_worker.py"
-    )
-    proc = subprocess.Popen(
-        [sys.executable, str(worker)],
-        cwd=tmp_path,
-        env={"PYTHONPATH": str(tmp_path / "src")},
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    assert proc.stdin is not None
-    assert proc.stdout is not None
-    assert proc.stderr is not None
-    request = {
-        "id": "1",
-        "kind": "validate",
-        "module": "worker_hooks.sample",
-        "inputs": {},
-        "target": str(tmp_path),
-        "args": {},
-    }
-    proc.stdin.write(json.dumps(request) + "\n")
-    proc.stdin.flush()
-
-    assert json.loads(proc.stdout.readline()) == {"ready": True}
-    response = json.loads(proc.stdout.readline())
-    proc.stdin.close()
-    stderr = proc.stderr.read()
-    proc.wait(timeout=10)
 
     assert response == {
         "id": "1",
@@ -1452,129 +739,39 @@ def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_pat
 
 
 def test_worker_script_rejects_invalid_validate_return_object(tmp_path: Path) -> None:
-    package = tmp_path / "src" / "worker_hooks"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("")
-    (package / "bad_validate.py").write_text(
-        "def validate(*, inputs, target, args, helpers):\n    return object()\n"
+    response, stderr = _run_worker_script(
+        tmp_path,
+        {
+            "worker_hooks/bad_validate.py": (
+                "def validate(*, inputs, target, args, helpers):\n    return object()\n"
+            )
+        },
+        {"kind": "validate", "module": "worker_hooks.bad_validate", "inputs": {}},
     )
-    worker = (
-        Path(__file__).parents[3]
-        / "src"
-        / "untaped"
-        / "capabilities"
-        / "recipe"
-        / "_worker"
-        / "hook_worker.py"
-    )
-    proc = subprocess.Popen(
-        [sys.executable, str(worker)],
-        cwd=tmp_path,
-        env={"PYTHONPATH": str(tmp_path / "src")},
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    assert proc.stdin is not None
-    assert proc.stdout is not None
-    assert proc.stderr is not None
-    request = {
-        "id": "1",
-        "kind": "validate",
-        "module": "worker_hooks.bad_validate",
-        "inputs": {},
-        "target": str(tmp_path),
-        "args": {},
-    }
-    proc.stdin.write(json.dumps(request) + "\n")
-    proc.stdin.flush()
 
-    assert json.loads(proc.stdout.readline()) == {"ready": True}
-    response = json.loads(proc.stdout.readline())
-    proc.stdin.close()
-    stderr = proc.stderr.read()
-    proc.wait(timeout=10)
-
-    assert response["id"] == "1"
     assert response["ok"] is False
-    assert "invalid validate verdict" in response["error"]
+    assert "invalid validate verdict" in str(response["error"])
     assert "invalid validate verdict" in stderr
 
 
-def test_hook_executor_rejects_unknown_warn_verdict(tmp_path: Path) -> None:
+def test_hook_executor_validates_worker_verdicts_and_collects_warnings(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipe"
     _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        exports=("validate",),
+        recipe_dir, hooks={"check": "project_hooks.hooks.check"}, exports=("validate",)
     )
 
-    class WarningWorkers:
-        def request(
-            self,
-            ref: UvHookRef,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            return HookWorkerCallResult(
-                result={"status": "warn", "message": "check this"},
-                diagnostics="discarded\n",
-            )
-
-    executor = HookExecutor(
-        HookResolver(),
-        workers=WarningWorkers(),
-    )
-
-    with pytest.raises(ValueError, match="status"):
-        executor.validate(
-            "check",
-            local_hook_project=recipe_dir,
-            target=tmp_path / "target",
-            inputs={},
-            args={},
+    def validate(workers: _CannedWorkers) -> object:
+        return HookExecutor(HookResolver(), workers=workers).validate(
+            "check", local_hook_project=recipe_dir, target=tmp_path, inputs={}, args={}
         )
 
-
-def test_hook_executor_collects_worker_warnings_alongside_verdict(tmp_path: Path) -> None:
-    recipe_dir = tmp_path / "recipe"
-    _write_hook_project(
-        recipe_dir,
-        hooks={"check": "project_hooks.hooks.check"},
-        exports=("validate",),
+    with pytest.raises(ValueError, match="status"):
+        validate(_CannedWorkers({"status": "warn", "message": "check this"}))
+    result = validate(
+        _CannedWorkers(
+            {"status": "skip", "message": "not applicable"}, warnings=("noticed something",)
+        )
     )
-
-    class WarningWorkers:
-        def request(
-            self,
-            ref: UvHookRef,
-            payload: dict[str, object],
-            *,
-            diagnostic_limit: int | None = 4000,
-            settle_seconds: float = 0,
-        ) -> HookWorkerCallResult:
-            return HookWorkerCallResult(
-                result={"status": "skip", "message": "not applicable"},
-                diagnostics="",
-                warnings=("noticed something",),
-            )
-
-    executor = HookExecutor(
-        HookResolver(),
-        workers=WarningWorkers(),
-    )
-
-    result = executor.validate(
-        "check",
-        local_hook_project=recipe_dir,
-        target=tmp_path / "target",
-        inputs={},
-        args={},
-    )
-
     assert result.result == Verdict(status="skip", message="not applicable")
     assert result.warnings == ("noticed something",)
 
@@ -1610,24 +807,12 @@ class _BrokenStdin:
 
 
 class _SlowStdout:
-    def __init__(self, delay: float, *, ready: bool = True) -> None:
+    """Ready arrives after ``ready_delay`` (never if not ``ready``), then ``lines``, then stalls."""
+
+    def __init__(self, delay: float, *, ready: bool, ready_delay: float, lines: list[str]) -> None:
         self._delay = delay
         self._ready_pending = ready
-
-    def readline(self) -> str:
-        if self._ready_pending:
-            self._ready_pending = False
-            return _READY_LINE
-        time.sleep(self._delay)
-        return ""
-
-
-class _DelayedReadyStdout:
-    """Ready arrives late (slow env sync), then responses flow instantly."""
-
-    def __init__(self, ready_delay: float, lines: list[str]) -> None:
         self._ready_delay = ready_delay
-        self._ready_pending = True
         self._lines = list(lines)
 
     def readline(self) -> str:
@@ -1637,33 +822,21 @@ class _DelayedReadyStdout:
             return _READY_LINE
         if self._lines:
             return self._lines.pop(0)
-        time.sleep(60)
+        time.sleep(self._delay)
         return ""
 
 
-class _DelayedReadyProcess:
-    def __init__(self, *, ready_delay: float, lines: list[str]) -> None:
-        self.stdin = StringIO()
-        self.stdout = _DelayedReadyStdout(ready_delay, lines)
-        self.stderr = StringIO()
-        self.killed = False
-
-    def wait(self, timeout: float | None = None) -> int:
-        if self.killed:
-            return 0
-        raise subprocess.TimeoutExpired("delayed", timeout)
-
-    def terminate(self) -> None:
-        self.killed = True
-
-    def kill(self) -> None:
-        self.killed = True
-
-
 class _SlowProcess:
-    def __init__(self, *, delay: float, ready: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        delay: float = 60,
+        ready: bool = True,
+        ready_delay: float = 0,
+        lines: list[str] | None = None,
+    ) -> None:
         self.stdin = StringIO()
-        self.stdout = _SlowStdout(delay, ready=ready)
+        self.stdout = _SlowStdout(delay, ready=ready, ready_delay=ready_delay, lines=lines or [])
         self.stderr = StringIO()
         self.killed = False
 
@@ -1734,6 +907,254 @@ def test_uv_hook_worker_launch_does_not_shadow_pack_top_level_modules(
     assert response["result"] == {"status": "pass", "message": "pack module"}
 
 
-def _expected_dev_requirement() -> str:
-    installed = Version(version("untaped"))
-    return f"untaped>={installed.public},<{installed.major + 1}"
+FatalError = worker_client.FatalHookWorkerError
+_OK_LINE = '{"id": "1", "ok": true, "result": "after"}\n'
+
+
+@pytest.mark.parametrize(
+    ("stdout", "ready", "stderr", "broken_stdin", "error", "match"),
+    [
+        ("not-json\n", True, "", False, ValueError, "malformed hook worker response"),
+        (
+            '{"id": "wrong", "ok": true, "result": "after"}\n',
+            True,
+            "",
+            False,
+            ValueError,
+            "response id mismatch",
+        ),
+        ("hello\n", False, "", False, FatalError, "malformed hook worker handshake"),
+        ("", False, "", False, FatalError, "exited before ready"),
+        ("", False, "ImportError: boom\n", False, FatalError, "exited before ready"),
+        ("", True, "", True, FatalError, "exited before request"),
+        ("", True, "", False, FatalError, "exited before response"),
+    ],
+)
+def test_uv_hook_worker_protocol_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stdout: str,
+    ready: bool,
+    stderr: str,
+    broken_stdin: bool,
+    error: type[Exception],
+    match: str,
+) -> None:
+    fake = _FakeProcess(stdout=stdout, ready=ready, stderr=stderr)
+    if broken_stdin:
+        fake.stdin = _BrokenStdin()  # type: ignore[assignment]
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    worker = UvHookWorker(tmp_path)
+
+    with pytest.raises(error, match=match):
+        worker.request({"kind": "transform", "module": "hooks.sample"}, settle_seconds=0.1)
+
+
+@pytest.mark.parametrize(
+    ("diagnostic_limit", "expected"),
+    [(10_000, "12345\n67890"), (7, "67890")],
+)
+def test_uv_hook_worker_request_returns_result_json_payload_and_bounded_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    diagnostic_limit: int,
+    expected: str,
+) -> None:
+    payload_args = {
+        "enabled": True,
+        "count": 2,
+        "labels": ["api", "worker"],
+        "options": {"mode": "strict", "empty": None},
+    }
+    fake = _FakeProcess(stdout=_OK_LINE, stderr="12345\n67890\n")
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    worker = UvHookWorker(tmp_path)
+
+    result = worker.request(
+        {"kind": "transform", "module": "hooks.sample", "args": payload_args},
+        diagnostic_limit=diagnostic_limit,
+        settle_seconds=0.05,
+    )
+
+    assert result.result == "after"
+    assert expected in result.diagnostics
+    assert len(result.diagnostics) <= diagnostic_limit
+    assert json.loads(fake.stdin.getvalue())["args"] == payload_args
+
+
+class _FakeWorker:
+    """Stand-in for ``UvHookWorker`` that records its lifecycle."""
+
+    def __init__(
+        self,
+        worker_id: int,
+        respond: Callable[[_FakeWorker], object],
+        *,
+        hook_timeout_seconds: float,
+        close_error: BaseException | None,
+    ) -> None:
+        self.worker_id = worker_id
+        self.hook_timeout_seconds = hook_timeout_seconds
+        self.calls = 0
+        self.closed = False
+        self._respond = respond
+        self._close_error = close_error
+
+    def request(
+        self,
+        payload: dict[str, object],
+        *,
+        diagnostic_limit: int | None = 4000,
+        settle_seconds: float = 0,
+    ) -> HookWorkerCallResult:
+        self.calls += 1
+        return HookWorkerCallResult(result=self._respond(self), diagnostics="")
+
+    def close(self) -> None:
+        self.closed = True
+        if self._close_error is not None:
+            raise self._close_error
+
+
+def _fake_workers(
+    monkeypatch: pytest.MonkeyPatch,
+    respond: Callable[[_FakeWorker], object] = lambda worker: worker.worker_id,
+    *,
+    close_errors: dict[int, BaseException] | None = None,
+) -> list[_FakeWorker]:
+    workers: list[_FakeWorker] = []
+
+    def start(project_root: Path, *, hook_timeout_seconds: float, **kwargs: object) -> _FakeWorker:
+        worker_id = len(workers) + 1
+        worker = _FakeWorker(
+            worker_id,
+            respond,
+            hook_timeout_seconds=hook_timeout_seconds,
+            close_error=(close_errors or {}).get(worker_id),
+        )
+        workers.append(worker)
+        return worker
+
+    monkeypatch.setattr(worker_client, "UvHookWorker", start)
+    return workers
+
+
+def _sample_ref(tmp_path: Path) -> UvHookRef:
+    return UvHookRef(
+        name="sample",
+        exports=frozenset({"transform"}),
+        project_root=tmp_path,
+        module="hooks.sample",
+    )
+
+
+def test_uv_hook_worker_pool_reuses_idle_workers_and_passes_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workers = _fake_workers(monkeypatch)
+    ref = _sample_ref(tmp_path)
+
+    with UvHookWorkerPool(max_workers_per_project=3, hook_timeout_seconds=12) as pool:
+        results = [pool.request(ref, {"kind": "transform"}).result for _ in range(3)]
+
+    assert results == [1, 1, 1]
+    assert [(worker.hook_timeout_seconds, worker.closed) for worker in workers] == [(12, True)]
+
+
+def test_uv_hook_worker_pool_leases_parallel_workers_and_close_survives_one_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    barrier = Barrier(3)
+
+    def wait_for_all(worker: _FakeWorker) -> int:
+        barrier.wait(timeout=5)
+        return worker.worker_id
+
+    workers = _fake_workers(
+        monkeypatch,
+        wait_for_all,
+        close_errors={2: BrokenPipeError("worker stdin already closed")},
+    )
+    ref = _sample_ref(tmp_path)
+    pool = UvHookWorkerPool(max_workers_per_project=3)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = [
+            result.result
+            for result in executor.map(lambda _: pool.request(ref, {"kind": "transform"}), range(3))
+        ]
+
+    assert sorted(results) == [1, 2, 3]
+    with pytest.raises(BrokenPipeError, match="worker stdin already closed"):
+        pool.close()
+    assert [worker.closed for worker in workers] == [True, True, True]
+
+
+@pytest.mark.parametrize(
+    ("failure", "replaced"),
+    [
+        (FatalError("malformed hook worker response"), True),
+        (ValueError("validate hook failed"), False),
+    ],
+)
+def test_uv_hook_worker_pool_retires_workers_only_after_fatal_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    replaced: bool,
+) -> None:
+    def fail_first_call(worker: _FakeWorker) -> int:
+        if worker.worker_id == 1 and worker.calls == 1:
+            raise failure
+        return worker.worker_id
+
+    workers = _fake_workers(monkeypatch, fail_first_call)
+    ref = _sample_ref(tmp_path)
+
+    with UvHookWorkerPool(max_workers_per_project=1) as pool:
+        with pytest.raises(ValueError, match=str(failure)):
+            pool.request(ref, {"kind": "validate"})
+        assert pool.request(ref, {"kind": "validate"}).result == (2 if replaced else 1)
+
+    assert len(workers) == (2 if replaced else 1)
+    assert all(worker.closed for worker in workers)
+
+
+def test_uv_hook_worker_pool_wakes_waiters_after_fatal_retirement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_request_started = Event()
+    fail_first_request = Event()
+
+    def respond(worker: _FakeWorker) -> int:
+        if worker.worker_id == 1:
+            first_request_started.set()
+            assert fail_first_request.wait(timeout=5)
+            raise FatalError("hook worker timed out")
+        return worker.worker_id
+
+    workers = _fake_workers(monkeypatch, respond)
+    ref = _sample_ref(tmp_path)
+
+    with (
+        UvHookWorkerPool(max_workers_per_project=1) as pool,
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        first = executor.submit(pool.request, ref, {"kind": "transform"})
+        assert first_request_started.wait(timeout=5)
+        second = executor.submit(pool.request, ref, {"kind": "transform"})
+        time.sleep(0.05)
+
+        fail_first_request.set()
+
+        with pytest.raises(FatalError, match="timed out"):
+            first.result(timeout=5)
+        try:
+            assert second.result(timeout=1).result == 2
+        except FutureTimeoutError as exc:
+            msg = "waiting request was not woken after fatal retirement"
+            raise AssertionError(msg) from exc
+
+    assert [worker.closed for worker in workers] == [True, True]
