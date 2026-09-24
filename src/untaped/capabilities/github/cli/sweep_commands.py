@@ -252,7 +252,7 @@ def sweep_command(
             emit(
                 _display_rows(rows, query=query, owners=owners, fmt=fmt, columns=columns),
                 fmt=fmt,
-                columns=columns or _default_columns(query=query, owners=owners),
+                columns=columns or _default_columns(query=query, owners=owners, fmt=fmt),
                 kind="github.sweep_repo",
                 empty="No matching repositories found.",
             )
@@ -370,8 +370,9 @@ def _display_rows(
     return display
 
 
-def _default_columns(*, query: SweepQuery, owners: bool) -> list[str] | None:
-    if not query.refs.beyond_default() and owners:
+def _default_columns(*, query: SweepQuery, owners: bool, fmt: OutputFormat) -> list[str] | None:
+    # Only the table view flattens ``hits`` into per-predicate columns.
+    if fmt != "table" or (not query.refs.beyond_default() and owners):
         return None
     columns = ["full_name", *query.labels()]
     if query.refs.beyond_default():
