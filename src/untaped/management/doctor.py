@@ -6,13 +6,16 @@ validation only, never network I/O. Each row is isolated: invalid settings
 for one capability surface as failed rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). Capability state
 sections still at the top level of ``config.yml`` (the pre-``state.yml``
-layout) render as a ``warn`` row, which does not fail the run; so does a
-capability check that returns ``DoctorResult(..., warn=True)``.
+layout) render as a ``warn`` row, which does not fail the run; so do a
+config file other users can read, profile keys no settings model declares,
+installed skills that differ from their packaged copy, and a capability
+check that returns ``DoctorResult(..., warn=True)``.
 """
 
 from __future__ import annotations
 
 import os
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +40,7 @@ from untaped.cli import (
     report_errors,
 )
 from untaped.config_file import read_config_dict
+from untaped.config_schema import walk_settings
 from untaped.errors import ConfigError, ExitCode, first_validation_error
 from untaped.http import resolve_verify
 from untaped.management._render import emit_isolated
@@ -48,10 +52,12 @@ from untaped.settings import (
     Settings,
     active_settings_layout,
     check_settings_field,
+    get_profile_settings_model,
     resolve_config_path,
     resolve_state_path,
     state_section_source,
 )
+from untaped.skills import InstallableSkill, outdated_skills
 from untaped.theme import UiSettings, resolve_theme
 
 _PASS = "pass"
@@ -147,6 +153,9 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row(shell)
     rows.append(config_row)
+    if raw is not None:
+        rows.append(_permissions_row(shell))
+        rows.append(_unknown_keys_row(shell, raw))
     state, state_file_row = _state_file_row(shell)
     rows.append(state_file_row)
     settings_error: str | None = None
@@ -179,9 +188,75 @@ def _collect(shell: ApplicationSpec, result: CompositionResult) -> list[dict[str
     for scope, settings in contexts:
         for check_item in scope.checks:
             rows.append(_run_check(scope, check_item, settings))
+    rows.append(_skills_row(shell, result))
     for record in result.quarantine:
         rows.append(_quarantine_row(record))
     return rows
+
+
+def _permissions_row(shell: ApplicationSpec) -> dict[str, object]:
+    """Warn when other users can read or write the config file (it may hold tokens)."""
+    title = "config file permissions"
+    path = resolve_config_path()
+    if os.name == "nt" or not path.is_file():
+        return _row("config", shell.name, _PASS, title, "not checked")
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if mode & 0o077:
+        detail = f"{path} has mode {mode:04o}; restrict it with `chmod 600 {path}`"
+        return _row("config", shell.name, _WARN, title, detail)
+    return _row("config", shell.name, _PASS, title, f"mode {mode:04o}")
+
+
+def _unknown_keys_row(shell: ApplicationSpec, raw: Mapping[str, Any]) -> dict[str, object]:
+    """Warn about profile keys that no registered settings model declares (typos)."""
+    title = "unknown config keys"
+    model = get_profile_settings_model()
+    leaves = {d.path for d in walk_settings(model, include_collections=True)}
+    prefixes = {path[:depth] for path in leaves for depth in range(1, len(path))}
+    unknown: list[str] = []
+    profiles = raw.get("profiles")
+    for name, data in profiles.items() if isinstance(profiles, dict) else ():
+        if isinstance(data, dict):
+            _collect_unknown(data, ("profiles", str(name)), (), leaves, prefixes, unknown)
+    if unknown:
+        return _row("unknown-keys", shell.name, _WARN, title, "ignored: " + ", ".join(unknown))
+    return _row("unknown-keys", shell.name, _PASS, title, "no unknown keys")
+
+
+def _collect_unknown(
+    node: Mapping[str, Any],
+    location: tuple[str, ...],
+    path: tuple[str, ...],
+    leaves: set[tuple[str, ...]],
+    prefixes: set[tuple[str, ...]],
+    unknown: list[str],
+) -> None:
+    for key, value in node.items():
+        child = (*path, str(key))
+        if child in leaves:
+            continue
+        if child in prefixes:
+            if isinstance(value, dict):
+                _collect_unknown(value, location, child, leaves, prefixes, unknown)
+            continue
+        unknown.append(".".join((*location, *child)))
+
+
+def _skills_row(shell: ApplicationSpec, result: CompositionResult) -> dict[str, object]:
+    """Warn when an installed skill no longer matches the packaged copy."""
+    title = "installed skills up to date"
+    skills: dict[str, InstallableSkill] = {asset.name: asset for asset in shell.skills}
+    for registered in result.capabilities:
+        skills.update({asset.name: asset for asset in registered.skills})
+    stale = outdated_skills(skills, project_dir=Path.cwd())
+    if not stale:
+        return _row("skills", shell.name, _PASS, title, "no outdated skills")
+    names = sorted({path.name for path in stale})
+    detail = (
+        f"outdated: {', '.join(str(path) for path in stale)}; "
+        f"reinstall with `untaped skills install {' '.join(names)} --force`"
+    )
+    return _row("skills", shell.name, _WARN, title, detail)
 
 
 def _config_row(shell: ApplicationSpec) -> tuple[dict[str, Any] | None, dict[str, object]]:

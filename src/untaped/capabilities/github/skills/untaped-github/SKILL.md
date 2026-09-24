@@ -12,7 +12,7 @@ Use this skill when the user wants an agent to operate the `untaped github` CLI 
 - The command is `untaped github`. It ships with the unified `untaped` CLI (no separate install).
 - Settings live under `profiles.<name>.github`: `base_url`, `token`, `corpus_path`, and `sweep` freshness/concurrency settings.
 - `base_url` defaults to `https://api.github.com`; GitHub Enterprise Server usually uses `https://HOST/api/v3`.
-- Set the token with `untaped config set github.token --prompt` or `--stdin`. A rejected token (HTTP 401) fails with a hint to run that command.
+- Set the token with `untaped config set github.token --prompt` or `--stdin`, or point `github.token_command` at a command that prints it (`'["gh", "auth", "token"]'`). `GH_TOKEN`/`GITHUB_TOKEN` are the last fallback. A rejected token (HTTP 401) fails with a hint to run that command.
 - Set the base URL with `untaped config set github.base_url https://HOST/api/v3`.
 
 ## Command Patterns

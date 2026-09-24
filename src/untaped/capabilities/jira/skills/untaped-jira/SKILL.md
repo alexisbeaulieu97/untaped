@@ -12,7 +12,7 @@ Use this skill when the user wants an agent to operate the `untaped jira` CLI fo
 - The command is `untaped jira`. It ships with the unified `untaped` CLI (no separate install).
 - `untaped jira` targets Jira Data Center and self-hosted Jira, not Jira Cloud REST v3.
 - Settings live under `profiles.<name>.jira`: `base_url`, `token`, `assigned_jql`, and optional defaults such as `default_board_id`.
-- Use `untaped config set jira.token --prompt` or `--stdin` for personal access tokens. A rejected token (HTTP 401) prints that command as a hint.
+- Use `untaped config set jira.token --prompt` or `--stdin` for personal access tokens, or set `jira.token_command` to an argv list that prints the token. A rejected token (HTTP 401) prints that command as a hint.
 - Set the base URL with `untaped config set jira.base_url https://HOST`.
 
 ## Command Patterns

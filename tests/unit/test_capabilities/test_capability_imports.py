@@ -118,6 +118,10 @@ APPROVED_HELPERS = frozenset(
         "read_records",
         "read_stdin_input",
         "summary",
+        "TokenCommand",
+        "TokenSources",
+        "connection_check",
+        "executable_check",
     }
 )
 
