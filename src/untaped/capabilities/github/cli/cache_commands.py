@@ -252,11 +252,11 @@ def clean_command(
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
-    """Deprecated: use ``cache delete`` or ``cache prune``; removed in 7.0."""
+    """Deprecated: use ``cache delete`` or ``cache prune``; removed in 8.0."""
     with report_errors():
         app_context().ui(strict=False).message(
             "warning",
-            "`cache clean` is deprecated and will be removed in 7.0; "
+            "`cache clean` is deprecated and will be removed in 8.0; "
             "use `cache delete` or `cache prune`",
         )
         repos = tuple(repo or ())

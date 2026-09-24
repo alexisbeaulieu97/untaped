@@ -56,7 +56,7 @@ def test_old_command_names_are_hidden_warning_aliases(args: list[str], old: str,
         result = invoke_cli(_root(), ["jira", *args, "--format", "json"])  # type: ignore[arg-type]
 
     assert result.exit_code == 0, result.output
-    assert f"warning: `{old}` is deprecated and will be removed in 7.0; use `{new}`" in (
+    assert f"warning: `{old}` is deprecated and will be removed in 8.0; use `{new}`" in (
         result.stderr
     )
     help_text = invoke_cli(_root(), ["jira", "--help"]).stdout  # type: ignore[arg-type]
@@ -86,7 +86,7 @@ def test_issue_edit_and_field_flags_alias_patch_and_set() -> None:
 
     assert result.exit_code == 0, result.output
     for old, new in (("issue", "issues"), ("edit", "patch"), ("--field", "--set")):
-        assert f"`{old}` is deprecated and will be removed in 7.0; use `{new}`" in result.stderr
+        assert f"`{old}` is deprecated and will be removed in 8.0; use `{new}`" in result.stderr
     assert "`--json-field` is deprecated" in result.stderr
     assert json.loads(route.calls[0].request.content) == {
         "fields": {"summary": "new", "labels": ["a"]}

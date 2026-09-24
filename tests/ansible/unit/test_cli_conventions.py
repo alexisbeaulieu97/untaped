@@ -229,7 +229,7 @@ def test_renamed_source_verbs_keep_deprecated_spellings(
     result = invoke_cli(build_root_app(externals=[]), ["ansible", "source", *old])
 
     assert result.exit_code == 0, result.output
-    assert f"`{old[0]}` is deprecated and will be removed in 7.0; use `{new_args}`" in (
+    assert f"`{old[0]}` is deprecated and will be removed in 8.0; use `{new_args}`" in (
         result.stderr
     )
 
@@ -285,7 +285,7 @@ def test_source_refresh_concurrency_is_a_deprecated_spelling_of_parallel(
         ["ansible", "source", "refresh", "missing", "--concurrency", "4"],
     )
 
-    assert "`--concurrency` is deprecated and will be removed in 7.0; use `--parallel`" in (
+    assert "`--concurrency` is deprecated and will be removed in 8.0; use `--parallel`" in (
         result.stderr
     )
     assert "source not found: 'missing'" in result.stderr
@@ -328,7 +328,7 @@ def test_graph_output_is_a_deprecated_spelling_of_out(
     )
 
     assert result.exit_code == 0, result.output
-    assert "`--output` is deprecated and will be removed in 7.0; use `--out`" in result.stderr
+    assert "`--output` is deprecated and will be removed in 8.0; use `--out`" in result.stderr
     assert json.loads(out.read_text())["target_id"]
 
 

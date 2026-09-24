@@ -18,7 +18,7 @@ Use this skill when the user wants an agent to operate the `untaped jira` CLI fo
 ## Command Patterns
 
 - Use `untaped jira --help` and subcommand `--help` output to confirm the available commands and flags before acting.
-- Commands: `whoami`, `issues get|search|assigned|create|patch|comment|transitions|transition`, `issues comments list`, `issues links create`, `projects list|get`, `boards list`, `sprints list`. The old spellings (`me`, `issue`, `project`, `board`, `sprint`, `issue edit`, `--field`, `--json-field`) still work until 7.0 but print a deprecation warning; do not use them.
+- Commands: `whoami`, `issues get|search|assigned|create|patch|comment|transitions|transition`, `issues comments list`, `issues links create`, `projects list|get`, `boards list`, `sprints list`. The old spellings (`me`, `issue`, `project`, `board`, `sprint`, `issue edit`, `--field`, `--json-field`) still work until 8.0 but print a deprecation warning; do not use them.
 - Jira platform calls use `/rest/api/2`; Jira Software board and sprint calls use `/rest/agile/1.0`.
 - Use `untaped jira issues assigned` to list issues assigned to the authenticated Jira user. It always applies `jira.assigned_jql`; `--jql` and the shortcut flags narrow it (ANDed), and an `ORDER BY` in `--jql` replaces the default `updated DESC` order. For an unrestricted query (not limited to your assigned issues) use `untaped jira issues search --jql ...` instead.
 - `untaped jira issues search` with no `--jql` or shortcut flags falls back to `jira.assigned_jql`.

@@ -305,7 +305,7 @@ def _consume_path_root_options(
 
 def _warn_deprecated(old: str, new: str) -> None:
     ui_context(strict=False).message(
-        "warning", f"`{old}` is deprecated and will be removed in 7.0; use `{new}`"
+        "warning", f"`{old}` is deprecated and will be removed in 8.0; use `{new}`"
     )
 
 
