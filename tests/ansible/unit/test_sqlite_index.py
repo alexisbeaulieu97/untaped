@@ -103,12 +103,18 @@ def _commit(
         keep = {(scan.source_repo, scan.ref_kind, scan.source_ref) for scan in scans} | {
             (touch.source_repo, touch.ref_kind, touch.source_ref) for touch in touches
         }
-    index.commit_source_ref_refresh(
+    repos = frozenset(repo for repo, _, _ in keep)
+    index.commit_source_ref_partial_refresh(
         source_key,
         scans=scans,
         touches=touches,
         keep=keep,
         repo_metadata=repo_metadata,
+        processed_repos=repos,
+    )
+    index.complete_source_ref_refresh(
+        source_key,
+        source_repos=repos,
         scanned_at=scanned_at or datetime(2026, 6, 1, tzinfo=UTC),
     )
 

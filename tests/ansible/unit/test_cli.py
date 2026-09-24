@@ -15,7 +15,7 @@ import pytest
 import respx
 import yaml
 
-from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli import app, refresh
 from untaped.capabilities.ansible.domain.payloads import (
     GRAPHQL_RATE_LIMIT_FALLBACK,
@@ -369,14 +369,27 @@ def _seed_index(
         )
         for (source_repo, source_ref, ref_kind), edges in grouped.items()
     )
-    index.commit_source_ref_refresh(
+    _commit_scans(index, source_key, scans, repo_metadata=repo_metadata, scanned_at=now)
+
+
+def _commit_scans(
+    index: SqliteDependencyIndex,
+    source_key: str,
+    scans: tuple[RefScan, ...],
+    *,
+    repo_metadata: tuple[SourceRepoMetadata, ...] = (),
+    scanned_at: datetime,
+) -> None:
+    repos = frozenset(scan.source_repo for scan in scans)
+    index.commit_source_ref_partial_refresh(
         source_key,
         scans=scans,
         touches=(),
         keep={(scan.source_repo, scan.ref_kind, scan.source_ref) for scan in scans},
         repo_metadata=repo_metadata,
-        scanned_at=now,
+        processed_repos=repos,
     )
+    index.complete_source_ref_refresh(source_key, source_repos=repos, scanned_at=scanned_at)
 
 
 def test_alias_add_list_remove_updates_config(
@@ -1640,11 +1653,10 @@ def test_graph_cached_missing_ref_lists_available_refs_in_display_order(
             ("heads", "docs"),
         )
     )
-    SqliteDependencyIndex(index_path).commit_source_ref_refresh(
+    _commit_scans(
+        SqliteDependencyIndex(index_path),
         "source:platform",
-        scans=scans,
-        touches=(),
-        keep={(scan.source_repo, scan.ref_kind, scan.source_ref) for scan in scans},
+        scans,
         repo_metadata=(
             SourceRepoMetadata(
                 source_key="source:platform",

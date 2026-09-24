@@ -335,13 +335,13 @@ def test_source_status_uses_snake_case_states_and_utc_timestamps(
         indexed_at=scanned_at,
         dependencies=(),
     )
-    SqliteDependencyIndex(tmp_path / "index.sqlite3").commit_source_ref_refresh(
-        "source:prod",
-        scans=(scan,),
-        touches=(),
-        keep={("acme/site", "heads", "main")},
-        scanned_at=scanned_at,
+    index = SqliteDependencyIndex(tmp_path / "index.sqlite3")
+    repos = frozenset({"acme/site"})
+    keep = {("acme/site", "heads", "main")}
+    index.commit_source_ref_partial_refresh(
+        "source:prod", scans=(scan,), touches=(), keep=keep, processed_repos=repos
     )
+    index.complete_source_ref_refresh("source:prod", source_repos=repos, scanned_at=scanned_at)
 
     result = invoke_cli(app, ["source", "status", "-f", "json"])
 

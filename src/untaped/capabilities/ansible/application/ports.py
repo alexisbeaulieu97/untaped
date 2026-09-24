@@ -81,24 +81,6 @@ class IncrementalDependencyIndexWriter(Protocol):
         refs: Iterable[tuple[str, str]],
     ) -> dict[tuple[str, str], payloads.RefScanMetadata]: ...
 
-    def commit_source_ref_refresh(
-        self,
-        source_key: str,
-        *,
-        scans: tuple[payloads.RefScan, ...],
-        touches: tuple[payloads.RefScanTouch, ...],
-        keep: set[tuple[str, str, str]],
-        repo_metadata: tuple[payloads.SourceRepoMetadata, ...] = (),
-        scanned_at: datetime,
-        failed_repos: frozenset[str] = frozenset(),
-    ) -> None:
-        """Commit a refresh; ``scans`` must be unique per (source_key, source_repo,
-        ref_kind, source_ref) -- duplicates fail (DependencyIndexError) inside the
-        transaction instead of last-wins. Refs and repo metadata cached for
-        ``failed_repos`` survive the prune even though they contribute nothing
-        to ``keep``."""
-        ...
-
     def commit_source_ref_partial_refresh(
         self,
         source_key: str,
