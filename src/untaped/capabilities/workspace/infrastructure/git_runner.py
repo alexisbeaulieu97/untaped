@@ -176,14 +176,6 @@ class GitRunner:
             return
         self._run(["checkout", "-b", branch], cwd=repo_path)
 
-    def default_branch(self, bare_path: Path) -> str | None:
-        """Return the branch the bare's HEAD points at, or ``None``."""
-        try:
-            out = self._run(["symbolic-ref", "--short", "HEAD"], cwd=bare_path, capture=True)
-        except GitError:
-            return None
-        return out.strip() or None
-
     # introspection (used by `workspace adopt`) --------------------------
 
     def read_remote_url(self, repo_path: Path, *, remote: str = "origin") -> str | None:
