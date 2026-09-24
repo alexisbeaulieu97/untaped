@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 7.1.0
 
 - Core
   - **Behavior change:** after every command, the root warns on stderr when an
