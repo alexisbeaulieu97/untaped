@@ -159,7 +159,7 @@ def build_root_config_app(*, shell: ApplicationSpec, result: CompositionResult) 
             ),
         ] = False,
     ) -> None:
-        """Print one effective scalar setting value."""
+        """Print one effective setting value (mappings and lists as JSON in raw/table)."""
         _get(ctx, key, fmt=fmt, show_secrets=show_secrets)
 
     @app.command(name="set")

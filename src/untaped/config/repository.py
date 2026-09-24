@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+import yaml
 from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from untaped.config_file import (
@@ -44,7 +45,7 @@ class SettingsFileRepository:
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
-            self._descriptors = walk_settings(self._profile_model())
+            self._descriptors = walk_settings(self._profile_model(), include_collections=True)
         return self._descriptors
 
     def descriptor(self, key: str) -> FieldDescriptor:
@@ -209,11 +210,13 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
     """Validate a CLI-supplied string against the leaf type; return its YAML form.
 
     ``str``/``SecretStr`` fields keep the input verbatim (no YAML parsing, so
-    ``p4ss #word`` or ``0123`` survive intact). Other types validate the raw
-    string in pydantic's lax mode and store the JSON-mode dump (e.g. a
-    ``Path`` as a string). For those non-string types the literal ``null``
-    stores ``None``; the section validation in ``set_value`` rejects it when
-    the field is not optional. (``config unset`` removes a key instead.)
+    ``p4ss #word`` or ``0123`` survive intact). Mapping and list fields parse
+    the input as JSON or YAML and replace the whole value. Other types
+    validate the raw string in pydantic's lax mode and store the JSON-mode
+    dump (e.g. a ``Path`` as a string). For those non-string types the
+    literal ``null`` stores ``None``; the section validation in ``set_value``
+    rejects it when the field is not optional. (``config unset`` removes a
+    key instead.)
     """
     if descriptor.annotation in (str, SecretStr):
         return raw_value
@@ -221,9 +224,21 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
         return None
     adapter: TypeAdapter[Any] = TypeAdapter(descriptor.annotation)
     try:
-        value = adapter.validate_strings(raw_value)
+        if descriptor.is_collection:
+            value = adapter.validate_python(_parse_structured(key, raw_value))
+        else:
+            value = adapter.validate_strings(raw_value)
     except ValidationError as exc:
         raise ConfigError(f"invalid value for {key!r}: {first_validation_error(exc)}") from exc
     if isinstance(value, SecretStr):
         return value.get_secret_value()
     return adapter.dump_python(value, mode="json")
+
+
+def _parse_structured(key: str, raw_value: str) -> Any:
+    """Parse a mapping/list value given as JSON or YAML (JSON is valid YAML)."""
+    try:
+        return yaml.safe_load(raw_value)
+    except yaml.YAMLError as exc:
+        problem = getattr(exc, "problem", None) or "not valid JSON or YAML"
+        raise ConfigError(f"invalid value for {key!r}: {problem}") from exc
