@@ -313,16 +313,8 @@ class SqliteDependencyIndex:
         age = datetime.now(UTC) - status.scanned_at
         return age.total_seconds() > max_age_seconds
 
-    def clear(self, source_key: str | None = None) -> None:
+    def clear(self, source_key: str) -> None:
         with self._db() as db:
-            if source_key is None:
-                db.execute("delete from source_ref_scans")
-                db.execute("delete from source_runs")
-                db.execute("delete from source_repo_metadata")
-                db.execute("delete from source_refresh_progress")
-                db.execute("delete from snapshot_edges")
-                db.execute("delete from dependency_snapshots")
-                return
             db.execute("delete from source_runs where source_key = ?", (source_key,))
             db.execute("delete from source_ref_scans where source_key = ?", (source_key,))
             db.execute("delete from source_repo_metadata where source_key = ?", (source_key,))
