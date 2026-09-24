@@ -96,6 +96,7 @@ APPROVED_HELPERS = frozenset(
         "resolve_verify",
         "ui_context",
         "unified_diff_text",
+        "AbsolutePath",
         "CheckRecord",
         "DryRunOption",
         "ExitCode",

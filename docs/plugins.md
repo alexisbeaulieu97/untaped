@@ -236,7 +236,7 @@ The shared runtime helpers are exported from the same module:
   `ExitCode`.
 - Message wording: `plural`, `q`, `not_found`, `hint`, `summary`.
 - Records: `OutcomeRecord`, `TargetRecord`, `CheckRecord`, and the
-  `UtcTimestamp` field type.
+  `UtcTimestamp` and `AbsolutePath` field types.
 - Settings and context: `get_config_section`, `get_core_settings`,
   `HttpSettings`, `app_context`, `AppContext`.
 - HTTP: `connected_client`, `HttpClient`, `RetryPolicy`, `resolve_verify`, and
@@ -340,7 +340,8 @@ untaped github search repos --format pipe | untaped acme import --stdin
 Keep filesystem destinations in an absolute, non-empty `record.target_path`.
 Consumers should not need producer-specific branching just to find that path.
 Subclassing `TargetRecord` enforces this, and `OutcomeRecord` fixes the `action`
-field of mutation results.
+field of mutation results. When `target_path` identifies the record, re-declare
+it as `target_path: AbsolutePath` so it leads the output.
 
 ## Confirmation
 

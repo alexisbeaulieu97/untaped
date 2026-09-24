@@ -80,7 +80,7 @@ from untaped.messages import hint, not_found, plural, q, summary
 from untaped.pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
 from untaped.progress import ProgressHandle
 from untaped.prompts import PromptChoice
-from untaped.records import CheckRecord, OutcomeRecord, TargetRecord, UtcTimestamp
+from untaped.records import AbsolutePath, CheckRecord, OutcomeRecord, TargetRecord, UtcTimestamp
 from untaped.render import OutputFormat
 from untaped.settings import HttpSettings, get_config_section, get_core_settings
 from untaped.state import StateCollection, StateMap
@@ -163,6 +163,7 @@ __all__ = [  # noqa: RUF022 — grouped composition and helpers; order pinned by
     "ui_context",
     "unified_diff_text",
     # 1.1 UX-convention helpers (docs/conventions.md).
+    "AbsolutePath",
     "CheckRecord",
     "DryRunOption",
     "ExitCode",
