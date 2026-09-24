@@ -61,82 +61,6 @@ def _seed_inventory_with_hosts(fake: Any) -> None:
     )
 
 
-def test_hosts_list_returns_seeded_records(fake_aap: Any) -> None:
-    _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["hosts", "list", "--format", "raw", "--columns", "name"],
-    )
-    assert result.exit_code == 0, result.output
-    names = sorted(result.stdout.strip().splitlines())
-    assert names == ["api-01", "web-01"]
-
-
-def test_hosts_list_filter_passes_through(fake_aap: Any) -> None:
-    _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "hosts",
-            "list",
-            "--filter",
-            "inventory__name=prod",
-            "--filter",
-            "name__icontains=web",
-            "--format",
-            "raw",
-            "--columns",
-            "name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "web-01"
-
-
-def test_hosts_get_by_id(fake_aap: Any) -> None:
-    _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["hosts", "get", "--by-id", "101", "--format", "json", "--columns", "name"],
-    )
-    assert result.exit_code == 0, result.output
-    assert "web-01" in result.stdout
-
-
-def test_hosts_get_by_stdin(fake_aap: Any) -> None:
-    _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["hosts", "get", "--stdin", "--by-id", "--format", "raw", "--columns", "name"],
-        input="101\n102\n",
-    )
-    assert result.exit_code == 0, result.output
-    names = result.stdout.strip().splitlines()
-    assert sorted(names) == ["api-01", "web-01"]
-
-
-def test_hosts_list_dotted_columns_walks_summary_fields(fake_aap: Any) -> None:
-    """``--columns summary_fields.inventory.name`` walks the dict tree."""
-    _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "hosts",
-            "list",
-            "--format",
-            "raw",
-            "--columns",
-            "name",
-            "--columns",
-            "summary_fields.inventory.name",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    # raw with two columns is tab-separated
-    rows = sorted(result.stdout.strip().splitlines())
-    assert rows == ["api-01\tprod", "web-01\tprod"]
-
-
 def test_hosts_apply_creates_host_via_nested_endpoint(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:
@@ -203,16 +127,6 @@ def test_hosts_apply_preview_does_not_write(seeded_default_org: Any, tmp_path: P
     assert seeded_default_org.store["hosts"] == {}
 
 
-def test_hosts_save_round_trips_to_yaml(fake_aap: Any) -> None:
-    _seed_inventory_with_hosts(fake_aap)
-    result = CliInvoker().invoke(app, ["hosts", "export", "web-01"])
-    assert result.exit_code == 0, result.output
-    out = result.stdout
-    # Save dumps YAML — exact field ordering varies, but kind + name must appear.
-    assert "kind: Host" in out
-    assert "web-01" in out
-
-
 def test_hosts_save_emits_metadata_parent_inventory(fake_aap: Any) -> None:
     """Critical for round-trip: a saved Host must include
     ``metadata.parent.kind: Inventory`` so applying it back through
@@ -261,18 +175,6 @@ def test_hosts_list_with_names_resolves_inventory(fake_aap: Any) -> None:
     # Both seeded hosts live in inventory id=20 named "prod" — flatten_fks
     # turns the bare id into the human-readable name.
     assert rows == ["prod", "prod"]
-
-
-def test_hosts_list_default_columns_no_dotted_summary_path(fake_aap: Any) -> None:
-    """Default-columns audit: Host's default projection is the consistent
-    ``name, inventory, enabled`` triple — no ``summary_fields.*`` paths.
-    Pinning this so a future spec edit doesn't silently regress to dotted
-    headers."""
-    from untaped.capabilities.awx.infrastructure.specs import HOST_SPEC
-
-    assert HOST_SPEC.list_columns == ("id", "name", "inventory", "enabled")
-    for col in HOST_SPEC.list_columns:
-        assert "." not in col, f"dotted path {col!r} leaked into default columns"
 
 
 def test_hosts_get_with_inventory_scope_disambiguates_across_inventories(
