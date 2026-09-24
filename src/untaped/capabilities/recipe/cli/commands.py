@@ -11,6 +11,7 @@ from untaped.capabilities.recipe.cli.library_commands import (
     get_command,
     list_command,
     remove_command,
+    sync_command,
     validate_command,
 )
 from untaped.capabilities.recipe.cli.new_commands import init_command
@@ -24,6 +25,7 @@ app.command(backup_app, name="backup")
 app.command(test_command, name="test")
 app.command(apply_command, name="apply")
 app.command(add_command, name="add")
+app.command(sync_command, name="sync")
 app.command(list_command, name="list")
 app.command(get_command, name="get")
 app.command(validate_command, name="validate")

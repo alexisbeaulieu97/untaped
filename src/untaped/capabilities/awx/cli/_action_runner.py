@@ -29,6 +29,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    hint,
     raise_usage,
 )
 
@@ -47,13 +48,16 @@ def run_action_selection(
     continue_on_error: bool = False,
     wait: bool = False,
     track: bool = False,
+    timeout: float | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
     """One bounded POST phase, then monitor every known execution even after failures.
 
     ``confirm`` (mass selections) previews the targets and asks once unless
-    ``yes``; a declined prompt submits nothing.
+    ``yes``; a declined prompt submits nothing. ``timeout`` bounds each
+    wait: an execution still running then fails its row and is named in a
+    ``jobs wait`` hint.
     """
     spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload)
     result_kinds = next(a.returns for a in spec.actions if a.name == action)
@@ -98,22 +102,60 @@ def run_action_selection(
             label = labels[index]
             launched.append((label, outcome.result))
             row_by_label[label] = index
+    unfinished: dict[str, list[str]] = {}
     if launched and (wait or track):
-        finals, errors = _monitor(ctx, launched, _unmonitored(outcomes, labels), track=track)
-        row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
-        for job in finals:
-            row = rows[row_by_job[(job.kind, job.id)]]
-            row.update(job.model_dump())
-            if job.status != "successful":
-                row.update(action="failed", detail=f"execution ended with status {job.status}")
+        finals, errors = _monitor(
+            ctx, launched, _unmonitored(outcomes, labels), track=track, timeout=timeout
+        )
+        unfinished = _record_finals(rows, row_by_label, finals, timeout=timeout)
         for label, exc in errors:
             index = row_by_label[label]
             rows[index].update(action="failed", detail=safe_error(exc, targets[index]))
     for row in rows:
         if row.get("detail"):
             echo(f"{row['action']}: {row['target_name']}: {row['detail']}", err=True)
+    for kind, ids in unfinished.items():
+        echo(hint(f"awx jobs wait {' '.join(ids)} --kind {kind}"), err=True)
     emit(rows, fmt=fmt, columns=columns, kind=f"awx.{action}_outcome")
     finish(any(row["action"] != "completed" for row in rows))
+
+
+def _record_finals(
+    rows: list[dict[str, Any]],
+    row_by_label: dict[str, int],
+    finals: list[Job],
+    *,
+    timeout: float | None,
+) -> dict[str, list[str]]:
+    """Fold each monitored execution's last state into its row.
+
+    Returns the ids, by execution kind, still running when ``timeout`` ended
+    the wait; their rows fail and they keep running on the controller.
+    """
+    row_by_job = {(rows[i]["kind"], rows[i]["id"]): i for i in row_by_label.values()}
+    unfinished: dict[str, list[str]] = {}
+    for job in finals:
+        row = rows[row_by_job[(job.kind, job.id)]]
+        row.update(job.model_dump())
+        if not job.is_terminal:
+            row.update(
+                action="failed",
+                detail=f"still {job.status} after --timeout {timeout or 0:g}s; it keeps running",
+            )
+            unfinished.setdefault(job.kind, []).append(str(job.id))
+        elif job.status != "successful":
+            row.update(action="failed", detail=f"execution ended with status {job.status}")
+    return unfinished
+
+
+def validate_wait_timeout(timeout: float | None, *, wait: bool, track: bool) -> None:
+    """``--timeout`` bounds ``--wait``/``--track`` and cannot be negative (usage errors)."""
+    if timeout is None:
+        return
+    if not (wait or track):
+        raise_usage("--timeout needs --wait or --track")
+    if timeout < 0:
+        raise_usage("--timeout must be non-negative")
 
 
 def _submit(
@@ -151,6 +193,7 @@ def _monitor(
     unmonitored: list[tuple[str, Job]],
     *,
     track: bool,
+    timeout: float | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Wait on launched executions; Ctrl-C stops polling and names what still runs."""
     finished: dict[str, Job] = {}
@@ -158,13 +201,20 @@ def _monitor(
         if track:
             ui = ctx.progress_ui()
             return drain_parallel(
-                ctx.monitor,
+                ctx.job_monitor(timeout=timeout),
                 launched,
                 lambda line: ui.styled(line, err=True),
                 stop=ctx.stop,
                 finished=finished,
             )
-        return wait_parallel(ctx.repo, launched, sleep=ctx.pause, stop=ctx.stop, finished=finished)
+        return wait_parallel(
+            ctx.repo,
+            launched,
+            sleep=ctx.pause,
+            stop=ctx.stop,
+            finished=finished,
+            timeout=timeout,
+        )
     except KeyboardInterrupt:
         report_interrupted(
             [(label, finished.get(label, job)) for label, job in launched] + unmonitored

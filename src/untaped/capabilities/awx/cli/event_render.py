@@ -18,6 +18,8 @@ a TUI:
 
 from __future__ import annotations
 
+import re
+
 from rich.text import Text
 
 from untaped.capabilities.awx.domain import JobEvent
@@ -48,6 +50,12 @@ _RUNNER_STYLES: dict[str, str] = {
     "skipped": "cyan",
     "no-hosts": "dim",
 }
+
+# Verdicts whose event ``stdout`` carries the reason (``fatal: [...]: FAILED! => ...``).
+_FAILURE_VERDICTS = frozenset({"failed", "unreachable"})
+_REASON_LINES = 10
+_REASON_STYLE = "red"
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 _PLAY_STYLE = "bold cyan"
 _TASK_STYLE = "bold blue"
@@ -96,6 +104,17 @@ def _render_body(ev: JobEvent) -> Text:
     return Text(" ".join(parts))
 
 
+def _failure_reason(ev: JobEvent) -> list[str]:
+    """The failed event's own output (ANSI stripped), capped at ten lines."""
+    if _RUNNER_RESULTS.get(ev.event) not in _FAILURE_VERDICTS:
+        return []
+    lines = [line.rstrip() for line in _ANSI.sub("", ev.stdout).splitlines() if line.strip()]
+    if len(lines) > _REASON_LINES:
+        extra = len(lines) - _REASON_LINES
+        lines = [*lines[:_REASON_LINES], f"… {extra} more lines (see jobs events)"]
+    return [f"    {line}" for line in lines]
+
+
 def render_event_text(ev: JobEvent, *, prefix: str = "") -> Text:
     """Return :class:`rich.text.Text` with status styling.
 
@@ -105,8 +124,12 @@ def render_event_text(ev: JobEvent, *, prefix: str = "") -> Text:
     When ``prefix`` is non-empty, ``[<prefix>] `` is prepended (dim
     cyan) so concurrent multi-template event streams stay
     disambiguable on a shared stderr.
+
+    A failed or unreachable host result is followed by the reason AWX
+    recorded in the event's ``stdout``, indented on the next lines.
     """
-    body = _render_body(ev)
-    if not prefix:
-        return body
-    return Text.assemble(Text(f"[{prefix}] ", style=_PREFIX_STYLE), body)
+    lines = [_render_body(ev)]
+    lines.extend(Text(line, style=_REASON_STYLE) for line in _failure_reason(ev))
+    if prefix:
+        lines = [Text.assemble(Text(f"[{prefix}] ", style=_PREFIX_STYLE), line) for line in lines]
+    return lines[0] if len(lines) == 1 else Text("\n").join(lines)

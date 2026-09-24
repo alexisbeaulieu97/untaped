@@ -6,7 +6,12 @@ Checks run offline against the validated ``ansible`` profile section only.
 from __future__ import annotations
 
 from untaped.capabilities.ansible.settings import AnsibleSettings
-from untaped.capability_api import CapabilityContext, DoctorCheck, DoctorResult
+from untaped.capability_api import (
+    CapabilityContext,
+    DoctorCheck,
+    DoctorResult,
+    executable_check,
+)
 
 DEPRECATED_SETTINGS_ID = "ansible.deprecated-settings"
 
@@ -33,4 +38,5 @@ DOCTOR_CHECKS = (
         title="deprecated settings",
         run=check_deprecated_settings,
     ),
+    executable_check("ansible.git", "git", purpose="git-backed source refresh"),
 )

@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from untaped.capabilities.recipe.application.ports import PackLibraryPort
-from untaped.capabilities.recipe.domain.pack import parse_ref
+from untaped.capabilities.recipe.domain.pack import InstalledPack, parse_ref
 from untaped.capabilities.recipe.domain.paths import is_path_ref
+from untaped.capability_api import plural, q
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,9 @@ def resolve_apply_recipe(
     except ValueError as exc:
         if not str(exc).startswith("recipe not found"):
             raise
+        named_pack = library.find_pack(ref_text)
+        if named_pack is not None:
+            return _only_recipe(named_pack, ref_prefix=named_pack.name)
         raise ValueError(f"{exc}{existing_path_hint(ref_text)}") from exc
     return ResolvedRecipe(
         path=pack.root / recipe.path,
@@ -105,6 +109,8 @@ def resolve_explicit_recipe(
                 local_hook_project=path,
             )
         recipe_path = path / "recipe.yml"
+        if not recipe_path.is_file() and (path / "pyproject.toml").is_file():
+            return _only_recipe(library.local_pack(path), ref_prefix=_dir_name(path))
         if not recipe_path.is_file():
             raise ValueError(f"recipe file not found: {recipe_path}")
         return ResolvedRecipe(
@@ -116,6 +122,23 @@ def resolve_explicit_recipe(
         path=path,
         ref=path.name,
         local_hook_project=None,
+    )
+
+
+def _only_recipe(pack: InstalledPack, *, ref_prefix: str) -> ResolvedRecipe:
+    """The pack's sole recipe; a pack with several must be told which one."""
+    recipes = sorted(pack.manifest.recipes.items())
+    if len(recipes) != 1:
+        names = ", ".join(f"{pack.name}/{name}" for name, _ in recipes) or "none"
+        raise ValueError(
+            f"pack {q(pack.name)} has {plural(len(recipes), 'recipe')}; name one "
+            f"(PACK/RECIPE, or --recipe NAME with a pack path): {names}"
+        )
+    name, entry = recipes[0]
+    return ResolvedRecipe(
+        path=pack.root / entry.path,
+        ref=f"{ref_prefix}/{name}",
+        local_hook_project=pack.root,
     )
 
 

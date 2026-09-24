@@ -52,10 +52,11 @@ variable shown.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `github.base_url` | string | `https://api.github.com` | `UNTAPED_GITHUB__BASE_URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
-| `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. |
+| `github.token` | secret (optional) | unset | `UNTAPED_GITHUB__TOKEN` | GitHub token for API calls and Git fetches. Falls back to `token_command`, then `GH_TOKEN`, then `GITHUB_TOKEN`. |
+| `github.token_command` | list (optional) | unset | `UNTAPED_GITHUB__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `github.token` is unset. |
 | `github.corpus_path` | path | `~/.untaped/github-corpus` | `UNTAPED_GITHUB__CORPUS_PATH` | Local Git corpus that `github sweep` and `github cache` manage. |
-| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` refreshes cached repos older than this. |
-| `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` Git workers. |
+| `github.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | `sweep` and `cache sync` refresh cached repos older than this that GitHub reports as pushed since. |
+| `github.sweep.sync_concurrency` | integer | `12` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | Default `sweep --parallel` and `cache sync --parallel` Git workers. |
 
 ## `jira`
 
@@ -63,6 +64,7 @@ variable shown.
 |---|---|---|---|---|
 | `jira.base_url` | string (optional) | unset | `UNTAPED_JIRA__BASE_URL` | Jira Data Center URL, for example `https://jira.example.com`. |
 | `jira.token` | secret (optional) | unset | `UNTAPED_JIRA__TOKEN` | Jira personal access token. |
+| `jira.token_command` | list (optional) | unset | `UNTAPED_JIRA__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `jira.token` is unset. |
 | `jira.api_prefix` | string | `/rest/api/2` | `UNTAPED_JIRA__API_PREFIX` | Jira platform REST prefix. |
 | `jira.agile_prefix` | string | `/rest/agile/1.0` | `UNTAPED_JIRA__AGILE_PREFIX` | Jira Software (boards, sprints) REST prefix. |
 | `jira.assigned_jql` | string | `assignee = currentUser() AND resolution = Unresolved` | `UNTAPED_JIRA__ASSIGNED_JQL` | Base JQL for `issues assigned`, and for `issues search` with no query. |
@@ -76,6 +78,7 @@ variable shown.
 |---|---|---|---|---|
 | `awx.base_url` | string (optional) | unset | `UNTAPED_AWX__BASE_URL` | AWX/AAP URL, for example `https://aap.example.com`. |
 | `awx.token` | secret (optional) | unset | `UNTAPED_AWX__TOKEN` | AWX/AAP API token. |
+| `awx.token_command` | list (optional) | unset | `UNTAPED_AWX__TOKEN_COMMAND` | Command (argv list, no shell) that prints the token; used when `awx.token` is unset. |
 | `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. |

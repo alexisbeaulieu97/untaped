@@ -94,13 +94,14 @@ write nothing and print their outcome with `action` `planned`.
 | `github search code` | `github.code` |
 | `github search issues` | `github.issue` |
 | `github search users` | `github.user_hit` |
-| `github sweep` | `github.sweep_repo`; `github.sweep_match` with `--show matches` |
+| `github sweep` | `github.sweep_repo`; `github.sweep_file` with `--show files`; `github.sweep_match` with `--show matches` |
 | `github cache status`, `cache delete`, `cache prune` | `github.corpus_repo` |
+| `github cache sync` | `github.sync_outcome` |
 | `github cache worktree` | `github.worktree` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `github search repos/code/issues --stdin`, `github sweep --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or `owner/name` lines | `full_name` |
+| `github search repos/code/issues --stdin`, `github sweep --stdin`, `github cache sync --stdin` | `github.repo`, `github.repo_hit`, `github.sweep_repo`; or `owner/name` lines | `full_name` (`sweep` and `cache sync` use a `github.repo` record as-is, without an API call) |
 
 ### jira
 
@@ -108,7 +109,8 @@ write nothing and print their outcome with `action` `planned`.
 |---|---|
 | `jira whoami` | `jira.user` |
 | `jira issues get`, `issues search`, `issues assigned` | `jira.issue` |
-| `jira issues create`, `patch`, `comment`, `transition` | `jira.issue_outcome` |
+| `jira issues create`, `patch`, `comment`, `transition`, `links create` | `jira.issue_outcome` |
+| `jira issues comments list` | `jira.comment` |
 | `jira issues transitions` | `jira.transition` |
 | `jira projects list`, `projects get` | `jira.project` |
 | `jira boards list` | `jira.board` |
@@ -135,6 +137,8 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
 | `awx projects sync`, `inventories sync`, `inventory-sources sync` | `awx.sync_outcome` |
 | `awx jobs list`, `jobs get`, `jobs wait` | `awx.job` |
+| `awx jobs cancel` | `awx.cancel_outcome` |
+| `awx jobs relaunch` | `awx.relaunch_outcome` (`id`/`kind` name the new execution) |
 | `awx jobs events` | `awx.event`, with the job id as `job` |
 | `awx jobs logs` | `awx.log` (`job`, `line`) |
 | `awx unified-templates list/get` | `awx.unified_template` |
@@ -148,7 +152,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 |---|---|---|
 | `awx <resource> <verb> --stdin` (selection commands) | that resource's kind; or name lines (ID lines with `--by-id`) | name field, or `id` with `--by-id` |
 | `awx <resource> <members> add/remove --stdin` | the member resource's kind | name field, or `id` |
-| `awx jobs get/events/logs/wait --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
+| `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
 | `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines | name field |
 
@@ -177,6 +181,7 @@ output.
 | `recipe apply` | `recipe.apply_outcome` |
 | `recipe list`, `recipe get` | `recipe.recipe`, `recipe.hook` or `recipe.pack` |
 | `recipe add` | `recipe.add_outcome` |
+| `recipe sync` | `recipe.sync_outcome` |
 | `recipe remove` | `recipe.remove_outcome` |
 | `recipe validate` | `recipe.check` |
 | `recipe test` | `recipe.test` |

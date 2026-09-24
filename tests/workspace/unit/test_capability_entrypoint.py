@@ -57,7 +57,7 @@ def test_spec_is_workspace_capability() -> None:
         "Use the built-in `untaped workspace` capability for local git workspaces."
     )
     assert skill.source.joinpath("SKILL.md").is_file()
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["workspace.git"]
 
 
 def test_build_app_is_nullary_factory() -> None:

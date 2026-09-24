@@ -16,7 +16,9 @@ no control flow in recipes, and no state or inventory.
 - `untaped recipe apply <recipe> <dir>...` plans, previews on stderr, confirms,
   backs up, then writes. The recipe argument is a bare name (unique across
   installed packs), a `pack/recipe` ref, an explicit path to a `recipe.yml`, or
-  a local pack path plus `--recipe <name>`. A value is a path only when it is
+  a local pack path plus `--recipe <name>`. An installed pack name or a local
+  pack path with exactly one recipe selects that recipe; with several, the
+  error lists them. A value is a path only when it is
   `.` or `..`, starts with `./`, `../`, `/`, or `~`, or ends in
   `.yml`/`.yaml` — anything else is a library ref, never probed on disk.
   The same target directory given twice (in any spelling) is planned once.
@@ -99,7 +101,8 @@ no control flow in recipes, and no state or inventory.
 - Emit kinds: `apply` → `recipe.apply_outcome` (one row per target);
   `validate` → `recipe.check`; `test` → `recipe.test`; `hook run` →
   `recipe.hook_run`; `list`/`get` → `recipe.recipe`, `recipe.hook`,
-  `recipe.pack`; `add` → `recipe.add_outcome`; `remove` →
+  `recipe.pack`; `add` → `recipe.add_outcome`; `sync` →
+  `recipe.sync_outcome`; `remove` →
   `recipe.remove_outcome`; `backup` → `recipe.backup`.
 - `recipe.apply_outcome` rows carry absolute `target_path`, `action`,
   `files_changed`, `warnings` (a list: accumulated `helpers.warn(...)`
@@ -120,6 +123,14 @@ no control flow in recipes, and no state or inventory.
   The row's `action` is `created`, or `updated` for a `--force` reinstall.
   The pack must load and contain a `uv.lock`. Reinstalling needs `--force`, which still refuses to
   overwrite a library copy with local edits unless `--discard-edits` is added.
+  A local path source is recorded as an absolute path.
+- `sync <pack>...` or `sync --all` re-fetches each installed pack from its
+  recorded source and `--rev` (a branch or tag moves forward). Packs whose
+  content would change are listed and need confirmation or `--yes`
+  (`--dry-run` previews); rows carry `action` `updated`, `unchanged` or
+  `planned`. A pack with local edits in the library fails unless
+  `--discard-edits` is passed; a failed pack prints `error: PACK: ...`, the
+  others still sync, and the command exits 1.
 - `list [--packs|--hooks]`, `get <ref>`, `edit <ref>`, `remove <pack>` operate
   on the unified library. `list --hooks` and `get` cover built-ins such as
   `yaml_edit` (marked `(builtin)`; not editable). `remove` is destructive,
@@ -164,8 +175,10 @@ no control flow in recipes, and no state or inventory.
   `transform`, `template`, `copy`, and `remove`. `transform`/`remove` take
   exactly one of `file`, `files` (load-time fan-out to per-file steps), or
   `globs` (planning-time discovery; `exclude` skips matches; no implicit
-  excludes, so repo sweeps usually add `exclude: [".git/**"]`; binary files
-  must be excluded; matches under symlinked directories are skipped with a
+  excludes, so repo sweeps usually add `exclude: [".git/**"]`; `transform`
+  rejects binary files, so exclude them; `copy` and `remove` handle binary
+  files byte-exact, and `--preview diff` prints `Binary file PATH differs`
+  for them; matches under symlinked directories are skipped with a
   warning). `optional: true` (transform with `file`/`files` only)
   skips missing files with a warning. `template`/`copy` accept
   `if_absent: true` to create only when the destination does not exist.

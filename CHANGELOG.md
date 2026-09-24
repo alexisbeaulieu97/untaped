@@ -2,6 +2,94 @@
 
 ## Unreleased
 
+Cleanup phase 6: performance and features. Items marked **behavior change**
+alter output, exit codes, or defaults.
+
+- Core
+  - **Behavior change:** `github`, `jira` and `awx` accept
+    `<section>.token_command` (an argv list, no shell). It runs at most once
+    per process, only when a command first needs the token, and its stdout is
+    the token. Precedence: `token` (config or `UNTAPED_*`) > `token_command` >
+    `GH_TOKEN`, then `GITHUB_TOKEN` (github only). Errors name the program and
+    exit status, never its arguments or output.
+  - **Behavior change:** `doctor` warns when the config file is group/world
+    accessible, on unknown profile keys and on installed skills that differ
+    from the packaged copy. New rows: `github`/`jira`/`awx` `.connection`
+    (base URL and token source; warns when only one is set) and
+    `.git`/`recipe.uv` (warns when the program is not on PATH).
+  - **Behavior change:** `--verbose` prints debug lines to stderr for each
+    HTTP request (method, masked URL, status, time, retry waits) and git
+    command (masked args, directory, exit status, time).
+  - SDK: `capability_api` gains `TokenSources`, `TokenCommand`,
+    `connection_check` and `executable_check`.
+- github
+  - **Behavior change:** an expired cached repo is re-fetched only when
+    GitHub's `pushed_at` or default branch changed; an unchanged repo gets
+    `fetched_at` bumped with no git call and counts as cached (300 repos:
+    expired re-run 10.5s → 1.65s, zero fetches).
+  - Refs sharing a tree are grepped once, each pattern runs one `git grep`
+    across all trees, AND queries stop at the first failed predicate,
+    `--not-grep` uses `git grep -q`, and CODEOWNERS is read in one
+    `cat-file --batch` (cached AND query, 13k matched lines: 28.6s → 1.25s).
+  - Each repo is scanned as soon as its fetch ends; progress reads
+    "Sweeping 312/1400 repos (45 fetched, 3 failed)". `sweep --stdin` uses
+    piped `github.repo` records as-is; other kinds are looked up 4 at a time.
+  - Fixed: sync, touch and delete lock each cached repo, so two sweeps can run
+    at once.
+  - New `github cache sync` warms the corpus without a query (sweep's scope
+    flags plus `--refs/--ref/--depth/-j/--refresh`), emits
+    `github.sync_outcome` (`synced`/`unchanged`/`skipped`/`failed`) and exits
+    1 on any failure.
+  - New `sweep --show files` emits `github.sweep_file` (`full_name`, `path`,
+    `refs`, `hits`).
+  - `cache status` shows sizes like "1.2 MiB" and ages like "3 hours ago"
+    (JSON keeps raw values).
+  - **Behavior change:** `--show matches` merges refs showing the same line at
+    the same path and line number into one row; `not-grep:` hit counts are
+    0/1 and appear only on matched rows.
+- jira
+  - `issues get --comments` fetches every comment (listed after the issue in
+    a table, nested under `comments` in JSON/YAML). **Behavior change:** the
+    `issues get` table shows a short column set for several issues and a
+    reordered detail view for one.
+  - New `issues comments list KEY` (`jira.comment`), `issues patch
+    --assignee USER|@me` / `--unassign`, and `issues transition --comment TEXT
+    --resolution NAME`.
+  - New `issues links create KEY TYPE OTHER` (action `linked`; previews print
+    a `reads as:` direction line). **Behavior change:** `jira.issue_outcome`
+    records gain `link_type` and `linked_key`.
+- recipe
+  - New `recipe sync PACK...|--all` re-fetches packs from their recorded
+    source and rev, confirms before changing files (`--yes`, `--dry-run`),
+    needs `--discard-edits` to overwrite local edits, and emits
+    `recipe.sync_outcome` (`updated`/`unchanged`/`planned`). A pack recorded
+    with a relative source path must be re-added first.
+  - **Behavior change:** `recipe add` records a local source as an absolute
+    path.
+  - `recipe apply PACK` without `--recipe` picks the pack's only recipe; with
+    several, the error lists them.
+  - `copy`/`remove` steps, backups and restores are binary-safe;
+    `--preview diff` prints `Binary file PATH differs`.
+- awx
+  - Fewer API requests: parent identities are memoized per run, organization
+    names come from `summary_fields`, and inventory sync lists sources with
+    `inventory__in`. Deleting 50 scoped hosts: 203 → 53 requests; scoped
+    `patch --all`: 155 → 106; `inventories sync --all` (10 inventories):
+    31 → 22.
+  - **Behavior change:** `delete --yes` no longer re-reads its targets after
+    selection (it still re-reads once after an interactive prompt).
+  - New `jobs cancel ID...` (`awx.cancel_outcome`:
+    `planned`/`skipped`/`cancel_requested`/`failed`) and `jobs relaunch ID...
+    [--failed-hosts]` (`awx.relaunch_outcome`; `id`/`kind` name the new
+    execution and `jobs * --stdin` accepts it), both with confirmation,
+    `--yes` and `--dry-run`.
+  - New `jobs list --template NAME|ID`, and `launch`/`sync --timeout SECONDS`
+    (with `--wait` or `--track`): a still-running execution fails its row and
+    a `jobs wait` hint names it.
+  - **Behavior change:** `--track` and `jobs events --follow` print the
+    failure reason (event stdout, ANSI stripped, at most 10 lines) under each
+    failed or unreachable host.
+
 Cleanup phase 5: docs and root fixes. Items marked **behavior change** alter
 output, exit codes, or defaults.
 

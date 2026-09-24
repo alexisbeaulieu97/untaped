@@ -103,6 +103,8 @@ def test_issue_comment_pipe_tags_issue_outcome(jira_config: Path) -> None:
         "api_url": None,
         "transition_id": None,
         "comment_id": "700",
+        "link_type": None,
+        "linked_key": None,
     }
 
 
@@ -202,6 +204,8 @@ def test_issue_create_pipe_tags_issue_outcome(jira_config: Path) -> None:
         "api_url": "https://jira.example.com/rest/api/2/issue/10001",
         "transition_id": None,
         "comment_id": None,
+        "link_type": None,
+        "linked_key": None,
     }
 
 

@@ -1,4 +1,4 @@
-"""Application use case for repository sweep queries."""
+"""Application use cases for repository sweep queries and corpus warm-up syncs."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ from untaped.capabilities.github.domain import (
     CorpusFailure,
     CorpusFreshness,
     CorpusRepoTarget,
+    CorpusSyncOutcome,
     GrepHit,
+    GrepSpec,
     RefEvaluation,
     RefSelector,
     RepoSweepOutcome,
@@ -28,12 +30,22 @@ from untaped.capabilities.github.domain import (
     parse_codeowners,
     ref_display_names,
     ref_matches,
+    unchanged_upstream,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError, is_global_github_failure
-from untaped.capability_api import ConfigError, UntapedError, UsageError, bounded_map
+from untaped.capability_api import (
+    ConfigError,
+    ProgressHandle,
+    UntapedError,
+    UsageError,
+    bounded_map,
+    plural,
+)
 
 InventoryResolver = Callable[[RepositoryInventoryScope], tuple[RepositoryInventoryItem, ...]]
 AuthHeaderSupplier = Callable[[], str | None]
+# Parallel per-repo API lookups; kept low to stay clear of GitHub's secondary rate limits.
+_API_CONCURRENCY = 4
 
 
 @dataclass(frozen=True)
@@ -49,6 +61,8 @@ class SweepOptions:
     depth: int
     parallel: int
     owners: bool
+    # Piped records complete enough to skip the per-repo API lookup.
+    stdin_items: tuple[RepositoryInventoryItem, ...] = ()
 
     def __post_init__(self) -> None:
         if self.depth < 0:
@@ -57,6 +71,21 @@ class SweepOptions:
             raise ValueError("parallel must be positive")
         if self.max_age_seconds < 0:
             raise ValueError("max_age_seconds must be non-negative")
+
+
+@dataclass(frozen=True)
+class CorpusSyncOptions:
+    """Options for warming the corpus without a query (``cache sync``)."""
+
+    scope: RepositoryInventoryScope
+    stdin_repos: tuple[str, ...]
+    include_archived: bool
+    refs: RefSelector
+    refresh: bool
+    max_age_seconds: int
+    depth: int
+    parallel: int
+    stdin_items: tuple[RepositoryInventoryItem, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -91,6 +120,8 @@ class _ReadyRepo:
     fetched_at: datetime | None
     refreshed: bool
     refresh_error: str | None = None
+    # True when GitHub reported no push since the cached fetch, so none ran.
+    unchanged: bool = False
 
 
 @dataclass(frozen=True)
@@ -99,21 +130,121 @@ class _RepoScan:
     matches: tuple[_ContentMatch, ...]
 
 
-@dataclass(frozen=True)
-class _RefScan:
-    evaluation: RefEvaluation
-    owner_paths: tuple[str, ...]
-    matches: tuple[_ContentMatch, ...]
+@dataclass
+class _TreeScan:
+    hits: dict[str, int]
+    owner_paths: set[str]
+    grep_hits: list[GrepHit]
 
 
 @dataclass(frozen=True)
 class _ContentMatch:
     full_name: str
     ref: str
-    blob_oid: str
     path: str
     line: int
     text: str
+
+
+class _NoProgress:
+    def update(
+        self, message: str, *, fraction: float | None = None, new_phase: bool = False
+    ) -> None:
+        return None
+
+    def log(self, line: str) -> None:
+        return None
+
+
+class _TreeScanner:
+    """Evaluate a query on each unique tree, dropping trees that can no longer match.
+
+    A dropped tree keeps the hits gathered so far; ``ref_matches`` still
+    rejects it because its failed predicate stays recorded (a missing label
+    reads as zero). Cheap file predicates run first, then one ``git grep`` per
+    pattern across all live trees; a negative pattern only needs
+    ``git grep -q``, which stops at the first hit.
+    """
+
+    def __init__(
+        self,
+        corpus: GitCorpus,
+        repo: CorpusRepoTarget,
+        *,
+        root: Path,
+        trees: tuple[str, ...],
+        query: SweepQuery,
+    ) -> None:
+        self._corpus = corpus
+        self._repo = repo
+        self._root = root
+        self._query = query
+        self._scans = {tree: _TreeScan(hits={}, owner_paths=set(), grep_hits=[]) for tree in trees}
+        self._live = list(trees)
+        self._paths: dict[str, tuple[str, ...]] = {}
+
+    def run(self) -> dict[str, _TreeScan]:
+        query = self._query
+        for glob in query.has_files:
+            for tree in self._live:
+                matched = _matching_paths(self._tree_paths(tree), glob)
+                self._scans[tree].hits[f"has-file:{glob}"] = 1 if matched else 0
+                self._scans[tree].owner_paths.update(matched)
+            self._keep(f"has-file:{glob}", positive=True)
+        for glob in query.lacks_files:
+            for tree in self._live:
+                found = _matching_paths(self._tree_paths(tree), glob)
+                self._scans[tree].hits[f"lacks-file:{glob}"] = 1 if found else 0
+            self._keep(f"lacks-file:{glob}", positive=False)
+        for pattern in query.greps:
+            self._grep(pattern)
+        if query.any_mode and (query.greps or query.has_files):
+            labels = _positive_labels(query)
+            self._live = [
+                tree
+                for tree in self._live
+                if any(self._scans[tree].hits.get(label, 0) for label in labels)
+            ]
+        for pattern in query.not_greps:
+            spec = _spec(query, pattern)
+            for tree in self._live:
+                hit = self._corpus.tree_has_match(self._repo, root=self._root, tree=tree, spec=spec)
+                self._scans[tree].hits[f"not-grep:{pattern}"] = 1 if hit else 0
+            self._keep(f"not-grep:{pattern}", positive=False)
+        return self._scans
+
+    def _grep(self, pattern: str) -> None:
+        label = f"grep:{pattern}"
+        found = (
+            self._corpus.grep_trees(
+                self._repo,
+                root=self._root,
+                trees=tuple(self._live),
+                spec=_spec(self._query, pattern),
+            )
+            if self._live
+            else {}
+        )
+        for tree in self._live:
+            hits = found.get(tree, ())
+            scan = self._scans[tree]
+            scan.hits[label] = len(hits)
+            scan.owner_paths.update(hit.path for hit in hits)
+            scan.grep_hits.extend(hits)
+        self._keep(label, positive=True)
+
+    def _tree_paths(self, tree: str) -> tuple[str, ...]:
+        if tree not in self._paths:
+            self._paths[tree] = self._corpus.tree_paths(self._repo, root=self._root, ref=tree)
+        return self._paths[tree]
+
+    def _keep(self, label: str, *, positive: bool) -> None:
+        # Negative predicates are always ANDed; positive ones only without --any.
+        if positive and self._query.any_mode:
+            return
+        self._live = [
+            tree for tree in self._live if (self._scans[tree].hits[label] > 0) == positive
+        ]
 
 
 class Sweep:
@@ -132,27 +263,55 @@ class Sweep:
         self._root = root
         self._auth_header = auth_header
 
-    def __call__(self, options: SweepOptions) -> SweepReport:
+    def __call__(
+        self, options: SweepOptions, *, progress: ProgressHandle | None = None
+    ) -> SweepReport:
         options.query.validate()
+        progress = progress or _NoProgress()
+        progress.update("Resolving repositories…", new_phase=True)
         repos, scope_failures = self._resolve_scope(options)
-        ready, prep_failures = self._prepare_repos(repos, options)
 
+        ready: list[_ReadyRepo] = []
         scans: list[_RepoScan] = []
-        scan_failures: list[CorpusFailure] = []
+        failures: list[CorpusFailure] = []
+        counts = {"fetched": 0, "failed": 0}
 
-        def scan_one(ready_repo: _ReadyRepo) -> _RepoScan | CorpusFailure:
+        # Sync and scan run in one worker per repo, so scanning starts as soon
+        # as a repo's fetch ends instead of after the slowest fetch.
+        def sweep_one(
+            repo: CorpusRepoTarget,
+        ) -> tuple[_ReadyRepo | None, _RepoScan | CorpusFailure]:
+            prepared = self._prepare(repo, options)
+            if isinstance(prepared, CorpusFailure):
+                return None, prepared
             try:
-                return self._scan_repo(ready_repo, options)
+                return prepared, self._scan_repo(prepared, options)
             except (GitCorpusError, OSError) as exc:
-                return _failure(ready_repo.repo, exc)
+                return prepared, _failure(repo, exc)
 
-        def record(_ready_repo: _ReadyRepo, outcome: _RepoScan | CorpusFailure) -> None:
-            if isinstance(outcome, CorpusFailure):
-                scan_failures.append(outcome)
+        def record(
+            _repo: CorpusRepoTarget,
+            outcome: tuple[_ReadyRepo | None, _RepoScan | CorpusFailure],
+        ) -> None:
+            prepared, result = outcome
+            if prepared is not None:
+                ready.append(prepared)
+                counts["fetched"] += prepared.refreshed
+            if isinstance(result, CorpusFailure):
+                failures.append(result)
+                counts["failed"] += 1
             else:
-                scans.append(outcome)
+                scans.append(result)
+            done = len(scans) + len(failures)
+            progress.update(
+                f"Sweeping {done}/{plural(len(repos), 'repo')} "
+                f"({counts['fetched']} fetched, {counts['failed']} failed)",
+                fraction=done / len(repos),
+            )
 
-        bounded_map(scan_one, ready, concurrency=options.parallel, on_each=record)
+        if repos:
+            progress.update(f"Sweeping {plural(len(repos), 'repo')}…", new_phase=True)
+        bounded_map(sweep_one, repos, concurrency=options.parallel, on_each=record)
         rows = tuple(
             sorted(
                 (scan.outcome for scan in scans if scan.outcome is not None),
@@ -166,7 +325,7 @@ class Sweep:
         return SweepReport(
             rows=rows,
             matches=_dedupe_matches(all_matches),
-            unscanned=(*scope_failures, *prep_failures, *scan_failures),
+            unscanned=(*scope_failures, *sorted(failures, key=lambda failure: failure.repo)),
             scanned=len(scans),
             refreshed=refreshed,
             cached=cached,
@@ -191,40 +350,27 @@ class Sweep:
         if options.sync == "off":
             return self._resolve_offline_scope(options), ()
 
-        items: dict[str, RepositoryInventoryItem] = {}
-        if options.scope.orgs or options.scope.teams:
-            scope = RepositoryInventoryScope(orgs=options.scope.orgs, teams=options.scope.teams)
-            for item in self._inventory(scope):
-                items.setdefault(item.full_name, item)
-        # Expand explicit names one at a time so one missing or inaccessible
-        # repo becomes an unscanned row instead of aborting the whole sweep.
-        # Auth and rate-limit failures hit every repo alike, so they abort.
-        failures: list[CorpusFailure] = []
-        names = tuple(dict.fromkeys((*options.scope.repos, *options.stdin_repos)))
-        for name in names:
-            try:
-                resolved = self._inventory(RepositoryInventoryScope(repos=(name,)))
-            except UntapedError as exc:
-                if is_global_github_failure(exc):
-                    raise
-                failures.append(CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__))
-                continue
-            items.update((item.full_name, item) for item in resolved)
-        if names and len(failures) == len(names) and not items:
-            detail = "; ".join(failure.reason for failure in failures)
-            raise UntapedError(f"no requested repository could be resolved: {detail}")
-        rows = (
-            items[name]
-            for name in sorted(items)
-            if options.include_archived or not items[name].archived
+        return _resolve_online_scope(
+            self._inventory,
+            scope=options.scope,
+            stdin_repos=options.stdin_repos,
+            stdin_items=options.stdin_items,
+            include_archived=options.include_archived,
+            parallel=options.parallel,
         )
-        return tuple(_target(item) for item in rows), tuple(failures)
 
     def _resolve_offline_scope(self, options: SweepOptions) -> tuple[CorpusRepoTarget, ...]:
         if options.scope.teams:
             raise UsageError("--team requires the API and cannot be combined with --cached")
         # GitHub owner and repo names are case-insensitive.
-        names = {name.casefold() for name in (*options.scope.repos, *options.stdin_repos)}
+        names = {
+            name.casefold()
+            for name in (
+                *options.scope.repos,
+                *options.stdin_repos,
+                *(item.full_name for item in options.stdin_items),
+            )
+        }
         owners = {org.casefold() for org in options.scope.orgs}
         rows = self._corpus.list_repos(root=self._root)
         targets: list[CorpusRepoTarget] = []
@@ -247,73 +393,18 @@ class Sweep:
             raise ConfigError("corpus has no repos in scope; run without --cached to populate")
         return tuple(sorted(targets, key=lambda repo: repo.full_name))
 
-    def _prepare_repos(
-        self,
-        repos: tuple[CorpusRepoTarget, ...],
-        options: SweepOptions,
-    ) -> tuple[tuple[_ReadyRepo, ...], tuple[CorpusFailure, ...]]:
-        ready: list[_ReadyRepo] = []
-        failures: list[CorpusFailure] = []
-
-        if options.sync == "off":
-            for repo in repos:
-                try:
-                    freshness = self._corpus.repo_freshness(repo, root=self._root)
-                except (GitCorpusError, OSError) as exc:
-                    failures.append(_failure(repo, exc))
-                    continue
-                ready.append(
-                    _ReadyRepo(
-                        repo=repo, fetched_at=_freshness_datetime(freshness), refreshed=False
-                    )
-                )
-            return tuple(ready), tuple(failures)
-
-        def prepare_one(repo: CorpusRepoTarget) -> _ReadyRepo | CorpusFailure:
-            try:
-                freshness = self._corpus.repo_freshness(repo, root=self._root)
-            except (GitCorpusError, OSError) as exc:
-                return _failure(repo, exc)
-            must_refresh = options.sync == "force" or _needs_refresh(
-                freshness,
-                selector=options.query.refs,
-                max_age_seconds=options.max_age_seconds,
-            )
-            if not must_refresh:
-                return _ReadyRepo(
-                    repo=repo, fetched_at=_freshness_datetime(freshness), refreshed=False
-                )
-            try:
-                result = self._corpus.sync_repo(
-                    repo,
-                    root=self._root,
-                    selector=options.query.refs,
-                    depth=options.depth,
-                    auth_header=self._auth_header(),
-                )
-            except (GitCorpusError, OSError) as exc:
-                if freshness is not None and covers(freshness, options.query.refs):
-                    return _ReadyRepo(
-                        repo=repo,
-                        fetched_at=freshness.fetched_at,
-                        refreshed=False,
-                        refresh_error=_failure(repo, exc).reason,
-                    )
-                return _failure(repo, exc)
-            return _ReadyRepo(
-                repo=repo,
-                fetched_at=_parse_datetime(result.fetched_at),
-                refreshed=True,
-            )
-
-        def record(_repo: CorpusRepoTarget, outcome: _ReadyRepo | CorpusFailure) -> None:
-            if isinstance(outcome, CorpusFailure):
-                failures.append(outcome)
-            else:
-                ready.append(outcome)
-
-        bounded_map(prepare_one, repos, concurrency=options.parallel, on_each=record)
-        return tuple(ready), tuple(failures)
+    def _prepare(self, repo: CorpusRepoTarget, options: SweepOptions) -> _ReadyRepo | CorpusFailure:
+        """Make one repo's cached copy current enough to scan (sync mode permitting)."""
+        return _prepare_repo(
+            self._corpus,
+            repo,
+            root=self._root,
+            selector=options.query.refs,
+            sync=options.sync,
+            max_age_seconds=options.max_age_seconds,
+            depth=options.depth,
+            auth_header=self._auth_header,
+        )
 
     def _scan_repo(self, ready: _ReadyRepo, options: SweepOptions) -> _RepoScan:
         refs_matched: list[str] = []
@@ -321,17 +412,25 @@ class Sweep:
         owner_paths: set[str] = set()
         matches: list[_ContentMatch] = []
         # Scan by full refname (a branch and a tag may share a short name);
-        # report the unambiguous short display name.
+        # report the unambiguous short display name. Refs that share a tree
+        # (a tag on a branch tip, say) are scanned once.
         refs = self._corpus.local_refs(ready.repo, root=self._root, selector=options.query.refs)
-        display_names = ref_display_names(refs)
+        display_names = ref_display_names(ref.name for ref in refs)
+        tree_scans = self._scan_trees(
+            ready.repo, tuple(dict.fromkeys(ref.tree for ref in refs)), options.query
+        )
         for ref in refs:
-            ref_scan = self._scan_ref(ready.repo, ref, options.query, display=display_names[ref])
-            if not ref_matches(options.query, ref_scan.evaluation):
+            tree_scan = tree_scans[ref.tree]
+            display = display_names[ref.name]
+            evaluation = RefEvaluation(ref=display, hits=tree_scan.hits)
+            if not ref_matches(options.query, evaluation):
                 continue
-            refs_matched.append(display_names[ref])
-            owner_paths.update(ref_scan.owner_paths)
-            matches.extend(ref_scan.matches)
-            for label, count in ref_scan.evaluation.hits.items():
+            refs_matched.append(display)
+            owner_paths.update(tree_scan.owner_paths)
+            matches.extend(
+                _content_match(ready.repo.full_name, display, hit) for hit in tree_scan.grep_hits
+            )
+            for label, count in tree_scan.hits.items():
                 aggregate_hits[label] = max(aggregate_hits.get(label, 0), count)
 
         if not refs_matched:
@@ -351,77 +450,24 @@ class Sweep:
             matches=tuple(matches),
         )
 
-    def _scan_ref(
-        self, repo: CorpusRepoTarget, ref: str, query: SweepQuery, *, display: str
-    ) -> _RefScan:
-        hits: dict[str, int] = {}
-        owner_paths: set[str] = set()
-        matches: list[_ContentMatch] = []
-        for pattern in query.greps:
-            label = f"grep:{pattern}"
-            grep_hits = self._grep(repo, ref, pattern, query)
-            hits[label] = len(grep_hits)
-            owner_paths.update(hit.path for hit in grep_hits)
-            matches.extend(_content_match(repo.full_name, display, hit) for hit in grep_hits)
-        for pattern in query.not_greps:
-            label = f"not-grep:{pattern}"
-            hits[label] = len(self._grep(repo, ref, pattern, query))
-
-        tree: tuple[str, ...] | None = None
-        for glob in query.has_files:
-            tree = self._tree(repo, ref) if tree is None else tree
-            matched = _matching_paths(tree, glob)
-            hits[f"has-file:{glob}"] = 1 if matched else 0
-            owner_paths.update(matched)
-        for glob in query.lacks_files:
-            tree = self._tree(repo, ref) if tree is None else tree
-            hits[f"lacks-file:{glob}"] = 1 if _matching_paths(tree, glob) else 0
-
-        return _RefScan(
-            evaluation=RefEvaluation(ref=display, hits=hits),
-            owner_paths=tuple(sorted(owner_paths)),
-            matches=tuple(matches),
-        )
-
-    def _grep(
-        self,
-        repo: CorpusRepoTarget,
-        ref: str,
-        pattern: str,
-        query: SweepQuery,
-    ) -> tuple[GrepHit, ...]:
-        return self._corpus.grep_ref(
-            repo,
-            root=self._root,
-            ref=ref,
-            pattern=pattern,
-            paths=query.paths,
-            ignore_case=query.ignore_case,
-            fixed_strings=query.fixed_strings,
-            word_regexp=query.word_regexp,
-        )
-
-    def _tree(self, repo: CorpusRepoTarget, ref: str) -> tuple[str, ...]:
-        return self._corpus.tree_paths(repo, root=self._root, ref=ref)
+    def _scan_trees(
+        self, repo: CorpusRepoTarget, trees: tuple[str, ...], query: SweepQuery
+    ) -> dict[str, _TreeScan]:
+        return _TreeScanner(self._corpus, repo, root=self._root, trees=trees, query=query).run()
 
     def _owners_for(self, repo: CorpusRepoTarget, *, paths: Iterable[str]) -> tuple[str, ...]:
         branch = repo.default_branch
         if not branch:
             return ()
-        rules = None
-        for path in CODEOWNERS_LOCATIONS:
-            try:
-                text = self._corpus.read_blob(
-                    repo, root=self._root, ref=f"refs/heads/{branch}", path=path
-                )
-            except GitCorpusError:
-                return ()
-            if text is None:
-                continue
-            rules = parse_codeowners(text)
-            break
-        if rules is None:
+        try:
+            text = self._corpus.read_first_blob(
+                repo, root=self._root, ref=f"refs/heads/{branch}", paths=CODEOWNERS_LOCATIONS
+            )
+        except GitCorpusError:
             return ()
+        if text is None:
+            return ()
+        rules = parse_codeowners(text)
         owner_rows: list[str] = []
         sorted_paths = tuple(sorted(paths))
         if not sorted_paths:
@@ -432,6 +478,52 @@ class Sweep:
         return tuple(dict.fromkeys(owner_rows))
 
 
+def _resolve_online_scope(
+    inventory: InventoryResolver,
+    *,
+    scope: RepositoryInventoryScope,
+    stdin_repos: tuple[str, ...],
+    stdin_items: tuple[RepositoryInventoryItem, ...],
+    include_archived: bool,
+    parallel: int,
+) -> tuple[tuple[CorpusRepoTarget, ...], tuple[CorpusFailure, ...]]:
+    """Expand scopes through the API into sorted corpus targets plus per-name failures."""
+    items: dict[str, RepositoryInventoryItem] = {}
+    if scope.orgs or scope.teams:
+        listed = RepositoryInventoryScope(orgs=scope.orgs, teams=scope.teams)
+        for item in inventory(listed):
+            items.setdefault(item.full_name, item)
+    # Piped repo records already carry what a sweep needs: no API call.
+    items.update((item.full_name, item) for item in stdin_items)
+    # Expand explicit names one at a time so one missing or inaccessible
+    # repo becomes an unscanned row instead of aborting the whole sweep.
+    # Auth and rate-limit failures hit every repo alike, so they abort.
+    failures: list[CorpusFailure] = []
+    names = tuple(dict.fromkeys((*scope.repos, *stdin_repos)))
+
+    def resolve_one(name: str) -> tuple[RepositoryInventoryItem, ...] | CorpusFailure:
+        try:
+            return inventory(RepositoryInventoryScope(repos=(name,)))
+        except UntapedError as exc:
+            if is_global_github_failure(exc):
+                raise
+            return CorpusFailure(repo=name, reason=str(exc) or type(exc).__name__)
+
+    def record(_name: str, resolved: tuple[RepositoryInventoryItem, ...] | CorpusFailure) -> None:
+        if isinstance(resolved, CorpusFailure):
+            failures.append(resolved)
+        else:
+            items.update((item.full_name, item) for item in resolved)
+
+    bounded_map(resolve_one, names, concurrency=min(parallel, _API_CONCURRENCY), on_each=record)
+    failures.sort(key=lambda failure: failure.repo)
+    if names and len(failures) == len(names) and not items:
+        detail = "; ".join(failure.reason for failure in failures)
+        raise UntapedError(f"no requested repository could be resolved: {detail}")
+    rows = (items[name] for name in sorted(items) if include_archived or not items[name].archived)
+    return tuple(_target(item) for item in rows), tuple(failures)
+
+
 def _target(item: RepositoryInventoryItem) -> CorpusRepoTarget:
     return CorpusRepoTarget(
         full_name=item.full_name,
@@ -439,6 +531,7 @@ def _target(item: RepositoryInventoryItem) -> CorpusRepoTarget:
         clone_url=item.clone_url,
         html_url=item.html_url,
         archived=item.archived,
+        pushed_at=item.pushed_at,
     )
 
 
@@ -446,17 +539,150 @@ def _failure(repo: CorpusRepoTarget, exc: Exception) -> CorpusFailure:
     return CorpusFailure(repo=repo.full_name, reason=str(exc) or type(exc).__name__)
 
 
-def _needs_refresh(
-    freshness: CorpusFreshness | None,
+class SyncCorpus:
+    """Fetch every repository in scope into the corpus so later sweeps start warm."""
+
+    def __init__(
+        self,
+        *,
+        inventory: InventoryResolver,
+        corpus: GitCorpus,
+        root: Path,
+        auth_header: AuthHeaderSupplier,
+    ) -> None:
+        self._inventory = inventory
+        self._corpus = corpus
+        self._root = root
+        self._auth_header = auth_header
+
+    def __call__(
+        self, options: CorpusSyncOptions, *, progress: ProgressHandle | None = None
+    ) -> tuple[CorpusSyncOutcome, ...]:
+        progress = progress or _NoProgress()
+        progress.update("Resolving repositories…", new_phase=True)
+        repos, failures = _resolve_online_scope(
+            self._inventory,
+            scope=options.scope,
+            stdin_repos=options.stdin_repos,
+            stdin_items=options.stdin_items,
+            include_archived=options.include_archived,
+            parallel=options.parallel,
+        )
+        outcomes = [
+            CorpusSyncOutcome(repo=failure.repo, action="failed", error=failure.reason)
+            for failure in failures
+        ]
+
+        def sync_one(repo: CorpusRepoTarget) -> _ReadyRepo | CorpusFailure:
+            return _prepare_repo(
+                self._corpus,
+                repo,
+                root=self._root,
+                selector=options.refs,
+                sync="force" if options.refresh else "auto",
+                max_age_seconds=options.max_age_seconds,
+                depth=options.depth,
+                auth_header=self._auth_header,
+            )
+
+        def record(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> None:
+            outcomes.append(_sync_outcome(repo, result))
+            done = len(outcomes) - len(failures)
+            fetched = sum(outcome.action == "synced" for outcome in outcomes)
+            failed = sum(outcome.failed for outcome in outcomes)
+            progress.update(
+                f"Syncing {done}/{plural(len(repos), 'repo')} ({fetched} fetched, {failed} failed)",
+                fraction=done / len(repos),
+            )
+
+        if repos:
+            progress.update(f"Syncing {plural(len(repos), 'repo')}…", new_phase=True)
+        bounded_map(sync_one, repos, concurrency=options.parallel, on_each=record)
+        return tuple(sorted(outcomes, key=lambda outcome: outcome.repo))
+
+
+def _sync_outcome(repo: CorpusRepoTarget, result: _ReadyRepo | CorpusFailure) -> CorpusSyncOutcome:
+    if isinstance(result, CorpusFailure):
+        return CorpusSyncOutcome(repo=repo.full_name, action="failed", error=result.reason)
+    if result.refresh_error is not None:
+        return CorpusSyncOutcome(
+            repo=repo.full_name,
+            action="failed",
+            fetched_at=result.fetched_at,
+            error=result.refresh_error,
+        )
+    action = "synced" if result.refreshed else "unchanged" if result.unchanged else "skipped"
+    return CorpusSyncOutcome(repo=repo.full_name, action=action, fetched_at=result.fetched_at)
+
+
+def _prepare_repo(
+    corpus: GitCorpus,
+    repo: CorpusRepoTarget,
     *,
+    root: Path,
     selector: RefSelector,
+    sync: Literal["auto", "force", "off"],
     max_age_seconds: int,
-) -> bool:
-    if freshness is None:
-        return True
-    if not covers(freshness, selector):
-        return True
+    depth: int,
+    auth_header: AuthHeaderSupplier,
+) -> _ReadyRepo | CorpusFailure:
+    """Bring one repo's cached copy up to date for ``selector``, fetching only when needed.
+
+    ``auto`` fetches a copy that is missing, under-profiled, or older than
+    ``max_age_seconds``; an old copy whose GitHub ``pushed_at`` has not moved
+    is marked current without any Git call. ``force`` always fetches and
+    ``off`` never does. A failed fetch falls back to a covering cached copy.
+    """
+    try:
+        freshness = corpus.repo_freshness(repo, root=root)
+    except (GitCorpusError, OSError) as exc:
+        return _failure(repo, exc)
+    if sync == "off":
+        return _ReadyRepo(repo=repo, fetched_at=_freshness_datetime(freshness), refreshed=False)
+    if sync == "auto" and freshness is not None and covers(freshness, selector):
+        if not _expired(freshness, max_age_seconds=max_age_seconds):
+            return _ReadyRepo(repo=repo, fetched_at=freshness.fetched_at, refreshed=False)
+        if unchanged_upstream(freshness, repo):
+            try:
+                touched = corpus.touch_repo(repo, root=root)
+            except GitCorpusError, OSError:
+                touched = freshness.fetched_at
+            return _ReadyRepo(repo=repo, fetched_at=touched, refreshed=False, unchanged=True)
+    try:
+        result = corpus.sync_repo(
+            repo, root=root, selector=selector, depth=depth, auth_header=auth_header()
+        )
+    except (GitCorpusError, OSError) as exc:
+        if freshness is not None and covers(freshness, selector):
+            return _ReadyRepo(
+                repo=repo,
+                fetched_at=freshness.fetched_at,
+                refreshed=False,
+                refresh_error=_failure(repo, exc).reason,
+            )
+        return _failure(repo, exc)
+    return _ReadyRepo(repo=repo, fetched_at=_parse_datetime(result.fetched_at), refreshed=True)
+
+
+def _expired(freshness: CorpusFreshness, *, max_age_seconds: int) -> bool:
     return (datetime.now(UTC) - freshness.fetched_at).total_seconds() > max_age_seconds
+
+
+def _spec(query: SweepQuery, pattern: str) -> GrepSpec:
+    return GrepSpec(
+        pattern=pattern,
+        paths=query.paths,
+        ignore_case=query.ignore_case,
+        fixed_strings=query.fixed_strings,
+        word_regexp=query.word_regexp,
+    )
+
+
+def _positive_labels(query: SweepQuery) -> tuple[str, ...]:
+    return (
+        *(f"grep:{pattern}" for pattern in query.greps),
+        *(f"has-file:{glob}" for glob in query.has_files),
+    )
 
 
 def _freshness_datetime(freshness: CorpusFreshness | None) -> datetime | None:
@@ -480,7 +706,6 @@ def _content_match(full_name: str, ref: str, hit: GrepHit) -> _ContentMatch:
     return _ContentMatch(
         full_name=full_name,
         ref=ref,
-        blob_oid=hit.blob_oid,
         path=hit.path,
         line=hit.line,
         text=hit.text,
@@ -489,9 +714,10 @@ def _content_match(full_name: str, ref: str, hit: GrepHit) -> _ContentMatch:
 
 def _dedupe_matches(matches: Iterable[_ContentMatch]) -> tuple[SweepMatch, ...]:
     # Insertion-ordered dicts give O(1) ref dedupe while keeping first-seen order.
-    grouped: dict[tuple[str, str, str, int, str], dict[str, None]] = {}
+    # Refs showing the same line at the same place collapse into one row.
+    grouped: dict[tuple[str, str, int, str], dict[str, None]] = {}
     for match in matches:
-        key = (match.full_name, match.blob_oid, match.path, match.line, match.text)
+        key = (match.full_name, match.path, match.line, match.text)
         grouped.setdefault(key, {})[match.ref] = None
     rows = [
         SweepMatch(
@@ -501,6 +727,6 @@ def _dedupe_matches(matches: Iterable[_ContentMatch]) -> tuple[SweepMatch, ...]:
             line=line,
             text=text,
         )
-        for (full_name, _blob_oid, path, line, text), refs in grouped.items()
+        for (full_name, path, line, text), refs in grouped.items()
     ]
     return tuple(sorted(rows, key=lambda row: (row.full_name, row.path, row.line, row.text)))

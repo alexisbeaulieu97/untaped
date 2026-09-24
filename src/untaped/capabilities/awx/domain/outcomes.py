@@ -88,6 +88,39 @@ class SaveOutcome(BaseModel):
     detail: str | None = None
 
 
+class JobCancelOutcome(OutcomeRecord):
+    """One ``jobs cancel`` row: the execution, its status when read, and the result.
+
+    ``action`` is ``planned``, ``skipped`` (already finished),
+    ``cancel_requested`` (AWX accepted the request; the job stops
+    asynchronously) or ``failed``.
+    """
+
+    id: int
+    kind: str
+    name: str | None = None
+    status: str | None = None
+    action: str
+    detail: str | None = None
+
+
+class JobRelaunchOutcome(OutcomeRecord):
+    """One ``jobs relaunch`` row: the new execution (``id``) and the job it repeats.
+
+    ``action`` is ``planned``, ``relaunched`` or ``failed``; ``hosts`` is
+    ``all`` or ``failed``.
+    """
+
+    id: int | None = None
+    kind: str
+    name: str | None = None
+    status: str | None = None
+    target_id: int
+    hosts: str = "all"
+    action: str
+    detail: str | None = None
+
+
 class DeleteReceipt(BaseModel):
     """A successful DELETE acknowledges removal or asynchronous acceptance."""
 

@@ -102,13 +102,18 @@ def _add_delete(app: App, spec: AwxResourceSpec) -> None:
                     )
                 failed = False
                 if confirm_batch(ctx, count=len(selected), verb="delete", yes=yes, dry_run=dry_run):
-                    # Scope, existence, and lifecycle policy are all checked again
-                    # for the complete fixed set after confirmation, before writes.
-                    selected = tuple(
-                        select_resources(ctx, spec, [str(item.id)], by_id=True, scope=item.scope)[0]
-                        for item in selected
-                    )
-                    deleter.validate_selection(spec, selected)
+                    if not yes:
+                        # A prompt left time for changes: scope, existence and
+                        # lifecycle policy are checked again for the complete
+                        # fixed set, in one resolve that shares ancestor reads.
+                        selected = select_resources(
+                            ctx,
+                            spec,
+                            [str(item.id) for item in selected],
+                            by_id=True,
+                            scope=selected[0].scope,
+                        )
+                        deleter.validate_selection(spec, selected)
                     outcomes = run_selected_actions(
                         selected,
                         lambda item: deleter(spec, item.id),

@@ -93,6 +93,16 @@ ParallelOption = Annotated[
     _CoreParallelOption,
     Parameter(help="Maximum number of concurrent writes (capped at 10)."),
 ]
+WaitTimeoutOption = Annotated[
+    float | None,
+    Parameter(
+        name="--timeout",
+        help=(
+            "Stop waiting after this many seconds per execution (needs --wait or --track); "
+            "unfinished executions fail the row and keep running."
+        ),
+    ),
+]
 UnverifiedOption = Annotated[
     bool,
     Parameter(
@@ -118,6 +128,7 @@ __all__ = [
     "SearchOption",
     "StdinOption",
     "UnverifiedOption",
+    "WaitTimeoutOption",
     "YesOption",
     "resolve_max_depth",
 ]

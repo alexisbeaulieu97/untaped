@@ -9,7 +9,7 @@ from typing import Literal
 
 from untaped.capabilities.recipe.application.inputs import has_sensitive_inputs
 from untaped.capabilities.recipe.cli._context import recipe_ui
-from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
+from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan, is_binary_content
 from untaped.capabilities.recipe.domain.recipe import Recipe
 from untaped.capability_api import echo, plural, render_rows, unified_diff_text
 
@@ -78,9 +78,11 @@ def _render_diff_preview(recipe: Recipe, plans: list[TargetPlan]) -> None:
     for plan in diffable_plans:
         target = _display_target(plan)
         for change in plan.changes:
-            diff = unified_diff_text(
-                change.before, change.after, path=change.relative_path.as_posix()
-            )
+            path = change.relative_path.as_posix()
+            if is_binary_content(change.before) or is_binary_content(change.after):
+                diff = f"Binary file {path} differs\n"
+            else:
+                diff = unified_diff_text(change.before, change.after, path=path)
             if diff:
                 echo(f"# {target}", err=True)
                 echo(diff, err=True, nl=False)

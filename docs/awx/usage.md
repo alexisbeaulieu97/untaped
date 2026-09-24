@@ -22,7 +22,10 @@ a rejected token fails the command; the output includes the authenticated
 
 Use `untaped --profile <name> awx ...` to select a different configured
 profile. Tokens are secret settings; do not put them in a manifest or command
-history.
+history. To keep the token out of `config.yml` too, set `awx.token_command`
+to a command that prints it, for example
+`untaped config set awx.token_command '["pass", "show", "aap/token"]'`; see
+[Tokens](../configuration.md#tokens).
 
 The writable resource groups are job templates, workflow templates, projects,
 schedules, hosts, groups, inventories, and inventory sources. They support the
@@ -248,7 +251,8 @@ untaped awx inventory-sources sync Cloud --inventory Production --wait
 untaped awx inventories sync Production --wait --track
 ```
 
-Inventory sync first resolves and freezes the current source IDs, then uses
+Inventory sync first resolves and freezes the current source IDs (one
+`inventory_sources` listing per 100 inventories), then uses
 the same source update action for each source. A known unsupported, source-less,
 manual, or otherwise invalid target fails complete preflight with zero POSTs;
 `--continue-on-error` applies to runtime failures after preflight, not to an
@@ -256,13 +260,18 @@ invalid selection. `--dry-run` resolves and previews targets without
 submitting an action.
 
 `--wait` waits for terminal success and exits nonzero for failed, canceled, or
-error executions. Ctrl-C while waiting or tracking (including
+error executions. `--timeout SECONDS` (with `--wait` or `--track`) stops
+waiting after that many seconds per execution: an execution still running
+fails its row (`still running after --timeout 600s; it keeps running`), and a
+`jobs wait` hint names it. Ctrl-C while waiting or tracking (including
 `awx test run --parallel`) or while launches are still being submitted stops
 promptly, exits 130, and prints the IDs of executions not known to have
 finished (including ones AWX created while ignoring fields; "was launched"
 when their status is unknown) with an `untaped awx jobs wait ...` command to
 resume; the executions themselves keep running on the controller. `--track`
-shows progress on stderr while waiting. Ordinary
+shows progress on stderr while waiting; a failed or unreachable host result
+is followed by the reason from that event's output (up to ten lines; `jobs
+events` has the rest). Ordinary
 jobs expose `job_events`; project and inventory updates expose their `events`
 routes. Workflow jobs, including sliced launches that return a workflow job,
 have no own events or stdout route, so tracking emits status transitions from
@@ -284,8 +293,11 @@ row names its `job`. With `--follow`, json streams one object per line
 (NDJSON) as rows arrive.
 
 `jobs list` shows the newest 20 executions by default; pass `--limit N` for a
-different count or `--limit 0` for every record. `<kind> list --limit N` stops
-paging once N records are read. `--limit 0` means no limit on every awx list.
+different count or `--limit 0` for every record. `--template NAME|ID` keeps
+the runs of one template (the project for `--kind project_update`, the
+inventory source for `--kind inventory_update`); digits mean an AWX id, so
+match a numeric name with `--filter job_template__name=123`.
+`<kind> list --limit N` stops paging once N records are read. `--limit 0` means no limit on every awx list.
 
 `get` prints a table of the default columns; pass `--format yaml` or
 `--format json` for the complete records. `export` stays YAML by default.
@@ -318,6 +330,25 @@ untaped awx jobs logs 101 --grep 'fatal:' -i
 untaped awx jobs events 101 --filter event=runner_on_failed
 untaped awx jobs wait 101 --timeout 600
 ```
+
+Cancel or relaunch existing executions. Both read every id first (an
+unknown id rejects the batch before any POST), preview each target on
+stderr, and ask once with No as the default; `--yes` skips the prompt and
+`--dry-run` previews `planned` rows without writing:
+
+```bash
+untaped awx jobs cancel 101 102
+untaped awx jobs relaunch 101 --failed-hosts --yes --format pipe \
+  | untaped awx jobs wait --stdin
+```
+
+`cancel` rows are `awx.cancel_outcome`: `cancel_requested` (AWX stops the
+execution asynchronously; `jobs wait` shows when it reaches `canceled`),
+`skipped` for one that already finished, or `failed` when the controller
+refuses. `relaunch` rows are `awx.relaunch_outcome`: `id` and `kind` name the
+new execution and `target_id` the one it repeats. `--failed-hosts` reruns only
+the failed hosts and applies to job executions; project and inventory updates
+have no relaunch route (sync them instead).
 
 `logs` prints the job's stdout; `events` prints the structured per-task
 events. Both take `--follow` to tail a running job. Chain a launch into a
@@ -413,7 +444,8 @@ changes does not prompt or write.
 The complete batch is validated before the first write. Existing fields and
 memberships are re-read to detect conflicts or deletion; this check cannot
 close a race with a later controller request and provides no transaction or
-rollback. Resource bodies and memberships are verified separately, so a body
+rollback. `delete` re-reads its targets only after an interactive prompt;
+with `--yes` the selection read just before the writes is the check. Resource bodies and memberships are verified separately, so a body
 success with a membership failure is reported as `partial` and retains the
 resource ID. Membership changes are additive for the membership commands;
 replacement membership fields verify the exact set or declared order while

@@ -1260,7 +1260,7 @@ def test_p45_capability_statics() -> None:
         "untaped-workspace",
         "Use the built-in `untaped workspace` capability for local git workspaces.",
     )
-    assert SPEC.doctor_checks == ()
+    assert [check.id for check in SPEC.doctor_checks] == ["workspace.git"]
 
     composition = bootstrap.compose_root(builtins=(SPEC,), externals=())
     assert composition.quarantine == ()

@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 from untaped.capabilities.recipe.application.files import read_existing_text_file
 from untaped.capabilities.recipe.application.ports import HookExecutorPort
 from untaped.capabilities.recipe.domain.paths import confined_path, safe_relative_path
-from untaped.capabilities.recipe.domain.plan import FileChange, TargetPlan
+from untaped.capabilities.recipe.domain.plan import CONTENT_ERRORS, FileChange, TargetPlan
 from untaped.capabilities.recipe.domain.recipe import (
     CopyStep,
     InputSpec,
@@ -166,7 +166,7 @@ class ApplyRecipe:
             raise ValueError(f"copy source not found: {source_relative}")
         if step.if_absent and _destination_exists(dest, target, buffer):
             return
-        buffer[dest] = source.read_text(encoding="utf-8", newline="")
+        buffer[dest] = source.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")
 
     def _plan_remove(
         self,
@@ -243,7 +243,7 @@ class ApplyRecipe:
         changes: list[FileChange] = []
         for relative, after in buffer.items():
             path = confined_path(target, relative, field="file")
-            before = _read_before(path, relative) if path.is_file() else None
+            before = _read_before(path) if path.is_file() else None
             if before == after:
                 continue
             changes.append(
@@ -346,11 +346,8 @@ def _is_excluded(relative_posix: str, patterns: tuple[str, ...]) -> bool:
     return any(relative_posix == pattern or path.full_match(pattern) for pattern in patterns)
 
 
-def _read_before(path: Path, relative: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", newline="")
-    except UnicodeDecodeError as exc:
-        raise ValueError(_binary_error(relative)) from exc
+def _read_before(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors=CONTENT_ERRORS, newline="")
 
 
 def _binary_error(relative: Path) -> str:

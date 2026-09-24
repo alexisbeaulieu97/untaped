@@ -21,7 +21,8 @@ untaped recipe apply ./my-pack/recipes/editorconfig/recipe.yml ~/work/api --yes
 The recipe argument is a unique recipe name, a `pack/recipe` ref, or a path.
 A value is a path only when it starts with `./`, `../`, `/` or `~`, is `.` or
 `..`, or ends in `.yml`/`.yaml`. For a local pack directory, pass its path and
-`--recipe NAME`.
+`--recipe NAME`. A pack name or pack path alone selects the pack's recipe when
+it has exactly one.
 
 | Flag | Effect |
 |---|---|
@@ -79,6 +80,8 @@ sandbox. Inspect a pack before you trust it (`recipe get`, `recipe validate`,
 ```bash
 untaped recipe add https://github.com/acme/untaped-recipes.git --rev v1.2.0
 untaped recipe add ./my-pack --name acme --force
+untaped recipe sync --all --dry-run
+untaped recipe sync acme
 untaped recipe list --packs
 untaped recipe get acme/editorconfig
 untaped recipe validate
@@ -88,6 +91,15 @@ untaped recipe remove acme --yes
 
 - A pack must contain a `uv.lock`. Reinstalling needs `--force`; local edits
   to the installed copy also need `--discard-edits`.
+- `recipe sync PACK...` or `recipe sync --all` re-fetches packs from the
+  source and `--rev` recorded at install (a branch or tag moves forward; a
+  local path source is re-read). Packs whose files would change are listed
+  and confirmed first (`--yes` skips the question, `--dry-run` only lists
+  them); the rest report `unchanged`. Local edits to an installed copy need
+  `--discard-edits`.
+- `recipe add` records a local path source as an absolute path. `recipe sync`
+  refuses a pack recorded with a relative path (older installs); re-add it
+  with `recipe add PATH --force`.
 - Packs are installed under `recipe.library_root`.
 - `recipe validate` checks the whole library, or one pack, recipe or path,
   without importing hook code.
@@ -138,7 +150,7 @@ steps:
 | `validate` | `hook`, `args` | Runs a hook that returns pass, fail or skip for the target. |
 | `transform` | `hook`, one of `file`/`files`/`globs`, `exclude`, `optional`, `args` | Rewrites file content through a hook. |
 | `template` | `template`, `dest`, `unknown_tokens`, `if_absent` | Renders a template file into the target. |
-| `copy` | `source`, `dest`, `if_absent` | Copies a file as is. |
+| `copy` | `source`, `dest`, `if_absent` | Copies a file as is, binary files included. |
 | `remove` | one of `file`/`files`/`globs`, `exclude` | Deletes files. |
 
 - Inputs have `type` (`str`, `int`, `bool`, `float`, `list`, `dict`),
@@ -149,6 +161,8 @@ steps:
   expressions alone. Path fields render tokens too.
 - `globs` has no implicit excludes: add `exclude: [".git/**"]` when the
   targets are Git clones.
+- `transform` works on UTF-8 text only; `copy` and `remove` also handle
+  binary files, which `--preview diff` shows as `Binary file PATH differs`.
 - All paths must be relative and stay inside the target; `..` and symlinks
   out are rejected.
 - Hook `args` are passed to the hook as written. The built-in `yaml_edit`

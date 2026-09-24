@@ -16,6 +16,7 @@ disable verification entirely (escape hatch — leaves traffic open to MITM).
 from __future__ import annotations
 
 import email.utils
+import logging
 import ssl
 import time
 from collections.abc import Callable, Collection, Iterator, Mapping
@@ -26,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.config_schema import walk_settings
+from untaped.config_schema import redact_url_password, walk_settings
 from untaped.errors import (
     ConfigError,
     HttpError,
@@ -44,6 +45,8 @@ if TYPE_CHECKING:
 type AuthFn = Callable[[httpx.Request], httpx.Request]
 VerifyTypes = bool | str | ssl.SSLContext
 PageFetcher = Callable[[str | None], tuple[list[dict[str, Any]], str | None]]
+
+_LOG = logging.getLogger("untaped.http")
 
 
 @dataclass(frozen=True)
@@ -223,9 +226,11 @@ class HttpClient:
             request = self._client.build_request(method, path, **kwargs)
             if self._auth is not None:
                 request = self._auth(request)
+            started = time.monotonic()
             try:
                 response = self._client.send(request)
             except httpx.HTTPError as exc:
+                _log_exchange(request, f"failed: {type(exc).__name__}", started)
                 presend = isinstance(
                     exc,
                     httpx.ConnectError
@@ -247,16 +252,18 @@ class HttpClient:
                     and transient
                     and policy.allows_transport_retry(method, presend=presend)
                 ):
-                    _sleep(policy.backoff(attempt))
+                    _sleep_before_retry(policy.backoff(attempt), attempt, policy)
                     continue
                 raise HttpTransportError(str(exc), url=str(request.url)) from exc
+            _log_exchange(request, str(response.status_code), started)
             if response.status_code >= 400:
                 if (
                     policy is not None
                     and attempt < policy.max_attempts
                     and policy.allows_status_retry(method, response.status_code)
                 ):
-                    _sleep(policy.status_delay(attempt, response.headers.get("Retry-After")))
+                    delay = policy.status_delay(attempt, response.headers.get("Retry-After"))
+                    _sleep_before_retry(delay, attempt, policy)
                     continue
                 raise HttpStatusError(
                     f"HTTP {response.status_code} for {request.url}",
@@ -330,6 +337,19 @@ class HttpClient:
         tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+def _log_exchange(request: httpx.Request, outcome: str, started: float) -> None:
+    """Debug-log one request: method, URL (password masked), outcome, elapsed time."""
+    if _LOG.isEnabledFor(logging.DEBUG):
+        elapsed_ms = (time.monotonic() - started) * 1000
+        url = redact_url_password(str(request.url))
+        _LOG.debug("%s %s -> %s (%.0f ms)", request.method, url, outcome, elapsed_ms)
+
+
+def _sleep_before_retry(delay: float, attempt: int, policy: RetryPolicy) -> None:
+    _LOG.debug("retrying in %.1fs (attempt %d of %d)", delay, attempt + 1, policy.max_attempts)
+    _sleep(delay)
 
 
 _BODY_LIMIT = 2048
