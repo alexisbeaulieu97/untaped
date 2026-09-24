@@ -53,8 +53,10 @@ DESCRIPTIONS: dict[str, str] = {
     "github.base_url": "GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`.",
     "github.token": "GitHub token for API calls and Git fetches.",
     "github.corpus_path": "Local Git corpus that `github sweep` and `github cache` manage.",
-    "github.sweep.max_age_seconds": "`sweep` refreshes cached repos older than this.",
-    "github.sweep.sync_concurrency": "Default `sweep --parallel` Git workers.",
+    "github.sweep.max_age_seconds": "`sweep` and `cache sync` refresh cached repos older than "
+    "this that GitHub reports as pushed since.",
+    "github.sweep.sync_concurrency": "Default `sweep --parallel` and `cache sync --parallel` Git "
+    "workers.",
     "jira.base_url": "Jira Data Center URL, for example `https://jira.example.com`.",
     "jira.token": "Jira personal access token.",
     "jira.api_prefix": "Jira platform REST prefix.",

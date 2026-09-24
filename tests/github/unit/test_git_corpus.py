@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
+from filelock import FileLock
 
 from untaped.capabilities.github.domain import (
     CorpusFreshness,
     CorpusRepoResult,
     CorpusRepoTarget,
     GrepHit,
+    GrepSpec,
     RefSelector,
     covers,
 )
@@ -77,6 +80,17 @@ def _sync_default(cache: GitCorpusCache, repo: CorpusRepoTarget, *, root: Path) 
     return cache.sync_repo(repo, root=root, selector=RefSelector(), depth=1, auth_header=None)
 
 
+def _grep(
+    cache: GitCorpusCache,
+    repo: CorpusRepoTarget,
+    *,
+    root: Path,
+    ref: str,
+    pattern: str,
+) -> tuple[GrepHit, ...]:
+    return cache.grep_trees(repo, root=root, trees=(ref,), spec=GrepSpec(pattern)).get(ref, ())
+
+
 def _grep_main(
     cache: GitCorpusCache,
     repo: CorpusRepoTarget,
@@ -84,16 +98,7 @@ def _grep_main(
     root: Path,
     pattern: str,
 ) -> tuple[GrepHit, ...]:
-    return cache.grep_ref(
-        repo,
-        root=root,
-        ref="main",
-        pattern=pattern,
-        paths=(),
-        ignore_case=False,
-        fixed_strings=False,
-        word_regexp=False,
-    )
+    return _grep(cache, repo, root=root, ref="main", pattern=pattern)
 
 
 def _has_ref(bare: Path, ref: str) -> bool:
@@ -125,6 +130,7 @@ def test_v1_metadata_reads_as_default_profile(tmp_path: Path) -> None:
         profile="default",
         ref_globs=(),
         archived=False,
+        default_branch="main",
     )
 
 
@@ -401,60 +407,50 @@ def test_covers_selector_containment() -> None:
     assert covers(all_refs, RefSelector(profile="branches", globs=("release/*",)))
 
 
-def test_grep_hits_carry_blob_oid_shared_across_refs(tmp_path: Path) -> None:
+def test_one_grep_covers_several_trees_and_keys_hits_by_tree(tmp_path: Path) -> None:
     source = _source_repo(tmp_path, "source", {"README.md": "uses: acme/action@v1\n"})
     _git(source, "checkout", "-q", "-b", "release/1")
-    _commit_file(source, "other.txt", "release only\n", "release")
+    _commit_file(source, "other.txt", "acme/action again\n", "release")
+    _git(source, "checkout", "-q", "-b", "empty")
+    _commit_file(source, "README.md", "nothing\n", "drop")
+    _git(source, "rm", "-q", "other.txt")
+    _git(source, "commit", "-q", "-m", "drop other")
     _git(source, "checkout", "-q", "main")
     cache = GitCorpusCache()
     root = tmp_path / "corpus"
     repo = _item("acme/api", source)
     cache.sync_repo(
-        repo,
-        root=root,
-        selector=RefSelector(profile="branches"),
-        depth=1,
-        auth_header=None,
+        repo, root=root, selector=RefSelector(profile="branches"), depth=1, auth_header=None
+    )
+    trees = {
+        ref.name: ref.tree
+        for ref in cache.local_refs(repo, root=root, selector=RefSelector(profile="branches"))
+    }
+
+    hits = cache.grep_trees(
+        repo, root=root, trees=tuple(trees.values()), spec=GrepSpec("acme/action")
     )
 
-    main_hits = cache.grep_ref(
-        repo,
-        root=root,
-        ref="main",
-        pattern="acme/action",
-        paths=(),
-        ignore_case=False,
-        fixed_strings=False,
-        word_regexp=False,
-    )
-    release_hits = cache.grep_ref(
-        repo,
-        root=root,
-        ref="release/1",
-        pattern="acme/action",
-        paths=(),
-        ignore_case=False,
-        fixed_strings=False,
-        word_regexp=False,
-    )
+    assert hits == {
+        trees["refs/heads/main"]: (GrepHit(path="README.md", line=1, text="uses: acme/action@v1"),),
+        trees["refs/heads/release/1"]: (
+            GrepHit(path="README.md", line=1, text="uses: acme/action@v1"),
+            GrepHit(path="other.txt", line=1, text="acme/action again"),
+        ),
+    }
 
-    assert main_hits == (
-        GrepHit(
-            path="README.md",
-            line=1,
-            text="uses: acme/action@v1",
-            blob_oid=main_hits[0].blob_oid,
-        ),
-    )
-    assert release_hits == (
-        GrepHit(
-            path="README.md",
-            line=1,
-            text="uses: acme/action@v1",
-            blob_oid=main_hits[0].blob_oid,
-        ),
-    )
-    assert main_hits[0].blob_oid
+
+def test_tree_has_match_stops_at_first_hit(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"a.txt": "legacy\n", "b.txt": "legacy\n"})
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    _sync_default(cache, repo, root=root)
+
+    assert cache.tree_has_match(repo, root=root, tree="main", spec=GrepSpec("legacy"))
+    assert not cache.tree_has_match(repo, root=root, tree="main", spec=GrepSpec("modern"))
+    with pytest.raises(GitCorpusError, match=r"regular expression|brackets"):
+        cache.tree_has_match(repo, root=root, tree="main", spec=GrepSpec("["))
 
 
 def test_grep_no_match_vs_invalid_pattern(tmp_path: Path) -> None:
@@ -464,30 +460,9 @@ def test_grep_no_match_vs_invalid_pattern(tmp_path: Path) -> None:
     repo = _item("acme/api", source)
     cache.sync_repo(repo, root=root, selector=RefSelector(), depth=1, auth_header=None)
 
-    assert (
-        cache.grep_ref(
-            repo,
-            root=root,
-            ref="main",
-            pattern="acme/action",
-            paths=(),
-            ignore_case=False,
-            fixed_strings=False,
-            word_regexp=False,
-        )
-        == ()
-    )
+    assert _grep(cache, repo, root=root, ref="main", pattern="acme/action") == ()
     with pytest.raises(GitCorpusError, match=r"regular expression|brackets"):
-        cache.grep_ref(
-            repo,
-            root=root,
-            ref="main",
-            pattern="[",
-            paths=(),
-            ignore_case=False,
-            fixed_strings=False,
-            word_regexp=False,
-        )
+        _grep(cache, repo, root=root, ref="main", pattern="[")
 
 
 def test_local_refs_default_first_then_sorted(tmp_path: Path) -> None:
@@ -511,15 +486,18 @@ def test_local_refs_default_first_then_sorted(tmp_path: Path) -> None:
         auth_header=None,
     )
 
-    assert cache.local_refs(repo, root=root, selector=RefSelector(profile="branches")) == (
+    branches = cache.local_refs(repo, root=root, selector=RefSelector(profile="branches"))
+    tagged = cache.local_refs(repo, root=root, selector=RefSelector(globs=("v*",)))
+
+    assert [ref.name for ref in branches] == [
         "refs/heads/main",
         "refs/heads/alpha",
         "refs/heads/zeta",
-    )
-    assert cache.local_refs(repo, root=root, selector=RefSelector(globs=("v*",))) == (
-        "refs/heads/main",
-        "refs/tags/v2.0",
-    )
+    ]
+    assert [ref.name for ref in tagged] == ["refs/heads/main", "refs/tags/v2.0"]
+    # The tag sits on main's tip, so both resolve to one tree.
+    assert tagged[0].tree == tagged[1].tree
+    assert len({ref.tree for ref in branches}) == 3
 
 
 def test_branch_and_tag_with_same_name_are_both_listed_and_greppable(tmp_path: Path) -> None:
@@ -534,28 +512,10 @@ def test_branch_and_tag_with_same_name_are_both_listed_and_greppable(tmp_path: P
     cache.sync_repo(repo, root=root, selector=RefSelector(profile="all"), depth=1, auth_header=None)
 
     refs = cache.local_refs(repo, root=root, selector=RefSelector(profile="all"))
-    branch_hits = cache.grep_ref(
-        repo,
-        root=root,
-        ref="refs/heads/x",
-        pattern="needle",
-        paths=(),
-        ignore_case=False,
-        fixed_strings=False,
-        word_regexp=False,
-    )
-    tag_hits = cache.grep_ref(
-        repo,
-        root=root,
-        ref="refs/tags/x",
-        pattern="needle",
-        paths=(),
-        ignore_case=False,
-        fixed_strings=False,
-        word_regexp=False,
-    )
+    branch_hits = _grep(cache, repo, root=root, ref="refs/heads/x", pattern="needle")
+    tag_hits = _grep(cache, repo, root=root, ref="refs/tags/x", pattern="needle")
 
-    assert refs == ("refs/heads/main", "refs/heads/x", "refs/tags/x")
+    assert [ref.name for ref in refs] == ["refs/heads/main", "refs/heads/x", "refs/tags/x"]
     assert [hit.path for hit in branch_hits] == ["branch.txt"]
     assert tag_hits == ()
     assert cache.tree_paths(repo, root=root, ref="refs/tags/x") == ("README.md",)
@@ -581,15 +541,23 @@ def test_tree_paths_recursive(tmp_path: Path) -> None:
     )
 
 
-def test_read_blob_returns_none_for_missing_path(tmp_path: Path) -> None:
-    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+def test_read_first_blob_skips_missing_paths_and_trees(tmp_path: Path) -> None:
+    source = _source_repo(
+        tmp_path, "source", {"README.md": "hello\n", "docs/x.md": "x\n", "b.txt": "second\n"}
+    )
     cache = GitCorpusCache()
     root = tmp_path / "corpus"
     repo = _item("acme/api", source)
     cache.sync_repo(repo, root=root, selector=RefSelector(), depth=1, auth_header=None)
 
-    assert cache.read_blob(repo, root=root, ref="main", path="README.md") == "hello\n"
-    assert cache.read_blob(repo, root=root, ref="main", path="missing.txt") is None
+    def read(*paths: str) -> str | None:
+        return cache.read_first_blob(repo, root=root, ref="main", paths=paths)
+
+    assert read("missing.txt", "docs", "README.md", "b.txt") == "hello\n"
+    assert read("missing.txt") is None
+    assert (
+        cache.read_first_blob(repo, root=root, ref="refs/heads/nope", paths=("README.md",)) is None
+    )
 
 
 def test_validate_pattern_flags_invalid_regex(tmp_path: Path) -> None:
@@ -633,7 +601,6 @@ def test_sync_fetches_blobful_default_branch_and_grep_parses_hits(tmp_path: Path
         ("actions.yml", 3, "second uses: acme/action@v2"),
         ("nested/workflow.yml", 1, "uses: acme/action@v3"),
     ]
-    assert all(hit.blob_oid for hit in hits)
 
 
 def test_grep_skips_binary_files_and_keeps_text_hits(tmp_path: Path) -> None:
@@ -675,16 +642,7 @@ def test_grep_exit_above_one_is_failure(tmp_path: Path) -> None:
     _sync_default(cache, repo, root=root)
 
     with pytest.raises(GitCorpusError, match=r"regular expression|brackets"):
-        cache.grep_ref(
-            repo,
-            root=root,
-            ref="main",
-            pattern="[",
-            paths=(),
-            ignore_case=False,
-            fixed_strings=False,
-            word_regexp=False,
-        )
+        _grep(cache, repo, root=root, ref="main", pattern="[")
 
 
 def test_grep_handles_colons_in_paths(tmp_path: Path) -> None:
@@ -724,16 +682,7 @@ def test_grep_malformed_output_is_git_corpus_error(
     monkeypatch.setattr(cache, "_run", fake_run)
 
     with pytest.raises(GitCorpusError, match="could not parse git grep output"):
-        cache.grep_ref(
-            repo,
-            root=root,
-            ref="main",
-            pattern="acme/action",
-            paths=(),
-            ignore_case=False,
-            fixed_strings=False,
-            word_regexp=False,
-        )
+        _grep(cache, repo, root=root, ref="main", pattern="acme/action")
 
 
 def test_list_clean_and_worktree_are_confined_to_managed_root(tmp_path: Path) -> None:
@@ -1094,3 +1043,65 @@ def test_corrupt_metadata_warnings_go_through_injected_warn(
     assert len(warnings) == 2
     assert all("could not read corpus metadata" in warning for warning in warnings)
     assert capfd.readouterr().err == ""
+
+
+def test_sync_records_pushed_at_and_touch_marks_copy_current(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = replace(_item("acme/api", source), pushed_at="2026-07-01T00:00:00Z")
+    cache.sync_repo(repo, root=root, selector=RefSelector(), depth=1, auth_header=None)
+    before = cache.repo_freshness(repo, root=root)
+
+    touched = cache.touch_repo(replace(repo, archived=True), root=root)
+    after = cache.repo_freshness(repo, root=root)
+
+    assert before is not None and after is not None
+    assert before.pushed_at == "2026-07-01T00:00:00Z"
+    assert before.default_branch == "main"
+    assert after.fetched_at == touched > before.fetched_at
+    assert after.archived is True
+    assert after.pushed_at == before.pushed_at
+
+
+def test_writers_wait_for_the_repo_lock_and_time_out(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    _sync_default(GitCorpusCache(), repo, root=root)
+    bare = cache_path_for(source.as_uri(), cache_dir=root)
+    cache = GitCorpusCache(lock_timeout=0.05)
+
+    with FileLock(str(bare / "untaped.lock")):
+        with pytest.raises(GitCorpusError, match="locked by another untaped process"):
+            _sync_default(cache, repo, root=root)
+        with pytest.raises(GitCorpusError, match="locked by another untaped process"):
+            cache.touch_repo(repo, root=root)
+
+    assert _sync_default(cache, repo, root=root).status == "synced"
+
+
+def test_annotated_tag_resolves_to_its_commit_tree(tmp_path: Path) -> None:
+    source = _source_repo(tmp_path, "source", {"README.md": "needle\n"})
+    _git(source, "tag", "-a", "v1", "-m", "release")
+    cache = GitCorpusCache()
+    root = tmp_path / "corpus"
+    repo = _item("acme/api", source)
+    selector = RefSelector(profile="tags")
+    cache.sync_repo(repo, root=root, selector=selector, depth=1, auth_header=None)
+
+    main, tag = cache.local_refs(repo, root=root, selector=selector)
+
+    assert tag.name == "refs/tags/v1"
+    assert tag.tree == main.tree
+    hits = _grep(cache, repo, root=root, ref=tag.tree, pattern="needle")
+    assert [hit.path for hit in hits] == ["README.md"]
+
+
+def test_validate_pattern_reports_bad_pathspec(tmp_path: Path) -> None:
+    error = GitCorpusCache().validate_pattern(
+        root=tmp_path / "corpus", pattern="ok", paths=(":(bad)x",), fixed_strings=False
+    )
+
+    assert error is not None
+    assert ":(bad)x" in error

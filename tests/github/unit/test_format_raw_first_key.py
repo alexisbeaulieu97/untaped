@@ -34,8 +34,16 @@ PYDANTIC_ROW_SOURCES: dict[type[BaseModel], str] = {
 
 _NOT_ROW_SOURCES_BY_MODULE: dict[str, frozenset[str]] = {
     # batch_repo_refs models are client-API results, not CLI rows.
+    # CorpusSyncOutcome is a core Record, which dumps its own fields first
+    # (``repo``); test_cache_cli pins that order.
     "untaped.capabilities.github.domain.models": frozenset(
-        {"BatchRepoRefsFailure", "BatchRepoRefsResult", "RepoRef", "RepoRefs"}
+        {
+            "BatchRepoRefsFailure",
+            "BatchRepoRefsResult",
+            "CorpusSyncOutcome",
+            "RepoRef",
+            "RepoRefs",
+        }
     ),
 }
 
