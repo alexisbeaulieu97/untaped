@@ -898,6 +898,69 @@ def test_publication_conflicts_fail_closed_before_next_mutation(
     assert "publish-release" not in transport.calls
 
 
+class _LaggingTransport(_FakePublicationTransport):
+    """Hides a just-created draft and just-uploaded index files for a few polls."""
+
+    def __init__(self, *, lag: int) -> None:
+        super().__init__()
+        self.lag = lag
+        self.release_polls = 0
+        self.index_polls = 0
+
+    def inspect_github_release(self, *, tag: str) -> Any:
+        if self.release is not None:
+            self.release_polls += 1
+            if self.release_polls <= self.lag:
+                return None
+        return super().inspect_github_release(tag=tag)
+
+    def inspect_index(self, *, index: str, candidate: Any) -> dict[str, str] | None:
+        if self.index_files is not None:
+            self.index_polls += 1
+            if self.index_polls <= self.lag:
+                return None
+        return super().inspect_index(index=index, candidate=candidate)
+
+
+def test_publication_waits_for_eventually_consistent_draft_and_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression (7.0.0 release): GitHub's release list and PyPI's CDN-cached
+    # simple index lag a few seconds behind writes, which failed the run with
+    # "disappeared during resume" / "not visible after the upload".
+    sleeps: list[float] = []
+    monkeypatch.setattr(sys.modules["_publication"], "_sleep", sleeps.append)
+    candidate = _candidate(tmp_path)
+    transport = _LaggingTransport(lag=2)
+
+    release_module.run_publication(candidate, index="pypi", transport=transport)
+
+    assert transport.calls.count("create-draft") == 1
+    assert transport.calls.count("upload-index:pypi") == 1
+    # Two independent waits (draft, then index), each backing off 2s → 4s.
+    assert sleeps == [2.0, 4.0, 2.0, 4.0]
+
+
+def test_publication_gives_up_when_index_never_shows_the_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(sys.modules["_publication"], "_sleep", sleeps.append)
+    candidate = _candidate(tmp_path)
+    transport = _LaggingTransport(lag=10_000)
+
+    with pytest.raises(release_module.ReleaseCheckError, match="not visible after the upload"):
+        release_module.verify_index_artifacts(
+            candidate, index="pypi", transport=_uploaded(transport, candidate)
+        )
+    assert sum(sleeps) >= 60
+
+
+def _uploaded(transport: _LaggingTransport, candidate: Any) -> _LaggingTransport:
+    transport.index_files = dict(candidate.artifact_hashes)
+    return transport
+
+
 def test_testpypi_resume_omits_github_draft_leg(tmp_path: Path) -> None:
     candidate = _candidate(tmp_path)
     transport = _FakePublicationTransport()
