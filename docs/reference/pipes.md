@@ -135,6 +135,8 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 | `awx job-templates launch`, `awx workflow-templates launch` | `awx.launch_outcome` |
 | `awx projects sync`, `inventories sync`, `inventory-sources sync` | `awx.sync_outcome` |
 | `awx jobs list`, `jobs get`, `jobs wait` | `awx.job` |
+| `awx jobs cancel` | `awx.cancel_outcome` |
+| `awx jobs relaunch` | `awx.relaunch_outcome` (`id`/`kind` name the new execution) |
 | `awx jobs events` | `awx.event`, with the job id as `job` |
 | `awx jobs logs` | `awx.log` (`job`, `line`) |
 | `awx unified-templates list/get` | `awx.unified_template` |
@@ -148,7 +150,7 @@ Resource kinds are `awx.<snake_case kind>`: `awx.organization`,
 |---|---|---|
 | `awx <resource> <verb> --stdin` (selection commands) | that resource's kind; or name lines (ID lines with `--by-id`) | name field, or `id` with `--by-id` |
 | `awx <resource> <members> add/remove --stdin` | the member resource's kind | name field, or `id` |
-| `awx jobs get/events/logs/wait --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
+| `awx jobs get/events/logs/wait/cancel/relaunch --stdin` | `awx.job`, `awx.launch_outcome`, `awx.sync_outcome`, `awx.relaunch_outcome`; or ID lines | `id`; a record's own execution kind wins over `--kind` |
 | `awx unified-templates get --stdin` | `awx.unified_template`; or ID lines | `id` |
 | `awx job-templates usage --stdin`, `workflow-templates usage/nodes --stdin` | the template's kind; or name lines | name field |
 
