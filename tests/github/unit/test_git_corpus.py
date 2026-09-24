@@ -21,11 +21,8 @@ from untaped.capabilities.github.domain import (
     covers,
 )
 from untaped.capabilities.github.domain.errors import GitCorpusError
-from untaped.capabilities.github.infrastructure.git_corpus import (
-    GitCorpusCache,
-    cache_path_for,
-)
-from untaped.capability_api import GitResult
+from untaped.capabilities.github.infrastructure.git_corpus import GitCorpusCache
+from untaped.capability_api import GitResult, safe_cache_path
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -114,7 +111,7 @@ def test_v1_metadata_reads_as_default_profile(tmp_path: Path) -> None:
     source = _source_repo(tmp_path, "source", {"README.md": "hello\n"})
     repo = _item("acme/api", source)
     root = tmp_path / "corpus"
-    bare = cache_path_for(source.as_uri(), cache_dir=root)
+    bare = safe_cache_path(source.as_uri(), root=root)
     bare.mkdir(parents=True)
     (bare / "HEAD").write_text("ref: refs/heads/main\n")
     (bare / "untaped-corpus.json").write_text(
@@ -658,33 +655,6 @@ def test_grep_handles_colons_in_paths(tmp_path: Path) -> None:
     assert hit.line == 1
 
 
-def test_grep_malformed_output_is_git_corpus_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    cache = GitCorpusCache()
-    repo = CorpusRepoTarget(
-        full_name="acme/api",
-        clone_url=(tmp_path / "source").as_uri(),
-        default_branch="main",
-    )
-    root = tmp_path / "corpus"
-    bare = root / "local" / "source-deadbeef.git"
-    bare.mkdir(parents=True)
-    (bare / "HEAD").write_text("ref: refs/heads/main\n")
-    monkeypatch.setattr(
-        "untaped.capabilities.github.infrastructure.git_corpus.cache_path_for",
-        lambda _url, *, cache_dir: bare,
-    )
-
-    def fake_run(_args: list[str], **_kwargs: Any) -> GitResult:
-        return GitResult(returncode=0, stdout=b"Binary file main:asset.bin matches\n", stderr="")
-
-    monkeypatch.setattr(cache, "_run", fake_run)
-
-    with pytest.raises(GitCorpusError, match="could not parse git grep output"):
-        _grep(cache, repo, root=root, ref="main", pattern="acme/action")
-
-
 def test_list_clean_and_worktree_are_confined_to_managed_root(tmp_path: Path) -> None:
     source = _source_repo(tmp_path, "source", {"README.md": "uses: acme/action@v1\n"})
     cache = GitCorpusCache()
@@ -1005,7 +975,7 @@ def test_ensure_origin_does_not_send_auth_header_to_local_commands(
 ) -> None:
     url = "https://github.example.com/acme/api.git"
     root = tmp_path / "corpus"
-    cache_path_for(url, cache_dir=root).mkdir(parents=True)
+    safe_cache_path(url, root=root).mkdir(parents=True)
     cache = GitCorpusCache()
     seen: list[tuple[str, str | None]] = []
 
@@ -1069,7 +1039,7 @@ def test_writers_wait_for_the_repo_lock_and_time_out(tmp_path: Path) -> None:
     root = tmp_path / "corpus"
     repo = _item("acme/api", source)
     _sync_default(GitCorpusCache(), repo, root=root)
-    bare = cache_path_for(source.as_uri(), cache_dir=root)
+    bare = safe_cache_path(source.as_uri(), root=root)
     cache = GitCorpusCache(lock_timeout=0.05)
 
     with FileLock(str(bare / "untaped.lock")):

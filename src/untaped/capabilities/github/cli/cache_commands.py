@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 
 from untaped.capabilities.github.application import (
     RepositoryInventoryItem,
@@ -13,7 +14,11 @@ from untaped.capabilities.github.application import (
 )
 from untaped.capabilities.github.cli._client import corpus_auth_header, open_client
 from untaped.capabilities.github.cli.scopes import (
+    ArchivedOption,
+    CorpusParallelOption,
+    DepthOption,
     OrgOption,
+    RepoOption,
     TeamOption,
     parse_team_scopes,
     read_stdin_repos,
@@ -25,7 +30,6 @@ from untaped.capability_api import (
     DryRunOption,
     FormatOption,
     OutputFormat,
-    ParallelOption,
     StdinOption,
     UsageError,
     YesOption,
@@ -41,15 +45,6 @@ from untaped.capability_api import (
     summary,
 )
 
-RepoOption = Annotated[
-    list[str] | None,
-    Parameter(
-        name="--repo",
-        help="Repository OWNER/NAME. Repeatable.",
-        consume_multiple=False,
-        negative="",
-    ),
-]
 AllOption = Annotated[
     bool,
     Parameter(name="--all", negative="", help="Select every cached repository."),
@@ -102,9 +97,7 @@ def sync_command(
     team: TeamOption = None,
     repo: RepoOption = None,
     stdin: StdinOption = False,
-    archived: Annotated[
-        bool, Parameter(name="--archived", negative="", help="Include archived repositories.")
-    ] = False,
+    archived: ArchivedOption = False,
     refs: Annotated[
         Literal["default", "branches", "tags", "all"],
         Parameter(name="--refs", help="Ref profile to fetch."),
@@ -129,17 +122,8 @@ def sync_command(
             ),
         ),
     ] = False,
-    depth: Annotated[
-        int,
-        Parameter(
-            name="--depth", validator=validators.Number(gte=0), help="Git fetch depth; 0 is full."
-        ),
-    ] = 1,
-    parallel: Annotated[
-        ParallelOption,
-        Parameter(help="Parallel Git workers (capped at 32; default from github.sweep settings)."),
-    ]
-    | None = None,
+    depth: DepthOption = 1,
+    parallel: CorpusParallelOption | None = None,
     fmt: FormatOption = "table",
     columns: ColumnsOption = None,
 ) -> None:
@@ -192,10 +176,7 @@ def sync_command(
         for outcome in outcomes:
             if outcome.failed:
                 ui.message("error", f"{outcome.repo}: {outcome.error}")
-        counts: dict[str, int] = {}
-        for outcome in outcomes:
-            counts[outcome.action] = counts.get(outcome.action, 0) + 1
-        echo(summary("sync", counts), err=True)
+        echo(summary("sync", Counter(outcome.action for outcome in outcomes)), err=True)
         finish(any(outcome.failed for outcome in outcomes))
 
 
@@ -279,7 +260,8 @@ def clean_command(
             "use `cache delete` or `cache prune`",
         )
         repos = tuple(repo or ())
-        _require_one_clean_mode(repos=repos, all_repos=all_repos, prune=prune)
+        if sum(bool(value) for value in (repos, all_repos, prune)) != 1:
+            raise UsageError("cache clean requires exactly one of --repo, --all, or --prune")
         if prune and not org:
             raise UsageError("cache clean --prune requires --org")
         _delete(
@@ -426,28 +408,17 @@ def _parse_time(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _relative_age(value: datetime | None, *, now: datetime | None = None) -> str:
+def _relative_age(value: datetime | None) -> str:
     """Render how long ago ``value`` was: ``just now``, ``5 minutes ago``, ``3 days ago``."""
     if value is None:
         return "n/a"
-    seconds = int(((now or datetime.now(UTC)) - value).total_seconds())
+    seconds = int((datetime.now(UTC) - value).total_seconds())
     if seconds < 60:
         return "just now"
-    for unit, span in (("day", 86400), ("hour", 3600), ("minute", 60)):
+    for unit, span in (("day", 86400), ("hour", 3600)):
         if seconds >= span:
             return f"{plural(seconds // span, unit)} ago"
-    raise AssertionError("unreachable")
-
-
-def _require_one_clean_mode(
-    *,
-    repos: tuple[str, ...],
-    all_repos: bool,
-    prune: bool,
-) -> None:
-    selected = sum(bool(value) for value in (repos, all_repos, prune))
-    if selected != 1:
-        raise UsageError("cache clean requires exactly one of --repo, --all, or --prune")
+    return f"{plural(seconds // 60, 'minute')} ago"
 
 
 def _in_orgs(
