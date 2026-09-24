@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import traceback
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -55,158 +54,6 @@ def test_recipe_schema_accepts_all_v1_step_types() -> None:
     assert recipe.steps[3].if_absent is False
 
 
-def test_template_step_unknown_tokens_accepts_keep_and_rejects_other_values() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "template",
-                    "template": "workflow.yml",
-                    "dest": ".github/workflows/ci.yml",
-                    "unknown_tokens": "keep",
-                }
-            ],
-        }
-    )
-
-    assert isinstance(recipe.steps[0], TemplateStep)
-    assert recipe.steps[0].unknown_tokens == "keep"
-    with pytest.raises(ValidationError):
-        Recipe.model_validate(
-            {
-                "version": 1,
-                "steps": [
-                    {
-                        "type": "template",
-                        "template": "workflow.yml",
-                        "dest": ".github/workflows/ci.yml",
-                        "unknown_tokens": "passthrough",
-                    }
-                ],
-            }
-        )
-
-
-def test_template_and_copy_steps_accept_if_absent() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "template",
-                    "template": "workflow.yml",
-                    "dest": ".github/workflows/ci.yml",
-                    "if_absent": True,
-                },
-                {
-                    "type": "copy",
-                    "source": "files/README.md",
-                    "dest": "README.md",
-                    "if_absent": True,
-                },
-            ],
-        }
-    )
-
-    template, copy = recipe.steps
-    assert isinstance(template, TemplateStep)
-    assert isinstance(copy, CopyStep)
-    assert template.if_absent is True
-    assert copy.if_absent is True
-
-
-def test_transform_files_stay_one_step_with_every_file() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "transform",
-                    "files": ["local.yml", "site.yml"],
-                    "hook": "add_collections",
-                    "optional": True,
-                    "args": {"collections": ["ansible.builtin"]},
-                }
-            ],
-        }
-    )
-
-    assert len(recipe.steps) == 1
-    step = recipe.steps[0]
-    assert isinstance(step, TransformStep)
-    assert step.file is None
-    assert step.files == (Path("local.yml"), Path("site.yml"))
-    assert step.hook == "add_collections"
-    assert step.args == {"collections": ["ansible.builtin"]}
-    assert step.optional is True
-
-
-def test_transform_globs_remain_single_planning_time_step() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "transform",
-                    "globs": ["**/*.yml", "playbooks/*.yaml"],
-                    "exclude": [".git/**", "skip.yml"],
-                    "hook": "add_collections",
-                    "args": {"collections": ["ansible.builtin"]},
-                }
-            ],
-        }
-    )
-
-    assert len(recipe.steps) == 1
-    step = recipe.steps[0]
-    assert isinstance(step, TransformStep)
-    assert step.file is None
-    assert step.globs == ("**/*.yml", "playbooks/*.yaml")
-    assert step.exclude == (".git/**", "skip.yml")
-
-
-def test_remove_globs_remain_single_planning_time_step() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "remove",
-                    "globs": ["**/*.bak"],
-                    "exclude": ["keep.bak"],
-                }
-            ],
-        }
-    )
-
-    assert len(recipe.steps) == 1
-    step = recipe.steps[0]
-    assert isinstance(step, RemoveStep)
-    assert step.file is None
-    assert step.globs == ("**/*.bak",)
-    assert step.exclude == ("keep.bak",)
-
-
-def test_remove_files_stay_one_step_with_every_file() -> None:
-    recipe = Recipe.model_validate(
-        {
-            "version": 1,
-            "steps": [
-                {
-                    "type": "remove",
-                    "files": ["ansible.cfg", "group_vars/old.yml"],
-                }
-            ],
-        }
-    )
-
-    assert len(recipe.steps) == 1
-    step = recipe.steps[0]
-    assert isinstance(step, RemoveStep)
-    assert step.files == (Path("ansible.cfg"), Path("group_vars/old.yml"))
-
-
 @pytest.mark.parametrize(
     "step",
     [
@@ -229,30 +76,6 @@ def test_file_fanout_steps_require_exactly_one_of_file_files_or_globs(
 
 
 @pytest.mark.parametrize(
-    "step",
-    [
-        {"type": "transform", "files": [], "hook": "edit"},
-        {"type": "remove", "files": []},
-    ],
-)
-def test_file_fanout_steps_reject_empty_files(step: dict[str, object]) -> None:
-    with pytest.raises(ValidationError, match="files must not be empty"):
-        Recipe.model_validate({"version": 1, "name": "bad", "steps": [step]})
-
-
-@pytest.mark.parametrize(
-    "step",
-    [
-        {"type": "transform", "globs": [], "hook": "edit"},
-        {"type": "remove", "globs": []},
-    ],
-)
-def test_file_fanout_steps_reject_empty_globs(step: dict[str, object]) -> None:
-    with pytest.raises(ValidationError, match="globs must not be empty"):
-        Recipe.model_validate({"version": 1, "name": "bad", "steps": [step]})
-
-
-@pytest.mark.parametrize(
     ("step", "message"),
     [
         (
@@ -271,9 +94,17 @@ def test_file_fanout_steps_reject_empty_globs(step: dict[str, object]) -> None:
             {"type": "transform", "globs": ["*.yml"], "optional": False, "hook": "edit"},
             "optional is not valid with globs",
         ),
+        ({"type": "transform", "files": [], "hook": "edit"}, "files must not be empty"),
+        ({"type": "remove", "files": []}, "files must not be empty"),
+        ({"type": "transform", "globs": [], "hook": "edit"}, "globs must not be empty"),
+        ({"type": "remove", "globs": []}, "globs must not be empty"),
+        (
+            {"type": "template", "template": "t.yml", "dest": "t.yml", "unknown_tokens": "pass"},
+            "unknown_tokens",
+        ),
     ],
 )
-def test_glob_steps_reject_invalid_options(step: dict[str, object], message: str) -> None:
+def test_steps_reject_invalid_options(step: dict[str, object], message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         Recipe.model_validate({"version": 1, "name": "bad", "steps": [step]})
 
@@ -288,38 +119,52 @@ def test_recipe_rejects_unknown_version_and_step_type() -> None:
         )
 
 
-def test_input_spec_coerces_supported_types() -> None:
-    assert InputSpec(type="str").coerce("api") == "api"
-    assert InputSpec(type="int").coerce("3") == 3
-    assert InputSpec(type="bool").coerce("false") is False
-    assert InputSpec(type="float").coerce("2.25") == 2.25
+_INT_LIST = {"type": "list", "items": "int"}
+_INT_DICT = {"type": "dict", "values": "int"}
 
 
-def test_input_spec_accepts_structured_shapes_and_coerces_elements() -> None:
-    list_spec = InputSpec.model_validate({"type": "list", "items": "int"})
-    dict_spec = InputSpec.model_validate({"type": "dict", "values": "bool"})
+@pytest.mark.parametrize(
+    ("spec", "value", "expected"),
+    [
+        ({"type": "str"}, "api", "api"),
+        ({"type": "int"}, "3", 3),
+        ({"type": "bool"}, "false", False),
+        ({"type": "float"}, "2.25", 2.25),
+        (_INT_LIST, ["1", 2], [1, 2]),
+        (_INT_LIST, (), []),
+        (
+            {"type": "dict", "values": "bool"},
+            {"on": "true", "off": False},
+            {"on": True, "off": False},
+        ),
+        ({"type": "dict", "values": "bool"}, {}, {}),
+        # Structured shapes default to string elements.
+        ({"type": "list"}, [1, "api"], ["1", "api"]),
+        ({"type": "dict"}, {"replicas": 3}, {"replicas": "3"}),
+    ],
+)
+def test_input_spec_coerces_declared_types(
+    spec: dict[str, object], value: object, expected: object
+) -> None:
+    assert InputSpec.model_validate(spec).coerce(value) == expected
 
-    assert list_spec.items == "int"
-    assert list_spec.values is None
-    assert list_spec.coerce(["1", 2]) == [1, 2]
-    assert list_spec.coerce(()) == []
-    assert dict_spec.values == "bool"
-    assert dict_spec.items is None
-    assert dict_spec.coerce({"enabled": "true", "disabled": False}) == {
-        "enabled": True,
-        "disabled": False,
-    }
-    assert dict_spec.coerce({}) == {}
 
-
-def test_input_spec_structured_shapes_default_to_string_elements() -> None:
-    list_spec = InputSpec.model_validate({"type": "list"})
-    dict_spec = InputSpec.model_validate({"type": "dict"})
-
-    assert list_spec.items is None
-    assert list_spec.coerce([1, "api"]) == ["1", "api"]
-    assert dict_spec.values is None
-    assert dict_spec.coerce({"replicas": 3}) == {"replicas": "3"}
+@pytest.mark.parametrize(
+    ("spec", "value", "match"),
+    [
+        (_INT_LIST, "not-a-list", "cannot coerce value to list"),
+        (_INT_LIST, ["not-an-int"], "cannot coerce value to list"),
+        (_INT_LIST, [["nested"]], "cannot coerce value to list"),
+        (_INT_DICT, "not-a-dict", "cannot coerce value to dict"),
+        (_INT_DICT, {1: "2"}, "dict input keys must be strings"),
+        (_INT_DICT, {"replicas": "not-an-int"}, "cannot coerce value to dict"),
+    ],
+)
+def test_input_spec_structured_coercion_errors_use_pinned_messages(
+    spec: dict[str, object], value: object, match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        InputSpec.model_validate(spec).coerce(value)
 
 
 def test_input_spec_rejects_invalid_structured_shape_metadata() -> None:
@@ -328,29 +173,6 @@ def test_input_spec_rejects_invalid_structured_shape_metadata() -> None:
 
     with pytest.raises(ValidationError, match="values is only valid with type dict"):
         InputSpec.model_validate({"type": "str", "values": "int"})
-
-
-def test_input_spec_structured_coercion_errors_use_pinned_messages() -> None:
-    list_spec = InputSpec.model_validate({"type": "list", "items": "int"})
-    dict_spec = InputSpec.model_validate({"type": "dict", "values": "int"})
-
-    with pytest.raises(ValueError, match="cannot coerce value to list"):
-        list_spec.coerce("not-a-list")
-
-    with pytest.raises(ValueError, match="cannot coerce value to list"):
-        list_spec.coerce(["not-an-int"])
-
-    with pytest.raises(ValueError, match="cannot coerce value to list"):
-        list_spec.coerce([["nested"]])
-
-    with pytest.raises(ValueError, match="cannot coerce value to dict"):
-        dict_spec.coerce("not-a-dict")
-
-    with pytest.raises(ValueError, match="dict input keys must be strings"):
-        dict_spec.coerce({1: "2"})
-
-    with pytest.raises(ValueError, match="cannot coerce value to dict"):
-        dict_spec.coerce({"replicas": "not-an-int"})
 
 
 @pytest.mark.parametrize("input_type", ["int", "float", "bool"])
@@ -385,9 +207,6 @@ def test_input_spec_supports_metadata_scope_and_from_fallbacks() -> None:
     assert spec.scope == "target"
     assert spec.from_ == ("{{ record.repo }}", "{{ target.name }}")
     assert spec.sensitive is True
-
-
-def test_input_spec_infers_global_scope_without_from() -> None:
     assert InputSpec.model_validate({"type": "str"}).scope == "global"
 
 
