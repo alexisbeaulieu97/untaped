@@ -101,7 +101,7 @@ def test_cache_status_reports_profile_disk_freshness(
     assert row["repo"] == "acme/api"
     assert row["profile"] == "default"
     assert row["disk_bytes"] > 0
-    assert "Cache: 1 repos" in result.stderr
+    assert "Cache: 1 repo," in result.stderr
     assert "oldest" in result.stderr
     assert "newest" in result.stderr
 

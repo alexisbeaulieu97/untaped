@@ -26,6 +26,7 @@ from untaped.capability_api import (
     echo,
     emit,
     finish,
+    plural,
     report_errors,
 )
 
@@ -270,11 +271,12 @@ def _status_summary(rows: tuple[CorpusRepoResult, ...]) -> None:
     dates = sorted(row.fetched_at for row in rows if row.fetched_at)
     if dates:
         echo(
-            f"Cache: {len(rows)} repos, {total} bytes, oldest {dates[0]}, newest {dates[-1]}",
+            f"Cache: {plural(len(rows), 'repo')}, {total} bytes, "
+            f"oldest {dates[0]}, newest {dates[-1]}",
             err=True,
         )
     else:
-        echo(f"Cache: {len(rows)} repos, {total} bytes, oldest n/a, newest n/a", err=True)
+        echo(f"Cache: {plural(len(rows), 'repo')}, {total} bytes, oldest n/a, newest n/a", err=True)
 
 
 def _require_one_clean_mode(
