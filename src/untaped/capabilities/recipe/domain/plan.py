@@ -12,6 +12,18 @@ from untaped.capabilities.recipe.domain.paths import safe_relative_path
 
 ApplyStatus = Literal["planned", "applied", "dry-run", "skipped", "error"]
 
+# File content is handled as ``str``. Bytes that are not UTF-8 decode to lone
+# surrogates under this error handler and encode back unchanged, so ``copy``,
+# ``remove``, backups and restores keep binary files byte-exact.
+CONTENT_ERRORS = "surrogateescape"
+
+
+def is_binary_content(content: str | None) -> bool:
+    """Whether ``content`` holds non-UTF-8 bytes or NULs (not diffable text)."""
+    return content is not None and (
+        "\x00" in content or any("\udc80" <= char <= "\udcff" for char in content)
+    )
+
 
 class Verdict(BaseModel):
     """Read-only hook verdict."""

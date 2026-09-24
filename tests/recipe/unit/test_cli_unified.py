@@ -785,3 +785,90 @@ def test_list_empty_library_hint_only_in_table_format(tmp_path: Path) -> None:
     assert "untaped recipe init pack NAME" in table.stderr
     assert as_json.exit_code == 0, as_json.output
     assert "no packs installed" not in as_json.stderr
+
+
+def test_apply_local_pack_path_picks_its_only_recipe(tmp_path: Path) -> None:
+    pack = tmp_path / "mypack"
+    _write_pack(pack, manifest_name="mypack", recipes={"fix": "recipes/fix.yml"})
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(
+        app, ["apply", str(pack), str(target), "--yes", "--format", "json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["recipe"] == "mypack/fix"
+
+
+def test_apply_installed_pack_name_picks_its_only_recipe(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_pack(source, manifest_name="acme", recipes={"fix": "recipes/fix.yml"})
+    _install_pack(source)
+    target = tmp_path / "target"
+    target.mkdir()
+
+    result = CliInvoker().invoke(app, ["apply", "acme", str(target), "--yes", "--format", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)[0]["recipe"] == "acme/fix"
+
+
+_BINARY = b"\x89PNG\r\n\x1a\n\x00\xff\xfe binary \x80\r\n"
+
+
+def test_apply_copies_and_removes_binary_files_byte_exact(tmp_path: Path) -> None:
+    pack = tmp_path / "mypack"
+    _write_pack(
+        pack,
+        manifest_name="mypack",
+        recipes={"fix": "recipes/fix.yml"},
+        recipe_body=(
+            "version: 1\nsteps:\n"
+            "  - type: copy\n    source: logo.png\n    dest: assets/logo.png\n"
+            "  - type: remove\n    file: old.png\n"
+        ),
+    )
+    (pack / "recipes" / "logo.png").write_bytes(_BINARY)
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "old.png").write_bytes(_BINARY[::-1])
+
+    diff = CliInvoker().invoke(
+        app, ["apply", str(pack), str(target), "--preview", "diff", "--dry-run"]
+    )
+    applied = CliInvoker().invoke(app, ["apply", str(pack), str(target), "--yes"])
+
+    assert diff.exit_code == 0, diff.output
+    assert "Binary file assets/logo.png differs" in diff.stderr
+    assert applied.exit_code == 0, applied.output
+    assert (target / "assets" / "logo.png").read_bytes() == _BINARY
+    assert not (target / "old.png").exists()
+
+    restored = CliInvoker().invoke(app, ["backup", "restore", "latest", "--yes"])
+
+    assert restored.exit_code == 0, restored.output
+    assert (target / "old.png").read_bytes() == _BINARY[::-1]
+    assert not (target / "assets" / "logo.png").exists()
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_apply_pack_with_several_recipes_asks_for_one(tmp_path: Path, installed: bool) -> None:
+    source = tmp_path / "acme"
+    _write_pack(
+        source,
+        manifest_name="acme",
+        recipes={"one": "recipes/one.yml", "two": "recipes/two.yml"},
+    )
+    if installed:
+        _install_pack(source)
+    target = tmp_path / "target"
+    target.mkdir()
+
+    ref = "acme" if installed else str(source)
+    result = CliInvoker().invoke(app, ["apply", ref, str(target), "--yes"])
+
+    assert result.exit_code != 0
+    assert "pack 'acme' has 2 recipes" in result.stderr
+    assert "acme/one" in result.stderr
+    assert "acme/two" in result.stderr
