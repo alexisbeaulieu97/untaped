@@ -262,3 +262,25 @@ def test_prompt_toolkit_multiselect_handles_cancelled_dialog(
 
     with pytest.raises(ConfigError, match="prompt cancelled"):
         backend.multiselect("Pick repos", [PromptChoice(value="one", label="One")], defaults=[])
+
+
+@pytest.mark.parametrize(
+    ("keys", "default", "expected"),
+    [("y\r", False, True), ("\r", False, False), ("n\r", True, False), ("\r", True, True)],
+)
+def test_prompt_toolkit_confirm_takes_a_typed_answer_over_the_default(
+    monkeypatch: pytest.MonkeyPatch, keys: str, default: bool, expected: bool
+) -> None:
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    with create_pipe_input() as pipe:
+        pipe.send_text(keys)
+        pipe.close()  # a re-prompt reads EOF instead of hanging
+        monkeypatch.setattr("prompt_toolkit.input.defaults.create_input", lambda _stream: pipe)
+        monkeypatch.setattr(
+            "prompt_toolkit.output.defaults.create_output", lambda _stream: DummyOutput()
+        )
+        backend = PromptToolkitPromptBackend(stdin=TtyStringIO(), stderr=TtyStringIO())
+
+        assert backend.confirm("Remove alias?", default=default) is expected

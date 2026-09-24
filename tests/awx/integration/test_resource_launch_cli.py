@@ -654,3 +654,22 @@ def test_launch_survey_rejects_variables_outside_the_survey(seeded_default_org: 
     assert result.exit_code == 2, result.output
     assert "debug" in result.output
     assert seeded_default_org.actions_called == []
+
+
+def test_launch_pipe_output_feeds_jobs_stdin(seeded_default_org: Any) -> None:
+    """`launch --format pipe | jobs get --stdin` reads the launched execution ids."""
+    seeded_default_org.seed(
+        "job_templates", id=10, name="alpha", organization=1, organization_name="Default"
+    )
+    launched = CliInvoker().invoke(app, ["job-templates", "launch", "alpha", "--format", "pipe"])
+    assert launched.exit_code == 0, launched.output
+    assert json.loads(launched.stdout)["kind"] == "awx.launch_outcome"
+
+    result = CliInvoker().invoke(
+        app,
+        ["jobs", "get", "--stdin", "--format", "raw", "--columns", "id"],
+        input=launched.stdout,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == str(json.loads(launched.stdout)["record"]["id"])
