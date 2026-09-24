@@ -396,17 +396,14 @@ def jobs_events(
     ``--filter event=runner_on_failed --filter host=web-01``.
 
     Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
-    between jobs. For a single id, output is identical to today.
-
-    Multi-id non-follow drains emit one format block per job — for
-    ``--format json``/``yaml``/``table`` that means N separately framed
-    documents, not one merged document. Each row carries a ``job`` field
-    so jq pipelines that need a single document should use
-    ``--format raw`` (concatenated lines) or ``--follow --format json``
-    (NDJSON streams unframed).
+    between jobs. Without ``--follow``, ``--format json``/``yaml`` print one
+    array holding every job's events; each row names its ``job``. With
+    ``--follow``, json streams one object per line (NDJSON).
     """
     filters = parse_kv_pairs(filter_, flag="--filter")
-    cols = list(columns) if columns else ["counter", "event", "host_name", "task"]
+    cols = list(columns) if columns else _event_columns(fmt)
+    one_document = _is_one_document(fmt, follow=follow)
+    rows: list[dict[str, object]] = []
     # Hoisted so post-``with`` exit dispatch is safe regardless of body outcome.
     any_failed = False
     with report_errors(), open_context() as ctx:
@@ -423,15 +420,43 @@ def jobs_events(
             events = ctx.monitor.stream_events(
                 job, from_counter=from_counter, params=filters, follow=follow
             )
-            _emit_events(events, fmt=fmt, cols=cols, follow=follow, ui=ctx.progress_ui())
+            if one_document:
+                rows.extend(_event_row(ev, job_id) for ev in events)
+                return
+            _emit_events(
+                events, job_id=job_id, fmt=fmt, cols=cols, follow=follow, ui=ctx.progress_ui()
+            )
 
-        _, any_failed = resolve_each(ids, _events_for_id)
+        drained, any_failed = resolve_each(ids, _events_for_id)
+        if one_document and drained:
+            echo(render_rows(rows, fmt=fmt, columns=cols, kind="awx.event"))
     finish(any_failed)
+
+
+def _is_one_document(fmt: OutputFormat, *, follow: bool) -> bool:
+    """Whether several jobs' rows merge into one json/yaml document.
+
+    json and yaml print a single document per invocation; ``--follow``
+    streams instead (json as NDJSON), and the other formats are line or
+    table oriented, so they keep emitting per job.
+    """
+    return not follow and fmt in ("json", "yaml")
+
+
+def _event_columns(fmt: OutputFormat) -> list[str]:
+    """Default ``jobs events`` columns; structured formats lead with ``job``."""
+    base = ["counter", "event", "host_name", "task"]
+    return base if fmt in ("table", "raw") else ["job", *base]
+
+
+def _event_row(ev: JobEvent, job_id: int) -> dict[str, object]:
+    return {"job": job_id, **ev.model_dump()}
 
 
 def _emit_events(
     events: Iterable[JobEvent],
     *,
+    job_id: int,
     fmt: OutputFormat,
     cols: list[str],
     follow: bool,
@@ -444,7 +469,7 @@ def _emit_events(
         # One-shot drain: collect everything then format as a single
         # table / json document so columns line up and yaml stays a
         # well-formed list.
-        rows = [ev.model_dump() for ev in events]
+        rows = [_event_row(ev, job_id) for ev in events]
         echo(render_rows(rows, fmt=fmt, columns=cols, kind="awx.event"))
         return
     if fmt == "table":
@@ -462,17 +487,18 @@ def _emit_events(
     # ``jq`` can ingest it directly without ``jq -s '.[]'``.
     if fmt == "json":
         for ev in events:
-            row = {c: ev.model_dump().get(c) for c in cols}
-            echo(json.dumps(row, default=str))
+            full = _event_row(ev, job_id)
+            echo(json.dumps({c: full.get(c) for c in cols}, default=str))
         return
     for ev in events:
-        line = render_rows([ev.model_dump()], fmt=fmt, columns=cols, kind="awx.event")
+        line = render_rows([_event_row(ev, job_id)], fmt=fmt, columns=cols, kind="awx.event")
         echo(line)
 
 
 def _emit_log_lines(
     lines: Iterable[str],
     *,
+    job_id: int,
     fmt: OutputFormat,
     cols: list[str] | None,
     follow: bool,
@@ -485,7 +511,7 @@ def _emit_log_lines(
     """
     if not follow:
         rendered = render_rows(
-            [{"line": line} for line in lines], fmt=fmt, columns=cols, kind="awx.log"
+            [_log_row(line, job_id) for line in lines], fmt=fmt, columns=cols, kind="awx.log"
         )
         if rendered:
             echo(rendered)
@@ -495,7 +521,7 @@ def _emit_log_lines(
     # and so ``jq`` can ingest it directly without ``jq -s '.[]'``.
     if fmt == "json":
         for line in lines:
-            row: dict[str, object] = {"line": line}
+            row = _log_row(line, job_id)
             if cols is not None:
                 row = {c: row.get(c) for c in cols}
             echo(json.dumps(row, default=str))
@@ -515,7 +541,11 @@ def _emit_log_lines(
     # to per-line row rendering like yaml does. Table-per-line is
     # silly but the cost is on the user who asked for it.
     for line in lines:
-        echo(render_rows([{"line": line}], fmt=fmt, columns=cols, kind="awx.log"))
+        echo(render_rows([_log_row(line, job_id)], fmt=fmt, columns=cols, kind="awx.log"))
+
+
+def _log_row(line: str, job_id: int) -> dict[str, object]:
+    return {"job": job_id, "line": line}
 
 
 @jobs_app.command(name="logs")
@@ -553,7 +583,8 @@ def jobs_logs(
     """Print the stdout of one or more jobs. Supports follow / tail / grep.
 
     Multiple ids drain serially with a ``[<id>]`` stderr breadcrumb
-    between jobs. For a single id, output is identical to today.
+    between jobs. Without ``--follow``, ``--format json``/``yaml`` print one
+    array holding every job's lines; each row names its ``job``.
     """
     if grep is not None:
         # Compile here so an invalid regex fails fast as a clean
@@ -568,7 +599,10 @@ def jobs_logs(
     with report_errors(), open_context() as ctx:
         ids, kinds = _job_targets(job_ids, stdin=stdin, kind=kind)
         show_breadcrumb = len(ids) > 1
-        cols = list(columns) if columns else None
+        # Log rows are ``{job, line}``; the line-oriented formats show the line.
+        cols = list(columns) if columns else (["line"] if fmt in ("table", "raw") else None)
+        one_document = _is_one_document(fmt, follow=follow)
+        rows: list[dict[str, object]] = []
 
         def _logs_for_id(n: str) -> None:
             job_id = _as_job_id(n)
@@ -580,9 +614,14 @@ def jobs_logs(
             lines = TailJobLogs(ctx.monitor)(
                 job, follow=follow, grep=grep, ignore_case=ignore_case, tail=tail
             )
-            _emit_log_lines(lines, fmt=fmt, cols=cols, follow=follow)
+            if one_document:
+                rows.extend(_log_row(line, job_id) for line in lines)
+                return
+            _emit_log_lines(lines, job_id=job_id, fmt=fmt, cols=cols, follow=follow)
 
-        _, any_failed = resolve_each(ids, _logs_for_id)
+        drained, any_failed = resolve_each(ids, _logs_for_id)
+        if one_document and drained:
+            echo(render_rows(rows, fmt=fmt, columns=cols, kind="awx.log"))
     finish(any_failed)
 
 
