@@ -3,107 +3,67 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from untaped.capabilities.awx.cli.patch_values import build_patch, parse_set_pairs
 from untaped.capability_api import ConfigError
 
-
-def test_parse_set_pairs_json_coerces_values() -> None:
-    result = parse_set_pairs(
-        [
-            "verbosity=2",
-            "enabled=true",
-            "limit=null",
-            "name=deploy",
-            'extra_vars={"a": 1}',
-        ]
-    )
-    assert result == {
-        "verbosity": 2,
-        "enabled": True,
-        "limit": None,
-        "name": "deploy",
-        "extra_vars": {"a": 1},
-    }
+_RECORD = {"scm_branch": "main", "verbosity": 0, "extra_vars": "", "limit": None}
 
 
-def test_parse_set_pairs_follows_existing_field_types() -> None:
-    record = {"scm_branch": "main", "verbosity": 0, "extra_vars": "", "limit": None}
-    result = parse_set_pairs(
-        [
-            "scm_branch=1.10",
-            "verbosity=2",
-            'extra_vars={"a": 1}',
-            "limit=null",
-            "unset_field=3",
-        ],
-        record=record,
-    )
-    assert result == {
-        "scm_branch": "1.10",
-        "verbosity": 2,
-        "extra_vars": {"a": 1},
-        "limit": None,
-        "unset_field": 3,
-    }
-
-
-def test_parse_set_pairs_splits_on_first_equals() -> None:
-    assert parse_set_pairs(["limit=a=b"]) == {"limit": "a=b"}
-
-
-def test_parse_set_pairs_distinguishes_numeric_fk_name_from_id() -> None:
-    assert parse_set_pairs(['inventory="123"']) == {"inventory": "123"}
-    assert parse_set_pairs(["inventory=123"]) == {"inventory": 123}
-
-
-def test_parse_set_pairs_empty_is_empty_dict() -> None:
-    assert parse_set_pairs(None) == {}
-    assert parse_set_pairs([]) == {}
+@pytest.mark.parametrize(
+    ("pairs", "record", "expected"),
+    [
+        (
+            ["verbosity=2", "enabled=true", "limit=null", "name=deploy", 'extra_vars={"a": 1}'],
+            None,
+            {"verbosity": 2, "enabled": True, "limit": None, "name": "deploy",
+             "extra_vars": {"a": 1}},
+        ),
+        # values follow the record's existing field types; unknown fields are JSON-coerced
+        (
+            ["scm_branch=1.10", "verbosity=2", 'extra_vars={"a": 1}', "limit=null", "other=3"],
+            _RECORD,
+            {"scm_branch": "1.10", "verbosity": 2, "extra_vars": {"a": 1}, "limit": None,
+             "other": 3},
+        ),
+        (["limit=a=b"], None, {"limit": "a=b"}),
+        # a quoted number is a name, a bare one an id
+        (['inventory="123"', "verbosity=4"], None, {"inventory": "123", "verbosity": 4}),
+        (None, None, {}),
+        ([], None, {}),
+    ],
+)  # fmt: skip
+def test_parse_set_pairs(
+    pairs: list[str] | None, record: dict[str, Any] | None, expected: dict[str, Any]
+) -> None:
+    assert parse_set_pairs(pairs, record=record) == expected
 
 
 def test_parse_set_pairs_rejects_malformed() -> None:
-    # parse_kv_pairs → raise_usage → SystemExit(2)
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit):  # usage error, exit 2
         parse_set_pairs(["novalue"])
 
 
-def test_build_patch_reads_patch_file_mapping(tmp_path: Path) -> None:
-    f = tmp_path / "p.yml"
-    f.write_text("verbosity: 3\njob_tags: deploy\n")
-    assert build_patch(None, f) == {"verbosity": 3, "job_tags": "deploy"}
-
-
-def test_build_patch_rejects_non_mapping_with_sdk_error(tmp_path: Path) -> None:
-    f = tmp_path / "p.yml"
-    f.write_text("- a\n- b\n")
-    with pytest.raises(ConfigError, match="must contain an object"):
-        build_patch(None, f)
-
-
-def test_build_patch_missing_patch_file_raises_sdk_error(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="could not read"):
-        build_patch(None, tmp_path / "nope.yml")
-
-
-def test_build_patch_expands_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    home = tmp_path / "home"
-    home.mkdir()
-    patch = home / "patch.yml"
-    patch.write_text("verbosity: 4\n")
-    monkeypatch.setenv("HOME", str(home))
-
-    assert build_patch(None, Path("~/patch.yml")) == {"verbosity": 4}
-
-
-def test_build_patch_set_overrides_patch_file(tmp_path: Path) -> None:
-    f = tmp_path / "p.yml"
-    f.write_text("verbosity: 1\njob_tags: base\n")
-    overlay = build_patch(["verbosity=5"], f)
-    assert overlay == {"verbosity": 5, "job_tags": "base"}
-
-
-def test_build_patch_set_only() -> None:
+def test_build_patch_set_overrides_patch_file_under_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "p.yml").write_text("verbosity: 1\njob_tags: base\n")
+    assert build_patch(["verbosity=5"], Path("~/p.yml")) == {"verbosity": 5, "job_tags": "base"}
     assert build_patch(["verbosity=2"], None) == {"verbosity": 2}
+
+
+@pytest.mark.parametrize(
+    ("content", "message"), [("- a\n- b\n", "must contain an object"), (None, "could not read")]
+)
+def test_build_patch_rejects_bad_patch_files(
+    tmp_path: Path, content: str | None, message: str
+) -> None:
+    path = tmp_path / "p.yml"
+    if content is not None:
+        path.write_text(content)
+    with pytest.raises(ConfigError, match=message):
+        build_patch(None, path)
