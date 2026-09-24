@@ -174,39 +174,16 @@ def _is_zombie(pid: int) -> bool:
     return stat_line.rsplit(")", 1)[-1].split()[0] == "Z"
 
 
-# ── editor selection precedence ────────────────────────────────────────────
-
-
-def test_explicit_editor_wins_over_env() -> None:
-    argv = resolve_editor_argv("code", env={"VISUAL": "subl", "EDITOR": "vi"})
-    assert argv == ("code",)
-
-
-def test_visual_beats_editor_when_no_explicit() -> None:
-    argv = resolve_editor_argv(None, env={"VISUAL": "subl", "EDITOR": "vi"})
-    assert argv == ("subl",)
-
-
-def test_editor_used_when_visual_missing() -> None:
-    argv = resolve_editor_argv(None, env={"EDITOR": "nvim"})
-    assert argv == ("nvim",)
-
-
-def test_vi_fallback_when_env_is_empty() -> None:
-    argv = resolve_editor_argv(None, env={})
-    assert argv == ("vi",)
-
-
 # ── argument splitting ─────────────────────────────────────────────────────
 
 
 def test_splits_editor_with_flags() -> None:
-    argv = resolve_editor_argv("code --reuse-window", env={})
+    argv = resolve_editor_argv("code --reuse-window")
     assert argv == ("code", "--reuse-window")
 
 
 def test_preserves_quoted_segments_in_posix_mode() -> None:
-    argv = resolve_editor_argv(None, env={"VISUAL": 'sh -c "exec vim $0"'}, posix=True)
+    argv = resolve_editor_argv('sh -c "exec vim $0"', posix=True)
     assert argv == ("sh", "-c", "exec vim $0")
 
 
@@ -215,7 +192,7 @@ def test_preserves_windows_paths_when_posix_false() -> None:
     mangle ``C:\\Tools\\vim.exe`` to ``C:Toolsvim.exe`` before
     subprocess ever sees it — that's the whole reason ``posix`` is a
     knob and not always ``True``."""
-    argv = resolve_editor_argv(r"C:\Tools\vim.exe", env={}, posix=False)
+    argv = resolve_editor_argv(r"C:\Tools\vim.exe", posix=False)
     assert argv == (r"C:\Tools\vim.exe",)
 
 
@@ -224,7 +201,7 @@ def test_preserves_windows_paths_when_posix_false() -> None:
 
 def test_empty_editor_raises_workspace_error() -> None:
     with pytest.raises(WorkspaceError, match="editor command is empty"):
-        resolve_editor_argv("   ", env={})
+        resolve_editor_argv("   ")
 
 
 def test_unterminated_quotes_raise_workspace_error_with_message() -> None:
@@ -234,5 +211,5 @@ def test_unterminated_quotes_raise_workspace_error_with_message() -> None:
     Pins the chained-exception contract too so debugging ever-rarer
     shlex edge cases still has the original cause attached."""
     with pytest.raises(WorkspaceError, match="could not parse editor command") as exc_info:
-        resolve_editor_argv('sh -c "missing-close', env={}, posix=True)
+        resolve_editor_argv('sh -c "missing-close', posix=True)
     assert isinstance(exc_info.value.__cause__, ValueError)

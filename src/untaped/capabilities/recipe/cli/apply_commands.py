@@ -39,6 +39,7 @@ from untaped.capabilities.recipe.infrastructure.file_writer import ApplyWriteErr
 from untaped.capabilities.recipe.infrastructure.hook_worker_client import UvHookWorkerPool
 from untaped.capabilities.recipe.infrastructure.pack_store import PackLibrary
 from untaped.capability_api import (
+    AbsolutePath,
     BatchOutcome,
     ColumnsOption,
     ConfigError,
@@ -72,6 +73,7 @@ class ApplyOutcomeRecord(OutcomeRecord, TargetRecord):
     ``cancelled`` (confirmation declined) or ``failed``.
     """
 
+    target_path: AbsolutePath
     files_changed: int
     warnings: list[str]
     error: str | None

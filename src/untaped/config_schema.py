@@ -2,7 +2,8 @@
 
 Used by the root ``untaped config list/set/unset`` commands to enumerate
 what's configurable without hard-coding the schema. Lists, dicts, and other
-collection types are skipped — they are managed by domain-specific commands.
+collection types are skipped unless ``include_collections`` asks for them as
+whole-value leaves (the ``config`` commands do, e.g. ``ui.symbols``).
 """
 
 from __future__ import annotations
@@ -43,22 +44,32 @@ class FieldDescriptor:
         """Dotted key, e.g. ``"http.verify_ssl"``."""
         return ".".join(self.path)
 
+    @property
+    def is_collection(self) -> bool:
+        """Whether the leaf holds a whole mapping or list (e.g. ``ui.symbols``)."""
+        return _is_collection(self.annotation)
+
 
 def walk_settings(
     model_cls: type[BaseModel],
     _prefix: tuple[str, ...] = (),
+    *,
+    include_collections: bool = False,
 ) -> list[FieldDescriptor]:
-    """Return every leaf scalar field of ``model_cls``, recursing into nested models."""
+    """Return every leaf scalar field of ``model_cls``, recursing into nested models.
+
+    ``include_collections`` also returns list/dict fields as single leaves.
+    """
     entries: list[FieldDescriptor] = []
     for name, field in model_cls.model_fields.items():
         annotation = _unwrap_optional(field.annotation)
         path = (*_prefix, name)
 
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            entries.extend(walk_settings(annotation, path))
+            entries.extend(walk_settings(annotation, path, include_collections=include_collections))
             continue
 
-        if _is_collection(annotation):
+        if _is_collection(annotation) and not include_collections:
             continue
 
         if field.default is not PydanticUndefined:
@@ -109,6 +120,11 @@ def redact_url_password(value: str, *, placeholder: str = "***") -> str:
     recognizable. Anything that is not such a URL is returned unchanged.
     """
     return _URL_PASSWORD.sub(rf"\g<prefix>:{placeholder}@", value, count=1)
+
+
+def redact_nested_url_passwords(value: Any, *, placeholder: str = "***") -> Any:
+    """Copy of ``value`` with :func:`redact_url_password` applied to every string."""
+    return _redact_url_passwords(copy.deepcopy(value), placeholder)
 
 
 def redact_secrets(

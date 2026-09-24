@@ -5,7 +5,6 @@ from untaped.capabilities.workspace.application.branch_workspace import (
     SetWorkspaceBranch,
     UnsetWorkspaceBranch,
 )
-from untaped.capabilities.workspace.application.edit_workspace import EditWorkspace
 from untaped.capabilities.workspace.application.foreach import Foreach
 from untaped.capabilities.workspace.application.forget_workspace import ForgetWorkspace
 from untaped.capabilities.workspace.application.import_workspace import (
@@ -35,7 +34,6 @@ __all__ = [
     "AdoptWorkspace",
     "ApplyWorkspaceBranch",
     "BareFetchTracker",
-    "EditWorkspace",
     "Foreach",
     "ForgetWorkspace",
     "ImportResult",

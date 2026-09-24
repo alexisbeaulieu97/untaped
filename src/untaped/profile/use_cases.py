@@ -29,7 +29,7 @@ class CreateProfile:
     def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
-    def __call__(self, name: str, *, copy_from: str | None = None) -> None:
+    def __call__(self, name: str, *, copy_from: str | None = None, dry_run: bool = False) -> None:
         if not name:
             raise ConfigError("profile name cannot be empty")
         if self._repo.read(name) is not None:
@@ -44,7 +44,8 @@ class CreateProfile:
             data = copy.deepcopy(source)
         else:
             data = {}
-        self._repo.write(name, data)
+        if not dry_run:
+            self._repo.write(name, data)
 
 
 class DeleteProfile:
@@ -130,7 +131,7 @@ class RenameProfile:
     def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
-    def __call__(self, old_name: str, new_name: str) -> None:
+    def __call__(self, old_name: str, new_name: str, *, dry_run: bool = False) -> None:
         if not new_name:
             raise ConfigError("new profile name cannot be empty")
         if old_name == DEFAULT_PROFILE:
@@ -141,7 +142,8 @@ class RenameProfile:
             raise ConfigError(not_found("profile", old_name, known=sorted(self._repo.names())))
         if self._repo.read(new_name) is not None:
             raise ConfigError(f"profile {new_name!r} already exists")
-        self._repo.rename(old_name, new_name)
+        if not dry_run:
+            self._repo.rename(old_name, new_name)
 
 
 @dataclass(frozen=True, slots=True)

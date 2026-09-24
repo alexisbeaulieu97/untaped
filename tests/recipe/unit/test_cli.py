@@ -153,6 +153,21 @@ def test_add_hooked_pack_without_lock_leads_with_error_no_summary(tmp_path: Path
     assert not (library_root() / "packs" / "demo").exists()
 
 
+def test_edit_uses_shared_editor_and_reports_bad_quoting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pack = tmp_path / "pack"
+    _write_pack_project(pack)
+    assert CliInvoker().invoke(app, ["add", str(pack), "--yes"]).exit_code == 0
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.setenv("EDITOR", "'unclosed")
+
+    result = CliInvoker().invoke(app, ["edit", "demo"])
+
+    assert result.exit_code == 1, result.output
+    assert "error: invalid quoting in $VISUAL or $EDITOR" in result.stderr
+
+
 def test_add_force_fails_fast_on_local_edits_before_confirm(
     tmp_path: Path,
 ) -> None:
@@ -2107,6 +2122,7 @@ def test_apply_derives_structured_input_from_pipe_record(
     row = json.loads(result.stdout)
     assert row["kind"] == "recipe.apply_outcome"
     assert row["record"]["inputs"] == {"collections": ["ansible.builtin", "community.general"]}
+    assert next(iter(row["record"])) == "target_path"
 
 
 def test_apply_rejects_input_from_conflicts_global_scope_and_interactive_check(

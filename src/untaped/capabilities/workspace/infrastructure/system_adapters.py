@@ -19,7 +19,7 @@ import stat
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from untaped.capabilities.workspace.domain import DEFAULT_FOREACH_TIMEOUT
@@ -190,40 +190,26 @@ def _append_timeout_message(stderr: str, timeout: float) -> str:
     return f"{stderr}{message}"
 
 
-def editor_runner(cmd: Sequence[str]) -> int:
-    """Default :data:`EditorRunner`: spawn ``cmd`` and return its exit code."""
-    completed = subprocess.run(list(cmd), check=False)
-    return completed.returncode
+def resolve_editor_argv(editor: str, *, posix: bool | None = None) -> tuple[str, ...]:
+    """Split an explicit ``--editor`` command into argv.
 
-
-def resolve_editor_argv(
-    editor: str | None,
-    *,
-    env: Mapping[str, str] | None = None,
-    posix: bool | None = None,
-) -> tuple[str, ...]:
-    """Resolve ``--editor`` / ``$VISUAL`` / ``$EDITOR`` / ``"vi"`` to argv.
-
-    Precedence: explicit ``editor`` argument > ``$VISUAL`` > ``$EDITOR``
-    > the literal ``"vi"`` fallback. The selected command is split with
-    :func:`shlex.split`; ``posix=os.name != "nt"`` by default, so
+    Without ``--editor``, ``run_editor`` reads ``$VISUAL`` / ``$EDITOR``
+    itself and fails with a hint when neither is set. The command is split
+    with :func:`shlex.split`; ``posix=os.name != "nt"`` by default, so
     Windows paths with backslashes survive (POSIX mode would mangle
-    ``C:\\Tools\\vim.exe``). Both ``env`` and ``posix`` are injectable
-    so unit tests cover both branches without depending on the runner's
-    OS.
+    ``C:\\Tools\\vim.exe``). ``posix`` is injectable so unit tests cover
+    both branches without depending on the runner's OS.
 
     Raises :class:`WorkspaceError` on an empty selection (e.g. whitespace
     only) and on :class:`shlex.split` ``ValueError`` (unterminated
     quoting), so callers see one error shape regardless of the failure
     mode.
     """
-    environment: Mapping[str, str] = env if env is not None else os.environ
     use_posix = posix if posix is not None else os.name != "nt"
-    chosen = editor or environment.get("VISUAL") or environment.get("EDITOR") or "vi"
     try:
-        argv = shlex.split(chosen, posix=use_posix)
+        argv = shlex.split(editor, posix=use_posix)
     except ValueError as exc:
-        raise WorkspaceError(f"could not parse editor command {chosen!r}: {exc}") from exc
+        raise WorkspaceError(f"could not parse editor command {editor!r}: {exc}") from exc
     if not argv:
         raise WorkspaceError("editor command is empty")
     return tuple(argv)
@@ -295,7 +281,6 @@ __all__ = [
     "DEFAULT_FOREACH_TIMEOUT",
     "InterruptibleShellRunner",
     "LocalFilesystem",
-    "editor_runner",
     "resolve_editor_argv",
     "shell_runner",
 ]

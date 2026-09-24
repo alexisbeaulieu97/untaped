@@ -116,7 +116,9 @@ A built-in capability owns its skill source under
 in `SPEC.skills`. An external provider packages the same asset with its
 provider distribution. Update the owning skill when its capability command,
 settings, workflow, or contract changes; do not duplicate the shared install
-mechanics in a capability-specific skill.
+mechanics in a capability-specific skill. Start a new skill from the
+[skill template](./templates/SKILL.md): its frontmatter, sections and length
+rules keep skills consistent across capabilities.
 
 See [Capability authoring](./plugins.md) for the provider entry-point contract
 and the current `untaped capabilities` output for the composed providers.
