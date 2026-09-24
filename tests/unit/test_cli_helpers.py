@@ -128,6 +128,22 @@ def test_broken_pipe_at_final_flush_exits_cleanly(monkeypatch: pytest.MonkeyPatc
     assert exc.value.code == 0
 
 
+def test_failure_while_handling_another_broken_pipe_keeps_its_exit_code() -> None:
+    """Only a closed stdout exits 0: an exit raised while handling a broken
+    pipe to some other process (a hook worker) is a real failure."""
+    app = create_app(name="test")
+
+    @app.default
+    def worker_died() -> None:
+        try:
+            raise BrokenPipeError(32, "Broken pipe")
+        except BrokenPipeError:
+            raise SystemExit(1) from None
+
+    result = CliInvoker().invoke(app, [])
+    assert result.exit_code == 1
+
+
 def _run_with_closed_stdout(argv: list[str]) -> subprocess.CompletedProcess[str]:
     """Run ``untaped <argv>`` with stdout a pipe whose reader is already gone."""
     read_end, write_end = os.pipe()

@@ -257,6 +257,7 @@ def test_profile_option_resolves_in_any_position(_isolated_config: Path) -> None
         ["ext", "--profile", "work", "who"],
         ["ext", "--profile=work", "who"],
         ["ext", "who", "--profile", "work"],
+        ["--profile", "work", "--", "ext", "who"],
     ):
         result = CliInvoker().invoke(root.meta, argv)
         assert result.exit_code == 0, result.output
@@ -305,6 +306,40 @@ def test_root_option_after_a_lazy_builtin_name_is_not_a_command(
     assert result.exit_code == 1
     assert "Unknown command" not in result.stderr
     assert "'nope'" in result.stderr
+
+
+def test_profile_value_may_equal_a_command_name(_isolated_config: Path) -> None:
+    _write_config(_isolated_config, "profiles:\n  ext:\n    ext:\n      token: EXT\n")
+    root = bootstrap.build_root_app(builtins=(), externals=[_ext_external([])])
+    for argv in (
+        ["--profile", "ext", "ext", "who"],
+        ["ext", "--profile", "ext", "who"],
+        ["ext", "who", "--profile=ext"],
+    ):
+        result = CliInvoker().invoke(root.meta, argv)
+        assert result.exit_code == 0, result.output
+        assert result.stdout.strip() == "EXT"
+
+
+def test_root_options_after_end_of_options_reach_the_command(
+    _isolated_config: Path,
+) -> None:
+    def run(cmd: str, /) -> None:
+        echo(f"{cmd} profile={profile_override()}")
+
+    ext = create_app(name="ext", help="ext capability.")
+    ext.command(run, name="run")
+    root = bootstrap.build_root_app(builtins=(), externals=[_external(_spec("ext", ext), [])])
+
+    result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "--profile"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "--profile profile=None"
+
+    # Extra positionals after ``--`` are a usage error, never a root option.
+    result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "echo", "--profile", "x"])
+    assert result.exit_code == 2, result.output
+    assert result.stdout == ""
+    assert "expects a value" not in result.stderr
 
 
 def test_root_options_reset_after_invocation(_isolated_config: Path) -> None:
