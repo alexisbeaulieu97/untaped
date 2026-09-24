@@ -163,6 +163,7 @@ def wait_parallel(
     sleep: Callable[[float], None] | None = None,
     stop: threading.Event | None = None,
     finished: dict[str, Job] | None = None,
+    timeout: float | None = None,
 ) -> tuple[list[Job], list[tuple[str, UntapedError]]]:
     """Block-wait on multiple jobs concurrently — no streaming.
 
@@ -170,9 +171,10 @@ def wait_parallel(
     ``--track``) path: each worker calls ``WatchJob(client)(job)``
     until the job hits a terminal state and returns. The
     executor / collection / error-wrap scaffolding lives in
-    :func:`drain_parallel_with_worker`.
+    :func:`drain_parallel_with_worker`. ``timeout`` bounds each wait;
+    a job still running then comes back in its last polled state.
     """
     watch = WatchJob(client, sleep=sleep) if sleep is not None else WatchJob(client)
     return drain_parallel_with_worker(
-        jobs, lambda _name, job: watch(job), stop=stop, finished=finished
+        jobs, lambda _name, job: watch(job, timeout=timeout), stop=stop, finished=finished
     )

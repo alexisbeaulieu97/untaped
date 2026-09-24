@@ -522,6 +522,37 @@ def test_single_named_launch_does_not_prompt(fake_aap: Any) -> None:
 
 
 @pytest.mark.parametrize("flag", ["--wait", "--track"])
+@pytest.mark.parametrize(
+    ("command", "name"), [("job-templates launch", "deploy"), ("projects sync", "playbooks")]
+)
+def test_timeout_stops_waiting_and_names_the_running_execution(
+    fake_aap: Any, flag: str, command: str, name: str
+) -> None:
+    seed(fake_aap)
+    fake_aap.next_action_status = "running"
+
+    result = CliInvoker().invoke(
+        app, [*command.split(), name, flag, "--timeout", "0", "--format", "json"]
+    )
+
+    assert result.exit_code == 1, result.output
+    row = json.loads(result.stdout)[0]
+    assert (row["status"], row["action"]) == ("running", "failed")
+    assert row["detail"] == "still running after --timeout 0s; it keeps running"
+    kind = row["kind"]
+    assert f"hint: run `untaped awx jobs wait {row['id']} --kind {kind}`" in result.stderr
+
+
+@pytest.mark.parametrize("command", ["job-templates launch deploy", "projects sync playbooks"])
+def test_timeout_needs_wait_or_track_and_a_non_negative_value(fake_aap: Any, command: str) -> None:
+    seed(fake_aap)
+    for extra in (["--timeout", "5"], ["--wait", "--timeout", "-1"]):
+        result = CliInvoker().invoke(app, [*command.split(), *extra])
+        assert result.exit_code == 2, result.output
+    assert fake_aap.actions_called == []
+
+
+@pytest.mark.parametrize("flag", ["--wait", "--track"])
 def test_ctrl_c_while_waiting_stops_promptly_and_names_running_jobs(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:
