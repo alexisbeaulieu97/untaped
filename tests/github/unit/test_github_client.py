@@ -1,9 +1,8 @@
-"""Unit tests for the reusable GitHub REST client surface."""
+"""GithubClient REST reads used only by the ansible capability (search/repos go via the CLI)."""
 
 from __future__ import annotations
 
 import httpx
-import pytest
 import respx
 from pydantic import SecretStr
 
@@ -13,41 +12,6 @@ from untaped.capabilities.github.settings import GithubSettings
 
 def _client() -> GithubClient:
     return GithubClient(GithubSettings(token=SecretStr("ghp_test")))
-
-
-def test_get_repository_returns_repo_metadata() -> None:
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/repos/acme/site").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "full_name": "acme/site",
-                    "default_branch": "main",
-                    "private": True,
-                },
-            )
-        )
-        with _client() as client:
-            repo = client.get_repository("acme", "site")
-
-    assert repo["full_name"] == "acme/site"
-    assert repo["default_branch"] == "main"
-
-
-def test_list_org_repos_paginates_visible_repositories() -> None:
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock.get("/orgs/acme/repos").mock(
-            return_value=httpx.Response(200, json=[{"full_name": "acme/site"}])
-        )
-        with _client() as client:
-            repos = list(client.list_org_repos("acme"))
-
-    assert repos == [{"full_name": "acme/site"}]
-
-
-def test_search_code_does_not_accept_sort_parameter() -> None:
-    with _client() as client, pytest.raises(TypeError):
-        client.search_code("TODO", sort="updated")  # type: ignore[call-arg]
 
 
 def test_list_matching_refs_returns_branch_and_tag_refs() -> None:

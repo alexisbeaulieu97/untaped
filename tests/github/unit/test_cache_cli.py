@@ -219,3 +219,17 @@ def test_cache_worktree_materializes_cached_ref(source_repo: SourceRepo) -> None
     row = json.loads(result.stdout)
     assert row["repo"] == "acme/api"
     assert (Path(row["path"]) / "README.md").is_file()
+
+
+@pytest.mark.parametrize(
+    ("repo", "message"),
+    [
+        ("acme/missing", "repository is not in the local corpus"),
+        ("acme", "repository must be owner/name: 'acme'"),
+    ],
+)
+def test_cache_worktree_rejects_repos_it_cannot_materialize(repo: str, message: str) -> None:
+    result = CliInvoker().invoke(app, ["cache", "worktree", repo])
+
+    assert result.exit_code == 1, result.output
+    assert message in result.stderr
