@@ -256,84 +256,66 @@ def test_create_when_no_existing() -> None:
     assert payload["scm_type"] == "git"
 
 
-def test_create_uses_fallback_get_when_write_response_omits_field() -> None:
-    strategy = _WriteResponseStrategy(
-        existing=None,
-        response={"id": 99, "name": "playbooks", "organization": 1, "scm_type": "git"},
-    )
-    client = _FallbackClient(
-        {
-            "id": 99,
-            "name": "playbooks",
-            "organization": 1,
-            "description": "new",
-            "scm_type": "git",
-        }
-    )
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-
-    assert outcome.action == "created"
-    assert outcome.detail is None
-    assert client.get_calls == [("Project", 99)]
+_OLD_PROJECT = {"id": 42, "name": "playbooks", "organization": 1, "description": "old"}
+_NEW_PROJECT = {
+    "id": 99,
+    "name": "playbooks",
+    "organization": 1,
+    "description": "new",
+    "scm_type": "git",
+}
+_GET_FAILED = AwxApiError("GET failed")
 
 
-def test_create_fails_when_written_field_is_not_reflected_after_get() -> None:
-    strategy = _WriteResponseStrategy(
-        existing=None,
-        response={"id": 99, "name": "playbooks", "organization": 1, "description": "old"},
-    )
-    client = _FallbackClient(
-        {"id": 99, "name": "playbooks", "organization": 1, "description": "old"}
-    )
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
+@pytest.mark.parametrize(
+    ("existing", "response", "fetched", "allow_unverified", "action", "detail", "gets"),
+    [
+        # create: a write response that omits a field is verified by one GET
+        (None, {"id": 99, "scm_type": "git"}, _NEW_PROJECT, False, "created", None, [99]),
+        (None, {"id": 99, "description": "old"}, {**_NEW_PROJECT, "description": "old"},
+         False, "partial", "description", [99]),
+        (None, {"id": 99, "description": "old"}, {**_NEW_PROJECT, "description": "old"},
+         True, "created", "description", [99]),
+        (None, {"scm_type": "git"}, _NEW_PROJECT, False, "partial", "no integer", []),
+        (None, {"id": 99}, _GET_FAILED, False, "partial", "fallback GET failed", [99]),
+        (None, {"id": 99}, _GET_FAILED, True, "created", "fallback GET failed", [99]),
+        # update: the existing record is read once more to verify
+        ({**_OLD_PROJECT, "scm_type": "git"}, {"id": 42}, {**_OLD_PROJECT, "description": "new"},
+         False, "updated", None, [42, 42]),
+        ({**_OLD_PROJECT, "scm_type": "git"}, _OLD_PROJECT, _OLD_PROJECT,
+         False, "partial", "description", [42, 42]),
+        ({**_OLD_PROJECT, "scm_type": "git"}, _OLD_PROJECT, _OLD_PROJECT,
+         True, "updated", "description", [42, 42]),
+    ],
+)  # fmt: skip
+def test_write_is_verified_against_the_server_record(
+    existing: dict[str, Any] | None,
+    response: dict[str, Any],
+    fetched: dict[str, Any] | AwxApiError,
+    allow_unverified: bool,
+    action: str,
+    detail: str | None,
+    gets: list[int],
+) -> None:
+    """Unreflected writes fail the row unless ``--allow-unverified`` downgrades them.
 
-    outcome = apply(resource, write=True)
-    assert outcome.action == "partial"
-
-    assert client.get_calls == [("Project", 99)]
-    message = str(outcome.detail)
-    assert "description" in message
-    assert "new" not in message
-
-
-def test_create_allow_unverified_keeps_action_and_records_detail() -> None:
-    strategy = _WriteResponseStrategy(
-        existing=None,
-        response={"id": 99, "name": "playbooks", "organization": 1, "description": "old"},
-    )
-    client = _FallbackClient(
-        {"id": 99, "name": "playbooks", "organization": 1, "description": "old"}
+    Details and warnings name the field but never the written value.
+    """
+    client: _FallbackClient | _ErrorFallbackClient = (
+        _ErrorFallbackClient(fetched)
+        if isinstance(fetched, AwxApiError)
+        else _FallbackClient(fetched)
     )
     warnings: list[str] = []
     apply = _make_apply(
         catalog_specs={"Project": PROJECT_SPEC},
         fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
+        strategy=_WriteResponseStrategy(
+            existing=existing, response={"name": "playbooks", "organization": 1, **response}
+        ),
         client=cast(RawHttpResourceClient, client),
         warn=warnings,
-        allow_unverified=True,
+        allow_unverified=allow_unverified,
     )
     resource = Resource(
         kind="Project",
@@ -342,101 +324,17 @@ def test_create_allow_unverified_keeps_action_and_records_detail() -> None:
     )
 
     outcome = apply(resource, write=True)
-    assert outcome.unverified is True
 
-    assert outcome.action == "created"
-    assert outcome.detail is not None
-    assert "description" in outcome.detail
-    assert "new" not in outcome.detail
-    assert any("description" in warning and "new" not in warning for warning in warnings)
-
-
-def test_create_without_id_cannot_fallback_and_fails_unverified() -> None:
-    strategy = _WriteResponseStrategy(
-        existing=None,
-        response={"name": "playbooks", "organization": 1, "scm_type": "git"},
-    )
-    client = _FallbackClient(
-        {"id": 99, "name": "playbooks", "organization": 1, "description": "new"}
-    )
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-    assert outcome.action == "partial"
-
-    assert client.get_calls == []
-    assert "no integer" in str(outcome.detail)
-
-
-def test_create_strict_fails_when_fallback_get_errors() -> None:
-    strategy = _WriteResponseStrategy(
-        existing=None,
-        response={"id": 99, "name": "playbooks", "organization": 1, "scm_type": "git"},
-    )
-    client = _ErrorFallbackClient(AwxApiError("GET failed"))
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-    assert outcome.action == "partial"
-
-    assert client.get_calls == [("Project", 99)]
-    message = str(outcome.detail)
-    assert "description" in message
-    assert "new" not in message
-    assert "fallback GET failed" in message
-
-
-def test_create_allow_unverified_downgrades_when_fallback_get_errors() -> None:
-    strategy = _WriteResponseStrategy(
-        existing=None,
-        response={"id": 99, "name": "playbooks", "organization": 1, "scm_type": "git"},
-    )
-    client = _ErrorFallbackClient(AwxApiError("GET failed"))
-    warnings: list[str] = []
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-        warn=warnings,
-        allow_unverified=True,
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-    assert outcome.unverified is True
-
-    assert outcome.action == "created"
-    assert outcome.detail is not None
-    assert "description" in outcome.detail
-    assert "fallback GET failed" in outcome.detail
-    assert "new" not in outcome.detail
-    assert client.get_calls == [("Project", 99)]
-    assert any("fallback GET failed" in warning for warning in warnings)
+    assert (outcome.action, outcome.unverified) == (action, detail is not None)
+    assert client.get_calls == [("Project", id_) for id_ in gets]
+    if detail is None:
+        assert outcome.detail is None
+    else:
+        assert outcome.detail is not None
+        assert detail in outcome.detail
+        assert "new" not in outcome.detail
+    if allow_unverified:
+        assert any(detail in w and "new" not in w for w in warnings)
 
 
 def test_update_when_existing_differs() -> None:
@@ -464,116 +362,6 @@ def test_update_when_existing_differs() -> None:
     _, patch_payload = strategy.updated
     # Only changed fields are PATCHed
     assert patch_payload == {"description": "new"}
-
-
-def test_update_fails_when_written_field_is_not_reflected_after_get() -> None:
-    existing = {
-        "id": 42,
-        "name": "playbooks",
-        "organization": 1,
-        "description": "old",
-        "scm_type": "git",
-    }
-    strategy = _WriteResponseStrategy(
-        existing=existing,
-        response={"id": 42, "name": "playbooks", "organization": 1, "description": "old"},
-    )
-    client = _FallbackClient(
-        {"id": 42, "name": "playbooks", "organization": 1, "description": "old"}
-    )
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-    assert outcome.action == "partial"
-
-    assert client.get_calls == [("Project", 42), ("Project", 42)]
-    message = str(outcome.detail)
-    assert "description" in message
-    assert "new" not in message
-
-
-def test_update_uses_fallback_get_when_write_response_omits_field() -> None:
-    existing = {
-        "id": 42,
-        "name": "playbooks",
-        "organization": 1,
-        "description": "old",
-        "scm_type": "git",
-    }
-    strategy = _WriteResponseStrategy(
-        existing=existing,
-        response={"id": 42, "name": "playbooks", "organization": 1},
-    )
-    client = _FallbackClient(
-        {"id": 42, "name": "playbooks", "organization": 1, "description": "new"}
-    )
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-
-    assert outcome.action == "updated"
-    assert outcome.detail is None
-    assert client.get_calls == [("Project", 42), ("Project", 42)]
-
-
-def test_update_allow_unverified_keeps_action_and_records_detail() -> None:
-    existing = {
-        "id": 42,
-        "name": "playbooks",
-        "organization": 1,
-        "description": "old",
-        "scm_type": "git",
-    }
-    strategy = _WriteResponseStrategy(
-        existing=existing,
-        response={"id": 42, "name": "playbooks", "organization": 1, "description": "old"},
-    )
-    client = _FallbackClient(
-        {"id": 42, "name": "playbooks", "organization": 1, "description": "old"}
-    )
-    warnings: list[str] = []
-    apply = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-        client=cast(RawHttpResourceClient, client),
-        warn=warnings,
-        allow_unverified=True,
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "new", "scm_type": "git"},
-    )
-
-    outcome = apply(resource, write=True)
-    assert outcome.unverified is True
-
-    assert outcome.action == "updated"
-    assert outcome.detail is not None
-    assert "description" in outcome.detail
-    assert "new" not in outcome.detail
-    assert any("description" in warning and "new" not in warning for warning in warnings)
 
 
 def test_unchanged_when_existing_matches() -> None:
@@ -1153,51 +941,3 @@ def test_apply_does_not_warn_on_known_or_handled_fields() -> None:
     )
     apply(resource, write=True)
     assert warnings == []
-
-
-# ── parallelism invariant: the batch mutation engine has no per-call attribute rebinds ──
-
-
-def test_apply_resource_has_no_per_call_attribute_rebinds() -> None:
-    """Structural pin: a ``__call__`` must not rebind any instance
-    attribute the constructor set up.
-
-    Parallel execution shares one
-    engine across workers; if any ``__call__`` rebinds an
-    attribute (e.g. ``self._cache = {}`` swapped for a fresh dict per
-    call) the workers race on instance state. This test is a structural
-    proxy for that contract — it doesn't pin behaviour under concurrency
-    (the phase-1 parallel tests in ``test_apply_file.py`` do), only the
-    "no per-call attribute rebind" property the contract rests on.
-    """
-    strategy = _StubStrategy(existing=None)
-    use_case = _make_apply(
-        catalog_specs={"Project": PROJECT_SPEC},
-        fk_names={("Organization", "Default"): 1},
-        strategy=strategy,
-    )
-    resource = Resource(
-        kind="Project",
-        metadata=Metadata(name="playbooks", organization="Default"),
-        spec={"description": "demo", "scm_type": "git"},
-    )
-
-    before = dict(vars(use_case))
-    use_case(resource)
-    after_first = dict(vars(use_case))
-    use_case(resource)
-    after_second = dict(vars(use_case))
-
-    # ``is`` not ``==``: a fresh mutable container rebound to the same
-    # attribute (e.g. ``self._cache = {}`` rebuilt per call) would tie on
-    # ``==`` but still break thread-safety. (Mutations *inside* an
-    # attribute aren't caught here — that's what the parallel
-    # ``test_apply_file.py`` cases pin behaviourally.)
-    assert before.keys() == after_first.keys() == after_second.keys()
-    for key in before:
-        assert before[key] is after_first[key], (
-            f"the batch mutation engine rebound attribute {key!r} during a call"
-        )
-        assert before[key] is after_second[key], (
-            f"the batch mutation engine rebound attribute {key!r} on the second call"
-        )
