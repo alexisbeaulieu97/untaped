@@ -106,10 +106,7 @@ class JiraClient:
     def list_transitions(self, issue_key: str) -> list[dict[str, Any]]:
         with map_jira_errors(noun="issue", name=issue_key):
             payload = self._http.get_json_dict(self._api(f"issue/{issue_key}/transitions"))
-        transitions = payload.get("transitions")
-        if not isinstance(transitions, list):
-            return []
-        return [transition for transition in transitions if isinstance(transition, dict)]
+        return list(payload.get("transitions") or [])
 
     def transition_issue(self, issue_key: str, payload: dict[str, Any]) -> None:
         with map_jira_errors(noun="issue", name=issue_key):
@@ -119,10 +116,7 @@ class JiraClient:
 
     def list_projects(self) -> Iterator[dict[str, Any]]:
         with map_jira_errors():
-            rows = self._http.get_json_list(self._api("project"))
-        for row in rows:
-            if isinstance(row, dict):
-                yield row
+            yield from self._http.get_json_list(self._api("project"))
 
     def get_project(self, project_key: str) -> dict[str, Any]:
         with map_jira_errors(noun="project", name=project_key):

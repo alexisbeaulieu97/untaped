@@ -62,14 +62,10 @@ class IssueResult(BaseModel):
         if not isinstance(data, dict):
             return data
         fields = data.get("fields") or {}
-        if not isinstance(fields, dict):
-            fields = {}
-        status = fields.get("status") or {}
-        assignee = fields.get("assignee") or {}
         patch = {
             "summary": _text(fields.get("summary")),
-            "status": status.get("name", "") if isinstance(status, dict) else "",
-            "assignee": _display_name(assignee),
+            "status": _name(fields.get("status")),
+            "assignee": _display_name(fields.get("assignee")),
             "updated_at": _timestamp(fields.get("updated")),
             "url": _browser_url(data),
             "api_url": _api_url(data),
@@ -131,8 +127,6 @@ class IssueDetailResult(IssueResult):
         if not isinstance(data, dict):
             return data
         fields = data.get("fields") or {}
-        if not isinstance(fields, dict):
-            fields = {}
         labels = fields.get("labels") or []
         patch = {
             "issue_type": _name(fields.get("issuetype")),
@@ -205,9 +199,7 @@ def _adf_inline(node: dict[str, Any]) -> str:
         return str(node.get("text") or "")
     if kind == "hardBreak":
         return "\n"
-    attrs = node.get("attrs")
-    if not isinstance(attrs, dict):
-        attrs = {}
+    attrs = node.get("attrs") or {}
     if kind in {"mention", "emoji", "status"}:
         return str(attrs.get("text") or attrs.get("shortName") or "")
     if kind in {"inlineCard", "blockCard"}:
