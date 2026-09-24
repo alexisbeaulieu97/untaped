@@ -69,15 +69,6 @@ def _seed_events(fake: Any, *, job_id: int = 42) -> None:
     )
 
 
-def test_jobs_list_returns_seeded_records(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    result = CliInvoker().invoke(app, ["jobs", "list", "--format", "raw", "--columns", "id"])
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines())
-    assert ids == ["42", "43"]
-
-
 def test_jobs_list_table_honours_global_ui_collection_view(
     fake_aap: Any,
     aap_config: Path,
@@ -113,17 +104,6 @@ def test_jobs_list_status_filter_passes_to_awx(fake_aap: Any) -> None:
     )
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "2"
-
-
-def test_jobs_events_drains_existing(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap)
-    _seed_events(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["jobs", "events", "42", "--format", "raw", "--columns", "counter"]
-    )
-    assert result.exit_code == 0, result.output
-    counters = sorted(result.stdout.strip().splitlines())
-    assert counters == ["1", "2", "3", "4"]
 
 
 def test_jobs_events_follow_streams_events_to_stdout(fake_aap: Any) -> None:
@@ -169,128 +149,62 @@ def test_jobs_events_follow_with_table_format_renders_human_lines(fake_aap: Any)
     assert "failed: api-01" in out
 
 
-def test_jobs_events_server_side_filter(fake_aap: Any) -> None:
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        ([], ["1", "2", "3", "4"]),
+        (["--filter", "event=runner_on_failed"], ["4"]),
+        (["--from-counter", "2"], ["3", "4"]),
+    ],
+)
+def test_jobs_events_selection(fake_aap: Any, args: list[str], expected: list[str]) -> None:
     _seed_running_job(fake_aap)
     _seed_events(fake_aap)
     result = CliInvoker().invoke(
-        app,
-        [
-            "jobs",
-            "events",
-            "42",
-            "--filter",
-            "event=runner_on_failed",
-            "--format",
-            "raw",
-            "--columns",
-            "host_name",
-        ],
+        app, ["jobs", "events", "42", *args, "--format", "raw", "--columns", "counter"]
     )
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "api-01"
+    assert sorted(result.stdout.split()) == expected
 
 
-def test_jobs_events_from_counter_skips_already_seen(fake_aap: Any) -> None:
+_LINES = ["line-0", "line-1", "line-2"]
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        # log rows are single-field: raw and ``--columns line`` print the bare lines
+        ([], _LINES),
+        (["--format", "raw", "--columns", "line"], _LINES),
+        (["--follow"], _LINES),
+        (["--follow", "--format", "raw", "--columns", "line"], _LINES),
+        (["--tail", "2"], _LINES[1:]),
+        (["--format", "json", "--columns", "line"], [json.dumps([{"line": x} for x in _LINES])]),
+        # --follow json is NDJSON: one bare object per line, straight into ``jq``
+        (["--follow", "--format", "json"], [json.dumps({"job": 42, "line": x}) for x in _LINES]),
+        (["--follow", "--format", "json", "--columns", "line"],
+         [json.dumps({"line": x}) for x in _LINES]),
+    ],
+)  # fmt: skip
+def test_jobs_logs_output_shapes(fake_aap: Any, args: list[str], expected: list[str]) -> None:
     _seed_running_job(fake_aap)
-    _seed_events(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        [
-            "jobs",
-            "events",
-            "42",
-            "--from-counter",
-            "2",
-            "--format",
-            "raw",
-            "--columns",
-            "counter",
-        ],
-    )
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", *args])
     assert result.exit_code == 0, result.output
-    counters = sorted(result.stdout.strip().splitlines())
-    assert counters == ["3", "4"]
+    assert result.stdout.strip().splitlines() == expected
 
 
-def test_jobs_logs_prints_full_stdout_by_default(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42"])
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (["--grep", "ERROR"], ["ERROR: boom"]),
+        (["--grep", "ERROR", "--ignore-case"], ["ERROR: boom", "error: low"]),
+    ],
+)
+def test_jobs_logs_grep_filters_lines(fake_aap: Any, args: list[str], expected: list[str]) -> None:
+    fake_aap.seed("jobs", id=42, status="successful", stdout="info\nERROR: boom\nerror: low\n")
+    result = CliInvoker().invoke(app, ["jobs", "logs", "42", *args])
     assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
-
-
-def test_jobs_logs_supports_standard_raw_columns_options(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["jobs", "logs", "42", "--format", "raw", "--columns", "line"]
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
-
-
-def test_jobs_logs_supports_structured_formatter_output(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["jobs", "logs", "42", "--format", "json", "--columns", "line"]
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == ('[{"line": "line-0"}, {"line": "line-1"}, {"line": "line-2"}]')
-
-
-def test_jobs_logs_follow_emits_ndjson_under_json(fake_aap: Any) -> None:
-    """Pins the NDJSON contract: ``logs --follow --format json`` emits one
-    bare JSON object per line so ``jq`` can ingest directly without ``jq
-    -s '.[]'``. Mirrors ``jobs events --follow --format json`` and matches
-    ``kubectl get -w -o json``.
-    """
-    import json as _json
-
-    _seed_running_job(fake_aap)  # terminal — stream_stdout returns immediately
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--follow", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    lines = [line for line in result.stdout.strip().splitlines() if line]
-    parsed = [_json.loads(line) for line in lines]
-    # NDJSON: each line is a bare object, NOT a single-element array.
-    assert all(isinstance(p, dict) for p in parsed), parsed
-    assert [p["line"] for p in parsed] == ["line-0", "line-1", "line-2"]
-
-
-def test_jobs_logs_follow_columns_filter_under_json(fake_aap: Any) -> None:
-    """``--columns line`` keeps the row narrow under ``--follow --format
-    json`` — same shape as the events command's column filtering."""
-    import json as _json
-
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "logs", "42", "--follow", "--format", "json", "--columns", "line"],
-    )
-    assert result.exit_code == 0, result.output
-    parsed = [_json.loads(line) for line in result.stdout.strip().splitlines() if line]
-    assert parsed == [{"line": "line-0"}, {"line": "line-1"}, {"line": "line-2"}]
-
-
-def test_jobs_logs_follow_raw_passes_through(fake_aap: Any) -> None:
-    """``--follow --format raw`` (the default fmt) emits raw log lines with
-    no JSON wrapping — same observable shape as the non-follow raw path."""
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--follow"])
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
-
-
-def test_jobs_logs_follow_raw_columns_line_is_noop(fake_aap: Any) -> None:
-    """``--follow --format raw --columns line`` matches bare ``--follow``
-    output: log rows are single-field so ``--columns line`` is the only
-    meaningful projection, and the raw fast-path treats it as the
-    identity. Pins parity for the only realistic user-supplied value.
-    """
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(
-        app, ["jobs", "logs", "42", "--follow", "--format", "raw", "--columns", "line"]
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["line-0", "line-1", "line-2"]
+    assert result.stdout.strip().splitlines() == expected
 
 
 def test_jobs_logs_follow_yaml_keeps_per_line_emission(fake_aap: Any) -> None:
@@ -340,35 +254,6 @@ def test_jobs_logs_follow_json_multi_id_keeps_stdout_pipe_clean(fake_aap: Any) -
     assert all(isinstance(p, dict) and "line" in p for p in parsed), parsed
     # Both jobs' lines made it through (3 each = 6 total).
     assert len(parsed) == 6
-
-
-def test_jobs_logs_tail_returns_only_last_n(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap)
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--tail", "2"])
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["line-1", "line-2"]
-
-
-def test_jobs_logs_grep_filters_lines(fake_aap: Any) -> None:
-    fake_aap.seed(
-        "jobs",
-        id=42,
-        status="successful",
-        stdout="info: ok\nERROR: boom\ninfo: done\n",
-    )
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--grep", "ERROR"])
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "ERROR: boom"
-
-
-def test_jobs_logs_grep_ignore_case(fake_aap: Any) -> None:
-    fake_aap.seed("jobs", id=42, status="successful", stdout="error: lower\nfine\n")
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "logs", "42", "--grep", "ERROR", "--ignore-case"],
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "error: lower"
 
 
 def test_jobs_logs_invalid_grep_pattern_rejected_at_boundary(fake_aap: Any) -> None:
@@ -518,46 +403,21 @@ def test_launch_track_parallel_drains_concurrently(
     assert result.exit_code == 0, result.output
 
 
-def test_launch_track_output_lines_carry_template_prefix(
-    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(("status", "exit_code"), [("successful", 0), ("failed", 1)])
+def test_launch_track_prefixes_every_template_and_fails_on_any_failure(
+    fake_aap: Any, monkeypatch: pytest.MonkeyPatch, status: str, exit_code: int
 ) -> None:
-    """Concurrent multi-template event output must be prefixed with the
-    originating template name so a shared stderr stays disambiguable.
-    """
-
+    """Concurrent ``--track`` output carries each template's name on the shared
+    stderr; one failed execution (the first launch only) exits 1 while the
+    other template's events still stream."""
     _seed_two_jts(fake_aap)
+    fake_aap.next_action_status = status
     monkeypatch.setattr(PollingJobMonitor, "stream_events", _prefixing_stub_stream)
 
     result = CliInvoker().invoke(
         app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
     )
-    assert result.exit_code == 0, result.output
-    assert "[deploy-a]" in result.stderr
-    assert "[deploy-b]" in result.stderr
-
-
-def test_launch_track_one_failed_exits_one_and_logs_both(
-    fake_aap: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Mixed terminal statuses across templates: one ``failed`` → exit 1
-    AND both templates' events still reach stderr with their prefixes.
-
-    The ``next_action_status`` override is one-shot, so ``deploy-a``
-    (first launch) ends ``failed`` and ``deploy-b`` defaults back to
-    ``successful``. ``failed`` is a terminal status — no exception is
-    raised — so the failure flows through ``drain_parallel`` into
-    ``jobs`` and the post-loop ``any(j.status != "successful")`` block
-    triggers ``exit 1``.
-    """
-
-    _seed_two_jts(fake_aap)
-    fake_aap.next_action_status = "failed"
-    monkeypatch.setattr(PollingJobMonitor, "stream_events", _prefixing_stub_stream)
-
-    result = CliInvoker().invoke(
-        app, ["job-templates", "launch", "--yes", "deploy-a", "deploy-b", "--track"]
-    )
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == exit_code, result.output
     assert "[deploy-a]" in result.stderr
     assert "[deploy-b]" in result.stderr
 
@@ -659,31 +519,63 @@ def test_launch_track_worker_exception_wraps_to_untaped_error(
 # ── jobs --stdin pipeline shape (issue #154) ────────────────────────────────
 
 
-def test_jobs_get_accepts_multiple_positional_ids(fake_aap: Any) -> None:
-    """``jobs get 42 43`` resolves each id in turn — same contract as
-    ``awx <kind> get a b c``."""
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    result = CliInvoker().invoke(
-        app, ["jobs", "get", "42", "43", "--format", "raw", "--columns", "id"]
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines())
-    assert ids == ["42", "43"]
+# Each multi-id jobs command, with the flags and the stdout it prints for jobs 42 and 43.
+_MULTI_ID = {
+    "get": (["--format", "raw", "--columns", "id"], ["42", "43"]),
+    "wait": (["--format", "raw", "--columns", "id"], ["42", "43"]),
+    "logs": ([], ["alpha", "beta"]),
+    "events": (["--format", "raw", "--columns", "counter"], ["1", "2"]),
+}
 
 
-def test_jobs_get_reads_ids_from_stdin(fake_aap: Any) -> None:
-    """``jobs list -f raw | jobs get --stdin`` is the documented pipeline shape."""
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "get", "--stdin", "--format", "raw", "--columns", "id"],
-        input="42\n43\n",
-    )
+@pytest.fixture
+def two_jobs(fake_aap: Any) -> Any:
+    for job_id, line, counter in ((42, "alpha", 1), (43, "beta", 2)):
+        fake_aap.seed("jobs", id=job_id, name="deploy", status="successful", stdout=f"{line}\n")
+        fake_aap.seed(
+            "job_events", id=counter, job=job_id, counter=counter, event="playbook_on_play_start"
+        )
+    return fake_aap
+
+
+@pytest.mark.parametrize("stdin", [False, True], ids=["positional", "stdin"])
+@pytest.mark.parametrize("command", sorted(_MULTI_ID))
+def test_jobs_commands_take_several_ids(two_jobs: Any, command: str, stdin: bool) -> None:
+    """``jobs list -f raw | jobs <command> --stdin`` is the documented pipeline shape."""
+    flags, expected = _MULTI_ID[command]
+    ids = ["--stdin"] if stdin else ["42", "43"]
+    result = CliInvoker().invoke(app, ["jobs", command, *ids, *flags], input="42\n43\n")
     assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines())
-    assert ids == ["42", "43"]
+    assert sorted(result.stdout.strip().splitlines()) == expected
+    if command in {"logs", "events"}:  # streams name the job they come from, on stderr
+        assert "[42]" in result.stderr and "[43]" in result.stderr
+
+
+@pytest.mark.parametrize("command", sorted(_MULTI_ID))
+def test_jobs_commands_reject_mixed_positional_and_stdin(two_jobs: Any, command: str) -> None:
+    result = CliInvoker().invoke(app, ["jobs", command, "42", "--stdin"], input="43\n")
+    assert result.exit_code != 0
+    assert "stdin" in result.stderr.lower()
+
+
+@pytest.mark.parametrize(
+    ("command", "ids", "input", "bad"),
+    [
+        *((command, ["9999", "42"], None, "9999") for command in sorted(_MULTI_ID)),
+        ("get", ["--stdin"], "not-a-number\n42\n", "not-a-number"),
+    ],
+)
+def test_jobs_commands_continue_past_a_bad_id(
+    two_jobs: Any, command: str, ids: list[str], input: str | None, bad: str
+) -> None:
+    """A bad id fails the exit status but never suppresses the rows that resolved,
+    and its error stays on stderr so pipelines do not ingest it as data."""
+    flags, expected = _MULTI_ID[command]
+    result = CliInvoker().invoke(app, ["jobs", command, *ids, *flags], input=input)
+    assert result.exit_code == 1
+    assert result.stdout.strip().splitlines() == expected[:1]
+    assert f"error: {bad}" in result.stderr
+    assert "error:" not in result.stdout
 
 
 def test_jobs_get_reads_ids_from_pipe_envelope_stdin(fake_aap: Any) -> None:
@@ -745,32 +637,6 @@ def test_jobs_kind_rejects_unknown_values(fake_aap: Any) -> None:
     assert result.exit_code == 2, result.output
 
 
-def test_jobs_get_continues_when_one_id_missing(fake_aap: Any) -> None:
-    """A missing id in a multi-id batch must not suppress the resolved
-    ids — same rule as ``awx <kind> get --stdin``."""
-    _seed_running_job(fake_aap, job_id=42)
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "get", "9999", "42", "--format", "raw", "--columns", "id"],
-        input="",
-    )
-    assert result.exit_code != 0
-    # The resolved id reaches stdout — pipeline still gets the row.
-    assert result.stdout.strip().splitlines() == ["42"]
-    # The per-id error row lands on stderr, never stdout (pipeline contract).
-    assert "error: 9999" in (result.stderr or "")
-    assert "error:" not in result.stdout
-
-
-def test_jobs_get_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
-    """Per ``read_identifiers``: mixing positional and ``--stdin`` is
-    refused, since a misplaced flag would silently act on the wrong set."""
-    _seed_running_job(fake_aap, job_id=42)
-    result = CliInvoker().invoke(app, ["jobs", "get", "42", "--stdin"], input="43\n")
-    assert result.exit_code != 0
-    assert "stdin" in (result.output + (result.stderr or "")).lower()
-
-
 def test_jobs_get_rejects_non_numeric_stdin_entry(fake_aap: Any) -> None:
     """Non-numeric job ids surface as a per-id error (not a crash)."""
     _seed_running_job(fake_aap, job_id=42)
@@ -784,50 +650,6 @@ def test_jobs_get_rejects_non_numeric_stdin_entry(fake_aap: Any) -> None:
     # downstream pipe doesn't ingest ``error: …`` as data.
     assert result.stdout.strip().splitlines() == ["42"]
     assert "error: not-a-number" in (result.stderr or "")
-    assert "error:" not in result.stdout
-
-
-def test_jobs_wait_accepts_multiple_positional_ids(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    result = CliInvoker().invoke(
-        app, ["jobs", "wait", "42", "43", "--format", "raw", "--columns", "id"]
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines())
-    assert ids == ["42", "43"]
-
-
-def test_jobs_wait_reads_ids_from_stdin(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "wait", "--stdin", "--format", "raw", "--columns", "id"],
-        input="42\n43\n",
-    )
-    assert result.exit_code == 0, result.output
-    ids = sorted(result.stdout.strip().splitlines())
-    assert ids == ["42", "43"]
-
-
-def test_jobs_wait_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap, job_id=42)
-    result = CliInvoker().invoke(app, ["jobs", "wait", "42", "--stdin"], input="43\n")
-    assert result.exit_code != 0
-    assert "stdin" in (result.output + (result.stderr or "")).lower()
-
-
-def test_jobs_wait_continues_when_one_id_missing(fake_aap: Any) -> None:
-    """A missing id in a multi-id ``wait`` batch must not suppress the
-    resolved ids — same pipeline-resilience contract as ``jobs get``."""
-    _seed_running_job(fake_aap, job_id=42)
-    result = CliInvoker().invoke(
-        app, ["jobs", "wait", "9999", "42", "--format", "raw", "--columns", "id"]
-    )
-    assert result.exit_code != 0
-    assert result.stdout.strip().splitlines() == ["42"]
-    assert "error: 9999" in (result.stderr or "")
     assert "error:" not in result.stdout
 
 
@@ -846,105 +668,6 @@ def test_jobs_wait_multi_id_timeout(fake_aap: Any) -> None:
     # One breadcrumb per id — neither was silently dropped.
     assert "timeout: job 42" in stderr
     assert "timeout: job 43" in stderr
-
-
-def test_jobs_logs_concatenates_streams_across_ids(fake_aap: Any) -> None:
-    """Multiple ids drain serially; each job's stdout is emitted in
-    turn. A ``[<id>] `` stderr breadcrumb identifies which job is up."""
-    fake_aap.seed("jobs", id=42, status="successful", stdout="alpha-1\nalpha-2\n")
-    fake_aap.seed("jobs", id=43, status="successful", stdout="beta-1\nbeta-2\n")
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "43"])
-    assert result.exit_code == 0, result.output
-    out = result.stdout.strip().splitlines()
-    assert out == ["alpha-1", "alpha-2", "beta-1", "beta-2"]
-    # Breadcrumb to stderr so stdout stays clean for piping.
-    assert "[42]" in result.stderr
-    assert "[43]" in result.stderr
-
-
-def test_jobs_logs_reads_ids_from_stdin(fake_aap: Any) -> None:
-    fake_aap.seed("jobs", id=42, status="successful", stdout="alpha\n")
-    fake_aap.seed("jobs", id=43, status="successful", stdout="beta\n")
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "logs", "--stdin"],
-        input="42\n43\n",
-    )
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().splitlines() == ["alpha", "beta"]
-
-
-def test_jobs_logs_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
-    fake_aap.seed("jobs", id=42, status="successful", stdout="x\n")
-    result = CliInvoker().invoke(app, ["jobs", "logs", "42", "--stdin"], input="43\n")
-    assert result.exit_code != 0
-    assert "stdin" in (result.output + (result.stderr or "")).lower()
-
-
-def test_jobs_logs_continues_when_one_id_missing(fake_aap: Any) -> None:
-    """A missing id in a multi-id ``logs`` batch streams what landed
-    and emits a per-id error on stderr without aborting."""
-    fake_aap.seed("jobs", id=42, status="successful", stdout="alpha\n")
-    result = CliInvoker().invoke(app, ["jobs", "logs", "9999", "42"])
-    assert result.exit_code != 0
-    # The reachable job's stdout still made it to stdout.
-    assert "alpha" in result.stdout
-    assert "error: 9999" in (result.stderr or "")
-    assert "error:" not in result.stdout
-
-
-def test_jobs_events_concatenates_streams_across_ids(fake_aap: Any) -> None:
-    """Two seeded jobs each get a one-event log; events ``--format raw
-    --columns counter`` emits both rows in id order with a breadcrumb."""
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
-    fake_aap.seed("job_events", id=2, job=43, counter=2, event="playbook_on_play_start")
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "events", "42", "43", "--format", "raw", "--columns", "counter"],
-    )
-    assert result.exit_code == 0, result.output
-    counters = result.stdout.strip().splitlines()
-    assert counters == ["1", "2"]
-    assert "[42]" in result.stderr
-    assert "[43]" in result.stderr
-
-
-def test_jobs_events_reads_ids_from_stdin(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap, job_id=42)
-    _seed_running_job(fake_aap, job_id=43)
-    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
-    fake_aap.seed("job_events", id=2, job=43, counter=2, event="playbook_on_play_start")
-    result = CliInvoker().invoke(
-        app,
-        ["jobs", "events", "--stdin", "--format", "raw", "--columns", "counter"],
-        input="42\n43\n",
-    )
-    assert result.exit_code == 0, result.output
-    counters = result.stdout.strip().splitlines()
-    assert counters == ["1", "2"]
-
-
-def test_jobs_events_rejects_mixed_positional_and_stdin(fake_aap: Any) -> None:
-    _seed_running_job(fake_aap, job_id=42)
-    result = CliInvoker().invoke(app, ["jobs", "events", "42", "--stdin"], input="43\n")
-    assert result.exit_code != 0
-    assert "stdin" in (result.output + (result.stderr or "")).lower()
-
-
-def test_jobs_events_continues_when_one_id_missing(fake_aap: Any) -> None:
-    """A missing id in a multi-id ``events`` batch streams what landed
-    and emits a per-id error on stderr without aborting."""
-    _seed_running_job(fake_aap, job_id=42)
-    fake_aap.seed("job_events", id=1, job=42, counter=1, event="playbook_on_play_start")
-    result = CliInvoker().invoke(
-        app, ["jobs", "events", "9999", "42", "--format", "raw", "--columns", "counter"]
-    )
-    assert result.exit_code != 0
-    assert result.stdout.strip().splitlines() == ["1"]
-    assert "error: 9999" in (result.stderr or "")
-    assert "error:" not in result.stdout
 
 
 @pytest.mark.parametrize("fmt", ["json", "yaml"])
