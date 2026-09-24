@@ -12,7 +12,7 @@ The root owns the cross-cutting command groups:
 
 - `untaped config` reads and writes settings.
 - `untaped profile` manages named profile overlays.
-- `untaped skills` lists and installs the composed skill assets.
+- `untaped skills` lists, installs, updates, and removes the composed skill assets.
 - `untaped doctor` runs isolated health checks and reports configuration
   problems.
 - `untaped capabilities` lists ready and quarantined providers.
@@ -301,9 +301,10 @@ broken section to hide the rest:
 - `unknown-keys` — `warn` naming every key, in any profile, that no settings
   model declares (usually a typo, which is otherwise silently ignored);
 - `skills` — `warn` when a skill installed by `untaped skills install` (in the
-  global Codex/Claude skill directories or the current directory's
-  `.agents/skills`/`.claude/skills`) differs from the packaged copy, with the
-  `skills install … --force` command that refreshes it;
+  global Codex/Claude skill directories or the current git root's
+  `.agents/skills`/`.claude/skills`) differs from the packaged copy or is no
+  longer shipped, pointing at `untaped skills update` or `skills remove`
+  (see [Agent skills](./skills.md#keep-installed-skills-up-to-date));
 - each capability-contributed health check (a check can report a
   non-failing `warn`, such as ansible's `ansible.deprecated-settings` while
   `ansible.freshness_ttl` is set), and any quarantined provider. The built-in

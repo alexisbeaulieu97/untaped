@@ -109,6 +109,76 @@ stable even when the short selector was used.
 Agents usually discover changed skills automatically. Restart the target agent
 if a newly created directory does not appear in its skill catalog.
 
+## Keep installed skills up to date
+
+An installed skill is a copy. Upgrading untaped does not change it, and a
+stale copy can send an agent to commands or flags this version no longer has.
+After every command (except `untaped skills …` and `untaped doctor`), the root
+compares each installed skill with the copy this version ships and prints a
+warning when one differs:
+
+```text
+warning: installed skills are out of date: untaped-awx, untaped-github
+hint: run `untaped skills update` (set skills.updates to auto or off to change this)
+```
+
+It looks in the global Codex and Claude skill directories and in
+`.agents/skills`/`.claude/skills` at the current git root (or the current
+directory outside a repository). Only directories with the
+`.untaped-skill.json` marker count; skills you wrote yourself are never
+touched. Installs made with `--target-dir` are not checked.
+
+The `skills.updates` setting picks what the check does:
+
+| Value | Behavior |
+|---|---|
+| `warn` (default) | Print the warning above. |
+| `auto` | Update outdated skills in place, then print `updated N outdated skills`. |
+| `off` | Do nothing. |
+
+```bash
+untaped config set skills.updates auto
+UNTAPED_SKILLS__UPDATES=off untaped …      # one process only
+```
+
+A skill this version no longer ships is reported as no longer shipped, even
+with `auto`. Remove it with `untaped skills remove`.
+
+### Inspect, update, and remove
+
+```bash
+untaped skills status                   # every installed skill and its state
+untaped skills status --check           # exit 3 when one is outdated or unshipped
+untaped skills update                   # update every outdated install in place
+untaped skills update github awx        # only these skills
+untaped skills update --dry-run         # show what would change
+untaped skills remove awx               # remove from every target and scope
+untaped skills remove awx --target claude --scope local
+untaped skills remove --all --yes
+```
+
+`status` reports each install's `state`: `current`, `outdated` (its files
+differ from this version's copy), or `orphaned` (this version no longer ships
+it). `update` rewrites an install where it already is: it keeps the target and
+scope and never installs anywhere new. `remove` previews the directories and
+asks before deleting; pass `--yes` when not interactive. Like `status`, both
+accept short selectors, `--stdin`, and `--project-dir PATH` to use another
+project's local skills.
+
+### Skills committed to a repository
+
+A `--scope local` install can be committed so everyone who works in the
+repository gets the skills. The Codex root `.agents/skills` is also read by
+other agents that load skills from that directory, such as GitHub Copilot.
+Everyone who runs untaped in the repository sees the warning when the
+committed copies do not match their untaped version. Run
+`untaped skills update` after upgrading and commit the result. To catch drift
+in CI, run:
+
+```bash
+untaped skills status --check
+```
+
 ## Authoring rules
 
 A built-in capability owns its skill source under

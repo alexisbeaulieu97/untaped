@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -131,3 +132,194 @@ def test_skills_module_imports_no_private_helpers() -> None:
         if alias.name.startswith("_")
     ]
     assert private == []
+
+
+def _install(app: object, *args: str) -> None:
+    result = CliInvoker().invoke(app, ["install", *args])  # type: ignore[arg-type]
+    assert result.exit_code == 0, result.output
+
+
+def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create a git project and run from a subdirectory of it."""
+    project = tmp_path / "project"
+    (project / "sub").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    monkeypatch.chdir(project / "sub")
+    return project
+
+
+def _json(app: object, *args: str) -> list[dict[str, object]]:
+    result = CliInvoker().invoke(app, [*args, "--format", "json"])  # type: ignore[arg-type]
+    assert result.exit_code == 0, result.output
+    rows: list[dict[str, object]] = json.loads(result.stdout)
+    return rows
+
+
+def test_status_reports_state_of_global_and_project_installs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path, monkeypatch)
+    app = _skills_app(tmp_path, "untaped-one", "untaped-two")
+    _install(app, "--all")
+    _install(app, "one", "--scope", "local", "--target", "claude")
+    Path.home().joinpath(".agents", "skills", "untaped-two", "SKILL.md").write_text("old\n")
+
+    rows = _json(app, "status")
+
+    assert [(row["name"], row["scope"], row["target"], row["state"]) for row in rows] == [
+        ("untaped-one", "global", "codex", "current"),
+        ("untaped-two", "global", "codex", "outdated"),
+        ("untaped-one", "local", "claude", "current"),
+    ]
+    assert rows[2]["target_path"] == str(project / ".claude" / "skills" / "untaped-one")
+
+
+def test_status_ignores_hand_made_skills_and_flags_unshipped_ones(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    root = Path.home() / ".agents" / "skills"
+    (root / "mine").mkdir()
+    (root / "mine" / "SKILL.md").write_text("mine\n")
+    gone = _skills_app(tmp_path, "untaped-gone")
+    _install(gone, "gone")
+
+    rows = _json(app, "status")
+
+    assert [(row["name"], row["state"]) for row in rows] == [
+        ("untaped-gone", "orphaned"),
+        ("untaped-one", "current"),
+    ]
+
+
+def test_status_check_exits_3_only_when_stale(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    assert CliInvoker().invoke(app, ["status", "--check"]).exit_code == 0  # type: ignore[arg-type]
+    Path.home().joinpath(".agents", "skills", "untaped-one", "SKILL.md").write_text("old\n")
+    assert CliInvoker().invoke(app, ["status", "--check"]).exit_code == 3  # type: ignore[arg-type]
+
+
+def test_update_refreshes_only_outdated_installs_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path, monkeypatch)
+    app = _skills_app(tmp_path, "untaped-one", "untaped-two")
+    _install(app, "--all", "--scope", "local")
+    local = project / ".agents" / "skills"
+    local.joinpath("untaped-one", "SKILL.md").write_text("old\n")
+
+    rows = _json(app, "update")
+
+    assert [(row["name"], row["scope"], row["action"]) for row in rows] == [
+        ("untaped-one", "local", "updated"),
+    ]
+    source = tmp_path / "skill-sources" / "untaped-one" / "SKILL.md"
+    assert local.joinpath("untaped-one", "SKILL.md").read_text() == source.read_text()
+    assert local.joinpath("untaped-one", ".untaped-skill.json").is_file()
+    assert not Path.home().joinpath(".agents", "skills", "untaped-one").exists()
+
+
+def test_update_selected_names_leaves_others(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one", "untaped-two")
+    _install(app, "--all")
+    root = Path.home() / ".agents" / "skills"
+    for name in ("untaped-one", "untaped-two"):
+        root.joinpath(name, "SKILL.md").write_text("old\n")
+
+    rows = _json(app, "update", "two")
+
+    assert [(row["name"], row["action"]) for row in rows] == [("untaped-two", "updated")]
+    assert root.joinpath("untaped-one", "SKILL.md").read_text() == "old\n"
+
+
+def test_update_dry_run_changes_nothing(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    installed = Path.home() / ".agents" / "skills" / "untaped-one" / "SKILL.md"
+    installed.write_text("old\n")
+
+    rows = _json(app, "update", "--dry-run")
+
+    assert [row["action"] for row in rows] == ["planned"]
+    assert installed.read_text() == "old\n"
+
+
+def test_update_named_current_skill_is_unchanged(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    assert [row["action"] for row in _json(app, "update", "one")] == ["unchanged"]
+
+
+def test_update_unknown_installed_name_fails(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    result = CliInvoker().invoke(app, ["update", "two"])  # type: ignore[arg-type]
+    assert result.exit_code == 1
+    assert "installed skill not found: 'two'; known: untaped-one" in result.output
+
+
+def test_remove_selected_skill_from_every_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path, monkeypatch)
+    app = _skills_app(tmp_path, "untaped-one", "untaped-two")
+    _install(app, "--all", "--target", "all")
+    _install(app, "one", "--scope", "local")
+
+    rows = _json(app, "remove", "one", "--yes")
+
+    assert sorted((row["target"], row["scope"], row["action"]) for row in rows) == [
+        ("claude", "global", "deleted"),
+        ("codex", "global", "deleted"),
+        ("codex", "local", "deleted"),
+    ]
+    assert not (project / ".agents" / "skills" / "untaped-one").exists()
+    assert not Path.home().joinpath(".claude", "skills", "untaped-one").exists()
+    assert Path.home().joinpath(".claude", "skills", "untaped-two").is_dir()
+
+
+def test_remove_filters_by_target_and_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project(tmp_path, monkeypatch)
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one", "--target", "all")
+    _install(app, "one", "--target", "all", "--scope", "local")
+
+    rows = _json(app, "remove", "one", "--target", "codex", "--scope", "local", "--yes")
+
+    assert [row["target_path"] for row in rows] == [
+        str(project / ".agents" / "skills" / "untaped-one")
+    ]
+    assert (project / ".claude" / "skills" / "untaped-one").is_dir()
+    assert Path.home().joinpath(".agents", "skills", "untaped-one").is_dir()
+
+
+def test_remove_dry_run_and_hand_made_skills_are_kept(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    mine = Path.home() / ".agents" / "skills" / "mine"
+    mine.mkdir()
+
+    rows = _json(app, "remove", "--all", "--dry-run")
+
+    assert [(row["name"], row["action"]) for row in rows] == [("untaped-one", "planned")]
+    assert Path.home().joinpath(".agents", "skills", "untaped-one").is_dir()
+    assert _json(app, "remove", "--all", "--yes")[0]["action"] == "deleted"
+    assert mine.is_dir()
+
+
+def test_remove_requires_yes_when_not_interactive(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    _install(app, "one")
+    result = CliInvoker().invoke(app, ["remove", "one"])  # type: ignore[arg-type]
+    assert result.exit_code == 2
+    assert "--yes" in result.output
+    assert Path.home().joinpath(".agents", "skills", "untaped-one").is_dir()
+
+
+def test_remove_without_selector_is_usage_error(tmp_path: Path) -> None:
+    app = _skills_app(tmp_path, "untaped-one")
+    result = CliInvoker().invoke(app, ["remove"])  # type: ignore[arg-type]
+    assert result.exit_code == 2
+    assert "provide skill names, --stdin, or --all" in result.output
