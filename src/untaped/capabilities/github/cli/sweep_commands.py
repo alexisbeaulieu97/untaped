@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from cyclopts import Parameter, validators
+from cyclopts import Parameter
 
 from untaped.capabilities.github.application import RepositoryInventoryScope
 from untaped.capabilities.github.cli._client import corpus_auth_header, open_client
 from untaped.capabilities.github.cli.scopes import (
+    ArchivedOption,
+    CorpusParallelOption,
+    DepthOption,
     OrgOption,
+    RepoOption,
     TeamOption,
     parse_team_scopes,
     read_stdin_repos,
@@ -19,7 +23,6 @@ from untaped.capability_api import (
     ColumnsOption,
     FormatOption,
     OutputFormat,
-    ParallelOption,
     StdinOption,
     UiContext,
     UsageError,
@@ -36,28 +39,6 @@ if TYPE_CHECKING:
     from untaped.capabilities.github.application import GitCorpus, SweepMatch, SweepReport
     from untaped.capabilities.github.domain import RepoSweepOutcome, SweepQuery
 
-RepoOption = Annotated[
-    list[str] | None,
-    Parameter(
-        name="--repo",
-        help="Repository OWNER/NAME. Repeatable.",
-        consume_multiple=False,
-        negative="",
-    ),
-]
-DepthOption = Annotated[
-    int,
-    Parameter(
-        name="--depth",
-        validator=validators.Number(gte=0),
-        help="Git fetch depth; 0 is full.",
-    ),
-]
-SweepParallelOption = Annotated[
-    ParallelOption,
-    Parameter(help="Parallel Git workers (capped at 32; default from github.sweep settings)."),
-]
-
 
 def sweep_command(
     *,
@@ -65,9 +46,7 @@ def sweep_command(
     team: TeamOption = None,
     repo: RepoOption = None,
     stdin: StdinOption = False,
-    archived: Annotated[
-        bool, Parameter(name="--archived", negative="", help="Include archived repositories.")
-    ] = False,
+    archived: ArchivedOption = False,
     grep: Annotated[
         list[str] | None,
         Parameter(
@@ -183,7 +162,7 @@ def sweep_command(
         Parameter(name="--fail-on-match", negative="", help="Exit 3 when any repository matches."),
     ] = False,
     depth: DepthOption = 1,
-    parallel: SweepParallelOption | None = None,
+    parallel: CorpusParallelOption | None = None,
 ) -> None:
     """Sweep repository refs for content and file-presence predicates."""
     from untaped.capabilities.github.application import (  # noqa: PLC0415
@@ -211,7 +190,10 @@ def sweep_command(
             word_regexp=word_regexp,
             refs=RefSelector(profile=refs, globs=tuple(ref or ())),
         )
-        _validate_query(query)
+        try:
+            query.validate()
+        except ValueError as exc:
+            raise UsageError(str(exc)) from exc
         workers = clamp_parallel(
             parallel if parallel is not None else settings.sweep.sync_concurrency,
             cap=32,
@@ -297,13 +279,6 @@ def _scope(
     return RepositoryInventoryScope(orgs=orgs, teams=team_scopes, repos=repos)
 
 
-def _validate_query(query: SweepQuery) -> None:
-    try:
-        query.validate()
-    except ValueError as exc:
-        raise UsageError(str(exc)) from exc
-
-
 def _validate_content_patterns(
     corpus: GitCorpus,
     settings: GithubSettings,
@@ -323,14 +298,10 @@ def _validate_content_patterns(
         )
         if error is None:
             continue
-        path = _path_from_error(paths, error)
+        path = next((path for path in paths if path in error), None)
         if path is not None:
             raise UsageError(f"--path {path!r}: {error}")
         raise UsageError(f"{flag} {pattern!r}: {error}")
-
-
-def _path_from_error(paths: tuple[str, ...], error: str) -> str | None:
-    return next((path for path in paths if path in error), None)
 
 
 def _repo_records(rows: tuple[RepoSweepOutcome, ...]) -> list[dict[str, object]]:
@@ -427,6 +398,5 @@ def _footer(report: SweepReport, ui: UiContext) -> None:
         )
         for failure in report.stale:
             ui.message("warning", f"stale {failure.repo}: {failure.reason}")
-    if report.unscanned:
-        for failure in report.unscanned:
-            ui.message("warning", f"unscanned {failure.repo}: {failure.reason}")
+    for failure in report.unscanned:
+        ui.message("warning", f"unscanned {failure.repo}: {failure.reason}")

@@ -78,12 +78,6 @@ class _SearchQueryToken:
     quoted: bool
 
 
-@dataclass(frozen=True)
-class _RepoSearchQueryBudget:
-    text_length: int
-    boolean_operators: int
-
-
 def _noop(_: str) -> None:
     pass
 
@@ -130,30 +124,12 @@ def _resolve_team_repos(
 
 def _apply_scope_defaults[F: ScopedQueryBase](filters: F, team_repos: tuple[str, ...]) -> F:
     """Merge team-resolved repos and inject ``user:@me`` when no scope set."""
-    repos = _dedupe_repos((*filters.repos, *team_repos))
+    repos = tuple(dict.fromkeys((*filters.repos, *team_repos)))
     has_scope = bool(filters.user or filters.orgs or repos)
     overrides: dict[str, object] = {"repos": repos}
     if not has_scope:
         overrides["user"] = "@me"
     return filters.model_copy(update=overrides)
-
-
-def _dedupe_repos(repos: tuple[str, ...]) -> tuple[str, ...]:
-    """Deduplicate repository scopes while preserving first-seen order."""
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for repo in repos:
-        if repo in seen:
-            continue
-        seen.add(repo)
-        deduped.append(repo)
-    return tuple(deduped)
-
-
-def _repo_search_batches(filters: RepoSearchFilters) -> tuple[RepoSearchFilters, ...]:
-    """Split repository search filters into GitHub-validation-safe batches."""
-    _ensure_search_query_fits(filters)
-    return _scoped_search_batches(filters, kind="repository")
 
 
 def _scoped_search_batches[F: ScopedQueryBase](filters: F, *, kind: str) -> tuple[F, ...]:
@@ -192,28 +168,19 @@ def _search_boolean_operator_count(filters: ScopedQueryBase) -> int:
 
 
 def _search_query_text_length(filters: RepoSearchFilters) -> int:
-    return _repo_search_query_budget(filters).text_length
-
-
-def _repo_search_query_budget(filters: RepoSearchFilters) -> _RepoSearchQueryBudget:
-    parts: list[str] = []
-    boolean_operators = 0
-    for token in _tokenize_search_query(filters.raw_query or ""):
-        if not token.quoted and token.value in _SEARCH_BOOLEAN_OPERATORS:
-            boolean_operators += 1
-            continue
-        if not token.quoted and _is_repo_search_qualifier(token.value):
-            continue
-        if token.value:
-            parts.append(token.value)
-    if filters.name:
-        name = filters.name.strip()
-        if name:
-            parts.append(name)
-    return _RepoSearchQueryBudget(
-        text_length=len(" ".join(parts)),
-        boolean_operators=boolean_operators,
-    )
+    """Length of the free text GitHub counts: no operators, no supported qualifiers."""
+    parts = [
+        token.value
+        for token in _tokenize_search_query(filters.raw_query or "")
+        if token.quoted
+        or (
+            token.value not in _SEARCH_BOOLEAN_OPERATORS
+            and not _is_repo_search_qualifier(token.value)
+        )
+    ]
+    if filters.name and filters.name.strip():
+        parts.append(filters.name.strip())
+    return len(" ".join(part for part in parts if part))
 
 
 def _tokenize_search_query(raw_query: str) -> tuple[_SearchQueryToken, ...]:
@@ -274,10 +241,6 @@ def _github_search_validation_error(
         url=exc.url,
         body=exc.body,
     )
-
-
-def _repo_search_should_globally_sort(filters: RepoSearchFilters) -> bool:
-    return filters.sort in _GLOBAL_REPO_SORTS
 
 
 def _sort_repo_results(rows: list[RepoResult], sort: str | None) -> list[RepoResult]:
@@ -379,8 +342,8 @@ def _merged_batch_search[F: ScopedQueryBase, R: BaseModel](
     return iter([result for _, result in rows])
 
 
-class SearchRepos:
-    """Run ``GET /search/repositories`` with scope-aware defaults."""
+class _ScopedSearch:
+    """Shared wiring for the searches that resolve team scopes."""
 
     def __init__(
         self,
@@ -392,6 +355,10 @@ class SearchRepos:
         self._search = search
         self._teams = teams
         self._warn = warn
+
+
+class SearchRepos(_ScopedSearch):
+    """Run ``GET /search/repositories`` with scope-aware defaults."""
 
     def __call__(
         self,
@@ -403,35 +370,34 @@ class SearchRepos:
         effective = _apply_scope_defaults(filters, team_repos)
         rows: list[RepoResult] = []
         seen: set[str] = set()
-        globally_sort = _repo_search_should_globally_sort(effective)
-        batches = _repo_search_batches(effective)
+        globally_sort = effective.sort in _GLOBAL_REPO_SORTS
+
+        def filled() -> bool:
+            return (
+                not globally_sort and effective.limit is not None and len(rows) >= effective.limit
+            )
+
+        _ensure_search_query_fits(effective)
+        batches = _scoped_search_batches(effective, kind="repository")
         if effective.sort == "help-wanted-issues" and len(batches) > 1:
             self._warn(_HELP_WANTED_BATCH_WARNING)
         for batch in batches:
-            q = batch.to_query_string()
             try:
-                search_rows = self._search.search_repositories(
-                    q,
-                    sort=batch.sort,
-                    limit=batch.limit,
-                )
-                for row in search_rows:
+                for row in self._search.search_repositories(
+                    batch.to_query_string(), sort=batch.sort, limit=batch.limit
+                ):
                     result = RepoResult.model_validate(row)
                     if result.full_name in seen:
                         continue
                     seen.add(result.full_name)
                     rows.append(result)
-                    if (
-                        not globally_sort
-                        and effective.limit is not None
-                        and len(rows) >= effective.limit
-                    ):
+                    if filled():
                         break
             except HttpStatusError as exc:
                 if exc.status_code == 422:
                     raise _github_search_validation_error(exc, batch) from exc
                 raise
-            if not globally_sort and effective.limit is not None and len(rows) >= effective.limit:
+            if filled():
                 break
         if globally_sort:
             rows = _sort_repo_results(rows, effective.sort)
@@ -440,19 +406,8 @@ class SearchRepos:
         return iter(rows)
 
 
-class SearchCode:
+class SearchCode(_ScopedSearch):
     """Run ``GET /search/code`` with scope-aware defaults."""
-
-    def __init__(
-        self,
-        search: GithubSearchService,
-        teams: GithubTeamService,
-        *,
-        warn: WarnFn = _noop,
-    ) -> None:
-        self._search = search
-        self._teams = teams
-        self._warn = warn
 
     def __call__(
         self,
@@ -479,19 +434,8 @@ class SearchCode:
         )
 
 
-class SearchIssues:
+class SearchIssues(_ScopedSearch):
     """Run ``GET /search/issues`` with scope-aware defaults."""
-
-    def __init__(
-        self,
-        search: GithubSearchService,
-        teams: GithubTeamService,
-        *,
-        warn: WarnFn = _noop,
-    ) -> None:
-        self._search = search
-        self._teams = teams
-        self._warn = warn
 
     def __call__(
         self,

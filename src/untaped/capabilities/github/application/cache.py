@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from untaped.capabilities.github.application.inventory import split_full_name
 from untaped.capabilities.github.application.ports import GitCorpus
 from untaped.capabilities.github.domain import CorpusRepoResult, WorktreeResult
 from untaped.capabilities.github.errors import GitCorpusError
-from untaped.capability_api import UntapedError
 
 
 class StatusCorpus:
@@ -37,9 +37,7 @@ class WorktreeCorpus:
         self._corpus = corpus
 
     def __call__(self, repo: str, *, root: Path, ref: str | None) -> WorktreeResult:
-        owner, separator, name = repo.partition("/")
-        if not owner or not separator or not name or "/" in name:
-            raise UntapedError(f"repository must be owner/name: {repo!r}")
+        split_full_name(repo)
         item = self._corpus.get_repo(root=root, repo=repo)
         if item is None:
             raise GitCorpusError("repository is not in the local corpus")
