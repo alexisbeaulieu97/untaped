@@ -838,6 +838,29 @@ def test_graph_missing_source_cache_fails_naming_the_source(
 
 
 @pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--upstream"], "upstream requires --source NAME or inline selectors"),
+        (["--source", "nope"], "source not found: 'nope'; known: ops, platform"),
+        (
+            ["--source", "platform", "--source", "ops"],
+            "no cached source data found for sources 'platform', 'ops'. Run: ",
+        ),
+        (["--org", "acme", "--upstream"], "no cached source data found for inline source"),
+    ],
+)
+def test_graph_unusable_source_selection_fails(
+    tmp_path: Path, monkeypatch, args: list[str], message: str
+) -> None:
+    _use_config(tmp_path, monkeypatch, _TWO_SOURCES)
+
+    result = _run("graph", "acme/base", *args)
+
+    assert result.exit_code == 1
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
     ("ttl", "age"),
     [(3600, timedelta(0)), (14400, timedelta(hours=3)), (60, timedelta(days=400))],
 )
