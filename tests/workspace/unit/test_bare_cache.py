@@ -1,46 +1,44 @@
+import hashlib
 from pathlib import Path
+
+import pytest
 
 from untaped.capabilities.workspace.infrastructure.bare_cache import cache_path_for
 
 
-def test_https_url_path(tmp_path: Path) -> None:
-    p = cache_path_for("https://github.com/org/svc-a.git", cache_dir=tmp_path)
-    assert p == (tmp_path / "github.com/org/svc-a.git").resolve()
+def _unknown(url: str) -> str:
+    return f"_unknown/{hashlib.sha256(url.encode()).hexdigest()[:16]}.git"
 
 
-def test_ssh_url_path(tmp_path: Path) -> None:
-    p = cache_path_for("git@github.com:org/svc-bee.git", cache_dir=tmp_path)
-    assert p == (tmp_path / "github.com/org/svc-bee.git").resolve()
+@pytest.mark.parametrize(
+    ("url", "relative"),
+    [
+        ("https://github.com/org/svc-a.git", "github.com/org/svc-a.git"),
+        ("git@github.com:org/svc-bee.git", "github.com/org/svc-bee.git"),
+        ("https://github.com/org/svc-c", "github.com/org/svc-c.git"),
+        # No host (plain path, file:// URL, garbage) -> deterministic hashed leaf.
+        ("/local/path/no-host", _unknown("/local/path/no-host")),
+        ("file:///tmp/foo/svc-a.git", _unknown("file:///tmp/foo/svc-a.git")),
+        ("not a url at all", _unknown("not a url at all")),
+    ],
+)
+def test_cache_layout(tmp_path: Path, url: str, relative: str) -> None:
+    assert cache_path_for(url, cache_dir=tmp_path) == (tmp_path / relative).resolve()
 
 
-def test_url_without_dot_git_suffix(tmp_path: Path) -> None:
-    p = cache_path_for("https://github.com/org/svc-c", cache_dir=tmp_path)
-    assert p == (tmp_path / "github.com/org/svc-c.git").resolve()
-
-
-def test_unparseable_url_falls_back_to_hashed_leaf(tmp_path: Path) -> None:
-    p = cache_path_for("/local/path/no-host", cache_dir=tmp_path)
-    # Falls into _unknown
-    assert p.parent == (tmp_path / "_unknown").resolve()
-    assert p.suffix == ".git"
-
-
-def test_file_url(tmp_path: Path) -> None:
-    p = cache_path_for("file:///tmp/foo/svc-a.git", cache_dir=tmp_path)
-    # urlparse gives empty host for file://; falls back to _unknown
-    assert "_unknown" in p.parts or "svc-a.git" in p.name
-
-
-def test_dot_dot_segments_stay_inside_cache_root(tmp_path: Path) -> None:
-    root = tmp_path.resolve()
-    for url in (
+@pytest.mark.parametrize(
+    "url",
+    [
         "https://evil/../../tmp/pwn.git",
         "https://evil/org/..",
         "git@evil:../../../tmp/pwn.git",
         "a@evil/../..:x/y.git",
         "https://evil/org/..\\..\\x.git",
-    ):
-        p = cache_path_for(url, cache_dir=tmp_path)
-        assert p.resolve().is_relative_to(root), url
-        assert ".." not in p.parts, url
-        assert "\\" not in str(p.relative_to(root)), url
+    ],
+)
+def test_dot_dot_segments_stay_inside_cache_root(tmp_path: Path, url: str) -> None:
+    root = tmp_path.resolve()
+    p = cache_path_for(url, cache_dir=tmp_path)
+    assert p.resolve().is_relative_to(root)
+    assert ".." not in p.parts
+    assert "\\" not in str(p.relative_to(root))

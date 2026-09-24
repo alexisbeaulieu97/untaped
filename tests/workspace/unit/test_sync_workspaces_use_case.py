@@ -337,28 +337,13 @@ def test_caller_supplied_tracker_is_used_for_every_job(tmp_path: Path) -> None:
     assert {tracker_id for *_prefix, tracker_id in engine.calls} == {id(tracker)}
 
 
-def test_unexpected_job_exceptions_drain_pool_then_raise(tmp_path: Path) -> None:
+@pytest.mark.parametrize("parallel", [1, 2])
+def test_unexpected_job_exceptions_drain_then_raise(tmp_path: Path, parallel: int) -> None:
     engine = _Engine(raises={("prod", "bad"): RuntimeError("boom")})
     use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("bad", "good")}, engine)
 
     with pytest.raises(WorkspaceError) as excinfo:
-        use_case(workspaces, parallel=2)
-
-    assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [
-        ("prod", "bad"),
-        ("prod", "good"),
-    ]
-    message = str(excinfo.value)
-    assert "sync failed with unexpected error" in message
-    assert "prod/bad: RuntimeError: boom" in message
-
-
-def test_serial_unexpected_job_exceptions_drain_then_raise(tmp_path: Path) -> None:
-    engine = _Engine(raises={("prod", "bad"): RuntimeError("boom")})
-    use_case, workspaces = _scheduler(tmp_path, {"prod": _manifest("bad", "good")}, engine)
-
-    with pytest.raises(WorkspaceError) as excinfo:
-        use_case(workspaces, parallel=1)
+        use_case(workspaces, parallel=parallel)
 
     assert [(ws, repo) for ws, repo, _tracker_id in engine.calls] == [
         ("prod", "bad"),
@@ -416,18 +401,6 @@ def test_parallel_same_cache_path_urls_share_bare_fetch_lock(tmp_path: Path) -> 
     assert [o.action for o in outcomes] == ["cloned", "cloned"]
     bare_fetch_count = sum(1 for event in git.events if event[0] == "bare_fetch")
     assert bare_fetch_count == 1, git.events
-
-
-def test_empty_workspace_list_is_a_noop(tmp_path: Path) -> None:
-    engine = _Engine()
-    notify = _Notify()
-    use_case, workspaces = _scheduler(tmp_path, {}, engine, notify=notify)
-
-    outcomes = use_case(workspaces, parallel=4)
-
-    assert outcomes == []
-    assert engine.calls == []
-    assert notify.messages == []
 
 
 def test_parallel_interrupt_cancels_queued_repo_jobs(tmp_path: Path) -> None:

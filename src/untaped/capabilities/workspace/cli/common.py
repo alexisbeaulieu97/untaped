@@ -15,7 +15,7 @@ from untaped.capabilities.workspace.infrastructure import (
     YamlManifestRepository,
 )
 from untaped.capabilities.workspace.settings import WorkspaceSettings
-from untaped.capability_api import UiContext, get_config_section, raise_usage, ui_context
+from untaped.capability_api import get_config_section, raise_usage
 
 RepoSelectorOption = Annotated[
     list[str] | None,
@@ -71,23 +71,8 @@ def target_workspaces(
     if all_workspaces:
         if workspace is not None or path is not None:
             raise_usage("--all cannot be combined with --workspace or --path")
-        return all_workspaces_from_registry()
+        return WorkspaceRegistryRepository().entries()
     return [resolve_workspace(workspace, path)]
-
-
-def all_workspaces_from_registry() -> list[Workspace]:
-    return WorkspaceRegistryRepository().entries()
-
-
-def progress_ui() -> UiContext:
-    """UiContext for stderr progress reporting on slow workspace operations.
-
-    Built with ``strict=False`` so a misconfigured ``ui.theme`` degrades the
-    spinner to the default theme rather than raising: the progress UI resolves
-    the theme up front (unlike ``render_rows`` for pipe formats, which bypasses
-    theme resolution), so feedback must never fail an otherwise-valid command.
-    """
-    return ui_context(strict=False)
 
 
 def parallel_cap() -> int:

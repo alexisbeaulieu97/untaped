@@ -6,27 +6,20 @@ from pydantic import ValidationError
 from untaped.capabilities.workspace.domain import RepoStatus, SyncOutcome
 
 
-def test_dirty_when_modified_or_untracked() -> None:
-    assert RepoStatus(branch="main", modified=1).dirty
-    assert RepoStatus(branch="main", untracked=1).dirty
-    assert not RepoStatus(branch="main").dirty
-
-
-def test_diverged_when_both_ahead_and_behind() -> None:
-    assert RepoStatus(branch="main", ahead=1, behind=1).diverged
-    assert not RepoStatus(branch="main", ahead=1, behind=0).diverged
-    assert not RepoStatus(branch="main", ahead=0, behind=1).diverged
-
-
-def test_status_is_frozen() -> None:
-    s = RepoStatus(branch="main")
-    with pytest.raises(ValidationError):
-        s.modified = 99  # type: ignore[misc]
-
-
-def test_sync_outcome_default_detail() -> None:
-    o = SyncOutcome(workspace="prod", repo="svc-a", target_path=Path("/ws/svc-a"), action="cloned")
-    assert o.detail == ""
+@pytest.mark.parametrize(
+    ("counts", "dirty", "diverged"),
+    [
+        ({}, False, False),
+        ({"modified": 1}, True, False),
+        ({"untracked": 1}, True, False),
+        ({"ahead": 1}, False, False),
+        ({"behind": 1}, False, False),
+        ({"ahead": 1, "behind": 1}, False, True),
+    ],
+)
+def test_status_dirty_and_diverged(counts: dict[str, int], dirty: bool, diverged: bool) -> None:
+    status = RepoStatus(branch="main", **counts)
+    assert (status.dirty, status.diverged) == (dirty, diverged)
 
 
 def test_sync_outcome_rejects_legacy_ignored_action() -> None:

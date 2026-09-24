@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from untaped.capabilities.workspace.errors import WorkspaceError
-
-Shell = Literal["zsh", "bash", "fish"]
 
 _POSIX = """\
 uwcd() {
@@ -54,15 +50,12 @@ complete -c uwcd -f -a '(__uwcd_workspaces)'
 """
 
 
+_SNIPPETS = {"zsh": _ZSH, "bash": _BASH, "sh": _POSIX, "fish": _FISH}
+
+
 class ShellInit:
     def __call__(self, shell: str) -> str:
-        normalised = shell.lower().strip()
-        if normalised == "zsh":
-            return _ZSH
-        if normalised == "bash":
-            return _BASH
-        if normalised == "sh":
-            return _POSIX
-        if normalised == "fish":
-            return _FISH
-        raise WorkspaceError(f"unsupported shell: {shell!r}; supported: zsh, bash, fish")
+        snippet = _SNIPPETS.get(shell.lower().strip())
+        if snippet is None:
+            raise WorkspaceError(f"unsupported shell: {shell!r}; supported: zsh, bash, fish")
+        return snippet

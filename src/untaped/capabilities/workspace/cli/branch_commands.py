@@ -15,7 +15,6 @@ from untaped.capabilities.workspace.cli.common import (
     RepoSelectorOption,
     WorkspaceNameOption,
     WorkspacePathOption,
-    progress_ui,
     resolve_workspace,
 )
 from untaped.capabilities.workspace.domain import BranchApplyOutcome
@@ -92,7 +91,7 @@ def branch_set_command(
                 f"set branch for repo {q(change.repo)} in {q(change.workspace)} to {change.branch}"
             )
         if apply_checkout:
-            with progress_ui().progress("Applying branches…"):
+            with ui_context(strict=False).progress("Applying branches…"):
                 outcomes = ApplyWorkspaceBranch(
                     YamlManifestRepository(),
                     GitRunner(),
@@ -147,7 +146,7 @@ def branch_apply_command(
     """Checkout existing repos to the branch declared in ``untaped.yml``."""
     with report_errors():
         ws = resolve_workspace(workspace, path)
-        with progress_ui().progress("Applying branches…"):
+        with ui_context(strict=False).progress("Applying branches…"):
             outcomes = ApplyWorkspaceBranch(
                 YamlManifestRepository(),
                 GitRunner(),

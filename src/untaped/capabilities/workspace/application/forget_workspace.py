@@ -19,10 +19,6 @@ from untaped.capabilities.workspace.errors import GitError, WorkspaceError
 _LEFTOVER_PREVIEW = 5
 
 
-def _noop(_: str) -> None:
-    return None
-
-
 @dataclass
 class _PrunePlan:
     clones: dict[Path, tuple[Path, str]] = field(default_factory=dict)
@@ -49,7 +45,7 @@ class ForgetWorkspace:
         *,
         fs: Filesystem,
         prune_safety: PruneSafetyInspector,
-        warn: Callable[[str], None] = _noop,
+        warn: Callable[[str], None] = lambda _: None,
     ) -> None:
         self._registry = registry
         self._manifests = manifest_repo
