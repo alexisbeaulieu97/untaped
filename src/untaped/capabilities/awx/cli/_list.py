@@ -1,7 +1,5 @@
 """``list`` builder for the spec-driven CLI factory."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from contextlib import nullcontext
 from typing import Annotated
@@ -9,10 +7,13 @@ from typing import Annotated
 from cyclopts import App, Parameter
 
 from untaped.capabilities.awx.application.mutation_values import redact_value
+from untaped.capabilities.awx.application.template_scm import SCM_FIELDS
+from untaped.capabilities.awx.application.template_scm import with_scm as add_scm_fields
 from untaped.capabilities.awx.cli._selection import select_resources
 from untaped.capabilities.awx.cli.context import open_context
 from untaped.capabilities.awx.cli.names import flatten_fks
 from untaped.capabilities.awx.cli.options import (
+    WITH_SCM_HELP,
     AllOption,
     ByIdOption,
     InventoryOption,
@@ -21,6 +22,7 @@ from untaped.capabilities.awx.cli.options import (
     OrganizationOption,
     ParentOption,
     StdinOption,
+    offers_with_scm,
 )
 from untaped.capabilities.awx.cli.pipe import pipe_kind_for_spec
 from untaped.capabilities.awx.infrastructure.spec import AwxResourceSpec
@@ -35,6 +37,7 @@ from untaped.capability_api import (
 
 
 def _add_list(app: App, spec: AwxResourceSpec) -> None:
+    # Resolved lazily by cyclopts (PEP 649), so ``show`` can read ``spec``.
     @app.command(name="list")
     def list_command(
         names: NamesArgument = None,
@@ -78,10 +81,18 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
                 ),
             ),
         ] = False,
+        with_scm: Annotated[
+            bool,
+            Parameter(
+                name="--with-scm", negative="", show=offers_with_scm(spec), help=WITH_SCM_HELP
+            ),
+        ] = False,
         fmt: FormatOption = "table",
         columns: ColumnsOption = None,
     ) -> None:
         """List a complete selection by names, IDs, typed input, or query."""
+        if with_scm and not offers_with_scm(spec):
+            raise_usage(f"--with-scm is not available for {spec.cli_name}")
         if limit is not None and limit < 0:
             raise_usage("--limit must be non-negative")
         # ``--limit 0`` means "no limit", as it does for ``jobs list``.
@@ -111,8 +122,21 @@ def _add_list(app: App, spec: AwxResourceSpec) -> None:
             records = [item.record for item in selected]
             if limit is not None:
                 records = records[:limit]
+            if with_scm:
+                records = add_scm_fields(
+                    records,
+                    client=ctx.repo,
+                    catalog=ctx.catalog,
+                    warn=lambda msg: ctx.progress_ui().message("warning", msg),
+                )
         # Default columns shape the human views; json/yaml/pipe keep full records.
-        cols = list(columns) if columns else _default_list_columns(fmt, spec.list_columns)
+        cols = (
+            list(columns)
+            if columns
+            else _default_list_columns(
+                fmt, (*spec.list_columns, *SCM_FIELDS) if with_scm else spec.list_columns
+            )
+        )
         if with_names:
             # Pass ``cols`` so display-only FK columns (e.g. Host's
             # ``inventory``, which lives in ``read_only_fields`` rather
