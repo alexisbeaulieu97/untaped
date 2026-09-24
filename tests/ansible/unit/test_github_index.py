@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import pytest
 
@@ -85,13 +86,18 @@ class EmptyIndex:
         return False
 
 
-def test_live_dependencies_without_ref_keep_default_branch_as_source_ref() -> None:
-    index = GithubDependencyIndex(
-        github=StubGithub(),
+def _index(github: Any, **kwargs: Any) -> GithubDependencyIndex:
+    return GithubDependencyIndex(
+        github=github,
         wrapped=EmptyIndex(),
         aliases={},
         dependency_paths=["roles/requirements.yml"],
+        **kwargs,
     )
+
+
+def test_live_dependencies_without_ref_keep_default_branch_as_source_ref() -> None:
+    index = _index(StubGithub())
 
     edges = index.dependencies("acme/site", None, source_key=None)
 
@@ -100,65 +106,30 @@ def test_live_dependencies_without_ref_keep_default_branch_as_source_ref() -> No
     ]
 
 
-def test_live_parse_warnings_use_skipped_dependency_file_payload() -> None:
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        ("---\ngalaxy_info:\n  role_name: {@ role_slug @}\n", "could not parse dependency YAML"),
+        ("roles: not-a-list\n", "expected list at roles"),
+    ],
+)
+def test_live_parse_warnings_use_skipped_dependency_file_payload(content: str, reason: str) -> None:
     class InvalidDependencyGithub(StubGithub):
         def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str:
-            assert (owner, repo, path, ref) == ("acme", "site", "roles/requirements.yml", "main")
-            return "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
+            return content
 
-    index = GithubDependencyIndex(
-        github=InvalidDependencyGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
+    index = _index(InvalidDependencyGithub())
 
-    edges = index.dependencies("acme/site", None, source_key=None)
-
-    assert edges == []
+    assert index.dependencies("acme/site", None, source_key=None) == []
     assert index.warnings == (
         SkippedDependencyFile(
-            repo="acme/site",
-            ref="main",
-            source_path="roles/requirements.yml",
-            reason="could not parse dependency YAML",
-        ),
-    )
-
-
-def test_live_wrong_shaped_dependency_section_uses_skipped_dependency_file_payload() -> None:
-    class WrongShapeDependencyGithub(StubGithub):
-        def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str:
-            assert (owner, repo, path, ref) == ("acme", "site", "roles/requirements.yml", "main")
-            return "roles: not-a-list\n"
-
-    index = GithubDependencyIndex(
-        github=WrongShapeDependencyGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
-
-    edges = index.dependencies("acme/site", None, source_key=None)
-
-    assert edges == []
-    assert index.warnings == (
-        SkippedDependencyFile(
-            repo="acme/site",
-            ref="main",
-            source_path="roles/requirements.yml",
-            reason="expected list at roles",
+            repo="acme/site", ref="main", source_path="roles/requirements.yml", reason=reason
         ),
     )
 
 
 def test_dependencies_batch_reads_live_per_pair_and_augments_cached_ref_reads() -> None:
-    index = GithubDependencyIndex(
-        github=StubGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
+    index = _index(StubGithub())
 
     batch = index.dependencies_batch([("acme/site", None)], source_key=None)
 
@@ -194,12 +165,7 @@ def test_cached_ref_reads_include_live_fetched_refs() -> None:
         ) -> list[dict[str, object]]:
             return []
 
-    index = GithubDependencyIndex(
-        github=RefStubGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
+    index = _index(RefStubGithub())
     index.dependencies("acme/site", "release", source_key=None)
 
     assert index.cached_refs("acme/site", source_key=None) == {"release"}
@@ -241,13 +207,7 @@ class MultiRepoGithub:
 
 
 def test_live_read_failures_become_errors_not_aborts() -> None:
-    index = GithubDependencyIndex(
-        github=MultiRepoGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-        concurrency=4,
-    )
+    index = _index(MultiRepoGithub(), concurrency=4)
 
     results = index.dependencies_batch(
         [("acme/site", None), ("acme/gone", None), ("acme/huge", None)], source_key=None
@@ -270,12 +230,7 @@ def test_live_graph_keeps_building_past_a_failed_repo() -> None:
                 return "- src: acme/gone\n  version: v9\n- src: acme/base\n"
             return ""
 
-    index = GithubDependencyIndex(
-        github=ChainGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
+    index = _index(ChainGithub())
 
     graph = BuildGraph(index)(GraphRequest(repo="acme/site", direction="deps", depth=None))
 
@@ -283,43 +238,21 @@ def test_live_graph_keeps_building_past_a_failed_repo() -> None:
     assert any("acme/gone@v9" in error for error in index.errors)
 
 
-def test_live_auth_failures_still_abort() -> None:
-    class UnauthorizedGithub(MultiRepoGithub):
-        def get_repository(self, owner: str, repo: str) -> dict[str, object]:
-            raise HttpStatusError("401 Unauthorized", status_code=401)
-
-    index = GithubDependencyIndex(
-        github=UnauthorizedGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
-
-    with pytest.raises(HttpStatusError):
-        index.dependencies("acme/site", None, source_key=None)
-
-
 @pytest.mark.parametrize(
-    "body",
+    ("status", "body"),
     [
-        '{"message": "API rate limit exceeded for user ID 1."}',
-        '{"message": "You have exceeded a secondary rate limit."}',
+        (401, None),
+        (403, '{"message": "API rate limit exceeded for user ID 1."}'),
+        (403, '{"message": "You have exceeded a secondary rate limit."}'),
     ],
 )
-def test_live_rate_limited_403_aborts(body: str) -> None:
-    class RateLimitedGithub(MultiRepoGithub):
+def test_live_auth_and_rate_limit_failures_still_abort(status: int, body: str | None) -> None:
+    class FailingGithub(MultiRepoGithub):
         def get_repository(self, owner: str, repo: str) -> dict[str, object]:
-            raise HttpStatusError("403 Forbidden", status_code=403, body=body)
-
-    index = GithubDependencyIndex(
-        github=RateLimitedGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
+            raise HttpStatusError(f"{status} error", status_code=status, body=body)
 
     with pytest.raises(HttpStatusError):
-        index.dependencies("acme/site", None, source_key=None)
+        _index(FailingGithub()).dependencies("acme/site", None, source_key=None)
 
 
 def test_live_permission_403_is_a_per_repo_error() -> None:
@@ -329,12 +262,7 @@ def test_live_permission_403_is_a_per_repo_error() -> None:
                 "403 Forbidden", status_code=403, body='{"message": "Resource not accessible"}'
             )
 
-    index = GithubDependencyIndex(
-        github=ForbiddenGithub(),
-        wrapped=EmptyIndex(),
-        aliases={},
-        dependency_paths=["roles/requirements.yml"],
-    )
+    index = _index(ForbiddenGithub())
 
     assert index.dependencies("acme/site", None, source_key=None) == []
     assert index.errors and "403" in index.errors[0]

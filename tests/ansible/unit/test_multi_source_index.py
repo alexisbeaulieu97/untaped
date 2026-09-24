@@ -9,6 +9,22 @@ from untaped.capabilities.ansible.infrastructure.multi_source_index import (
     MultiSourceDependencyIndex,
 )
 
+_KEYS = ("source:platform", "source:ops")
+_UNION = "sources:platform,ops"
+
+
+def _edge(
+    source: str, target: str, *, ref: str = "main", version: str | None = None
+) -> IndexedDependency:
+    return IndexedDependency(
+        source_repo=source,
+        source_ref=ref,
+        dependency_repo=target,
+        dependency_name=target.rsplit("/", maxsplit=1)[-1],
+        dependency_version=version,
+        source_path="roles/requirements.yml",
+    )
+
 
 class StubIndex:
     def __init__(
@@ -25,11 +41,7 @@ class StubIndex:
         self.stale_sources = stale_sources or set()
 
     def dependencies(
-        self,
-        repo: str,
-        ref: str | None,
-        *,
-        source_key: str | None,
+        self, repo: str, ref: str | None, *, source_key: str | None
     ) -> list[IndexedDependency]:
         return [
             edge
@@ -38,11 +50,7 @@ class StubIndex:
         ]
 
     def dependents(
-        self,
-        repo: str,
-        ref: str | None,
-        *,
-        source_key: str | None,
+        self, repo: str, ref: str | None, *, source_key: str | None
     ) -> list[IndexedDependency]:
         return [
             edge
@@ -57,30 +65,17 @@ class StubIndex:
         return self.metadata_by_source.get((source_key or "", repo), ())
 
     def dependencies_batch(
-        self,
-        pairs: Sequence[tuple[str, str | None]],
-        *,
-        source_key: str | None,
+        self, pairs: Sequence[tuple[str, str | None]], *, source_key: str | None
     ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
-        return {
-            (repo, ref): self.dependencies(repo, ref, source_key=source_key) for repo, ref in pairs
-        }
+        return {pair: self.dependencies(*pair, source_key=source_key) for pair in pairs}
 
     def dependents_batch(
-        self,
-        pairs: Sequence[tuple[str, str | None]],
-        *,
-        source_key: str | None,
+        self, pairs: Sequence[tuple[str, str | None]], *, source_key: str | None
     ) -> dict[tuple[str, str | None], list[IndexedDependency]]:
-        return {
-            (repo, ref): self.dependents(repo, ref, source_key=source_key) for repo, ref in pairs
-        }
+        return {pair: self.dependents(*pair, source_key=source_key) for pair in pairs}
 
     def cached_ref_metadata_batch(
-        self,
-        repos: Sequence[str],
-        *,
-        source_key: str | None,
+        self, repos: Sequence[str], *, source_key: str | None
     ) -> dict[str, tuple[CachedRef, ...]]:
         return {repo: self.cached_ref_metadata(repo, source_key=source_key) for repo in repos}
 
@@ -88,224 +83,73 @@ class StubIndex:
         return source_key in self.stale_sources
 
 
-def test_multi_source_index_unions_dependency_reads_and_dedupes_edges() -> None:
-    shared = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/base",
-        dependency_name="base",
-        dependency_version=None,
-        source_path="roles/requirements.yml",
+def test_dependency_reads_union_sources_and_dedupe_edges() -> None:
+    shared = _edge("acme/site", "acme/base")
+    platform_only = _edge("acme/site", "acme/common")
+    ops_only = _edge("acme/site", "acme/ops")
+    index = MultiSourceDependencyIndex(
+        StubIndex({"source:platform": [shared, platform_only], "source:ops": [shared, ops_only]}),
+        _KEYS,
     )
-    platform_only = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/common",
-        dependency_name="common",
-        dependency_version=None,
-        source_path="meta/main.yml",
+
+    batch = index.dependencies_batch(
+        [("acme/site", "main"), ("acme/other", None)], source_key=_UNION
     )
-    ops_only = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/ops",
-        dependency_name="ops",
-        dependency_version=None,
-        source_path="roles/requirements.yml",
-    )
+
+    union = [shared, platform_only, ops_only]
+    assert index.dependencies("acme/site", "main", source_key=_UNION) == union
+    assert batch == {("acme/site", "main"): union, ("acme/other", None): []}
+
+
+def test_dependents_cached_refs_and_staleness_union_sources_in_key_order() -> None:
+    platform_edge = _edge("acme/site", "acme/base", version="v1")
+    ops_edge = _edge("acme/deploy", "acme/base", ref="release", version="v1")
     index = MultiSourceDependencyIndex(
         StubIndex(
-            {
-                "source:platform": [shared, platform_only],
-                "source:ops": [shared, ops_only],
-            }
-        ),
-        ("source:platform", "source:ops"),
-    )
-
-    assert index.dependencies("acme/site", "main", source_key="sources:platform,ops") == [
-        shared,
-        platform_only,
-        ops_only,
-    ]
-
-
-def test_multi_source_index_unions_dependents_cached_refs_and_staleness() -> None:
-    platform_edge = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/base",
-        dependency_name="base",
-        dependency_version="v1",
-        source_path="roles/requirements.yml",
-    )
-    ops_edge = IndexedDependency(
-        source_repo="acme/deploy",
-        source_ref="release",
-        dependency_repo="acme/base",
-        dependency_name="base",
-        dependency_version="v1",
-        source_path="roles/requirements.yml",
-    )
-    index = MultiSourceDependencyIndex(
-        StubIndex(
-            {
-                "source:platform": [platform_edge],
-                "source:ops": [ops_edge],
-            },
+            {"source:platform": [platform_edge], "source:ops": [ops_edge]},
             refs_by_source={
                 ("source:platform", "acme/site"): {"main"},
                 ("source:ops", "acme/site"): {"release"},
             },
             stale_sources={"source:ops"},
         ),
-        ("source:platform", "source:ops"),
+        _KEYS,
     )
 
-    assert index.dependents("acme/base", "v1", source_key="sources:platform,ops") == [
-        platform_edge,
-        ops_edge,
-    ]
-    assert index.cached_refs("acme/site", source_key="sources:platform,ops") == {
-        "main",
-        "release",
+    batch = index.dependents_batch([("acme/base", "v1"), ("acme/base", "v2")], source_key=_UNION)
+
+    assert index.dependents("acme/base", "v1", source_key=_UNION) == [platform_edge, ops_edge]
+    assert batch == {("acme/base", "v1"): [platform_edge, ops_edge], ("acme/base", "v2"): []}
+    assert index.cached_refs("acme/site", source_key=_UNION) == {"main", "release"}
+    assert index.is_stale(_UNION, max_age_seconds=60)
+
+
+def test_cached_ref_metadata_unions_sources_with_the_first_default_branch() -> None:
+    def refs(default: str, *names: tuple[str, str]) -> tuple[CachedRef, ...]:
+        return tuple(
+            CachedRef(name=name, kind=kind, default_branch=default) for name, kind in names
+        )
+
+    index = MultiSourceDependencyIndex(
+        StubIndex(
+            {},
+            metadata_by_source={
+                ("source:platform", "acme/site"): refs(
+                    "main", ("main", "heads"), ("v1.0.0", "tags")
+                ),
+                ("source:ops", "acme/site"): refs(
+                    "release", ("release", "heads"), ("v2.0.0", "tags")
+                ),
+            },
+        ),
+        _KEYS,
+    )
+
+    expected = refs(
+        "main", ("main", "heads"), ("v1.0.0", "tags"), ("release", "heads"), ("v2.0.0", "tags")
+    )
+    assert index.cached_ref_metadata("acme/site", source_key=_UNION) == expected
+    assert index.cached_ref_metadata_batch(["acme/site", "acme/missing"], source_key=_UNION) == {
+        "acme/site": expected,
+        "acme/missing": (),
     }
-    assert index.is_stale("sources:platform,ops", max_age_seconds=60)
-
-
-def test_multi_source_index_unions_cached_ref_metadata_with_first_default_branch() -> None:
-    index = MultiSourceDependencyIndex(
-        StubIndex(
-            {},
-            metadata_by_source={
-                ("source:platform", "acme/site"): (
-                    CachedRef(name="main", kind="heads", default_branch="main"),
-                    CachedRef(name="v1.0.0", kind="tags", default_branch="main"),
-                ),
-                ("source:ops", "acme/site"): (
-                    CachedRef(name="release", kind="heads", default_branch="release"),
-                    CachedRef(name="v2.0.0", kind="tags", default_branch="release"),
-                ),
-            },
-        ),
-        ("source:platform", "source:ops"),
-    )
-
-    assert index.cached_ref_metadata("acme/site", source_key="sources:platform,ops") == (
-        CachedRef(name="main", kind="heads", default_branch="main"),
-        CachedRef(name="v1.0.0", kind="tags", default_branch="main"),
-        CachedRef(name="release", kind="heads", default_branch="main"),
-        CachedRef(name="v2.0.0", kind="tags", default_branch="main"),
-    )
-
-
-def test_multi_source_dependencies_batch_unions_and_dedupes_per_pair() -> None:
-    shared = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/base",
-        dependency_name="base",
-        dependency_version=None,
-        source_path="roles/requirements.yml",
-    )
-    platform_only = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/common",
-        dependency_name="common",
-        dependency_version=None,
-        source_path="meta/main.yml",
-    )
-    ops_only = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/ops",
-        dependency_name="ops",
-        dependency_version=None,
-        source_path="roles/requirements.yml",
-    )
-    index = MultiSourceDependencyIndex(
-        StubIndex(
-            {
-                "source:platform": [shared, platform_only],
-                "source:ops": [shared, ops_only],
-            }
-        ),
-        ("source:platform", "source:ops"),
-    )
-
-    batch = index.dependencies_batch(
-        [("acme/site", "main"), ("acme/other", None)],
-        source_key="sources:platform,ops",
-    )
-
-    assert batch[("acme/site", "main")] == [shared, platform_only, ops_only]
-    assert batch[("acme/other", None)] == []
-
-
-def test_multi_source_dependents_batch_unions_sources_in_key_order() -> None:
-    platform_edge = IndexedDependency(
-        source_repo="acme/site",
-        source_ref="main",
-        dependency_repo="acme/base",
-        dependency_name="base",
-        dependency_version="v1",
-        source_path="roles/requirements.yml",
-    )
-    ops_edge = IndexedDependency(
-        source_repo="acme/deploy",
-        source_ref="release",
-        dependency_repo="acme/base",
-        dependency_name="base",
-        dependency_version="v1",
-        source_path="roles/requirements.yml",
-    )
-    index = MultiSourceDependencyIndex(
-        StubIndex(
-            {
-                "source:platform": [platform_edge],
-                "source:ops": [ops_edge],
-            }
-        ),
-        ("source:platform", "source:ops"),
-    )
-
-    batch = index.dependents_batch(
-        [("acme/base", "v1"), ("acme/base", "v2")],
-        source_key="sources:platform,ops",
-    )
-
-    assert batch[("acme/base", "v1")] == [platform_edge, ops_edge]
-    assert batch[("acme/base", "v2")] == []
-
-
-def test_multi_source_cached_ref_metadata_batch_applies_first_default_branch() -> None:
-    index = MultiSourceDependencyIndex(
-        StubIndex(
-            {},
-            metadata_by_source={
-                ("source:platform", "acme/site"): (
-                    CachedRef(name="main", kind="heads", default_branch="main"),
-                    CachedRef(name="v1.0.0", kind="tags", default_branch="main"),
-                ),
-                ("source:ops", "acme/site"): (
-                    CachedRef(name="release", kind="heads", default_branch="release"),
-                    CachedRef(name="v2.0.0", kind="tags", default_branch="release"),
-                ),
-            },
-        ),
-        ("source:platform", "source:ops"),
-    )
-
-    batch = index.cached_ref_metadata_batch(
-        ["acme/site", "acme/missing"],
-        source_key="sources:platform,ops",
-    )
-
-    assert batch["acme/site"] == (
-        CachedRef(name="main", kind="heads", default_branch="main"),
-        CachedRef(name="v1.0.0", kind="tags", default_branch="main"),
-        CachedRef(name="release", kind="heads", default_branch="main"),
-        CachedRef(name="v2.0.0", kind="tags", default_branch="main"),
-    )
-    assert batch["acme/missing"] == ()

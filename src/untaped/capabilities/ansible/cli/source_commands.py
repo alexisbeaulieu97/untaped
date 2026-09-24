@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from untaped.capabilities.ansible.application.refresh_index import RefreshResult
+from untaped.capabilities.ansible.application.refresh_git_index import RefreshResult
 from untaped.capabilities.ansible.cli.refresh import (
     GIT_PARALLEL_CAP,
     run_source_refresh,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pytest
 
@@ -45,58 +45,34 @@ class FakeBatchClient:
     ) -> BatchRepoRefsResult:
         with self._lock:
             self.calls.append((tuple(repos), tuple(kinds), chunk_size))
-            rate_limit = self.rate_limits.pop(0) if self.rate_limits else None
-        found: list[RepoRefs] = []
-        missing: list[str] = []
-        failures: list[BatchRepoRefsFailure] = []
-        for repo in repos:
-            error = self.errors.get(repo)
-            if error is not None:
-                raise error
-            if repo in self.transient_failures:
-                failures.append(
-                    BatchRepoRefsFailure(
-                        full_name=repo,
-                        reason=self.transient_failures[repo],
-                        kind="server_error",
-                        status_code=502,
-                        url="https://api.github.com/graphql",
-                    )
-                )
-                continue
-            if repo in self.missing:
-                missing.append(repo)
-                continue
-            found.append(
-                RepoRefs(
-                    full_name=repo,
-                    default_branch=self.default_branches.get(repo, "main"),
-                    refs=tuple(ref for ref in self.refs.get(repo, []) if ref.kind in kinds),
-                )
-            )
-        return BatchRepoRefsResult(
-            repos=tuple(found),
-            missing=tuple(missing),
-            failures=tuple(failures),
-            rate_limit_remaining=rate_limit,
+        return self._result(
+            repos, lambda repo: [ref for ref in self.refs.get(repo, []) if ref.kind in kinds]
         )
 
     def batch_default_branch_refs(
-        self,
-        repos: Sequence[str],
-        *,
-        chunk_size: int = 200,
+        self, repos: Sequence[str], *, chunk_size: int = 200
     ) -> BatchRepoRefsResult:
         with self._lock:
             self.default_branch_calls.append((tuple(repos), chunk_size))
+
+        def default_ref(repo: str) -> list[RepoRef]:
+            branch = self.default_branches.get(repo, "main")
+            return (
+                [] if branch is None else [RepoRef(kind="heads", name=branch, sha=f"sha-{branch}")]
+            )
+
+        return self._result(repos, default_ref)
+
+    def _result(
+        self, repos: Sequence[str], refs_of: Callable[[str], list[RepoRef]]
+    ) -> BatchRepoRefsResult:
+        with self._lock:
             rate_limit = self.rate_limits.pop(0) if self.rate_limits else None
         found: list[RepoRefs] = []
-        missing: list[str] = []
         failures: list[BatchRepoRefsFailure] = []
         for repo in repos:
-            error = self.errors.get(repo)
-            if error is not None:
-                raise error
+            if repo in self.errors:
+                raise self.errors[repo]
             if repo in self.transient_failures:
                 failures.append(
                     BatchRepoRefsFailure(
@@ -107,24 +83,16 @@ class FakeBatchClient:
                         url="https://api.github.com/graphql",
                     )
                 )
-                continue
-            if repo in self.missing:
-                missing.append(repo)
-                continue
-            branch = self.default_branches.get(repo, "main")
-            refs = ()
-            if branch is not None:
-                refs = (RepoRef(kind="heads", name=branch, sha=f"sha-{repo}-{branch}"),)
-            found.append(
-                RepoRefs(
-                    full_name=repo,
-                    default_branch=branch,
-                    refs=refs,
+            elif repo not in self.missing:
+                default_branch = self.default_branches.get(repo, "main")
+                found.append(
+                    RepoRefs(
+                        full_name=repo, default_branch=default_branch, refs=tuple(refs_of(repo))
+                    )
                 )
-            )
         return BatchRepoRefsResult(
             repos=tuple(found),
-            missing=tuple(missing),
+            missing=tuple(repo for repo in repos if repo in self.missing),
             failures=tuple(failures),
             rate_limit_remaining=rate_limit,
         )
@@ -223,39 +191,42 @@ def test_probe_can_use_default_branch_ref_query() -> None:
     )
 
     assert report.repos["acme/site"].default_branch == "trunk"
-    assert report.repos["acme/site"].refs == (
-        GitRef(kind="heads", name="trunk", sha="sha-acme/site-trunk"),
-    )
+    assert report.repos["acme/site"].refs == (GitRef(kind="heads", name="trunk", sha="sha-trunk"),)
     assert client.calls == []
     assert client.default_branch_calls == [(("acme/site",), 1)]
 
 
-def test_probe_marks_failed_chunks_without_aborting_others() -> None:
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (HttpError("github graphql 502", url="https://api.github.com"), "github graphql 502"),
+        (UntapedError("invalid repository 'acme/boom'"), "invalid repository 'acme/boom'"),
+    ],
+)
+def test_probe_marks_failed_chunks_without_aborting_others(error: Exception, reason: str) -> None:
     client = FakeBatchClient()
     client.refs["acme/ok"] = [RepoRef(kind="heads", name="main", sha="sha-ok")]
-    client.errors["acme/boom"] = HttpError("github graphql 502", url="https://api.github.com")
+    client.errors["acme/boom"] = error
     client.refs["acme/also-ok"] = [RepoRef(kind="heads", name="main", sha="sha-also")]
 
     report = GithubRefProbe(client, concurrency=2, chunk_size=1).probe(
-        ["acme/ok", "acme/boom", "acme/also-ok"],
-        kinds=("heads",),
+        ["acme/ok", "acme/boom", "acme/also-ok"], kinds=("heads",)
     )
 
     assert set(report.repos) == {"acme/ok", "acme/also-ok"}
-    assert "acme/boom" in report.failures
-    assert report.failures["acme/boom"].kind == "chunk"
-    assert "502" in report.failures["acme/boom"].reason
-    assert report.failures["acme/boom"].reason.startswith("ref probe failed: ")
+    assert report.failures == {
+        "acme/boom": ProbeFailure(kind="chunk", reason=f"ref probe failed: {reason}")
+    }
 
 
-def test_probe_marks_github_transient_failures_without_losing_successes() -> None:
+@pytest.mark.parametrize("mode", ["all", "default_branch"])
+def test_probe_marks_github_transient_failures_without_losing_successes(mode: str) -> None:
     client = FakeBatchClient()
     client.refs["acme/ok"] = [RepoRef(kind="heads", name="main", sha="sha-ok")]
     client.transient_failures["acme/flaky"] = "HTTP 502 for https://api.github.com/graphql"
 
     report = GithubRefProbe(client, concurrency=1).probe(
-        ["acme/ok", "acme/flaky"],
-        kinds=("heads",),
+        ["acme/ok", "acme/flaky"], kinds=("heads",), mode=mode
     )
 
     assert set(report.repos) == {"acme/ok"}
@@ -266,42 +237,6 @@ def test_probe_marks_github_transient_failures_without_losing_successes() -> Non
         )
     }
     assert is_transient_ref_probe_failure(report.failures["acme/flaky"].reason)
-
-
-def test_probe_marks_default_branch_github_transient_failures() -> None:
-    client = FakeBatchClient()
-    client.default_branches["acme/ok"] = "main"
-    client.transient_failures["acme/flaky"] = "HTTP 502 for https://api.github.com/graphql"
-
-    report = GithubRefProbe(client, concurrency=1).probe(
-        ["acme/ok", "acme/flaky"],
-        kinds=("heads", "tags"),
-        mode="default_branch",
-    )
-
-    assert set(report.repos) == {"acme/ok"}
-    assert report.failures == {
-        "acme/flaky": ProbeFailure(
-            kind="transient",
-            reason="transient ref probe failed: HTTP 502 for https://api.github.com/graphql",
-        )
-    }
-    assert is_transient_ref_probe_failure(report.failures["acme/flaky"].reason)
-
-
-def test_probe_marks_untaped_error_chunks_as_failures() -> None:
-    client = FakeBatchClient()
-    client.errors["acme/bad"] = UntapedError("invalid repository 'acme/bad'")
-
-    report = GithubRefProbe(client).probe(["acme/bad"], kinds=("heads",))
-
-    assert report.repos == {}
-    assert report.failures == {
-        "acme/bad": ProbeFailure(
-            kind="chunk",
-            reason="ref probe failed: invalid repository 'acme/bad'",
-        )
-    }
 
 
 def test_probe_propagates_global_graphql_errors() -> None:

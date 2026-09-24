@@ -37,7 +37,7 @@ class GitRepositoryCache:
         auth_header: str | None,
     ) -> Path:
         """Ensure a bare repository cache exists for ``url``."""
-        bare = cache_path_for(url, cache_dir=cache_dir)
+        bare = safe_cache_path(url, root=cache_dir)
         if not (bare / "HEAD").is_file():
             bare.parent.mkdir(parents=True, exist_ok=True)
             self._run(["init", "--bare", str(bare)], timeout=self._slow_timeout)
@@ -109,17 +109,6 @@ class GitRepositoryCache:
             auth_header=header,
             auth_url=auth_url,
         )
-
-    def read_file(
-        self,
-        bare_path: Path,
-        sha: str,
-        path: str,
-        *,
-        auth_header: str | None,
-    ) -> str | None:
-        """Read ``path`` from ``sha`` without checking out a worktree."""
-        return self.read_files(bare_path, sha, [path], auth_header=auth_header).get(path)
 
     def read_files(
         self,
@@ -273,11 +262,6 @@ def local_remote_url(
     if lines:
         return lines[0].split(maxsplit=1)[-1].strip() or None
     return None
-
-
-def cache_path_for(url: str, *, cache_dir: Path) -> Path:
-    """Return the deterministic bare-cache path for a remote URL."""
-    return safe_cache_path(url, root=cache_dir)
 
 
 def _parse_cat_file_batch(output: bytes, blob_ids: list[str]) -> dict[str, str]:
