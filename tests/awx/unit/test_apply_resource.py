@@ -640,6 +640,47 @@ def test_apply_sibling_change_alongside_nested_secret_raises() -> None:
     assert strategy.updated is None
 
 
+def test_top_level_change_beside_survey_placeholders_keeps_the_survey() -> None:
+    """``survey_spec.spec.*.default`` is a wildcard secret path: every list
+    item's placeholder is preserved, ``survey_spec`` stays out of the PATCH
+    (no ``$encrypted$`` leaks) and the sibling ``description`` change goes out.
+    """
+    survey = {
+        "spec": [
+            {"variable": "pw", "default": "$encrypted$", "question_name": "Password"},
+            {"variable": "env", "default": "$encrypted$", "question_name": "Environment"},
+        ],
+    }
+    existing = {
+        "id": 7,
+        "name": "deploy",
+        "organization": 1,
+        "playbook": "deploy.yml",
+        "description": "old",
+        "survey_spec": survey,
+    }
+    strategy = _StubStrategy(existing=existing)
+    apply = _make_apply(
+        catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
+        fk_names={("Organization", "Default"): 1},
+        strategy=strategy,
+    )
+    resource = Resource(
+        kind="JobTemplate",
+        metadata=Metadata(name="deploy", organization="Default"),
+        spec={"playbook": "deploy.yml", "description": "new", "survey_spec": survey},
+    )
+
+    outcome = apply(resource, write=True)
+
+    assert outcome.action == "updated"
+    assert [p for p in outcome.preserved_secrets if p.startswith("survey_spec.spec.")] == [
+        "survey_spec.spec.*.default"
+    ] * 2
+    assert strategy.updated is not None
+    assert strategy.updated[1] == {"description": "new"}
+
+
 def test_apply_real_secret_value_alongside_sibling_change_succeeds() -> None:
     """Inlining the real secret unblocks the sibling rename — the PATCH
     sends the full survey_spec including the new value.
