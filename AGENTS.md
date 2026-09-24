@@ -19,8 +19,8 @@ implementation in `src/untaped/` is authoritative for composition and command
 behavior. User workflows live in [`docs/`](docs/README.md); provider authors
 should start with [`docs/plugins.md`](docs/plugins.md).
 
-Inspect `untaped --help` for the current built-in command order. The source
-tree is the implementation reference:
+Inspect `untaped capabilities` for the current built-in capability order.
+The source tree is the implementation reference:
 
 - `pyproject.toml` and `uv.lock` define the distribution and locked
   environment.
@@ -70,7 +70,9 @@ against per-capability baselines that may only shrink.
   `untaped --help` and `src/untaped/management/` when adding a capability.
 - A new built-in capability: add `capabilities/<name>/` per the layout
   above, expose `SPEC` + `build_app`, and append it to
-  `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Set
+  `BUILTIN_CAPABILITIES` in `bootstrap.py` in declaration order. Start its
+  skill from [`docs/templates/SKILL.md`](docs/templates/SKILL.md) and its user
+  guide at `docs/<name>/usage.md`, linked from `docs/README.md`. Set
   `SPEC.help` to the app's one-line help: built-ins with `help` are mounted
   lazily (factory runs once, on dispatch), so `untaped --help` and other
   capabilities never import their CLI. Externals are always built once during
@@ -94,6 +96,10 @@ written only through `StateCollection`/`StateMap` (or
 `state.yml` and state writes never touch `config.yml`, except the one-time move
 of a legacy top-level state section out of `config.yml` (see
 [`docs/configuration.md`](docs/configuration.md#capability-state)).
+[`docs/reference/config.md`](docs/reference/config.md) is generated from the
+settings models: after changing one, run
+`uv run python scripts/gen_config_reference.py` (a test fails while it is
+stale).
 
 ## Per-capability ownership (Hard Rules)
 
